@@ -76,7 +76,7 @@ These are the behaviours the Rust code must keep. Each row becomes an up-front f
 | Payment | Methods: Cash, Bank Transfer, Credit Card, Alipay, PromptPay (`SCB Transfer` is read as Bank Transfer). Non-cash needs a payment ref and a slip file; passport file always | `6446-6453`, `6624` |
 | Custody (when enabled) | Phases CLOSED → READY → OPEN → CUT_OFF → COUNTING; request kinds OPEN, HANDOVER, CLOSE, SAFE_OPEN, SAFE_IN/OUT, EXTERNAL_IN/OUT; one PENDING request at a time; signature rules per kind; Backend commits and must not be sender/receiver | `5969-6250` |
 | Custody gate on save | Only the FRONT custodian, clocked in, in phase OPEN (or CUT_OFF with an open draft); customer must not be on hold | `6868-6877` |
-| Kiosk | QUOTED → WAITING → ACCEPTED → ID_CHECKED → COMPLETED; quote valid 5 min, confirm not before 3 s; rate re-checked at confirm; only the accepting employee may continue | `7957-8045`, `8060-8075` |
+| Kiosk | QUOTED → WAITING → ACCEPTED → ID_CHECKED → COMPLETED, with QUOTED → EXPIRED. A quote can be confirmed from 3 s (`7981`, enforced by the server) to 5 min (`7980`) after it was made; between 5 and 10 min its status reads `EXPIRED` (`7913`); after 10 min the row is deleted by the next quote (`7971`) and the answer is "not found". `confirm` on a row already past QUOTED returns its identity instead of failing (`7978`), so a retry is safe. Rate re-checked at confirm (`7983-7984`); only the accepting employee may continue | `7957-8045`, `8060-8075` |
 
 Known differences v3 introduces on purpose:
 
@@ -333,38 +333,68 @@ Nothing else is built in Flutter. The staff queue page and the kiosk-currency pa
 Replaces `public/kiosk.html`, `kiosk.js`, `kiosk.css`, `kiosk-i18n.js`, `kiosk-language-extras.js`, `kiosk-fonts.css`.
 It talks to the same `POST /api/kiosk` actions, so the staff side of the queue (`kiosk-queue.html`, `desk-kiosk.js`) is untouched.
 
+The app follows the layout and stack of `108heros-flutter` (owner, 2026-10-06), so nothing has to be
+re-shaped later: `app/` · `core/` · `features/<name>/{app,domain,infrastructure,presentation}` · `shared/` · `l10n/`,
+with Riverpod 3, dio and go_router.
+
 ```mermaid
 classDiagram
   direction LR
-  class KioskApi { +rates(branch); +quote(req); +confirm(id); +status(id); +customerReceipt(id) }
-  class KioskController { +screen; +start(); +submitQuote(); +confirm(); +reset() }
-  class QuoteModel { type; currency; rate; foreign; thb; paymentMethod; queue; orderNo; status: KioskStatus }
-  class KioskStatus { <<enum>> quoted; waiting; accepted; idChecked; completed; expired }
-  class StatusPoller { +watch(id) Stream~KioskStatus~ }
-  class IdleTimer { +touch(); +onIdle }
-  class KioskL10n { +languages; +text(key); +errorText(serverMessage) }
-  class SelectScreen
-  class QuoteScreen
-  class WaitingScreen
-  class ReceiptScreen
-  KioskController --> KioskApi
+  class KioskApi { +call(action, payload) Json }
+  class KioskRepository { <<abstract>> +rates(); +quote(); +confirm(id); +status(id); +customerReceipt(id) }
+  class KioskRepositoryImpl
+  class KioskFailure { serverMessage }
+  class KioskController { <<Notifier>> +start(); +reset(); +submitQuote(); +confirm(); +setLanguage() }
+  class KioskState { screen; model; type; currency; amountText; paymentMethod; quote; status; receiptImage; error; secondsLeft; languageCode }
+  class QuoteModel { type; currency; rate; foreign; thb; paymentMethod; identity }
+  class RequestIdentity { id; queue; orderNo; transactionNo; status: KioskStatus }
+  class KioskStatus { <<enum>> quoted; waiting; accepted; idChecked; completed; expired; unknown }
+  class StatusPoller { +start(); +stop() }
+  class IdleTimer { +touch() }
+  class KioskL10n { +languages; +of(code) KioskTexts; +detect(deviceLanguages) }
+  class KioskTexts { +text(key, vars); +errorText(serverMessage); +direction }
+  class KioskPage
+  class SelectPage
+  class QuotePage
+  class WaitingPage
+  class ReceiptPage
+  KioskRepository <|.. KioskRepositoryImpl
+  KioskRepositoryImpl --> KioskApi
+  KioskRepositoryImpl ..> KioskFailure : throws
+  KioskController --> KioskRepository
+  KioskController --> KioskState
   KioskController --> StatusPoller
   KioskController --> IdleTimer
-  StatusPoller --> KioskApi
-  SelectScreen --> KioskController
-  QuoteScreen --> KioskController
-  WaitingScreen --> KioskController
-  ReceiptScreen --> KioskController
-  QuoteScreen --> KioskL10n
+  KioskController --> KioskL10n
+  KioskPage --> SelectPage
+  KioskPage --> QuotePage
+  KioskPage --> WaitingPage
+  KioskPage --> ReceiptPage
+  SelectPage --> KioskController
+  QuotePage --> KioskController
+  KioskL10n --> KioskTexts
 ```
 
-| Piece | Location (under `app/`) |
+| Piece | Location (under `app/lib/`) |
 |---|---|
-| `KioskApi`; `QuoteModel`, `KioskStatus` | `lib/api/kiosk_api.dart`; `lib/api/models.dart` (F1 owns both — F3's poller imports `KioskStatus`, it does not declare it). The Rust `KioskStatus` of §5.1 is a separate type in `xc-domain/src/kiosk.rs` |
-| `KioskController`, `StatusPoller`, `IdleTimer` | `lib/kiosk/controller.dart`, `lib/kiosk/status_poller.dart`, `lib/kiosk/idle_timer.dart` |
-| Screens | `lib/kiosk/screens/{select,quote,waiting,receipt}_screen.dart` |
-| `KioskL10n` + language files | `lib/l10n/` — texts moved 1:1 from `kiosk-i18n.js` and `kiosk-language-extras.js` |
-| Fonts (Myanmar, Arabic, Lao, Devanagari — OFL, already in `public/fonts/`) | `assets/fonts/` |
+| App shell, router | `app/app.dart`, `app/router/app_router.dart` |
+| dio (same-origin base URL, `X-Xchange-Request` header), `BaseApiService` | `core/network/` |
+| Browser seam (device languages, `?branch=`, `Intl` names and symbols, save image) with a VM stub for tests | `core/platform/` |
+| Providers | `features/kiosk/app/kiosk_providers.dart` |
+| `QuoteModel`, `RequestIdentity`, `KioskStatus`, rates models; `KioskFailure`; `KioskRepository` | `features/kiosk/domain/entities/kiosk_models.dart`, `features/kiosk/domain/kiosk_failure.dart`, `features/kiosk/domain/repository/` |
+| `KioskApi`; `KioskRepositoryImpl` | `features/kiosk/infrastructure/data_sources/`, `features/kiosk/infrastructure/repositories/` |
+| `KioskController` + `KioskState`, `StatusPoller`, `IdleTimer` | `features/kiosk/presentation/controllers/` |
+| The frame and the four screens | `features/kiosk/presentation/pages/{kiosk,select,quote,waiting,receipt}_page.dart` |
+| Shared kiosk widgets | `features/kiosk/presentation/widgets/` |
+| Colours, theme | `shared/theme/` |
+| `KioskL10n`, `KioskTexts`; texts moved 1:1 from `kiosk-i18n.js` and `kiosk-language-extras.js` | `l10n/kiosk_l10n.dart`, `assets/l10n/kiosk.json` |
+
+Two places where this app differs from `108heros-flutter`, on purpose:
+- Models are hand-written immutable classes, not freezed — six small read-only types. They sit where the freezed ones would, so switching is local to those files.
+- Texts are a runtime JSON table, not `.arb` files: the customer picks among 16 languages on the screen itself, independent of the device locale, and the table is the v2 kiosk's own.
+
+Fonts: Flutter web fetches the Noto fallback fonts for Thai, CJK, Arabic, Myanmar, Lao and Devanagari on demand.
+Bundling them for a kiosk with a poor connection is not done yet.
 
 **How it is served in phase 1** (no change to the v2 server): nginx on the customer host serves the
 Flutter web build from a directory and proxies only `POST /api/kiosk` to `127.0.0.1:8093`. Today
@@ -374,8 +404,10 @@ a static `root` for the build plus the one proxied path. The page keeps the same
 
 Behaviour to keep (from `public/kiosk.js` and the server side at `7957-7998`): language starts from the
 device language and returns to it on reset; quote must be shown at least 3 s before confirm and expires at 5 min;
-server error messages are mapped to localised text; the receipt image published by staff is shown for 10 minutes;
-the screen resets when idle. The client shows amounts the server returned and never submits a rate or a THB figure of its own.
+server error messages are mapped to localised text; the status is polled every 5 s and the receipt every 3 s;
+the screen restarts **30 seconds** after it sees the request completed (`public/kiosk.js:105`) — the 10-minute figure
+in the server (`RECEIPT_TTL`, `server.mjs:7903`) is how long a published receipt image stays retrievable, not how long
+it is displayed; before confirming, two minutes without a touch restart the screen, and the counter screens never idle out. The client shows amounts the server returned and never submits a rate or a THB figure of its own.
 
 ## 9. Tests written before implementation
 
@@ -393,14 +425,13 @@ Not covered by fixtures, written by hand: per-branch locking under concurrency, 
 
 | # | Ticket | Files owned | Depends on |
 |---|---|---|---|
-| F1 | Kiosk API client + models | `app/lib/api/` | — |
-| F2 | Languages and fonts, moved 1:1 from the v2 kiosk files | `app/lib/l10n/`, `app/assets/fonts/` | — |
-| F3 | Controller, status poller, idle timer | `app/lib/kiosk/{controller,status_poller,idle_timer}.dart` | F1 (stub allowed) |
-| F4 | Screens | `app/lib/kiosk/screens/` | F2, F3 (stubs allowed) |
-| F5 | App shell, web build, Flutter CI | `app/pubspec.yaml`, `app/lib/main.dart`, `app/web/`, `.github/workflows/app.yml` | — |
-| F6 | nginx file for the customer host + deploy notes | `deploy/nginx/xc-customer.conf`, `deploy/README.md` | F5; applying it on the server is the owner's call |
+| F1 | The kiosk app: network core, kiosk feature (domain, infrastructure, controllers, pages), texts, tests | `app/` | — |
+| F5 | Flutter CI | `.github/workflows/app.yml` | F1 |
+| F6 | nginx file for the customer host + deploy notes | `deploy/nginx/xc-customer.conf`, `deploy/README.md` | F1; applying it on the server is the owner's call |
+| F7 | Bundle the fallback fonts so the kiosk does not depend on fetching them | `app/assets/fonts/`, `app/pubspec.yaml`, `app/lib/shared/theme/theme.dart` | F1 |
 
-F1, F2, F5 can start together. All of phase 1 is developed and tested against the running v2 server.
+F1 was written in one piece by the session the owner gave it to; F5–F7 are independent of each other.
+ All of phase 1 is developed and tested against the running v2 server.
 
 ### Phase 2 — Rust + PostgreSQL server
 
