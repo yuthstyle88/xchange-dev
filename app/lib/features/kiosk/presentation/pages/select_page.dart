@@ -275,7 +275,10 @@ class _SelectPageState extends ConsumerState<SelectPage> {
             initialValue: s.paymentMethod,
             isExpanded: true,
             hint: Text(l.text('choosePayment')),
-            style: const TextStyle(fontSize: 20, color: KioskColors.ink),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              fontSize: 20,
+              color: KioskColors.ink,
+            ),
             items: [
               for (final m in s.availablePaymentMethods)
                 DropdownMenuItem(value: m, child: Text(paymentName(l, m))),

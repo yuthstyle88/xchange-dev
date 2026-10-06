@@ -169,7 +169,10 @@ class PrimaryButton extends StatelessWidget {
     style: FilledButton.styleFrom(
       backgroundColor: KioskColors.brand,
       minimumSize: const Size.fromHeight(72),
-      textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+      textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     child: Text(label, textAlign: TextAlign.center),
@@ -187,7 +190,10 @@ class SecondaryButton extends StatelessWidget {
     style: OutlinedButton.styleFrom(
       foregroundColor: KioskColors.ink,
       minimumSize: const Size.fromHeight(72),
-      textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+      textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+      ),
       side: const BorderSide(color: KioskColors.line, width: 2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),

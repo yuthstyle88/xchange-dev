@@ -28,3 +28,41 @@ flutter:
     - assets/l10n/kiosk.json
     - assets/img/logo.png
     - assets/img/telegram_qr.png
+
+  fonts:
+    # The Flutter web engine requests Roboto before the first frame.
+    # Where a firewall drops packets instead of refusing them, the page stays white ~10s.
+    # Aliasing Roboto to the already-bundled NotoSans.ttf satisfies the engine locally with 0 bytes growth.
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/NotoSans.ttf
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans.ttf
+    - family: NotoSansThai
+      fonts:
+        - asset: assets/fonts/NotoSansThai.ttf
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/NotoSansSC.ttf
+    - family: NotoSansTC
+      fonts:
+        - asset: assets/fonts/NotoSansTC.ttf
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP.ttf
+    - family: NotoSansKR
+      fonts:
+        - asset: assets/fonts/NotoSansKR.ttf
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic.ttf
+    - family: NotoSansDevanagari
+      fonts:
+        - asset: assets/fonts/NotoSansDevanagari.ttf
+    - family: NotoSansLao
+      fonts:
+        - asset: assets/fonts/NotoSansLao.ttf
+    - family: NotoSansMyanmar
+      fonts:
+        - asset: assets/fonts/NotoSansMyanmar.ttf
