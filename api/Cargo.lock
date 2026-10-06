@@ -3670,6 +3670,7 @@ dependencies = [
  "pos-error",
  "pos-infra",
  "pos-kernel",
+ "reqwest",
  "rust_decimal",
  "serde",
  "serde_json",
