@@ -15,7 +15,11 @@ pos-infra = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+futures = "0.3"
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres"] }
 
 [dev-dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
