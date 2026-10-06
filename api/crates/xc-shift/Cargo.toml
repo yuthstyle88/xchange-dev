@@ -1,0 +1,19 @@
+[package]
+name = "xc-shift"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Shift bounded context for xchange"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-kernel = { workspace = true }
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+xc-kernel = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

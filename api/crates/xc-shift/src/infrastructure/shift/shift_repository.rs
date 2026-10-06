@@ -1,0 +1,1 @@
+//! Shift repository postgres implementation.

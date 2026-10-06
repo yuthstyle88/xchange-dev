@@ -1,0 +1,1 @@
+//! Simulated device driver.

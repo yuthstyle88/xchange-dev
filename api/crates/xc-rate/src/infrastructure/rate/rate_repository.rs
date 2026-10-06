@@ -1,0 +1,1 @@
+//! Rate repository postgres implementation.

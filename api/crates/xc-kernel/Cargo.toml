@@ -1,0 +1,15 @@
+[package]
+name = "xc-kernel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Kernel types for xchange"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-kernel = { workspace = true }
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,1 @@
+//! Branch repository trait.

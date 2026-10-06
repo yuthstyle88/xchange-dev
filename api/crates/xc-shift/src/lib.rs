@@ -1,0 +1,13 @@
+//! `xc-shift` — shift and custody bounded context.
+
+pub mod shared {
+    pub use pos_kernel::{ids, money, pagination, time};
+
+    pub mod error {
+        pub use pos_error::{AppError, AppResult};
+    }
+}
+
+pub mod application;
+pub mod domain;
+pub mod infrastructure;

@@ -1,14 +1,49 @@
 [workspace]
-resolver = "2"
-members = ["crates/xc-domain"]
-
-[workspace.package]
-version = "1.0.0"
-edition = "2021"
-publish = false
+members = ["crates/*"]
 
 [workspace.dependencies]
+pos-kernel = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
+pos-error = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
+pos-infra = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 rust_decimal = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+xc-kernel = { path = "crates/xc-kernel" }
+xc-exchange = { path = "crates/xc-exchange" }
+xc-shift = { path = "crates/xc-shift" }
+xc-rate = { path = "crates/xc-rate" }
+xc-kiosk = { path = "crates/xc-kiosk" }
+xc-auth = { path = "crates/xc-auth" }
+
+[package]
+name = "xchange"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "XCHANGE server"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-kernel = { workspace = true }
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+xc-kernel = { workspace = true }
+xc-exchange = { workspace = true }
+xc-shift = { workspace = true }
+xc-rate = { workspace = true }
+xc-kiosk = { workspace = true }
+xc-auth = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "xchange"
+path = "src/main.rs"

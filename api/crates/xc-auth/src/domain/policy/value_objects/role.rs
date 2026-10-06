@@ -1,0 +1,1 @@
+//! Role value object.

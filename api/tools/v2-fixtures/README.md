@@ -9,4 +9,4 @@ They need `engine.mjs` beside them: lines 5961–6952 of the deployed bundle's
 this repository, so the scripts cannot run in CI; their **outputs** are checked
 in under each crate's `tests/fixtures/` and are what the tests read.
 
-    node gen_quote.mjs > ../../crates/xc-domain/tests/fixtures/v2_quote_cases.json
+    node gen_quote.mjs > ../../crates/xc-exchange/tests/fixtures/v2_quote_cases.json

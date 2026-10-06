@@ -1,0 +1,1 @@
+//! BoT rate source implementation.
