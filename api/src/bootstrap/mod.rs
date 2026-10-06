@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, web};
+use actix_web::web;
 use sqlx::PgPool;
 
 use crate::config::Settings;
@@ -69,13 +69,30 @@ impl AppState {
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: AppState) {
-    cfg.app_data(web::Data::new(state));
-    crate::presentation::http::health::configure(cfg);
-    cfg.default_service(web::to(|| async {
-        HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Not found")
-    }));
+    cfg.app_data(web::Data::new(state.clone()));
+    crate::presentation::http::configure(cfg, &state);
+    crate::presentation::pages::configure(cfg, &state);
+    cfg.default_service(web::to(crate::presentation::pages::fallback));
+}
+
+/// Opens the pool the settings describe, checks the database answers, applies the migrations. Binds no port.
+pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
+    let db_options = settings.database.with_db();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(settings.database.max_connections)
+        .acquire_timeout(std::time::Duration::from_secs(
+            settings.database.acquire_timeout_secs,
+        ))
+        .connect_with(db_options)
+        .await?;
+
+    // Eager SELECT 1 to ensure database is reachable
+    sqlx::query("SELECT 1").execute(&pool).await?;
+
+    // Run migrations
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    Ok(pool)
 }
 
 pub struct Application {
@@ -85,20 +102,7 @@ pub struct Application {
 
 impl Application {
     pub async fn build(settings: Settings) -> Result<Self, anyhow::Error> {
-        let db_options = settings.database.with_db();
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(settings.database.max_connections)
-            .acquire_timeout(std::time::Duration::from_secs(
-                settings.database.acquire_timeout_secs,
-            ))
-            .connect_with(db_options)
-            .await?;
-
-        // Eager SELECT 1 to ensure database is reachable
-        sqlx::query("SELECT 1").execute(&pool).await?;
-
-        // Run migrations
-        sqlx::migrate!("./migrations").run(&pool).await?;
+        let pool = connect(&settings).await?;
 
         let address = format!(
             "{}:{}",
