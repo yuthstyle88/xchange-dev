@@ -1,11 +1,5 @@
 List<String> deviceLanguages() => const ['en'];
 
-/// `?branch=` of the page URL; `MAIN` when absent.
-String branchFromUrl() => 'MAIN';
-
-/// Origin the page was served from; the API lives on the same one.
-String pageOrigin() => 'http://localhost';
-
 /// The currency's narrow symbol, or the code when the browser has none.
 String currencySymbol(String code) => code;
 

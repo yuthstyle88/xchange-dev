@@ -41,13 +41,6 @@ List<String> deviceLanguages() {
   return list.isEmpty ? [web.window.navigator.language] : list;
 }
 
-String branchFromUrl() =>
-    Uri.base.queryParameters['branch']?.trim().isNotEmpty == true
-    ? Uri.base.queryParameters['branch']!
-    : 'MAIN';
-
-String pageOrigin() => Uri.base.origin;
-
 final _symbols = <String, String>{};
 
 String currencySymbol(String code) => _symbols.putIfAbsent(code, () {

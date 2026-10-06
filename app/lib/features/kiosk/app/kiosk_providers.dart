@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/endpoint/endpoint_store.dart';
 import '../../../core/network/dio_provider.dart';
 import '../../../core/platform/browser.dart' as browser;
 import '../../../l10n/kiosk_l10n.dart';
@@ -8,8 +9,14 @@ import '../infrastructure/data_sources/kiosk_api.dart';
 import '../infrastructure/repositories/kiosk_repository_impl.dart';
 import '../presentation/controllers/kiosk_controller.dart';
 
-/// `?branch=` of the page URL.
-final kioskBranchProvider = Provider<String>((ref) => browser.branchFromUrl());
+/// The branch the kiosk is serving: the endpoint's branchId. Throws StateError when there is no endpoint.
+final kioskBranchProvider = Provider<String>((ref) {
+  final endpoint = ref.watch(kioskEndpointProvider);
+  if (endpoint == null) {
+    throw StateError('No kiosk endpoint set');
+  }
+  return endpoint.branchId;
+});
 
 /// The device's languages, most wanted first.
 final deviceLanguagesProvider = Provider<List<String>>(

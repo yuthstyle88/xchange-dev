@@ -1,21 +1,35 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../platform/browser.dart' as browser;
+import '../endpoint/endpoint_store.dart';
 
-/// Where the API is. The XCHANGE server refuses a POST whose `Origin` is not
-/// its own host, so the API is always the origin the page was served from.
-final apiBaseUrlProvider = Provider<String>((ref) => browser.pageOrigin());
+/// Where the API is: the endpoint's origin. Throws StateError when there is no endpoint.
+final apiBaseUrlProvider = Provider<String>((ref) {
+  final endpoint = ref.watch(kioskEndpointProvider);
+  if (endpoint == null) {
+    throw StateError('No kiosk endpoint set');
+  }
+  return endpoint.origin;
+});
 
 final dioProvider = Provider<Dio>((ref) {
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+  final endpoint = ref.watch(kioskEndpointProvider);
+  final store = ref.watch(endpointStoreProvider);
+  final origin = endpoint != null ? store.originHeader(endpoint) : null;
+
+  final headers = <String, dynamic>{
+    'X-Xchange-Request': '1',
+    'Origin': ?origin,
+  };
+
   final dio = Dio(
     BaseOptions(
-      baseUrl: ref.watch(apiBaseUrlProvider),
+      baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 15),
       contentType: Headers.jsonContentType,
-      // The server's cross-site request check (with the Origin comparison).
-      headers: const {'X-Xchange-Request': '1'},
+      headers: headers,
     ),
   );
   ref.onDispose(dio.close);
