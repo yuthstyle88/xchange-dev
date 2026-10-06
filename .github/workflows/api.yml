@@ -113,7 +113,10 @@ jobs:
         working-directory: api
         run: |
           VERSION="0.19.9"
-          if ! cargo deny --version 2>/dev/null | grep -qF "$VERSION"; then
-            cargo install --locked cargo-deny --version "$VERSION"
+          TOOL_CACHE="${RUNNER_TOOL_CACHE:-$HOME/.cache}"
+          ROOT="$TOOL_CACHE/xchange-cargo-deny-$VERSION"
+          BIN="$ROOT/bin/cargo-deny"
+          if [ ! -x "$BIN" ] || [ "$("$BIN" --version 2>/dev/null)" != "cargo-deny $VERSION" ]; then
+            CARGO_TARGET_DIR="$ROOT/target" cargo install cargo-deny --version "$VERSION" --locked --root "$ROOT"
           fi
-          cargo deny check
+          "$BIN" check
