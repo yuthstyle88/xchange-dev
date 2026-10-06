@@ -29,7 +29,7 @@ publish = false
 [dependencies]
 pos-kernel = { workspace = true }
 pos-error = { workspace = true }
-pos-infra = { workspace = true }
+pos-infra = { workspace = true, features = ["config", "telemetry"] }
 xc-kernel = { workspace = true }
 xc-exchange = { workspace = true }
 xc-shift = { workspace = true }
@@ -40,6 +40,16 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+actix-web = "4"
+anyhow = "1"
+config = { version = "0.15", default-features = false, features = ["yaml"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+chrono = "0.4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "test-util"] }
 
 [lib]
 path = "src/lib.rs"

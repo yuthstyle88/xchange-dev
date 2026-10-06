@@ -1,0 +1,23 @@
+application:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 2
+  shutdown_timeout_secs: 30
+
+channel: "staging"
+
+database:
+  host: "localhost"
+  port: 5432
+  username: "postgres"
+  password: ""
+  database_name: "xchange"
+  require_ssl: false
+  max_connections: 10
+  min_connections: 1
+  acquire_timeout_secs: 5
+
+telemetry:
+  service_name: "xchange"
+  log_level: "info"
+  json_logs: false
