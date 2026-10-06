@@ -3646,13 +3646,18 @@ dependencies = [
 name = "xc-shift"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "futures",
  "pos-error",
  "pos-infra",
  "pos-kernel",
  "rust_decimal",
  "serde",
  "serde_json",
+ "sqlx",
  "thiserror",
+ "tokio",
+ "uuid",
  "xc-kernel",
 ]
 
