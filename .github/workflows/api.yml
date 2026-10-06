@@ -118,5 +118,6 @@ jobs:
           BIN="$ROOT/bin/cargo-deny"
           if [ ! -x "$BIN" ] || [ "$("$BIN" --version 2>/dev/null)" != "cargo-deny $VERSION" ]; then
             CARGO_TARGET_DIR="$ROOT/target" cargo install cargo-deny --version "$VERSION" --locked --root "$ROOT"
+            rm -rf "$ROOT/target"
           fi
           "$BIN" check
