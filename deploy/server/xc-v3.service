@@ -1,0 +1,32 @@
+# systemd unit of the XCHANGE v3 server (Rust, api/).
+# install.sh and update.sh install this file; when their variables differ from
+# the defaults they rewrite the six lines marked "(rendered)".
+# The hardening lines are the ones the test instance ran with on Ubuntu 24.04
+# (2026-10-06); ReadWritePaths is the only place the server may write.
+[Unit]
+Description=XCHANGE v3 server (Rust)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+# (rendered)
+User=xc-v3
+# (rendered)
+Group=xc-v3
+# (rendered)
+WorkingDirectory=/opt/xc-v3
+# (rendered)
+EnvironmentFile=/etc/xc-v3/env
+# (rendered)
+ExecStart=/opt/xc-v3/xchange
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# (rendered) The uploads directory (APP_FILES__DIR). It must exist before start.
+ReadWritePaths=/var/lib/xc-v3/uploads
+
+[Install]
+WantedBy=multi-user.target

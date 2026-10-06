@@ -1,0 +1,91 @@
+# Example only; the host's owner applies it. Nothing in this repository
+# installs or reloads nginx.
+#
+# Desk / admin host(s) of the XCHANGE v3 server: everything is proxied to the
+# one v3 process on 127.0.0.1. The split between hosts is done here, by nginx —
+# the server itself does not look at which host it is called as (it only
+# compares Origin with Host). The customer host is the other file,
+# xc-v3-customer.conf.example, and lets only the kiosk through.
+#
+# Replace before use: the server_name values and the port
+# (APP_APPLICATION__PORT). As written it fits a host reached through Cloudflare
+# (TLS ends there, nginx listens on port 80); a host that terminates TLS itself
+# changes the listen lines and X-Forwarded-Proto (see below).
+#
+# The proxy_set_header lines are at server level on purpose: a location that
+# sets any proxy_set_header of its own drops ALL of these (nginx inherits them
+# only when the location has none). Do not add one inside a location.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name xc-desk.example.com xc-admin.example.com;
+
+    # Uploads are accepted up to 15 MB by the server
+    # (api/src/infrastructure/files/file_service.rs MAX_UPLOAD_BYTES), sent as
+    # the raw request body. 16m = that limit plus margin, so that the server —
+    # not nginx — answers a file that is too large, with its own message.
+    client_max_body_size 16m;
+
+    proxy_http_version 1.1;
+    proxy_read_timeout 60s;
+
+    # Passed through unchanged: the server builds its own origin from Host and
+    # refuses a POST whose Origin differs.
+    proxy_set_header Host $host;
+
+    # Overwrites whatever the client sent. The sign-in attempt limit (30 per
+    # address) keys on this header (api/src/presentation/http/auth.rs): if the
+    # client's own X-Real-IP were passed on, one machine could pick a new
+    # "address" for every guess and the limit would count nothing.
+    proxy_set_header X-Real-IP $remote_addr;
+
+    # Staff sign-in reads CF-Connecting-IP BEFORE X-Real-IP. nginx forwards
+    # request headers it is not told about, so a client reaching this host
+    # could send its own. An empty value removes the header; the server then
+    # falls back to X-Real-IP above. Keep this line behind Cloudflare too (see
+    # the Cloudflare block below: there $remote_addr already is the visitor).
+    proxy_set_header CF-Connecting-IP "";
+
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # The server uses this to build its origin (https://<host>) and redirects.
+    # TLS ends at Cloudflare and this block listens on plain port 80, so the
+    # value is fixed: with $scheme it would be "http", every POST would be
+    # refused as cross-origin and redirects would go to http://.
+    proxy_set_header X-Forwarded-Proto https;
+    # Only for a host where TLS ends on THIS nginx (listen 443 ssl), instead of
+    # the line above:
+    #     proxy_set_header X-Forwarded-Proto $scheme;
+
+    # --- Behind Cloudflare -------------------------------------------------
+    # $remote_addr is then a Cloudflare edge address, shared by all visitors:
+    # the per-address sign-in limit would lock everyone out together. Let
+    # nginx (ngx_http_realip_module; check `nginx -V 2>&1 | grep -o
+    # http_realip_module`) replace $remote_addr with the visitor's address,
+    # trusting the header ONLY from Cloudflare's own ranges:
+    #
+    #     set_real_ip_from <each range of https://www.cloudflare.com/ips/>;
+    #     real_ip_header CF-Connecting-IP;
+    #
+    # and close this host's port to everything but those ranges (firewall).
+    # With that, X-Real-IP $remote_addr above carries the real visitor, and
+    # CF-Connecting-IP stays cleared. The ranges change: whoever applies this
+    # keeps them current. Do not paste them from memory.
+    # -----------------------------------------------------------------------
+
+    # API answers are per user and must never be stored or replayed.
+    location /api/ {
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+        proxy_pass http://127.0.0.1:8094;
+    }
+
+    # Pages, static files, uploaded files, /healthz and /health/ready. The
+    # server sets Cache-Control itself (pages: no-store).
+    location / {
+        proxy_cache off;
+        proxy_pass http://127.0.0.1:8094;
+    }
+}

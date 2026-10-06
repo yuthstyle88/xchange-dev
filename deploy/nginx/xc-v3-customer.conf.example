@@ -1,0 +1,58 @@
+# Example only; the host's owner applies it. Nothing in this repository
+# installs or reloads nginx.
+#
+# Customer (kiosk) host once /api/kiosk is answered by the v3 server. It is
+# deploy/nginx/xc-customer.conf (phase 1: Flutter web build + v2 on :8093) with
+# two changes: the upstream is the v3 port, and the client-address headers are
+# set as the v3 server needs them. Until v3's /api/kiosk is on main and
+# installed, xc-customer.conf is the file in use — do not apply this one.
+#
+# Host split: this host serves the kiosk files and POST /api/kiosk only. No
+# other path reaches the server from here; sign-in, desk and admin live on the
+# desk host (xc-v3-desk.conf.example).
+#
+# Replace before use: server_name, the port, the web root. See the desk example
+# for why each header line is there and for the Cloudflare notes (realip).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name xc-customer.example.com;
+
+    client_max_body_size 64k;
+
+    root /var/www/xc-customer/web;
+    index index.html;
+
+    location = /api/kiosk {
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+
+        proxy_pass http://127.0.0.1:8094/api/kiosk;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # From the connection, never the client's own value (see desk example).
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # TLS ends at Cloudflare, so the value is fixed (see the desk example).
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+    }
+
+    # Entry points, loaders, and version manifests must not be cached
+    location ~* ^/(index\.html|flutter_bootstrap\.js|flutter_service_worker\.js|version\.json)$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # All other paths serve static assets or fall back to /index.html (SPA)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
