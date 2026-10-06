@@ -82,6 +82,45 @@ impl BranchTx {
             .await
     }
 
+    /// Takes the lock of a second branch inside a transaction that
+    /// [`BranchTx::run`] started for another one, for a write that depends on
+    /// what both branches hold.
+    ///
+    /// The same as `run` does for its own branch, at once: the branch's row
+    /// in `branch_versions` is created if absent, locked `FOR UPDATE` until
+    /// the transaction ends, and its version is incremented by 1 — the
+    /// increment is part of the transaction, so it is undone with it.
+    ///
+    /// **Lock order: `MAIN` first, then the other branch — never the reverse.**
+    /// A transaction that needs two branch locks is run on `MAIN` and calls
+    /// this for the other branch; a transaction run on another branch must
+    /// not call this for `MAIN`. With one order there is no cycle to wait in.
+    /// Calling it for the branch `run` already locked would count that
+    /// version twice: the caller leaves that case out.
+    pub async fn lock_also(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 0) ON CONFLICT (branch_id) DO NOTHING",
+        )
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await?;
+
+        sqlx::query("SELECT version FROM branch_versions WHERE branch_id = $1 FOR UPDATE")
+            .bind(branch.as_str())
+            .execute(&mut **tx)
+            .await?;
+
+        sqlx::query("UPDATE branch_versions SET version = version + 1 WHERE branch_id = $1")
+            .bind(branch.as_str())
+            .execute(&mut **tx)
+            .await?;
+
+        Ok(())
+    }
+
     /// Returns the current committed version of `branch`.
     ///
     /// Returns `0` if the branch has never been written. Creates no row

@@ -54,15 +54,25 @@ impl BranchService {
         // Step 3: name is Text(60, required)
         let trimmed_name = validate_text(&cmd.name, 60, true)?.to_string();
 
+        let from_branch = cmd.from_branch.clone();
         let from_branch_id = cmd.from_branch.as_str().to_string();
         let actor_str = actor.to_string();
         let stored_now = cut_to_millis(now);
         let repo = self.repo.clone();
 
         let main_id = BranchId::new("MAIN");
+        let locked = main_id.clone();
         self.branch_tx
-            .run(&main_id, move |tx| {
+            .run(&locked, move |tx| {
                 Box::pin(async move {
+                    // The request may be given up in the branch it was sent
+                    // from, under that branch's lock. Hold it too before
+                    // anything is read: MAIN first (taken by `run`), then the
+                    // sending branch — the one lock order of the system.
+                    if from_branch != main_id {
+                        BranchTx::lock_also(tx, &from_branch).await?;
+                    }
+
                     // Step 4: a branch with this request_id exists:
                     // its name equals trimmed_name exactly -> return that branch, write nothing; otherwise REQUEST_CHANGED
                     if let Some(existing) = repo.find_by_request(tx, &trimmed_req).await? {
