@@ -426,7 +426,7 @@ Not covered by fixtures, written by hand: per-branch locking under concurrency, 
 | # | Ticket | Files owned | Depends on |
 |---|---|---|---|
 | F1 | The kiosk app: network core, kiosk feature (domain, infrastructure, controllers, pages), texts, tests | `app/` | — |
-| F5 | Flutter CI | `.github/workflows/app.yml` | F1 |
+| F5 | Flutter CI (#4) | `.github/workflows/app.yml` | F1 |
 | F6 | nginx file for the customer host + deploy notes | `deploy/nginx/xc-customer.conf`, `deploy/README.md` | F1; applying it on the server is the owner's call |
 | F7 | Bundle the fallback fonts so the kiosk does not depend on fetching them | `app/assets/fonts/`, `app/pubspec.yaml`, `app/lib/shared/theme/theme.dart` | F1 |
 
