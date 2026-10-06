@@ -231,6 +231,14 @@ impl AccountRepository for FakeRepository {
         Ok(())
     }
 
+    async fn purge_expired(
+        &self,
+        _now: DateTime<Utc>,
+        _current_window: DateTime<Utc>,
+    ) -> AppResult<xc_auth::domain::account::repositories::account_repository::Purged> {
+        unreachable!("not used by these tests")
+    }
+
     async fn increment_attempt(&self, _key: &str, _window_start: DateTime<Utc>) -> AppResult<i32> {
         Ok(1)
     }

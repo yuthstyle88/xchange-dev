@@ -44,6 +44,21 @@ pub struct FilesSettings {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuthSettings {
+    /// Seconds between two purges of expired sessions and past sign-in
+    /// attempt windows; the first one runs when the server starts. At least 1.
+    pub purge_interval_secs: u64,
+}
+
+impl Default for AuthSettings {
+    fn default() -> Self {
+        Self {
+            purge_interval_secs: 3600,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
     pub channel: Channel,
@@ -51,6 +66,8 @@ pub struct Settings {
     pub telemetry: TelemetrySettings,
     pub web: WebSettings,
     pub files: FilesSettings,
+    #[serde(default)]
+    pub auth: AuthSettings,
 }
 
 impl Settings {
@@ -105,6 +122,12 @@ impl Settings {
                 .source(Some(env_map)),
         );
 
-        builder.build()?.try_deserialize()
+        let settings: Settings = builder.build()?.try_deserialize()?;
+        if settings.auth.purge_interval_secs == 0 {
+            return Err(config::ConfigError::Message(
+                "auth.purge_interval_secs must be at least 1".to_string(),
+            ));
+        }
+        Ok(settings)
     }
 }

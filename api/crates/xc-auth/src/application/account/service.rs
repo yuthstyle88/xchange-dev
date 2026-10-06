@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
 use crate::domain::account::entities::session::{Login, SignedIn};
-use crate::domain::account::repositories::account_repository::AccountRepository;
+use crate::domain::account::repositories::account_repository::{AccountRepository, Purged};
 use crate::domain::account::value_objects::password_hasher::PasswordHasher;
 
 const WRONG: &str = "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง";
@@ -474,6 +474,18 @@ impl<R: AccountRepository> AccountService<R> {
                 Err(AppError::Domain(BAD_REQUEST.to_string()))
             }
         }
+    }
+
+    /// Deletes the sessions that have run out and the attempt counters of
+    /// windows that are over, and says how many of each went. Run by the
+    /// server on a timer; nothing a signed-in person can see changes.
+    ///
+    /// A session has run out when its `expires` is before `now`, with `now`
+    /// cut to the millisecond as every stored time is. A window is over when
+    /// it started before the window `now` falls in.
+    pub async fn purge_expired(&self, now: DateTime<Utc>) -> AppResult<Purged> {
+        let now = DateTime::from_timestamp_millis(now.timestamp_millis()).unwrap_or(now);
+        self.repo.purge_expired(now, window_start(now)).await
     }
 
     /// Active employees of one branch (for T11a's receiver check and T11b's snapshot).

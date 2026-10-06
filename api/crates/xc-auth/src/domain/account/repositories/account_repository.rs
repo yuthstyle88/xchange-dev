@@ -7,6 +7,15 @@ use std::future::Future;
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
 
+/// How many rows a purge removed, by kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Purged {
+    pub owner_sessions: u64,
+    pub employee_sessions: u64,
+    /// Rows of `auth_attempts`: one per key and 15-minute window.
+    pub attempt_windows: u64,
+}
+
 pub trait AccountRepository: Send + Sync + 'static {
     fn find_owner_by_username(
         &self,
@@ -107,6 +116,16 @@ pub trait AccountRepository: Send + Sync + 'static {
         employee_id: &str,
         now: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// Deletes, in one transaction, what can no longer matter: the sessions of
+    /// the owner and of employees whose `expires` is before `now`, and the
+    /// attempt rows whose window started before `current_window` (the start
+    /// of the window `now` falls in). Nothing else is deleted.
+    fn purge_expired(
+        &self,
+        now: DateTime<Utc>,
+        current_window: DateTime<Utc>,
+    ) -> impl Future<Output = AppResult<Purged>> + Send;
 
     fn increment_attempt(
         &self,

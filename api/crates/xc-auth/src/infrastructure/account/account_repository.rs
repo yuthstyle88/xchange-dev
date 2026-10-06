@@ -6,7 +6,7 @@ use sqlx::{PgPool, Row};
 
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
-use crate::domain::account::repositories::account_repository::AccountRepository;
+use crate::domain::account::repositories::account_repository::{AccountRepository, Purged};
 
 const EMPLOYEE_DATA: &str = "ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง";
 
@@ -508,6 +508,41 @@ impl AccountRepository for PgAccountRepository {
         .map_err(AppError::Database)?;
 
         Ok(())
+    }
+
+    async fn purge_expired(
+        &self,
+        now: DateTime<Utc>,
+        current_window: DateTime<Utc>,
+    ) -> AppResult<Purged> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+
+        let owner_sessions = sqlx::query("DELETE FROM owner_sessions WHERE expires < $1")
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?
+            .rows_affected();
+        let employee_sessions = sqlx::query("DELETE FROM employee_sessions WHERE expires < $1")
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?
+            .rows_affected();
+        let attempt_windows = sqlx::query("DELETE FROM auth_attempts WHERE window_start < $1")
+            .bind(current_window)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?
+            .rows_affected();
+
+        tx.commit().await.map_err(AppError::Database)?;
+
+        Ok(Purged {
+            owner_sessions,
+            employee_sessions,
+            attempt_windows,
+        })
     }
 
     async fn increment_attempt(&self, key: &str, window_start: DateTime<Utc>) -> AppResult<i32> {
