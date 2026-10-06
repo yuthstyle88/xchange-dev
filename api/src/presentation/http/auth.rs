@@ -17,6 +17,7 @@ use crate::presentation::extractors::actor::{
     STAFF_COOKIE, accounts, answer, cookie, failure, payload_of, read, refuse, same_origin,
     server_error, set_cookie, signed_in,
 };
+use crate::presentation::http::client_address::client_address;
 use crate::presentation::pages::{self, SessionReader};
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -54,13 +55,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     }
 }
 
-fn header_text<'a>(req: &'a HttpRequest, name: &str) -> Option<&'a str> {
-    req.headers()
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .filter(|v| !v.is_empty())
-}
-
 /// v2's `safe(employee)`.
 pub fn employee_json(e: &Employee) -> Value {
     json!({ "id": e.id, "username": e.username, "name": e.name, "role": e.role,
@@ -92,7 +86,7 @@ async fn auth(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         return server_error();
     };
     let payload = payload_of(&body);
-    let ip = header_text(&req, "x-real-ip").unwrap_or("unknown");
+    let ip = client_address(&req);
     let (owner, staff) = (cookie(&req, OWNER_COOKIE), cookie(&req, STAFF_COOKIE));
     let now = SystemTime::now().into();
     match body["action"].as_str() {
@@ -170,9 +164,7 @@ async fn staff(req: HttpRequest, bytes: web::Bytes, op: Op) -> HttpResponse {
     let now = SystemTime::now().into();
     match op {
         Op::Login => {
-            let ip = header_text(&req, "cf-connecting-ip")
-                .or_else(|| header_text(&req, "x-real-ip"))
-                .unwrap_or("unknown");
+            let ip = client_address(&req);
             match accounts.login_employee(&payload, ip, now).await {
                 Ok(login) => {
                     let SignedIn::Employee(e) = &login.who else {

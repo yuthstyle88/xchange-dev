@@ -1,6 +1,7 @@
 //! HTTP route handlers.
 pub mod auth;
 pub mod bookings;
+pub mod client_address;
 pub mod customers;
 pub mod devices;
 pub mod documents;

@@ -94,9 +94,49 @@ async fn v2_story_addresses() {
     stay_inside_one_attempt_window(Duration::from_secs(180)).await;
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    replay(&app, &desk, &story(&fixture(), "addresses")).await;
+    replay(
+        &app,
+        &desk,
+        &behind_the_proxy(story(&fixture(), "addresses")),
+    )
+    .await;
     drop(app);
     desk.drop_schema().await;
+}
+
+/// Ticket #130: the replay plays the proxy for the staff door.
+///
+/// v2's staff door read `CF-Connecting-IP` first; v3 reads `X-Real-IP` at every door and never
+/// `CF-Connecting-IP` (a known difference, `presentation/http/client_address.rs`). The proxy in
+/// front of v3 is what turns the one into the other: it writes the address Cloudflare reports
+/// into `X-Real-IP`. So for each recorded request to `/api/staff/login` that carries a
+/// `CF-Connecting-IP`, the request is sent with `X-Real-IP` set to that value — the address v2
+/// counted the caller under. The fixture file is not changed, every other header of the step is
+/// sent as recorded, and every recorded answer is still compared in full.
+///
+/// Changed that way: steps 32–62 of the story `addresses` (31 requests), and no other step of
+/// any story. Their recorded `X-Real-IP` (10.1.0.1 … 10.1.0.31, "differs every time and is
+/// ignored") is what is no longer replayed. The `/api/auth` steps 0–30 carry both headers too
+/// and are sent untouched: v2 read `X-Real-IP` there, as v3 does.
+fn behind_the_proxy(mut story: Value) -> Value {
+    let mut rewritten = 0;
+    for step in story["steps"].as_array_mut().expect("steps") {
+        let Some(request) = step.get_mut("request") else {
+            continue;
+        };
+        if request["path"] != "/api/staff/login" {
+            continue;
+        }
+        if let Some(reported) = request["headers"].get("cf-connecting-ip").cloned() {
+            request["headers"]["x-real-ip"] = reported;
+            rewritten += 1;
+        }
+    }
+    assert_eq!(
+        rewritten, 31,
+        "the proxy's part is played for the 31 staff-door steps recorded with CF-Connecting-IP"
+    );
+    story
 }
 
 // ── reading the request ──────────────────────────────────────────────────
