@@ -20,10 +20,11 @@ thiserror = { workspace = true }
 chrono = "0.4"
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
