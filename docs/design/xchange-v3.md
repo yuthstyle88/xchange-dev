@@ -48,7 +48,7 @@ authorises in one module, and does post-save work in the same DB transaction.
 | D1 | Phase 1: customer kiosk = Flutter, everything else as is. Phase 2: server = Rust + PostgreSQL behind the unchanged admin / desk / staff screens | **decided** (owner 2026-10-06) |
 | D2 | sqlx 0.9, `rust_decimal`, actix-web 4, edition 2024, toolchain 1.98.1 — and **the workspace is laid out like `pos108-core`** (owner, 2026-10-06: "rust ให้ ดู โครง สร้างจาก 108pos"); see §5.2 | [required] |
 | D3 | One repo `108-Plaza/xchange` with `api/` and `app/` | **decided** — repo created 2026-10-06 |
-| D4 | Sign-in = port of v2's local owner/employee accounts and cookies | follows from D1: the kept `login.html` and `account-bar.js` post to `/api/auth` and rely on `__Host-xc_owner` / `__Host-xc_staff` |
+| D4 | Sign-in = v3's own owner/employee accounts in `xc-auth`, with v2's contract and cookies: the kept `login.html` and `account-bar.js` post to `/api/auth` and rely on `__Host-xc_owner` / `__Host-xc_staff` (§6) | **decided** (owner 2026-10-06, in the Identity session, relayed by claude/21bc39ab: "ให้ xc-auth เก็บบัญชีพนักงานเอง"). The same day the owner first asked whether Identity could be plugged in; measured at `108-platform-services` `46be83f`, it cannot create an account with a username only (`crates/auth/src/application/register.rs:101-116`; 400 `missing_identifier` on a running copy) nor let an administrator set another person's password (no such route), and the owner decided to add nothing to Identity because other systems share it ("เพราะ identity platfrom มันทำหน้าที่ แค่ authen"; its ticket 395 closed not planned) |
 | D5 | Bookings/members API: the kept admin screen has a "การจองออนไลน์" menu that calls `/api/bookings` | **open — owner**: port it (screen keeps working) or leave it returning an error. No public booking site is deployed (`server.mjs:5922`) |
 | D6 | v2 holds **test data only**; no real shop uses it (owner, 2026-10-06: "ตอนนี้ v2 ยังเป็นข้อมูลทดสอบ ยังไม่มีร้านจริง") | **decided**. v3 starts on an empty database; nothing is imported (§7). If a real shop starts on v2 before the cutover, this row and §7 must be reopened |
 | D7 | Service hours 11:00–22:50 / 23:00 stay hard-coded as in v2 (`server.mjs:6037`, `6876`) | [required] for parity; a setting would need a screen that does not exist |
@@ -157,6 +157,9 @@ classDiagram
   class KioskMachine { +next(status, event, actor, now) Result~KioskStatus~ }
   class Policy { +allow(actor, action, branch) Result }
   class Actor { +id; +kind: Owner|Staff; +role: Role; +branch_id: Option }
+  class AccountService { +login(); +logout(); +status(); +change_password(); +employees(action) }
+  class PasswordHasher { +hash(password) Result~String~; +verify(password, stored) bool }
+  AccountService --> PasswordHasher
 
   class TxService { +reserve_customer(); +save_transaction(); +documents() }
   class ShiftService { +open(); +close(); +move_stock() }
@@ -246,7 +249,7 @@ small and change together (`pos108-core` crates already nest `domain/<context>/`
 | `xc-shift` | `shift` (shifts, balances, stock movements), `custody` (the custody state machine and its records) | `Balances`, `StockDelta`, `ShiftLedger`, `ShiftService`, `CustodyMachine`, `CustodyService` |
 | `xc-rate` | `branch`, `rate` (currencies, counter rates, reference-rate sources) | `RateService`, `RateSource`, `BotRateSource` |
 | `xc-kiosk` | `kiosk` (requests, kiosk currencies, published receipts) | `KioskMachine`, `KioskService` |
-| `xc-auth` | `account` (owners, employees, sessions), `policy` | `Actor`, `Policy` |
+| `xc-auth` | `account` (owners, employees, sessions), `policy` | `Actor`, `Policy`, `AccountService`, `PasswordHasher` |
 | root package `xchange` | `presentation/http` (routes of §5.3), `presentation/dto`, `application/compat/` (`CompatRpc`, `SnapshotBuilder`), `application/workflows/` (a save that crosses exchange, shift, custody, kiosk and devices in one transaction), `infrastructure/{files,devices}/` (`FileService`, `DeviceService`, drivers), page serving, bootstrap | `CompatRpc`, `SnapshotBuilder`, `PageServer`, `FileService`, `DeviceService`, `DeviceDriver` |
 
 Files and devices stay in the root package's `infrastructure/` until they grow: one local file store and
@@ -255,6 +258,8 @@ one simulated driver do not earn a crate. They move out the day a second variant
 [required] **Dependency rule.** A context crate depends on `xc-kernel` and the three `pos-*` crates, never on another context crate (measured on `main` `4d515d7`: no `xc-*` manifest names another context crate). What two contexts must share is either a pure value that belongs in `xc-kernel`, or is composed in the root package's `application/workflows/`. This is what moved the money types: `StockDelta` in `xc-shift` needs the quote that `xc-exchange` first held.
 
 File rule that keeps tickets from colliding, as in `pos108-core`: one value object, entity or use case per file; a `mod.rs` only re-exports. Two tickets never share a file other than a `mod.rs`, and every `mod.rs` a later ticket would need is created — with all its `pub mod` lines — by the restructuring ticket below, so later tickets do not edit them.
+
+[required] **Route rule.** Routes are registered in exactly one place, and no feature ticket edits it. Ticket T1b gives every handler file under `api/src/presentation/http/` except `health.rs` a `pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState)` (empty until its ticket fills it; `health.rs` keeps its `configure(cfg)`, which T1a's tests pin), makes `presentation::http::configure` in `http/mod.rs` call each of them, and makes `bootstrap::configure` call that one function before the default 404. A handler module builds its own service from `state.db` and registers it as `web::Data` inside its `configure`; `AppState` gains no field per feature. `configure` runs once per worker, so a service registered there holds no state of its own beyond the pool: state that must be shared (the kiosk's per-IP limit of §6 is the first case) lives in the database, or is built once before `HttpServer::new` and passed through `AppState`. T1b also splits `bootstrap::connect(settings) -> Result<PgPool>` (pool, eager `SELECT 1`, migrations) out of `Application::build`, so a command-line sub-command can use the database without binding a port. After T1b a ticket with HTTP routes edits only its own `http/<name>.rs`. (Measured on `main` `2a998ef`: `api/src/bootstrap/mod.rs:71-74` registers `health::configure` only, and `Application::build` at `:87-107` opens the pool, migrates and binds in one function.)
 
 **State of the code against this layout.** T2 (PR 14) wrote `Money`, `Rate` and `Quote` in a flat crate; T2b (PR 22, `c04f346`) moved them unchanged to `api/crates/xc-exchange/src/domain/exchange/value_objects/{money,rate,side}.rs` and `…/entities/quote.rs` and created every crate, layer and `mod.rs`. That placement was this document's and it is wrong by the dependency rule above. **T2c** moves the four types, their two test files and the fixture to `api/crates/xc-kernel/src/money/` and `api/crates/xc-kernel/tests/`, unchanged apart from `use` lines and the visibility the new neighbours need, and adds `MoneyDelta` and `CurrencyCode`. `BranchTx` is still a comment-only stub (`api/crates/xc-kernel/src/branch_tx.rs` on `main` `4d515d7`: five `//!` lines); it is its own ticket, **T2d**, with the concurrency test.
 
@@ -305,8 +310,33 @@ v2's three lists and must be confirmed by the owner during review, because v2's 
 `staff-bridge` lets them do neither (`7434`).
 
 Sessions: opaque 32-byte token, SHA-256 at rest, 12 h, `version` column invalidates on
-password change — as v2 (`7347`, `7354`). Password hashes migrate unchanged: scrypt N=16384, r=8, p=5, 32-byte key,
-stored `salt_hex:key_hex`, and **the salt is fed to scrypt as the ASCII hex string, not decoded bytes** (`7292-7296`).
+password change — as v2 (`7347`, `7354`).
+
+Accounts (D4) are v3's own, with v2's behaviour: usernames lower-cased and trimmed (`7865` at the shared login, `7314` at creation, `7337` at the staff login), a username
+longer than 40 characters refused as wrong credentials (`7338`), passwords of 12–128 characters (`7293`), an employee's
+initial password that must be changed at first sign-in (`mustChange`, employees only), an owner resetting or disabling
+an employee through `/api/employees` (`7371`), and every such action written to `employee_audit`. The Thai sentences
+are v2's, pinned by a fixture recorded from v2.
+
+Attempt limit, as v2 (`7340`, `7845`; v2 keeps the rows in `booking_limits` under an `AUTH:` key, v3 in `auth_attempts`):
+every sign-in attempt is recorded **before** the password is checked, right or wrong; within a 15-minute window more than
+30 attempts from one IP address, or more than 10 for one username, are refused with v2's sentence.
+
+Password hashing: [required] one type, `PasswordHasher`, in
+`api/crates/xc-auth/src/domain/account/value_objects/password_hasher.rs`, is the only code that hashes or verifies.
+[required] Argon2id (version 0x13) through the `argon2` crate, stored as a PHC string — the same algorithm and crate the
+fleet's Identity uses (`108-platform-services` `crates/auth/Cargo.toml:23`, `argon2_hasher.rs:81-83` at `46be83f`);
+`xc-auth` depends on the `argon2` crate itself, never on Identity's crate. [proposed] the cost parameters. v2's scrypt format (N=16384, r=8, p=5,
+`salt_hex:key_hex`, the salt fed as the ASCII hex string, `7292-7296`) is **not** ported: v3 starts empty (D6), so
+no v2 hash is ever loaded.
+
+First owner: v2 always answers `setupRequired: false` and has its owner in the database from installation.
+v2 has no way for an owner to change the password: every statement on `owners` is a `SELECT` (`7825`, `7866`), the owner's
+login answer carries no `mustChange` (`7870`), and the kept `login.html` sends a must-change user to `/staff`, whose
+password route needs a staff session (`7356`). [required] v3 therefore has a one-shot command
+`xchange create-owner --username <u>` that reads the password from standard input and creates the `owners` row with
+that password as the real one — no must-change for owners — and refuses when an owner exists. It is not an HTTP route;
+it uses `bootstrap::connect` (route rule, §5.2). Changing an owner's password later is not designed here.
 
 Kiosk quote creation gets a per-IP limit; v2 has none in the kiosk module (`7897-8076`) or in `nginx/xc-customer.spacing.cloud.conf`.
 
@@ -338,7 +368,7 @@ Source, had there been one: `ledger_rows` JSON arrays + side tables of `xc_desk_
 | `OpsState` row 2 | `ops_state` + child tables | arrays split one element per row |
 | `ledger_control.properties` | `counters` | so `XC-…` and `CX-…` numbering continues |
 | `file_records` + upload dir | `files` + same directory | bytes not rewritten; `sha256` re-verified |
-| `employees`, `employee_audit`, `owners` | same | password hashes unchanged; sessions are dropped, everyone signs in again |
+| `employees`, `employee_audit`, `owners` | not migrated — v3 starts empty (D6) | accounts are created again through `create-owner` and the employee screen; no v2 password hash is loaded |
 | `kiosk_*`, `device_*`, `receipt_images` | same names | in-flight `QUOTED` kiosk rows dropped |
 | `bookings`, `members`, `member_registrations`, `booking_rules` | migrated as-is if D5 = port; otherwise left in the v2 database | `adminSnapshot` reads `members` to flag customers (`7038`) — if not ported, that flag is always false |
 
@@ -587,11 +617,14 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 |---|---|---|---|
 | T1 | Root package `xchange`: bootstrap, config, `/healthz`, `/health/ready`, Rust CI (#18); extract v2 pages and assets into `api/web/`; `PageServer` | `api/src/{main.rs,lib.rs,bootstrap/,config/,presentation/http/health.rs,presentation/pages.rs}`, `api/web/`, `api/configuration/`, `.github/workflows/api.yml` | T2b |
 | T2 | `Money`, `Rate`, `Quote` — **merged** (PR 14) in the flat crate `xc-domain` | `api/crates/xc-domain/src/{money,quote}.rs` | — |
+| T1b | The route table and `bootstrap::connect` (route rule, §5.2): a `configure(cfg, state)` in every `http/*.rs`, `presentation::http::configure`, one call from `bootstrap::configure` | `api/src/bootstrap/mod.rs`, `api/src/presentation/http/mod.rs`, `api/src/presentation/http/{auth,bookings,customers,devices,documents,employees,files,kiosk,reference_rates,rpc}.rs` (one empty function each), `api/tests/routes_test.rs` | T1a |
 | T2b | Restructure to the `pos108-core` layout (§5.2) — **merged** (PR 22, `c04f346`): root package, `xc-kernel` and the five context crates with their three layers and every `mod.rs`, kernel git dependencies, T2's code and tests moved unchanged, `xc-domain` deleted. `BranchTx` was left a stub and is T2d | `api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml` | T2 |
 | T2c | Money types to the kernel: move `Money`, `NumberError`, `Rate`, `Side`, `Quote` with their tests and fixture, unchanged; add `MoneyDelta` and `CurrencyCode` | `api/crates/xc-kernel/Cargo.toml`, `api/crates/xc-kernel/src/lib.rs`, `api/crates/xc-kernel/src/money/`, `api/crates/xc-kernel/tests/`, `api/crates/xc-exchange/src/domain/exchange/{value_objects,entities}/` (the four files leave, their `mod` lines with them), `api/crates/xc-exchange/tests/`, `api/Cargo.lock`, `api/tools/v2-fixtures/README.md` | T2b |
 | T2d | `BranchTx` with its concurrency test (two tasks on one branch serialise; two branches do not wait) | `api/crates/xc-kernel/src/branch_tx.rs`, `api/crates/xc-kernel/tests/branch_tx_test.rs`, `api/crates/xc-kernel/Cargo.toml`, `api/Cargo.lock`, `api/migrations/*_branch_versions.sql` | T2c (both change `xc-kernel/Cargo.toml` and `Cargo.lock`) |
 | T3 | `Balances`, `StockDelta`, `ShiftLedger` | `api/crates/xc-shift/src/domain/shift/value_objects/{stock_delta,balances}.rs`, `…/domain/shift/entities/shift_ledger.rs`, `api/crates/xc-shift/tests/{stock_delta_test.rs,shift_ledger_test.rs}`, `api/crates/xc-shift/tests/fixtures/v2_stock_cases.json` | T2c |
-| T4 | `Actor`, `Policy`; `/api/auth`, `/api/staff/{login,logout,password,me}`, `/api/employees` | `api/crates/xc-auth/src/`, `api/src/presentation/{extractors/actor.rs,http/auth.rs,http/employees.rs}` | T1 |
+| T4a | `Actor`, `Policy` (pure) | `api/crates/xc-auth/src/domain/policy/`, `api/crates/xc-auth/tests/policy_test.rs` | T2c |
+| T4b | `AccountService`, `PasswordHasher`, sessions, `auth_attempts`, `create-owner` (§6) | `api/crates/xc-auth/src/{domain,application,infrastructure}/account/`, `api/crates/xc-auth/tests/account_test.rs`, `api/crates/xc-auth/tests/fixtures/`, `api/crates/xc-auth/Cargo.toml`, `api/Cargo.lock`, `api/migrations/*_accounts.sql`, `api/src/main.rs` (the `create-owner` sub-command, through `bootstrap::connect`) | T1b, T2d, T4a. Holds `api/Cargo.lock`, as T5 and T7 (#48) do: the queue hands these out one at a time, in the order T5, T7, T4b |
+| T4c | `/api/auth`, `/api/staff/{login,logout,password,me}`, `/api/employees` | `api/src/presentation/{extractors/actor.rs,http/auth.rs,http/employees.rs}` — routes are registered inside these files' `configure` (route rule, §5.2); `bootstrap/mod.rs` is not touched | T1b, T4b |
 | T5 | Branches, currencies, rates, `RateSource`, `/api/reference-rates` | `api/crates/xc-rate/src/`, `api/crates/xc-rate/tests/`, `api/src/presentation/http/reference_rates.rs`, `api/migrations/*_branches_rates.sql` (its RPC actions are served through T11's `rpc.rs`; no dto file of its own exists in the tree) | T1, T2c, T2d (`RateService` writes through `BranchTx`) |
 | T6 | Customers + files (`/api/upload`, `/files/`, `/documents`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/customer/`, `api/src/infrastructure/files/`, `api/src/presentation/http/{customers,files,documents}.rs`, `api/src/presentation/dto/{customer,file}.rs`, `api/migrations/*_customers_files.sql` | T1 |
 | T7 | Shifts + movements | `api/crates/xc-shift/src/{application,infrastructure}/shift/`, `api/crates/xc-shift/src/domain/shift/{entities/shift.rs,entities/stock_movement.rs,repositories/,commands/}`, `api/src/presentation/dto/shift.rs`, `api/migrations/*_shifts.sql` | T1, T2d, T3 (`ShiftService` writes through `BranchTx`; T10 gets it through this row) |
@@ -603,6 +636,8 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | T13 | Devices (`/api/devices`, receipt image) | `api/src/infrastructure/devices/`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/migrations/*_devices.sql` | T8 |
 | T14 | `xc-import` — **not built** while D6 holds (v2 has test data only) | `api/crates/xc-import/` | reopens only if D6 changes |
 | T15 | Bookings/members (`/api/bookings`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/booking/`, `api/src/presentation/http/bookings.rs`, `api/src/presentation/dto/booking.rs`, `api/migrations/*_bookings.sql` | D5 |
+
+[required] Every row that owns a file under `api/src/presentation/http/` depends on T1b, whether or not its cell says so (T4c, T5, T6, T11, T12, T13, T15); and "T1" in a Depends-on cell means T1a **and** T1b are merged. The T1 row itself is the original undivided ticket: T1a (merged, PR 44) and T1b are cut from it, and the pages part (`presentation/pages.rs`, `api/web/`) is a ticket still to be cut.
 
 **For whoever watches the queue:** T2c's file scope takes four files out of `xc-exchange` and changes `xc-kernel`'s manifest and `lib.rs`; T2d changes the same manifest and so follows it. Everything that uses `Money`, `Rate` or `BranchTx` waits for them: after T2c only T3 and T9 can start, and T5 and T7 need T2d as well. That narrow start is intended.
 
@@ -618,4 +653,4 @@ and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a br
 | Lane for this repo in the fleet's lane table | 1, 2 | workers on other machines cannot verify who controls it | owner |
 | Source repos `xchange-online`, `xchange-booking` | 1, 2 | phase 1 works from the readable `public/kiosk.js`; the phase 2 test harness is simpler with source | owner |
 | D5 port bookings/members or not | 2 | T15, and the member flag in T11 | owner |
-| Role table in §6 (v2's two allow-lists disagree) | 2 | T4, T11 — v3 reproduces both paths as they are unless the owner says which is right | owner, at review |
+| Role table in §6 (v2's two allow-lists disagree) | 2 | T4a, T11 — v3 reproduces both paths as they are unless the owner says which is right | owner, at review |
