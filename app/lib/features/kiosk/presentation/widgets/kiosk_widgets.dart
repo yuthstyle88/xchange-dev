@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/platform/browser.dart' as platform;
+import '../../../../core/platform/display_names.dart';
 import '../../../../l10n/kiosk_l10n.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../domain/entities/kiosk_models.dart';
@@ -18,10 +18,11 @@ String formatMoney(num n) {
   return '${n < 0 ? '-' : ''}$grouped${fixed.substring(dot)}';
 }
 
-String currencyLabel(String code) => '${platform.currencySymbol(code)} $code';
+String currencyLabel(DisplayNames names, String code) =>
+    '${names.currencySymbol(code)} $code';
 
-String currencyName(KioskTexts l10n, CurrencyRate r) =>
-    platform.currencyDisplayName(l10n.language.lang, r.code) ??
+String currencyName(DisplayNames names, KioskTexts l10n, CurrencyRate r) =>
+    names.currencyName(l10n.language.lang, r.code) ??
     (l10n.code == 'th' && r.name.isNotEmpty
         ? r.name
         : r.nameEn.isNotEmpty

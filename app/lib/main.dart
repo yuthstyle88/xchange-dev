@@ -5,6 +5,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'app/app.dart';
 import 'core/endpoint/endpoint_store.dart';
+import 'core/platform/display_names.dart';
 import 'features/kiosk/app/kiosk_providers.dart';
 import 'l10n/kiosk_l10n.dart';
 
@@ -38,7 +39,12 @@ Future<void> main() async {
   // synchronously to pick the device's language.
   final l10n = await KioskL10n.load();
   final store = createEndpointStore();
-  final container = await bootstrap(l10n: l10n, store: store);
+  final names = await loadDisplayNames();
+  final container = await bootstrap(
+    l10n: l10n,
+    store: store,
+    overrides: [displayNamesProvider.overrideWithValue(names)],
+  );
   runApp(
     UncontrolledProviderScope(container: container, child: const KioskApp()),
   );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/platform/browser.dart' as platform;
+import '../../../../core/platform/device_actions.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../app/kiosk_providers.dart';
 import '../widgets/kiosk_widgets.dart';
@@ -89,7 +89,17 @@ class WaitingPage extends ConsumerWidget {
                     ),
                     Text(l.text('usdtScan')),
                     TextButton(
-                      onPressed: () => platform.openExternal(telegramUrl),
+                      onPressed: () async {
+                        try {
+                          await ref
+                              .read(deviceActionsProvider)
+                              .openExternal(telegramUrl);
+                        } on DeviceActionException {
+                          ref
+                              .read(kioskControllerProvider.notifier)
+                              .reportError('errGeneric');
+                        }
+                      },
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
                         foregroundColor: KioskColors.brand,

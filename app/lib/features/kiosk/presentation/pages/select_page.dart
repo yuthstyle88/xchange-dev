@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/platform/browser.dart' as platform;
+import '../../../../core/platform/display_names.dart';
+import '../../../../l10n/kiosk_l10n.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../app/kiosk_providers.dart';
 import '../../domain/entities/kiosk_models.dart';
 import '../controllers/kiosk_controller.dart';
-import '../../../../l10n/kiosk_l10n.dart';
 import '../widgets/kiosk_widgets.dart';
 
 /// Screen 1 — choose buy or sell, the currency and the amount; see the rate.
@@ -25,6 +25,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
   KioskState get s => ref.watch(kioskControllerProvider);
   KioskController get c => ref.read(kioskControllerProvider.notifier);
   KioskTexts get l => ref.watch(kioskTextsProvider);
+  DisplayNames get names => ref.watch(displayNamesProvider);
 
   @override
   void dispose() {
@@ -36,6 +37,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
   List<CurrencyRate> _matches() {
     final q = _search.text.trim().toLowerCase();
     final lang = l.language.lang;
+    final dNames = names;
     return [
       for (final r in s.model?.rates ?? const <CurrencyRate>[])
         if (q.isEmpty ||
@@ -43,12 +45,12 @@ class _SelectPageState extends ConsumerState<SelectPage> {
               r.code,
               r.name,
               r.nameEn,
-              currencyName(l, r),
+              currencyName(dNames, l, r),
               for (final k in r.countries) ...[
                 k.code,
                 k.en,
                 k.th,
-                platform.regionDisplayName(lang, k.code) ?? '',
+                dNames.regionName(lang, k.code) ?? '',
               ],
             ].join(' ').toLowerCase().contains(q))
           r,
@@ -145,7 +147,8 @@ class _SelectPageState extends ConsumerState<SelectPage> {
                 for (final r in matches)
                   _CurrencyChip(
                     code: r.code,
-                    name: currencyName(l, r),
+                    label: currencyLabel(names, r.code),
+                    name: currencyName(names, l, r),
                     selected: r.code == s.currency,
                     onTap: () => c.setCurrency(r.code),
                   ),
@@ -165,7 +168,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
     final estimate = s.estimate;
     final receiveText = estimate == null
         ? ''
-        : '${platform.currencySymbol(receive)} '
+        : '${names.currencySymbol(receive)} '
               '${formatMoney(estimate.receive)} $receive';
     return KioskCard(
       child: Column(
@@ -190,7 +193,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
                 const SizedBox(height: 4),
                 rate > 0
                     ? Ltr(
-                        '1 ${currencyLabel(code)} = '
+                        '1 ${currencyLabel(names, code)} = '
                         '${rate.toStringAsFixed(4)} ฿ THB',
                         style: const TextStyle(
                           fontSize: 26,
@@ -209,7 +212,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            l.text('amountLabel', {'code': currencyLabel(give)}),
+            l.text('amountLabel', {'code': currencyLabel(names, give)}),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
@@ -233,7 +236,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            '${l.text('youReceive')} (${currencyLabel(receive)})',
+            '${l.text('youReceive')} (${currencyLabel(names, receive)})',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
@@ -365,11 +368,12 @@ class _DirectionButton extends StatelessWidget {
 class _CurrencyChip extends StatelessWidget {
   const _CurrencyChip({
     required this.code,
+    required this.label,
     required this.name,
     required this.selected,
     required this.onTap,
   });
-  final String code, name;
+  final String code, label, name;
   final bool selected;
   final VoidCallback onTap;
 
@@ -397,7 +401,7 @@ class _CurrencyChip extends StatelessWidget {
           child: Column(
             children: [
               Ltr(
-                currencyLabel(code),
+                label,
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,

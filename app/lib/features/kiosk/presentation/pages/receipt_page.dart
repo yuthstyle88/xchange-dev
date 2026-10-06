@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/platform/browser.dart' as platform;
+import '../../../../core/platform/device_actions.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../app/kiosk_providers.dart';
 import '../../domain/entities/kiosk_models.dart';
@@ -72,7 +72,17 @@ class ReceiptPage extends ConsumerWidget {
             child: PrimaryButton(
               key: const Key('save-receipt'),
               label: l.text('saveImage'),
-              onPressed: () => platform.saveDataUrl(image, filename(id)),
+              onPressed: () async {
+                try {
+                  await ref
+                      .read(deviceActionsProvider)
+                      .saveImage(image, filename(id));
+                } on DeviceActionException {
+                  ref
+                      .read(kioskControllerProvider.notifier)
+                      .reportError('errGeneric');
+                }
+              },
             ),
           ),
         ),

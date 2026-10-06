@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/endpoint/endpoint_store.dart';
 import '../../../core/network/dio_provider.dart';
-import '../../../core/platform/browser.dart' as browser;
+import '../../../core/platform/device_actions.dart';
 import '../../../l10n/kiosk_l10n.dart';
 import '../domain/repository/kiosk_repository.dart';
 import '../infrastructure/data_sources/kiosk_api.dart';
@@ -20,7 +20,7 @@ final kioskBranchProvider = Provider<String>((ref) {
 
 /// The device's languages, most wanted first.
 final deviceLanguagesProvider = Provider<List<String>>(
-  (ref) => browser.deviceLanguages(),
+  (ref) => ref.watch(deviceActionsProvider).languages(),
 );
 
 /// The kiosk's texts. Loaded from the asset in `main` before the first frame

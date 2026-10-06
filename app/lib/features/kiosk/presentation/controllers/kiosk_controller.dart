@@ -195,6 +195,10 @@ class KioskController extends Notifier<KioskState> {
   String _failure(Object e) =>
       e is KioskFailure ? _t.errorText(e.serverMessage) : _t.text('errGeneric');
 
+  void reportError(String textKey) {
+    _set(state.copyWith(error: _t.text(textKey)));
+  }
+
   // ---- lifecycle ---------------------------------------------------------
 
   /// Loads the rates and returns the screen to its starting state.
