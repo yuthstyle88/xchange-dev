@@ -46,11 +46,11 @@ authorises in one module, and does post-save work in the same DB transaction.
 | # | Decision | Status |
 |---|---|---|
 | D1 | Phase 1: customer kiosk = Flutter, everything else as is. Phase 2: server = Rust + PostgreSQL behind the unchanged admin / desk / staff screens | **decided** (owner 2026-10-06) |
-| D2 | sqlx 0.9, `rust_decimal`, actix-web (same as `pos108-core`, `jh-api`) | [required] — fleet contract |
+| D2 | sqlx 0.9, `rust_decimal`, actix-web 4, edition 2024, toolchain 1.98.1 — and **the workspace is laid out like `pos108-core`** (owner, 2026-10-06: "rust ให้ ดู โครง สร้างจาก 108pos"); see §5.2 | [required] |
 | D3 | One repo `108-Plaza/xchange` with `api/` and `app/` | **decided** — repo created 2026-10-06 |
 | D4 | Sign-in = port of v2's local owner/employee accounts and cookies | follows from D1: the kept `login.html` and `account-bar.js` post to `/api/auth` and rely on `__Host-xc_owner` / `__Host-xc_staff` |
 | D5 | Bookings/members API: the kept admin screen has a "การจองออนไลน์" menu that calls `/api/bookings` | **open — owner**: port it (screen keeps working) or leave it returning an error. No public booking site is deployed (`server.mjs:5922`) |
-| D6 | Whether v2 holds real shop data. The admin screen showed "ข้อมูลจริง" with one completed transaction on 2026-10-06 | **open — owner**. Decides how strict §7 must be |
+| D6 | v2 holds **test data only**; no real shop uses it (owner, 2026-10-06: "ตอนนี้ v2 ยังเป็นข้อมูลทดสอบ ยังไม่มีร้านจริง") | **decided**. v3 starts on an empty database; nothing is imported (§7). If a real shop starts on v2 before the cutover, this row and §7 must be reopened |
 | D7 | Service hours 11:00–22:50 / 23:00 stay hard-coded as in v2 (`server.mjs:6037`, `6876`) | [required] for parity; a setting would need a screen that does not exist |
 | D8 | Kiosk delivery = Flutter **web** served on the customer host | **decided** (owner 2026-10-06) — the v2 server rejects any POST whose `Origin` is not its own host (`server.mjs:8050`), an installed app sends none, and phase 1 does not change the server |
 
@@ -131,6 +131,12 @@ Concurrency: every write handler opens one transaction and takes `SELECT … FOR
 branch's `branch_versions` row first. That gives per-branch serialisation (v2 serialised the whole system)
 and makes "one PENDING custody request", "one OPEN shift" and the stock guard race-free without retries.
 
+[required] That lock is `BranchTx` (§5.1, §5.2: crate `xc-kernel`). `pos_infra::transactions::Transactor` gives a transaction but
+nothing branch-scoped and no `FOR UPDATE` (`108-platform-services` `crates/pos-infra/src/transactions.rs`: `new`, `pool`, `run`).
+A use case that writes **must** go through `BranchTx::run`, never through `Transactor::run` directly; calling the bare
+transactor compiles, passes every single-threaded test of §9, and silently loses all three guarantees. The concurrency
+tests named in §9 exist to catch exactly that.
+
 ## 5. API (Rust)
 
 ### 5.1 Class diagram
@@ -155,7 +161,7 @@ classDiagram
   class KioskService { +public_rates(); +quote(); +confirm(); +staff_action() }
   class DeviceService { +queue(); +process(); +retry() }
   class FileService { +upload(); +open() }
-  class Store { +begin_branch_tx(branch) BranchTx }
+  class BranchTx { +run(branch, f) Result — locks the branch row, runs f, bumps the version, commits }
   class CompatRpc { +dispatch(action, payload, actor) Result~Json~ }
   class SnapshotBuilder { +admin_snapshot(branch, actor) Json; +desk_config(branch) Json }
   class PageServer { +page(name, actor) Html; +static_file(path) }
@@ -169,7 +175,7 @@ classDiagram
   CompatRpc --> RateService
   CompatRpc --> CustodyService
   CompatRpc --> SnapshotBuilder
-  SnapshotBuilder --> Store
+  SnapshotBuilder --> BranchTx : reads the version
   Quote --> Money
   Quote --> Rate
   StockDelta --> Quote
@@ -186,44 +192,61 @@ classDiagram
   DeviceService --> DeviceDriver
   RateSource <|.. BotRateSource
   DeviceDriver <|.. SimulatedDriver
-  TxService --> Store
-  ShiftService --> Store
+  TxService --> BranchTx
+  ShiftService --> BranchTx
+  CustodyService --> BranchTx
+  RateService --> BranchTx
+  KioskService --> BranchTx
   Policy --> Actor
 ```
 
 `RateSource` and `DeviceDriver` are traits because a second variant is already known
 (KBank reference rates in `public/kbank-reference.json`; a real ESC/POS driver). `FileService` and
-`Store` stay concrete — one variant, none planned.
+`BranchTx` stay concrete — one variant, none planned.
 
-### 5.2 Where each class lives
+### 5.2 Where each class lives — the `pos108-core` layout
 
-Two classes that different tickets touch are never in the same file.
+Measured from `108-Plaza/pos108-core` at `405605de` and reproduced here so nothing has to be re-shaped later:
 
-| Class / module | File (under `api/crates/`) | Provides to |
+| `pos108-core` | here |
+|---|---|
+| The root manifest is both the workspace and the `pos108` binary package; its `src/` holds `application/ bootstrap/ config/ infrastructure/ presentation/{dto,extractors,http,middleware,responses} shared/ telemetry/` | `api/Cargo.toml` is both the workspace and the `xchange` binary package, with the same `src/` tree |
+| One crate per bounded context, `crates/pos-<context>/`, each `src/{application,domain,infrastructure}/<context>/` | `api/crates/xc-<context>/`, same three layers |
+| `domain/<context>/{entities,value_objects,repositories,commands}/` — repositories are **traits** | same |
+| `application/<context>/<use_case>.rs` — one file per use case, `pub async fn execute(cmd, repo: &Arc<R>, transactor: &Transactor) -> AppResult<…>`, plus `service.rs` | same |
+| `infrastructure/<context>/<x>_repository.rs` — the sqlx implementation of the trait | same |
+| Each crate's `lib.rs` re-exports the kernel as `crate::shared::{…}` and `crate::shared::error::{AppError, AppResult}` | same |
+| `pos-kernel`, `pos-error`, `pos-infra` come from `108-platform-services` as git dependencies pinned to one `rev` in `[workspace.dependencies]` | **reused, not copied**: `pos-error` (`AppError`/`AppResult`), `pos-infra` (`Transactor`, config, telemetry), `pos-kernel` (`pagination`, `time`) — same pinning rule |
+| `migrations/`, `configuration/`, `tests/`, `deny.toml`, `rust-toolchain.toml` at the workspace root | under `api/` |
+| edition 2024, `rust-version = "1.85"`, toolchain `1.98.1` | same |
+
+Two things are **not** taken from `pos-kernel`, with the reason:
+- `pos_kernel::money::Money::new` rounds with `round_dp(2)` (banker's rounding) and has no input cap. An exchange principal must round **half up** and an entered amount is capped at 100,000,000 (§3). The exchange's `Money` and `Rate` are therefore value objects of `xc-exchange`; they convert to `pos_kernel::money::Money` where a shared type is wanted.
+- `pos_kernel::ids` are UUID newtypes. A branch id here is text (`MAIN`, `B<request id>`) because the kept screens create and send it; ids are newtypes local to each crate.
+
+**How much of it fits.** `pos108-core` is 42 crates for a multi-tenant product with sync, outbox and
+back-office; this server is the Rust form of about 2,950 lines of v2 logic for one shop. The layering,
+the file-per-use-case rule, the repository traits and the shared error/transaction crates fit as they are.
+The crate count does not: a crate per small context would be mostly manifests. So the same shape is
+used with **five** context crates and one small kernel crate, a context crate holding more than one sub-context directory where the contexts are
+small and change together (`pos108-core` crates already nest `domain/<context>/`):
+
+| Crate | Sub-contexts (`domain/<x>/`, `application/<x>/`, `infrastructure/<x>/`) | Classes of §5.1 |
 |---|---|---|
-| `Money`, `Rate` | `xc-domain/src/money.rs` | everything |
-| `Quote` | `xc-domain/src/quote.rs` | `TxService`, `KioskService` |
-| `StockDelta`, `ShiftLedger` | `xc-domain/src/stock.rs` | `TxService`, `ShiftService`, `CustodyMachine` |
-| `CustodyMachine` + state types | `xc-domain/src/custody/{mod,state,commands}.rs` | `CustodyService`, `TxService` |
-| `KioskMachine` | `xc-domain/src/kiosk.rs` | `KioskService`, `TxService` |
-| `Actor`, `Role`, `Policy` | `xc-domain/src/policy.rs` | every handler |
-| `Store`, `BranchTx` | `xc-store/src/lib.rs` | every service |
-| repositories | `xc-store/src/{branches,rates,customers,shifts,transactions,custody,kiosk,devices,files,counters}.rs` — one file per aggregate | the matching service |
-| migrations | `xc-store/migrations/NNNN_<aggregate>.sql` — one file per aggregate | — |
-| `TxService` | `xc-api/src/services/tx.rs` | `routes/tx.rs` |
-| `ShiftService` | `xc-api/src/services/shift.rs` | `routes/shift.rs`, `CustodyService` |
-| `RateService`, `RateSource`, `BotRateSource` | `xc-api/src/services/rate.rs`, `xc-api/src/rate_source/{mod,bot}.rs` | `routes/rate.rs` |
-| `CustodyService` | `xc-api/src/services/custody.rs` | `routes/custody.rs` |
-| `KioskService` | `xc-api/src/services/kiosk.rs` | `routes/kiosk.rs` |
-| `DeviceService`, `DeviceDriver`, `SimulatedDriver` | `xc-api/src/services/device.rs`, `xc-api/src/device_driver/{mod,simulated}.rs` | `routes/device.rs`, `TxService` |
-| `FileService` | `xc-api/src/services/file.rs` | `routes/file.rs`, `TxService` |
-| auth: sessions, cookies, login limiter → `Actor` | `xc-api/src/auth/` | every route |
-| `CompatRpc` (action name → service call, v2 JSON in/out) | `xc-api/src/compat/rpc.rs` | `routes/rpc.rs` |
-| `SnapshotBuilder` (the `adminSnapshot` / `adminDeskConfig` JSON) | `xc-api/src/compat/snapshot.rs` | `CompatRpc`, kiosk, devices |
-| `PageServer` + the v2 pages and assets, copied unchanged | `xc-api/src/pages.rs`, `api/web/` | browser |
-| DTOs | `xc-api/src/dto/<aggregate>.rs` | routes, Flutter client |
-| version report | `xc-api/src/routes/health.rs` | ops |
-| v2 importer | `xc-import/src/{main,read_ledger,map_*,verify}.rs` | cutover |
+| `xc-kernel` | no layers — the few things every context crate needs and `pos-kernel` cannot supply: `ids.rs` (`BranchId` and the other text ids), `branch_tx.rs` (`BranchTx`, a wrapper over `pos_infra`'s `Transactor` that takes `SELECT … FOR UPDATE` on the branch's `branch_versions` row, runs the closure, increments the version, commits) | `BranchTx` |
+| `xc-exchange` | `exchange` (amounts, rates-as-values, the quote, transactions, document numbers), `customer` | `Money`, `Rate`, `Quote`, `TxService` |
+| `xc-shift` | `shift` (shifts, balances, stock movements), `custody` (the custody state machine and its records) | `StockDelta`, `ShiftLedger`, `ShiftService`, `CustodyMachine`, `CustodyService` |
+| `xc-rate` | `branch`, `rate` (currencies, counter rates, reference-rate sources) | `RateService`, `RateSource`, `BotRateSource` |
+| `xc-kiosk` | `kiosk` (requests, kiosk currencies, published receipts) | `KioskMachine`, `KioskService` |
+| `xc-auth` | `account` (owners, employees, sessions), `policy` | `Actor`, `Policy` |
+| root package `xchange` | `presentation/http` (routes of §5.3), `presentation/dto`, `application/compat/` (`CompatRpc`, `SnapshotBuilder`), `application/workflows/` (a save that crosses exchange, shift, custody, kiosk and devices in one transaction), `infrastructure/{files,devices}/` (`FileService`, `DeviceService`, drivers), page serving, bootstrap | `CompatRpc`, `SnapshotBuilder`, `PageServer`, `FileService`, `DeviceService`, `DeviceDriver` |
+
+Files and devices stay in the root package's `infrastructure/` until they grow: one local file store and
+one simulated driver do not earn a crate. They move out the day a second variant is written.
+
+File rule that keeps tickets from colliding, as in `pos108-core`: one value object, entity or use case per file; a `mod.rs` only re-exports. Two tickets never share a file other than a `mod.rs`, and every `mod.rs` a later ticket would need is created — with all its `pub mod` lines — by the restructuring ticket below, so later tickets do not edit them.
+
+**State of the code against this layout.** Ticket T2 was merged before the owner asked for the `pos108` layout: `Money`, `Rate` and `Quote` live in a flat crate `api/crates/xc-domain/src/{money,quote}.rs`. A restructuring ticket (T2b) moves them, unchanged, to `api/crates/xc-exchange/src/domain/exchange/value_objects/{money,rate,side}.rs` and `…/domain/exchange/entities/quote.rs`, moves the tests and the fixture with them, deletes `xc-domain`, and turns `api/Cargo.toml` into the root package. No behaviour changes; the provided tests must pass byte-for-byte apart from their `use` lines.
 
 Fallback when a provider has not landed: the consuming ticket declares a stub with the diagram's
 signature in its own file, marked `// moves to <file> with ticket <id>`. It does not wait and does not touch the provider's file.
@@ -279,7 +302,17 @@ Kiosk quote creation gets a per-IP limit; v2 has none in the kiosk module (`7897
 
 ## 7. Data migration
 
-Source: `ledger_rows` JSON arrays + side tables of `xc_desk_v2`. Target: §4. One-shot importer `xc-import`, run at cutover.
+**Decision D6 applies: nothing is migrated.** v2 holds test data only, so v3 starts on an empty
+database, the owner account and employees are created fresh, and rates are entered again. The importer
+(ticket T14) is **not built**. The mapping below is kept as the record of what an import would have to do,
+for the day D6 changes; it is not work to schedule.
+
+What still matters at cutover without an import:
+- Deploy order is unchanged: v3 on a new database and port, v2 untouched, switch by repointing nginx, roll back by pointing it back.
+- Nothing is lost by rolling back, because nothing real was entered — again only while D6 holds.
+- The document-number and customer-number counters start from 1.
+
+Source, had there been one: `ledger_rows` JSON arrays + side tables of `xc_desk_v2`. Target: §4.
 
 **(1) What each existing row becomes**
 
@@ -413,8 +446,8 @@ it is displayed; before confirming, two minutes without a touch restart the scre
 
 `runEngine(action, input, tables, props, actor, files, booking)` and `runOperations(...)` in v2 are pure
 functions (`server.mjs:6255`, `5969`). A small Node harness around the v2 bundle produces fixture files
-`(input) → (result | error, table diff)` for every rule in §3; the Rust tests in `xc-domain/tests/` and
-`xc-api/tests/` assert the same outcomes. The ticket author commits fixtures and failing tests first;
+`(input) → (result | error, table diff)` for every rule in §3; the Rust tests in each crate's `tests/` and
+in `api/tests/` assert the same outcomes. The ticket author commits fixtures and failing tests first;
 implementers may add tests but not edit those.
 
 Not covered by fixtures, written by hand: per-branch locking under concurrency, `304` behaviour, policy table, importer verification.
@@ -437,21 +470,24 @@ F1 was written in one piece by the session the owner gave it to; F5–F7 are ind
 
 | # | Ticket | Files owned | Depends on |
 |---|---|---|---|
-| T1 | Workspace skeleton, Rust CI, `/healthz`, `/health/ready`, `Store`/`BranchTx`; extract v2 pages and assets into `api/web/`; `PageServer` | `api/Cargo.toml`, `xc-store/src/lib.rs`, `routes/health.rs`, `pages.rs`, `api/web/`, `.github/workflows/api.yml` | — |
-| T2 | `Money`, `Rate`, `Quote` | `xc-domain/src/{money,quote}.rs` | — |
-| T3 | `StockDelta`, `ShiftLedger` | `xc-domain/src/stock.rs` | T2 (stub allowed) |
-| T4 | `Actor`, `Policy`; `/api/auth`, `/api/staff/{login,logout,password,me}`, `/api/employees` | `xc-domain/src/policy.rs`, `xc-api/src/auth/`, employee store/route files | T1 |
-| T5 | Branches, currencies, rates, `RateSource`, `/api/reference-rates` | their store/service files + migration | T1 |
-| T6 | Customers + files (`/api/upload`, `/files/`, `/documents`) | same pattern | T1 |
-| T7 | Shifts + movements | same pattern | T1, T3 |
-| T8 | Transactions: save, receipt HTML, documents | same pattern | T2, T3, T6, T7 |
-| T9 | `CustodyMachine` | `xc-domain/src/custody/` | T3 |
-| T10 | Custody service (`ops*`) | same pattern | T7, T9 |
-| T11 | `SnapshotBuilder` + `CompatRpc` + `/api/rpc`, `/api/staff/rpc`, `/staff/desk` | `xc-api/src/compat/`, `routes/rpc.rs` | T5–T8, T10 (stubs allowed) |
-| T12 | `KioskMachine` + `/api/kiosk` | kiosk domain/store/service/route files | T5, T8 |
-| T13 | Devices (`/api/devices`, receipt image) | device files | T8 |
-| T14 | `xc-import` | `api/crates/xc-import/` | T4–T10 schemas |
-| T15 | Bookings/members (`/api/bookings`) | booking files | D5 |
+| T1 | Root package `xchange`: bootstrap, config, `/healthz`, `/health/ready`, Rust CI; extract v2 pages and assets into `api/web/`; `PageServer` | `api/src/{main.rs,lib.rs,bootstrap/,config/,presentation/http/health.rs,presentation/pages.rs}`, `api/web/`, `api/configuration/`, `.github/workflows/api.yml` | T2b |
+| T2 | `Money`, `Rate`, `Quote` — **merged** (PR 14) in the flat crate `xc-domain` | `api/crates/xc-domain/src/{money,quote}.rs` | — |
+| T2b | Restructure to the `pos108-core` layout (§5.2): root package, `xc-kernel` (with `BranchTx` and its concurrency test) and the five context crates with their three layers and every `mod.rs`, kernel git dependencies, move T2's code and tests unchanged, delete `xc-domain` | `api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml` | T2 |
+| T3 | `StockDelta`, `ShiftLedger` | `api/crates/xc-shift/src/domain/shift/value_objects/{stock_delta,balances}.rs`, `…/domain/shift/entities/shift_ledger.rs` | T2b |
+| T4 | `Actor`, `Policy`; `/api/auth`, `/api/staff/{login,logout,password,me}`, `/api/employees` | `api/crates/xc-auth/src/`, `api/src/presentation/{extractors/actor.rs,http/auth.rs,http/employees.rs}` | T1 |
+| T5 | Branches, currencies, rates, `RateSource`, `/api/reference-rates` | `api/crates/xc-rate/src/`, its route and dto files, its migration | T1 |
+| T6 | Customers + files (`/api/upload`, `/files/`, `/documents`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/customer/`, `api/src/infrastructure/files/`, `api/src/presentation/http/{customers,files,documents}.rs`, `api/src/presentation/dto/{customer,file}.rs`, `api/migrations/*_customers_files.sql` | T1 |
+| T7 | Shifts + movements | `api/crates/xc-shift/src/{application,infrastructure}/shift/`, `api/crates/xc-shift/src/domain/shift/{entities/shift.rs,entities/stock_movement.rs,repositories/,commands/}`, `api/src/presentation/dto/shift.rs`, `api/migrations/*_shifts.sql` | T1, T3 |
+| T8 | Transactions: save, receipt HTML, documents | `api/crates/xc-exchange/src/{application,infrastructure}/exchange/`, `api/crates/xc-exchange/src/domain/exchange/{entities/transaction.rs,repositories/,commands/}`, `api/src/application/workflows/save_transaction.rs`, `api/src/presentation/dto/transaction.rs`, `api/migrations/*_transactions.sql` | T2b, T3, T6, T7 |
+| T9 | `CustodyMachine` | `api/crates/xc-shift/src/domain/custody/` | T2b |
+| T10 | Custody service (`ops*`) | `api/crates/xc-shift/src/{application,infrastructure}/custody/`, `api/migrations/*_custody.sql` | T7, T9 |
+| T11 | `SnapshotBuilder` + `CompatRpc` + `/api/rpc`, `/api/staff/rpc`, `/staff/desk` | `api/src/application/compat/`, `api/src/presentation/http/rpc.rs` | T5–T8, T10 (stubs allowed) |
+| T12 | `KioskMachine` + `/api/kiosk` | `api/crates/xc-kiosk/src/`, `api/src/presentation/http/kiosk.rs`, `api/src/presentation/dto/kiosk.rs`, `api/migrations/*_kiosk.sql` | T5, T8 |
+| T13 | Devices (`/api/devices`, receipt image) | `api/src/infrastructure/devices/`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/migrations/*_devices.sql` | T8 |
+| T14 | `xc-import` — **not built** while D6 holds (v2 has test data only) | `api/crates/xc-import/` | reopens only if D6 changes |
+| T15 | Bookings/members (`/api/bookings`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/booking/`, `api/src/presentation/http/bookings.rs`, `api/src/presentation/dto/booking.rs`, `api/migrations/*_bookings.sql` | D5 |
+
+**For whoever watches the queue:** T2b's file scope is the whole server (`api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml`). While it is in flight nothing else under `api/` can be dispatched; that silence is intended, and it is why T2b is a pure move kept as small and as quick as possible.
 
 Parity check before the phase 2 cutover: the kept screens and the phase 1 kiosk are driven against v3
 and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a browser pass covers the page rewriting in T1/T11).
@@ -460,8 +496,9 @@ and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a br
 
 | Item | Phase | Blocks | Who |
 |---|---|---|---|
-| Branch protection, CI runners, `tq` queue config, lane for this repo | 1 | dispatching any ticket | owner |
+| Branch protection on `main` | 1, 2 | making any check required; until then a review is the only gate | owner |
+| Rust CI (`.github/workflows/api.yml`, part of T1) | 2 | every Rust PR rests on one reviewer's local run until it exists | controller — ticket not opened yet |
+| Lane for this repo in the fleet's lane table | 1, 2 | workers on other machines cannot verify who controls it | owner |
 | Source repos `xchange-online`, `xchange-booking` | 1, 2 | phase 1 works from the readable `public/kiosk.js`; the phase 2 test harness is simpler with source | owner |
-| D6 is v2 in real use + read access to `xc_desk_v2` | 2 | T14 strictness, §7(2) counts | owner |
 | D5 port bookings/members or not | 2 | T15, and the member flag in T11 | owner |
 | Role table in §6 (v2's two allow-lists disagree) | 2 | T4, T11 — v3 reproduces both paths as they are unless the owner says which is right | owner, at review |
