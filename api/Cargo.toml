@@ -40,10 +40,13 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
 actix-web = "4"
 anyhow = "1"
 config = { version = "0.15", default-features = false, features = ["yaml"] }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros", "chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tracing = "0.1"
 

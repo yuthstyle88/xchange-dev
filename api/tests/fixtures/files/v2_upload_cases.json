@@ -1,0 +1,434 @@
+{
+ "source": "xchange-online@3ffc5a5 server.mjs:7126-7151",
+ "limit": 15728640,
+ "sentences": [
+  "ชนิดไฟล์ไม่ตรงกับเนื้อหา",
+  "ชนิดไฟล์ไม่รองรับ",
+  "ไฟล์ใหญ่เกิน 15 MB"
+ ],
+ "cases": [
+  {
+   "label": "a JPEG",
+   "mime": "image/jpeg",
+   "head": "ffd8ffe000104a464946",
+   "pad": 200,
+   "size": 210,
+   "accepted": true,
+   "sha256": "bf88ecf283b945e6c3382e6fa9874ff26f05d6e0c4670a40c85b38caefb8950d"
+  },
+  {
+   "label": "a JPEG of two bytes",
+   "mime": "image/jpeg",
+   "head": "ffd8",
+   "pad": 0,
+   "size": 2,
+   "accepted": true,
+   "sha256": "71563ad80061407ede9c6f316836284bd3710a520c5a792b5eda1cb703690815"
+  },
+  {
+   "label": "a PNG",
+   "mime": "image/png",
+   "head": "89504e470d0a1a0a0000000d",
+   "pad": 200,
+   "size": 212,
+   "accepted": true,
+   "sha256": "a413a67221be32d39ced35518cd84f477a75426a3dc00fa84870c989e943c591"
+  },
+  {
+   "label": "a PNG of exactly its signature",
+   "mime": "image/png",
+   "head": "89504e470d0a1a0a",
+   "pad": 0,
+   "size": 8,
+   "accepted": true,
+   "sha256": "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6"
+  },
+  {
+   "label": "a PDF",
+   "mime": "application/pdf",
+   "head": "255044462d312e370a",
+   "pad": 200,
+   "size": 209,
+   "accepted": true,
+   "sha256": "babf823f39b4e4ed316f452285a91cf304179feaffdf1b57489b6745a96eb076"
+  },
+  {
+   "label": "a PDF of exactly five bytes",
+   "mime": "application/pdf",
+   "head": "255044462d",
+   "pad": 0,
+   "size": 5,
+   "accepted": true,
+   "sha256": "38523c087796e5d5dd1cf9bad1fb026781a838dd9dd2cf8af58b9f6502a46778"
+  },
+  {
+   "label": "a WebP",
+   "mime": "image/webp",
+   "head": "52494646240000005745425056503820",
+   "pad": 200,
+   "size": 216,
+   "accepted": true,
+   "sha256": "f90cb50860b1ee7a75a3a6b586a7f5a04859b49139243a52e83d568a80b01e3d"
+  },
+  {
+   "label": "a WebP of exactly twelve bytes",
+   "mime": "image/webp",
+   "head": "524946460000000057454250",
+   "pad": 0,
+   "size": 12,
+   "accepted": true,
+   "sha256": "44e65465e5e82733c8e5499cdd2fb106b8b703ea3f28da3b7da7f3a661267d6e"
+  },
+  {
+   "label": "a WebP whose four length bytes are anything",
+   "mime": "image/webp",
+   "head": "52494646ffffffff57454250",
+   "pad": 8,
+   "size": 20,
+   "accepted": true,
+   "sha256": "e2988916d206048a45a85c842c89456af99a47a32d6d30121ed5a56a86fed020"
+  },
+  {
+   "label": "a JPEG of one byte",
+   "mime": "image/jpeg",
+   "head": "ff",
+   "pad": 0,
+   "size": 1,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a JPEG whose second byte is wrong",
+   "mime": "image/jpeg",
+   "head": "ffd9ffe0",
+   "pad": 20,
+   "size": 24,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a JPEG whose first byte is wrong",
+   "mime": "image/jpeg",
+   "head": "fed8ffe0",
+   "pad": 20,
+   "size": 24,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PNG sent as JPEG",
+   "mime": "image/jpeg",
+   "head": "89504e470d0a1a0a0000000d",
+   "pad": 20,
+   "size": 32,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a JPEG sent as PNG",
+   "mime": "image/png",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PNG one byte short of its signature",
+   "mime": "image/png",
+   "head": "89504e470d0a1a",
+   "pad": 0,
+   "size": 7,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PNG whose last signature byte is wrong",
+   "mime": "image/png",
+   "head": "89504e470d0a1a0b",
+   "pad": 20,
+   "size": 28,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PDF in lower case",
+   "mime": "application/pdf",
+   "head": "257064662d312e37",
+   "pad": 20,
+   "size": 28,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PDF without the dash",
+   "mime": "application/pdf",
+   "head": "25504446312e37",
+   "pad": 20,
+   "size": 27,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PDF after a blank",
+   "mime": "application/pdf",
+   "head": "20255044462d312e37",
+   "pad": 20,
+   "size": 29,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PDF of four bytes",
+   "mime": "application/pdf",
+   "head": "25504446",
+   "pad": 0,
+   "size": 4,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a WebP of eleven bytes",
+   "mime": "image/webp",
+   "head": "5249464600000000574542",
+   "pad": 0,
+   "size": 11,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a WAVE file sent as WebP",
+   "mime": "image/webp",
+   "head": "524946462400000057415645666d7420",
+   "pad": 20,
+   "size": 36,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a WebP without RIFF",
+   "mime": "image/webp",
+   "head": "52494658240000005745425056503820",
+   "pad": 20,
+   "size": 36,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a PDF sent as WebP",
+   "mime": "image/webp",
+   "head": "255044462d312e370a",
+   "pad": 20,
+   "size": 29,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "a JPEG sent as PDF",
+   "mime": "application/pdf",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "an HTML page sent as JPEG",
+   "mime": "image/jpeg",
+   "head": "3c21646f63747970652068746d6c3e3c7363726970743e",
+   "pad": 0,
+   "size": 23,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "an empty body",
+   "mime": "image/jpeg",
+   "head": "",
+   "pad": 0,
+   "size": 0,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "an empty body",
+   "mime": "image/png",
+   "head": "",
+   "pad": 0,
+   "size": 0,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "an empty body",
+   "mime": "image/webp",
+   "head": "",
+   "pad": 0,
+   "size": 0,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "an empty body",
+   "mime": "application/pdf",
+   "head": "",
+   "pad": 0,
+   "size": 0,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+  },
+  {
+   "label": "no type at all",
+   "mime": null,
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "an empty type",
+   "mime": "",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "a type with a parameter",
+   "mime": "image/jpeg; charset=binary",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "a type in upper case",
+   "mime": "IMAGE/JPEG",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "image/jpg is not image/jpeg",
+   "mime": "image/jpg",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "a GIF",
+   "mime": "image/gif",
+   "head": "474946383961",
+   "pad": 20,
+   "size": 26,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "an SVG",
+   "mime": "image/svg+xml",
+   "head": "3c7376672f3e",
+   "pad": 0,
+   "size": 6,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "an HTML page",
+   "mime": "text/html",
+   "head": "3c21646f63747970652068746d6c3e",
+   "pad": 0,
+   "size": 15,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "a HEIC photo",
+   "mime": "image/heic",
+   "head": "000000186674797068656963",
+   "pad": 20,
+   "size": 32,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "plain bytes",
+   "mime": "application/octet-stream",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "a form upload",
+   "mime": "multipart/form-data; boundary=x",
+   "head": "ffd8ffe000104a464946",
+   "pad": 20,
+   "size": 30,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "an unsupported type with an empty body",
+   "mime": "text/plain",
+   "head": "",
+   "pad": 0,
+   "size": 0,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  },
+  {
+   "label": "exactly 15 MB",
+   "mime": "image/jpeg",
+   "head": "ffd8ffe000104a464946",
+   "pad": 15728630,
+   "size": 15728640,
+   "accepted": true,
+   "sha256": "adca7c9916d069f8c6c387839caa42042dae948d42233c7a8e7e652ea8065c69"
+  },
+  {
+   "label": "one byte over 15 MB",
+   "mime": "image/jpeg",
+   "head": "ffd8ffe000104a464946",
+   "pad": 15728631,
+   "size": 15728641,
+   "accepted": false,
+   "error": "ไฟล์ใหญ่เกิน 15 MB"
+  },
+  {
+   "label": "one byte under 15 MB",
+   "mime": "application/pdf",
+   "head": "255044462d312e370a",
+   "pad": 15728630,
+   "size": 15728639,
+   "accepted": true,
+   "sha256": "692d0098e41d9d1796daefaec3e818ef9f7b3fbadb0e4fbd8f7414dc34cf6fea"
+  },
+  {
+   "label": "one byte over 15 MB whose content is wrong too",
+   "mime": "image/png",
+   "head": "ffd8ffe000104a464946",
+   "pad": 15728631,
+   "size": 15728641,
+   "accepted": false,
+   "error": "ไฟล์ใหญ่เกิน 15 MB"
+  },
+  {
+   "label": "one byte over 15 MB of an unsupported type",
+   "mime": "image/gif",
+   "head": "474946383961",
+   "pad": 15728640,
+   "size": 15728646,
+   "accepted": false,
+   "error": "ชนิดไฟล์ไม่รองรับ"
+  }
+ ]
+}

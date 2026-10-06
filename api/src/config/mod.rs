@@ -37,12 +37,20 @@ pub struct WebSettings {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct FilesSettings {
+    /// Directory the uploaded files are kept in. A relative path is taken from
+    /// the directory the server is started in.
+    pub dir: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
     pub channel: Channel,
     pub database: DatabaseSettings,
     pub telemetry: TelemetrySettings,
     pub web: WebSettings,
+    pub files: FilesSettings,
 }
 
 impl Settings {

@@ -24,3 +24,7 @@ telemetry:
 
 web:
   dir: "web"
+
+files:
+  dir: "uploads"
+
