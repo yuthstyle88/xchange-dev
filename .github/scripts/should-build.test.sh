@@ -18,7 +18,6 @@ cd "$REPO_DIR"
 
 git config user.email "test@example.com"
 git config user.name "Test User"
-git config core.quotepath false
 
 # Initial commit with basic repository layout
 mkdir -p app api docs .github/workflows .github/scripts
