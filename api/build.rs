@@ -37,6 +37,16 @@ fn get_build() -> String {
         if output.status.success() {
             let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !sha.is_empty() {
+                let is_dirty = std::process::Command::new("git")
+                    .args(["status", "--porcelain"])
+                    .output()
+                    .map(|o| {
+                        o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty()
+                    })
+                    .unwrap_or(false);
+                if is_dirty {
+                    return format!("{sha}-dirty");
+                }
                 return sha;
             }
         }
@@ -55,6 +65,7 @@ fn get_built_at() -> String {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=nonexistent_file_to_force_rerun");
     println!("cargo:rerun-if-env-changed=BUILD_SHA");
     println!("cargo:rerun-if-env-changed=BUILT_AT");
     println!("cargo:rerun-if-changed=migrations");
