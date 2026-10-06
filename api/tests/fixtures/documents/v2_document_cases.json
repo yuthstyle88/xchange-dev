@@ -1,0 +1,854 @@
+{
+ "source": "xchange-online@3ffc5a5 server.mjs through its own handle(req), driven by api/tools/v2-fixtures/gen_documents.mjs",
+ "note": "In a path and in a page, `$<name>.ref` stands for the document number of the exchange <name> and `$<name>.passport` / `.slip` / `.receipt` for the keys of its files (in a path the `$` is written %24). `as` names who is signed in (see `people`; \"owner\" is the owner). `steps` were recorded with DEVICES_ENABLED=1, as the installed desk runs. `devicesOff` is the same page as v2 serves it without devices — a record of the other shape, not a requirement.",
+ "branches": [
+  "MAIN",
+  "BR-2"
+ ],
+ "exchanges": [
+  {
+   "name": "cash",
+   "branchId": "MAIN",
+   "mode": "LIVE",
+   "passport": "image/jpeg",
+   "slip": null
+  },
+  {
+   "name": "transfer",
+   "branchId": "MAIN",
+   "mode": "LIVE",
+   "passport": "image/png",
+   "slip": "application/pdf"
+  },
+  {
+   "name": "other",
+   "branchId": "BR-2",
+   "mode": "LIVE",
+   "passport": "image/webp",
+   "slip": "image/jpeg"
+  },
+  {
+   "name": "demo",
+   "branchId": "MAIN",
+   "mode": "DEMO",
+   "passport": "image/jpeg",
+   "slip": null
+  }
+ ],
+ "people": {
+  "front": {
+   "id": "employee-front",
+   "role": "FRONT",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "manager": {
+   "id": "employee-manager",
+   "role": "MANAGER",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "rates": {
+   "id": "employee-rates",
+   "role": "RATES",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "system": {
+   "id": "employee-system",
+   "role": "SYSTEM",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "front2": {
+   "id": "employee-front2",
+   "role": "FRONT",
+   "branchId": "BR-2",
+   "mustChange": false
+  },
+  "newcomer": {
+   "id": "employee-newcomer",
+   "role": "FRONT",
+   "branchId": "MAIN",
+   "mustChange": true
+  }
+ },
+ "counts": {
+  "requests": 39,
+  "byStatus": {
+   "200": 17,
+   "302": 9,
+   "303": 2,
+   "404": 11
+  },
+  "devicesOff": 4
+ },
+ "steps": [
+  {
+   "note": "documents: nobody signed in is sent to the sign-in page",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": []
+   },
+   "response": {
+    "status": 303,
+    "headers": {
+     "location": "https://desk.example/login"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "documents: a first-password employee is sent there too",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "newcomer"
+    ]
+   },
+   "response": {
+    "status": 303,
+    "headers": {
+     "location": "https://desk.example/login"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "POST /documents is not a route",
+   "request": {
+    "method": "POST",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "documents, owner: a cash exchange — passport and receipt",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, owner: the same with the branch named",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=MAIN&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, owner: ?branch= (empty) is MAIN",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, owner: a transfer — passport, payment proof, receipt",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24transfer.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $transfer.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$transfer.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$transfer.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.passport\" download=\"$transfer.ref_PASSPORT.png\">ดาวน์โหลด $transfer.ref_PASSPORT.png</a></li><li>หลักฐานชำระเงิน — <a href=\"/files/$transfer.slip\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.slip\" download=\"$transfer.ref_PAYMENT.pdf\">ดาวน์โหลด $transfer.ref_PAYMENT.pdf</a></li><li>ใบเสร็จ — <a href=\"/files/$transfer.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.receipt\" download=\"$transfer.ref_RECEIPT_FULL.html\">ดาวน์โหลด $transfer.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, owner: an exchange of another branch, with that branch named",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=BR-2&ref=%24other.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $other.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$other.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$other.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.passport\" download=\"$other.ref_PASSPORT.webp\">ดาวน์โหลด $other.ref_PASSPORT.webp</a></li><li>หลักฐานชำระเงิน — <a href=\"/files/$other.slip\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.slip\" download=\"$other.ref_PAYMENT.jpg\">ดาวน์โหลด $other.ref_PAYMENT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$other.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.receipt\" download=\"$other.ref_RECEIPT_FULL.html\">ดาวน์โหลด $other.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=BR-2#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, owner: an exchange of another branch without naming it",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24other.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner: the wrong branch named",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=BR-2&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner: a branch that does not exist",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=NOWHERE&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+   }
+  },
+  {
+   "note": "documents, owner: a name that is no branch is answered the same way",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=MAIN_1&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+   }
+  },
+  {
+   "note": "documents, owner: a number nobody was given",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=XC-NOPE",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner: no ref",
+   "request": {
+    "method": "GET",
+    "path": "/documents",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner: an empty ref",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner: a demo exchange has no documents page",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24demo.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, owner and an employee signed in together: the owner (another branch may be named)",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=BR-2&ref=%24other.ref",
+    "as": [
+     "owner",
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $other.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$other.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$other.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.passport\" download=\"$other.ref_PASSPORT.webp\">ดาวน์โหลด $other.ref_PASSPORT.webp</a></li><li>หลักฐานชำระเงิน — <a href=\"/files/$other.slip\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.slip\" download=\"$other.ref_PAYMENT.jpg\">ดาวน์โหลด $other.ref_PAYMENT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$other.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.receipt\" download=\"$other.ref_RECEIPT_FULL.html\">ดาวน์โหลด $other.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=BR-2#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, Front: an exchange of the own branch",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24transfer.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $transfer.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$transfer.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$transfer.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.passport\" download=\"$transfer.ref_PASSPORT.png\">ดาวน์โหลด $transfer.ref_PASSPORT.png</a></li><li>หลักฐานชำระเงิน — <a href=\"/files/$transfer.slip\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.slip\" download=\"$transfer.ref_PAYMENT.pdf\">ดาวน์โหลด $transfer.ref_PAYMENT.pdf</a></li><li>ใบเสร็จ — <a href=\"/files/$transfer.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$transfer.receipt\" download=\"$transfer.ref_RECEIPT_FULL.html\">ดาวน์โหลด $transfer.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, Front: ?branch=BR-2 is replaced by the own branch — the own exchange is found",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=BR-2&ref=%24cash.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, Front: an exchange of another branch is not",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=BR-2&ref=%24other.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "documents, Front of BR-2: the own branch without naming it",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24other.ref",
+    "as": [
+     "front2"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $other.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$other.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$other.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.passport\" download=\"$other.ref_PASSPORT.webp\">ดาวน์โหลด $other.ref_PASSPORT.webp</a></li><li>หลักฐานชำระเงิน — <a href=\"/files/$other.slip\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.slip\" download=\"$other.ref_PAYMENT.jpg\">ดาวน์โหลด $other.ref_PAYMENT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$other.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$other.receipt\" download=\"$other.ref_RECEIPT_FULL.html\">ดาวน์โหลด $other.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=BR-2#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, Manager",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "manager"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, Rates: the list is shown to every signed-in employee at this page",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "rates"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "documents, System: the same",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "system"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน</p><ul><li>พาสปอร์ต — <a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.passport\" download=\"$cash.ref_PASSPORT.jpg\">ดาวน์โหลด $cash.ref_PASSPORT.jpg</a></li><li>ใบเสร็จ — <a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">เปิดดู</a> · <a href=\"/files/$cash.receipt\" download=\"$cash.ref_RECEIPT_FULL.html\">ดาวน์โหลด $cash.ref_RECEIPT_FULL.html</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents: no session is sent to the staff page",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": []
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents: the owner is not an employee",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents: a first-password employee",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "newcomer"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "POST /staff/documents is not a route",
+   "request": {
+    "method": "POST",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "staff documents, Front: a cash exchange",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "private, no-store"
+    },
+    "text": "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>เอกสารรายการ</title><body style=\"font-family:sans-serif;padding:32px\"><h1>$cash.ref</h1><p><a href=\"/api/staff/file/$cash.passport\">พาสปอร์ต</a></p><p><a href=\"/api/staff/file/$cash.receipt\">ใบเสร็จ</a></p><a href=\"/staff\">กลับหน้าพนักงาน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents, Front: a transfer",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24transfer.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "private, no-store"
+    },
+    "text": "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>เอกสารรายการ</title><body style=\"font-family:sans-serif;padding:32px\"><h1>$transfer.ref</h1><p><a href=\"/api/staff/file/$transfer.passport\">พาสปอร์ต</a></p><p><a href=\"/api/staff/file/$transfer.slip\">หลักฐานชำระเงิน</a></p><p><a href=\"/api/staff/file/$transfer.receipt\">ใบเสร็จ</a></p><a href=\"/staff\">กลับหน้าพนักงาน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents, Front with the owner signed in too",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "owner",
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "private, no-store"
+    },
+    "text": "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>เอกสารรายการ</title><body style=\"font-family:sans-serif;padding:32px\"><h1>$cash.ref</h1><p><a href=\"/api/staff/file/$cash.passport\">พาสปอร์ต</a></p><p><a href=\"/api/staff/file/$cash.receipt\">ใบเสร็จ</a></p><a href=\"/staff\">กลับหน้าพนักงาน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents, Manager",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24transfer.ref",
+    "as": [
+     "manager"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "private, no-store"
+    },
+    "text": "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>เอกสารรายการ</title><body style=\"font-family:sans-serif;padding:32px\"><h1>$transfer.ref</h1><p><a href=\"/api/staff/file/$transfer.passport\">พาสปอร์ต</a></p><p><a href=\"/api/staff/file/$transfer.slip\">หลักฐานชำระเงิน</a></p><p><a href=\"/api/staff/file/$transfer.receipt\">ใบเสร็จ</a></p><a href=\"/staff\">กลับหน้าพนักงาน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents, Front of BR-2",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24other.ref",
+    "as": [
+     "front2"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "private, no-store"
+    },
+    "text": "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>เอกสารรายการ</title><body style=\"font-family:sans-serif;padding:32px\"><h1>$other.ref</h1><p><a href=\"/api/staff/file/$other.passport\">พาสปอร์ต</a></p><p><a href=\"/api/staff/file/$other.slip\">หลักฐานชำระเงิน</a></p><p><a href=\"/api/staff/file/$other.receipt\">ใบเสร็จ</a></p><a href=\"/staff\">กลับหน้าพนักงาน</a></body></html>"
+   }
+  },
+  {
+   "note": "staff documents, Front: ?branch=BR-2 is ignored — an exchange of another branch is not found",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?branch=BR-2&ref=%24other.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents, Front: a number nobody was given",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=XC-NOPE",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents, Front: no ref",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents, Front: a demo exchange",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24demo.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents, Rates: this role reads no documents here",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "rates"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "staff documents, System: the same",
+   "request": {
+    "method": "GET",
+    "path": "/staff/documents?ref=%24cash.ref",
+    "as": [
+     "system"
+    ]
+   },
+   "response": {
+    "status": 302,
+    "headers": {
+     "location": "https://desk.example/staff"
+    },
+    "text": ""
+   }
+  }
+ ],
+ "devicesOff": [
+  {
+   "note": "devices off — documents, owner: a transfer",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24transfer.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff",
+     "referrer-policy": "same-origin"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"MAIN\";</script><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $transfer.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$transfer.ref</p><ul><li><a href=\"/files/$transfer.passport\" target=\"_blank\" rel=\"noopener\">พาสปอร์ต</a></li><li><a href=\"/files/$transfer.slip\" target=\"_blank\" rel=\"noopener\">หลักฐานชำระเงิน</a></li><li><a href=\"/files/$transfer.receipt\" target=\"_blank\" rel=\"noopener\">ใบเสร็จ</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "devices off — documents, owner: a number nobody was given",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=XC-NOPE",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบเอกสารรายการ"
+   }
+  },
+  {
+   "note": "devices off — documents, Front",
+   "request": {
+    "method": "GET",
+    "path": "/documents?ref=%24cash.ref",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=utf-8",
+     "cache-control": "no-store",
+     "x-content-type-options": "nosniff",
+     "referrer-policy": "same-origin"
+    },
+    "text": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"MAIN\";</script><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>เอกสาร $cash.ref</title><style>body{font:18px/1.7 Tahoma,sans-serif;max-width:700px;margin:40px auto;padding:20px}a{color:#ab0044}li{margin:20px 0}</style></head><body><h1>เอกสารรายการ</h1><p>$cash.ref</p><ul><li><a href=\"/files/$cash.passport\" target=\"_blank\" rel=\"noopener\">พาสปอร์ต</a></li><li><a href=\"/files/$cash.receipt\" target=\"_blank\" rel=\"noopener\">ใบเสร็จ</a></li></ul><a href=\"/?branch=MAIN#transactions\">กลับรายการแลกเงิน</a></body></html>"
+   }
+  },
+  {
+   "note": "devices off — documents, owner: a name that is no branch",
+   "request": {
+    "method": "GET",
+    "path": "/documents?branch=MAIN_1&ref=%24cash.ref",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+   }
+  }
+ ]
+}
