@@ -104,8 +104,8 @@ macro_rules! app_with {
         let state = state($web_dir);
         test::init_service(
             App::new()
-                .app_data(web::Data::from(reader))
-                .configure(move |cfg| bootstrap::configure(cfg, state)),
+                .configure(move |cfg| bootstrap::configure(cfg, state))
+                .app_data(web::Data::from(reader)),
         )
         .await
     }};

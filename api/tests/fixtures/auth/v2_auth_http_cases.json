@@ -1,0 +1,5722 @@
+{
+ "source": "xchange-online@3ffc5a5 server.mjs through its own handle(req), driven by api/tools/v2-fixtures/gen_auth_http.mjs",
+ "note": "Tokens are written $tN and employee ids $eN in the order v2 made them. `origin` / `marker` null = the header is absent. `cookies` is what the request carried, `setCookies` what the answer set. A long raw body is written {repeat, times}. A step with `custody` is not a request: it changes what custody says about a branch from there on.",
+ "counts": {
+  "stories": 4,
+  "requests": 200,
+  "byStatus": {
+   "200": 52,
+   "400": 133,
+   "401": 10,
+   "403": 2,
+   "404": 3
+  }
+ },
+ "stories": [
+  {
+   "name": "auth",
+   "about": "POST /api/auth: the request checks, status, sign-in of the owner and of an employee, sign-out.",
+   "owner": {
+    "username": "boss",
+    "password": "owner-password-01"
+   },
+   "branches": {
+    "MAIN": {
+     "enabled": false,
+     "custodian": "",
+     "requests": []
+    }
+   },
+   "steps": [
+    {
+     "note": "GET is not this route",
+     "request": {
+      "method": "GET",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1"
+     },
+     "response": {
+      "status": 404,
+      "contentType": "text/plain;charset=UTF-8",
+      "cacheControl": null,
+      "setCookies": {},
+      "text": "Not found"
+     }
+    },
+    {
+     "note": "no Origin header",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": null,
+      "marker": "1",
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "another origin",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://evil.example",
+      "marker": "1",
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the same host over http",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "http://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no X-XChange-Request header",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": null,
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "X-XChange-Request: true",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "true",
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the checks come before the body is read: bad origin and a body that is too long",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": null,
+      "marker": "1",
+      "raw": {
+       "repeat": "x",
+       "times": 4001
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "a body of 4001 characters",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "raw": {
+       "repeat": " ",
+       "times": 4001
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ข้อมูลคำขอใหญ่เกินกำหนด"
+      }
+     }
+    },
+    {
+     "note": "an empty body",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "raw": ""
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "an empty object",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {}
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "an unknown action",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "register",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "status, nobody",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "status without a payload",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "status"
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "status with cookies that are not sessions",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "nonsense",
+       "staff": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "sign-in without a payload",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login"
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "sign-in, wrong password",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "boss",
+        "password": "wrong-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the owner signs in: the owner cookie is set for twelve hours and the staff cookie cleared",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": " Boss ",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "token": "$t1",
+        "maxAge": 43200
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "status with the owner cookie",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "the owner creates an employee",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "the employee signs in at the shared door: the staff cookie is set and the owner cookie cleared; mustChange",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "somchai",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t2",
+        "maxAge": 43200
+       },
+       "owner": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN"
+       },
+       "mustChange": true
+      }
+     }
+    },
+    {
+     "note": "status with a first-password session: nobody",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "the employee changes the first password at the staff door",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true,
+       "loginAgain": true
+      }
+     }
+    },
+    {
+     "note": "…and signs in again: mustChange false",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "somchai",
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t3",
+        "maxAge": 43200
+       },
+       "owner": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN"
+       },
+       "mustChange": false
+      }
+     }
+    },
+    {
+     "note": "status with the staff cookie",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN"
+       }
+      }
+     }
+    },
+    {
+     "note": "status with both cookies: the owner",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1",
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "sign-out with both cookies: both are cleared",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1",
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "logout",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "cleared": true,
+        "maxAge": 0
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "the owner session is over",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "the staff session is over",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": null
+      }
+     }
+    },
+    {
+     "note": "sign-out with no cookie still clears both",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "logout"
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "cleared": true,
+        "maxAge": 0
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "sign-out needs the two request headers too",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "x"
+      },
+      "json": {
+       "action": "logout",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "cleared": true,
+        "maxAge": 0
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "…without them it is refused and nothing is cleared",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": null,
+      "json": {
+       "action": "logout",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "staff door",
+   "about": "POST /api/staff/{login,logout,password,me}.",
+   "owner": {
+    "username": "boss",
+    "password": "owner-password-01"
+   },
+   "branches": {
+    "MAIN": {
+     "enabled": false,
+     "custodian": "",
+     "requests": []
+    }
+   },
+   "steps": [
+    {
+     "note": "the owner signs in",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "boss",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "token": "$t1",
+        "maxAge": 43200
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "…and creates an employee",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "GET is not this route",
+     "request": {
+      "method": "GET",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1"
+     },
+     "response": {
+      "status": 404,
+      "contentType": "text/plain;charset=UTF-8",
+      "cacheControl": null,
+      "setCookies": {},
+      "text": "Not found"
+     }
+    },
+    {
+     "note": "no Origin header",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": null,
+      "marker": "1",
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no X-XChange-Request header",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": null,
+      "json": {
+       "payload": {
+        "username": "somchai",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "a body of 120001 characters",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "raw": {
+       "repeat": " ",
+       "times": 120001
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ข้อมูลมากเกินไป"
+      }
+     }
+    },
+    {
+     "note": "me without a cookie",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "me with an empty body and no cookie",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "raw": ""
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "me with the owner cookie only",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "sign-in, wrong password",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "somchai",
+        "password": "wrong-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "sign-in without a payload",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1"
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the owner cannot sign in here",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "boss",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "sign-in: the answer carries the employee and no token; only the staff cookie is set, an owner cookie sent along is left alone",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "payload": {
+        "username": " SomChai ",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t2",
+        "maxAge": 43200
+       }
+      },
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": true
+       }
+      }
+     }
+    },
+    {
+     "note": "me with a first-password session answers the employee",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": true
+       }
+      }
+     }
+    },
+    {
+     "note": "me with an empty body",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "raw": ""
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": true
+       }
+      }
+     }
+    },
+    {
+     "note": "password: too short — refused, the cookie is kept",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {
+        "password": "short"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "รหัสผ่านต้องมี 12–128 ตัวอักษร"
+      }
+     }
+    },
+    {
+     "note": "password without a payload",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "รหัสผ่านต้องมี 12–128 ตัวอักษร"
+      }
+     }
+    },
+    {
+     "note": "password without a cookie",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "password changed: sign in again, the staff cookie is cleared",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true,
+       "loginAgain": true
+      }
+     }
+    },
+    {
+     "note": "the old session is over",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "sign-in with the new password",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "somchai",
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t3",
+        "maxAge": 43200
+       }
+      },
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": false
+       }
+      }
+     }
+    },
+    {
+     "note": "me",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": false
+       }
+      }
+     }
+    },
+    {
+     "note": "the owner session was not touched by any of this",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "status",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "setupRequired": false,
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "sign-out: the staff cookie is cleared",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/logout",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3",
+       "owner": "$t1"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "the session is over",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "sign-out without a cookie is accepted too",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/logout",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "sign-out with an empty body",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/logout",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "raw": ""
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "employees",
+   "about": "POST /api/employees: who may call it, the request checks, and what the route adds around the account actions.",
+   "owner": {
+    "username": "boss",
+    "password": "owner-password-01"
+   },
+   "branches": {
+    "MAIN": {
+     "enabled": false,
+     "custodian": "",
+     "requests": []
+    },
+    "BR-2": {
+     "enabled": false,
+     "custodian": "",
+     "requests": []
+    }
+   },
+   "steps": [
+    {
+     "note": "nobody signed in",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "error": "กรุณาเข้าสู่ระบบ"
+      }
+     }
+    },
+    {
+     "note": "nobody signed in, and the request headers missing: the sign-in check comes first",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": null,
+      "marker": null,
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "error": "กรุณาเข้าสู่ระบบ"
+      }
+     }
+    },
+    {
+     "note": "GET is not this route",
+     "request": {
+      "method": "GET",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1"
+     },
+     "response": {
+      "status": 404,
+      "contentType": "text/plain;charset=UTF-8",
+      "cacheControl": null,
+      "setCookies": {},
+      "text": "Not found"
+     }
+    },
+    {
+     "note": "the owner signs in",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "boss",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "token": "$t1",
+        "maxAge": 43200
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "no Origin header",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": null,
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ORIGIN_REJECTED"
+      }
+     }
+    },
+    {
+     "note": "no X-XChange-Request header",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": null,
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ORIGIN_REJECTED"
+      }
+     }
+    },
+    {
+     "note": "a body of 6001 characters",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "raw": {
+       "repeat": " ",
+       "times": 6001
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ข้อมูลมากเกินไป"
+      }
+     }
+    },
+    {
+     "note": "list, nobody yet",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employees": []
+      }
+     }
+    },
+    {
+     "note": "list without a payload",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list"
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employees": []
+      }
+     }
+    },
+    {
+     "note": "create in a branch that does not exist",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "NOWHERE",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+      }
+     }
+    },
+    {
+     "note": "create in a branch that does not exist, with other fields wrong too: the branch is looked at first",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "NOPE",
+        "branchId": "NOWHERE",
+        "password": "short"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+      }
+     }
+    },
+    {
+     "note": "create without a branch: the fields are refused",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "create with a bad role",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "NOPE",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "create with a short password",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "password": "short"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "รหัสผ่านต้องมี 12–128 ตัวอักษร"
+      }
+     }
+    },
+    {
+     "note": "create a Front in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a Manager in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "malee",
+        "name": "มาลี",
+        "role": "MANAGER",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a Front in BR-2",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "anan",
+        "name": "อนันต์",
+        "role": "FRONT",
+        "branchId": "BR-2",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "list",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employees": [
+        {
+         "id": "$e3",
+         "username": "anan",
+         "name": "อนันต์",
+         "role": "FRONT",
+         "branchId": "BR-2",
+         "active": true,
+         "mustChange": true
+        },
+        {
+         "id": "$e2",
+         "username": "malee",
+         "name": "มาลี",
+         "role": "MANAGER",
+         "branchId": "MAIN",
+         "active": true,
+         "mustChange": true
+        },
+        {
+         "id": "$e1",
+         "username": "somchai",
+         "name": "สมชาย ใจดี",
+         "role": "FRONT",
+         "branchId": "MAIN",
+         "active": true,
+         "mustChange": true
+        }
+       ]
+      }
+     }
+    },
+    {
+     "note": "somchai signs in (first password)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "somchai",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t2",
+        "maxAge": 43200
+       }
+      },
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": true
+       }
+      }
+     }
+    },
+    {
+     "note": "a first-password session is nobody here",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "error": "กรุณาเข้าสู่ระบบ"
+      }
+     }
+    },
+    {
+     "note": "…changes the password",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/password",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t2"
+      },
+      "json": {
+       "payload": {
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "saved": true,
+       "loginAgain": true
+      }
+     }
+    },
+    {
+     "note": "…and signs in again",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "somchai",
+        "password": "second-password-2"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "staff": {
+        "token": "$t3",
+        "maxAge": 43200
+       }
+      },
+      "json": {
+       "employee": {
+        "id": "$e1",
+        "username": "somchai",
+        "name": "สมชาย ใจดี",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "active": true,
+        "mustChange": false
+       }
+      }
+     }
+    },
+    {
+     "note": "an employee is refused",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 403,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "error": "เฉพาะเจ้าของระบบเท่านั้น"
+      }
+     }
+    },
+    {
+     "note": "an employee is refused before the request headers are looked at",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": null,
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 403,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "error": "เฉพาะเจ้าของระบบเท่านั้น"
+      }
+     }
+    },
+    {
+     "note": "with both cookies it is the owner",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1",
+       "staff": "$t3"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employees": [
+        {
+         "id": "$e3",
+         "username": "anan",
+         "name": "อนันต์",
+         "role": "FRONT",
+         "branchId": "BR-2",
+         "active": true,
+         "mustChange": true
+        },
+        {
+         "id": "$e2",
+         "username": "malee",
+         "name": "มาลี",
+         "role": "MANAGER",
+         "branchId": "MAIN",
+         "active": true,
+         "mustChange": true
+        },
+        {
+         "id": "$e1",
+         "username": "somchai",
+         "name": "สมชาย ใจดี",
+         "role": "FRONT",
+         "branchId": "MAIN",
+         "active": true,
+         "mustChange": false
+        }
+       ]
+      }
+     }
+    },
+    {
+     "note": "reset: unknown employee",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "reset",
+       "payload": {
+        "id": "nobody",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ไม่พบพนักงาน"
+      }
+     }
+    },
+    {
+     "note": "reset somchai",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "reset",
+       "payload": {
+        "id": "$e1",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "…which ends his session",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/me",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "staff": "$t3"
+      },
+      "json": {
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 401,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "EMPLOYEE_AUTH_REQUIRED"
+      }
+     }
+    },
+    {
+     "note": "an unknown action on a real employee",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "promote",
+       "payload": {
+        "id": "$e1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "คำขอไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no action at all",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {}
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ไม่พบพนักงาน"
+      }
+     }
+    },
+    {
+     "note": "custody of MAIN is now as given",
+     "custody": {
+      "branch": "MAIN",
+      "operations": {
+       "enabled": true,
+       "custodian": "$e1",
+       "requests": []
+      }
+     }
+    },
+    {
+     "note": "disable refused: he holds the cash",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "$e1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน"
+      }
+     }
+    },
+    {
+     "note": "custody of MAIN is now as given",
+     "custody": {
+      "branch": "MAIN",
+      "operations": {
+       "enabled": true,
+       "custodian": "",
+       "requests": [
+        {
+         "id": "r1",
+         "status": "PENDING",
+         "sender": "$e1",
+         "receiver": "$e2"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "note": "disable refused: he sent a request that is pending",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "$e1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน"
+      }
+     }
+    },
+    {
+     "note": "disable refused: she is to receive a request that is pending",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "$e2"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน"
+      }
+     }
+    },
+    {
+     "note": "custody of MAIN does not hold back an employee of BR-2",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "$e3"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "custody of MAIN is now as given",
+     "custody": {
+      "branch": "MAIN",
+      "operations": {
+       "enabled": true,
+       "custodian": "",
+       "requests": [
+        {
+         "id": "r1",
+         "status": "COMMITTED",
+         "sender": "$e1",
+         "receiver": "$e2"
+        },
+        {
+         "id": "r2",
+         "status": "REJECTED",
+         "sender": "$e2",
+         "receiver": "$e1"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "note": "requests that are no longer pending do not hold back",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "$e1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "disable: unknown employee — custody is not asked, the account action answers",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "disable",
+       "payload": {
+        "id": "nobody"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ไม่พบพนักงาน"
+      }
+     }
+    },
+    {
+     "note": "list at the end",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "list",
+       "payload": {}
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "employees": [
+        {
+         "id": "$e3",
+         "username": "anan",
+         "name": "อนันต์",
+         "role": "FRONT",
+         "branchId": "BR-2",
+         "active": false,
+         "mustChange": true
+        },
+        {
+         "id": "$e2",
+         "username": "malee",
+         "name": "มาลี",
+         "role": "MANAGER",
+         "branchId": "MAIN",
+         "active": true,
+         "mustChange": true
+        },
+        {
+         "id": "$e1",
+         "username": "somchai",
+         "name": "สมชาย ใจดี",
+         "role": "FRONT",
+         "branchId": "MAIN",
+         "active": false,
+         "mustChange": true
+        }
+       ]
+      }
+     }
+    },
+    {
+     "note": "entity is handed to custody with the payload as it came",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "entity",
+       "payload": {
+        "branchId": "MAIN",
+        "name": "บริษัท ตัวอย่าง จำกัด",
+        "taxId": "0105500000000"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "saved": true,
+       "by": "custody",
+       "action": "opsSetEntity"
+      }
+     },
+     "custodyCalls": [
+      {
+       "action": "opsSetEntity",
+       "payload": {
+        "branchId": "MAIN",
+        "name": "บริษัท ตัวอย่าง จำกัด",
+        "taxId": "0105500000000"
+       },
+       "actorId": "owner"
+      }
+     ]
+    },
+    {
+     "note": "enable refused: MAIN lacks an active employee of each of the six roles",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "enable",
+       "payload": {
+        "branchId": "MAIN"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน"
+      }
+     }
+    },
+    {
+     "note": "create a FRONT in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "x-front",
+        "name": "FRONT",
+        "role": "FRONT",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a BACKEND in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "x-backend",
+        "name": "BACKEND",
+        "role": "BACKEND",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a RATES in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "x-rates",
+        "name": "RATES",
+        "role": "RATES",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a MONITOR in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "x-monitor",
+        "name": "MONITOR",
+        "role": "MONITOR",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "create a FINANCE in MAIN",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "create",
+       "payload": {
+        "username": "x-finance",
+        "name": "FINANCE",
+        "role": "FINANCE",
+        "branchId": "MAIN",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "saved": true
+      }
+     }
+    },
+    {
+     "note": "enable is handed to custody once all six roles are there (the Manager from before, the Front new: the first one is disabled)",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "enable",
+       "payload": {
+        "branchId": "MAIN",
+        "note": "go"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": null,
+      "setCookies": {},
+      "json": {
+       "saved": true,
+       "by": "custody",
+       "action": "opsEnable"
+      }
+     },
+     "custodyCalls": [
+      {
+       "action": "opsEnable",
+       "payload": {
+        "branchId": "MAIN",
+        "note": "go"
+       },
+       "actorId": "owner"
+      }
+     ]
+    },
+    {
+     "note": "enable for BR-2, whose only employee is disabled",
+     "request": {
+      "method": "POST",
+      "path": "/api/employees",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "cookies": {
+       "owner": "$t1"
+      },
+      "json": {
+       "action": "enable",
+       "payload": {
+        "branchId": "BR-2"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "addresses",
+   "about": "Which header names the caller for the attempt limit: X-Real-IP at /api/auth; CF-Connecting-IP, then X-Real-IP, at the staff door.",
+   "owner": {
+    "username": "boss",
+    "password": "owner-password-01"
+   },
+   "branches": {
+    "MAIN": {
+     "enabled": false,
+     "custodian": "",
+     "requests": []
+    }
+   },
+   "steps": [
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 1 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.1"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost1",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 2 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.2"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost2",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 3 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.3"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost3",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 4 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.4"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost4",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 5 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.5"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost5",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 6 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.6"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost6",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 7 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.7"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost7",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 8 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.8"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost8",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 9 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.9"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost9",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 10 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.10"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost10",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 11 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.11"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost11",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 12 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.12"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost12",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 13 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.13"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost13",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 14 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.14"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost14",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 15 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.15"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost15",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 16 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.16"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost16",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 17 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.17"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost17",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 18 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.18"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost18",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 19 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.19"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost19",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 20 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.20"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost20",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 21 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.21"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost21",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 22 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.22"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost22",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 23 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.23"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost23",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 24 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.24"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost24",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 25 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.25"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost25",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 26 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.26"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost26",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 27 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.27"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost27",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 28 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.28"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost28",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 29 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.29"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost29",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "/api/auth from 10.0.0.1, attempt 30 (CF-Connecting-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.30"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost30",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the 31st from 10.0.0.1 is refused",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.1",
+       "cf-connecting-ip": "172.16.0.99"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "boss",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที"
+      }
+     }
+    },
+    {
+     "note": "from 10.0.0.2 the owner signs in",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "10.0.0.2"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "boss",
+        "password": "owner-password-01"
+       }
+      }
+     },
+     "response": {
+      "status": 200,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {
+       "owner": {
+        "token": "$t1",
+        "maxAge": 43200
+       },
+       "staff": {
+        "cleared": true,
+        "maxAge": 0
+       }
+      },
+      "json": {
+       "user": {
+        "id": "owner",
+        "username": "boss",
+        "name": "boss",
+        "role": "OWNER",
+        "branchId": null
+       }
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 1 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.1"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom1",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 2 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.2"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom2",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 3 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.3"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom3",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 4 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.4"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom4",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 5 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.5"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom5",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 6 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.6"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom6",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 7 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.7"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom7",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 8 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.8"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom8",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 9 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.9"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom9",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 10 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.10"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom10",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 11 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.11"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom11",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 12 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.12"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom12",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 13 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.13"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom13",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 14 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.14"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom14",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 15 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.15"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom15",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 16 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.16"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom16",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 17 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.17"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom17",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 18 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.18"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom18",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 19 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.19"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom19",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 20 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.20"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom20",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 21 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.21"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom21",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 22 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.22"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom22",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 23 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.23"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom23",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 24 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.24"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom24",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 25 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.25"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom25",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 26 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.26"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom26",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 27 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.27"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom27",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 28 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.28"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom28",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 29 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.29"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom29",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the staff door, CF-Connecting-IP 172.20.0.1, attempt 30 (X-Real-IP differs every time and is ignored)",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.30"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom30",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "the 31st with that CF-Connecting-IP is refused",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "cf-connecting-ip": "172.20.0.1",
+       "x-real-ip": "10.1.0.31"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom31",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที"
+      }
+     }
+    },
+    {
+     "note": "the staff door without CF-Connecting-IP falls back to X-Real-IP: 172.20.0.1 there is the same caller",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "172.20.0.1"
+      },
+      "json": {
+       "payload": {
+        "username": "phantom32",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที"
+      }
+     }
+    },
+    {
+     "note": "…and /api/auth counts that address too: one counter per address for both doors",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "headers": {
+       "x-real-ip": "172.20.0.1"
+      },
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "ghost99",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 1",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit1",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 2",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit2",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 3",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit3",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 4",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit4",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 5",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit5",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 6",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit6",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 7",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit7",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 8",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit8",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 9",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit9",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 10",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit10",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 11",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit11",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 12",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit12",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 13",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit13",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 14",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit14",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 15",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit15",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 16",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit16",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 17",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit17",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 18",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit18",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 19",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit19",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 20",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit20",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 21",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit21",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 22",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit22",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 23",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit23",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 24",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit24",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 25",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit25",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 26",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit26",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 27",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit27",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 28",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit28",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 29",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit29",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "no address header at all, attempt 30",
+     "request": {
+      "method": "POST",
+      "path": "/api/auth",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "action": "login",
+       "payload": {
+        "username": "spirit30",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง"
+      }
+     }
+    },
+    {
+     "note": "…the 31st is refused: such callers share one counter",
+     "request": {
+      "method": "POST",
+      "path": "/api/staff/login",
+      "origin": "https://desk.example",
+      "marker": "1",
+      "json": {
+       "payload": {
+        "username": "spirit31",
+        "password": "first-password-1"
+       }
+      }
+     },
+     "response": {
+      "status": 400,
+      "contentType": "application/json",
+      "cacheControl": "no-store",
+      "setCookies": {},
+      "json": {
+       "error": "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที"
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
