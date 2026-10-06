@@ -30,11 +30,19 @@ pub struct ApplicationSettings {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct WebSettings {
+    /// Directory holding the pages and the static files. A relative path is
+    /// taken from the directory the server is started in.
+    pub dir: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
     pub channel: Channel,
     pub database: DatabaseSettings,
     pub telemetry: TelemetrySettings,
+    pub web: WebSettings,
 }
 
 impl Settings {

@@ -1,0 +1,1527 @@
+{
+ "source": "xchange-online@3ffc5a5 server.mjs:5545-5550,7416-7418,8196-8233",
+ "pages": [
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"MAIN\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/desk",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"MAIN\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"MAIN\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/staff",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><title>พนักงาน (fixture)</title></head><body><p>staff shell</p></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/staff/report",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>report (fixture)</title></head><body><p>staff report shell</p></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/devices",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>devices (fixture)</title></head><p>no closing body here</p><script src=\"/account-bar.js\"></script></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/login",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>login (fixture)</title></head><body><form></form></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/kiosk",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/kiosk-queue.html",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><title>queue (fixture)</title><p>neither closing tag<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/kiosk-currencies.html",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>currencies (fixture)</title></head><body><p>currencies</p><script src=\"/account-bar.js\"></script></body></html>\n"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/staff-guide",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><HTML><HEAD><TITLE>guide (fixture)</TITLE></HEAD><BODY><P>upper-case tags are not the tags looked for</P></BODY></HTML>\n<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "the owner asks",
+   "dir": "web",
+   "path": "/staff-guide.html",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><HTML><HEAD><TITLE>guide (fixture)</TITLE></HEAD><BODY><P>upper-case tags are not the tags looked for</P></BODY></HTML>\n<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/desk",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in, and need not be",
+   "dir": "web",
+   "path": "/staff",
+   "query": "",
+   "visitor": "none",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><title>พนักงาน (fixture)</title></head><body><p>staff shell</p></body></html>\n"
+  },
+  {
+   "label": "nobody is signed in, and need not be",
+   "dir": "web",
+   "path": "/staff/report",
+   "query": "",
+   "visitor": "none",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>report (fixture)</title></head><body><p>staff report shell</p></body></html>\n"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/devices",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in, and need not be",
+   "dir": "web",
+   "path": "/login",
+   "query": "",
+   "visitor": "none",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>login (fixture)</title></head><body><form></form></body></html>\n"
+  },
+  {
+   "label": "nobody is signed in, and need not be",
+   "dir": "web",
+   "path": "/kiosk",
+   "query": "",
+   "visitor": "none",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/kiosk-queue.html",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/kiosk-currencies.html",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/staff-guide",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/staff-guide.html",
+   "query": "",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B01\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/desk",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B01\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B01\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/staff",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><title>พนักงาน (fixture)</title></head><body><p>staff shell</p></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/staff/report",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>report (fixture)</title></head><body><p>staff report shell</p></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/devices",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>devices (fixture)</title></head><p>no closing body here</p><script src=\"/account-bar.js\"></script></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/login",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>login (fixture)</title></head><body><form></form></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/kiosk",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/kiosk-queue.html",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><title>queue (fixture)</title><p>neither closing tag<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/kiosk-currencies.html",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><title>currencies (fixture)</title></head><body><p>currencies</p><script src=\"/account-bar.js\"></script></body></html>\n"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/staff-guide",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><HTML><HEAD><TITLE>guide (fixture)</TITLE></HEAD><BODY><P>upper-case tags are not the tags looked for</P></BODY></HTML>\n<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "a staff member asks",
+   "dir": "web",
+   "path": "/staff-guide.html",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><HTML><HEAD><TITLE>guide (fixture)</TITLE></HEAD><BODY><P>upper-case tags are not the tags looked for</P></BODY></HTML>\n<script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "the owner names a branch",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC-B02",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B02\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "an empty branch is MAIN",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"MAIN\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "other parameters do not matter",
+   "dir": "web",
+   "path": "/",
+   "query": "x=1&branch=XC-B07&y=2",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B07\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "the first of two branches counts",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"AAA\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "a branch is percent-decoded",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC%2DB03",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B03\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "seventy characters is the longest branch",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "seventy-one characters is refused",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a plus sign is a space, and a space is refused",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC+B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "an underscore is refused",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC_B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a quote is refused",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=%22%3E",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a Thai branch is refused",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=%E0%B8%AA%E0%B8%B2%E0%B8%82%E0%B8%B2",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a staff member gets the own branch whatever is named",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC-B02",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B01\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when a bad one is named",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=%22%3E",
+   "visitor": "staff:FINANCE:XC-B05",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B05\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when two are named",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "staff:MANAGER:XC-B09",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B09\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "an owner session wins over a staff session",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=XC-B02",
+   "visitor": "owner+staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"th\">\n<head><script>window.XC_BRANCH=\"XC-B02\";</script><meta charset=\"utf-8\"><title>แอดมิน (fixture)</title></head>\n<body>\n<h1>admin fixture</h1>\n<script>var note = \"a later <head> and a later <script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script></body> are left alone\";</script>\n</body>\n</html>\n"
+  },
+  {
+   "label": "nobody is signed in and the branch is bad: the sign-in page comes first",
+   "dir": "web",
+   "path": "/",
+   "query": "branch=%22%3E",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "the owner names a branch",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC-B02",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B02\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "an empty branch is MAIN",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"MAIN\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "other parameters do not matter",
+   "dir": "web",
+   "path": "/desk",
+   "query": "x=1&branch=XC-B07&y=2",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B07\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "the first of two branches counts",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"AAA\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "a branch is percent-decoded",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC%2DB03",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B03\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "seventy characters is the longest branch",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "seventy-one characters is refused",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a plus sign is a space, and a space is refused",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC+B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "an underscore is refused",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC_B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a quote is refused",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=%22%3E",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a Thai branch is refused",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=%E0%B8%AA%E0%B8%B2%E0%B8%82%E0%B8%B2",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a staff member gets the own branch whatever is named",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC-B02",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B01\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when a bad one is named",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=%22%3E",
+   "visitor": "staff:FINANCE:XC-B05",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B05\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when two are named",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "staff:MANAGER:XC-B09",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B09\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "an owner session wins over a staff session",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=XC-B02",
+   "visitor": "owner+staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B02\";</script><script src=\"/transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/documents?ref=1\">documents</a> <a href=\"/staff/documents?ref=2\">already staff</a>\n<img src=\"/files/abc\"> <img src=\"/files/def\">\n<script src=\"/transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/bookings\");fetch(\"/api/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "nobody is signed in and the branch is bad: the sign-in page comes first",
+   "dir": "web",
+   "path": "/desk",
+   "query": "branch=%22%3E",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "the owner names a branch",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC-B02",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B02\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "an empty branch is MAIN",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"MAIN\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "other parameters do not matter",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "x=1&branch=XC-B07&y=2",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B07\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "the first of two branches counts",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"AAA\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "a branch is percent-decoded",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC%2DB03",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B03\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "seventy characters is the longest branch",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "seventy-one characters is refused",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a plus sign is a space, and a space is refused",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC+B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "an underscore is refused",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC_B",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a quote is refused",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=%22%3E",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a Thai branch is refused",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=%E0%B8%AA%E0%B8%B2%E0%B8%82%E0%B8%B2",
+   "visitor": "owner",
+   "status": 400,
+   "headers": {
+    "content-type": "text/plain;charset=UTF-8"
+   },
+   "body": "Invalid branch"
+  },
+  {
+   "label": "a staff member gets the own branch whatever is named",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC-B02",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B01\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when a bad one is named",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=%22%3E",
+   "visitor": "staff:FINANCE:XC-B05",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B05\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "a staff member gets the own branch when two are named",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=AAA&branch=BBB",
+   "visitor": "staff:MANAGER:XC-B09",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B09\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "an owner session wins over a staff session",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=XC-B02",
+   "visitor": "owner+staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\"><head><script>window.XC_BRANCH=\"XC-B02\";</script><title>sample ticket (fixture)</title></head><body><p>SAMPLE</p></body></html>\n"
+  },
+  {
+   "label": "nobody is signed in and the branch is bad: the sign-in page comes first",
+   "dir": "web",
+   "path": "/receipt-sample",
+   "query": "branch=%22%3E",
+   "visitor": "none",
+   "status": 303,
+   "location": "/login"
+  },
+  {
+   "label": "a Front staff member gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "private, no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B01\";</script><script src=\"/staff-transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/staff/documents?ref=1\">documents</a> <a href=\"/staff/staff/documents?ref=2\">already staff</a>\n<img src=\"/api/staff/file/abc\"> <img src=\"/api/staff/file/def\">\n<script src=\"/staff-transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/staff/bookings\");fetch(\"/api/staff/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const draft=await staffGasOriginal('opsBeginTransaction',{type:s.type,currency:s.currency,amount:Number(s.amount)});staffDraftId=draft.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script><script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "the variant ignores the branch in the address",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "branch=XC-B02",
+   "visitor": "staff:FRONT:XC-B04",
+   "status": 200,
+   "headers": {
+    "cache-control": "private, no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B04\";</script><script src=\"/staff-transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/staff/documents?ref=1\">documents</a> <a href=\"/staff/staff/documents?ref=2\">already staff</a>\n<img src=\"/api/staff/file/abc\"> <img src=\"/api/staff/file/def\">\n<script src=\"/staff-transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/staff/bookings\");fetch(\"/api/staff/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const draft=await staffGasOriginal('opsBeginTransaction',{type:s.type,currency:s.currency,amount:Number(s.amount)});staffDraftId=draft.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script><script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "a Front staff session counts even beside an owner session",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "owner+staff:FRONT:XC-B06",
+   "status": 200,
+   "headers": {
+    "cache-control": "private, no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html lang=\"th\"><head><script>window.XC_BRANCH=\"XC-B06\";</script><script src=\"/staff-transport.js\"></script><meta charset=\"utf-8\"><title>เดสก์ (fixture)</title></head>\n<body>\n<h1>desk fixture</h1>\n<a href=\"/staff/documents?ref=1\">documents</a> <a href=\"/staff/staff/documents?ref=2\">already staff</a>\n<img src=\"/api/staff/file/abc\"> <img src=\"/api/staff/file/def\">\n<script src=\"/staff-transport.js\" defer></script>\n<script>\nconst s={type:\"BUY\",currency:\"USD\",amount:\"100\"};\nlet gasCall=async(name,payload)=>fetch(\"/api/rpc\",{method:\"POST\",body:JSON.stringify({name,payload})});\nfetch(\"/api/staff/bookings\");fetch(\"/api/staff/bookings?x=1\");\nconst cost=\"$&$1$$\";\n// the page loads /transport.js; only the attribute is rewritten\n</script>\n<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const draft=await staffGasOriginal('opsBeginTransaction',{type:s.type,currency:s.currency,amount:Number(s.amount)});staffDraftId=draft.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script><script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></body>\n<!-- a second </body> -->\n</html>\n"
+  },
+  {
+   "label": "only Front gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:BACKEND:XC-B01",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "only Front gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:FINANCE:XC-B01",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "only Front gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:MANAGER:XC-B01",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "only Front gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:RATES:XC-B01",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "only Front gets the desk variant",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:SYSTEM:XC-B01",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "the owner has no staff session",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "owner",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "nobody is signed in",
+   "dir": "web",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "none",
+   "status": 302,
+   "location": "/staff"
+  },
+  {
+   "label": "a page without a head tag and without closing tags",
+   "dir": "web-bare",
+   "path": "/",
+   "query": "branch=XC-B02",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><title>admin without the tags (fixture)</title><p>no head tag, no closing tags<script src=\"/admin-devices.js\"></script><script src=\"/account-bar.js\"></script>"
+  },
+  {
+   "label": "a desk page without a closing body",
+   "dir": "web-bare",
+   "path": "/desk",
+   "query": "",
+   "visitor": "owner",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff"
+   },
+   "body": "<!doctype html><html><head><script>window.XC_BRANCH=\"MAIN\";</script><title>desk without a closing body (fixture)</title></head><p>/documents and /files/x</p><script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></html>\n"
+  },
+  {
+   "label": "a desk variant without a closing body",
+   "dir": "web-bare",
+   "path": "/staff/desk",
+   "query": "",
+   "visitor": "staff:FRONT:XC-B01",
+   "status": 200,
+   "headers": {
+    "cache-control": "private, no-store",
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "<!doctype html><html><head><script>window.XC_BRANCH=\"XC-B01\";</script><title>desk without a closing body (fixture)</title></head><p>/staff/documents and /api/staff/file/x</p><script src=\"/desk-skip.js\"></script><script src=\"/desk-devices.js\"></script><script src=\"/desk-kiosk.js\"></script><script src=\"/account-bar.js\"></script></html>\n"
+  }
+ ],
+ "statics": [
+  {
+   "dir": "web",
+   "path": "/app.js",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/javascript; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "app.js"
+  },
+  {
+   "dir": "web",
+   "path": "/style.css",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/css; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "style.css"
+  },
+  {
+   "dir": "web",
+   "path": "/favicon.svg",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "image/svg+xml",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "favicon.svg"
+  },
+  {
+   "dir": "web",
+   "path": "/logo.jpeg",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "image/jpeg",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "logo.jpeg"
+  },
+  {
+   "dir": "web",
+   "path": "/photo.jpg",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "image/jpeg",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "photo.jpg"
+  },
+  {
+   "dir": "web",
+   "path": "/dot.png",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "image/png",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "dot.png"
+  },
+  {
+   "dir": "web",
+   "path": "/note.txt",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/plain; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "note.txt"
+  },
+  {
+   "dir": "web",
+   "path": "/data.json",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "application/json; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "data.json"
+  },
+  {
+   "dir": "web",
+   "path": "/fonts/thai-0a1b2c3d.woff2",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "font/woff2",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "fonts/thai-0a1b2c3d.woff2"
+  },
+  {
+   "dir": "web",
+   "path": "/fonts/OFL.txt",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/plain; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "fonts/OFL.txt"
+  },
+  {
+   "dir": "web",
+   "path": "/vendor/lib-1.2.3.min.js",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/javascript; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "vendor/lib-1.2.3.min.js"
+  },
+  {
+   "dir": "web",
+   "path": "/two%20words.txt",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/plain; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "two words.txt"
+  },
+  {
+   "dir": "web",
+   "path": "/%E0%B9%84%E0%B8%97%E0%B8%A2.txt",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/plain; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "ไทย.txt"
+  },
+  {
+   "dir": "web",
+   "path": "/fonts%2FOFL.txt",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/plain; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "fonts/OFL.txt"
+  },
+  {
+   "dir": "web",
+   "path": "/%61pp.js",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/javascript; charset=utf-8",
+    "x-content-type-options": "nosniff"
+   },
+   "file": "app.js"
+  },
+  {
+   "dir": "web",
+   "path": "/admin.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/desk.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/login.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/staff.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/kiosk.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/receipt-sample.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/devices.html",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/UPPER.JS",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/blob.bin",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/LICENSE",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/.hidden",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/.js",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/app.js.map",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/folder.js",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/folder.js/readme.md",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/fonts",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/fonts/",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/missing.js",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/app",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/favicon.ico",
+   "status": 404
+  },
+  {
+   "dir": "web",
+   "path": "/style.CSS",
+   "status": 404
+  }
+ ]
+}

@@ -21,3 +21,6 @@ telemetry:
   service_name: "xchange"
   log_level: "info"
   json_logs: false
+
+web:
+  dir: "web"
