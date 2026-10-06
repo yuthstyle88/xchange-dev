@@ -188,4 +188,32 @@ void main() {
   test('the sample test that `flutter create` writes was not kept', () {
     expect(File('test/widget_test.dart').existsSync(), isFalse);
   });
+
+  test('app/.metadata lists exactly root, web and android platforms', () {
+    final lines = read('.metadata').split('\n');
+    final platforms = <String>[];
+    var inPlatforms = false;
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed == 'platforms:') {
+        inPlatforms = true;
+        continue;
+      }
+      if (inPlatforms) {
+        if (!line.startsWith(' ') &&
+            !line.startsWith('\t') &&
+            trimmed.isNotEmpty) {
+          inPlatforms = false;
+          continue;
+        }
+        final match = RegExp(r'^-\s+platform:\s*(\S+)').firstMatch(trimmed);
+        if (match != null) {
+          platforms.add(match.group(1)!);
+        } else if (trimmed.endsWith(':') && !trimmed.startsWith('-')) {
+          inPlatforms = false;
+        }
+      }
+    }
+    expect(platforms, ['root', 'web', 'android']);
+  });
 }
