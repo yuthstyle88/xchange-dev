@@ -74,12 +74,27 @@ fn window_contains(
     }
 }
 
+/// A rate as the bank writes it: digits, optionally one dot with digits on
+/// both sides. `Decimal::from_str` alone also takes `33_42` (as 3342), a sign,
+/// an exponent, `33.` and `.5`; none of those is repaired here.
+fn is_plain_decimal(text: &str) -> bool {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    match text.split_once('.') {
+        Some((whole, fraction)) => digits(whole) && digits(fraction),
+        None => digits(text),
+    }
+}
+
 fn parse_rate(val: Option<&serde_json::Value>) -> Option<Decimal> {
-    let d = match val? {
-        serde_json::Value::String(s) => Decimal::from_str(s).ok()?,
-        serde_json::Value::Number(n) => Decimal::from_str(&n.to_string()).ok()?,
+    let text = match val? {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
         _ => return None,
     };
+    if !is_plain_decimal(&text) {
+        return None;
+    }
+    let d = Decimal::from_str(&text).ok()?;
     if d <= Decimal::ZERO {
         return None;
     }

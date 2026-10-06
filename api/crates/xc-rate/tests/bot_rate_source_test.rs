@@ -819,3 +819,67 @@ async fn calls_at_the_same_time_do_not_share_an_answer() {
         bank.seen()
     );
 }
+
+// ------------------------------------------------------- added with ticket #97
+
+/// A rate from the bank is digits with at most one dot and digits on both
+/// sides of it. Everything else a lenient decimal parser would repair
+/// (`33_42` → 3342, `1e2` → 100, `+33.42`, `33.`, `.5`) is the refusal: a rate
+/// that is not what the bank writes is not stored as something else.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_rate_that_is_not_plain_digits_and_one_dot_is_the_refusal() {
+    for text in [
+        "33_42",
+        "+33.42",
+        "1e2",
+        "1E2",
+        "33.",
+        ".5",
+        "",
+        "-33.42",
+        " 33.42",
+        "33.42 ",
+        "33,42",
+        "33.4.2",
+        "3_3.42",
+        "33.4_2",
+        "0x21",
+        "٣٣.٤٢",
+        ".",
+        "33e",
+        "Infinity",
+        "NaN",
+    ] {
+        let bank = Bank::open(plain_script(text));
+        let hands = Hands::at(NOW);
+        let result = source(&bank, PATIENT, &hands).fetch().await;
+        assert!(
+            matches!(&result, Err(AppError::Domain(sentence)) if sentence == SENTENCE),
+            "a dollar selling rate written {text:?} must be the refusal, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_rate_of_plain_digits_and_one_dot_is_read_as_written() {
+    for (text, printed) in [
+        ("33.42", "33.42"),
+        ("33", "33"),
+        ("0.5", "0.5"),
+        ("033.4200", "33.42"),
+        ("0.0001", "0.0001"),
+    ] {
+        let bank = Bank::open(plain_script(text));
+        let hands = Hands::at(NOW);
+        let rates = source(&bank, PATIENT, &hands)
+            .fetch()
+            .await
+            .unwrap_or_else(|e| panic!("{text:?} is a rate, got {e:?}"));
+        assert_eq!(field(&rates, "USD", "selling"), printed, "{text:?}");
+        // the bank's own text is kept beside it, untouched
+        assert_eq!(
+            rates.rows.iter().find(|r| r["code"] == "USD").expect("USD")["original"]["selling"],
+            Value::String(text.to_owned()),
+        );
+    }
+}

@@ -13,10 +13,10 @@ use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
 use crate::bootstrap::AppState;
+use crate::presentation::extractors::actor::{answer, refuse, server_error};
 use crate::presentation::pages::{self, SessionReader};
 
 const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
-const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
 
 /// Routes of this module; registered through the one route table.
 pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
@@ -81,13 +81,13 @@ fn check_origin(req: &HttpRequest) -> bool {
     origin == expected_origin
 }
 
+/// The 401 and 403 of this route: the sentence, and no `Cache-Control`.
 fn policy_refusal_response(err: &PolicyError) -> HttpResponse {
-    let status = actix_web::http::StatusCode::from_u16(err.status())
-        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
-    let msg = err.to_string();
-    HttpResponse::build(status)
-        .content_type("application/json")
-        .body(format!(r#"{{"error":"{msg}"}}"#))
+    answer(
+        err.status(),
+        serde_json::json!({ "error": err.to_string() }),
+        false,
+    )
 }
 
 async fn handler(req: HttpRequest) -> HttpResponse {
@@ -106,17 +106,12 @@ async fn handler(req: HttpRequest) -> HttpResponse {
 
     // 3: Same-origin check
     if !check_origin(&req) {
-        return HttpResponse::BadRequest()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .content_type("application/json")
-            .body(format!(r#"{{"error":"{ORIGIN_REJECTED}"}}"#));
+        return refuse(400, ORIGIN_REJECTED);
     }
 
     // 4: Ask the rate source
     let Some(source_data) = req.app_data::<web::Data<Arc<dyn RateSource>>>() else {
-        return HttpResponse::InternalServerError()
-            .content_type("application/json")
-            .body(format!(r#"{{"error":"{SERVER_ERROR}"}}"#));
+        return server_error();
     };
 
     match source_data.fetch().await {
@@ -132,12 +127,10 @@ async fn handler(req: HttpRequest) -> HttpResponse {
                 .content_type("application/json")
                 .body(serde_json::to_string(&body).unwrap_or_default())
         }
-        Err(AppError::Domain(sentence)) => HttpResponse::BadRequest()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .content_type("application/json")
-            .body(format!(r#"{{"error":"{sentence}"}}"#)),
-        Err(_) => HttpResponse::InternalServerError()
-            .content_type("application/json")
-            .body(format!(r#"{{"error":"{SERVER_ERROR}"}}"#)),
+        Err(AppError::Domain(sentence)) => refuse(400, &sentence),
+        Err(other) => {
+            tracing::error!(error = ?other, "the reference-rate source failed");
+            server_error()
+        }
     }
 }

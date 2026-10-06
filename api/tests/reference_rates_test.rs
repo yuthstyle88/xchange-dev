@@ -970,3 +970,139 @@ async fn the_body_is_never_read() {
     }
     assert_eq!(rates.calls(), 6);
 }
+
+// ------------------------------------------------------- added with ticket #97
+
+/// Sentences a source could refuse with that are not safe to paste between
+/// two quotes: the body must still be JSON and say exactly the sentence.
+#[actix_web::test]
+async fn a_refusal_sentence_that_needs_escaping_is_still_json() {
+    for sentence in [
+        r#"ธนาคารตอบว่า "ปิดปรับปรุง""#,
+        r"C:\rates\today",
+        "บรรทัดแรก\nบรรทัดสอง",
+        "tab\there, return\r, bell\u{7}",
+        r#"","rows":[],"x":""#,
+        r"ends with a backslash \",
+    ] {
+        let rates = FakeRates::new(Rates::Refuse(sentence));
+        let sessions = FakeSessions::new(Who::Owner);
+        let app = application!(&rates, &sessions);
+
+        let answer = send!(&app, post());
+        assert_eq!(answer.status, StatusCode::BAD_REQUEST, "{sentence:?}");
+        assert!(is_json(&answer), "{}", answer.content_type);
+        assert_eq!(answer.cache_control.as_deref(), Some("no-store"));
+        let body: Value = serde_json::from_slice(answer.body.as_bytes()).unwrap_or_else(|e| {
+            panic!("{sentence:?}: the body is not JSON ({e}): {}", answer.body)
+        });
+        assert_eq!(body, json!({ "error": sentence }), "{sentence:?}");
+    }
+}
+
+/// The request's own origin drops a port only when it is the default port of
+/// the request's own scheme: `:443` on plain http and `:80` on https are
+/// ports like any other.
+#[actix_web::test]
+async fn the_default_port_of_the_other_scheme_is_not_dropped() {
+    let rates = FakeRates::new(Rates::Answer(standard()));
+    let sessions = FakeSessions::new(Who::Owner);
+    let app = application!(&rates, &sessions);
+
+    let request = |host: &'static str, origin: &'static str, https: bool| {
+        let request = post()
+            .insert_header((header::HOST, host))
+            .insert_header((header::ORIGIN, origin));
+        if https {
+            request.insert_header(("X-Forwarded-Proto", "https"))
+        } else {
+            request
+        }
+    };
+    for (host, origin, https, status) in [
+        ("x:443", "http://x", false, StatusCode::BAD_REQUEST),
+        ("x:443", "http://x:443", false, StatusCode::OK),
+        ("x:443", "https://x", false, StatusCode::BAD_REQUEST),
+        ("x:80", "https://x", true, StatusCode::BAD_REQUEST),
+        ("x:80", "https://x:80", true, StatusCode::OK),
+        ("x:80", "http://x", true, StatusCode::BAD_REQUEST),
+        // and its own default port still is, as v2 recorded
+        ("x:80", "http://x", false, StatusCode::OK),
+        ("x:443", "https://x", true, StatusCode::OK),
+    ] {
+        let what = format!("Host {host}, Origin {origin}, https {https}");
+        let answer = send!(&app, request(host, origin, https));
+        assert_eq!(answer.status, status, "{what}: {}", answer.body);
+        if status == StatusCode::BAD_REQUEST {
+            assert_eq!(answer.body, error_body(ORIGIN_REJECTED), "{what}");
+        }
+    }
+    assert_eq!(
+        rates.calls(),
+        4,
+        "only the four accepted requests reach the source"
+    );
+}
+
+/// The headers of the 500, as v2 recorded them (fixture case "the session
+/// look-up fails"): JSON in UTF-8 and, unlike every 200 and 400 of this route,
+/// no `Cache-Control`.
+#[actix_web::test]
+async fn a_source_that_breaks_answers_with_v2s_500_headers() {
+    let recorded = fixture()
+        .cases
+        .into_iter()
+        .find(|case| case.v2.status == 500)
+        .expect("the fixture records a 500");
+    assert_eq!(
+        (
+            recorded.v2.content_type.as_deref(),
+            recorded.v2.cache_control.as_deref()
+        ),
+        (Some("application/json; charset=utf-8"), None)
+    );
+
+    let rates = FakeRates::new(Rates::Break);
+    let sessions = FakeSessions::new(Who::Owner);
+    let app = application!(&rates, &sessions);
+
+    let answer = send!(&app, post());
+    assert_eq!(answer.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(answer.content_type, "application/json; charset=utf-8");
+    assert_eq!(answer.cache_control, None);
+    assert_eq!(answer.body, recorded.v2.body);
+}
+
+/// The 401 and the 403 carry no `Cache-Control`, as v2 recorded for every one
+/// of them; the 400s and the 200 say `no-store`.
+#[actix_web::test]
+async fn the_401_and_the_403_carry_no_cache_control() {
+    let recorded = fixture();
+    for status in [401, 403] {
+        let of_status: Vec<&Case> = recorded
+            .cases
+            .iter()
+            .filter(|case| case.v2.status == status)
+            .collect();
+        assert!(!of_status.is_empty(), "the fixture records a {status}");
+        assert!(
+            of_status.iter().all(|case| case.v2.cache_control.is_none()
+                && case.v2.content_type.as_deref() == Some("application/json")),
+            "v2's {status} headers"
+        );
+    }
+
+    for (who, status) in [
+        (Who::Nobody, StatusCode::UNAUTHORIZED),
+        (Who::Staff(Role::Rates), StatusCode::FORBIDDEN),
+    ] {
+        let rates = FakeRates::new(Rates::Answer(standard()));
+        let sessions = FakeSessions::new(who);
+        let app = application!(&rates, &sessions);
+
+        let answer = send!(&app, post());
+        assert_eq!(answer.status, status);
+        assert_eq!(answer.content_type, "application/json");
+        assert_eq!(answer.cache_control, None, "{status}");
+    }
+}
