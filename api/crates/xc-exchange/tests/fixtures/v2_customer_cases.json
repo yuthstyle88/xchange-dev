@@ -1,0 +1,2123 @@
+{
+ "source": "v2 engine extracted unchanged from the deployed bundle (xchange-online@3ffc5a5): reserveCustomer, adminSnapshot (server.mjs:6317-6383, 6631), driven by gen_customers.mjs",
+ "sentences": [
+  "กรุณาเลือกประเภทรายการ",
+  "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+  "ตัวนับรหัสไม่ถูกต้อง",
+  "รูปแบบวันที่ไม่ถูกต้อง",
+  "วันที่ไม่ถูกต้อง",
+  "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+ ],
+ "scenarios": [
+  {
+   "name": "a new customer gets the first number",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "three customers are numbered in order",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "BB1",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000002",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "BB1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Third",
+     "passportNo": "CC1",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000003",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "BB1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-00000003",
+       "name": "Third",
+       "passportNo": "CC1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000003",
+       "name": "Third",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the same passport again returns the same customer and changes nothing",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Another Name",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-01-31",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": true,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "dates are kept",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-01-31",
+     "passportExpiry": "2031-12-31",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "1990-01-31",
+       "passportExpiry": "2031-12-31",
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "empty dates are no dates",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "",
+     "passportExpiry": "",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "passport number and nationality are stored in upper case, the name as typed",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "somchai Jaidee",
+     "passportNo": "aa1234567",
+     "nationality": "tha",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": true,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "all three texts are trimmed",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "  Somchai  ",
+     "passportNo": "  AA1  ",
+     "nationality": "  THA ",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai",
+       "passportNo": "AA1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": true,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai",
+       "passportNo": "AA1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "same passport number, other nationality",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "LAO",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000002",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "LAO",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "LAO"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "same passport, the other mode: a demo customer is a different one with its own numbering",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "DEMO",
+     "v2Error": null,
+     "customerId": "TEST-CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "TEST-CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "ZZ9",
+     "nationality": "THA",
+     "mode": "DEMO",
+     "v2Error": null,
+     "customerId": "TEST-CX-00000002",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "TEST-CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      },
+      {
+       "id": "TEST-CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "ZZ9",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "YY8",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000002",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "TEST-CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      },
+      {
+       "id": "TEST-CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "ZZ9",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "YY8",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "a demo customer is not listed on the admin screen",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "DEMO",
+     "v2Error": null,
+     "customerId": "TEST-CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "TEST-CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "DEMO"
+      }
+     ],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "the same passport in two branches is two customers, numbered from one counter",
+   "counters": {},
+   "steps": [
+    {
+     "op": "createBranch",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "name": "Silom"
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000002",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000002",
+     "existing": true,
+     "stored": [
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000002",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "BB1",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000003",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-00000003",
+       "name": "Somchai Jaidee",
+       "passportNo": "BB1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-00000003",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "a branch that does not exist",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "BNOPE",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "customerId": null,
+     "existing": null,
+     "stored": null,
+     "listed": null
+    }
+   ]
+  },
+  {
+   "name": "a branch that does not exist and no name: the branch is judged first",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "BNOPE",
+     "name": "",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "customerId": null,
+     "existing": null,
+     "stored": null,
+     "listed": null
+    }
+   ]
+  },
+  {
+   "name": "name empty",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "name of spaces",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "   ",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "name of 100 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "name of 101 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "name of 50 emoji is 100 UTF-16 units",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "name of 51 emoji is 102 UTF-16 units",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport number empty",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport number of 30 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "passport number of 31 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "nationality empty",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "nationality of 60 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "nationality of 61 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "mode missing",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "v2Error": "กรุณาเลือกประเภทรายการ",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "mode in lower case",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "live",
+     "v2Error": "กรุณาเลือกประเภทรายการ",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "mode unknown",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "TEST",
+     "v2Error": "กรุณาเลือกประเภทรายการ",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "no name and no mode: the name is judged first",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "X",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "bad birth date and no mode: the date is judged first",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "x",
+     "mode": "X",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "no passport number and a bad date: the passport number is judged first",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "",
+     "nationality": "THA",
+     "birthDate": "x",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "bad birth date and bad expiry: the birth date is judged first",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-02-30",
+     "passportExpiry": "x",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date with slashes",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "31/01/1990",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry with slashes",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "31/01/1990",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of 11 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-01-311",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of 11 characters",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-01-311",
+     "mode": "LIVE",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date without leading zeros",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-1-31",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry without leading zeros",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-1-31",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of 30 February",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-02-30",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of 30 February",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-02-30",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of 29 February in a common year",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "2023-02-29",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of 29 February in a common year",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "2023-02-29",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of month 13",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-13-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of month 13",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-13-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of day 00",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-01-00",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of day 00",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-01-00",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date of year 0000",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "0000-01-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry of year 0000",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "0000-01-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date with a letter",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1990-01-3x",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry with a letter",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1990-01-3x",
+     "mode": "LIVE",
+     "v2Error": "รูปแบบวันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "the earliest date v2 accepts",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1920-04-02",
+     "passportExpiry": "1920-04-02",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "1920-04-02",
+       "passportExpiry": "1920-04-02",
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "birth date one day before the earliest",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1920-04-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "passport expiry one day before the earliest",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "passportExpiry": "1920-04-01",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "birth date in 1899",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "1899-12-31",
+     "mode": "LIVE",
+     "v2Error": "วันที่ไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  },
+  {
+   "name": "the last date of year 9999",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "9999-12-31",
+     "passportExpiry": "9999-12-31",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "9999-12-31",
+       "passportExpiry": "9999-12-31",
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "29 February in a leap year",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "2024-02-29",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "2024-02-29",
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "a date with spaces around it is trimmed",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": " 1990-01-31 ",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "1990-01-31",
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "a birth date in the future and an expiry in the past are accepted",
+   "counters": {},
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "birthDate": "2999-01-01",
+     "passportExpiry": "1999-01-01",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000001",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": "2999-01-01",
+       "passportExpiry": "1999-01-01",
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000001",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the counter continues from where it stands",
+   "counters": {
+    "customer-LIVE": "41"
+   },
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-00000042",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-00000042",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-00000042",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "eight digits, then nine",
+   "counters": {
+    "customer-LIVE": "99999998"
+   },
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-99999999",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-99999999",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-99999999",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    },
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "BB1",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-100000000",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-99999999",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      },
+      {
+       "id": "CX-100000000",
+       "name": "Somchai Jaidee",
+       "passportNo": "BB1",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-99999999",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      },
+      {
+       "id": "CX-100000000",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the last number",
+   "counters": {
+    "customer-LIVE": "999999998"
+   },
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": null,
+     "customerId": "CX-999999999",
+     "existing": false,
+     "stored": [
+      {
+       "id": "CX-999999999",
+       "name": "Somchai Jaidee",
+       "passportNo": "AA1234567",
+       "nationality": "THA",
+       "birthDate": null,
+       "passportExpiry": null,
+       "mode": "LIVE"
+      }
+     ],
+     "listed": [
+      {
+       "id": "CX-999999999",
+       "name": "Somchai Jaidee",
+       "nationality": "THA"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the counter is exhausted",
+   "counters": {
+    "customer-LIVE": "999999999"
+   },
+   "steps": [
+    {
+     "op": "reserve",
+     "branch": "MAIN",
+     "name": "Somchai Jaidee",
+     "passportNo": "AA1234567",
+     "nationality": "THA",
+     "mode": "LIVE",
+     "v2Error": "ตัวนับรหัสไม่ถูกต้อง",
+     "customerId": null,
+     "existing": null,
+     "stored": [],
+     "listed": []
+    }
+   ]
+  }
+ ]
+}
