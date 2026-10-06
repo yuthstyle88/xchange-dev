@@ -30,6 +30,14 @@ pub struct StoredFile {
     pub bytes: Vec<u8>,
 }
 
+/// What is recorded of an uploaded file, without its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attachment {
+    pub key: String,
+    pub mime: String,
+    pub sha256: String,
+}
+
 #[derive(Clone)]
 pub struct FileService {
     pool: PgPool,
@@ -118,35 +126,8 @@ impl FileService {
         // The directory is created when missing, parents included.
         // Write to a temporary name inside <dir> that no other upload can share, then rename.
         // On Unix the file's mode is 0600.
-        std::fs::create_dir_all(&self.dir).map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let temp_name = format!(".tmp-{}", uuid::Uuid::new_v4());
-        let temp_path = self.dir.join(&temp_name);
+        self.write_file(&key, bytes)?;
         let target_path = self.dir.join(&key);
-
-        let write_res = (|| -> Result<(), std::io::Error> {
-            #[cfg(unix)]
-            {
-                use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true).mode(0o600);
-                let mut file = options.open(&temp_path)?;
-                file.write_all(bytes)?;
-                file.sync_all()?;
-            }
-            #[cfg(not(unix))]
-            {
-                std::fs::write(&temp_path, bytes)?;
-            }
-            std::fs::rename(&temp_path, &target_path)?;
-            Ok(())
-        })();
-
-        if let Err(e) = write_res {
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(AppError::Internal(e.to_string()));
-        }
 
         // 4. One row: key, branch_id = the branch, owner_id, mime as given, sha256, created_at = now cut to milliseconds.
         let stored_created_at = chrono::Utc
@@ -253,6 +234,104 @@ impl FileService {
             created_at,
             bytes,
         }))
+    }
+
+    /// Writes `bytes` to `<dir>/<key>`: a temporary name of its own first, then a
+    /// rename, so a reader never sees half a file. Creates the directory when missing.
+    fn write_file(&self, key: &str, bytes: &[u8]) -> AppResult<()> {
+        std::fs::create_dir_all(&self.dir).map_err(|e| AppError::Internal(e.to_string()))?;
+
+        let temp_path = self.dir.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
+        let target_path = self.dir.join(key);
+
+        let write_res = (|| -> Result<(), std::io::Error> {
+            #[cfg(unix)]
+            {
+                use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true).mode(0o600);
+                let mut file = options.open(&temp_path)?;
+                file.write_all(bytes)?;
+                file.sync_all()?;
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::write(&temp_path, bytes)?;
+            }
+            std::fs::rename(&temp_path, &target_path)?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_res {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(AppError::Internal(e.to_string()));
+        }
+        Ok(())
+    }
+
+    /// The record of an upload this owner stored in this branch, whatever is on
+    /// the disk: what a save needs to know of a file a form names.
+    pub async fn attachment(
+        &self,
+        key: &str,
+        owner_id: &str,
+        branch: &BranchId,
+    ) -> AppResult<Option<Attachment>> {
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT key, mime, sha256 FROM files \
+             WHERE key = $1 AND owner_id = $2 AND branch_id = $3",
+        )
+        .bind(key)
+        .bind(owner_id)
+        .bind(branch.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(row.map(|(key, mime, sha256)| Attachment { key, mime, sha256 }))
+    }
+
+    /// Whether the bytes of a key are on the disk.
+    pub fn on_disk(&self, key: &str) -> bool {
+        self.dir.join(key).is_file()
+    }
+
+    /// Keeps a receipt and returns its key, `receipt-<SHA-256 of the text>`.
+    ///
+    /// The row is written with the caller's transaction, so it exists exactly
+    /// when the exchange it belongs to does. The bytes are written first; a
+    /// receipt left on the disk by a save that then failed is named by its
+    /// content and is found again, or never asked for.
+    pub async fn store_receipt_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        owner_id: &str,
+        html: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<String> {
+        let sha256_hex = format!("{:x}", Sha256::digest(html.as_bytes()));
+        let key = format!("receipt-{sha256_hex}");
+        if !self.on_disk(&key) {
+            self.write_file(&key, html.as_bytes())?;
+        }
+        let created_at = chrono::Utc
+            .timestamp_millis_opt(now.timestamp_millis())
+            .single()
+            .unwrap_or(now);
+        sqlx::query(
+            "INSERT INTO files (key, branch_id, owner_id, mime, sha256, created_at) \
+             VALUES ($1, $2, $3, 'text/html', $4, $5) ON CONFLICT (key) DO NOTHING",
+        )
+        .bind(&key)
+        .bind(branch.as_str())
+        .bind(owner_id)
+        .bind(&sha256_hex)
+        .bind(created_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(key)
     }
 }
 

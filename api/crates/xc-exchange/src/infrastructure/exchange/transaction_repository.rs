@@ -1,1 +1,242 @@
 //! Transaction repository postgres implementation.
+
+use chrono::{DateTime, NaiveDate, Utc};
+use pos_error::{AppError, AppResult};
+use sqlx::{PgPool, Row};
+use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Money, Rate, Side};
+
+use crate::domain::customer::value_objects::mode::Mode;
+use crate::domain::exchange::entities::transaction::Transaction;
+use crate::domain::exchange::repositories::transaction_repository::TransactionRepository;
+use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+
+#[derive(Clone)]
+pub struct PgTransactionRepository {
+    pool: PgPool,
+}
+
+const SELECT: &str = "SELECT t.document_ref, t.branch_id, t.mode, t.shift_id, t.submission_id, t.customer_id, \
+    t.customer_name, t.nationality, t.type, t.code::text AS code, t.amount::text AS amount, t.rate::text AS rate, \
+    t.reference_rate::text AS reference_rate, t.principal::text AS principal, t.fee::text AS fee, \
+    t.bank_fee::text AS bank_fee, t.received::text AS received, t.paid::text AS paid, t.method, t.payment_ref, \
+    t.account, t.staff_id, t.booking_no, t.notes, t.value_date, t.paid_at, t.recorded_at, t.recorded_by, t.payload_hash, \
+    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'PASSPORT') AS passport_key, \
+    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'SLIP') AS slip_key, \
+    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'RECEIPT') AS receipt_key \
+    FROM transactions t";
+
+fn bad(what: &str) -> AppError {
+    AppError::Internal(format!("stored transaction: {what}"))
+}
+
+fn money(row: &sqlx::postgres::PgRow, col: &str) -> AppResult<Money> {
+    let text: String = row.try_get(col).map_err(AppError::Database)?;
+    Money::parse(&text).map_err(|_| bad(col))
+}
+
+fn map(row: &sqlx::postgres::PgRow) -> AppResult<(Transaction, String)> {
+    let get = |c: &str| -> AppResult<String> { row.try_get(c).map_err(AppError::Database) };
+    let mode = if get("mode")? == "DEMO" {
+        Mode::Demo
+    } else {
+        Mode::Live
+    };
+    let side = if get("type")? == "SELL" {
+        Side::Sell
+    } else {
+        Side::Buy
+    };
+    let method_text = get("method")?;
+    let method = [
+        PaymentMethod::Cash,
+        PaymentMethod::ScbTransfer,
+        PaymentMethod::BankTransfer,
+        PaymentMethod::CreditCard,
+        PaymentMethod::Alipay,
+        PaymentMethod::PromptPay,
+    ]
+    .into_iter()
+    .find(|m| m.as_str() == method_text)
+    .ok_or_else(|| bad("method"))?;
+    let reference_rate: Option<String> =
+        row.try_get("reference_rate").map_err(AppError::Database)?;
+    let value_date: NaiveDate = row.try_get("value_date").map_err(AppError::Database)?;
+    let paid_at: DateTime<Utc> = row.try_get("paid_at").map_err(AppError::Database)?;
+    let recorded_at: DateTime<Utc> = row.try_get("recorded_at").map_err(AppError::Database)?;
+    Ok((
+        Transaction {
+            document_ref: get("document_ref")?,
+            branch_id: BranchId::new(get("branch_id")?),
+            mode,
+            shift_id: row.try_get("shift_id").map_err(AppError::Database)?,
+            submission_id: get("submission_id")?,
+            customer_id: get("customer_id")?,
+            customer_name: get("customer_name")?,
+            nationality: get("nationality")?,
+            side,
+            currency: get("code")?,
+            amount: money(row, "amount")?,
+            rate: Rate::parse(&get("rate")?).map_err(|_| bad("rate"))?,
+            reference_rate: match reference_rate {
+                Some(t) => Some(Rate::parse(&t).map_err(|_| bad("reference_rate"))?),
+                None => None,
+            },
+            principal: money(row, "principal")?,
+            fee: money(row, "fee")?,
+            bank_fee: money(row, "bank_fee")?,
+            received: money(row, "received")?,
+            paid: money(row, "paid")?,
+            method,
+            payment_ref: get("payment_ref")?,
+            account: get("account")?,
+            staff: get("staff_id")?,
+            booking: get("booking_no")?,
+            notes: get("notes")?,
+            value_date,
+            paid_at,
+            passport_key: get("passport_key")?,
+            slip_key: row.try_get("slip_key").map_err(AppError::Database)?,
+            receipt_key: get("receipt_key")?,
+            recorded_at,
+            recorded_by: get("recorded_by")?,
+        },
+        get("payload_hash")?,
+    ))
+}
+
+impl PgTransactionRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl TransactionRepository for PgTransactionRepository {
+    async fn find(&self, branch: &BranchId, document_ref: &str) -> AppResult<Option<Transaction>> {
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "{SELECT} WHERE t.branch_id = $1 AND t.document_ref = $2"
+        )))
+        .bind(branch.as_str())
+        .bind(document_ref)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        row.as_ref().map(|r| map(r).map(|x| x.0)).transpose()
+    }
+
+    async fn list(&self, branch: &BranchId, mode: Mode) -> AppResult<Vec<Transaction>> {
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 ORDER BY t.seq"
+        )))
+        .bind(branch.as_str())
+        .bind(mode.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        rows.iter().map(|r| map(r).map(|x| x.0)).collect()
+    }
+
+    async fn find_submission_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        mode: Mode,
+        submission_id: &'a str,
+    ) -> AppResult<Option<(Transaction, String)>> {
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 AND t.submission_id = $3"
+        )))
+        .bind(branch.as_str())
+        .bind(mode.as_str())
+        .bind(submission_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        row.as_ref().map(map).transpose()
+    }
+
+    async fn next_number_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        counter_key: &'a str,
+    ) -> AppResult<i64> {
+        sqlx::query_scalar(
+            "INSERT INTO counters (key, value) VALUES ($1, 1) \
+             ON CONFLICT (key) DO UPDATE SET value = counters.value + 1 RETURNING value",
+        )
+        .bind(counter_key)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn insert_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        t: &'a Transaction,
+        payload_hash: &'a str,
+    ) -> AppResult<()> {
+        let id: String = sqlx::query_scalar(
+            "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+             customer_id, customer_name, nationality, type, code, amount, rate, reference_rate, principal, fee, \
+             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, \
+             paid_at, recorded_at, recorded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, \
+             $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, $17::numeric, $18::numeric, \
+             $19::numeric, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING id::text",
+        )
+        .bind(&t.document_ref)
+        .bind(t.branch_id.as_str())
+        .bind(t.mode.as_str())
+        .bind(&t.shift_id)
+        .bind(&t.submission_id)
+        .bind(payload_hash)
+        .bind(&t.customer_id)
+        .bind(&t.customer_name)
+        .bind(&t.nationality)
+        .bind(match t.side {
+            Side::Buy => "BUY",
+            Side::Sell => "SELL",
+        })
+        .bind(&t.currency)
+        .bind(t.amount.to_string())
+        .bind(t.rate.to_string())
+        .bind(t.reference_rate.map(|r| r.to_string()))
+        .bind(t.principal.to_string())
+        .bind(t.fee.to_string())
+        .bind(t.bank_fee.to_string())
+        .bind(t.received.to_string())
+        .bind(t.paid.to_string())
+        .bind(t.method.as_str())
+        .bind(&t.payment_ref)
+        .bind(&t.account)
+        .bind(&t.staff)
+        .bind(&t.booking)
+        .bind(&t.notes)
+        .bind(t.value_date)
+        .bind(t.paid_at)
+        .bind(t.recorded_at)
+        .bind(&t.recorded_by)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        let mut files = vec![
+            ("PASSPORT", t.passport_key.as_str()),
+            ("RECEIPT", t.receipt_key.as_str()),
+        ];
+        if let Some(slip) = &t.slip_key {
+            files.push(("SLIP", slip.as_str()));
+        }
+        for (kind, key) in files {
+            sqlx::query(
+                "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1::uuid, $2, $3)",
+            )
+            .bind(&id)
+            .bind(kind)
+            .bind(key)
+            .execute(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+        Ok(())
+    }
+}
