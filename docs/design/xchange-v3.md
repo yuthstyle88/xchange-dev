@@ -86,7 +86,7 @@ Known differences v3 introduces on purpose:
 
 ## 4. Data model
 
-Types: money `NUMERIC(14,2)`, rate `NUMERIC(14,4)`, time `timestamptz`, ids `uuid` unless a human-facing code is noted.
+Types: money `NUMERIC(20,2)` (an entered amount is capped at 100,000,000, but a computed baht figure is not — v2 stores 3,209,999,999.68 for 99,999,999.99 × 32.1), rate `NUMERIC(14,4)`, time `timestamptz`, ids `uuid` unless a human-facing code is noted.
 
 ```mermaid
 erDiagram

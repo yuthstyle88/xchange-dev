@@ -1,0 +1,5143 @@
+{
+ "source": "v2 engine extracted unchanged from the deployed bundle (xchange-online@3ffc5a5), driven by gen_quote.mjs: adminSaveRate → adminOpenShift → reserveCustomer → saveTransaction; principal/received/paid read from the stored transaction row",
+ "cases": [
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.32",
+    "received": "0.00",
+    "paid": "0.32"
+   },
+   "exact": {
+    "principal": "0.32",
+    "received": "0.00",
+    "paid": "0.32"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "0.33",
+    "received": "0.00",
+    "paid": "0.33"
+   },
+   "exact": {
+    "principal": "0.33",
+    "received": "0.00",
+    "paid": "0.33"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "0.44",
+    "received": "0.00",
+    "paid": "0.44"
+   },
+   "exact": {
+    "principal": "0.44",
+    "received": "0.00",
+    "paid": "0.44"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "0.04",
+    "received": "0.00",
+    "paid": "0.04"
+   },
+   "exact": {
+    "principal": "0.04",
+    "received": "0.00",
+    "paid": "0.04"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "0.38",
+    "received": "0.00",
+    "paid": "0.38"
+   },
+   "exact": {
+    "principal": "0.38",
+    "received": "0.00",
+    "paid": "0.38"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.01",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "0.21",
+    "received": "0.00",
+    "paid": "0.21"
+   },
+   "exact": {
+    "principal": "0.21",
+    "received": "0.00",
+    "paid": "0.21"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "32.10",
+    "received": "0.00",
+    "paid": "32.10"
+   },
+   "exact": {
+    "principal": "32.10",
+    "received": "0.00",
+    "paid": "32.10"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "32.60",
+    "received": "0.00",
+    "paid": "32.60"
+   },
+   "exact": {
+    "principal": "32.60",
+    "received": "0.00",
+    "paid": "32.60"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.21",
+    "received": "0.00",
+    "paid": "0.21"
+   },
+   "exact": {
+    "principal": "0.21",
+    "received": "0.00",
+    "paid": "0.21"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.22",
+    "received": "0.00",
+    "paid": "0.22"
+   },
+   "exact": {
+    "principal": "0.22",
+    "received": "0.00",
+    "paid": "0.22"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "43.90",
+    "received": "0.00",
+    "paid": "43.90"
+   },
+   "exact": {
+    "principal": "43.90",
+    "received": "0.00",
+    "paid": "43.90"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "4.46",
+    "received": "0.00",
+    "paid": "4.46"
+   },
+   "exact": {
+    "principal": "4.46",
+    "received": "0.00",
+    "paid": "4.46"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1.00",
+    "received": "0.00",
+    "paid": "1.00"
+   },
+   "exact": {
+    "principal": "1.00",
+    "received": "0.00",
+    "paid": "1.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "37.51",
+    "received": "0.00",
+    "paid": "37.51"
+   },
+   "exact": {
+    "principal": "37.51",
+    "received": "0.00",
+    "paid": "37.51"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "21.33",
+    "received": "0.00",
+    "paid": "21.33"
+   },
+   "exact": {
+    "principal": "21.33",
+    "received": "0.00",
+    "paid": "21.33"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3260.00",
+    "received": "0.00",
+    "paid": "3260.00"
+   },
+   "exact": {
+    "principal": "3260.00",
+    "received": "0.00",
+    "paid": "3260.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.10",
+    "received": "0.00",
+    "paid": "21.10"
+   },
+   "exact": {
+    "principal": "21.10",
+    "received": "0.00",
+    "paid": "21.10"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21.95",
+    "received": "0.00",
+    "paid": "21.95"
+   },
+   "exact": {
+    "principal": "21.95",
+    "received": "0.00",
+    "paid": "21.95"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4390.00",
+    "received": "0.00",
+    "paid": "4390.00"
+   },
+   "exact": {
+    "principal": "4390.00",
+    "received": "0.00",
+    "paid": "4390.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445.67",
+    "received": "0.00",
+    "paid": "445.67"
+   },
+   "exact": {
+    "principal": "445.67",
+    "received": "0.00",
+    "paid": "445.67"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100.00",
+    "received": "0.00",
+    "paid": "100.00"
+   },
+   "exact": {
+    "principal": "100.00",
+    "received": "0.00",
+    "paid": "100.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750.55",
+    "received": "0.00",
+    "paid": "3750.55"
+   },
+   "exact": {
+    "principal": "3750.55",
+    "received": "0.00",
+    "paid": "3750.55"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133.33",
+    "received": "0.00",
+    "paid": "2133.33"
+   },
+   "exact": {
+    "principal": "2133.33",
+    "received": "0.00",
+    "paid": "2133.33"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3226.05",
+    "received": "0.00",
+    "paid": "3226.05"
+   },
+   "exact": {
+    "principal": "3226.05",
+    "received": "0.00",
+    "paid": "3226.05"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3276.30",
+    "received": "0.00",
+    "paid": "3276.30"
+   },
+   "exact": {
+    "principal": "3276.30",
+    "received": "0.00",
+    "paid": "3276.30"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.21",
+    "received": "0.00",
+    "paid": "21.21"
+   },
+   "exact": {
+    "principal": "21.21",
+    "received": "0.00",
+    "paid": "21.21"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "22.06",
+    "received": "0.00",
+    "paid": "22.06"
+   },
+   "exact": {
+    "principal": "22.06",
+    "received": "0.00",
+    "paid": "22.06"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4411.95",
+    "received": "0.00",
+    "paid": "4411.95"
+   },
+   "exact": {
+    "principal": "4411.95",
+    "received": "0.00",
+    "paid": "4411.95"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "447.90",
+    "received": "0.00",
+    "paid": "447.90"
+   },
+   "exact": {
+    "principal": "447.90",
+    "received": "0.00",
+    "paid": "447.90"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100.50",
+    "received": "0.00",
+    "paid": "100.50"
+   },
+   "exact": {
+    "principal": "100.50",
+    "received": "0.00",
+    "paid": "100.50"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3769.30",
+    "received": "0.00",
+    "paid": "3769.30"
+   },
+   "exact": {
+    "principal": "3769.30",
+    "received": "0.00",
+    "paid": "3769.30"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.5",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2144.00",
+    "received": "0.00",
+    "paid": "2144.00"
+   },
+   "exact": {
+    "principal": "2144.00",
+    "received": "0.00",
+    "paid": "2144.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3209.68",
+    "received": "0.00",
+    "paid": "3209.68"
+   },
+   "exact": {
+    "principal": "3209.68",
+    "received": "0.00",
+    "paid": "3209.68"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3259.67",
+    "received": "0.00",
+    "paid": "3259.67"
+   },
+   "exact": {
+    "principal": "3259.67",
+    "received": "0.00",
+    "paid": "3259.67"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.10",
+    "received": "0.00",
+    "paid": "21.10"
+   },
+   "exact": {
+    "principal": "21.10",
+    "received": "0.00",
+    "paid": "21.10"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21.95",
+    "received": "0.00",
+    "paid": "21.95"
+   },
+   "exact": {
+    "principal": "21.95",
+    "received": "0.00",
+    "paid": "21.95"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4389.56",
+    "received": "0.00",
+    "paid": "4389.56"
+   },
+   "exact": {
+    "principal": "4389.56",
+    "received": "0.00",
+    "paid": "4389.56"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445.63",
+    "received": "0.00",
+    "paid": "445.63"
+   },
+   "exact": {
+    "principal": "445.63",
+    "received": "0.00",
+    "paid": "445.63"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "99.99",
+    "received": "0.00",
+    "paid": "99.99"
+   },
+   "exact": {
+    "principal": "99.99",
+    "received": "0.00",
+    "paid": "99.99"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750.17",
+    "received": "0.00",
+    "paid": "3750.17"
+   },
+   "exact": {
+    "principal": "3750.17",
+    "received": "0.00",
+    "paid": "3750.17"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99.99",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133.12",
+    "received": "0.00",
+    "paid": "2133.12"
+   },
+   "exact": {
+    "principal": "2133.12",
+    "received": "0.00",
+    "paid": "2133.12"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "39629.38",
+    "received": "0.00",
+    "paid": "39629.38"
+   },
+   "exact": {
+    "principal": "39629.38",
+    "received": "0.00",
+    "paid": "39629.38"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "40246.66",
+    "received": "0.00",
+    "paid": "40246.66"
+   },
+   "exact": {
+    "principal": "40246.66",
+    "received": "0.00",
+    "paid": "40246.66"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "260.49",
+    "received": "0.00",
+    "paid": "260.49"
+   },
+   "exact": {
+    "principal": "260.49",
+    "received": "0.00",
+    "paid": "260.49"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "270.99",
+    "received": "0.00",
+    "paid": "270.99"
+   },
+   "exact": {
+    "principal": "270.99",
+    "received": "0.00",
+    "paid": "270.99"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "54197.18",
+    "received": "0.00",
+    "paid": "54197.18"
+   },
+   "exact": {
+    "principal": "54197.18",
+    "received": "0.00",
+    "paid": "54197.18"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "5502.06",
+    "received": "0.00",
+    "paid": "5502.06"
+   },
+   "exact": {
+    "principal": "5502.06",
+    "received": "0.00",
+    "paid": "5502.06"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.12",
+    "received": "0.00",
+    "paid": "0.12"
+   },
+   "exact": {
+    "principal": "0.12",
+    "received": "0.00",
+    "paid": "0.12"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1234.56",
+    "received": "0.00",
+    "paid": "1234.56"
+   },
+   "exact": {
+    "principal": "1234.56",
+    "received": "0.00",
+    "paid": "1234.56"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "46302.79",
+    "received": "0.00",
+    "paid": "46302.79"
+   },
+   "exact": {
+    "principal": "46302.79",
+    "received": "0.00",
+    "paid": "46302.79"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1234.56",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "26337.24",
+    "received": "0.00",
+    "paid": "26337.24"
+   },
+   "exact": {
+    "principal": "26337.24",
+    "received": "0.00",
+    "paid": "26337.24"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "2.25",
+    "received": "0.00",
+    "paid": "2.25"
+   },
+   "exact": {
+    "principal": "2.25",
+    "received": "0.00",
+    "paid": "2.25"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "2.28",
+    "received": "0.00",
+    "paid": "2.28"
+   },
+   "exact": {
+    "principal": "2.28",
+    "received": "0.00",
+    "paid": "2.28"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.00",
+    "paid": "0.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.02",
+    "received": "0.00",
+    "paid": "0.02"
+   },
+   "exact": {
+    "principal": "0.02",
+    "received": "0.00",
+    "paid": "0.02"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "3.07",
+    "received": "0.00",
+    "paid": "3.07"
+   },
+   "exact": {
+    "principal": "3.07",
+    "received": "0.00",
+    "paid": "3.07"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "0.31",
+    "received": "0.00",
+    "paid": "0.31"
+   },
+   "exact": {
+    "principal": "0.31",
+    "received": "0.00",
+    "paid": "0.31"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.07",
+    "received": "0.00",
+    "paid": "0.07"
+   },
+   "exact": {
+    "principal": "0.07",
+    "received": "0.00",
+    "paid": "0.07"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "2.63",
+    "received": "0.00",
+    "paid": "2.63"
+   },
+   "exact": {
+    "principal": "2.63",
+    "received": "0.00",
+    "paid": "2.63"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0.07",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "1.49",
+    "received": "0.00",
+    "paid": "1.49"
+   },
+   "exact": {
+    "principal": "1.49",
+    "received": "0.00",
+    "paid": "1.49"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "8025000.00",
+    "received": "0.00",
+    "paid": "8025000.00"
+   },
+   "exact": {
+    "principal": "8025000.00",
+    "received": "0.00",
+    "paid": "8025000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "8150000.00",
+    "received": "0.00",
+    "paid": "8150000.00"
+   },
+   "exact": {
+    "principal": "8150000.00",
+    "received": "0.00",
+    "paid": "8150000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "52750.00",
+    "received": "0.00",
+    "paid": "52750.00"
+   },
+   "exact": {
+    "principal": "52750.00",
+    "received": "0.00",
+    "paid": "52750.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "54875.00",
+    "received": "0.00",
+    "paid": "54875.00"
+   },
+   "exact": {
+    "principal": "54875.00",
+    "received": "0.00",
+    "paid": "54875.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "10975000.00",
+    "received": "0.00",
+    "paid": "10975000.00"
+   },
+   "exact": {
+    "principal": "10975000.00",
+    "received": "0.00",
+    "paid": "10975000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "1114175.00",
+    "received": "0.00",
+    "paid": "1114175.00"
+   },
+   "exact": {
+    "principal": "1114175.00",
+    "received": "0.00",
+    "paid": "1114175.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "25.00",
+    "received": "0.00",
+    "paid": "25.00"
+   },
+   "exact": {
+    "principal": "25.00",
+    "received": "0.00",
+    "paid": "25.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "250000.00",
+    "received": "0.00",
+    "paid": "250000.00"
+   },
+   "exact": {
+    "principal": "250000.00",
+    "received": "0.00",
+    "paid": "250000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "9376375.00",
+    "received": "0.00",
+    "paid": "9376375.00"
+   },
+   "exact": {
+    "principal": "9376375.00",
+    "received": "0.00",
+    "paid": "9376375.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "250000",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "5333325.00",
+    "received": "0.00",
+    "paid": "5333325.00"
+   },
+   "exact": {
+    "principal": "5333325.00",
+    "received": "0.00",
+    "paid": "5333325.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99999999.99",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21100000.00",
+    "received": "0.00",
+    "paid": "21100000.00"
+   },
+   "exact": {
+    "principal": "21100000.00",
+    "received": "0.00",
+    "paid": "21100000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99999999.99",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21950000.00",
+    "received": "0.00",
+    "paid": "21950000.00"
+   },
+   "exact": {
+    "principal": "21950000.00",
+    "received": "0.00",
+    "paid": "21950000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99999999.99",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "10000.00",
+    "received": "0.00",
+    "paid": "10000.00"
+   },
+   "exact": {
+    "principal": "10000.00",
+    "received": "0.00",
+    "paid": "10000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "99999999.99",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "99999999.99",
+    "received": "0.00",
+    "paid": "99999999.99"
+   },
+   "exact": {
+    "principal": "99999999.99",
+    "received": "0.00",
+    "paid": "99999999.99"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100000000",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21100000.00",
+    "received": "0.00",
+    "paid": "21100000.00"
+   },
+   "exact": {
+    "principal": "21100000.00",
+    "received": "0.00",
+    "paid": "21100000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100000000",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21950000.00",
+    "received": "0.00",
+    "paid": "21950000.00"
+   },
+   "exact": {
+    "principal": "21950000.00",
+    "received": "0.00",
+    "paid": "21950000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100000000",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "10000.00",
+    "received": "0.00",
+    "paid": "10000.00"
+   },
+   "exact": {
+    "principal": "10000.00",
+    "received": "0.00",
+    "paid": "10000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100000000",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100000000.00",
+    "received": "0.00",
+    "paid": "100000000.00"
+   },
+   "exact": {
+    "principal": "100000000.00",
+    "received": "0.00",
+    "paid": "100000000.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "106.89",
+    "received": "0.00",
+    "paid": "106.89"
+   },
+   "exact": {
+    "principal": "106.89",
+    "received": "0.00",
+    "paid": "106.89"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "108.56",
+    "received": "0.00",
+    "paid": "108.56"
+   },
+   "exact": {
+    "principal": "108.56",
+    "received": "0.00",
+    "paid": "108.56"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.70",
+    "received": "0.00",
+    "paid": "0.70"
+   },
+   "exact": {
+    "principal": "0.70",
+    "received": "0.00",
+    "paid": "0.70"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.73",
+    "received": "0.00",
+    "paid": "0.73"
+   },
+   "exact": {
+    "principal": "0.73",
+    "received": "0.00",
+    "paid": "0.73"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "146.19",
+    "received": "0.00",
+    "paid": "146.19"
+   },
+   "exact": {
+    "principal": "146.19",
+    "received": "0.00",
+    "paid": "146.19"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "14.84",
+    "received": "0.00",
+    "paid": "14.84"
+   },
+   "exact": {
+    "principal": "14.84",
+    "received": "0.00",
+    "paid": "14.84"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "3.33",
+    "received": "0.00",
+    "paid": "3.33"
+   },
+   "exact": {
+    "principal": "3.33",
+    "received": "0.00",
+    "paid": "3.33"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "124.89",
+    "received": "0.00",
+    "paid": "124.89"
+   },
+   "exact": {
+    "principal": "124.89",
+    "received": "0.00",
+    "paid": "124.89"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "3.33",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "71.04",
+    "received": "0.00",
+    "paid": "71.04"
+   },
+   "exact": {
+    "principal": "71.04",
+    "received": "0.00",
+    "paid": "71.04"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "249.42",
+    "received": "0.00",
+    "paid": "249.42"
+   },
+   "exact": {
+    "principal": "249.42",
+    "received": "0.00",
+    "paid": "249.42"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "253.30",
+    "received": "0.00",
+    "paid": "253.30"
+   },
+   "exact": {
+    "principal": "253.30",
+    "received": "0.00",
+    "paid": "253.30"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "1.64",
+    "received": "0.00",
+    "paid": "1.64"
+   },
+   "exact": {
+    "principal": "1.64",
+    "received": "0.00",
+    "paid": "1.64"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "1.71",
+    "received": "0.00",
+    "paid": "1.71"
+   },
+   "exact": {
+    "principal": "1.71",
+    "received": "0.00",
+    "paid": "1.71"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "341.10",
+    "received": "0.00",
+    "paid": "341.10"
+   },
+   "exact": {
+    "principal": "341.10",
+    "received": "0.00",
+    "paid": "341.10"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "34.63",
+    "received": "0.00",
+    "paid": "34.63"
+   },
+   "exact": {
+    "principal": "34.63",
+    "received": "0.00",
+    "paid": "34.63"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "7.77",
+    "received": "0.00",
+    "paid": "7.77"
+   },
+   "exact": {
+    "principal": "7.77",
+    "received": "0.00",
+    "paid": "7.77"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "291.42",
+    "received": "0.00",
+    "paid": "291.42"
+   },
+   "exact": {
+    "principal": "291.42",
+    "received": "0.00",
+    "paid": "291.42"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "7.77",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "165.76",
+    "received": "0.00",
+    "paid": "165.76"
+   },
+   "exact": {
+    "principal": "165.76",
+    "received": "0.00",
+    "paid": "165.76"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "32100.32",
+    "received": "0.00",
+    "paid": "32100.32"
+   },
+   "exact": {
+    "principal": "32100.32",
+    "received": "0.00",
+    "paid": "32100.32"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "32600.33",
+    "received": "0.00",
+    "paid": "32600.33"
+   },
+   "exact": {
+    "principal": "32600.33",
+    "received": "0.00",
+    "paid": "32600.33"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "211.00",
+    "received": "0.00",
+    "paid": "211.00"
+   },
+   "exact": {
+    "principal": "211.00",
+    "received": "0.00",
+    "paid": "211.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "219.50",
+    "received": "0.00",
+    "paid": "219.50"
+   },
+   "exact": {
+    "principal": "219.50",
+    "received": "0.00",
+    "paid": "219.50"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "43900.44",
+    "received": "0.00",
+    "paid": "43900.44"
+   },
+   "exact": {
+    "principal": "43900.44",
+    "received": "0.00",
+    "paid": "43900.44"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "4456.74",
+    "received": "0.00",
+    "paid": "4456.74"
+   },
+   "exact": {
+    "principal": "4456.74",
+    "received": "0.00",
+    "paid": "4456.74"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.10",
+    "received": "0.00",
+    "paid": "0.10"
+   },
+   "exact": {
+    "principal": "0.10",
+    "received": "0.00",
+    "paid": "0.10"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1000.01",
+    "received": "0.00",
+    "paid": "1000.01"
+   },
+   "exact": {
+    "principal": "1000.01",
+    "received": "0.00",
+    "paid": "1000.01"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "37505.88",
+    "received": "0.00",
+    "paid": "37505.88"
+   },
+   "exact": {
+    "principal": "37505.88",
+    "received": "0.00",
+    "paid": "37505.88"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "1000.01",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "21333.51",
+    "received": "0.00",
+    "paid": "21333.51"
+   },
+   "exact": {
+    "principal": "21333.51",
+    "received": "0.00",
+    "paid": "21333.51"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "640.40",
+    "received": "0.00",
+    "paid": "640.40"
+   },
+   "exact": {
+    "principal": "640.40",
+    "received": "0.00",
+    "paid": "640.40"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "650.37",
+    "received": "0.00",
+    "paid": "650.37"
+   },
+   "exact": {
+    "principal": "650.37",
+    "received": "0.00",
+    "paid": "650.37"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "4.21",
+    "received": "0.00",
+    "paid": "4.21"
+   },
+   "exact": {
+    "principal": "4.21",
+    "received": "0.00",
+    "paid": "4.21"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "4.38",
+    "received": "0.00",
+    "paid": "4.38"
+   },
+   "exact": {
+    "principal": "4.38",
+    "received": "0.00",
+    "paid": "4.38"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "875.81",
+    "received": "0.00",
+    "paid": "875.81"
+   },
+   "exact": {
+    "principal": "875.81",
+    "received": "0.00",
+    "paid": "875.81"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "88.91",
+    "received": "0.00",
+    "paid": "88.91"
+   },
+   "exact": {
+    "principal": "88.91",
+    "received": "0.00",
+    "paid": "88.91"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "19.95",
+    "received": "0.00",
+    "paid": "19.95"
+   },
+   "exact": {
+    "principal": "19.95",
+    "received": "0.00",
+    "paid": "19.95"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "748.23",
+    "received": "0.00",
+    "paid": "748.23"
+   },
+   "exact": {
+    "principal": "748.23",
+    "received": "0.00",
+    "paid": "748.23"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "19.95",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "425.60",
+    "received": "0.00",
+    "paid": "425.60"
+   },
+   "exact": {
+    "principal": "425.60",
+    "received": "0.00",
+    "paid": "425.60"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.32",
+    "received": "0.32",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.32",
+    "received": "0.32",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "0.33",
+    "received": "0.33",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.33",
+    "received": "0.33",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "0.44",
+    "received": "0.44",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.44",
+    "received": "0.44",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "0.04",
+    "received": "0.04",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.04",
+    "received": "0.04",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "0.38",
+    "received": "0.38",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.38",
+    "received": "0.38",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.01",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "0.21",
+    "received": "0.21",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.21",
+    "received": "0.21",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "32.10",
+    "received": "32.10",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "32.10",
+    "received": "32.10",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "32.60",
+    "received": "32.60",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "32.60",
+    "received": "32.60",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.21",
+    "received": "0.21",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.21",
+    "received": "0.21",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.22",
+    "received": "0.22",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.22",
+    "received": "0.22",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "43.90",
+    "received": "43.90",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "43.90",
+    "received": "43.90",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "4.46",
+    "received": "4.46",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4.46",
+    "received": "4.46",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1.00",
+    "received": "1.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1.00",
+    "received": "1.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "37.51",
+    "received": "37.51",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "37.51",
+    "received": "37.51",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "21.33",
+    "received": "21.33",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.33",
+    "received": "21.33",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3260.00",
+    "received": "3260.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3260.00",
+    "received": "3260.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.10",
+    "received": "21.10",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.10",
+    "received": "21.10",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21.95",
+    "received": "21.95",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.95",
+    "received": "21.95",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4390.00",
+    "received": "4390.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4390.00",
+    "received": "4390.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445.67",
+    "received": "445.67",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "445.67",
+    "received": "445.67",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100.00",
+    "received": "100.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "100.00",
+    "received": "100.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750.55",
+    "received": "3750.55",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3750.55",
+    "received": "3750.55",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133.33",
+    "received": "2133.33",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2133.33",
+    "received": "2133.33",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3226.05",
+    "received": "3226.05",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3226.05",
+    "received": "3226.05",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3276.30",
+    "received": "3276.30",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3276.30",
+    "received": "3276.30",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.21",
+    "received": "21.21",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.21",
+    "received": "21.21",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "22.06",
+    "received": "22.06",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "22.06",
+    "received": "22.06",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4411.95",
+    "received": "4411.95",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4411.95",
+    "received": "4411.95",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "447.90",
+    "received": "447.90",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "447.90",
+    "received": "447.90",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100.50",
+    "received": "100.50",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "100.50",
+    "received": "100.50",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3769.30",
+    "received": "3769.30",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3769.30",
+    "received": "3769.30",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.5",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2144.00",
+    "received": "2144.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2144.00",
+    "received": "2144.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3209.68",
+    "received": "3209.68",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3209.68",
+    "received": "3209.68",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3259.67",
+    "received": "3259.67",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3259.67",
+    "received": "3259.67",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21.10",
+    "received": "21.10",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.10",
+    "received": "21.10",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21.95",
+    "received": "21.95",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21.95",
+    "received": "21.95",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4389.56",
+    "received": "4389.56",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4389.56",
+    "received": "4389.56",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445.63",
+    "received": "445.63",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "445.63",
+    "received": "445.63",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "99.99",
+    "received": "99.99",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "99.99",
+    "received": "99.99",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750.17",
+    "received": "3750.17",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3750.17",
+    "received": "3750.17",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99.99",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133.12",
+    "received": "2133.12",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2133.12",
+    "received": "2133.12",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "39629.38",
+    "received": "39629.38",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "39629.38",
+    "received": "39629.38",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "40246.66",
+    "received": "40246.66",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "40246.66",
+    "received": "40246.66",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "260.49",
+    "received": "260.49",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "260.49",
+    "received": "260.49",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "270.99",
+    "received": "270.99",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "270.99",
+    "received": "270.99",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "54197.18",
+    "received": "54197.18",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "54197.18",
+    "received": "54197.18",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "5502.06",
+    "received": "5502.06",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "5502.06",
+    "received": "5502.06",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.12",
+    "received": "0.12",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.12",
+    "received": "0.12",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1234.56",
+    "received": "1234.56",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1234.56",
+    "received": "1234.56",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "46302.79",
+    "received": "46302.79",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "46302.79",
+    "received": "46302.79",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1234.56",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "26337.24",
+    "received": "26337.24",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "26337.24",
+    "received": "26337.24",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "2.25",
+    "received": "2.25",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2.25",
+    "received": "2.25",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "2.28",
+    "received": "2.28",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2.28",
+    "received": "2.28",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.01",
+    "received": "0.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.02",
+    "received": "0.02",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.02",
+    "received": "0.02",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "3.07",
+    "received": "3.07",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3.07",
+    "received": "3.07",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "0.31",
+    "received": "0.31",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.31",
+    "received": "0.31",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "0.07",
+    "received": "0.07",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.07",
+    "received": "0.07",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "2.63",
+    "received": "2.63",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2.63",
+    "received": "2.63",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0.07",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "1.49",
+    "received": "1.49",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1.49",
+    "received": "1.49",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "8025000.00",
+    "received": "8025000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "8025000.00",
+    "received": "8025000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "8150000.00",
+    "received": "8150000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "8150000.00",
+    "received": "8150000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "52750.00",
+    "received": "52750.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "52750.00",
+    "received": "52750.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "54875.00",
+    "received": "54875.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "54875.00",
+    "received": "54875.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "10975000.00",
+    "received": "10975000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "10975000.00",
+    "received": "10975000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "1114175.00",
+    "received": "1114175.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1114175.00",
+    "received": "1114175.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "25.00",
+    "received": "25.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "25.00",
+    "received": "25.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "250000.00",
+    "received": "250000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "250000.00",
+    "received": "250000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "9376375.00",
+    "received": "9376375.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "9376375.00",
+    "received": "9376375.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "250000",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "5333325.00",
+    "received": "5333325.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "5333325.00",
+    "received": "5333325.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3209999999.68",
+    "received": "3209999999.68",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3209999999.68",
+    "received": "3209999999.68",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3259999999.67",
+    "received": "3259999999.67",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3259999999.67",
+    "received": "3259999999.67",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21100000.00",
+    "received": "21100000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21100000.00",
+    "received": "21100000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21950000.00",
+    "received": "21950000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21950000.00",
+    "received": "21950000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4389999999.56",
+    "received": "4389999999.56",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4389999999.56",
+    "received": "4389999999.56",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445669999.96",
+    "received": "445669999.96",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "445669999.96",
+    "received": "445669999.96",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "10000.00",
+    "received": "10000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "10000.00",
+    "received": "10000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "99999999.99",
+    "received": "99999999.99",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "99999999.99",
+    "received": "99999999.99",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750549999.62",
+    "received": "3750549999.62",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3750549999.62",
+    "received": "3750549999.62",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "99999999.99",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133329999.79",
+    "received": "2133329999.79",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2133329999.79",
+    "received": "2133329999.79",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210000000.00",
+    "received": "3210000000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210000000.00",
+    "received": "3210000000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "3260000000.00",
+    "received": "3260000000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3260000000.00",
+    "received": "3260000000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "21100000.00",
+    "received": "21100000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21100000.00",
+    "received": "21100000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "21950000.00",
+    "received": "21950000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21950000.00",
+    "received": "21950000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "4390000000.00",
+    "received": "4390000000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4390000000.00",
+    "received": "4390000000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "445670000.00",
+    "received": "445670000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "445670000.00",
+    "received": "445670000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "10000.00",
+    "received": "10000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "10000.00",
+    "received": "10000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "100000000.00",
+    "received": "100000000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "100000000.00",
+    "received": "100000000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "3750550000.00",
+    "received": "3750550000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3750550000.00",
+    "received": "3750550000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "2133330000.00",
+    "received": "2133330000.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "2133330000.00",
+    "received": "2133330000.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "106.89",
+    "received": "106.89",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "106.89",
+    "received": "106.89",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "108.56",
+    "received": "108.56",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "108.56",
+    "received": "108.56",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "0.70",
+    "received": "0.70",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.70",
+    "received": "0.70",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "0.73",
+    "received": "0.73",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.73",
+    "received": "0.73",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "146.19",
+    "received": "146.19",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "146.19",
+    "received": "146.19",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "14.84",
+    "received": "14.84",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "14.84",
+    "received": "14.84",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "3.33",
+    "received": "3.33",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3.33",
+    "received": "3.33",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "124.89",
+    "received": "124.89",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "124.89",
+    "received": "124.89",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "3.33",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "71.04",
+    "received": "71.04",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "71.04",
+    "received": "71.04",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "249.42",
+    "received": "249.42",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "249.42",
+    "received": "249.42",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "253.30",
+    "received": "253.30",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "253.30",
+    "received": "253.30",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "1.64",
+    "received": "1.64",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1.64",
+    "received": "1.64",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "1.71",
+    "received": "1.71",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1.71",
+    "received": "1.71",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "341.10",
+    "received": "341.10",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "341.10",
+    "received": "341.10",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "34.63",
+    "received": "34.63",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "34.63",
+    "received": "34.63",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "7.77",
+    "received": "7.77",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "7.77",
+    "received": "7.77",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "291.42",
+    "received": "291.42",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "291.42",
+    "received": "291.42",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "7.77",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "165.76",
+    "received": "165.76",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "165.76",
+    "received": "165.76",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "32100.32",
+    "received": "32100.32",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "32100.32",
+    "received": "32100.32",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "32600.33",
+    "received": "32600.33",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "32600.33",
+    "received": "32600.33",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "211.00",
+    "received": "211.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "211.00",
+    "received": "211.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "219.50",
+    "received": "219.50",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "219.50",
+    "received": "219.50",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "43900.44",
+    "received": "43900.44",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "43900.44",
+    "received": "43900.44",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "4456.74",
+    "received": "4456.74",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4456.74",
+    "received": "4456.74",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.10",
+    "received": "0.10",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.10",
+    "received": "0.10",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "1000.01",
+    "received": "1000.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "1000.01",
+    "received": "1000.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "37505.88",
+    "received": "37505.88",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "37505.88",
+    "received": "37505.88",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "1000.01",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "21333.51",
+    "received": "21333.51",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "21333.51",
+    "received": "21333.51",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "640.40",
+    "received": "640.40",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "640.40",
+    "received": "640.40",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "32.6",
+   "fee": "0",
+   "v2": {
+    "principal": "650.37",
+    "received": "650.37",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "650.37",
+    "received": "650.37",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "0.211",
+   "fee": "0",
+   "v2": {
+    "principal": "4.21",
+    "received": "4.21",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4.21",
+    "received": "4.21",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "0.2195",
+   "fee": "0",
+   "v2": {
+    "principal": "4.38",
+    "received": "4.38",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "4.38",
+    "received": "4.38",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "43.9",
+   "fee": "0",
+   "v2": {
+    "principal": "875.81",
+    "received": "875.81",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "875.81",
+    "received": "875.81",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "4.4567",
+   "fee": "0",
+   "v2": {
+    "principal": "88.91",
+    "received": "88.91",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "88.91",
+    "received": "88.91",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "0.0001",
+   "fee": "0",
+   "v2": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "0.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "1",
+   "fee": "0",
+   "v2": {
+    "principal": "19.95",
+    "received": "19.95",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "19.95",
+    "received": "19.95",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "37.5055",
+   "fee": "0",
+   "v2": {
+    "principal": "748.23",
+    "received": "748.23",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "748.23",
+    "received": "748.23",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "19.95",
+   "rate": "21.3333",
+   "fee": "0",
+   "v2": {
+    "principal": "425.60",
+    "received": "425.60",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "425.60",
+    "received": "425.60",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0.01",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3209.99"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3209.99"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "10",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3200.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3200.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "25.5",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3184.50"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3184.50"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "3210",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "3210.01",
+   "v2Error": "ค่าบริการสูงกว่ายอดซื้อ",
+   "error": "FEE_EXCEEDS_PRINCIPAL"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "99999",
+   "v2Error": "ค่าบริการสูงกว่ายอดซื้อ",
+   "error": "FEE_EXCEEDS_PRINCIPAL"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0.01",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "10",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3220.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3220.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "25.5",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3235.50",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3235.50",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "3210",
+   "v2": {
+    "principal": "3210.00",
+    "received": "6420.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "6420.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "3210.01",
+   "v2": {
+    "principal": "3210.00",
+    "received": "6420.01",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "6420.01",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "99999",
+   "v2": {
+    "principal": "3210.00",
+    "received": "103209.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "103209.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.00",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100.000",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.10000",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0.00",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0100",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3210.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "10.50",
+   "v2": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3199.50"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "0.00",
+    "paid": "3199.50"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.00",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100.000",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.10000",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "0.00",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "0100",
+   "rate": "32.1",
+   "fee": "0",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3210.00",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "10.50",
+   "v2": {
+    "principal": "3210.00",
+    "received": "3220.50",
+    "paid": "0.00"
+   },
+   "exact": {
+    "principal": "3210.00",
+    "received": "3220.50",
+    "paid": "0.00"
+   },
+   "v2DiffersFromExact": false
+  },
+  {
+   "type": "BUY",
+   "amount": "0",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "0",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "-1",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "-1",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100000000.01",
+   "rate": "1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "100000000.01",
+   "rate": "1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "1.001",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  },
+  {
+   "type": "SELL",
+   "amount": "1.001",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  },
+  {
+   "type": "BUY",
+   "amount": "abc",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "abc",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "",
+   "rate": "32.1",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "0",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "0",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "-3",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "-3",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.12345",
+   "fee": "0",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.12345",
+   "fee": "0",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "100000000.0001",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "100000000.0001",
+   "fee": "0",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "-1",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "-1",
+   "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+   "error": "INVALID_NUMBER"
+  },
+  {
+   "type": "BUY",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "1.005",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  },
+  {
+   "type": "SELL",
+   "amount": "100",
+   "rate": "32.1",
+   "fee": "1.005",
+   "v2Error": "ทศนิยมเกินกำหนด",
+   "error": "TOO_MANY_DECIMALS"
+  }
+ ]
+}
