@@ -1,7 +1,11 @@
 //! Domain validation and error constants for xc-rate.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use pos_error::AppError;
+use rust_decimal::Decimal;
+use xc_kernel::money::{NumberError, Rate};
 
 pub const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
@@ -46,4 +50,23 @@ pub fn validate_request_id(s: &str) -> Result<&str, AppError> {
         return Err(AppError::Domain(BAD_REQUEST_ID.to_string()));
     }
     Ok(trimmed)
+}
+
+pub fn map_number_error(e: NumberError) -> AppError {
+    match e {
+        NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_string()),
+        _ => AppError::Domain(BAD_NUMBER.to_string()),
+    }
+}
+
+pub fn parse_rate(s: &str) -> Result<Rate, AppError> {
+    Rate::parse(s).map_err(map_number_error)
+}
+
+pub fn decimal_to_rate(d: &Decimal) -> Result<Rate, AppError> {
+    Rate::parse(&d.normalize().to_string()).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+pub fn rate_to_decimal(r: &Rate) -> Result<Decimal, AppError> {
+    Decimal::from_str(&r.to_string()).map_err(|e| AppError::Internal(e.to_string()))
 }

@@ -1,152 +1,79 @@
 //! Rate application service.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, NumberError, Rate};
+use xc_kernel::money::{CurrencyCode, Rate};
 
+use crate::domain::branch::repositories::branch_repository::BranchRepository;
 use crate::domain::rate::commands::save_rate::SaveRate;
 use crate::domain::rate::entities::counter_rate::CounterRate;
 use crate::domain::rate::entities::rate_change::RateChange;
 use crate::domain::rate::entities::rate_source::RateSource;
-use crate::domain::validation::{
-    ABANDONED, BAD_NUMBER, EDITED_ELSEWHERE, NO_SUCH_BRANCH, PARTNER_PAIR, REQUEST_CHANGED,
-    SELL_BELOW_BUY, TOO_MANY_DECIMALS, cut_to_millis, format_iso, validate_request_id,
-    validate_text,
+use crate::domain::rate::repositories::rate_repository::{
+    CurrentRateRow, NewRate, RateRepository, SavedRateRecord,
 };
-
-type RateRow = (
-    String,
-    Decimal,
-    Decimal,
-    DateTime<Utc>,
-    String,
-    String,
-    String,
-    Option<Decimal>,
-    Option<serde_json::Value>,
-);
+use crate::domain::validation::{
+    ABANDONED, EDITED_ELSEWHERE, NO_SUCH_BRANCH, PARTNER_PAIR, REQUEST_CHANGED, SELL_BELOW_BUY,
+    cut_to_millis, format_iso, parse_rate, validate_request_id, validate_text,
+};
+use crate::infrastructure::branch::branch_repository::PgBranchRepository;
+use crate::infrastructure::rate::rate_repository::PgRateRepository;
 
 #[derive(Clone)]
 pub struct RateService {
     branch_tx: BranchTx,
     source: Arc<dyn RateSource>,
+    rate_repo: PgRateRepository,
+    branch_repo: PgBranchRepository,
 }
 
-type SavedRate = (String, Decimal, Decimal, String, Option<Decimal>);
-
 fn is_same_rate(
-    existing: &SavedRate,
+    existing: &SavedRateRecord,
     code: CurrencyCode,
     buy: Rate,
     sell: Rate,
     partner_name: &str,
     partner_cost: Option<Rate>,
-) -> AppResult<bool> {
-    let (ex_code, ex_buy, ex_sell, ex_pname, ex_pcost) = existing;
-    if ex_code.trim() != code.as_str() {
-        return Ok(false);
-    }
-    let db_buy = Rate::parse(&ex_buy.normalize().to_string())
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    if db_buy != buy {
-        return Ok(false);
-    }
-    let db_sell = Rate::parse(&ex_sell.normalize().to_string())
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    if db_sell != sell {
-        return Ok(false);
-    }
-    if ex_pname != partner_name {
-        return Ok(false);
-    }
-    let db_cost = ex_pcost
-        .map(|c| Rate::parse(&c.normalize().to_string()))
-        .transpose()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    if db_cost != partner_cost {
-        return Ok(false);
-    }
-    Ok(true)
+) -> bool {
+    existing.code.trim() == code.as_str()
+        && existing.buy == buy
+        && existing.sell == sell
+        && existing.partner_name == partner_name
+        && existing.partner_cost == partner_cost
 }
 
 impl RateService {
     pub fn new(branch_tx: BranchTx, source: Arc<dyn RateSource>) -> Self {
-        Self { branch_tx, source }
+        let rate_repo = PgRateRepository::new(branch_tx.pool().clone());
+        let branch_repo = PgBranchRepository::new(branch_tx.pool().clone());
+        Self {
+            branch_tx,
+            source,
+            rate_repo,
+            branch_repo,
+        }
     }
 
     pub async fn current(&self, branch: &BranchId) -> AppResult<Vec<CounterRate>> {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1)")
-                .bind(branch.as_str())
-                .fetch_one(self.branch_tx.pool())
-                .await
-                .map_err(AppError::Database)?;
-
-        if !exists {
+        if !self.branch_repo.branch_exists(branch).await? {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
         }
 
-        let currencies = sqlx::query_as::<_, (String, String, Option<String>)>(
-            "SELECT code, name_th, symbol FROM currencies WHERE code != 'THB'",
-        )
-        .fetch_all(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
+        let currencies = self.rate_repo.list_currencies().await?;
         let mut currency_map: HashMap<String, (String, Option<String>)> = currencies
             .into_iter()
             .map(|(code, name_th, symbol)| (code.trim().to_string(), (name_th, symbol)))
             .collect();
 
-        let rates = sqlx::query_as::<_, (
-            String,
-            Decimal,
-            Decimal,
-            DateTime<Utc>,
-            String,
-            String,
-            Option<Decimal>,
-            Option<serde_json::Value>,
-        )>(
-            "SELECT DISTINCT ON (code) code, buy, sell, updated_at, request_id, partner_name, partner_cost, reference FROM rates WHERE branch_id = $1 ORDER BY code, id DESC",
-        )
-        .bind(branch.as_str())
-        .fetch_all(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        let mut rate_map = HashMap::new();
-        for (code, buy_dec, sell_dec, updated_at, request_id, partner_name, cost_dec, reference) in
-            rates
-        {
-            let buy = Rate::parse(&buy_dec.normalize().to_string())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let sell = Rate::parse(&sell_dec.normalize().to_string())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let partner_cost = cost_dec
-                .map(|c| Rate::parse(&c.normalize().to_string()))
-                .transpose()
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-
-            rate_map.insert(
-                code.trim().to_string(),
-                (
-                    buy,
-                    sell,
-                    updated_at,
-                    request_id,
-                    partner_name,
-                    partner_cost,
-                    reference,
-                ),
-            );
+        let rates = self.rate_repo.current_rates(branch).await?;
+        let mut rate_map: HashMap<String, CurrentRateRow> = HashMap::with_capacity(rates.len());
+        for row in rates {
+            rate_map.insert(row.code.trim().to_string(), row);
         }
 
         let mut result = Vec::with_capacity(152);
@@ -156,27 +83,18 @@ impl RateService {
                 .remove(code_str)
                 .unwrap_or_else(|| (code_str.to_string(), None));
 
-            if let Some((
-                buy,
-                sell,
-                updated_at,
-                request_id,
-                partner_name,
-                partner_cost,
-                reference,
-            )) = rate_map.remove(code_str)
-            {
+            if let Some(row) = rate_map.remove(code_str) {
                 result.push(CounterRate {
                     code: *code,
                     name,
                     symbol,
-                    buy: Some(buy),
-                    sell: Some(sell),
-                    updated_at: Some(updated_at),
-                    request_id: Some(request_id),
-                    partner_name,
-                    partner_cost,
-                    reference,
+                    buy: Some(row.buy),
+                    sell: Some(row.sell),
+                    updated_at: Some(row.updated_at),
+                    request_id: Some(row.request_id),
+                    partner_name: row.partner_name,
+                    partner_cost: row.partner_cost,
+                    reference: row.reference,
                 });
             } else {
                 result.push(CounterRate {
@@ -198,63 +116,11 @@ impl RateService {
     }
 
     pub async fn history(&self, branch: &BranchId) -> AppResult<Vec<RateChange>> {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1)")
-                .bind(branch.as_str())
-                .fetch_one(self.branch_tx.pool())
-                .await
-                .map_err(AppError::Database)?;
-
-        if !exists {
+        if !self.branch_repo.branch_exists(branch).await? {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
         }
 
-        let rows = sqlx::query_as::<_, RateRow>(
-            "SELECT code, buy, sell, updated_at, updated_by, request_id, partner_name, partner_cost, reference FROM rates WHERE branch_id = $1 ORDER BY id DESC",
-        )
-        .bind(branch.as_str())
-        .fetch_all(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        let mut changes = Vec::with_capacity(rows.len());
-        for (
-            r_code,
-            buy_dec,
-            sell_dec,
-            updated_at,
-            updated_by,
-            request_id,
-            partner_name,
-            cost_dec,
-            reference,
-        ) in rows
-        {
-            let code = CurrencyCode::parse(r_code.trim())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let buy = Rate::parse(&buy_dec.normalize().to_string())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let sell = Rate::parse(&sell_dec.normalize().to_string())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let partner_cost = cost_dec
-                .map(|c| Rate::parse(&c.normalize().to_string()))
-                .transpose()
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-
-            changes.push(RateChange {
-                code,
-                buy,
-                sell,
-                updated_at,
-                updated_by,
-                request_id,
-                partner_name,
-                partner_cost,
-                reference,
-            });
-        }
-
-        Ok(changes)
+        self.rate_repo.history(branch).await
     }
 
     pub async fn save_rate(
@@ -265,14 +131,7 @@ impl RateService {
         now: DateTime<Utc>,
     ) -> AppResult<()> {
         // Step 1: branch exists
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1)")
-                .bind(branch.as_str())
-                .fetch_one(self.branch_tx.pool())
-                .await
-                .map_err(AppError::Database)?;
-
-        if !exists {
+        if !self.branch_repo.branch_exists(branch).await? {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
         }
 
@@ -283,16 +142,10 @@ impl RateService {
         let trimmed_code = validate_text(&cmd.code, 3, true)?;
 
         // Step 4: buy is a Number
-        let buy_rate = Rate::parse(&cmd.buy).map_err(|e| match e {
-            NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_string()),
-            _ => AppError::Domain(BAD_NUMBER.to_string()),
-        })?;
+        let buy_rate = parse_rate(&cmd.buy)?;
 
         // Step 5: sell is a Number
-        let sell_rate = Rate::parse(&cmd.sell).map_err(|e| match e {
-            NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_string()),
-            _ => AppError::Domain(BAD_NUMBER.to_string()),
-        })?;
+        let sell_rate = parse_rate(&cmd.sell)?;
 
         // Step 6: trimmed code in register (CurrencyCode::parse, exact case), not THB, and sell >= buy
         let parsed_code = match CurrencyCode::parse(trimmed_code) {
@@ -301,16 +154,11 @@ impl RateService {
         };
 
         // Step 7: request is not Abandoned in this branch
-        let abandoned: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM abandoned_requests WHERE branch_id = $1 AND request_id = $2)",
-        )
-        .bind(branch.as_str())
-        .bind(&trimmed_req)
-        .fetch_one(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        if abandoned {
+        if self
+            .rate_repo
+            .is_abandoned(branch.as_str(), &trimmed_req)
+            .await?
+        {
             return Err(AppError::Domain(ABANDONED.to_string()));
         }
 
@@ -319,13 +167,7 @@ impl RateService {
 
         // Step 9: partner_cost, when Some and not "", is a Number
         let partner_cost_rate = match &cmd.partner_cost {
-            Some(cost_str) if !cost_str.is_empty() => {
-                let cost = Rate::parse(cost_str).map_err(|e| match e {
-                    NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_string()),
-                    _ => AppError::Domain(BAD_NUMBER.to_string()),
-                })?;
-                Some(cost)
-            }
+            Some(cost_str) if !cost_str.is_empty() => Some(parse_rate(cost_str)?),
             _ => None,
         };
 
@@ -335,20 +177,10 @@ impl RateService {
         }
 
         // Step 11 check on committed data before asking the source
-        let existing_pre = sqlx::query_as::<_, (
-            String,
-            Decimal,
-            Decimal,
-            String,
-            Option<Decimal>,
-        )>(
-            "SELECT code, buy, sell, partner_name, partner_cost FROM rates WHERE branch_id = $1 AND request_id = $2",
-        )
-        .bind(branch.as_str())
-        .bind(&trimmed_req)
-        .fetch_optional(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
+        let existing_pre = self
+            .rate_repo
+            .find_by_request(branch.as_str(), &trimmed_req)
+            .await?;
 
         if let Some(existing) = existing_pre {
             if is_same_rate(
@@ -358,7 +190,7 @@ impl RateService {
                 sell_rate,
                 &trimmed_partner_name,
                 partner_cost_rate,
-            )? {
+            ) {
                 return Ok(());
             } else {
                 return Err(AppError::Domain(REQUEST_CHANGED.to_string()));
@@ -386,34 +218,16 @@ impl RateService {
         let actor_str = actor.to_string();
         let stored_now = cut_to_millis(now);
         let previous_updated = cmd.previous_updated;
-
-        let buy_dec = Decimal::from_str(&buy_rate.to_string())
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        let sell_dec = Decimal::from_str(&sell_rate.to_string())
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        let partner_cost_dec = partner_cost_rate
-            .map(|r| Decimal::from_str(&r.to_string()))
-            .transpose()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let code_string = parsed_code.as_str().to_string();
+        let rate_repo = self.rate_repo.clone();
 
         self.branch_tx
             .run(branch, move |tx| {
                 Box::pin(async move {
                     // Repeat step 11 inside lock (in case of concurrent identical request)
-                    let existing = sqlx::query_as::<_, (
-                        String,
-                        Decimal,
-                        Decimal,
-                        String,
-                        Option<Decimal>,
-                    )>(
-                        "SELECT code, buy, sell, partner_name, partner_cost FROM rates WHERE branch_id = $1 AND request_id = $2",
-                    )
-                    .bind(&branch_id_str)
-                    .bind(&trimmed_req)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
+                    let existing = rate_repo
+                        .find_by_request_tx(tx, &branch_id_str, &trimmed_req)
+                        .await?;
 
                     if let Some(existing_row) = existing {
                         if is_same_rate(
@@ -423,7 +237,7 @@ impl RateService {
                             sell_rate,
                             &trimmed_partner_name,
                             partner_cost_rate,
-                        )? {
+                        ) {
                             return Ok(());
                         } else {
                             return Err(AppError::Domain(REQUEST_CHANGED.to_string()));
@@ -431,28 +245,17 @@ impl RateService {
                     }
 
                     // Proposed: repeat abandoned check inside lock
-                    let abandoned: bool = sqlx::query_scalar(
-                        "SELECT EXISTS(SELECT 1 FROM abandoned_requests WHERE branch_id = $1 AND request_id = $2)",
-                    )
-                    .bind(&branch_id_str)
-                    .bind(&trimmed_req)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    if abandoned {
+                    if rate_repo
+                        .is_abandoned_tx(tx, &branch_id_str, &trimmed_req)
+                        .await?
+                    {
                         return Err(AppError::Domain(ABANDONED.to_string()));
                     }
 
                     // Step 12: previous_updated equals Printed time of newest row of this code in this branch, or "" when none
-                    let newest_updated_at: Option<DateTime<Utc>> = sqlx::query_scalar(
-                        "SELECT updated_at FROM rates WHERE branch_id = $1 AND code = $2 ORDER BY id DESC LIMIT 1",
-                    )
-                    .bind(&branch_id_str)
-                    .bind(code_str)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
+                    let newest_updated_at = rate_repo
+                        .newest_updated_at(tx, &branch_id_str, &code_string)
+                        .await?;
 
                     let expected_prev = match newest_updated_at {
                         Some(t) => format_iso(t),
@@ -464,22 +267,23 @@ impl RateService {
                     }
 
                     // Insert
-                    sqlx::query(
-                        "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, reference, updated_at, updated_by, request_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-                    )
-                    .bind(&branch_id_str)
-                    .bind(code_str)
-                    .bind(buy_dec)
-                    .bind(sell_dec)
-                    .bind(&trimmed_partner_name)
-                    .bind(partner_cost_dec)
-                    .bind(reference_json)
-                    .bind(stored_now)
-                    .bind(&actor_str)
-                    .bind(&trimmed_req)
-                    .execute(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
+                    rate_repo
+                        .insert(
+                            tx,
+                            NewRate {
+                                branch_id: &branch_id_str,
+                                code: &code_string,
+                                buy: buy_rate,
+                                sell: sell_rate,
+                                partner_name: &trimmed_partner_name,
+                                partner_cost: partner_cost_rate,
+                                reference: reference_json,
+                                updated_at: stored_now,
+                                updated_by: &actor_str,
+                                request_id: &trimmed_req,
+                            },
+                        )
+                        .await?;
 
                     Ok(())
                 })
@@ -492,24 +296,6 @@ impl RateService {
         branch: &BranchId,
         code: CurrencyCode,
     ) -> AppResult<Option<(Rate, Rate)>> {
-        let row = sqlx::query_as::<_, (Decimal, Decimal)>(
-            "SELECT buy, sell FROM rates WHERE branch_id = $1 AND code = $2 ORDER BY id DESC LIMIT 1",
-        )
-        .bind(branch.as_str())
-        .bind(code.as_str())
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        match row {
-            Some((buy_dec, sell_dec)) => {
-                let buy = Rate::parse(&buy_dec.normalize().to_string())
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
-                let sell = Rate::parse(&sell_dec.normalize().to_string())
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
-                Ok(Some((buy, sell)))
-            }
-            None => Ok(None),
-        }
+        PgRateRepository::find_rate_in(tx, branch, code).await
     }
 }

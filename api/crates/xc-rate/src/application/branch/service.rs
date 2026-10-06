@@ -7,56 +7,32 @@ use xc_kernel::ids::BranchId;
 
 use crate::domain::branch::commands::create_branch::CreateBranch;
 use crate::domain::branch::entities::branch::Branch;
+use crate::domain::branch::repositories::branch_repository::BranchRepository;
 use crate::domain::validation::{
     ABANDONED, NAME_TAKEN, NO_SUCH_BRANCH, REQUEST_CHANGED, TOO_MANY_BRANCHES, cut_to_millis,
     validate_request_id, validate_text,
 };
-
-type BranchRow = (String, String, Option<String>);
+use crate::infrastructure::branch::branch_repository::PgBranchRepository;
 
 #[derive(Clone)]
 pub struct BranchService {
     branch_tx: BranchTx,
+    repo: PgBranchRepository,
 }
 
 impl BranchService {
     pub fn new(branch_tx: BranchTx) -> Self {
-        Self { branch_tx }
+        let repo = PgBranchRepository::new(branch_tx.pool().clone());
+        Self { branch_tx, repo }
     }
 
     pub async fn list(&self) -> AppResult<Vec<Branch>> {
-        let rows = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
-        )
-        .fetch_all(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(rows
-            .into_iter()
-            .map(|(id, name, request_id)| Branch {
-                id: BranchId::new(id),
-                name,
-                request_id,
-            })
-            .collect())
+        self.repo.list().await
     }
 
     pub async fn require(&self, id: &BranchId) -> AppResult<Branch> {
-        let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id FROM branches WHERE id = $1",
-        )
-        .bind(id.as_str())
-        .fetch_optional(self.branch_tx.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        match row {
-            Some((id, name, request_id)) => Ok(Branch {
-                id: BranchId::new(id),
-                name,
-                request_id,
-            }),
+        match self.repo.find_by_id(id).await? {
+            Some(branch) => Ok(branch),
             None => Err(AppError::Domain(NO_SUCH_BRANCH.to_string())),
         }
     }
@@ -68,14 +44,7 @@ impl BranchService {
         now: DateTime<Utc>,
     ) -> AppResult<Branch> {
         // Step 1: cmd.from_branch exists
-        let from_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1)")
-                .bind(cmd.from_branch.as_str())
-                .fetch_one(self.branch_tx.pool())
-                .await
-                .map_err(AppError::Database)?;
-
-        if !from_exists {
+        if !self.repo.branch_exists(&cmd.from_branch).await? {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
         }
 
@@ -88,6 +57,7 @@ impl BranchService {
         let from_branch_id = cmd.from_branch.as_str().to_string();
         let actor_str = actor.to_string();
         let stored_now = cut_to_millis(now);
+        let repo = self.repo.clone();
 
         let main_id = BranchId::new("MAIN");
         self.branch_tx
@@ -95,76 +65,40 @@ impl BranchService {
                 Box::pin(async move {
                     // Step 4: a branch with this request_id exists:
                     // its name equals trimmed_name exactly -> return that branch, write nothing; otherwise REQUEST_CHANGED
-                    let existing = sqlx::query_as::<_, BranchRow>(
-                        "SELECT id, name, request_id FROM branches WHERE request_id = $1",
-                    )
-                    .bind(&trimmed_req)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    if let Some((id, name, request_id)) = existing {
-                        if name == trimmed_name {
-                            return Ok(Branch {
-                                id: BranchId::new(id),
-                                name,
-                                request_id,
-                            });
+                    if let Some(existing) = repo.find_by_request(tx, &trimmed_req).await? {
+                        if existing.name == trimmed_name {
+                            return Ok(existing);
                         } else {
                             return Err(AppError::Domain(REQUEST_CHANGED.to_string()));
                         }
                     }
 
                     // Step 5: the request is not Abandoned in from_branch
-                    let abandoned: bool = sqlx::query_scalar(
-                        "SELECT EXISTS(SELECT 1 FROM abandoned_requests WHERE branch_id = $1 AND request_id = $2)",
-                    )
-                    .bind(&from_branch_id)
-                    .bind(&trimmed_req)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    if abandoned {
+                    if repo.is_abandoned(tx, &from_branch_id, &trimmed_req).await? {
                         return Err(AppError::Domain(ABANDONED.to_string()));
                     }
 
                     // Step 6: no branch has this name, compared without regard to case (the main branch's XC-B counts)
-                    let name_taken: bool = sqlx::query_scalar(
-                        "SELECT EXISTS(SELECT 1 FROM branches WHERE lower(name) = lower($1))",
-                    )
-                    .bind(&trimmed_name)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    if name_taken {
+                    if repo.name_taken(tx, &trimmed_name).await? {
                         return Err(AppError::Domain(NAME_TAKEN.to_string()));
                     }
 
                     // Step 7: fewer than 20 branches exist, the main one included
-                    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM branches")
-                        .fetch_one(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-
-                    if count >= 20 {
+                    if repo.count(tx).await? >= 20 {
                         return Err(AppError::Domain(TOO_MANY_BRANCHES.to_string()));
                     }
 
                     // Insert
                     let new_id = format!("B{}", trimmed_req);
-                    sqlx::query(
-                        "INSERT INTO branches (id, name, created_at, created_by, request_id) VALUES ($1, $2, $3, $4, $5)",
+                    repo.insert(
+                        tx,
+                        &new_id,
+                        &trimmed_name,
+                        stored_now,
+                        &actor_str,
+                        &trimmed_req,
                     )
-                    .bind(&new_id)
-                    .bind(&trimmed_name)
-                    .bind(stored_now)
-                    .bind(&actor_str)
-                    .bind(&trimmed_req)
-                    .execute(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
+                    .await?;
 
                     Ok(Branch {
                         id: BranchId::new(new_id),
