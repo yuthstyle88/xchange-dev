@@ -1,0 +1,8 @@
+# Example key.properties for Android release signing.
+# The real key.properties file contains sensitive credentials and is NEVER committed to version control.
+# Copy this file to key.properties and replace the placeholders with your actual release keystore values.
+
+storeFile=<path-to-keystore>
+storePassword=<keystore-password>
+keyAlias=<key-alias>
+keyPassword=<key-password>
