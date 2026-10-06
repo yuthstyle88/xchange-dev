@@ -33,6 +33,47 @@ fn a_later_pair_for_the_same_currency_replaces_the_earlier_one() {
     let b = Balances::of(&[(code("USD"), money("5")), (code("USD"), money("7.50"))]);
     assert_eq!(b.get(code("USD")), money("7.50"));
     assert_eq!(b.non_zero().len(), 1);
+    let zeroed = Balances::of(&[(code("USD"), money("5")), (code("USD"), Money::ZERO)]);
+    assert_eq!(zeroed, Balances::empty());
+    assert_eq!(
+        Balances::of(&[(code("USD"), Money::ZERO)]),
+        Balances::empty()
+    );
+}
+
+#[test]
+fn an_explicit_zero_equals_empty() {
+    assert_eq!(
+        Balances::of(&[(code("USD"), Money::ZERO)]),
+        Balances::empty()
+    );
+    let replaced = Balances::of(&[(code("USD"), money("5.00")), (code("USD"), Money::ZERO)]);
+    assert_eq!(replaced, Balances::empty());
+    let opening = balances(&map(&[("USD", "5.00")]));
+    let out = StockDelta::for_movement(code("USD"), Direction::Out, money("5.00"));
+    assert_eq!(
+        ShiftLedger::expected(&opening, &[out]),
+        Ok(Balances::empty())
+    );
+}
+
+#[test]
+fn entries_are_listed_in_the_registers_order_baht_first() {
+    let b = Balances::of(&[
+        (code("ZWG"), money("1.00")),
+        (code("USD"), money("1.00")),
+        (CurrencyCode::THB, money("1.00")),
+    ]);
+    let order: Vec<&str> = b.non_zero().iter().map(|(c, _)| c.as_str()).collect();
+    assert_eq!(order, ["THB", "USD", "ZWG"]);
+    assert_eq!(
+        b.non_zero(),
+        vec![
+            (CurrencyCode::THB, money("1.00")),
+            (code("USD"), money("1.00")),
+            (code("ZWG"), money("1.00")),
+        ]
+    );
 }
 
 #[test]

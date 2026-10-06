@@ -81,6 +81,32 @@ fn pairs_for_the_same_currency_add_up_and_zeros_are_not_listed() {
     ]);
     assert_eq!(d.get(code("USD")), MoneyDelta::ZERO);
     assert_eq!(d.non_zero(), vec![(code("EUR"), signed("3.00"))]);
+    assert_eq!(
+        StockDelta::of(&[(code("USD"), MoneyDelta::ZERO)]),
+        StockDelta::none()
+    );
+    assert_eq!(
+        StockDelta::of(&[
+            (code("USD"), signed("10.00")),
+            (code("USD"), signed("-10.00")),
+        ]),
+        StockDelta::none()
+    );
+}
+
+#[test]
+fn an_explicit_zero_equals_none() {
+    assert_eq!(
+        StockDelta::of(&[(code("USD"), MoneyDelta::ZERO)]),
+        StockDelta::none()
+    );
+    assert_eq!(
+        StockDelta::of(&[
+            (code("USD"), signed("5.00")),
+            (code("USD"), signed("-5.00")),
+        ]),
+        StockDelta::none()
+    );
 }
 
 #[test]
