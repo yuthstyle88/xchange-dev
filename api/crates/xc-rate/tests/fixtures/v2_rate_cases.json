@@ -1,0 +1,6009 @@
+{
+ "source": "v2 engine extracted unchanged from the deployed bundle (xchange-online@3ffc5a5): adminSaveRate, adminCreateBranch, adminAbandonRequest, adminSnapshot (server.mjs:6614-6824), driven by gen_rates.mjs",
+ "mainBranch": {
+  "id": "MAIN",
+  "name": "XC-B"
+ },
+ "sentences": [
+  "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+  "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+  "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด",
+  "คำขอเดิมมีข้อมูลเปลี่ยน",
+  "จำนวนเงินหรือเรทไม่ถูกต้อง",
+  "ชื่อสาขานี้มีอยู่แล้ว",
+  "ทศนิยมเกินกำหนด",
+  "รหัสคำขอไม่ถูกต้อง",
+  "รองรับสูงสุด 20 สาขา",
+  "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
+  "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+  "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+ ],
+ "currencies": [
+  {
+   "code": "USD",
+   "name": "ดอลลาร์สหรัฐ",
+   "symbol": "$"
+  },
+  {
+   "code": "EUR",
+   "name": "ยูโร",
+   "symbol": "€"
+  },
+  {
+   "code": "GBP",
+   "name": "ปอนด์สเตอร์ลิง (สหราชอาณาจักร)",
+   "symbol": "£"
+  },
+  {
+   "code": "JPY",
+   "name": "เยนญี่ปุ่น",
+   "symbol": "¥"
+  },
+  {
+   "code": "CNY",
+   "name": "หยวนจีน",
+   "symbol": "¥"
+  },
+  {
+   "code": "AUD",
+   "name": "ดอลลาร์ออสเตรเลีย",
+   "symbol": "$"
+  },
+  {
+   "code": "AED",
+   "name": "เดอร์แฮมสหรัฐอาหรับเอมิเรตส์",
+   "symbol": null
+  },
+  {
+   "code": "AFN",
+   "name": "อัฟกานิอัฟกานิสถาน",
+   "symbol": null
+  },
+  {
+   "code": "ALL",
+   "name": "เลกแอลเบเนีย",
+   "symbol": null
+  },
+  {
+   "code": "AMD",
+   "name": "แดรมอาร์เมเนีย",
+   "symbol": null
+  },
+  {
+   "code": "AOA",
+   "name": "กวานซาแองโกลา",
+   "symbol": null
+  },
+  {
+   "code": "ARS",
+   "name": "เปโซอาร์เจนตินา",
+   "symbol": null
+  },
+  {
+   "code": "AWG",
+   "name": "ฟลอรินอารูบา",
+   "symbol": null
+  },
+  {
+   "code": "AZN",
+   "name": "มานัตอาเซอร์ไบจาน",
+   "symbol": null
+  },
+  {
+   "code": "BAM",
+   "name": "มาร์กบอสเนีย-เฮอร์เซโกวีนา",
+   "symbol": null
+  },
+  {
+   "code": "BBD",
+   "name": "ดอลลาร์บาร์เบโดส",
+   "symbol": null
+  },
+  {
+   "code": "BDT",
+   "name": "ตากาบังกลาเทศ",
+   "symbol": null
+  },
+  {
+   "code": "BHD",
+   "name": "ดีนาร์บาห์เรน",
+   "symbol": null
+  },
+  {
+   "code": "BIF",
+   "name": "ฟรังก์บุรุนดี",
+   "symbol": null
+  },
+  {
+   "code": "BMD",
+   "name": "ดอลลาร์เบอร์มิวดา",
+   "symbol": null
+  },
+  {
+   "code": "BND",
+   "name": "ดอลลาร์บรูไน",
+   "symbol": null
+  },
+  {
+   "code": "BOB",
+   "name": "โบลิเวียโนโบลิเวีย",
+   "symbol": null
+  },
+  {
+   "code": "BRL",
+   "name": "เรียลบราซิล",
+   "symbol": null
+  },
+  {
+   "code": "BSD",
+   "name": "ดอลลาร์บาฮามาส",
+   "symbol": null
+  },
+  {
+   "code": "BTN",
+   "name": "เอ็งกุลตรัมภูฏาน",
+   "symbol": null
+  },
+  {
+   "code": "BWP",
+   "name": "ปูลาบอตสวานา",
+   "symbol": null
+  },
+  {
+   "code": "BYN",
+   "name": "รูเบิลเบลารุส",
+   "symbol": null
+  },
+  {
+   "code": "BZD",
+   "name": "ดอลลาร์เบลีซ",
+   "symbol": null
+  },
+  {
+   "code": "CAD",
+   "name": "ดอลลาร์แคนาดา",
+   "symbol": null
+  },
+  {
+   "code": "CDF",
+   "name": "ฟรังก์คองโก",
+   "symbol": null
+  },
+  {
+   "code": "CHF",
+   "name": "ฟรังก์สวิส",
+   "symbol": null
+  },
+  {
+   "code": "CLP",
+   "name": "เปโซชิลี",
+   "symbol": null
+  },
+  {
+   "code": "COP",
+   "name": "เปโซโคลอมเบีย",
+   "symbol": null
+  },
+  {
+   "code": "CRC",
+   "name": "โกลองคอสตาริกา",
+   "symbol": null
+  },
+  {
+   "code": "CUP",
+   "name": "เปโซคิวบา",
+   "symbol": null
+  },
+  {
+   "code": "CVE",
+   "name": "เอสคูโดเคปเวิร์ด",
+   "symbol": null
+  },
+  {
+   "code": "CZK",
+   "name": "โครูนาสาธารณรัฐเช็ก",
+   "symbol": null
+  },
+  {
+   "code": "DJF",
+   "name": "ฟรังก์จิบูตี",
+   "symbol": null
+  },
+  {
+   "code": "DKK",
+   "name": "โครนเดนมาร์ก",
+   "symbol": null
+  },
+  {
+   "code": "DOP",
+   "name": "เปโซโดมินิกัน",
+   "symbol": null
+  },
+  {
+   "code": "DZD",
+   "name": "ดีนาร์แอลจีเรีย",
+   "symbol": null
+  },
+  {
+   "code": "EGP",
+   "name": "ปอนด์อียิปต์",
+   "symbol": null
+  },
+  {
+   "code": "ERN",
+   "name": "แนกฟาเอริเทรีย",
+   "symbol": null
+  },
+  {
+   "code": "ETB",
+   "name": "เบอรร์เอธิโอเปีย",
+   "symbol": null
+  },
+  {
+   "code": "FJD",
+   "name": "ดอลลาร์ฟิจิ",
+   "symbol": null
+  },
+  {
+   "code": "FKP",
+   "name": "ปอนด์หมู่เกาะฟอล์กแลนด์",
+   "symbol": null
+  },
+  {
+   "code": "GEL",
+   "name": "ลารีจอร์เจีย",
+   "symbol": null
+  },
+  {
+   "code": "GHS",
+   "name": "เซดีกานา",
+   "symbol": null
+  },
+  {
+   "code": "GIP",
+   "name": "ปอนด์ยิบรอลตาร์",
+   "symbol": null
+  },
+  {
+   "code": "GMD",
+   "name": "ดาลาซีแกมเบีย",
+   "symbol": null
+  },
+  {
+   "code": "GNF",
+   "name": "ฟรังก์กินี",
+   "symbol": null
+  },
+  {
+   "code": "GTQ",
+   "name": "เควตซัลกัวเตมาลา",
+   "symbol": null
+  },
+  {
+   "code": "GYD",
+   "name": "ดอลลาร์กายอานา",
+   "symbol": null
+  },
+  {
+   "code": "HKD",
+   "name": "ดอลลาร์ฮ่องกง",
+   "symbol": null
+  },
+  {
+   "code": "HNL",
+   "name": "เลมปิราฮอนดูรัส",
+   "symbol": null
+  },
+  {
+   "code": "HTG",
+   "name": "กูร์ดเฮติ",
+   "symbol": null
+  },
+  {
+   "code": "HUF",
+   "name": "ฟอรินต์ฮังการี",
+   "symbol": null
+  },
+  {
+   "code": "IDR",
+   "name": "รูเปียห์อินโดนีเซีย",
+   "symbol": null
+  },
+  {
+   "code": "ILS",
+   "name": "นิวเชเกลอิสราเอล",
+   "symbol": null
+  },
+  {
+   "code": "INR",
+   "name": "รูปีอินเดีย",
+   "symbol": null
+  },
+  {
+   "code": "IQD",
+   "name": "ดีนาร์อิรัก",
+   "symbol": null
+  },
+  {
+   "code": "IRR",
+   "name": "เรียลอิหร่าน",
+   "symbol": null
+  },
+  {
+   "code": "ISK",
+   "name": "โครนาไอซ์แลนด์",
+   "symbol": null
+  },
+  {
+   "code": "JMD",
+   "name": "ดอลลาร์จาเมกา",
+   "symbol": null
+  },
+  {
+   "code": "JOD",
+   "name": "ดีนาร์จอร์แดน",
+   "symbol": null
+  },
+  {
+   "code": "KES",
+   "name": "ชิลลิงเคนยา",
+   "symbol": null
+  },
+  {
+   "code": "KGS",
+   "name": "ซอมคีร์กีซสถาน",
+   "symbol": null
+  },
+  {
+   "code": "KHR",
+   "name": "เรียลกัมพูชา",
+   "symbol": null
+  },
+  {
+   "code": "KMF",
+   "name": "ฟรังก์คอโมโรส",
+   "symbol": null
+  },
+  {
+   "code": "KPW",
+   "name": "วอนเกาหลีเหนือ",
+   "symbol": null
+  },
+  {
+   "code": "KRW",
+   "name": "วอนเกาหลีใต้",
+   "symbol": null
+  },
+  {
+   "code": "KWD",
+   "name": "ดีนาร์คูเวต",
+   "symbol": null
+  },
+  {
+   "code": "KYD",
+   "name": "ดอลลาร์หมู่เกาะเคย์แมน",
+   "symbol": null
+  },
+  {
+   "code": "KZT",
+   "name": "เทงเจคาซัคสถาน",
+   "symbol": null
+  },
+  {
+   "code": "LAK",
+   "name": "กีบลาว",
+   "symbol": null
+  },
+  {
+   "code": "LBP",
+   "name": "ปอนด์เลบานอน",
+   "symbol": null
+  },
+  {
+   "code": "LKR",
+   "name": "รูปีศรีลังกา",
+   "symbol": null
+  },
+  {
+   "code": "LRD",
+   "name": "ดอลลาร์ไลบีเรีย",
+   "symbol": null
+  },
+  {
+   "code": "LSL",
+   "name": "โลตีเลโซโท",
+   "symbol": null
+  },
+  {
+   "code": "LYD",
+   "name": "ดีนาร์ลิเบีย",
+   "symbol": null
+  },
+  {
+   "code": "MAD",
+   "name": "ดีแรห์มโมร็อกโก",
+   "symbol": null
+  },
+  {
+   "code": "MDL",
+   "name": "ลิวมอลโดวา",
+   "symbol": null
+  },
+  {
+   "code": "MGA",
+   "name": "อาเรียรีมาลากาซี",
+   "symbol": null
+  },
+  {
+   "code": "MKD",
+   "name": "ดีนาร์มาซิโดเนีย",
+   "symbol": null
+  },
+  {
+   "code": "MMK",
+   "name": "จ๊าตพม่า",
+   "symbol": null
+  },
+  {
+   "code": "MNT",
+   "name": "ทูกริกมองโกเลีย",
+   "symbol": null
+  },
+  {
+   "code": "MOP",
+   "name": "ปาตากามาเก๊า",
+   "symbol": null
+  },
+  {
+   "code": "MRU",
+   "name": "อูกียามอริเตเนีย",
+   "symbol": null
+  },
+  {
+   "code": "MUR",
+   "name": "รูปีมอริเชียส",
+   "symbol": null
+  },
+  {
+   "code": "MVR",
+   "name": "รูฟิยามัลดีฟส์",
+   "symbol": null
+  },
+  {
+   "code": "MWK",
+   "name": "ควาชามาลาวี",
+   "symbol": null
+  },
+  {
+   "code": "MXN",
+   "name": "เปโซเม็กซิโก",
+   "symbol": null
+  },
+  {
+   "code": "MYR",
+   "name": "ริงกิตมาเลเซีย",
+   "symbol": null
+  },
+  {
+   "code": "MZN",
+   "name": "เมติคัลโมซัมบิก",
+   "symbol": null
+  },
+  {
+   "code": "NAD",
+   "name": "ดอลลาร์นามิเบีย",
+   "symbol": null
+  },
+  {
+   "code": "NGN",
+   "name": "ไนราไนจีเรีย",
+   "symbol": null
+  },
+  {
+   "code": "NIO",
+   "name": "กอร์โดบานิการากัว",
+   "symbol": null
+  },
+  {
+   "code": "NOK",
+   "name": "โครนนอร์เวย์",
+   "symbol": null
+  },
+  {
+   "code": "NPR",
+   "name": "รูปีเนปาล",
+   "symbol": null
+  },
+  {
+   "code": "NZD",
+   "name": "ดอลลาร์นิวซีแลนด์",
+   "symbol": null
+  },
+  {
+   "code": "OMR",
+   "name": "เรียลโอมาน",
+   "symbol": null
+  },
+  {
+   "code": "PAB",
+   "name": "บัลบัวปานามา",
+   "symbol": null
+  },
+  {
+   "code": "PEN",
+   "name": "ซอลเปรู",
+   "symbol": null
+  },
+  {
+   "code": "PGK",
+   "name": "กีนาปาปัวนิวกินี",
+   "symbol": null
+  },
+  {
+   "code": "PHP",
+   "name": "เปโซฟิลิปปินส์",
+   "symbol": null
+  },
+  {
+   "code": "PKR",
+   "name": "รูปีปากีสถาน",
+   "symbol": null
+  },
+  {
+   "code": "PLN",
+   "name": "ซลอตีโปแลนด์",
+   "symbol": null
+  },
+  {
+   "code": "PYG",
+   "name": "กวารานีปารากวัย",
+   "symbol": null
+  },
+  {
+   "code": "QAR",
+   "name": "เรียลกาตาร์",
+   "symbol": null
+  },
+  {
+   "code": "RON",
+   "name": "ลิวโรมาเนีย",
+   "symbol": null
+  },
+  {
+   "code": "RSD",
+   "name": "ดีนาร์เซอร์เบีย",
+   "symbol": null
+  },
+  {
+   "code": "RUB",
+   "name": "รูเบิลรัสเซีย",
+   "symbol": null
+  },
+  {
+   "code": "RWF",
+   "name": "ฟรังก์รวันดา",
+   "symbol": null
+  },
+  {
+   "code": "SAR",
+   "name": "ริยัลซาอุดีอาระเบีย",
+   "symbol": null
+  },
+  {
+   "code": "SBD",
+   "name": "ดอลลาร์หมู่เกาะโซโลมอน",
+   "symbol": null
+  },
+  {
+   "code": "SCR",
+   "name": "รูปีเซเชลส์",
+   "symbol": null
+  },
+  {
+   "code": "SDG",
+   "name": "ปอนด์ซูดาน",
+   "symbol": null
+  },
+  {
+   "code": "SEK",
+   "name": "โครนาสวีเดน",
+   "symbol": null
+  },
+  {
+   "code": "SGD",
+   "name": "ดอลลาร์สิงคโปร์",
+   "symbol": null
+  },
+  {
+   "code": "SHP",
+   "name": "ปอนด์เซนต์เฮเลนา",
+   "symbol": null
+  },
+  {
+   "code": "SLE",
+   "name": "ลีโอนเซียร์ราลีโอน",
+   "symbol": null
+  },
+  {
+   "code": "SOS",
+   "name": "ชิลลิงโซมาเลีย",
+   "symbol": null
+  },
+  {
+   "code": "SRD",
+   "name": "ดอลลาร์ซูรินาเม",
+   "symbol": null
+  },
+  {
+   "code": "SSP",
+   "name": "ปอนด์ซูดานใต้",
+   "symbol": null
+  },
+  {
+   "code": "STN",
+   "name": "ดอบราเซาตูเมและปรินซิปี",
+   "symbol": null
+  },
+  {
+   "code": "SYP",
+   "name": "ปอนด์ซีเรีย",
+   "symbol": null
+  },
+  {
+   "code": "SZL",
+   "name": "ลิลันเจนีสวาซิ",
+   "symbol": null
+  },
+  {
+   "code": "TJS",
+   "name": "โซโมนิทาจิกิสถาน",
+   "symbol": null
+  },
+  {
+   "code": "TMT",
+   "name": "มานัตเติร์กเมนิสถาน",
+   "symbol": null
+  },
+  {
+   "code": "TND",
+   "name": "ดีนาร์ตูนิเซีย",
+   "symbol": null
+  },
+  {
+   "code": "TOP",
+   "name": "พาแองกาตองกา",
+   "symbol": null
+  },
+  {
+   "code": "TRY",
+   "name": "ลีราตุรกี",
+   "symbol": null
+  },
+  {
+   "code": "TTD",
+   "name": "ดอลลาร์ตรินิแดดและโตเบโก",
+   "symbol": null
+  },
+  {
+   "code": "TWD",
+   "name": "ดอลลาร์ไต้หวันใหม่",
+   "symbol": null
+  },
+  {
+   "code": "TZS",
+   "name": "ชิลลิงแทนซาเนีย",
+   "symbol": null
+  },
+  {
+   "code": "UAH",
+   "name": "ฮรีฟเนียยูเครน",
+   "symbol": null
+  },
+  {
+   "code": "UGX",
+   "name": "ชิลลิงยูกันดา",
+   "symbol": null
+  },
+  {
+   "code": "UYU",
+   "name": "เปโซอุรุกวัย",
+   "symbol": null
+  },
+  {
+   "code": "UZS",
+   "name": "ซอมอุซเบกิสถาน",
+   "symbol": null
+  },
+  {
+   "code": "VES",
+   "name": "โบลีวาร์เวเนซุเอลา",
+   "symbol": null
+  },
+  {
+   "code": "VND",
+   "name": "ดองเวียดนาม",
+   "symbol": null
+  },
+  {
+   "code": "VUV",
+   "name": "วาตูวานูอาตู",
+   "symbol": null
+  },
+  {
+   "code": "WST",
+   "name": "ทาลาซามัว",
+   "symbol": null
+  },
+  {
+   "code": "XAF",
+   "name": "ฟรังก์เซฟาธนาคารรัฐแอฟริกากลาง",
+   "symbol": null
+  },
+  {
+   "code": "XCD",
+   "name": "ดอลลาร์แคริบเบียนตะวันออก",
+   "symbol": null
+  },
+  {
+   "code": "XCG",
+   "name": "XCG",
+   "symbol": null
+  },
+  {
+   "code": "XOF",
+   "name": "ฟรังก์เซฟาธนาคารกลางรัฐแอฟริกาตะวันตก",
+   "symbol": null
+  },
+  {
+   "code": "XPF",
+   "name": "ฟรังก์ซีเอฟพี",
+   "symbol": null
+  },
+  {
+   "code": "YER",
+   "name": "เรียลเยเมน",
+   "symbol": null
+  },
+  {
+   "code": "ZAR",
+   "name": "แรนด์แอฟริกาใต้",
+   "symbol": null
+  },
+  {
+   "code": "ZMW",
+   "name": "ควาชาแซมเบีย",
+   "symbol": null
+  },
+  {
+   "code": "ZWG",
+   "name": "ZWG",
+   "symbol": null
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "first rate of a code, then a newer one",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.15",
+     "sell": "32.65",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1500",
+       "sell": "32.6500",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1500",
+        "sell": "32.6500",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0003-aaaaaaaaaaaa",
+     "code": "EUR",
+     "buy": "37.5055",
+     "sell": "37.9",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "37.5055",
+       "sell": "37.9000",
+       "requestId": "req-0003-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "EUR",
+        "buy": "37.5055",
+        "sell": "37.9000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1500",
+        "sell": "32.6500",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell equal to buy is allowed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "JPY",
+     "buy": "0.2195",
+     "sell": "0.2195",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "0.2195",
+       "sell": "0.2195",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "JPY",
+        "buy": "0.2195",
+        "sell": "0.2195",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "four decimals, smallest and largest rate",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "0.0001",
+     "sell": "0.0001",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "0.0001",
+       "sell": "0.0001",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "0.0001",
+        "sell": "0.0001",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "EUR",
+     "buy": "100000000",
+     "sell": "100000000",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "100000000.0000",
+       "sell": "100000000.0000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "EUR",
+        "buy": "100000000.0000",
+        "sell": "100000000.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "0.0001",
+        "sell": "0.0001",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0003-aaaaaaaaaaaa",
+     "code": "GBP",
+     "buy": "43.9000",
+     "sell": "44.10",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "43.9000",
+       "sell": "44.1000",
+       "requestId": "req-0003-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "GBP",
+        "buy": "43.9000",
+        "sell": "44.1000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "EUR",
+        "buy": "100000000.0000",
+        "sell": "100000000.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "0.0001",
+        "sell": "0.0001",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "the last code of the register",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "ZWG",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "1.0000",
+       "sell": "2.0000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "ZWG",
+        "buy": "1.0000",
+        "sell": "2.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell below buy",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.6",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell below buy by one ten-thousandth",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1001",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy zero",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "0",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell zero",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "0",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy with five decimals",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.12345",
+     "sell": "33",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ทศนิยมเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell with five decimals",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32",
+     "sell": "33.00001",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ทศนิยมเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy above the limit",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "100000000.0001",
+     "sell": "200000000",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy empty",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "sell empty",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy not a number",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "abc",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "buy negative",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "-1",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "both wrong: buy is judged first",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.12345",
+     "sell": "0",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ทศนิยมเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "THB has no counter rate",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "THB",
+     "buy": "1",
+     "sell": "1",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "a code outside the register",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "XXX",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "lower case code",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "usd",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "code empty",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "code of four letters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USDT",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "code with spaces around it is trimmed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": " USD ",
+     "buy": "1",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "1.0000",
+       "sell": "2.0000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "1.0000",
+        "sell": "2.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bad code and bad number: the number is judged first",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "XXX",
+     "buy": "0",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "bad code and sell below buy give the same sentence",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "XXX",
+     "buy": "3",
+     "sell": "2",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ",
+     "after": {
+      "rate": null,
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id of 15 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "aaaaaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id of 16 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "aaaaaaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "aaaaaaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id of 60 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id of 61 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id empty",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id with an underscore",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "aaaaaaaa_aaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id with a space inside",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "aaaaaaaa aaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "request id with spaces around it is trimmed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "  cccccccccccccccc  ",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "cccccccccccccccc",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "cccccccccccccccc",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "cccccccccccccccc",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bad request id and bad number: the request id is judged first",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "short",
+     "code": "USD",
+     "buy": "0",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name and cost together",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "SuperRich",
+     "partnerCost": "32.05",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "SuperRich",
+       "partnerCost": "32.0500",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "SuperRich",
+        "partnerCost": "32.0500"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name without cost",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "SuperRich",
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name with null cost",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "SuperRich",
+     "partnerCost": null,
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name with empty cost",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "SuperRich",
+     "partnerCost": "",
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner cost without name",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerCost": "32.05",
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of spaces counts as none",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "   ",
+     "partnerCost": "32.05",
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of spaces and no cost is no partner",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "   ",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name is trimmed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "  Vasu  ",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "Vasu",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "Vasu",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of 100 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of 101 characters",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of 50 emoji is 100 UTF-16 units",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner name of 51 emoji is 102 UTF-16 units",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner cost zero",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "0",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner cost with five decimals",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32.00001",
+     "branch": "MAIN",
+     "v2Error": "ทศนิยมเกินกำหนด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "partner cost may exceed the sell rate",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "99",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "99.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "99.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "a newer row without partner clears it",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.7",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.2000",
+       "sell": "32.7000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.2000",
+        "sell": "32.7000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, same data: nothing new is written",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request after a newer row, with a stale previousUpdated: still the saved answer",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.7",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.2000",
+       "sell": "32.7000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.2000",
+        "sell": "32.7000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@stale",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.2000",
+       "sell": "32.7000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.2000",
+        "sell": "32.7000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, the number written another way",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1000",
+     "sell": "32.60",
+     "previousUpdated": "",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, other buy",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, other sell",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.7",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, other code",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "EUR",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, partner added",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, partner cost changed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32.01",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request, partner name changed",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "Q",
+     "partnerCost": "32",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "P",
+       "partnerCost": "32.0000",
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "P",
+        "partnerCost": "32.0000"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "same request with a refused partner pair: the pair is judged before the replay",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "branch": "MAIN",
+     "v2Error": "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "first row with a previousUpdated that names a row",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@stale",
+     "branch": "MAIN",
+     "v2Error": "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "newer row with an empty previousUpdated",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.7",
+     "previousUpdated": "",
+     "branch": "MAIN",
+     "v2Error": "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "newer row with a stale previousUpdated",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.7",
+     "previousUpdated": "@stale",
+     "branch": "MAIN",
+     "v2Error": "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "previousUpdated is per code: another code having rows does not matter",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "EUR",
+     "buy": "37",
+     "sell": "38",
+     "previousUpdated": "",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "37.0000",
+       "sell": "38.0000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "EUR",
+        "buy": "37.0000",
+        "sell": "38.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "abandoned before use",
+   "steps": [
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "abandon after it was applied changes nothing",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "APPLIED"
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "abandoned request and bad number: the number is judged first",
+   "steps": [
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "0",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "abandoned request and a refused partner pair: abandoned is judged first",
+   "steps": [
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "partnerName": "P",
+     "branch": "MAIN",
+     "v2Error": "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด",
+     "after": {
+      "rate": {
+       "buy": null,
+       "sell": null,
+       "requestId": "",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": false
+      },
+      "history": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "a branch that does not exist",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "BNOPE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "after": null
+    }
+   ]
+  },
+  {
+   "name": "a branch that does not exist and sell below buy: the branch is judged first",
+   "steps": [
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.6",
+     "sell": "32.1",
+     "previousUpdated": "@current",
+     "branch": "BNOPE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "after": null
+    }
+   ]
+  },
+  {
+   "name": "rates are kept per branch",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0050-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0050-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0050-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0050-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.1",
+     "sell": "32.6",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.1000",
+       "sell": "32.6000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "31",
+     "sell": "33",
+     "previousUpdated": "",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "31.0000",
+       "sell": "33.0000",
+       "requestId": "req-0002-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "31.0000",
+        "sell": "33.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0003-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "31.5",
+     "sell": "33.5",
+     "previousUpdated": "@current",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "31.5000",
+       "sell": "33.5000",
+       "requestId": "req-0003-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "31.5000",
+        "sell": "33.5000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "31.0000",
+        "sell": "33.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0004-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "32.2",
+     "sell": "32.7",
+     "previousUpdated": "@current",
+     "branch": "MAIN",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "32.2000",
+       "sell": "32.7000",
+       "requestId": "req-0004-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "32.2000",
+        "sell": "32.7000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       },
+       {
+        "code": "USD",
+        "buy": "32.1000",
+        "sell": "32.6000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "a request abandoned in one branch is refused only there",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0050-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0050-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0050-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0050-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "saveRate",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "code": "USD",
+     "buy": "31",
+     "sell": "33",
+     "previousUpdated": "@current",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "v2Error": null,
+     "after": {
+      "rate": {
+       "buy": "31.0000",
+       "sell": "33.0000",
+       "requestId": "req-0001-aaaaaaaaaaaa",
+       "partnerName": "",
+       "partnerCost": null,
+       "hasUpdated": true
+      },
+      "history": [
+       {
+        "code": "USD",
+        "buy": "31.0000",
+        "sell": "33.0000",
+        "actor": "owner",
+        "partnerName": "",
+        "partnerCost": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "create a branch",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "create two branches",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "name": "Asok",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0002-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Asok",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch name is trimmed",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "  Silom  ",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "same request, same name",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "same request, other name",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Asok",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "same request, the name in another case",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "SILOM",
+     "branch": "MAIN",
+     "v2Error": "คำขอเดิมมีข้อมูลเปลี่ยน",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "name taken",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": "ชื่อสาขานี้มีอยู่แล้ว",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "name taken in another case",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "name": "sILOM",
+     "branch": "MAIN",
+     "v2Error": "ชื่อสาขานี้มีอยู่แล้ว",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the name of the main branch is taken",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "xc-b",
+     "branch": "MAIN",
+     "v2Error": "ชื่อสาขานี้มีอยู่แล้ว",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch name empty",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch name of spaces",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "   ",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch name of 60 characters",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "สสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสส",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "สสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสส",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch name of 61 characters",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "สสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสสส",
+     "branch": "MAIN",
+     "v2Error": "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "branch request id too short",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "short",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "bad request id and empty name: the request id is judged first",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "short",
+     "name": "",
+     "branch": "MAIN",
+     "v2Error": "รหัสคำขอไม่ถูกต้อง",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "created from a branch that does not exist, with a bad request id: the branch is judged first",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "short",
+     "name": "Silom",
+     "branch": "BNOPE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "created from a branch that does not exist",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "BNOPE",
+     "v2Error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "created from another branch",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0050-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0050-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0050-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0050-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "name": "Asok",
+     "branch": "Breq-0050-aaaaaaaaaaaa",
+     "v2Error": null,
+     "createdId": "Breq-0002-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0050-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0050-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Asok",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "abandoned request",
+   "steps": [
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "abandoned request and a taken name: abandoned is judged first",
+   "steps": [
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "CANCELLED"
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "XC-B",
+     "branch": "MAIN",
+     "v2Error": "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "abandon after the branch was created changes nothing",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "abandon",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "branch": "MAIN",
+     "v2Error": null,
+     "resolution": "APPLIED"
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Silom",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Silom",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "twenty branches at most, the main one included",
+   "steps": [
+    {
+     "op": "createBranch",
+     "requestId": "req-0001-aaaaaaaaaaaa",
+     "name": "Branch 1",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0001-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0002-aaaaaaaaaaaa",
+     "name": "Branch 2",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0002-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0003-aaaaaaaaaaaa",
+     "name": "Branch 3",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0003-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0004-aaaaaaaaaaaa",
+     "name": "Branch 4",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0004-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0005-aaaaaaaaaaaa",
+     "name": "Branch 5",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0005-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0006-aaaaaaaaaaaa",
+     "name": "Branch 6",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0006-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0007-aaaaaaaaaaaa",
+     "name": "Branch 7",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0007-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0008-aaaaaaaaaaaa",
+     "name": "Branch 8",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0008-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0009-aaaaaaaaaaaa",
+     "name": "Branch 9",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0009-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0010-aaaaaaaaaaaa",
+     "name": "Branch 10",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0010-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0011-aaaaaaaaaaaa",
+     "name": "Branch 11",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0011-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0012-aaaaaaaaaaaa",
+     "name": "Branch 12",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0012-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0013-aaaaaaaaaaaa",
+     "name": "Branch 13",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0013-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0014-aaaaaaaaaaaa",
+     "name": "Branch 14",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0014-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0015-aaaaaaaaaaaa",
+     "name": "Branch 15",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0015-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0016-aaaaaaaaaaaa",
+     "name": "Branch 16",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0016-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0017-aaaaaaaaaaaa",
+     "name": "Branch 17",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0017-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0018-aaaaaaaaaaaa",
+     "name": "Branch 18",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0018-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0018-aaaaaaaaaaaa",
+       "name": "Branch 18",
+       "requestId": "req-0018-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0019-aaaaaaaaaaaa",
+     "name": "Branch 19",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0019-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0018-aaaaaaaaaaaa",
+       "name": "Branch 18",
+       "requestId": "req-0018-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0019-aaaaaaaaaaaa",
+       "name": "Branch 19",
+       "requestId": "req-0019-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0020-aaaaaaaaaaaa",
+     "name": "One too many",
+     "branch": "MAIN",
+     "v2Error": "รองรับสูงสุด 20 สาขา",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0018-aaaaaaaaaaaa",
+       "name": "Branch 18",
+       "requestId": "req-0018-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0019-aaaaaaaaaaaa",
+       "name": "Branch 19",
+       "requestId": "req-0019-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0019-aaaaaaaaaaaa",
+     "name": "Branch 19",
+     "branch": "MAIN",
+     "v2Error": null,
+     "createdId": "Breq-0019-aaaaaaaaaaaa",
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0018-aaaaaaaaaaaa",
+       "name": "Branch 18",
+       "requestId": "req-0018-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0019-aaaaaaaaaaaa",
+       "name": "Branch 19",
+       "requestId": "req-0019-aaaaaaaaaaaa"
+      }
+     ]
+    },
+    {
+     "op": "createBranch",
+     "requestId": "req-0021-aaaaaaaaaaaa",
+     "name": "Branch 1",
+     "branch": "MAIN",
+     "v2Error": "ชื่อสาขานี้มีอยู่แล้ว",
+     "createdId": null,
+     "branchesAfter": [
+      {
+       "id": "MAIN",
+       "name": "XC-B",
+       "requestId": null
+      },
+      {
+       "id": "Breq-0001-aaaaaaaaaaaa",
+       "name": "Branch 1",
+       "requestId": "req-0001-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0002-aaaaaaaaaaaa",
+       "name": "Branch 2",
+       "requestId": "req-0002-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0003-aaaaaaaaaaaa",
+       "name": "Branch 3",
+       "requestId": "req-0003-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0004-aaaaaaaaaaaa",
+       "name": "Branch 4",
+       "requestId": "req-0004-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0005-aaaaaaaaaaaa",
+       "name": "Branch 5",
+       "requestId": "req-0005-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0006-aaaaaaaaaaaa",
+       "name": "Branch 6",
+       "requestId": "req-0006-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0007-aaaaaaaaaaaa",
+       "name": "Branch 7",
+       "requestId": "req-0007-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0008-aaaaaaaaaaaa",
+       "name": "Branch 8",
+       "requestId": "req-0008-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0009-aaaaaaaaaaaa",
+       "name": "Branch 9",
+       "requestId": "req-0009-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0010-aaaaaaaaaaaa",
+       "name": "Branch 10",
+       "requestId": "req-0010-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0011-aaaaaaaaaaaa",
+       "name": "Branch 11",
+       "requestId": "req-0011-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0012-aaaaaaaaaaaa",
+       "name": "Branch 12",
+       "requestId": "req-0012-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0013-aaaaaaaaaaaa",
+       "name": "Branch 13",
+       "requestId": "req-0013-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0014-aaaaaaaaaaaa",
+       "name": "Branch 14",
+       "requestId": "req-0014-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0015-aaaaaaaaaaaa",
+       "name": "Branch 15",
+       "requestId": "req-0015-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0016-aaaaaaaaaaaa",
+       "name": "Branch 16",
+       "requestId": "req-0016-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0017-aaaaaaaaaaaa",
+       "name": "Branch 17",
+       "requestId": "req-0017-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0018-aaaaaaaaaaaa",
+       "name": "Branch 18",
+       "requestId": "req-0018-aaaaaaaaaaaa"
+      },
+      {
+       "id": "Breq-0019-aaaaaaaaaaaa",
+       "name": "Branch 19",
+       "requestId": "req-0019-aaaaaaaaaaaa"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
