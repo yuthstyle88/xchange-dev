@@ -16,3 +16,12 @@ xc-kernel = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono"] }
+argon2 = { version = "0.5", features = ["std"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
