@@ -275,7 +275,11 @@ class _SelectPageState extends ConsumerState<SelectPage> {
             initialValue: s.paymentMethod,
             isExpanded: true,
             hint: Text(l.text('choosePayment')),
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            style: TextStyle(
+              fontFamily: Theme.of(context).textTheme.bodyLarge?.fontFamily,
+              fontFamilyFallback: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.fontFamilyFallback,
               fontSize: 20,
               color: KioskColors.ink,
             ),

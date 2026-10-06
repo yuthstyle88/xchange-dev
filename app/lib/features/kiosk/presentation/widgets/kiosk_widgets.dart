@@ -169,7 +169,11 @@ class PrimaryButton extends StatelessWidget {
     style: FilledButton.styleFrom(
       backgroundColor: KioskColors.brand,
       minimumSize: const Size.fromHeight(72),
-      textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+      textStyle: TextStyle(
+        fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
+        fontFamilyFallback: Theme.of(
+          context,
+        ).textTheme.titleLarge?.fontFamilyFallback,
         fontSize: 24,
         fontWeight: FontWeight.w700,
       ),
@@ -190,7 +194,11 @@ class SecondaryButton extends StatelessWidget {
     style: OutlinedButton.styleFrom(
       foregroundColor: KioskColors.ink,
       minimumSize: const Size.fromHeight(72),
-      textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+      textStyle: TextStyle(
+        fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
+        fontFamilyFallback: Theme.of(
+          context,
+        ).textTheme.titleLarge?.fontFamilyFallback,
         fontSize: 22,
         fontWeight: FontWeight.w700,
       ),
