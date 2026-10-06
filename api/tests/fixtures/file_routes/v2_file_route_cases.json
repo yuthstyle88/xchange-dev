@@ -1,0 +1,2928 @@
+{
+ "source": "xchange-online@3ffc5a5 server.mjs through its own handle(req), driven by api/tools/v2-fixtures/gen_file_routes.mjs",
+ "note": "Keys v2 drew are written $kN in the order it drew them. `as` names who is signed in (see `people`; \"owner\" is the owner). A POST body is `head` (hex) followed by `pad` zero bytes; `origin` / `marker` null = the header is absent; `mime` null = no Content-Type. A step with `seed` is not a request: a file put in the store directly. `stored` is the one row and object an accepted upload left. `v3` is the answer v3 gives where it differs from v2 on purpose.",
+ "branches": [
+  "MAIN",
+  "BR-2"
+ ],
+ "people": {
+  "front": {
+   "id": "employee-front",
+   "role": "FRONT",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "finance": {
+   "id": "employee-finance",
+   "role": "FINANCE",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "manager": {
+   "id": "employee-manager",
+   "role": "MANAGER",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "rates": {
+   "id": "employee-rates",
+   "role": "RATES",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "system": {
+   "id": "employee-system",
+   "role": "SYSTEM",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "monitor": {
+   "id": "employee-monitor",
+   "role": "MONITOR",
+   "branchId": "MAIN",
+   "mustChange": false
+  },
+  "front2": {
+   "id": "employee-front2",
+   "role": "FRONT",
+   "branchId": "BR-2",
+   "mustChange": false
+  },
+  "newcomer": {
+   "id": "employee-newcomer",
+   "role": "FRONT",
+   "branchId": "MAIN",
+   "mustChange": true
+  }
+ },
+ "counts": {
+  "requests": 118,
+  "seeds": 5,
+  "stored": 16,
+  "byStatus": {
+   "200": 42,
+   "303": 2,
+   "400": 47,
+   "401": 7,
+   "404": 20
+  }
+ },
+ "steps": [
+  {
+   "note": "upload: nobody signed in",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "กรุณาเข้าสู่ระบบ"
+    }
+   }
+  },
+  {
+   "note": "upload: nobody, and the request headers missing — the sign-in check comes first",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [],
+    "origin": null,
+    "marker": null,
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "กรุณาเข้าสู่ระบบ"
+    }
+   }
+  },
+  {
+   "note": "upload: a first-password employee is nobody here",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "newcomer"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "กรุณาเข้าสู่ระบบ"
+    }
+   }
+  },
+  {
+   "note": "GET /api/upload is not a route",
+   "request": {
+    "method": "GET",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "upload, owner: no Origin header",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": null,
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ORIGIN_REJECTED"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: another origin",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://evil.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ORIGIN_REJECTED"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: no marker header",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": null,
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ORIGIN_REJECTED"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: no branch named → MAIN",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k1"
+    }
+   },
+   "stored": {
+    "key": "$k1",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "upload, owner: ?branch= (empty) → MAIN",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/png",
+    "head": "89504e470d0a1a0a0000000d",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k2"
+    }
+   },
+   "stored": {
+    "key": "$k2",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/png",
+    "sha256": "c7c80b23a2c5c18118e423fe3eee3fd4bae0598d916cae5fa76af57edc1a6ba8"
+   }
+  },
+  {
+   "note": "upload, owner: ?branch=BR-2",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=BR-2",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "application/pdf",
+    "head": "255044462d312e370a",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k3"
+    }
+   },
+   "stored": {
+    "key": "$k3",
+    "branchId": "BR-2",
+    "ownerId": "owner",
+    "mime": "application/pdf",
+    "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+   }
+  },
+  {
+   "note": "upload, owner: a WebP",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=MAIN",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/webp",
+    "head": "52494646240000005745425056503820",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k4"
+    }
+   },
+   "stored": {
+    "key": "$k4",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/webp",
+    "sha256": "79b0f1bddf7910914b34fc49a68d87c0d81f20162950d4286b9c820323d651c4"
+   }
+  },
+  {
+   "note": "upload, owner: a branch that does not exist",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=NOWHERE",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: not a branch name",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=MAIN_1",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "สาขาไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: a bad branch and a bad type — the branch sentence wins",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=NOWHERE",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "text/plain",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: a type that is not accepted",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/gif",
+    "head": "474946383961",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: a type with a parameter",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg; charset=binary",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: no Content-Type",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": null,
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: content that is not what the type says",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "89504e470d0a1a0a0000000d",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: an empty body",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "",
+    "pad": 0
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+    }
+   }
+  },
+  {
+   "note": "upload, owner: exactly 15 MB",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 15728630
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k5"
+    }
+   },
+   "stored": {
+    "key": "$k5",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/jpeg",
+    "sha256": "adca7c9916d069f8c6c387839caa42042dae948d42233c7a8e7e652ea8065c69"
+   }
+  },
+  {
+   "note": "upload, owner: one byte more",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 15728631
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "json": {
+     "error": "ไฟล์ใหญ่เกิน 15 MB"
+    }
+   }
+  },
+  {
+   "note": "upload, owner and an employee signed in together: it is the owner",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=BR-2",
+    "as": [
+     "owner",
+     "manager"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k6"
+    }
+   },
+   "stored": {
+    "key": "$k6",
+    "branchId": "BR-2",
+    "ownerId": "owner",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "upload, Front: stored in the employee's own branch",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k7"
+    }
+   },
+   "stored": {
+    "key": "$k7",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "upload, Front: ?branch=BR-2 is ignored — still the own branch",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=BR-2",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/png",
+    "head": "89504e470d0a1a0a0000000d",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k8"
+    }
+   },
+   "stored": {
+    "key": "$k8",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/png",
+    "sha256": "c7c80b23a2c5c18118e423fe3eee3fd4bae0598d916cae5fa76af57edc1a6ba8"
+   }
+  },
+  {
+   "note": "upload, Front: ?branch=NOWHERE is ignored too",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload?branch=NOWHERE",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k9"
+    }
+   },
+   "stored": {
+    "key": "$k9",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "upload, Finance",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "finance"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "application/pdf",
+    "head": "255044462d312e370a",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k10"
+    }
+   },
+   "stored": {
+    "key": "$k10",
+    "branchId": "MAIN",
+    "ownerId": "employee-finance",
+    "mime": "application/pdf",
+    "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+   }
+  },
+  {
+   "note": "upload, Front of BR-2",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front2"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k11"
+    }
+   },
+   "stored": {
+    "key": "$k11",
+    "branchId": "BR-2",
+    "ownerId": "employee-front2",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "upload, employee: no Origin header — the staff sentence, not the owner's",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": null,
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "upload, employee: no marker header",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": null,
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "upload, manager: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "manager"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "upload, rates: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "rates"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "upload, system: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "system"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "upload, monitor: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "monitor"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "upload, Manager with the headers missing: the headers are judged first",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "manager"
+    ],
+    "origin": null,
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "upload, Manager with a bad type: the role is judged first",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "manager"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "text/plain",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "upload, Front: a type that is not accepted",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "text/html",
+    "head": "3c68746d6c3e",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "upload, Front: content that is not what the type says",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/webp",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+    }
+   }
+  },
+  {
+   "note": "upload, Front: more than 15 MB",
+   "request": {
+    "method": "POST",
+    "path": "/api/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 15728640
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ไฟล์ใหญ่เกิน 15 MB"
+    }
+   }
+  },
+  {
+   "note": "staff upload: no session",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "staff upload: the owner is not an employee",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "staff upload: no Origin header",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": null,
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "staff upload: no Origin header and no session — the headers are judged first",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [],
+    "origin": null,
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "staff upload: no marker header",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": null,
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "คำขอไม่ถูกต้อง"
+    }
+   }
+  },
+  {
+   "note": "GET /api/staff/upload is not a route",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "staff upload: a first-password employee (v2 names the password; v3 has no session for such an employee)",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "newcomer"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน"
+    }
+   },
+   "v3": {
+    "status": 401,
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "staff upload, Front",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k12"
+    }
+   },
+   "stored": {
+    "key": "$k12",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/jpeg",
+    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+   }
+  },
+  {
+   "note": "staff upload, Front with the owner signed in too: the employee",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "owner",
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/webp",
+    "head": "52494646240000005745425056503820",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k13"
+    }
+   },
+   "stored": {
+    "key": "$k13",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/webp",
+    "sha256": "79b0f1bddf7910914b34fc49a68d87c0d81f20162950d4286b9c820323d651c4"
+   }
+  },
+  {
+   "note": "staff upload, Finance",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "finance"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/png",
+    "head": "89504e470d0a1a0a0000000d",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k14"
+    }
+   },
+   "stored": {
+    "key": "$k14",
+    "branchId": "MAIN",
+    "ownerId": "employee-finance",
+    "mime": "image/png",
+    "sha256": "c7c80b23a2c5c18118e423fe3eee3fd4bae0598d916cae5fa76af57edc1a6ba8"
+   }
+  },
+  {
+   "note": "staff upload, Front of BR-2, ?branch=MAIN ignored",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload?branch=MAIN",
+    "as": [
+     "front2"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "application/pdf",
+    "head": "255044462d312e370a",
+    "pad": 20
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k15"
+    }
+   },
+   "stored": {
+    "key": "$k15",
+    "branchId": "BR-2",
+    "ownerId": "employee-front2",
+    "mime": "application/pdf",
+    "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+   }
+  },
+  {
+   "note": "staff upload, manager: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "manager"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "staff upload, rates: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "rates"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "staff upload, system: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "system"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "staff upload, monitor: this role may not upload",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "monitor"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "staff upload, Manager with a bad type: the role is judged first",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "manager"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "text/plain",
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "บทบาทนี้อัปโหลดหลักฐานไม่ได้"
+    }
+   }
+  },
+  {
+   "note": "staff upload: a type that is not accepted",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/gif",
+    "head": "474946383961",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "staff upload: no Content-Type",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": null,
+    "head": "ffd8ffe000104a464946",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่รองรับ"
+    }
+   }
+  },
+  {
+   "note": "staff upload: content that is not what the type says",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "255044462d312e370a",
+    "pad": 20
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+    }
+   }
+  },
+  {
+   "note": "staff upload: an empty body",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "",
+    "pad": 0
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ชนิดไฟล์ไม่ตรงกับเนื้อหา"
+    }
+   }
+  },
+  {
+   "note": "staff upload: exactly 15 MB",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 15728630
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "uploadKey": "$k16"
+    }
+   },
+   "stored": {
+    "key": "$k16",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "image/jpeg",
+    "sha256": "adca7c9916d069f8c6c387839caa42042dae948d42233c7a8e7e652ea8065c69"
+   }
+  },
+  {
+   "note": "staff upload: one byte more",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/upload",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": "image/jpeg",
+    "head": "ffd8ffe000104a464946",
+    "pad": 15728631
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "no-store"
+    },
+    "json": {
+     "error": "ไฟล์ใหญ่เกิน 15 MB"
+    }
+   }
+  },
+  {
+   "note": "a receipt page stored by the owner's save of an exchange in MAIN",
+   "seed": {
+    "key": "receipt-abababababababababababababababababababababababababababababababab",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "text/html",
+    "text": "<!doctype html><title>receipt</title><p>ใบเสร็จ</p>"
+   }
+  },
+  {
+   "note": "a receipt page stored by Front's save in MAIN",
+   "seed": {
+    "key": "receipt-cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    "branchId": "MAIN",
+    "ownerId": "employee-front",
+    "mime": "text/html",
+    "text": "<!doctype html><title>receipt</title><p>ใบเสร็จของพนักงาน</p>"
+   }
+  },
+  {
+   "note": "a file under a 40-character key in MAIN (only the staff ways in take such a key)",
+   "seed": {
+    "key": "0123456789abcdef-0123456789abcdef-012345",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/png",
+    "text": "PNG\r\n\u001a\nlong"
+   }
+  },
+  {
+   "note": "a file under receipt- and 36 characters in MAIN",
+   "seed": {
+    "key": "receipt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "image/jpeg",
+    "text": "short receipt"
+   }
+  },
+  {
+   "note": "a file whose recorded type is none v2 knows",
+   "seed": {
+    "key": "ffffffffffffffffffffffffffffffffffff",
+    "branchId": "MAIN",
+    "ownerId": "owner",
+    "mime": "application/zip",
+    "text": "zip"
+   }
+  },
+  {
+   "note": "file: nobody signed in is sent to the sign-in page",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k1",
+    "as": []
+   },
+   "response": {
+    "status": 303,
+    "headers": {
+     "location": "https://desk.example/login"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "file: a first-password employee is sent there too",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "newcomer"
+    ]
+   },
+   "response": {
+    "status": 303,
+    "headers": {
+     "location": "https://desk.example/login"
+    },
+    "text": ""
+   }
+  },
+  {
+   "note": "POST /files/{key} is not a route",
+   "request": {
+    "method": "POST",
+    "path": "/files/$k1",
+    "as": [
+     "owner"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": null,
+    "head": "",
+    "pad": 0
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a JPEG the owner uploaded",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, owner: the same with ?download=1",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k1?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"$k1.jpg\""
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, owner: ?download=true is not a download",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k1?download=true",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a PNG, download",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k2?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/png",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"$k2.png\""
+    },
+    "body": {
+     "length": 32,
+     "sha256": "c7c80b23a2c5c18118e423fe3eee3fd4bae0598d916cae5fa76af57edc1a6ba8"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a WebP, download",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k4?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/webp",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"$k4.webp\""
+    },
+    "body": {
+     "length": 36,
+     "sha256": "79b0f1bddf7910914b34fc49a68d87c0d81f20162950d4286b9c820323d651c4"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a PDF of another branch, download — the branch plays no part",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k3?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/pdf",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"$k3.pdf\""
+    },
+    "body": {
+     "length": 29,
+     "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a receipt page",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-abababababababababababababababababababababababababababababababab",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 65,
+     "sha256": "6d689540a92dfde372ec8d6267e41aad65ad8712bdf755c333f849a496642208"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a receipt page, download",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-abababababababababababababababababababababababababababababababab?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"receipt-abababababababababababababababababababababababababababababababab.html\""
+    },
+    "body": {
+     "length": 65,
+     "sha256": "6d689540a92dfde372ec8d6267e41aad65ad8712bdf755c333f849a496642208"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a type v2 has no ending for, download",
+   "request": {
+    "method": "GET",
+    "path": "/files/ffffffffffffffffffffffffffffffffffff?download=1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/zip",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+     "content-disposition": "attachment; filename=\"ffffffffffffffffffffffffffffffffffff.bin\""
+    },
+    "body": {
+     "length": 3,
+     "sha256": "4a70fe9aa6436e02c2dea340fbd1e352e4ef2d8ce6ca52ad25d4b95471fc8bf2"
+    }
+   }
+  },
+  {
+   "note": "file, owner: a file an employee uploaded is not the owner's",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a receipt an employee's save stored is not the owner's",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a 40-character key is not looked up this way",
+   "request": {
+    "method": "GET",
+    "path": "/files/0123456789abcdef-0123456789abcdef-012345",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: receipt- and 36 characters is not looked up this way",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a key nobody stored",
+   "request": {
+    "method": "GET",
+    "path": "/files/00000000-0000-4000-8000-000000000000",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a key in capitals",
+   "request": {
+    "method": "GET",
+    "path": "/files/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner: a key of 35 characters",
+   "request": {
+    "method": "GET",
+    "path": "/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, owner and employee signed in together: the owner's way",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "owner",
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front: own upload — no Content-Disposition this way",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, Front: ?download=1 changes nothing this way",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7?download=1",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, Front: the owner's upload in the same branch",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k1",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, Manager: a colleague's upload in the same branch",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k10",
+    "as": [
+     "manager"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/pdf",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 29,
+     "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+    }
+   }
+  },
+  {
+   "note": "file, Monitor: a receipt page",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-abababababababababababababababababababababababababababababababab",
+    "as": [
+     "monitor"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 65,
+     "sha256": "6d689540a92dfde372ec8d6267e41aad65ad8712bdf755c333f849a496642208"
+    }
+   }
+  },
+  {
+   "note": "file, Front: the 40-character key",
+   "request": {
+    "method": "GET",
+    "path": "/files/0123456789abcdef-0123456789abcdef-012345",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/png",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 13,
+     "sha256": "386278c2bf56c6d235181ded71fa9087543e4e185900ca21cd205230f53bf3f8"
+    }
+   }
+  },
+  {
+   "note": "file, Front: receipt- and 36 characters",
+   "request": {
+    "method": "GET",
+    "path": "/files/receipt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 13,
+     "sha256": "4feef563a70b3811b07f10e95db61d9ffe6e3ab24081fb8fea87fbe9d8eff9c8"
+    }
+   }
+  },
+  {
+   "note": "file, Front: a file of another branch",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k3",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front of BR-2: a file of MAIN",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "front2"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front of BR-2: own branch",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k11",
+    "as": [
+     "front2"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "file, rates: this role reads no file",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "rates"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, system: this role reads no file",
+   "request": {
+    "method": "GET",
+    "path": "/files/$k7",
+    "as": [
+     "system"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front: a key in capitals",
+   "request": {
+    "method": "GET",
+    "path": "/files/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front: a key of 65 characters",
+   "request": {
+    "method": "GET",
+    "path": "/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "file, Front: a key nobody stored",
+   "request": {
+    "method": "GET",
+    "path": "/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "staff file: no session",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": []
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "staff file: the owner is not an employee",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k1",
+    "as": [
+     "owner"
+    ]
+   },
+   "response": {
+    "status": 401,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "staff file: a first-password employee (v2 names the password; v3 has no session for such an employee)",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "newcomer"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน"
+    }
+   },
+   "v3": {
+    "status": 401,
+    "json": {
+     "error": "EMPLOYEE_AUTH_REQUIRED"
+    }
+   }
+  },
+  {
+   "note": "POST /api/staff/file/{key} is not a route",
+   "request": {
+    "method": "POST",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "front"
+    ],
+    "origin": "https://desk.example",
+    "marker": "1",
+    "mime": null,
+    "head": "",
+    "pad": 0
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "staff file: one path part too many",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7/x",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 404,
+    "headers": {
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "text": "Not found"
+   }
+  },
+  {
+   "note": "staff file, Front: own upload",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: needs neither Origin nor the marker header, and ?download=1 changes nothing",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7?download=1",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 30,
+     "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front with the owner signed in too",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k2",
+    "as": [
+     "owner",
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/png",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 32,
+     "sha256": "c7c80b23a2c5c18118e423fe3eee3fd4bae0598d916cae5fa76af57edc1a6ba8"
+    }
+   }
+  },
+  {
+   "note": "staff file, Finance: a PDF",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k10",
+    "as": [
+     "finance"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/pdf",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 29,
+     "sha256": "e7826e8557625db1c50c01f169827b2cf21e5fa2c758713009db53ead11b0369"
+    }
+   }
+  },
+  {
+   "note": "staff file, Manager: a WebP",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k4",
+    "as": [
+     "manager"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/webp",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 36,
+     "sha256": "79b0f1bddf7910914b34fc49a68d87c0d81f20162950d4286b9c820323d651c4"
+    }
+   }
+  },
+  {
+   "note": "staff file, Monitor: a receipt page is always a download named receipt.html",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/receipt-abababababababababababababababababababababababababababababababab",
+    "as": [
+     "monitor"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "text/html",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment; filename=\"receipt.html\""
+    },
+    "body": {
+     "length": 65,
+     "sha256": "6d689540a92dfde372ec8d6267e41aad65ad8712bdf755c333f849a496642208"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: the 40-character key",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/0123456789abcdef-0123456789abcdef-012345",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/png",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 13,
+     "sha256": "386278c2bf56c6d235181ded71fa9087543e4e185900ca21cd205230f53bf3f8"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: receipt- and 36 characters",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/receipt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "image/jpeg",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 13,
+     "sha256": "4feef563a70b3811b07f10e95db61d9ffe6e3ab24081fb8fea87fbe9d8eff9c8"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a type v2 has no ending for",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/ffffffffffffffffffffffffffffffffffff",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/zip",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "inline"
+    },
+    "body": {
+     "length": 3,
+     "sha256": "4a70fe9aa6436e02c2dea340fbd1e352e4ef2d8ce6ca52ad25d4b95471fc8bf2"
+    }
+   }
+  },
+  {
+   "note": "staff file, rates: this role reads no file",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "rates"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "บทบาทนี้ไม่มีสิทธิ์อ่านเอกสารลูกค้าหรือหลักฐานเงิน"
+    }
+   }
+  },
+  {
+   "note": "staff file, system: this role reads no file",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "system"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "บทบาทนี้ไม่มีสิทธิ์อ่านเอกสารลูกค้าหรือหลักฐานเงิน"
+    }
+   }
+  },
+  {
+   "note": "staff file, Rates and a key that cannot be one: the role is judged first",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/NOPE",
+    "as": [
+     "rates"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "บทบาทนี้ไม่มีสิทธิ์อ่านเอกสารลูกค้าหรือหลักฐานเงิน"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a file of another branch",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k3",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front of BR-2: a file of MAIN",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/$k7",
+    "as": [
+     "front2"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a key nobody stored",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a key in capitals",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a key of 35 characters",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  },
+  {
+   "note": "staff file, Front: a key of 65 characters",
+   "request": {
+    "method": "GET",
+    "path": "/api/staff/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "as": [
+     "front"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "headers": {
+     "content-type": "application/json",
+     "cache-control": "private, no-store",
+     "x-content-type-options": "nosniff",
+     "content-disposition": "attachment"
+    },
+    "json": {
+     "error": "ไม่พบไฟล์"
+    }
+   }
+  }
+ ]
+}
