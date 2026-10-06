@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
@@ -15,7 +15,6 @@ use crate::domain::account::value_objects::password_hasher::PasswordHasher;
 
 const WRONG: &str = "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง";
 const LIMIT: &str = "ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที";
-const PASSWORD_LENGTH_MSG: &str = "รหัสผ่านต้องมี 12–128 ตัวอักษร";
 const EMPLOYEE_DATA: &str = "ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง";
 const NOT_FOUND: &str = "ไม่พบพนักงาน";
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
@@ -32,9 +31,6 @@ const ROLES: &[&str] = &[
     "DOCUMENTS",
     "DOCUMENT_REVIEW",
 ];
-
-const DUMMY_HASH: &str =
-    "$argon2id$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$dGVzdHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q";
 
 fn sha256_hex(text: &str) -> String {
     Sha256::digest(text.as_bytes())
@@ -82,6 +78,16 @@ fn is_valid_token(token: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// The password a payload sets. Anything that is not a JSON string reads as
+/// the empty password, which `PasswordHasher::hash` refuses with the length
+/// sentence — the one place that rule is written.
+fn new_password(payload: &Value) -> &str {
+    payload
+        .get("password")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
 fn window_start(now: DateTime<Utc>) -> DateTime<Utc> {
     let millis = now.timestamp_millis();
     let window_millis = millis.div_euclid(15 * 60 * 1000) * (15 * 60 * 1000);
@@ -94,15 +100,49 @@ pub enum EmployeesAnswer {
     Saved,
 }
 
-#[derive(Clone)]
 pub struct AccountService<R> {
     repo: Arc<R>,
     hasher: PasswordHasher,
+    /// Made on first use by `hasher`, shared by clones. See [`Self::spare_hash`].
+    spare: Arc<OnceLock<String>>,
+}
+
+// Not derived: a derive would ask for `R: Clone`, and only the `Arc` is cloned.
+impl<R> Clone for AccountService<R> {
+    fn clone(&self) -> Self {
+        Self {
+            repo: Arc::clone(&self.repo),
+            hasher: self.hasher.clone(),
+            spare: Arc::clone(&self.spare),
+        }
+    }
 }
 
 impl<R: AccountRepository> AccountService<R> {
     pub fn new(repo: Arc<R>, hasher: PasswordHasher) -> Self {
-        Self { repo, hasher }
+        Self {
+            repo,
+            hasher,
+            spare: Arc::new(OnceLock::new()),
+        }
+    }
+
+    /// The PHC string a sign-in is verified against when there is nothing else
+    /// to verify (no usable account, or a password field that cannot be a
+    /// password). It is the hash of 32 random bytes, made once by this
+    /// service's own hasher, so it costs what a real account costs.
+    pub fn spare_hash(&self) -> &str {
+        self.spare
+            .get_or_init(|| self.hasher.hash(&generate_token()).unwrap_or_default())
+    }
+
+    /// The password step of every sign-in: exactly one verification at the
+    /// hasher's cost, whatever the account (`stored` is `None` when there is
+    /// no usable one) and whatever the payload's password field holds.
+    fn password_matches(&self, payload: &Value, stored: Option<&str>) -> bool {
+        let password = payload.get("password").and_then(|v| v.as_str());
+        self.hasher
+            .verify_at_full_cost(password, stored, self.spare_hash())
     }
 
     /// The shared door (`/api/auth` login): the owner if the username is an owner's, else an employee.
@@ -136,12 +176,7 @@ impl<R: AccountRepository> AccountService<R> {
                 }
 
                 // Password check
-                let password = payload.get("password").and_then(|v| v.as_str());
-                let valid_pwd = if let Some(p) = password {
-                    p.encode_utf16().count() <= 128 && self.hasher.verify(p, &password_hash)
-                } else {
-                    false
-                };
+                let valid_pwd = self.password_matches(payload, Some(&password_hash));
 
                 if !owner.active || !valid_pwd {
                     return Err(AppError::Domain(WRONG.to_string()));
@@ -197,33 +232,25 @@ impl<R: AccountRepository> AccountService<R> {
         }
 
         // (4) account looked up and password checked
-        let password = payload.get("password").and_then(|v| v.as_str());
         let emp_opt = if !username.is_empty() {
             self.repo.find_employee_by_username(&username).await?
         } else {
             None
         };
 
-        let (employee, password_hash) = match emp_opt {
-            Some(pair) => pair,
-            None => {
-                self.hasher.verify("dummy_password", DUMMY_HASH);
-                return Err(AppError::Domain(WRONG.to_string()));
-            }
-        };
-
-        if !employee.active {
+        // No such name and a disabled account are "no usable account": the
+        // same answer after the same work as a wrong password.
+        let usable = emp_opt.filter(|(employee, _)| employee.active);
+        let stored = usable
+            .as_ref()
+            .map(|(_, password_hash)| password_hash.as_str());
+        if !self.password_matches(payload, stored) {
             return Err(AppError::Domain(WRONG.to_string()));
         }
-
-        let pwd = match password {
-            Some(p) if p.encode_utf16().count() <= 128 => p,
-            _ => return Err(AppError::Domain(WRONG.to_string())),
-        };
-
-        if !self.hasher.verify(pwd, &password_hash) {
+        // A match implies an account; this arm is never taken.
+        let Some((employee, _)) = usable else {
             return Err(AppError::Domain(WRONG.to_string()));
-        }
+        };
 
         let token = generate_token();
         let token_hash = sha256_hex(&token);
@@ -260,10 +287,13 @@ impl<R: AccountRepository> AccountService<R> {
         }
 
         if !staff_token.is_empty() {
-            match self.employee_session(staff_token, false, now).await {
-                Ok(employee) => return Ok(Some(SignedIn::Employee(employee))),
-                Err(_) => return Ok(None),
-            }
+            return match self.employee_session(staff_token, false, now).await {
+                Ok(employee) => Ok(Some(SignedIn::Employee(employee))),
+                // No usable session, or a first password still to change: nobody is signed in.
+                Err(AppError::Unauthenticated | AppError::Domain(_)) => Ok(None),
+                // Anything else (the database) is not an answer about the session.
+                Err(other) => Err(other),
+            };
         }
 
         Ok(None)
@@ -300,15 +330,22 @@ impl<R: AccountRepository> AccountService<R> {
 
     /// Ends the sessions of the tokens given. "" = none.
     pub async fn logout(&self, owner_token: &str, staff_token: &str) -> AppResult<()> {
-        if !owner_token.is_empty() && is_valid_token(owner_token) {
-            let token_hash = sha256_hex(owner_token);
-            let _ = self.repo.delete_owner_session(&token_hash).await;
-        }
-        if !staff_token.is_empty() && is_valid_token(staff_token) {
-            let token_hash = sha256_hex(staff_token);
-            let _ = self.repo.delete_employee_session(&token_hash).await;
-        }
-        Ok(())
+        // Both deletes are attempted whatever the other did; a failure of either is the answer.
+        let owner = if is_valid_token(owner_token) {
+            self.repo
+                .delete_owner_session(&sha256_hex(owner_token))
+                .await
+        } else {
+            Ok(())
+        };
+        let staff = if is_valid_token(staff_token) {
+            self.repo
+                .delete_employee_session(&sha256_hex(staff_token))
+                .await
+        } else {
+            Ok(())
+        };
+        owner.and(staff)
     }
 
     pub async fn change_password(
@@ -319,17 +356,7 @@ impl<R: AccountRepository> AccountService<R> {
     ) -> AppResult<()> {
         let employee = self.employee_session(staff_token, true, now).await?;
 
-        let password = match payload.get("password").and_then(|v| v.as_str()) {
-            Some(p) => p,
-            None => return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string())),
-        };
-
-        let pwd_utf16 = password.encode_utf16().count();
-        if !(12..=128).contains(&pwd_utf16) {
-            return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string()));
-        }
-
-        let password_hash = self.hasher.hash(password)?;
+        let password_hash = self.hasher.hash(new_password(payload))?;
         let success = self
             .repo
             .change_employee_password(&employee.id, employee.version, &password_hash, now)
@@ -394,16 +421,7 @@ impl<R: AccountRepository> AccountService<R> {
                     return Err(AppError::Domain(EMPLOYEE_DATA.to_string()));
                 }
 
-                let password = match payload.get("password").and_then(|v| v.as_str()) {
-                    Some(p) => p,
-                    None => return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string())),
-                };
-                let pwd_utf16 = password.encode_utf16().count();
-                if !(12..=128).contains(&pwd_utf16) {
-                    return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string()));
-                }
-
-                let password_hash = self.hasher.hash(password)?;
+                let password_hash = self.hasher.hash(new_password(payload))?;
                 let id = generate_uuid();
                 let employee = Employee {
                     id,
@@ -433,15 +451,7 @@ impl<R: AccountRepository> AccountService<R> {
                     .ok_or_else(|| AppError::Domain(NOT_FOUND.to_string()))?;
 
                 if action == "reset" {
-                    let password = match payload.get("password").and_then(|v| v.as_str()) {
-                        Some(p) => p,
-                        None => return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string())),
-                    };
-                    let pwd_utf16 = password.encode_utf16().count();
-                    if !(12..=128).contains(&pwd_utf16) {
-                        return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string()));
-                    }
-                    let password_hash = self.hasher.hash(password)?;
+                    let password_hash = self.hasher.hash(new_password(payload))?;
                     self.repo
                         .reset_employee_password(id, &password_hash, now, actor)
                         .await?;
@@ -485,11 +495,6 @@ impl<R: AccountRepository> AccountService<R> {
             });
         if !is_valid_username {
             return Err(AppError::Domain("ชื่อบัญชีไม่ถูกต้อง".to_string()));
-        }
-
-        let pwd_utf16 = password.encode_utf16().count();
-        if !(12..=128).contains(&pwd_utf16) {
-            return Err(AppError::Domain(PASSWORD_LENGTH_MSG.to_string()));
         }
 
         let password_hash = self.hasher.hash(password)?;

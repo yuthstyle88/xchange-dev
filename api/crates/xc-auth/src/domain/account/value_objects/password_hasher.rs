@@ -7,6 +7,8 @@ const MAX_UTF16: usize = 128;
 const DEFAULT_MEMORY_KIB: u32 = 19_456;
 const DEFAULT_ITERATIONS: u32 = 2;
 const DEFAULT_PARALLELISM: u32 = 1;
+/// What a spare verification "tries".
+const SPARE_ATTEMPT: &str = "spare verification";
 const PASSWORD_LENGTH_MSG: &str = "รหัสผ่านต้องมี 12–128 ตัวอักษร";
 
 #[derive(Debug, Clone)]
@@ -52,22 +54,49 @@ impl PasswordHasher {
         Ok(hash)
     }
 
+    /// False for a wrong password, a password longer than 128 units, and any stored value that is
+    /// not an Argon2id PHC string. The cost is read from `stored`, not from `self`. Never panics.
     pub fn verify(&self, password: &str, stored: &str) -> bool {
+        Self::verifiable(password, stored).is_some_and(|hash| Self::run(password, &hash))
+    }
+
+    /// `verify` for a sign-in: the same answer, after exactly one verification
+    /// whatever was sent. Where `verify` would answer without doing the work —
+    /// no password, one longer than 128 units, no account (`stored` is `None`),
+    /// a stored value that is no Argon2id hash — the work is done against
+    /// `spare` instead and the answer is false. `spare` can never grant
+    /// anything: its result is thrown away.
+    pub fn verify_at_full_cost(
+        &self,
+        password: Option<&str>,
+        stored: Option<&str>,
+        spare: &str,
+    ) -> bool {
+        if let (Some(password), Some(stored)) = (password, stored)
+            && let Some(hash) = Self::verifiable(password, stored)
+        {
+            return Self::run(password, &hash);
+        }
+        if let Some(hash) = Self::verifiable(SPARE_ATTEMPT, spare) {
+            let _ = Self::run(SPARE_ATTEMPT, &hash);
+        }
+        false
+    }
+
+    /// The parsed hash when `password` and `stored` are something Argon2id can be run on.
+    fn verifiable<'a>(password: &str, stored: &'a str) -> Option<PasswordHash<'a>> {
         if password.encode_utf16().count() > MAX_UTF16 {
-            return false;
+            return None;
         }
+        PasswordHash::new(stored)
+            .ok()
+            .filter(|hash| hash.algorithm == Algorithm::Argon2id.ident())
+    }
 
-        let parsed_hash = match PasswordHash::new(stored) {
-            Ok(h) => h,
-            Err(_) => return false,
-        };
-
-        if parsed_hash.algorithm != Algorithm::Argon2id.ident() {
-            return false;
-        }
-
+    /// The Argon2id computation itself, at the cost written in `hash`.
+    fn run(password: &str, hash: &PasswordHash<'_>) -> bool {
         Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
+            .verify_password(password.as_bytes(), hash)
             .is_ok()
     }
 }
