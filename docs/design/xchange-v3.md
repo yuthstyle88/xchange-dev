@@ -470,7 +470,7 @@ F1 was written in one piece by the session the owner gave it to; F5–F7 are ind
 
 | # | Ticket | Files owned | Depends on |
 |---|---|---|---|
-| T1 | Root package `xchange`: bootstrap, config, `/healthz`, `/health/ready`, Rust CI; extract v2 pages and assets into `api/web/`; `PageServer` | `api/src/{main.rs,lib.rs,bootstrap/,config/,presentation/http/health.rs,presentation/pages.rs}`, `api/web/`, `api/configuration/`, `.github/workflows/api.yml` | T2b |
+| T1 | Root package `xchange`: bootstrap, config, `/healthz`, `/health/ready`, Rust CI (#18); extract v2 pages and assets into `api/web/`; `PageServer` | `api/src/{main.rs,lib.rs,bootstrap/,config/,presentation/http/health.rs,presentation/pages.rs}`, `api/web/`, `api/configuration/`, `.github/workflows/api.yml` | T2b |
 | T2 | `Money`, `Rate`, `Quote` — **merged** (PR 14) in the flat crate `xc-domain` | `api/crates/xc-domain/src/{money,quote}.rs` | — |
 | T2b | Restructure to the `pos108-core` layout (§5.2): root package, `xc-kernel` (with `BranchTx` and its concurrency test) and the five context crates with their three layers and every `mod.rs`, kernel git dependencies, move T2's code and tests unchanged, delete `xc-domain` | `api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml` | T2 |
 | T3 | `StockDelta`, `ShiftLedger` | `api/crates/xc-shift/src/domain/shift/value_objects/{stock_delta,balances}.rs`, `…/domain/shift/entities/shift_ledger.rs` | T2b |

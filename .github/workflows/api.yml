@@ -1,0 +1,109 @@
+name: api
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || format('api-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  api:
+    name: api
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: https://github.com/
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        id: filter
+        run: |
+          skip_build=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+            pr_files=$(git diff --no-renames --name-only "$base_sha...$head_sha")
+            echo "PR changed files:"
+            echo "$pr_files"
+
+            if [ -z "$pr_files" ]; then
+              echo "Empty diff — running build."
+            elif echo "$pr_files" | grep -qE '^api/'; then
+              echo "Changes detected in api/ — running build."
+            elif ! echo "$pr_files" | grep -vqE '^docs/|\.md$'; then
+              echo "PR only touches docs — skipping build."
+              skip_build=true
+            elif echo "$pr_files" | grep -qE '^\.github/workflows/api\.yml'; then
+              head_files=$(git diff --no-renames --name-only "${head_sha}^...${head_sha}" 2>/dev/null || echo "$pr_files")
+              echo "HEAD commit changed files:"
+              echo "$head_files"
+              if [ -n "$head_files" ] && ! echo "$head_files" | grep -vqE '^docs/|\.md$'; then
+                echo "HEAD commit is doc-only test commit — skipping build."
+                skip_build=true
+              else
+                echo "Workflow changed in HEAD — running build."
+              fi
+            else
+              echo "No changes under api/ — skipping build."
+              skip_build=true
+            fi
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            if [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+              push_files=$(git diff --no-renames --name-only "${{ github.event.before }}...${{ github.event.after }}")
+              echo "Push changed files:"
+              echo "$push_files"
+              if [ -n "$push_files" ] && ! echo "$push_files" | grep -qE '^(api/|\.github/workflows/api\.yml)'; then
+                echo "Push has no changes under api/ or api.yml — skipping build."
+                skip_build=true
+              fi
+            fi
+          fi
+          echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
+
+      - name: Verify rustc 1.98.1
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        working-directory: api
+        run: |
+          if [ -d "$HOME/.cargo/bin" ]; then
+            export PATH="$HOME/.cargo/bin:$PATH"
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+          rustup show active-toolchain || true
+          rustc --version
+          VERSION=$(rustc --version | head -n 1)
+          if ! echo "$VERSION" | grep -qE '^rustc 1\.98\.1(\s|$)'; then
+            echo "::error::rustc version must be 1.98.1, but found: $VERSION"
+            exit 1
+          fi
+
+      - name: Check formatting
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        working-directory: api
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        working-directory: api
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        working-directory: api
+        run: cargo test --workspace --no-fail-fast
