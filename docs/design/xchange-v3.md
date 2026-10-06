@@ -144,10 +144,13 @@ tests named in §9 exist to catch exactly that.
 ```mermaid
 classDiagram
   direction LR
-  class Money { +Decimal value; +parse(str, max_dp) Result~Money~; +round_half_up_2() Money }
+  class Money { +parse(str) Result~Money~; +minor() i64; +from_minor(i64) Result~Money~; +is_zero() bool; +ZERO }
   class Rate { +Decimal value; +parse(str) Result~Rate~ }
   class Quote { +principal: Money; +received: Money; +paid: Money; +compute(side, amount, rate, fee) Result~Quote~ }
-  class StockDelta { +fx: (Code, Money); +thb: Money; +for_tx(side, code, amount, rate, fee, method) StockDelta }
+  class CurrencyCode { +parse(str) Result~CurrencyCode~; +THB; +as_str() str }
+  class MoneyDelta { +minor: i128; +plus(Money) MoneyDelta; +minus(Money) MoneyDelta; +is_negative() bool }
+  class Balances { +get(CurrencyCode) Money; +apply(StockDelta) Result~Balances~ }
+  class StockDelta { +fx: (CurrencyCode, MoneyDelta); +thb: MoneyDelta; +for_tx(side, code, amount, quote, cash) StockDelta; +for_movement(code, direction, amount) StockDelta }
   class ShiftLedger { +expected(opening, txs, moves) Balances; +ensure_non_negative(bal, delta) Result; +difference(expected, counted) Balances }
   class CustodyMachine { +apply(state, cmd, actor, facts, now) Result~Transition~ }
   class KioskMachine { +next(status, event, actor, now) Result~KioskStatus~ }
@@ -179,6 +182,10 @@ classDiagram
   Quote --> Money
   Quote --> Rate
   StockDelta --> Quote
+  StockDelta --> MoneyDelta
+  StockDelta --> CurrencyCode
+  Balances --> CurrencyCode
+  ShiftLedger --> Balances
   ShiftLedger --> StockDelta
   TxService --> Quote
   TxService --> ShiftLedger
@@ -221,7 +228,7 @@ Measured from `108-Plaza/pos108-core` at `405605de` and reproduced here so nothi
 | edition 2024, `rust-version = "1.85"`, toolchain `1.98.1` | same |
 
 Two things are **not** taken from `pos-kernel`, with the reason:
-- `pos_kernel::money::Money::new` rounds with `round_dp(2)` (banker's rounding) and has no input cap. An exchange principal must round **half up** and an entered amount is capped at 100,000,000 (§3). The exchange's `Money` and `Rate` are therefore value objects of `xc-exchange`; they convert to `pos_kernel::money::Money` where a shared type is wanted.
+- `pos_kernel::money::Money::new` rounds with `round_dp(2)` (banker's rounding) and has no input cap. An exchange principal must round **half up** and an entered amount is capped at 100,000,000 (§3). This server therefore has its own `Money`, `Rate`, `Side` and `Quote`, and they live in **`xc-kernel`** (`src/money/`), not in a context crate: the quote is needed by the exchange (save), the kiosk (quote action) and the shift (stock delta), and context crates do not depend on one another (rule below). [required] No file of this server imports `pos_kernel::money`; each crate's `shared` module re-exports it only because the `pos108-core` `lib.rs` shape is copied line for line, and a `Money` taken from there would round a principal differently without any test noticing a type error.
 - `pos_kernel::ids` are UUID newtypes. A branch id here is text (`MAIN`, `B<request id>`) because the kept screens create and send it; ids are newtypes local to each crate.
 
 **How much of it fits.** `pos108-core` is 42 crates for a multi-tenant product with sync, outbox and
@@ -233,9 +240,9 @@ small and change together (`pos108-core` crates already nest `domain/<context>/`
 
 | Crate | Sub-contexts (`domain/<x>/`, `application/<x>/`, `infrastructure/<x>/`) | Classes of §5.1 |
 |---|---|---|
-| `xc-kernel` | no layers — the few things every context crate needs and `pos-kernel` cannot supply: `ids.rs` (`BranchId` and the other text ids), `branch_tx.rs` (`BranchTx`, a wrapper over `pos_infra`'s `Transactor` that takes `SELECT … FOR UPDATE` on the branch's `branch_versions` row, runs the closure, increments the version, commits) | `BranchTx` |
-| `xc-exchange` | `exchange` (amounts, rates-as-values, the quote, transactions, document numbers), `customer` | `Money`, `Rate`, `Quote`, `TxService` |
-| `xc-shift` | `shift` (shifts, balances, stock movements), `custody` (the custody state machine and its records) | `StockDelta`, `ShiftLedger`, `ShiftService`, `CustodyMachine`, `CustodyService` |
+| `xc-kernel` | no layers — the few things every context crate needs and `pos-kernel` cannot supply: `ids.rs` (`BranchId` and the other text ids), `branch_tx.rs` (`BranchTx`, a wrapper over `pos_infra`'s `Transactor` that takes `SELECT … FOR UPDATE` on the branch's `branch_versions` row, runs the closure, increments the version, commits), and `money/` — one file per type: `money.rs` (`Money`, `NumberError`), `rate.rs`, `side.rs`, `quote.rs`, `money_delta.rs` (`MoneyDelta`, a signed amount in hundredths for stock changes and count differences), `currency_code.rs` (`CurrencyCode`, the stock register of v2 `server.mjs:6512`, `THB` first) | `BranchTx`, `Money`, `Rate`, `Quote`, `MoneyDelta`, `CurrencyCode` |
+| `xc-exchange` | `exchange` (transactions, document numbers), `customer`, `booking` | `TxService` |
+| `xc-shift` | `shift` (shifts, balances, stock movements), `custody` (the custody state machine and its records) | `Balances`, `StockDelta`, `ShiftLedger`, `ShiftService`, `CustodyMachine`, `CustodyService` |
 | `xc-rate` | `branch`, `rate` (currencies, counter rates, reference-rate sources) | `RateService`, `RateSource`, `BotRateSource` |
 | `xc-kiosk` | `kiosk` (requests, kiosk currencies, published receipts) | `KioskMachine`, `KioskService` |
 | `xc-auth` | `account` (owners, employees, sessions), `policy` | `Actor`, `Policy` |
@@ -244,9 +251,11 @@ small and change together (`pos108-core` crates already nest `domain/<context>/`
 Files and devices stay in the root package's `infrastructure/` until they grow: one local file store and
 one simulated driver do not earn a crate. They move out the day a second variant is written.
 
+[required] **Dependency rule.** A context crate depends on `xc-kernel` and the three `pos-*` crates, never on another context crate (measured on `main` `4d515d7`: no `xc-*` manifest names another context crate). What two contexts must share is either a pure value that belongs in `xc-kernel`, or is composed in the root package's `application/workflows/`. This is what moved the money types: `StockDelta` in `xc-shift` needs the quote that `xc-exchange` first held.
+
 File rule that keeps tickets from colliding, as in `pos108-core`: one value object, entity or use case per file; a `mod.rs` only re-exports. Two tickets never share a file other than a `mod.rs`, and every `mod.rs` a later ticket would need is created — with all its `pub mod` lines — by the restructuring ticket below, so later tickets do not edit them.
 
-**State of the code against this layout.** Ticket T2 was merged before the owner asked for the `pos108` layout: `Money`, `Rate` and `Quote` live in a flat crate `api/crates/xc-domain/src/{money,quote}.rs`. A restructuring ticket (T2b) moves them, unchanged, to `api/crates/xc-exchange/src/domain/exchange/value_objects/{money,rate,side}.rs` and `…/domain/exchange/entities/quote.rs`, moves the tests and the fixture with them, deletes `xc-domain`, and turns `api/Cargo.toml` into the root package. No behaviour changes; the provided tests must pass byte-for-byte apart from their `use` lines.
+**State of the code against this layout.** T2 (PR 14) wrote `Money`, `Rate` and `Quote` in a flat crate; T2b (PR 22, `c04f346`) moved them unchanged to `api/crates/xc-exchange/src/domain/exchange/value_objects/{money,rate,side}.rs` and `…/entities/quote.rs` and created every crate, layer and `mod.rs`. That placement was this document's and it is wrong by the dependency rule above. **T2c** moves the four types, their two test files and the fixture to `api/crates/xc-kernel/src/money/` and `api/crates/xc-kernel/tests/`, unchanged apart from `use` lines and the visibility the new neighbours need, and adds `MoneyDelta` and `CurrencyCode`. `BranchTx` is still a comment-only stub (`api/crates/xc-kernel/src/branch_tx.rs` on `main` `4d515d7`: five `//!` lines); it is its own ticket, **T2d**, with the concurrency test.
 
 Fallback when a provider has not landed: the consuming ticket declares a stub with the diagram's
 signature in its own file, marked `// moves to <file> with ticket <id>`. It does not wait and does not touch the provider's file.
@@ -472,14 +481,16 @@ F1 was written in one piece by the session the owner gave it to; F5–F7 are ind
 |---|---|---|---|
 | T1 | Root package `xchange`: bootstrap, config, `/healthz`, `/health/ready`, Rust CI (#18); extract v2 pages and assets into `api/web/`; `PageServer` | `api/src/{main.rs,lib.rs,bootstrap/,config/,presentation/http/health.rs,presentation/pages.rs}`, `api/web/`, `api/configuration/`, `.github/workflows/api.yml` | T2b |
 | T2 | `Money`, `Rate`, `Quote` — **merged** (PR 14) in the flat crate `xc-domain` | `api/crates/xc-domain/src/{money,quote}.rs` | — |
-| T2b | Restructure to the `pos108-core` layout (§5.2): root package, `xc-kernel` (with `BranchTx` and its concurrency test) and the five context crates with their three layers and every `mod.rs`, kernel git dependencies, move T2's code and tests unchanged, delete `xc-domain` | `api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml` | T2 |
-| T3 | `StockDelta`, `ShiftLedger` | `api/crates/xc-shift/src/domain/shift/value_objects/{stock_delta,balances}.rs`, `…/domain/shift/entities/shift_ledger.rs` | T2b |
+| T2b | Restructure to the `pos108-core` layout (§5.2) — **merged** (PR 22, `c04f346`): root package, `xc-kernel` and the five context crates with their three layers and every `mod.rs`, kernel git dependencies, T2's code and tests moved unchanged, `xc-domain` deleted. `BranchTx` was left a stub and is T2d | `api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml` | T2 |
+| T2c | Money types to the kernel: move `Money`, `NumberError`, `Rate`, `Side`, `Quote` with their tests and fixture, unchanged; add `MoneyDelta` and `CurrencyCode` | `api/crates/xc-kernel/Cargo.toml`, `api/crates/xc-kernel/src/lib.rs`, `api/crates/xc-kernel/src/money/`, `api/crates/xc-kernel/tests/`, `api/crates/xc-exchange/src/domain/exchange/{value_objects,entities}/` (the four files leave, their `mod` lines with them), `api/crates/xc-exchange/tests/`, `api/Cargo.lock`, `api/tools/v2-fixtures/README.md` | T2b |
+| T2d | `BranchTx` with its concurrency test (two tasks on one branch serialise; two branches do not wait) | `api/crates/xc-kernel/src/branch_tx.rs`, `api/crates/xc-kernel/tests/branch_tx_test.rs`, `api/crates/xc-kernel/Cargo.toml`, `api/Cargo.lock`, `api/migrations/*_branch_versions.sql` | T2c (both change `xc-kernel/Cargo.toml` and `Cargo.lock`) |
+| T3 | `Balances`, `StockDelta`, `ShiftLedger` | `api/crates/xc-shift/src/domain/shift/value_objects/{stock_delta,balances}.rs`, `…/domain/shift/entities/shift_ledger.rs`, `api/crates/xc-shift/tests/{stock_delta_test.rs,shift_ledger_test.rs}`, `api/crates/xc-shift/tests/fixtures/v2_stock_cases.json` | T2c |
 | T4 | `Actor`, `Policy`; `/api/auth`, `/api/staff/{login,logout,password,me}`, `/api/employees` | `api/crates/xc-auth/src/`, `api/src/presentation/{extractors/actor.rs,http/auth.rs,http/employees.rs}` | T1 |
-| T5 | Branches, currencies, rates, `RateSource`, `/api/reference-rates` | `api/crates/xc-rate/src/`, its route and dto files, its migration | T1 |
+| T5 | Branches, currencies, rates, `RateSource`, `/api/reference-rates` | `api/crates/xc-rate/src/`, `api/crates/xc-rate/tests/`, `api/src/presentation/http/reference_rates.rs`, `api/migrations/*_branches_rates.sql` (its RPC actions are served through T11's `rpc.rs`; no dto file of its own exists in the tree) | T1, T2c, T2d (`RateService` writes through `BranchTx`) |
 | T6 | Customers + files (`/api/upload`, `/files/`, `/documents`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/customer/`, `api/src/infrastructure/files/`, `api/src/presentation/http/{customers,files,documents}.rs`, `api/src/presentation/dto/{customer,file}.rs`, `api/migrations/*_customers_files.sql` | T1 |
-| T7 | Shifts + movements | `api/crates/xc-shift/src/{application,infrastructure}/shift/`, `api/crates/xc-shift/src/domain/shift/{entities/shift.rs,entities/stock_movement.rs,repositories/,commands/}`, `api/src/presentation/dto/shift.rs`, `api/migrations/*_shifts.sql` | T1, T3 |
-| T8 | Transactions: save, receipt HTML, documents | `api/crates/xc-exchange/src/{application,infrastructure}/exchange/`, `api/crates/xc-exchange/src/domain/exchange/{entities/transaction.rs,repositories/,commands/}`, `api/src/application/workflows/save_transaction.rs`, `api/src/presentation/dto/transaction.rs`, `api/migrations/*_transactions.sql` | T2b, T3, T6, T7 |
-| T9 | `CustodyMachine` | `api/crates/xc-shift/src/domain/custody/` | T2b |
+| T7 | Shifts + movements | `api/crates/xc-shift/src/{application,infrastructure}/shift/`, `api/crates/xc-shift/src/domain/shift/{entities/shift.rs,entities/stock_movement.rs,repositories/,commands/}`, `api/src/presentation/dto/shift.rs`, `api/migrations/*_shifts.sql` | T1, T2d, T3 (`ShiftService` writes through `BranchTx`; T10 gets it through this row) |
+| T8 | Transactions: save, receipt HTML, documents | `api/crates/xc-exchange/src/{application,infrastructure}/exchange/`, `api/crates/xc-exchange/src/domain/exchange/{entities/transaction.rs,repositories/,commands/}`, `api/src/application/workflows/save_transaction.rs`, `api/src/presentation/dto/transaction.rs`, `api/migrations/*_transactions.sql` | T2c, T2d, T3, T6, T7 |
+| T9 | `CustodyMachine` | `api/crates/xc-shift/src/domain/custody/`, `api/crates/xc-shift/tests/custody_machine_test.rs` | T2c |
 | T10 | Custody service (`ops*`) | `api/crates/xc-shift/src/{application,infrastructure}/custody/`, `api/migrations/*_custody.sql` | T7, T9 |
 | T11 | `SnapshotBuilder` + `CompatRpc` + `/api/rpc`, `/api/staff/rpc`, `/staff/desk` | `api/src/application/compat/`, `api/src/presentation/http/rpc.rs` | T5–T8, T10 (stubs allowed) |
 | T12 | `KioskMachine` + `/api/kiosk` | `api/crates/xc-kiosk/src/`, `api/src/presentation/http/kiosk.rs`, `api/src/presentation/dto/kiosk.rs`, `api/migrations/*_kiosk.sql` | T5, T8 |
@@ -487,7 +498,7 @@ F1 was written in one piece by the session the owner gave it to; F5–F7 are ind
 | T14 | `xc-import` — **not built** while D6 holds (v2 has test data only) | `api/crates/xc-import/` | reopens only if D6 changes |
 | T15 | Bookings/members (`/api/bookings`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/booking/`, `api/src/presentation/http/bookings.rs`, `api/src/presentation/dto/booking.rs`, `api/migrations/*_bookings.sql` | D5 |
 
-**For whoever watches the queue:** T2b's file scope is the whole server (`api/Cargo.toml`, `api/src/`, `api/crates/`, `api/deny.toml`). While it is in flight nothing else under `api/` can be dispatched; that silence is intended, and it is why T2b is a pure move kept as small and as quick as possible.
+**For whoever watches the queue:** T2c's file scope takes four files out of `xc-exchange` and changes `xc-kernel`'s manifest and `lib.rs`; T2d changes the same manifest and so follows it. Everything that uses `Money`, `Rate` or `BranchTx` waits for them: after T2c only T3 and T9 can start, and T5 and T7 need T2d as well. That narrow start is intended.
 
 Parity check before the phase 2 cutover: the kept screens and the phase 1 kiosk are driven against v3
 and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a browser pass covers the page rewriting in T1/T11).
@@ -496,8 +507,8 @@ and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a br
 
 | Item | Phase | Blocks | Who |
 |---|---|---|---|
-| Branch protection on `main` | 1, 2 | making any check required; until then a review is the only gate | owner |
-| Rust CI (`.github/workflows/api.yml`, part of T1) | 2 | every Rust PR rests on one reviewer's local run until it exists | controller — ticket not opened yet |
+| Branch protection on `main` | 1, 2 | nothing — set 2026-10-06 on the owner's decision: required checks `app` and `api`, `strict` (`gh api repos/108-Plaza/xchange/branches/main/protection`); `enforce_admins` is off and no review is required by GitHub, so the reviewer's verdict remains a process rule (#20) | — |
+| Rust CI | 2 | nothing — `.github/workflows/api.yml` is on `main` (PR 21, then PR 24 for the shared build decision); `api` reported `success` on `main` `4d515d7` | — |
 | Lane for this repo in the fleet's lane table | 1, 2 | workers on other machines cannot verify who controls it | owner |
 | Source repos `xchange-online`, `xchange-booking` | 1, 2 | phase 1 works from the readable `public/kiosk.js`; the phase 2 test harness is simpler with source | owner |
 | D5 port bookings/members or not | 2 | T15, and the member flag in T11 | owner |
