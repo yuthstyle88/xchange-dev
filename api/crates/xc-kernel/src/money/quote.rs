@@ -2,9 +2,9 @@
 
 use rust_decimal::RoundingStrategy;
 
-use crate::domain::exchange::value_objects::money::Money;
-use crate::domain::exchange::value_objects::rate::Rate;
-use crate::domain::exchange::value_objects::side::Side;
+use super::money::Money;
+use super::rate::Rate;
+use super::side::Side;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum QuoteError {

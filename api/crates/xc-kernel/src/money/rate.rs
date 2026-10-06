@@ -4,7 +4,7 @@ use std::fmt;
 
 use rust_decimal::Decimal;
 
-use crate::domain::exchange::value_objects::money::{Money, NumberError, parse_decimal};
+use super::money::{Money, NumberError, parse_decimal};
 
 /// Baht per one unit of a foreign currency: greater than zero, `<= 100,000,000`,
 /// at most four decimal places.

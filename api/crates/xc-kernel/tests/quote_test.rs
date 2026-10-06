@@ -6,10 +6,7 @@
 //! differs from it. The Rust code is held to `exact`.
 
 use serde::Deserialize;
-use xc_exchange::domain::exchange::entities::quote::{Quote, QuoteError};
-use xc_exchange::domain::exchange::value_objects::money::{Money, NumberError};
-use xc_exchange::domain::exchange::value_objects::rate::Rate;
-use xc_exchange::domain::exchange::value_objects::side::Side;
+use xc_kernel::money::{Money, NumberError, Quote, QuoteError, Rate, Side};
 
 #[derive(Deserialize)]
 struct Figures {

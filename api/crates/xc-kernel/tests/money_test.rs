@@ -1,7 +1,6 @@
 //! Written before the implementation (ticket T2). Do not edit, delete or weaken.
 
-use xc_exchange::domain::exchange::value_objects::money::{Money, NumberError};
-use xc_exchange::domain::exchange::value_objects::rate::Rate;
+use xc_kernel::money::{Money, NumberError, Rate};
 
 #[test]
 fn money_reads_plain_decimals_and_prints_two_places() {

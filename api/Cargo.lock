@@ -2089,7 +2089,10 @@ dependencies = [
  "pos-error",
  "pos-infra",
  "pos-kernel",
+ "rust_decimal",
  "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

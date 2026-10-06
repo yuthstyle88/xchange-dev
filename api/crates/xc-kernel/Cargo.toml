@@ -12,4 +12,10 @@ publish = false
 pos-kernel = { workspace = true }
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

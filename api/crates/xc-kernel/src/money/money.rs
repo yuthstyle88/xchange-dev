@@ -45,12 +45,28 @@ impl Money {
         d.mantissa() as i64
     }
 
+    /// The amount as hundredths with no 64-bit limit.
+    pub fn minor_i128(self) -> i128 {
+        let mut d = self.0;
+        d.rescale(2);
+        d.mantissa()
+    }
+
     /// The inverse of [`Money::minor`]; no upper cap. `Err(Invalid)` when negative.
     pub fn from_minor(minor: i64) -> Result<Money, NumberError> {
         if minor < 0 {
             return Err(NumberError::Invalid);
         }
         Ok(Money(Decimal::new(minor, 2)))
+    }
+
+    pub(crate) fn from_minor_i128(minor: i128) -> Result<Money, NumberError> {
+        if minor < 0 {
+            return Err(NumberError::Invalid);
+        }
+        Decimal::try_from_i128_with_scale(minor, 2)
+            .map(Money)
+            .map_err(|_| NumberError::Invalid)
     }
 
     pub fn is_zero(self) -> bool {
