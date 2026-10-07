@@ -345,3 +345,43 @@ async fn a_custody_signature_role_custody_does_not_know_is_a_fault() {
     );
     db.drop_schema().await;
 }
+
+// Ticket #253 — a stored amount is a JSON integer while it fits 64 bits and its decimal text only
+// beyond that (`minor_to_json`). A text that would fit 64 bits was never written by the server,
+// so reading it is a fault, not the amount it spells. Pins the guard in `minor_from_json`.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_ops_state_safe_amount_stored_as_text_that_fits_64_bits_is_a_fault() {
+    let db = TestDb::start().await;
+    let d = a_branch_with_history(&db).await;
+    spoil(
+        &db,
+        "UPDATE ops_state SET safe = safe || '{\"USD\": \"5\"}' \
+         WHERE branch_id = $1",
+        &d,
+    )
+    .await;
+    a_fault(
+        d.custody.state(&d.branch).await,
+        "a safe amount of \"5\" (text that fits 64 bits)",
+    );
+    db.drop_schema().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_draft_amount_stored_as_text_that_fits_64_bits_is_a_fault() {
+    let db = TestDb::start().await;
+    let d = a_branch_with_history(&db).await;
+    spoil(
+        &db,
+        "UPDATE tx_drafts SET data = jsonb_set(data, '{amount}', '\"5\"') \
+         WHERE branch_id = $1",
+        &d,
+    )
+    .await;
+    a_fault(
+        d.custody.state(&d.branch).await,
+        "a draft amount of \"5\" (text that fits 64 bits)",
+    );
+    db.drop_schema().await;
+}
