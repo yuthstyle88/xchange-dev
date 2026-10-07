@@ -568,6 +568,16 @@ impl DeviceService {
         })
     }
 
+    /// Reads the drawer settings of a branch.
+    pub async fn drawer_settings(&self, branch: &BranchId) -> AppResult<DrawerSettings> {
+        self.require_branch(branch).await?;
+        let mut tx = self.branch_tx.pool().begin().await?;
+        let settings =
+            DrawerSettings::read_in(&mut tx, &self.repo, branch, &self.printer_models).await?;
+        tx.rollback().await?;
+        Ok(settings)
+    }
+
     /// The lines a saved exchange leaves, and its print job — written on the
     /// transaction that saves the exchange, which already holds the branch.
     /// Called twice for the same exchange it adds nothing the second time.

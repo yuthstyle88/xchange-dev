@@ -16,9 +16,10 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::device_commands::QueueJob;
-use crate::infrastructure::devices::device_service::DeviceService;
+use crate::infrastructure::devices::device_service::{BAD_PRINTER, DeviceService};
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
+use crate::infrastructure::devices::printer_settings::{DEFAULT_PORT, PrinterKind};
 use crate::presentation::dto::device::{job_json, overview_json};
 use crate::presentation::extractors::actor::{
     BAD_REQUEST, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, answer, cookie, failure,
@@ -108,7 +109,10 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
 
     match action {
         "snapshot" => match devices.overview(&branch).await {
-            Ok(overview) => answer(200, overview_json(&overview), true),
+            Ok(overview) => match devices.drawer_settings(&branch).await {
+                Ok(drawer) => answer(200, overview_json(&overview, &drawer), true),
+                Err(e) => failure(e),
+            },
             Err(e) => failure(e),
         },
         "queue" => {
@@ -175,6 +179,52 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
             let state = payload.get("state").and_then(|v| v.as_str()).unwrap_or("");
             match devices
                 .drawer_observation(&branch, reference, state, actor.id(), now)
+                .await
+            {
+                Ok(()) => answer(200, json!({ "saved": true }), true),
+                Err(e) => failure(e),
+            }
+        }
+        "setPrinter" => {
+            let kind_str = match payload.get("kind").and_then(|v| v.as_str()) {
+                Some(k) => k,
+                None => return refuse(400, BAD_PRINTER),
+            };
+            let kind = match kind_str {
+                "SIMULATED" => PrinterKind::Simulated,
+                "NETWORK" => {
+                    let host = payload
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned();
+                    let port = match payload.get("port") {
+                        None => DEFAULT_PORT,
+                        Some(v) => match v.as_i64() {
+                            Some(p) if (0..=65535).contains(&p) => p as u16,
+                            _ => return refuse(400, BAD_PRINTER),
+                        },
+                    };
+                    PrinterKind::Network(host, port)
+                }
+                _ => return refuse(400, BAD_PRINTER),
+            };
+            match devices.set_printer(&branch, kind, &actor, now).await {
+                Ok(()) => answer(200, json!({ "saved": true }), true),
+                Err(e) => failure(e),
+            }
+        }
+        "setDrawer" => {
+            let model = payload
+                .get("printerModel")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let has_drawer = match payload.get("hasDrawer").and_then(|v| v.as_bool()) {
+                Some(b) => b,
+                None => return refuse(400, BAD_PRINTER),
+            };
+            match devices
+                .set_drawer(&branch, model, has_drawer, &actor, now)
                 .await
             {
                 Ok(()) => answer(200, json!({ "saved": true }), true),

@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::infrastructure::devices::device_event::DeviceEvent;
 use crate::infrastructure::devices::device_job::DeviceJob;
 use crate::infrastructure::devices::device_service::DeviceOverview;
+use crate::infrastructure::devices::printer_models::DrawerSettings;
 
 /// A device job object as v2 answered it (minus request_hash).
 pub fn job_json(job: &DeviceJob) -> Value {
@@ -35,10 +36,12 @@ pub fn event_json(event: &DeviceEvent) -> Value {
 }
 
 /// The overview (snapshot) of device jobs, events, and printer status.
-pub fn overview_json(overview: &DeviceOverview) -> Value {
+pub fn overview_json(overview: &DeviceOverview, drawer: &DrawerSettings) -> Value {
     json!({
         "jobs": overview.jobs.iter().map(job_json).collect::<Vec<_>>(),
         "events": overview.events.iter().map(event_json).collect::<Vec<_>>(),
         "printerOnline": overview.printer_online,
+        "printerModel": drawer.model,
+        "hasDrawer": drawer.has_drawer,
     })
 }

@@ -236,6 +236,13 @@ impl Policy {
         let is_owner = actor.kind() == ActorKind::Owner;
 
         match act {
+            "setPrinter" | "setDrawer" => {
+                if is_owner {
+                    Ok(())
+                } else {
+                    Err(PolicyError::DeviceStepNotAllowed)
+                }
+            }
             "queue" => {
                 if is_owner || role == Role::Front || role == Role::Backend || role == Role::Manager
                 {
