@@ -49,6 +49,8 @@ fn an_app_variable_overrides_the_yaml_value() {
         ("APP_APPLICATION__PORT", "9191"),
         ("APP_APPLICATION__HOST", "10.1.2.3"),
         ("APP_DATABASE__HOST", "db.internal"),
+        // A non-local host needs TLS (DB-LINK, design §7c).
+        ("APP_DATABASE__REQUIRE_SSL", "true"),
         ("APP_DATABASE__PORT", "6543"),
         ("APP_DATABASE__DATABASE_NAME", "xchange_other"),
         ("APP_CHANNEL", "release"),

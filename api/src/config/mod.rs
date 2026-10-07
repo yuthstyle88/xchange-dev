@@ -149,6 +149,20 @@ impl Settings {
         if let Err(e) = PrinterModels::new(settings.devices.printer_models.clone()) {
             return Err(config::ConfigError::Message(e));
         }
+        if !settings.database.require_ssl && !is_local_database_host(&settings.database.host) {
+            return Err(config::ConfigError::Message(format!(
+                "database.require_ssl must be true for the non-local database host `{}` (APP_DATABASE__REQUIRE_SSL=true)",
+                settings.database.host
+            )));
+        }
         Ok(settings)
     }
+}
+
+fn is_local_database_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host.starts_with('/')
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
