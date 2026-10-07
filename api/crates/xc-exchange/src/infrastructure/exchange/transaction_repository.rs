@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Row};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Money, Rate, Side};
+use xc_kernel::money::{Money, Rate, Side, plain_decimal};
 
 use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::entities::transaction::Transaction;
@@ -32,7 +32,12 @@ fn bad(what: &str) -> AppError {
 
 fn money(row: &sqlx::postgres::PgRow, col: &str) -> AppResult<Money> {
     let text: String = row.try_get(col).map_err(AppError::Database)?;
-    Money::parse(&text).map_err(|_| bad(col))
+    let mut d = plain_decimal(&text).ok_or_else(|| bad(col))?;
+    if d.scale() > 2 {
+        return Err(bad(col));
+    }
+    d.rescale(2);
+    Money::try_from_minor_i128(d.mantissa()).map_err(|_| bad(col))
 }
 
 fn map(row: &sqlx::postgres::PgRow) -> AppResult<(Transaction, String)> {
