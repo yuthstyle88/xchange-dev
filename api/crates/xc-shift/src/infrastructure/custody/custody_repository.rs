@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, TimeZone, Utc};
 use futures::future::BoxFuture;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
 use xc_kernel::ids::BranchId;
@@ -53,70 +53,101 @@ fn role_to_str(role: CustodyRole) -> &'static str {
     }
 }
 
-fn str_to_role(s: &str) -> CustodyRole {
+fn undecodable(table: &str, field: &str, value: impl std::fmt::Display) -> AppError {
+    AppError::Internal(format!(
+        "{table}.{field} holds an undecodable value: {value}"
+    ))
+}
+
+fn str_to_role(table: &str, field: &str, s: &str) -> AppResult<CustodyRole> {
     match s {
-        "OWNER" => CustodyRole::Owner,
-        "FRONT" => CustodyRole::Front,
-        "FINANCE" => CustodyRole::Finance,
-        "MONITOR" => CustodyRole::Monitor,
-        "MANAGER" => CustodyRole::Manager,
-        "BACKEND" => CustodyRole::Backend,
-        _ => CustodyRole::Other,
+        "OWNER" => Ok(CustodyRole::Owner),
+        "FRONT" => Ok(CustodyRole::Front),
+        "FINANCE" => Ok(CustodyRole::Finance),
+        "MONITOR" => Ok(CustodyRole::Monitor),
+        "MANAGER" => Ok(CustodyRole::Manager),
+        "BACKEND" => Ok(CustodyRole::Backend),
+        "OTHER" => Ok(CustodyRole::Other),
+        other => Err(undecodable(table, field, other)),
     }
 }
 
-fn str_to_event_kind(s: &str) -> EventKind {
+fn str_to_event_kind(table: &str, field: &str, s: &str) -> AppResult<EventKind> {
     match s {
-        "SET_ENTITY" => EventKind::SetEntity,
-        "ENABLE" => EventKind::Enable,
-        "CLOCK_IN" => EventKind::ClockIn,
-        "CLOCK_OUT" => EventKind::ClockOut,
-        "CASH_TARGET" => EventKind::CashTarget,
-        "SERVICE_OPEN" => EventKind::ServiceOpen,
-        "CUT_OFF" => EventKind::CutOff,
-        "PROPOSE" => EventKind::Propose,
-        "HOLD_CUSTOMER" => EventKind::HoldCustomer,
-        "RELEASE_CUSTOMER" => EventKind::ReleaseCustomer,
-        "REJECT" => EventKind::Reject,
-        "SIGN" => EventKind::Sign,
-        "DISPATCH" => EventKind::Dispatch,
-        "COMMIT" => EventKind::Commit,
-        "RECONCILE" => EventKind::Reconcile,
-        _ => EventKind::Propose,
+        "SET_ENTITY" => Ok(EventKind::SetEntity),
+        "ENABLE" => Ok(EventKind::Enable),
+        "CLOCK_IN" => Ok(EventKind::ClockIn),
+        "CLOCK_OUT" => Ok(EventKind::ClockOut),
+        "CASH_TARGET" => Ok(EventKind::CashTarget),
+        "SERVICE_OPEN" => Ok(EventKind::ServiceOpen),
+        "CUT_OFF" => Ok(EventKind::CutOff),
+        "PROPOSE" => Ok(EventKind::Propose),
+        "HOLD_CUSTOMER" => Ok(EventKind::HoldCustomer),
+        "RELEASE_CUSTOMER" => Ok(EventKind::ReleaseCustomer),
+        "REJECT" => Ok(EventKind::Reject),
+        "SIGN" => Ok(EventKind::Sign),
+        "DISPATCH" => Ok(EventKind::Dispatch),
+        "COMMIT" => Ok(EventKind::Commit),
+        "RECONCILE" => Ok(EventKind::Reconcile),
+        other => Err(undecodable(table, field, other)),
     }
 }
 
-fn str_to_phase(s: &str) -> Phase {
+fn str_to_phase(table: &str, field: &str, s: &str) -> AppResult<Phase> {
     match s {
-        "CLOSED" => Phase::Closed,
-        "READY" => Phase::Ready,
-        "OPEN" => Phase::Open,
-        "CUT_OFF" => Phase::CutOff,
-        "COUNTING" => Phase::Counting,
-        _ => Phase::Closed,
+        "CLOSED" => Ok(Phase::Closed),
+        "READY" => Ok(Phase::Ready),
+        "OPEN" => Ok(Phase::Open),
+        "CUT_OFF" => Ok(Phase::CutOff),
+        "COUNTING" => Ok(Phase::Counting),
+        other => Err(undecodable(table, field, other)),
     }
 }
 
-fn str_to_request_kind(s: &str) -> RequestKind {
+fn str_to_request_kind(table: &str, field: &str, s: &str) -> AppResult<RequestKind> {
     match s {
-        "OPEN" => RequestKind::Open,
-        "HANDOVER" => RequestKind::Handover,
-        "CLOSE" => RequestKind::Close,
-        "SAFE_OPEN" => RequestKind::SafeOpen,
-        "SAFE_IN" => RequestKind::SafeIn,
-        "SAFE_OUT" => RequestKind::SafeOut,
-        "EXTERNAL_IN" => RequestKind::ExternalIn,
-        "EXTERNAL_OUT" => RequestKind::ExternalOut,
-        _ => RequestKind::Open,
+        "OPEN" => Ok(RequestKind::Open),
+        "HANDOVER" => Ok(RequestKind::Handover),
+        "CLOSE" => Ok(RequestKind::Close),
+        "SAFE_OPEN" => Ok(RequestKind::SafeOpen),
+        "SAFE_IN" => Ok(RequestKind::SafeIn),
+        "SAFE_OUT" => Ok(RequestKind::SafeOut),
+        "EXTERNAL_IN" => Ok(RequestKind::ExternalIn),
+        "EXTERNAL_OUT" => Ok(RequestKind::ExternalOut),
+        other => Err(undecodable(table, field, other)),
     }
 }
 
-fn str_to_request_status(s: &str) -> RequestStatus {
+fn str_to_request_status(table: &str, field: &str, s: &str) -> AppResult<RequestStatus> {
     match s {
-        "PENDING" => RequestStatus::Pending,
-        "REJECTED" => RequestStatus::Rejected,
-        "COMPLETED" => RequestStatus::Completed,
-        _ => RequestStatus::Pending,
+        "PENDING" => Ok(RequestStatus::Pending),
+        "REJECTED" => Ok(RequestStatus::Rejected),
+        "COMPLETED" => Ok(RequestStatus::Completed),
+        other => Err(undecodable(table, field, other)),
+    }
+}
+
+fn currency_from_json(table: &str, field: &str, v: &Value) -> AppResult<CurrencyCode> {
+    match v {
+        Value::String(s) => CurrencyCode::parse(s).map_err(|_| undecodable(table, field, s)),
+        _ => Err(undecodable(table, field, v)),
+    }
+}
+
+fn money_from_json(table: &str, field: &str, v: &Value) -> AppResult<Money> {
+    let minor = minor_from_json(v).ok_or_else(|| undecodable(table, field, v))?;
+    MoneyDelta::from_minor(minor)
+        .to_money()
+        .map_err(|_| undecodable(table, field, v))
+}
+
+fn time_from_json(table: &str, field: &str, v: &Value) -> AppResult<CustodyTime> {
+    match v {
+        Value::Number(n) => n
+            .as_i64()
+            .map(CustodyTime::from_epoch_millis)
+            .ok_or_else(|| undecodable(table, field, v)),
+        _ => Err(undecodable(table, field, v)),
     }
 }
 
@@ -151,22 +182,23 @@ fn balances_to_json(b: &Balances) -> Value {
     Value::Object(map)
 }
 
-fn balances_from_json(v: &Value) -> Balances {
-    let mut pairs = Vec::new();
-    if let Value::Object(map) = v {
-        for (k, val) in map {
-            if let Ok(code) = CurrencyCode::parse(k) {
-                if let Some(minor) = minor_from_json(val) {
-                    if let Ok(m) = MoneyDelta::from_minor(minor).to_money() {
-                        if !m.is_zero() {
-                            pairs.push((code, m));
-                        }
-                    }
-                }
-            }
+fn balances_from_json(table: &str, field: &str, v: &Value) -> AppResult<Balances> {
+    let map = match v {
+        Value::Object(map) => map,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let mut pairs = Vec::with_capacity(map.len());
+    for (k, val) in map {
+        let code = CurrencyCode::parse(k).map_err(|_| undecodable(table, field, k))?;
+        let minor = minor_from_json(val).ok_or_else(|| undecodable(table, field, val))?;
+        let m = MoneyDelta::from_minor(minor)
+            .to_money()
+            .map_err(|_| undecodable(table, field, val))?;
+        if !m.is_zero() {
+            pairs.push((code, m));
         }
     }
-    Balances::of(&pairs)
+    Ok(Balances::of(&pairs))
 }
 
 fn delta_to_json(d: &StockDelta) -> Value {
@@ -177,21 +209,21 @@ fn delta_to_json(d: &StockDelta) -> Value {
     Value::Object(map)
 }
 
-fn delta_from_json(v: &Value) -> StockDelta {
-    let mut pairs = Vec::new();
-    if let Value::Object(map) = v {
-        for (k, val) in map {
-            if let Ok(code) = CurrencyCode::parse(k) {
-                if let Some(minor) = minor_from_json(val) {
-                    let d = MoneyDelta::from_minor(minor);
-                    if !d.is_zero() {
-                        pairs.push((code, d));
-                    }
-                }
-            }
+fn delta_from_json(table: &str, field: &str, v: &Value) -> AppResult<StockDelta> {
+    let map = match v {
+        Value::Object(map) => map,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let mut pairs = Vec::with_capacity(map.len());
+    for (k, val) in map {
+        let code = CurrencyCode::parse(k).map_err(|_| undecodable(table, field, k))?;
+        let minor = minor_from_json(val).ok_or_else(|| undecodable(table, field, val))?;
+        let d = MoneyDelta::from_minor(minor);
+        if !d.is_zero() {
+            pairs.push((code, d));
         }
     }
-    StockDelta::of(&pairs)
+    Ok(StockDelta::of(&pairs))
 }
 
 fn count_sheet_to_json(cs: &CountSheet) -> Value {
@@ -212,38 +244,56 @@ fn count_sheet_to_json(cs: &CountSheet) -> Value {
     })
 }
 
-fn count_sheet_from_json(v: &Value) -> CountSheet {
-    let totals = v
+fn count_sheet_from_json(table: &str, field: &str, v: &Value) -> AppResult<CountSheet> {
+    let obj = match v {
+        Value::Object(o) => o,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let totals_val = obj
         .get("totals")
-        .map(balances_from_json)
-        .unwrap_or_else(Balances::empty);
+        .ok_or_else(|| undecodable(table, field, "missing totals"))?;
+    let totals = balances_from_json(table, "totals", totals_val)?;
 
-    let mut denominations = Vec::new();
-    if let Some(Value::Array(arr)) = v.get("denominations") {
-        for item in arr {
-            let curr = item
-                .get("currency")
-                .and_then(|s| s.as_str())
-                .and_then(|s| CurrencyCode::parse(s).ok())
-                .unwrap_or(CurrencyCode::THB);
-            let denom = item
-                .get("denomination")
-                .and_then(minor_from_json)
-                .and_then(|min| MoneyDelta::from_minor(min).to_money().ok())
-                .unwrap_or(Money::ZERO);
-            let count = item.get("count").and_then(|c| c.as_u64()).unwrap_or(0) as u32;
-            denominations.push(DenominationRow {
-                currency: curr,
-                denomination: denom,
-                count,
-            });
-        }
+    let arr = match obj.get("denominations") {
+        Some(Value::Array(a)) => a,
+        Some(other) => return Err(undecodable(table, field, other)),
+        None => return Err(undecodable(table, field, "missing denominations")),
+    };
+
+    let mut denominations = Vec::with_capacity(arr.len());
+    for item in arr {
+        let item_obj = match item {
+            Value::Object(o) => o,
+            _ => return Err(undecodable(table, "denominations", item)),
+        };
+        let curr_val = item_obj
+            .get("currency")
+            .ok_or_else(|| undecodable(table, "denominations.currency", "missing"))?;
+        let curr = currency_from_json(table, "denominations.currency", curr_val)?;
+
+        let denom_val = item_obj
+            .get("denomination")
+            .ok_or_else(|| undecodable(table, "denominations.denomination", "missing"))?;
+        let denom = money_from_json(table, "denominations.denomination", denom_val)?;
+
+        let count_val = item_obj
+            .get("count")
+            .and_then(|c| c.as_u64())
+            .ok_or_else(|| undecodable(table, "denominations.count", item))?;
+        let count = u32::try_from(count_val)
+            .map_err(|_| undecodable(table, "denominations.count", count_val))?;
+
+        denominations.push(DenominationRow {
+            currency: curr,
+            denomination: denom,
+            count,
+        });
     }
 
-    CountSheet {
+    Ok(CountSheet {
         totals,
         denominations,
-    }
+    })
 }
 
 fn target_to_json(target: &CashTarget) -> Value {
@@ -254,15 +304,25 @@ fn target_to_json(target: &CashTarget) -> Value {
     })
 }
 
-fn target_from_json(v: &Value) -> Option<CashTarget> {
-    let amounts = v.get("amounts").map(balances_from_json)?;
-    let by = v.get("by").and_then(|s| s.as_str())?.to_string();
-    let at = v.get("at").and_then(|n| n.as_i64())?;
-    Some(CashTarget {
-        amounts,
-        by,
-        at: CustodyTime::from_epoch_millis(at),
-    })
+fn target_from_json(table: &str, field: &str, v: &Value) -> AppResult<CashTarget> {
+    let obj = match v {
+        Value::Object(o) => o,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let amounts_val = obj
+        .get("amounts")
+        .ok_or_else(|| undecodable(table, field, "missing amounts"))?;
+    let amounts = balances_from_json(table, "amounts", amounts_val)?;
+    let by = obj
+        .get("by")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid by"))?
+        .to_string();
+    let at_val = obj
+        .get("at")
+        .ok_or_else(|| undecodable(table, field, "missing at"))?;
+    let at = time_from_json(table, field, at_val)?;
+    Ok(CashTarget { amounts, by, at })
 }
 
 fn cutoff_to_json(cutoff: &Cutoff) -> Value {
@@ -275,23 +335,47 @@ fn cutoff_to_json(cutoff: &Cutoff) -> Value {
     })
 }
 
-fn cutoff_from_json(v: &Value) -> Option<Cutoff> {
-    let at = v.get("at").and_then(|n| n.as_i64())?;
-    let by = v.get("by").and_then(|s| s.as_str())?.to_string();
-    let shift_id = v.get("shiftId").and_then(|s| s.as_str())?.to_string();
-    let last_ref = v.get("lastRef").and_then(|s| s.as_str()).map(String::from);
-    let pending: Vec<String> = v
-        .get("pending")
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|s| s.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+fn cutoff_from_json(table: &str, field: &str, v: &Value) -> AppResult<Cutoff> {
+    let obj = match v {
+        Value::Object(o) => o,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let at_val = obj
+        .get("at")
+        .ok_or_else(|| undecodable(table, field, "missing at"))?;
+    let at = time_from_json(table, field, at_val)?;
+    let by = obj
+        .get("by")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid by"))?
+        .to_string();
+    let shift_id = obj
+        .get("shiftId")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid shiftId"))?
+        .to_string();
+    let last_ref = match obj.get("lastRef") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(other) => return Err(undecodable(table, field, other)),
+    };
+    let pending = match obj.get("pending") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(arr)) => {
+            let mut list = Vec::with_capacity(arr.len());
+            for item in arr {
+                match item {
+                    Value::String(s) => list.push(s.clone()),
+                    other => return Err(undecodable(table, field, other)),
+                }
+            }
+            list
+        }
+        Some(other) => return Err(undecodable(table, field, other)),
+    };
 
-    Some(Cutoff {
-        at: CustodyTime::from_epoch_millis(at),
+    Ok(Cutoff {
+        at,
         by,
         shift_id,
         last_ref,
@@ -308,16 +392,35 @@ fn entity_to_json(e: &Entity) -> Value {
     })
 }
 
-fn entity_from_json(v: &Value) -> Option<Entity> {
-    let company = v.get("company").and_then(|s| s.as_str())?.to_string();
-    let site = v.get("site").and_then(|s| s.as_str())?.to_string();
-    let confirmed_by = v.get("confirmedBy").and_then(|s| s.as_str())?.to_string();
-    let at = v.get("at").and_then(|n| n.as_i64())?;
-    Some(Entity {
+fn entity_from_json(table: &str, field: &str, v: &Value) -> AppResult<Entity> {
+    let obj = match v {
+        Value::Object(o) => o,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let company = obj
+        .get("company")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid company"))?
+        .to_string();
+    let site = obj
+        .get("site")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid site"))?
+        .to_string();
+    let confirmed_by = obj
+        .get("confirmedBy")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid confirmedBy"))?
+        .to_string();
+    let at_val = obj
+        .get("at")
+        .ok_or_else(|| undecodable(table, field, "missing at"))?;
+    let at = time_from_json(table, field, at_val)?;
+    Ok(Entity {
         company,
         site,
         confirmed_by,
-        at: CustodyTime::from_epoch_millis(at),
+        at,
     })
 }
 
@@ -329,15 +432,26 @@ fn decision_to_json(d: &Decision) -> Value {
     })
 }
 
-fn decision_from_json(v: &Value) -> Option<Decision> {
-    let by = v.get("by").and_then(|s| s.as_str())?.to_string();
-    let at = v.get("at").and_then(|n| n.as_i64())?;
-    let text = v.get("text").and_then(|s| s.as_str())?.to_string();
-    Some(Decision {
-        by,
-        at: CustodyTime::from_epoch_millis(at),
-        text,
-    })
+fn decision_from_json(table: &str, field: &str, v: &Value) -> AppResult<Decision> {
+    let obj = match v {
+        Value::Object(o) => o,
+        _ => return Err(undecodable(table, field, v)),
+    };
+    let by = obj
+        .get("by")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid by"))?
+        .to_string();
+    let at_val = obj
+        .get("at")
+        .ok_or_else(|| undecodable(table, field, "missing at"))?;
+    let at = time_from_json(table, field, at_val)?;
+    let text = obj
+        .get("text")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| undecodable(table, field, "missing or invalid text"))?
+        .to_string();
+    Ok(Decision { by, at, text })
 }
 
 // ── one row of each table, as it is stored ──────────────────────────────────
@@ -470,11 +584,14 @@ fn to_write<'a, T: PartialEq>(
         .collect()
 }
 
-fn signature_at(sig: &Signature) -> DateTime<Utc> {
-    truncate_millis(
-        DateTime::from_timestamp_millis(sig.at.epoch_millis())
-            .unwrap_or_else(|| Utc.timestamp_millis_opt(0).unwrap()),
-    )
+fn signature_at(sig: &Signature) -> AppResult<DateTime<Utc>> {
+    let dt = DateTime::from_timestamp_millis(sig.at.epoch_millis()).ok_or_else(|| {
+        AppError::Internal(format!(
+            "signature time out of range: {}",
+            sig.at.epoch_millis()
+        ))
+    })?;
+    Ok(truncate_millis(dt))
 }
 
 #[derive(Clone)]
@@ -504,25 +621,24 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
 
     let enabled: bool = ops_row.get(0);
     let phase_str: String = ops_row.get(1);
-    let phase = str_to_phase(&phase_str);
+    let phase = str_to_phase("ops_state", "phase", &phase_str)?;
     let custodian: Option<String> = ops_row.get(2);
-    let entity: Option<Entity> = ops_row
-        .get::<Option<Value>, _>(3)
-        .as_ref()
-        .and_then(entity_from_json);
-    let target: Option<CashTarget> = ops_row
-        .get::<Option<Value>, _>(4)
-        .as_ref()
-        .and_then(target_from_json);
-    let safe: Option<Balances> = ops_row
-        .get::<Option<Value>, _>(5)
-        .as_ref()
-        .filter(|v| !v.is_null())
-        .map(balances_from_json);
-    let cutoff: Option<Cutoff> = ops_row
-        .get::<Option<Value>, _>(6)
-        .as_ref()
-        .and_then(cutoff_from_json);
+    let entity: Option<Entity> = match ops_row.get::<Option<Value>, _>(3) {
+        Some(v) if !v.is_null() => Some(entity_from_json("ops_state", "entity", &v)?),
+        _ => None,
+    };
+    let target: Option<CashTarget> = match ops_row.get::<Option<Value>, _>(4) {
+        Some(v) if !v.is_null() => Some(target_from_json("ops_state", "target", &v)?),
+        _ => None,
+    };
+    let safe: Option<Balances> = match ops_row.get::<Option<Value>, _>(5) {
+        Some(v) if !v.is_null() => Some(balances_from_json("ops_state", "safe", &v)?),
+        _ => None,
+    };
+    let cutoff: Option<Cutoff> = match ops_row.get::<Option<Value>, _>(6) {
+        Some(v) if !v.is_null() => Some(cutoff_from_json("ops_state", "cutoff", &v)?),
+        _ => None,
+    };
     let service_opened_at: Option<CustodyTime> = ops_row
         .get::<Option<DateTime<Utc>>, _>(7)
         .map(|t| CustodyTime::from_epoch_millis(t.timestamp_millis()));
@@ -542,20 +658,19 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let employee_id: String = r.get(1);
         let data: Value = r.get(2);
 
-        let role = data
-            .get("role")
-            .and_then(|s| s.as_str())
-            .map(str_to_role)
-            .unwrap_or(CustodyRole::Front);
-        let clock_in = data
-            .get("clockIn")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis)
-            .unwrap_or_else(|| CustodyTime::from_epoch_millis(0));
-        let clock_out = data
-            .get("clockOut")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis);
+        let role = match data.get("role") {
+            Some(Value::String(s)) => str_to_role("attendance", "role", s)?,
+            Some(other) => return Err(undecodable("attendance", "role", other)),
+            None => return Err(undecodable("attendance", "role", "absent")),
+        };
+        let clock_in = match data.get("clockIn") {
+            Some(v) => time_from_json("attendance", "clockIn", v)?,
+            None => return Err(undecodable("attendance", "clockIn", "absent")),
+        };
+        let clock_out = match data.get("clockOut") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(time_from_json("attendance", "clockOut", v)?),
+        };
 
         attendance.push(Attendance {
             id,
@@ -582,7 +697,7 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let employee_id: String = r.get(1);
         let role_str: String = r.get(2);
         let at_dt: DateTime<Utc> = r.get(3);
-        let role = str_to_role(&role_str);
+        let role = str_to_role("custody_signatures", "role", &role_str)?;
         let at = CustodyTime::from_epoch_millis(at_dt.timestamp_millis());
         signatures_by_req
             .entry(req_id)
@@ -611,114 +726,139 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let status_str: String = r.get(3);
         let data: Value = r.get(4);
 
-        let kind = str_to_request_kind(&kind_str);
-        let status = str_to_request_status(&status_str);
+        let kind = str_to_request_kind("custody_requests", "kind", &kind_str)?;
+        let status = str_to_request_status("custody_requests", "status", &status_str)?;
 
-        let payload_hash = data
-            .get("payloadHash")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let at = data
-            .get("at")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis)
-            .unwrap_or_else(|| CustodyTime::from_epoch_millis(0));
-        let sender = data
-            .get("sender")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let receiver = data
-            .get("receiver")
-            .and_then(|s| s.as_str())
-            .map(String::from);
-        let note = data
-            .get("note")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let evidence_keys = data
-            .get("evidenceKeys")
-            .and_then(|a| a.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|s| s.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let payload_hash = match data.get("payloadHash") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("custody_requests", "payloadHash", other)),
+            None => return Err(undecodable("custody_requests", "payloadHash", "absent")),
+        };
+        let at = match data.get("at") {
+            Some(v) => time_from_json("custody_requests", "at", v)?,
+            None => return Err(undecodable("custody_requests", "at", "absent")),
+        };
+        let sender = match data.get("sender") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("custody_requests", "sender", other)),
+            None => return Err(undecodable("custody_requests", "sender", "absent")),
+        };
+        let receiver = match data.get("receiver") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("custody_requests", "receiver", other)),
+        };
+        let note = match data.get("note") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("custody_requests", "note", other)),
+            None => return Err(undecodable("custody_requests", "note", "absent")),
+        };
+        let evidence_keys = match data.get("evidenceKeys") {
+            Some(Value::Array(arr)) => {
+                let mut keys = Vec::with_capacity(arr.len());
+                for item in arr {
+                    match item {
+                        Value::String(s) => keys.push(s.clone()),
+                        other => {
+                            return Err(undecodable("custody_requests", "evidenceKeys", other));
+                        }
+                    }
+                }
+                keys
+            }
+            Some(other) => return Err(undecodable("custody_requests", "evidenceKeys", other)),
+            None => return Err(undecodable("custody_requests", "evidenceKeys", "absent")),
+        };
 
-        let shift_id = data
-            .get("shiftId")
-            .and_then(|s| s.as_str())
-            .map(String::from);
-        let counted = data
-            .get("counted")
-            .filter(|v| !v.is_null())
-            .map(count_sheet_from_json);
-        let target = data.get("target").and_then(target_from_json);
-        let target_difference = data
-            .get("targetDifference")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let expected = data
-            .get("expected")
-            .filter(|v| !v.is_null())
-            .map(balances_from_json);
-        let variance = data
-            .get("variance")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let cutoff = data.get("cutoff").and_then(cutoff_from_json);
-        let safe_count = data
-            .get("safeCount")
-            .filter(|v| !v.is_null())
-            .map(count_sheet_from_json);
-        let safe_expected = data
-            .get("safeExpected")
-            .filter(|v| !v.is_null())
-            .map(balances_from_json);
-        let safe_variance = data
-            .get("safeVariance")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let currency = data
-            .get("currency")
-            .and_then(|s| s.as_str())
-            .and_then(|s| CurrencyCode::parse(s).ok());
-        let amount = data
-            .get("amount")
-            .and_then(minor_from_json)
-            .and_then(|min| MoneyDelta::from_minor(min).to_money().ok());
+        let shift_id = match data.get("shiftId") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("custody_requests", "shiftId", other)),
+        };
+        let counted = match data.get("counted") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(count_sheet_from_json("custody_requests", "counted", v)?),
+        };
+        let target = match data.get("target") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(target_from_json("custody_requests", "target", v)?),
+        };
+        let target_difference = match data.get("targetDifference") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("custody_requests", "targetDifference", v)?),
+        };
+        let expected = match data.get("expected") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(balances_from_json("custody_requests", "expected", v)?),
+        };
+        let variance = match data.get("variance") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("custody_requests", "variance", v)?),
+        };
+        let cutoff = match data.get("cutoff") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(cutoff_from_json("custody_requests", "cutoff", v)?),
+        };
+        let safe_count = match data.get("safeCount") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(count_sheet_from_json("custody_requests", "safeCount", v)?),
+        };
+        let safe_expected = match data.get("safeExpected") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(balances_from_json("custody_requests", "safeExpected", v)?),
+        };
+        let safe_variance = match data.get("safeVariance") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("custody_requests", "safeVariance", v)?),
+        };
+        let currency = match data.get("currency") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(currency_from_json("custody_requests", "currency", v)?),
+        };
+        let amount = match data.get("amount") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(money_from_json("custody_requests", "amount", v)?),
+        };
 
-        let stage = data
-            .get("stage")
-            .and_then(|s| s.as_str())
-            .map(|st| match st {
-                "IN_TRANSIT" => TransferStage::InTransit,
-                _ => TransferStage::Received,
-            });
-        let dispatched_at = data
-            .get("dispatchedAt")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis);
-        let dispatched_by = data
-            .get("dispatchedBy")
-            .and_then(|s| s.as_str())
-            .map(String::from);
-        let rejected = data.get("rejected").and_then(decision_from_json);
-        let completed_at = data
-            .get("completedAt")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis);
-        let reconciliation =
-            data.get("reconciliation")
-                .and_then(|s| s.as_str())
-                .map(|st| match st {
-                    "CHECKED" => Reconciliation::Checked,
-                    _ => Reconciliation::Pending,
-                });
-        let reconciled = data.get("reconciled").and_then(decision_from_json);
+        let stage = match data.get("stage") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => match s.as_str() {
+                "IN_TRANSIT" => Some(TransferStage::InTransit),
+                "RECEIVED" => Some(TransferStage::Received),
+                other => return Err(undecodable("custody_requests", "stage", other)),
+            },
+            Some(other) => return Err(undecodable("custody_requests", "stage", other)),
+        };
+        let dispatched_at = match data.get("dispatchedAt") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(time_from_json("custody_requests", "dispatchedAt", v)?),
+        };
+        let dispatched_by = match data.get("dispatchedBy") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("custody_requests", "dispatchedBy", other)),
+        };
+        let rejected = match data.get("rejected") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(decision_from_json("custody_requests", "rejected", v)?),
+        };
+        let completed_at = match data.get("completedAt") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(time_from_json("custody_requests", "completedAt", v)?),
+        };
+        let reconciliation = match data.get("reconciliation") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => match s.as_str() {
+                "CHECKED" => Some(Reconciliation::Checked),
+                "PENDING" => Some(Reconciliation::Pending),
+                other => return Err(undecodable("custody_requests", "reconciliation", other)),
+            },
+            Some(other) => return Err(undecodable("custody_requests", "reconciliation", other)),
+        };
+        let reconciled = match data.get("reconciled") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(decision_from_json("custody_requests", "reconciled", v)?),
+        };
 
         let signatures = signatures_by_req.remove(&id).unwrap_or_default();
 
@@ -770,39 +910,48 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let id: String = r.get(0);
         let data: Value = r.get(1);
 
-        let customer_id = data
-            .get("customerId")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let reason = data
-            .get("reason")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let by = data
-            .get("by")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let at = data
-            .get("at")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis)
-            .unwrap_or_else(|| CustodyTime::from_epoch_millis(0));
-        let status = match data.get("status").and_then(|s| s.as_str()) {
-            Some("RELEASED") => HoldStatus::Released,
-            _ => HoldStatus::Open,
+        let customer_id = match data.get("customerId") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("customer_holds", "customerId", other)),
+            None => return Err(undecodable("customer_holds", "customerId", "absent")),
         };
-        let reviewed_by = data
-            .get("reviewedBy")
-            .and_then(|s| s.as_str())
-            .map(String::from);
-        let reviewed_at = data
-            .get("reviewedAt")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis);
-        let note = data.get("note").and_then(|s| s.as_str()).map(String::from);
+        let reason = match data.get("reason") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("customer_holds", "reason", other)),
+            None => return Err(undecodable("customer_holds", "reason", "absent")),
+        };
+        let by = match data.get("by") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("customer_holds", "by", other)),
+            None => return Err(undecodable("customer_holds", "by", "absent")),
+        };
+        let at = match data.get("at") {
+            Some(v) => time_from_json("customer_holds", "at", v)?,
+            None => return Err(undecodable("customer_holds", "at", "absent")),
+        };
+        let status = match data.get("status") {
+            Some(Value::String(s)) => match s.as_str() {
+                "OPEN" => HoldStatus::Open,
+                "RELEASED" => HoldStatus::Released,
+                other => return Err(undecodable("customer_holds", "status", other)),
+            },
+            Some(other) => return Err(undecodable("customer_holds", "status", other)),
+            None => return Err(undecodable("customer_holds", "status", "absent")),
+        };
+        let reviewed_by = match data.get("reviewedBy") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("customer_holds", "reviewedBy", other)),
+        };
+        let reviewed_at = match data.get("reviewedAt") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(time_from_json("customer_holds", "reviewedAt", v)?),
+        };
+        let note = match data.get("note") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("customer_holds", "note", other)),
+        };
 
         holds.push(CustomerHold {
             id,
@@ -831,43 +980,51 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let id: String = r.get(0);
         let data: Value = r.get(1);
 
-        let shift_id = data
-            .get("shiftId")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let employee_id = data
-            .get("employeeId")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let side = match data.get("side").and_then(|s| s.as_str()) {
-            Some("SELL") => Side::Sell,
-            _ => Side::Buy,
+        let shift_id = match data.get("shiftId") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("tx_drafts", "shiftId", other)),
+            None => return Err(undecodable("tx_drafts", "shiftId", "absent")),
         };
-        let currency = data
-            .get("currency")
-            .and_then(|s| s.as_str())
-            .and_then(|s| CurrencyCode::parse(s).ok())
-            .unwrap_or(CurrencyCode::THB);
-        let amount = data
-            .get("amount")
-            .and_then(minor_from_json)
-            .and_then(|min| MoneyDelta::from_minor(min).to_money().ok())
-            .unwrap_or(Money::ZERO);
-        let at = data
-            .get("at")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis)
-            .unwrap_or_else(|| CustodyTime::from_epoch_millis(0));
-        let status = match data.get("status").and_then(|s| s.as_str()) {
-            Some("COMPLETED") => DraftStatus::Completed,
-            _ => DraftStatus::Open,
+        let employee_id = match data.get("employeeId") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("tx_drafts", "employeeId", other)),
+            None => return Err(undecodable("tx_drafts", "employeeId", "absent")),
         };
-        let document_ref = data
-            .get("documentRef")
-            .and_then(|s| s.as_str())
-            .map(String::from);
+        let side = match data.get("side") {
+            Some(Value::String(s)) => match s.as_str() {
+                "BUY" => Side::Buy,
+                "SELL" => Side::Sell,
+                other => return Err(undecodable("tx_drafts", "side", other)),
+            },
+            Some(other) => return Err(undecodable("tx_drafts", "side", other)),
+            None => return Err(undecodable("tx_drafts", "side", "absent")),
+        };
+        let currency = match data.get("currency") {
+            Some(v) => currency_from_json("tx_drafts", "currency", v)?,
+            None => return Err(undecodable("tx_drafts", "currency", "absent")),
+        };
+        let amount = match data.get("amount") {
+            Some(v) => money_from_json("tx_drafts", "amount", v)?,
+            None => return Err(undecodable("tx_drafts", "amount", "absent")),
+        };
+        let at = match data.get("at") {
+            Some(v) => time_from_json("tx_drafts", "at", v)?,
+            None => return Err(undecodable("tx_drafts", "at", "absent")),
+        };
+        let status = match data.get("status") {
+            Some(Value::String(s)) => match s.as_str() {
+                "OPEN" => DraftStatus::Open,
+                "COMPLETED" => DraftStatus::Completed,
+                other => return Err(undecodable("tx_drafts", "status", other)),
+            },
+            Some(other) => return Err(undecodable("tx_drafts", "status", other)),
+            None => return Err(undecodable("tx_drafts", "status", "absent")),
+        };
+        let document_ref = match data.get("documentRef") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("tx_drafts", "documentRef", other)),
+        };
 
         drafts.push(TxDraft {
             id,
@@ -896,45 +1053,50 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         let id: String = r.get(0);
         let data: Value = r.get(1);
 
-        let request_id = data
-            .get("requestId")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = match data.get("status").and_then(|s| s.as_str()) {
-            Some("REVIEWED") => ExceptionStatus::Reviewed,
-            _ => ExceptionStatus::Open,
+        let request_id = match data.get("requestId") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("cash_exceptions", "requestId", other)),
+            None => return Err(undecodable("cash_exceptions", "requestId", "absent")),
         };
-        let target_difference = data
-            .get("targetDifference")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let cash_variance = data
-            .get("cashVariance")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let safe_variance = data
-            .get("safeVariance")
-            .filter(|v| !v.is_null())
-            .map(delta_from_json);
-        let note = data
-            .get("note")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let at = data
-            .get("at")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis)
-            .unwrap_or_else(|| CustodyTime::from_epoch_millis(0));
-        let reviewed_by = data
-            .get("reviewedBy")
-            .and_then(|s| s.as_str())
-            .map(String::from);
-        let reviewed_at = data
-            .get("reviewedAt")
-            .and_then(|n| n.as_i64())
-            .map(CustodyTime::from_epoch_millis);
+        let status = match data.get("status") {
+            Some(Value::String(s)) => match s.as_str() {
+                "OPEN" => ExceptionStatus::Open,
+                "REVIEWED" => ExceptionStatus::Reviewed,
+                other => return Err(undecodable("cash_exceptions", "status", other)),
+            },
+            Some(other) => return Err(undecodable("cash_exceptions", "status", other)),
+            None => return Err(undecodable("cash_exceptions", "status", "absent")),
+        };
+        let target_difference = match data.get("targetDifference") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("cash_exceptions", "targetDifference", v)?),
+        };
+        let cash_variance = match data.get("cashVariance") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("cash_exceptions", "cashVariance", v)?),
+        };
+        let safe_variance = match data.get("safeVariance") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(delta_from_json("cash_exceptions", "safeVariance", v)?),
+        };
+        let note = match data.get("note") {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => return Err(undecodable("cash_exceptions", "note", other)),
+            None => return Err(undecodable("cash_exceptions", "note", "absent")),
+        };
+        let at = match data.get("at") {
+            Some(v) => time_from_json("cash_exceptions", "at", v)?,
+            None => return Err(undecodable("cash_exceptions", "at", "absent")),
+        };
+        let reviewed_by = match data.get("reviewedBy") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(other) => return Err(undecodable("cash_exceptions", "reviewedBy", other)),
+        };
+        let reviewed_at = match data.get("reviewedAt") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(time_from_json("cash_exceptions", "reviewedAt", v)?),
+        };
 
         exceptions.push(CashException {
             id,
@@ -1018,12 +1180,19 @@ impl CustodyRepository for PgCustodyRepository {
                 || before.cutoff != after.cutoff
                 || before.service_opened_at != after.service_opened_at;
             if own_values_changed || *before == CustodyState::initial() {
-                let service_opened_at = after.service_opened_at.map(|t| {
-                    truncate_millis(
-                        DateTime::from_timestamp_millis(t.epoch_millis())
-                            .unwrap_or_else(|| Utc.timestamp_millis_opt(0).unwrap()),
-                    )
-                });
+                let service_opened_at = match after.service_opened_at {
+                    Some(t) => {
+                        let dt =
+                            DateTime::from_timestamp_millis(t.epoch_millis()).ok_or_else(|| {
+                                AppError::Internal(format!(
+                                    "service_opened_at time out of range: {}",
+                                    t.epoch_millis()
+                                ))
+                            })?;
+                        Some(truncate_millis(dt))
+                    }
+                    None => None,
+                };
                 sqlx::query(
                     "INSERT INTO ops_state (branch_id, enabled, phase, custodian_id, entity, target, safe, cutoff, service_opened_at) \
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
@@ -1117,7 +1286,7 @@ impl CustodyRepository for PgCustodyRepository {
                     .bind(sig_pos as i32)
                     .bind(&sig.employee_id)
                     .bind(role_to_str(sig.role))
-                    .bind(signature_at(sig))
+                    .bind(signature_at(sig)?)
                     .execute(&mut **tx)
                     .await?;
                 }
@@ -1226,10 +1395,10 @@ impl CustodyRepository for PgCustodyRepository {
 
                 events.push(StoredEvent {
                     id,
-                    kind: str_to_event_kind(&kind_str),
+                    kind: str_to_event_kind("ops_events", "kind", &kind_str)?,
                     at,
                     actor,
-                    role: str_to_role(&role_str),
+                    role: str_to_role("ops_events", "role", &role_str)?,
                     details,
                 });
             }
