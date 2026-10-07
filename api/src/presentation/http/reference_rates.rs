@@ -14,6 +14,7 @@ use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{answer, refuse, server_error};
+use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::pages::{self, SessionReader};
 
 const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
@@ -28,57 +29,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
             .route(web::post().to(handler))
             .default_service(web::to(pages::fallback)),
     );
-}
-
-fn check_origin(req: &HttpRequest) -> bool {
-    let marker = req
-        .headers()
-        .get("X-Xchange-Request")
-        .and_then(|v| v.to_str().ok());
-    if marker != Some("1") {
-        return false;
-    }
-
-    let Some(origin) = req
-        .headers()
-        .get(header::ORIGIN)
-        .and_then(|v| v.to_str().ok())
-    else {
-        return false;
-    };
-
-    let Some(host_hdr) = req
-        .headers()
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-    else {
-        return false;
-    };
-
-    let scheme = match req
-        .headers()
-        .get("X-Forwarded-Proto")
-        .and_then(|v| v.to_str().ok())
-    {
-        Some("https") => "https",
-        _ => "http",
-    };
-
-    let host_lower = host_hdr.to_ascii_lowercase();
-    let host = match host_lower.rfind(':') {
-        Some(colon_idx) => {
-            let port = &host_lower[colon_idx + 1..];
-            if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
-                &host_lower[..colon_idx]
-            } else {
-                &host_lower
-            }
-        }
-        None => &host_lower,
-    };
-
-    let expected_origin = format!("{scheme}://{host}");
-    origin == expected_origin
 }
 
 /// The 401 and 403 of this route: the sentence, and no `Cache-Control`.
@@ -105,7 +55,7 @@ async fn handler(req: HttpRequest) -> HttpResponse {
     }
 
     // 3: Same-origin check
-    if !check_origin(&req) {
+    if !same_origin(&req) {
         return refuse(400, ORIGIN_REJECTED);
     }
 

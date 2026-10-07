@@ -16,6 +16,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::{FileService, MAX_UPLOAD_BYTES, StoredFile};
+use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::pages::{self, SessionReader, Sessions};
 
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
@@ -61,7 +62,7 @@ async fn sessions(req: &HttpRequest) -> Sessions {
     }
 }
 
-fn own_origin(req: &HttpRequest) -> String {
+fn redirect_origin(req: &HttpRequest) -> String {
     let https = req
         .headers()
         .get("x-forwarded-proto")
@@ -72,11 +73,6 @@ fn own_origin(req: &HttpRequest) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost");
     format!("{}://{}", if https { "https" } else { "http" }, host)
-}
-
-fn same_origin(req: &HttpRequest) -> bool {
-    let text = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
-    text("origin") == Some(own_origin(req).as_str()) && text("x-xchange-request") == Some("1")
 }
 
 fn json_answer(status: u16, body: serde_json::Value, no_store: bool) -> HttpResponse {
@@ -230,7 +226,7 @@ async fn file(req: HttpRequest, path: web::Path<String>) -> HttpResponse {
     let Sessions { owner, staff } = sessions(&req).await;
     let Some(actor) = owner.or(staff) else {
         return HttpResponse::SeeOther()
-            .insert_header((header::LOCATION, format!("{}/login", own_origin(&req))))
+            .insert_header((header::LOCATION, format!("{}/login", redirect_origin(&req))))
             .finish();
     };
     let Some(files) = req.app_data::<web::Data<FileService>>() else {

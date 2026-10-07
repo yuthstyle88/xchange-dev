@@ -51,20 +51,7 @@ pub fn set_cookie(name: &str, value: &str, max_age: u32) -> (header::HeaderName,
     )
 }
 
-/// v2's check of a write from the kept pages: same origin, and the marker header.
-pub fn same_origin(req: &HttpRequest) -> bool {
-    let text = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
-    let https = req
-        .headers()
-        .get("x-forwarded-proto")
-        .is_some_and(|v| v.as_bytes() == b"https");
-    let own = format!(
-        "{}://{}",
-        if https { "https" } else { "http" },
-        text("host").unwrap_or("localhost")
-    );
-    text("origin") == Some(own.as_str()) && text("x-xchange-request") == Some("1")
-}
+pub use super::origin::same_origin;
 
 pub fn answer(status: u16, body: Value, no_store: bool) -> HttpResponse {
     let mut response = HttpResponse::build(StatusCode::from_u16(status).unwrap());
