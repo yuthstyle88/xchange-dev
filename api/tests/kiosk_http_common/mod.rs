@@ -1,0 +1,713 @@
+//! Written before the implementation (ticket T12c). Do not edit, delete or weaken.
+//!
+//! The harness of `kiosk_http_test.rs`: the replay of `tests/fixtures/kiosk/*.json`
+//! — what v2 answered on `POST /api/kiosk` — through the server's own route
+//! table, on a PostgreSQL schema of the test's own.
+//!
+//! It stands on the harness of ticket T11a (`rpc_common`): the desk, the app,
+//! real sessions, and the replay of one step with the ids v3 made put where v2's
+//! were. A recorded file mixes two kinds of step and both go through HTTP: the
+//! kiosk's own, and the `/api/rpc` steps that set the counter up (a rate, a
+//! shift, a second branch) or show what a kiosk step left behind.
+//!
+//! Four things a test controls, each registered after the route table so that
+//! it replaces what the route table registered:
+//!
+//! - the clock (`web::Data<dyn RpcClock>`) and the Bank of Thailand
+//!   (`web::Data<Arc<dyn RateSource>>`), as in `rpc_common`;
+//! - the ids the kiosk route makes (`web::Data<dyn KioskIds>`): a quote gets the
+//!   id v2 gave it, so that every later step can name it;
+//! - where the kiosk's audit lines go (`web::Data<dyn KioskAuditLog>`): into the
+//!   table `test_kiosk_audit`, **on the transaction they are handed**, so a line
+//!   of a step that was rolled back is not there. The log also refuses a line
+//!   that comes on a transaction other than the step's own.
+//!
+//! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+#![allow(dead_code)]
+
+use std::collections::{BTreeMap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use chrono::{DateTime, Utc};
+use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
+use serde_json::{Map, Value, json};
+use xc_kernel::ids::BranchId;
+use xc_kernel::money::Side;
+use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
+use xc_rate::domain::rate::entities::rate_source::ReferenceRates;
+use xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog;
+use xchange::presentation::http::kiosk::KioskIds;
+
+use crate::compat_common::{Fixture, IdMap, Person, Step, fixtures_dir};
+use crate::rpc_common::{
+    Answer, App, BANK_DOWN, Call, Cookies, Desk, MAIN, Replay, Tally, sign_in,
+};
+
+pub const KIOSK: &str = "/api/kiosk";
+
+// v2's sentences, as the kiosk screens and `kiosk-i18n.js` know them
+pub const REQUEST_REJECTED: &str = "Request rejected.";
+pub const REQUEST_TOO_LARGE: &str = "Request too large.";
+pub const INVALID_REQUEST: &str = "Invalid request.";
+pub const INVALID_BRANCH: &str = "Invalid branch.";
+pub const UNKNOWN_ACTION: &str = "Unknown kiosk action.";
+pub const STAFF_REQUIRED: &str = "Staff access required.";
+pub const OWNER_OR_RATES: &str = "Owner or Rates access required.";
+pub const ALREADY_ASSIGNED: &str = "This request is already assigned or unavailable.";
+pub const ACCEPT_FIRST: &str = "Accept this request using your own account first.";
+/// v3's own: v2 has no limit on quotes (design §6).
+pub const TOO_MANY_QUOTES: &str = "Too many requests. Please wait a moment and try again.";
+pub const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
+
+// ── the ids the route makes ──────────────────────────────────────────────────
+
+/// Hands out the ids a test queued, in order; once they are used up, ids of its
+/// own that no recorded file holds.
+#[derive(Default)]
+pub struct QueuedIds {
+    next: Mutex<VecDeque<String>>,
+    made: Mutex<u64>,
+}
+
+impl QueuedIds {
+    pub fn push(&self, id: &str) {
+        self.next
+            .lock()
+            .expect("the ids' lock")
+            .push_back(id.to_string());
+    }
+
+    pub fn waiting(&self) -> usize {
+        self.next.lock().expect("the ids' lock").len()
+    }
+}
+
+impl KioskIds for QueuedIds {
+    fn new_id(&self) -> String {
+        if let Some(id) = self.next.lock().expect("the ids' lock").pop_front() {
+            return id;
+        }
+        let mut made = self.made.lock().expect("the ids' lock");
+        *made += 1;
+        format!("7e570000-0000-4000-9000-{:012x}", *made)
+    }
+}
+
+// ── the audit log ────────────────────────────────────────────────────────────
+
+/// The kiosk's audit log in the test's hands: every line into `test_kiosk_audit`
+/// through the transaction it came with, or a failure when told to fail.
+#[derive(Default)]
+pub struct TestAudit {
+    fails: AtomicBool,
+}
+
+impl TestAudit {
+    pub fn fail(&self, fails: bool) {
+        self.fails.store(fails, Ordering::SeqCst);
+    }
+}
+
+fn detail_of(what: &KioskAudit) -> Value {
+    match what {
+        KioskAudit::Request { quote } => json!({
+            "type": match quote.side { Side::Buy => "BUY", Side::Sell => "SELL" },
+            "currency": quote.currency.as_str(),
+            "rate": quote.rate.to_string(),
+            "foreign": quote.foreign.to_string(),
+            "thb": quote.thb.to_string(),
+            "inputAmount": quote.input_amount.to_string(),
+            "paymentMethod": quote.payment_method.as_str(),
+        }),
+        KioskAudit::Accepted | KioskAudit::IdChecked => json!({}),
+        KioskAudit::Completed { document_ref } => json!({ "documentRef": document_ref }),
+        KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
+            json!({ "enabled": enabled, "buy": buy, "sell": sell })
+        }
+    }
+}
+
+impl KioskAuditLog for TestAudit {
+    fn record_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        line: &'a AuditLine,
+        at: DateTime<Utc>,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.fails.load(Ordering::SeqCst) {
+                return Err(AppError::Internal("the audit log is down".to_string()));
+            }
+            // The line must come on the transaction of the step it records: on
+            // that transaction — and on no other — the request already stands
+            // where the step moved it (`KioskService` stores the move, then
+            // hands the line over, `xc-kiosk/src/application/kiosk/service.rs`).
+            let moved_to = match &line.what {
+                KioskAudit::Request { .. } => Some("WAITING"),
+                KioskAudit::Accepted => Some("ACCEPTED"),
+                KioskAudit::IdChecked => Some("ID_CHECKED"),
+                KioskAudit::Completed { .. } | KioskAudit::CurrencyConfigured { .. } => None,
+            };
+            if let Some(expected) = moved_to {
+                let seen: Option<(String,)> = sqlx::query_as(
+                    "SELECT status FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+                )
+                .bind(branch.as_str())
+                .bind(&line.subject)
+                .fetch_optional(&mut **tx)
+                .await?;
+                if seen.as_ref().map(|row| row.0.as_str()) != Some(expected) {
+                    return Err(AppError::Internal(format!(
+                        "the audit line of {} came on a transaction that does not see the \
+                         request as {expected} (it sees {seen:?}): not the step's own",
+                        line.subject
+                    )));
+                }
+            }
+            sqlx::query(
+                "INSERT INTO test_kiosk_audit (branch_id, actor, kind, subject, detail, at) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(branch.as_str())
+            .bind(&line.actor)
+            .bind(line.what.kind())
+            .bind(&line.subject)
+            .bind(detail_of(&line.what).to_string())
+            .bind(at)
+            .execute(&mut **tx)
+            .await?;
+            Ok(())
+        })
+    }
+}
+
+/// One audit line as a test compares it: amounts and rates as plain decimal
+/// text without trailing zeros, whether v2 wrote a number or a text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Line {
+    pub branch: String,
+    pub actor: String,
+    pub kind: String,
+    pub subject: String,
+    pub detail: Value,
+    pub at: Option<DateTime<Utc>>,
+}
+
+fn plain(value: &Value) -> Value {
+    let text = match value {
+        Value::Number(number) => number.to_string(),
+        Value::String(text) => text.clone(),
+        other => return other.clone(),
+    };
+    match text.parse::<Decimal>() {
+        Ok(decimal) => json!(decimal.normalize().to_string()),
+        Err(_) => json!(text),
+    }
+}
+
+/// The part of a recorded or written detail the two sides share. v2's
+/// `KIOSK_REQUEST` line also carries the branch's name and
+/// `financialTransaction: false`, which v3's line does not (the line is typed:
+/// `KioskAudit::Request { quote }`).
+fn comparable(kind: &str, detail: &Value) -> Value {
+    let keys: &[&str] = match kind {
+        "KIOSK_REQUEST" => &[
+            "type",
+            "currency",
+            "rate",
+            "foreign",
+            "thb",
+            "inputAmount",
+            "paymentMethod",
+        ],
+        "KIOSK_CURRENCY_CONFIGURED" => &["enabled", "buy", "sell"],
+        "KIOSK_COMPLETED" => &["documentRef"],
+        _ => &[],
+    };
+    let mut out = Map::new();
+    for key in keys {
+        let value = detail
+            .get(*key)
+            .unwrap_or_else(|| panic!("a {kind} line without `{key}`: {detail}"));
+        let numeric = matches!(
+            *key,
+            "rate" | "foreign" | "thb" | "inputAmount" | "buy" | "sell"
+        );
+        out.insert(
+            (*key).to_string(),
+            if numeric { plain(value) } else { value.clone() },
+        );
+    }
+    Value::Object(out)
+}
+
+// ── the app ──────────────────────────────────────────────────────────────────
+
+/// What a test holds beside the desk: the ids and the audit log it registered.
+#[derive(Clone, Default)]
+pub struct Hands {
+    pub ids: Arc<QueuedIds>,
+    pub audit: Arc<TestAudit>,
+}
+
+/// The server's whole route table with the test's clock, bank, ids and audit
+/// log registered after it.
+#[macro_export]
+macro_rules! kiosk_app {
+    ($desk:expr, $hands:expr) => {{
+        let state = $desk.state();
+        let clock: std::sync::Arc<dyn xchange::presentation::http::rpc::RpcClock> =
+            $desk.clock.clone();
+        let bank: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =
+            $desk.bank.clone();
+        let ids: std::sync::Arc<dyn xchange::presentation::http::kiosk::KioskIds> =
+            $hands.ids.clone();
+        let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
+            $hands.audit.clone();
+        $crate::rpc_common::App::new(
+            actix_web::test::init_service(
+                actix_web::App::new()
+                    .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
+                    .app_data(actix_web::web::Data::from(clock))
+                    .app_data(actix_web::web::Data::new(bank))
+                    .app_data(actix_web::web::Data::from(ids))
+                    .app_data(actix_web::web::Data::from(audit)),
+            )
+            .await,
+            |t| t.to_request(),
+        )
+    }};
+}
+
+/// The table the test's audit log writes to.
+pub async fn make_the_audit_table(desk: &Desk) {
+    sqlx::query(
+        "CREATE TABLE test_kiosk_audit (seq bigserial PRIMARY KEY, branch_id text NOT NULL, \
+         actor text NOT NULL, kind text NOT NULL, subject text NOT NULL, detail text NOT NULL, \
+         at timestamptz NOT NULL)",
+    )
+    .execute(&desk.db.pool)
+    .await
+    .expect("create the test's audit table");
+}
+
+/// A row of `test_kiosk_audit`: seq, branch, actor, kind, subject, detail, at.
+type AuditRow = (i64, String, String, String, String, String, DateTime<Utc>);
+
+/// The audit lines written after line `after`, and the number of the last one.
+pub async fn audit_since(desk: &Desk, after: i64) -> (Vec<Line>, i64) {
+    let rows: Vec<AuditRow> = sqlx::query_as(
+        "SELECT seq, branch_id, actor, kind, subject, detail, at FROM test_kiosk_audit \
+         WHERE seq > $1 ORDER BY seq",
+    )
+    .bind(after)
+    .fetch_all(&desk.db.pool)
+    .await
+    .expect("read the test's audit table");
+    let last = rows.last().map_or(after, |row| row.0);
+    let lines = rows
+        .into_iter()
+        .map(|(_, branch, actor, kind, subject, detail, at)| {
+            let detail: Value = serde_json::from_str(&detail).expect("a detail written as JSON");
+            Line {
+                detail: comparable(&kind, &detail),
+                branch,
+                actor,
+                kind,
+                subject,
+                at: Some(at),
+            }
+        })
+        .collect();
+    (lines, last)
+}
+
+// ── a kiosk request by hand ──────────────────────────────────────────────────
+
+/// `{action, payload}` to `/api/kiosk` as the screens send it.
+pub fn kiosk(origin: &str, action: &str, payload: Value) -> Call {
+    Call::action(origin, KIOSK, action, payload)
+}
+
+pub fn as_who(call: Call, cookies: &Cookies, who: &str) -> Call {
+    call.cookie(
+        cookies
+            .get(who)
+            .unwrap_or_else(|| panic!("{who} is not signed in")),
+    )
+}
+
+// ── the replay of a recorded file ────────────────────────────────────────────
+
+/// What happened behind the answers of one file: `tests/fixtures/kiosk/behind.json`.
+fn behind_of(file: &str) -> Map<String, Value> {
+    let path = fixtures_dir().join("kiosk/behind.json");
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let all: Value = serde_json::from_str(&raw).expect("behind.json is JSON");
+    all.get(file)
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| panic!("behind.json has nothing for {file}"))
+        .clone()
+}
+
+pub struct KioskReplay<'f> {
+    pub replay: Replay<'f>,
+    pub hands: Hands,
+    behind: Map<String, Value>,
+    /// People of a branch that does not exist until a step creates it.
+    late: Vec<Person>,
+    audit_seen: i64,
+    /// Step number → the audit lines that step wrote.
+    pub lines: BTreeMap<usize, Vec<Line>>,
+    /// How many recorded audit lines were compared.
+    pub lines_compared: usize,
+}
+
+impl<'f> KioskReplay<'f> {
+    /// A desk with the people of `MAIN` employed and signed in; the people of
+    /// another branch join when the step that creates their branch was replayed.
+    pub async fn start(fixture: &'f Fixture) -> KioskReplay<'f> {
+        let desk = Desk::open().await;
+        make_the_audit_table(&desk).await;
+        // the recorded shop's owner is called "Owner" (the generator wrote the row);
+        // `create-owner` names a new owner after the username
+        let owner = fixture
+            .people
+            .iter()
+            .find(|p| p.is_owner())
+            .expect("a recorded file has an owner");
+        sqlx::query("UPDATE owners SET name = $1 WHERE username = $2")
+            .bind(&owner.name)
+            .bind(&owner.username)
+            .execute(&desk.db.pool)
+            .await
+            .expect("name the owner as recorded");
+        let hands = Hands::default();
+        let app: App = kiosk_app!(desk, hands);
+
+        let (now, late): (Vec<Person>, Vec<Person>) = fixture
+            .people
+            .iter()
+            .cloned()
+            .partition(|p| p.is_owner() || p.branch_id.as_deref() == Some(MAIN));
+        desk.employ(&now).await;
+        let cookies = sign_in(&app, &fixture.origin, &now).await;
+        let file = fixture.name.rsplit('/').next().unwrap_or(&fixture.name);
+        KioskReplay {
+            replay: Replay {
+                desk,
+                app,
+                fixture,
+                cookies,
+                ids: IdMap::new(),
+                tally: Tally::default(),
+                answers: BTreeMap::new(),
+                rules: BTreeMap::new(),
+            },
+            hands,
+            behind: behind_of(file),
+            late,
+            audit_seen: 0,
+            lines: BTreeMap::new(),
+            lines_compared: 0,
+        }
+    }
+
+    pub fn rule(mut self, n: usize, rule: crate::rpc_common::Rule) -> Self {
+        self.replay = self.replay.rule(n, rule);
+        self
+    }
+
+    fn is_kiosk(step: &Step) -> bool {
+        step.path() == Some(KIOSK)
+    }
+
+    /// Every step in the order recorded.
+    pub async fn run(&mut self) {
+        let fixture = self.replay.fixture;
+        for step in fixture.steps() {
+            self.step(step).await;
+        }
+        assert_eq!(
+            self.replay.tally.total(),
+            fixture.steps().len(),
+            "{}: every step is accounted for",
+            fixture.name
+        );
+        assert_eq!(
+            self.hands.ids.waiting(),
+            0,
+            "{}: an id v2 made was never asked for",
+            fixture.name
+        );
+    }
+
+    pub async fn step(&mut self, step: &Step) {
+        let label = self.replay.label(step);
+        let behind = self.behind.get(&step.n.to_string()).cloned();
+        let action = step.action.as_deref();
+        let accepted = step.status == Some(200);
+
+        if Self::is_kiosk(step) {
+            // the id v2 gave the quote is the id every later step names
+            if action == Some("quote") && accepted {
+                let id = step.json()["id"].as_str().expect("a quote has an id");
+                self.hands.ids.push(id);
+            }
+            if action == Some("configure") {
+                let bank = &self.replay.desk.bank;
+                match behind.as_ref().and_then(|b| b.get("bank")) {
+                    Some(reference) => bank.answer_next(ReferenceRates {
+                        source: text(reference, "source"),
+                        fetched_at: text(reference, "fetchedAt"),
+                        kind: text(reference, "kind"),
+                        rows: reference["rows"].as_array().cloned().unwrap_or_default(),
+                    }),
+                    None if step.error() == Some(BANK_DOWN) => bank.go_down(),
+                    None => bank.answer_nothing_special(),
+                }
+            }
+        }
+
+        self.replay.step(step).await;
+
+        // a quote that v3 refused where v2 accepted must not leave its id behind
+        if Self::is_kiosk(step) && action == Some("quote") && accepted {
+            assert_eq!(
+                self.hands.ids.waiting(),
+                0,
+                "{label}: the route did not ask for a new id"
+            );
+        }
+
+        // a branch was created: its people can be employed now
+        if action == Some("adminCreateBranch") && accepted {
+            let recorded = step.json()["branchId"].as_str().expect("a branch id");
+            let actual = self.replay.answers[&step.n].json()["branchId"]
+                .as_str()
+                .expect("a branch id")
+                .to_string();
+            let (mut joining, later): (Vec<Person>, Vec<Person>) = std::mem::take(&mut self.late)
+                .into_iter()
+                .partition(|p| p.branch_id.as_deref() == Some(recorded));
+            self.late = later;
+            for person in &mut joining {
+                person.branch_id = Some(actual.clone());
+            }
+            self.replay.desk.employ(&joining).await;
+            let cookies = sign_in(&self.replay.app, &self.replay.fixture.origin, &joining).await;
+            self.replay.cookies.extend(cookies);
+        }
+
+        // the audit lines of this step against v2's
+        let (written, last) = audit_since(&self.replay.desk, self.audit_seen).await;
+        self.audit_seen = last;
+        let recorded: Vec<Line> = behind
+            .as_ref()
+            .and_then(|b| b.get("audit"))
+            .and_then(Value::as_array)
+            .map(|lines| {
+                lines
+                    .iter()
+                    .map(|line| {
+                        let kind = text(line, "kind");
+                        Line {
+                            branch: self.actual_text(&text(line, "branch")),
+                            actor: text(line, "actor"),
+                            subject: self.actual_text(&text(line, "ref")),
+                            detail: comparable(&kind, &line["detail"]),
+                            kind,
+                            at: None,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let written_without_time: Vec<Line> = written
+            .iter()
+            .cloned()
+            .map(|line| Line { at: None, ..line })
+            .collect();
+        assert_eq!(
+            written_without_time, recorded,
+            "{label}: the audit lines of this step"
+        );
+        for line in &written {
+            assert_eq!(
+                line.at,
+                Some(crate::snapshot_common::time(&step.at)),
+                "{label}: an audit line carries the instant of its request"
+            );
+        }
+        self.lines_compared += recorded.len();
+        if !written.is_empty() {
+            self.lines.insert(step.n, written);
+        }
+    }
+
+    fn actual_text(&self, recorded: &str) -> String {
+        match self.replay.ids.to_actual(&json!(recorded)) {
+            Value::String(actual) => actual,
+            other => panic!("{recorded} became {other}"),
+        }
+    }
+
+    pub fn answer(&self, n: usize) -> &Answer {
+        self.replay
+            .answers
+            .get(&n)
+            .unwrap_or_else(|| panic!("step {n} was not replayed"))
+    }
+
+    pub async fn finish(self) {
+        self.replay.finish().await;
+    }
+}
+
+fn text(value: &Value, key: &str) -> String {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("no text `{key}` in {value}"))
+        .to_string()
+}
+
+// ── a counter set up by hand, for the tests that are not a replay ────────────
+
+/// A desk whose `MAIN` has the dollar at 32.1 / 32.6 and an open shift, the
+/// owner and the people given signed in — all through the routes.
+pub struct Counter {
+    pub desk: Desk,
+    pub app: App,
+    pub hands: Hands,
+    pub cookies: Cookies,
+    pub origin: String,
+}
+
+pub const ORIGIN: &str = "http://desk.test";
+
+pub fn person(key: &str, role: &str, n: u8) -> Person {
+    Person {
+        key: key.to_string(),
+        kind: "staff".to_string(),
+        id: format!("00000000-0000-4000-8000-0000000000{n:02x}"),
+        username: key.to_lowercase(),
+        name: format!("{key} of the test"),
+        role: role.to_string(),
+        branch_id: Some(MAIN.to_string()),
+        must_change: false,
+    }
+}
+
+pub fn the_owner() -> Person {
+    Person {
+        key: "owner".to_string(),
+        kind: "owner".to_string(),
+        id: "owner".to_string(),
+        username: "owner".to_string(),
+        name: "Owner".to_string(),
+        role: "OWNER".to_string(),
+        branch_id: None,
+        must_change: false,
+    }
+}
+
+impl Counter {
+    pub async fn open(staff: &[Person]) -> Counter {
+        let desk = Desk::open().await;
+        make_the_audit_table(&desk).await;
+        let hands = Hands::default();
+        let app: App = kiosk_app!(desk, hands);
+        let mut people = vec![the_owner()];
+        people.extend(staff.iter().cloned());
+        desk.employ(&people).await;
+        let cookies = sign_in(&app, ORIGIN, &people).await;
+        let counter = Counter {
+            desk,
+            app,
+            hands,
+            cookies,
+            origin: ORIGIN.to_string(),
+        };
+        counter
+            .owner_rpc(
+                "adminSaveRate",
+                json!({ "requestId": "00000000-0000-4000-8000-0000000b0001", "code": "USD",
+                        "buy": 32.1, "sell": 32.6, "previousUpdated": "" }),
+            )
+            .await;
+        counter
+            .owner_rpc(
+                "adminOpenShift",
+                json!({ "requestId": "00000000-0000-4000-8000-0000000b0002",
+                        "opening": { "THB": 100000, "USD": 2000 } }),
+            )
+            .await;
+        counter
+    }
+
+    pub async fn owner_rpc(&self, action: &str, payload: Value) -> Value {
+        let call = Call::action(&self.origin, "/api/rpc", action, payload);
+        let answer = self.app.send(as_who(call, &self.cookies, "owner")).await;
+        assert_eq!(answer.status, 200, "{action}: {}", answer.text);
+        answer.json()
+    }
+
+    /// One kiosk action; `who` is a person's key, or `None` for the customer.
+    pub async fn ask(&self, who: Option<&str>, action: &str, payload: Value) -> Answer {
+        self.ask_from(who, action, payload, None).await
+    }
+
+    /// The same from a given client address (`X-Real-IP`).
+    pub async fn ask_from(
+        &self,
+        who: Option<&str>,
+        action: &str,
+        payload: Value,
+        address: Option<&str>,
+    ) -> Answer {
+        let mut call = kiosk(&self.origin, action, payload);
+        if let Some(who) = who {
+            call = as_who(call, &self.cookies, who);
+        }
+        if let Some(address) = address {
+            call = call.header("x-real-ip", address);
+        }
+        self.app.send(call).await
+    }
+
+    /// A quote confirmed into the queue: its id.
+    pub async fn waiting_request(&self, id: &str) -> String {
+        self.hands.ids.push(id);
+        let quote = self
+            .ask(
+                None,
+                "quote",
+                json!({ "type": "BUY", "currency": "USD", "amount": 100 }),
+            )
+            .await;
+        assert_eq!(quote.status, 200, "quote: {}", quote.text);
+        assert_eq!(quote.json()["id"], id, "the route used the id it was given");
+        self.desk
+            .clock
+            .set(self.now() + chrono::Duration::seconds(4));
+        let confirmed = self.ask(None, "confirm", json!({ "id": id })).await;
+        assert_eq!(confirmed.status, 200, "confirm: {}", confirmed.text);
+        id.to_string()
+    }
+
+    pub fn now(&self) -> DateTime<Utc> {
+        use xchange::presentation::http::rpc::RpcClock;
+        self.desk.clock.now()
+    }
+
+    pub async fn finish(self) {
+        self.desk.finish().await;
+    }
+}
