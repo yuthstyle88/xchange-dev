@@ -161,6 +161,7 @@ class KioskState {
 class KioskController extends Notifier<KioskState> {
   static const reviewSeconds = 3;
   static const restartAfterDone = Duration(seconds: 30);
+  static const ratesRefresh = Duration(seconds: 30);
 
   late final KioskRepository _repo = ref.read(kioskRepositoryProvider);
   late final KioskL10n _l10n = ref.read(kioskL10nProvider);
@@ -171,6 +172,10 @@ class KioskController extends Notifier<KioskState> {
   );
 
   late final IdleTimer _idle = IdleTimer(onIdle: _onIdle);
+  late final StatusPoller _ratesPoller = StatusPoller(
+    interval: ratesRefresh,
+    poll: _refreshRates,
+  );
   late final StatusPoller _statusPoller = StatusPoller(
     interval: const Duration(seconds: 5),
     poll: _pollStatus,
@@ -191,6 +196,7 @@ class KioskController extends Notifier<KioskState> {
       _disposed = true;
       _countdown?.cancel();
       _restart?.cancel();
+      _ratesPoller.stop();
       _statusPoller.stop();
       _receiptPoller.stop();
       _idle.dispose();
@@ -218,6 +224,7 @@ class KioskController extends Notifier<KioskState> {
     _countdown?.cancel();
     _restart?.cancel();
     _restart = null;
+    _ratesPoller.start();
     _statusPoller.stop();
     _receiptPoller.stop();
     _idle.touch();
@@ -257,6 +264,32 @@ class KioskController extends Notifier<KioskState> {
   }
 
   // ---- screen 1: select --------------------------------------------------
+
+  Future<void> _refreshRates() async {
+    if (state.screen != KioskScreen.select ||
+        state.busy ||
+        state.quote != null) {
+      return;
+    }
+    try {
+      final m = await _repo.rates();
+      if (_disposed ||
+          state.screen != KioskScreen.select ||
+          state.busy ||
+          state.quote != null) {
+        return;
+      }
+      final keep = m.rates.any((r) => r.code == state.currency);
+      final currency = keep
+          ? state.currency
+          : (m.rates.isEmpty ? null : m.rates.first.code);
+      final openChanged = state.model == null || m.open != state.model!.open;
+      final error = openChanged
+          ? (m.open ? '' : _t.text('closed'))
+          : state.error;
+      _set(state.copyWith(model: m, currency: currency, error: error));
+    } catch (_) {}
+  }
 
   void setLanguage(String code) {
     final t = _l10n.of(code);

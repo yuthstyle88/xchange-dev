@@ -325,9 +325,13 @@ void main() {
       c = make();
       quoteUsd(async);
       c.backToSelect();
-      final before = server.calls.length;
+      // The select screen re-reads `rates` every 30 s (kiosk_rates_refresh_test);
+      // what must stop is every call about the quote.
+      List<String> aboutTheQuote() =>
+          server.calls.where((call) => call != 'rates').toList();
+      final before = aboutTheQuote();
       async.elapse(const Duration(seconds: 30));
-      expect(server.calls.length, before);
+      expect(aboutTheQuote(), before);
       expect(st().quote, isNull);
       expect(st().screen, KioskScreen.select);
       container.dispose();
