@@ -19,6 +19,7 @@ can be reviewed later without holding phase 1 up.
 | Source | State |
 |---|---|
 | `xc-desk-v2-deployed-20261005-1758.zip` — built bundle, `SOURCE-VERSIONS.json` = `xchange-online@3ffc5a5`, `xchange-booking@206345c` | Read: all app code in `server.mjs` lines 5349–8301 (engine, operations, ledger, auth, kiosk, devices, routes), `schema.sql`, `cutover.sh`, `migrate-v1.mjs`, nginx configs |
+| `XC-Desk-v2-Passport-Drawer-20261006.zip` — the **10-06 bundle**, sha256 `6514b4c8…`, manifest `passport-drawer-20261006`, `"deployed": false`; its `SOURCE-VERSIONS.json` is the same `xchange-online@3ffc5a5` as above, so it is told apart by its own hashes (§5.5) | Read for §5.5 only: the diff against the 10-05 bundle, its three server modules and `.sql`, its four notes files, and every changed or new `public/` file |
 | Source repos `xchange-online`, `xchange-booking` | **Not available** — not found under `108-Plaza`, `yuthstyle88`, or on this machine |
 | Minified React (`public/staff.js`, `staff-report.js`), `kiosk.html`, embedded admin/desk HTML | **Not read** — screens in §8 are derived from the API they call, not from the UI code |
 | Live database `xc_desk_v2` | **Not read** — row counts and real data shapes are unmeasured |
@@ -54,6 +55,7 @@ authorises in one module, and does post-save work in the same DB transaction.
 | D7 | Service hours 11:00–22:50 / 23:00 stay hard-coded as in v2 (`server.mjs:6037`, `6876`) | [required] for parity; a setting would need a screen that does not exist |
 | D8 | Kiosk delivery = Flutter **web** served on the customer host | **decided** (owner 2026-10-06) and **extended by D9**. The reason first given here — "an installed app sends no `Origin`" — was wrong: measured 2026-10-06 on a local v2 copy, `POST /api/kiosk` answers 200 when the client itself sends `Origin: <the server's own origin>`, 400 with no `Origin`, 400 with another one. The check is a cross-site guard for browsers, not something an app cannot satisfy |
 | D9 | The same kiosk is also an **Android app distributed through the Play Store** (owner 2026-10-06: "ต้องให้ ลูกค้า ทำผ่าน ทาง pay store", "ลูกค้าใช้ android"). Application id **`com.spacing.xchange`**, store name **`XC.Xchange`** (both typed by the owner). The web build stays; one code base, two targets (§8.1) | **decided** — store identity: never changed without the owner |
+| D10 | v3 targets the kept screens of the **10-06 bundle**: payment settings per branch, queue work and the admin refresh are designed to be cut into tickets; the passport-step drawer is designed and **held** (§5.5) | **decided** (owner 2026-10-07, relayed by the lane controller claude/7ca80c: "B ทำเลย"; the drawer half stays under "ยังไม่integrate ตอนนี้", #274) |
 
 ## 3. Domain rules carried over (behaviour table)
 
@@ -396,7 +398,9 @@ screens do arithmetic on it; decimals exist only inside the server and the datab
 | `POST /api/reference-rates` | — | `7275` |
 | `POST /api/bookings` | `{action, payload}` | `7263` — subject to D5 |
 | `POST /api/devices` · `GET /devices/receipt` | `{action: snapshot\|queue\|process\|retry\|printerOnline\|drawerObservation}` | `7665`, `7794` |
-| `POST /api/kiosk` | `{action, payload}` — public: `rates`, `quote`, `confirm`, `status`, `customerReceipt`; any signed-in role: `notifications`; OWNER, FRONT, BACKEND, MANAGER: `list`, `accept`, `get`, `identityChecked`, `publishReceipt`; OWNER and RATES: `manage`, `configure` | `8048` |
+| `POST /api/kiosk` | `{action, payload}` — public: `rates`, `quote`, `confirm`, `status`, `customerReceipt`; any signed-in role: `notifications`; OWNER, FRONT, BACKEND, MANAGER: `list`, `accept`, `get`, `identityChecked`, `publishReceipt`; OWNER and RATES: `manage`, `configure`. The 10-06 bundle moves `list` to any signed-in role and changes `rates`, `quote`, `confirm`, `notifications`, `list` and `accept` (§5.5.2, §5.5.3) | `8048` |
+| `POST /api/payment-methods` (10-06 bundle) | `{action: list\|save, payload}` | 10-06 `8154`; §5.5.2 |
+| `POST /api/drawer-passport` (10-06 bundle) | `{branchId, orderId, kiosk, mode}` | 10-06 `8153`; §5.5.5 — switched off until PD-1 |
 | Pages: `/`, `/desk`, `/staff`, `/staff/report`, `/staff/desk`, `/staff/documents`, `/login`, `/devices`, `/kiosk-queue.html`, `/kiosk-currencies.html`, `/staff-guide`, `/receipt-sample`, static assets | — | route table `8143-8188` |
 
 Request rules carried over unchanged: `Origin` must equal the request origin and `X-Xchange-Request: 1`
@@ -641,6 +645,439 @@ never writes the new values and reads only rows it knows (a row with a new statu
 `JobStatus::parse` — the install runs one binary at a time, so this does not happen); (4) `down` narrows the CHECK and fails
 while any row holds a new value — delete or convert those rows first. No v3 install exists yet (owner 2026-10-06), so this
 is the approved-migration window.
+
+### 5.5 The add-ons of the 10-06 bundle (owner 2026-10-07, "B ทำเลย")
+
+The owner asked for every add-on the newer v2 bundle has and v3 lacks, designed in one go (decision D10). The kept screens
+of that bundle are the contract (§5.3); this section says what v3 must add so they work unchanged.
+
+**The two bundles, told apart.** Both carry the same `SOURCE-VERSIONS.json` (`xchange-online@3ffc5a5`,
+`xchange-booking@206345c`): the add-ons are an overlay that is not in `xchange-online`'s history, so that hash cannot
+tell the bundles apart. They are named here by their own hashes:
+
+| Name here | File | sha256 | `server.mjs` sha256 |
+|---|---|---|---|
+| **10-05 bundle** (what §0 to §5.4b read) | `xc-desk-v2-deployed-20261005-1758.zip` | `4d99a8de…6c93e02` | `3578465b…325ec4` |
+| **10-06 bundle** | `XC-Desk-v2-Passport-Drawer-20261006.zip` (= the folder `~/Downloads/xc-desk-v2/` less two `.DS_Store`) | `6514b4c8…4375f570` | `99ddcd10…8a1b0b` |
+
+The 10-06 bundle's `ADMIN-REFRESH-MANIFEST.json` names itself `passport-drawer-20261006`, gives the 10-05 zip as its
+source (`sourceSHA256` `4d99a8de…`, matching), and says `"deployed": false`. Its four notes files say no add-on has run
+against a real PostgreSQL or real hardware. Line numbers below are `server.mjs:<line>` **of the 10-06 bundle** and
+`<file>:<line>` of its add-on scripts.
+
+**What the diff shows** (`diff -rq` of the two, measured 2026-10-07): 13 new files (4 notes, the manifest, 3 server
+modules with their 3 `.sql`, and `public/{admin-payments,admin-queue,admin-workspace,desk-passport-drawer,desk-payments,queue-panel}.js`,
+`admin-workspace.css`, `queue-panel.css`), 5 changed files (`server.mjs`, `schema.sql`, `public/account-bar.js`,
+`public/kiosk.js`, `public/kiosk-queue.html`). The embedded `admin.html`, `desk.html` and `receipt-sample.html` are
+byte-identical (`extract-v2-pages.mjs --check` on both bundles: same sha256), so every add-on reaches the screens as an
+injected script. `server.mjs` changes only where the three modules plug in (`5916-5922`, `7047`, `7062`, `7937`, `7978`,
+`7982`, `7993`, `8015-8018`, `8026`, `8051-8055`, `8083-8084`, `8150-8154`, `8177-8178`, `8208-8209`); besides those,
+`deviceAfterSave` moved from before the after-hooks to after them (`7761`) and `/api/staff/rpc` now runs the save hooks
+when sign-in is on (`8177`) — v3 already runs every save step on both RPC routes (P2-S), so neither needs work.
+
+| Add-on | Notes file | Server module · SQL | Pages |
+|---|---|---|---|
+| Payment settings (§5.5.2) | `PAYMENT-SETTINGS-NOTES.md` | `payment-settings.mjs` · `payment-settings.sql` | `admin-payments.js`, `desk-payments.js`, `kiosk.js` (changed) |
+| Queue work (§5.5.3) | `QUEUE-WORK-NOTES.md` | `queue-work.mjs` · `queue-work.sql` | `queue-panel.js/.css`, `admin-queue.js`, `account-bar.js` (changed), `kiosk-queue.html` (rewritten) |
+| Admin refresh (§5.5.4) | `ADMIN-REFRESH-NOTES.md` + manifest | none | `admin-workspace.js/.css` |
+| Passport drawer (§5.5.5) — **HELD** | `PASSPORT-DRAWER-NOTES.md` | `passport-drawer.mjs` · `passport-drawer.sql` | `desk-passport-drawer.js` |
+
+Nothing else differs. **Not designed, because the owner has not asked:** branch details beyond the name (address,
+phone, tax ID, receipt header); the 10-06 bundle does not add them either.
+
+#### 5.5.1 The shared core: one per-branch setting store with history
+
+Of the four add-ons, one keeps a per-branch setting that is versioned and audited (payment settings: `version`, a
+409 on a stale save, the last 20 changes with before/after). The passport drawer has a per-branch on/off switch too, but
+it is a device setting: it is read where `DrawerSettings` is read, on the device job's claim (§5.4b), and needs no
+history in v2. Queue work and the admin refresh keep no setting.
+
+What exists: `device_settings` (`api/migrations/20261007180000_devices.sql`) is per-branch key → text, with no version,
+no history and no actor, written only by `DeviceService` (`set_printer_online`, `set_printer`, `set_drawer`). Putting the
+payment table in it would need a version and a history it does not have, and would make devices the owner of a money rule.
+
+[required] So the core is a **new store for versioned per-branch documents**, keyed by (branch, name), knowing nothing of
+payments. Payment settings are its first document (`name = 'paymentMethods'`). A second versioned setting later is one more small service
+over the same store and the same tables, with no migration and no copy of the version, conflict and history logic.
+There is no trait over "a document" yet: one document exists and no second is planned, and a single variant stays
+concrete until a second one is. The passport switch goes to configuration (§5.5.5), not here.
+
+| Class | File | What |
+|---|---|---|
+| `BranchSettingStore` | `api/src/infrastructure/settings/branch_setting_store.rs` | `new(pool)`; `read(branch, name) -> Option<StoredSetting>` (pool); `read_in(tx, branch, name)`; `write_in(tx, branch, name, expected_version: i64, first_before: &Value, body: &Value, actor: &str, at) -> Result<StoredSetting, VersionConflict>`; `history(branch, name, limit) -> Vec<SettingChange>`, newest first. `write_in` must run inside `BranchTx::run` of that branch (the branch lock replaces v2's `FOR UPDATE`); it compares the stored version (no row = 0) with `expected_version`, writes version + 1, and writes the history row in the same transaction, with `before` = the stored body or `first_before` when there was no row |
+| `StoredSetting`, `SettingChange`, `VersionConflict` | `api/src/infrastructure/settings/stored_setting.rs` | `{version, body, updated_at, updated_by}`; `{version, actor, at, before, after}`; the stale-version refusal (the document's service gives it its sentence) |
+
+**Data migration — `branch_settings` and `branch_setting_history`** (row SET, `api/migrations/20261008100000_branch_settings.sql`):
+
+```sql
+CREATE TABLE branch_settings (
+    branch_id  text        NOT NULL REFERENCES branches (id),
+    name       text        NOT NULL CHECK (name ~ '^[a-z][A-Za-z0-9]{0,39}$'),
+    version    bigint      NOT NULL CHECK (version >= 1),
+    body       jsonb       NOT NULL,
+    updated_at timestamptz NOT NULL,
+    updated_by text        NOT NULL,
+    PRIMARY KEY (branch_id, name)
+);
+CREATE TABLE branch_setting_history (
+    branch_id text        NOT NULL,
+    name      text        NOT NULL,
+    version   bigint      NOT NULL,
+    actor     text        NOT NULL,
+    at        timestamptz NOT NULL,
+    before    jsonb       NOT NULL,
+    after     jsonb       NOT NULL,
+    PRIMARY KEY (branch_id, name, version),
+    FOREIGN KEY (branch_id, name) REFERENCES branch_settings (branch_id, name)
+);
+```
+
+1. *Existing rows.* None: two new tables, no existing table or column changes.
+2. *Backfill.* None. A branch with no row reads as version 0 with v2's defaults (`payment-settings.mjs:20`), the same
+   answer v2 gives before a branch's first save. `SELECT count(*) FROM branch_settings;` is 0 on every database at deploy.
+3. *Deploy order.* The migration runs at start-up of the binary that contains it, before it binds. An older binary never
+   names the tables and keeps working against the new schema.
+4. *What `down` loses.* No down migrations exist; dropping the tables by hand loses every branch's payment settings and
+   their history, and every branch falls back to the defaults (all five channels on).
+
+v2 differs in two ways that no caller can see: it stores times as text (`payment-settings.sql`), and it bumps the global
+`ledger_control.revision` on every save (`payment-settings.mjs:34`) so that a save in flight in *any* branch is
+retried. In v3 the settings write and every exchange save take the same branch lock, so only that branch's saves wait.
+
+#### 5.5.2 Payment settings — per branch
+
+**For a user.** Admin → *เงินและรายงาน* → *วิธีชำระเงิน* (`/#payments`, `admin-payments.js:3-6`). The branch picked at
+the top is the branch edited. Five channels (Cash, Credit Card, Alipay, PromptPay, Bank Transfer), each with: on/off;
+*รับเงินบาทจากลูกค้า* (SELL); *จ่ายเงินบาทให้ลูกค้า* (BUY, only Cash and Bank Transfer); an account / point name shown to
+staff (≤ 100); an instruction shown to the customer (≤ 400). Save shows who and when; a *ประวัติการตั้งค่า* list shows
+the last 20 changes. **The owner edits; any signed-in employee reads only their own branch** (the branch is forced for
+staff, `payment-settings.mjs:45`); staff see no history (`:51`). The kiosk (`kiosk.js:42`, `51-54`) and the desk
+(`desk-payments.js:5-21`) offer only what is on for the direction and show the instruction; the server checks again
+on the kiosk quote, the kiosk confirm and the LIVE save. Saved exchanges never change.
+
+**Routes and actions.**
+
+| Where | Request | Answer | Source |
+|---|---|---|---|
+| `POST /api/payment-methods` (new) | `{action: "list" \| "save", payload: {branchId?, version?, methods?}}` | `{branchId, version, methods: [{id, enabled, buy, sell, account, instruction}] ×5 in the order above, updatedAt \| null, updatedBy \| null, canEdit, history}`; `history` = `[{version, actor, created_at, before_methods, after_methods}]` newest first, ≤ 20, owner only, else `[]` (the keys are snake_case in v2 and stay so) | `server.mjs:8154`, `payment-settings.mjs:38-54` |
+| `POST /api/kiosk` `rates` | as today | adds `paymentMethods: [{id, enabled, buy, sell, instruction}]` (no `account`) after `rates`, before `simulation` | `server.mjs:7937` |
+| `POST /api/kiosk` `quote` | as today | refused `Payment method unavailable. Please contact staff.` when the method is off for the direction — after `Invalid payment method.`, the last check | `server.mjs:7978` |
+| `POST /api/kiosk` `confirm` | as today | the same sentence, after the 3-second check and before the rate check; a request already past QUOTED still answers its identity | `server.mjs:7993` |
+| `POST /api/rpc`, `/api/staff/rpc` `adminDeskConfig` | as today | adds `paymentMethods` = the branch's full rows (with `account`) | `server.mjs:7047` |
+| `POST /api/rpc`, `/api/staff/rpc` `saveTransaction` | as today | a **first LIVE** save whose `method` (`SCB Transfer` read as Bank Transfer) is off for its `type` is refused `Payment method unavailable. Please contact staff.`; a repeat of a saved submission and every DEMO save are not checked | `server.mjs:7062` (after the unchanged-replay return at `7058-7060`) |
+
+[required] Refusals of `/api/payment-methods`, in v2's order (status, sentence):
+
+| # | When | Status | Sentence |
+|---|---|---|---|
+| 1 | nobody signed in (router) | 401 | `กรุณาเข้าสู่ระบบ` (`server.mjs:8289`) |
+| 2 | `Origin` / `X-Xchange-Request` | 403 | `Request rejected.` |
+| 3 | body longer than 12,000 characters | 400 | `คำขอใหญ่เกินกำหนด` |
+| 4 | `payload` not an object | 400 | `คำขอไม่ถูกต้อง` |
+| 5 | branch (staff: their own; owner: `payload.branchId` or `MAIN`) not 1–70 of `A-Za-z0-9-` | 400 | `สาขาไม่ถูกต้อง` |
+| 6 | `action` not `list`/`save` | 400 | `คำขอไม่ถูกต้อง` |
+| 7 | `save` by anyone but the owner | 403 | `เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้` |
+| 8 | the branch does not exist | 400 | `ไม่พบสาขา` |
+| 9 | `methods` not 5 rows with 5 distinct `id` | 400 | `กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง` |
+| 10 | per channel, in the order above: missing, or `enabled`/`buy`/`sell` not JSON booleans | 400 | `ข้อมูลช่องทางชำระเงินไม่ถูกต้อง` |
+| 11 | … `buy` on a channel other than Cash / Bank Transfer | 400 | `การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร` |
+| 12 | … on, with neither direction | 400 | `ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท` |
+| 13 | … `account` / `instruction` not a string, longer than 100 / 400 UTF-16 units **before** trimming, or holding a control character U+0000–0008, U+000B, U+000C, U+000E–001F | 400 | `ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง` |
+| 14 | no channel on for BUY, or none for SELL | 400 | `ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง` |
+| 15 | `version` not a whole number ≥ 0 | 400 | `เวอร์ชันข้อมูลไม่ถูกต้อง` |
+| 16 | `version` ≠ the stored one | 409 | `มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก` |
+| 17 | a database failure | 500 | `โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน` |
+
+Texts are stored trimmed. `updatedBy` and the history's `actor` are the saver's username. Every answer carries
+`Cache-Control: no-store`. A body that is not JSON is a known difference (v2 answers row 17's 500; v3 answers 400
+`คำขอไม่ถูกต้อง`, as `/api/rpc` does — `docs/design/xchange-v3-known-differences.md`).
+
+**Data.** v2: `payment_method_settings` (one row per branch: `version`, `methods jsonb`, `updated_at text`,
+`updated_by`) and `payment_method_audit` (`(branch_id, version)`, `before_methods`, `after_methods`) — additive
+(`payment-settings.sql`). v3: the core of §5.5.1, `name = 'paymentMethods'`, `body` = the five rows.
+
+**v3 today** (searched at `main` `3828abb`: `git grep` of `payment_method_settings`, `paymentMethods`, `payment-methods`,
+`Payment method unavailable`): nothing. The two `PaymentMethod` enums (`xc-exchange/.../value_objects/payment_method.rs`,
+`xc-kiosk/.../value_objects/payment_method.rs`) parse the five names; nothing switches one off. The Flutter kiosk
+offers fixed lists (`app/lib/features/kiosk/presentation/controllers/kiosk_controller.dart:17-26`).
+
+**Gap and design.**
+
+| Class | File | Row | What |
+|---|---|---|---|
+| `PaymentRules`, `ChannelRule`, `METHODS` | `api/crates/xc-kernel/src/payment/{payment_rules.rs,channel_rule.rs}` | PM-R | pure, in the kernel because the kiosk crate needs them (dependency rule). `PaymentRules::defaults()` (`payment-settings.mjs:3`), `rows() -> &[ChannelRule; 5]`, `rule(method)`, `allows(method: &str, side: Side) -> bool` (`:17`; `SCB Transfer` read as Bank Transfer, `:2`; `Side::Buy` reads `buy`), `PaymentRules::from_rows(rows) -> Option<Self>` (refuses rows that break rows 11, 12, 14 — the parser below has already given the sentence) |
+| `BranchSettingStore` | §5.5.1 | SET | |
+| `PaymentSettingsService` | `api/src/application/settings/payment_settings.rs` | PM-API | `new(branch_tx, store, branches)`; `rules(branch) -> PaymentRules` and `rules_in(tx, branch)` (no row → defaults); `view(branch, actor)`; `save(branch, version, methods, actor, now)` through `BranchTx::run` |
+| `parse_methods`, `parse_version` | `api/src/application/settings/payment_input.rs` | PM-API | rows 9–15 over `serde_json::Value`, in v2's order, with v2's sentences |
+| `rules_json(full: bool)` | `api/src/application/settings/payment_json.rs` | PM-API | the five rows as `V2Json`; `full = false` drops `account` (`payment-settings.mjs:18`) |
+| route | `api/src/presentation/http/payment_methods.rs`, `api/src/presentation/dto/payment_methods.rs` | PM-API | rows 1–8 and 16–17; `Policy::allow(actor, EntryPath::PaymentMethods, action)` for rows 1, 6, 7; `Policy::branch` for the branch |
+| `KioskPorts::payment_rules(branch)`, `payment_rules_in(tx, branch)` | `api/crates/xc-kiosk/src/domain/kiosk/repositories/kiosk_ports.rs` (trait, default methods answer `PaymentRules::defaults()` so the test fakes compile unchanged), `api/src/infrastructure/kiosk/kiosk_ports.rs` (`PgKioskPorts` overrides through `PaymentSettingsService`) | PM-K | [required] `PgKioskPorts` builds its `PaymentSettingsService` from the pool it already holds (`kiosk_ports.rs:122-126`); `PgKioskPorts::new` keeps its signature, so neither of its callers (`presentation/http/kiosk.rs:278`, `presentation/http/rpc.rs:290`) is edited |
+| `PaymentGate` | `api/crates/xc-kiosk/src/domain/kiosk/entities/payment_gate.rs` | PM-K | pure: `quote(request, rules) -> Result<(), PaymentUnavailable>` after `KioskMachine::quote` succeeded (v2's last check); `confirm(machine_result, request, rules) -> Result<Transition, GateRefusal>` — when the machine answered the step to WAITING **or** `RateChangedOrClosed`, an off method wins (v2 checks it first); an identity answer of a request already past QUOTED passes unchanged. `KioskMachine` is not edited |
+| `PublicRates.payment` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/public_rates.rs` | PM-K | the branch's `PaymentRules`, printed public by K-HTTP |
+| `SnapshotSources::payment_rules(branch)` | `api/src/application/compat/snapshot_sources.rs` (default: defaults), `api/src/infrastructure/compat/snapshot_sources.rs` | PM-D | `SnapshotBuilder::desk_config` adds `paymentMethods` (full). [required] `ServiceSnapshotSources` builds its `PaymentSettingsService` from what it already holds — the `BranchTx` of its `TransactionService` (`TransactionService::branch_tx`, `xc-exchange/src/application/exchange/service.rs:33`), whose pool the store uses; `ServiceSnapshotSources::new` keeps its signature, so `presentation/http/rpc.rs:315` is not edited |
+| `PaymentSaveStep` | `api/src/application/workflows/payment_save_step.rs` | PM-S | `impl SaveStep`: `before_in` nothing; `after_in` on a first save (`ctx.prior` is `None`) of a LIVE exchange reads `rules_in(tx, branch)` on the save's own transaction and refuses when `!allows(method, side)` — the save is undone. Registered **last**, after custody (v2 checks after the engine): `SaveAction::with_payment_check(self, payments) -> Self` appends it, so `SaveAction::new` and its callers keep their signature |
+
+[required] **Per branch everywhere:** the store's key is the branch; the API's branch is `Policy::branch` (staff → their
+own, whatever they name); the kiosk reads the kiosk request's branch; the desk config reads the desk's branch; the save
+step reads the save's branch on the save's own transaction, under the same branch lock as the settings write, so a save
+that started before a channel was switched off either commits first or sees the new rule.
+
+#### 5.5.3 Queue work — who took a kiosk request, and for how long
+
+**For a user.** A bar under the branch picker on every admin page (`admin-queue.js:6`): waiting count, working count,
+and who is working on what since when; *เปิดคิว / รับเรื่อง* opens a dialog with three tabs — waiting / working /
+done — 50 per page, polled every 5 s (`queue-panel.js:9-37`). A small toast on a new request (`admin-queue.js:19`).
+*รับเรื่องนี้* claims the request; others then see the holder's name and start time and no button; the holder gets
+*ทำรายการต่อ →* to the desk. The time runs from the claim to the save of the exchange, breaks included; old rows show
+"no data", never a guess. `kiosk-queue.html` is now the same panel on its own page (it lost its own *Passport checked*
+button; the desk's `desk-kiosk.js` still sends `identityChecked`). Per branch (staff are forced onto their own).
+Who: listing — anyone signed in (it moved above the staff check, `server.mjs:8026`); claiming — OWNER, FRONT, BACKEND,
+MANAGER, as before.
+
+**Routes and actions** (all on `POST /api/kiosk`).
+
+| Action | Request | Answer | Source |
+|---|---|---|---|
+| `notifications` | as today | adds, **first**: `serverNow` (ISO), `workingCount`, `working` = up to 10 `{id, queue, staff, startedAt, status}` of ACCEPTED/ID_CHECKED requests ordered by start time (none last), then id | `server.mjs:8015-8018` |
+| `list` | `{filter: "waiting" \| "working" \| "completed" \| "all" (absent = all), page: 0 … 100000 (absent = 0)}` | `{branchId, serverNow, page, hasMore, requests}` — ≤ 50, newest first then id descending, QUOTED never; each `{paymentMethod, type, currency, rate, foreign, thb, inputAmount, branchName, id, branch, status, created, staff, queue, orderNo, transactionNo, startedAt, completedAt, durationSeconds, canAccept, canContinue}` — `canAccept` = a claiming role and WAITING; `canContinue` = a claiming role, the holder, ACCEPTED or ID_CHECKED; `durationSeconds` = whole seconds from start to completion, `null` unless both exist | `queue-work.mjs:14-20` |
+| `accept` | `{id}` | first claim: `{saved: true, claimed: true, startedAt, completedAt: null, durationSeconds: null}`; the holder again while ACCEPTED or ID_CHECKED: `{saved: true, startedAt, completedAt, durationSeconds}`, start time unchanged, no audit line | `queue-work.mjs:6-13`, `server.mjs:8052-8055` |
+| the save of a kiosk exchange | as today | stamps `completed_at` the first time only; a repeat never rewrites it | `queue-work.mjs:30` |
+
+[required] New refusals (kiosk answers are 400 `{error}`): `list` — `หน้าข้อมูลไม่ถูกต้อง` (page not a whole number in
+range, after JavaScript's `Number(page \|\| 0)`), `ตัวกรองไม่ถูกต้อง`; `accept` — `ออเดอร์นี้มี <holder's username>
+กำลังทำรายการแล้ว` when the request has a holder (including the caller's own COMPLETED one, as v2 does), otherwise
+`คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด` (replacing `This request is already assigned or unavailable.`). A `list` by
+nobody signed in keeps `Staff access required.`
+
+**Data.** `ALTER TABLE kiosk_requests ADD COLUMN started_at timestamptz, ADD COLUMN completed_at timestamptz` — additive,
+old rows NULL (`queue-work.sql`).
+
+**v3 today.** `KioskService::list` (`api/crates/xc-kiosk/src/application/kiosk/service.rs:299`) answers the newest 100
+without filter, page or times, desk roles only (`KioskMachine::authorize`, `kiosk_machine.rs:38-45` at `f72b979`); `accept`
+(`:320`) refuses everything but WAITING; `notifications` (`:283`) has no `working`; `kiosk_requests` has no time
+columns (`api/migrations/20261007170000_kiosk.sql`). `git grep` of `started_at`, `startedAt`, `workingCount`,
+`serverNow`, `hasMore`, `canAccept`: no hit in the kiosk.
+
+**Gap and design.**
+
+| Class | File | Row | What |
+|---|---|---|---|
+| `WorkTimes` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/work_times.rs` | Q1 | `{started_at, completed_at}`, `duration_seconds()` (`queue-work.mjs:3`) |
+| `QueueFilter`, `QueuePage`, `QueueItem` | `.../value_objects/{queue_filter.rs,queue_page.rs}` | Q1 | `QueueFilter::parse(Option<&Value>)`, `QueuePage::parse` with v2's two sentences; `QueueItem {request, identity, times}`; a page answer `{page, has_more, items}` |
+| `AcceptOutcome` | `.../value_objects/accept_outcome.rs` | Q1 | `Claimed(WorkTimes)`, `AlreadyMine(WorkTimes)`, `HeldBy(staff id)`, `Unavailable` — the route turns the last two into the sentences, because only it maps an account id to a username (it does so for `list` today) |
+| `Notifications` (changed) | `.../value_objects/notifications.rs` | Q1 | gains `working: Vec<WorkingRequest>` (≤ 10) and `working_count` |
+| `KioskMachine` (changed) | `.../entities/kiosk_machine.rs` | Q1 (after POL) | `Accept` by the holder of an ACCEPTED or ID_CHECKED request → `Ok`, request unchanged, no event. Who may `list` is not the machine's any more (§5.5.7 *Policy*) |
+| `KioskRepository` (changed) | `.../repositories/kiosk_repository.rs`, `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs` | Q1 | `queue_page(branch, filter, page)` (51 rows read, 50 kept), `working(branch, 10)`, `mark_started_in(tx, branch, id, at)`, `mark_completed_in(tx, branch, id, at)` (`COALESCE`); the times are read beside the entity, so `KioskRequest` keeps its shape and its literals in the provided tests compile unchanged |
+| `KioskService` desk methods | `api/crates/xc-kiosk/src/application/kiosk/desk.rs` (after S0) | Q1 | `list(branch, actor, filter, page, now) -> QueuePage`, `accept(...) -> AcceptOutcome` (stamps the start in the claim's transaction), `notifications` with `working` |
+| `KioskService::complete_in` | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` (after S0) | Q1 | stamps `completed_at` on the save's transaction when the event is `Completed` |
+| route + JSON | `api/src/presentation/http/kiosk.rs`, `api/src/presentation/dto/kiosk.rs` | K-HTTP | the three answers above, with v2's key order; `staff` and the holder in the sentence as usernames, looked up once per answer |
+
+The audit lines `KIOSK_ACCEPTED` / `KIOSK_COMPLETED` keep v3's detail: v2 copies the times into them (`server.mjs:8054`,
+`8084`); v3 keeps them once, on the request (known difference).
+
+**Data migration — `kiosk_requests.started_at`, `completed_at`** (row Q1, `api/migrations/20261008110000_kiosk_work_times.sql`):
+
+1. *Existing rows.* Both columns NULL; `list` prints `null` and the panel shows *ยังไม่มีข้อมูล* / *ไม่มีเวลาย้อนหลัง*
+   (`queue-panel.js:20-21`) — v2's rule: unknown times stay unknown.
+2. *Backfill.* None, on purpose. Before deploy, the rows that will show no time:
+   `SELECT count(*) FROM kiosk_requests WHERE status IN ('ACCEPTED','ID_CHECKED','COMPLETED');`
+3. *Deploy order.* Migration at start-up, before the binary binds. The older binary inserts with a column list
+   (`kiosk_repository.rs:211` at `f72b979`) and never reads the new columns, so it works on the new schema.
+4. *What `down` loses.* Dropping the two columns loses every start and finish time; nothing else reads them.
+
+#### 5.5.4 Admin refresh — presentation only
+
+**For a user.** The admin's side menu grouped (*งานหน้าร้าน / เงินและรายงาน / ข้อมูลและทีม / เครื่องมือ*) with a menu
+search; account and sign-out moved to the top; report tabs; stock shows non-zero rows first; a PENDING filter option;
+the wine-red theme; phone layout (`ADMIN-REFRESH-NOTES.md`). Everything is client-side over the unchanged `admin.html`
+(`admin-workspace.js:1`: "Existing RPCs, permissions and ledger remain authoritative") — no route, no table. Its menu
+links `/kiosk-queue.html` (intercepted by `admin-queue.js:23`) and `/kiosk`, both served by v3 (`PAGE_SPECS`,
+`api/src/presentation/pages.rs:55-147`).
+
+**v3 today / gap.** `admin-workspace.js` is not injected. The only gap is the script list (row PG), and its order: it
+must come **after** `admin-payments.js`, whose menu item it regroups (`admin-workspace.js:13`).
+
+#### 5.5.5 Passport drawer — **HELD** (owner: "ยังไม่integrate ตอนนี้", #274)
+
+**For a user (v2).** When the desk draws the passport step (step 1) of a LIVE exchange, it asks once per order to open
+the cash drawer (`desk-passport-drawer.js:9-18`) and shows the answer as a notice; never retried by itself. Per order:
+the kiosk request id, or for a walk-in a draft id kept in the tab's `sessionStorage` until the save
+(`:6`, `:17`). The save carries `drawerOrderId`. Roles OWNER, FRONT, BACKEND, MANAGER; for a kiosk order only its
+holder. On in v2 only when `AUTH_ENABLED=1`, `XC_PASSPORT_DRAWER=1` **and** the branch equals `XC_DRAWER_BRANCH` —
+one branch per server, from the environment (`passport-drawer.mjs:13`).
+
+**Route.** `POST /api/drawer-passport` `{branchId, orderId, kiosk: bool, mode}` (`server.mjs:8153`,
+`passport-drawer.mjs:39-42`). Order of checks and answers (all refusals 400 `{error}` except the router's 401):
+
+| # | When | Answer |
+|---|---|---|
+| 1 | nobody signed in | 401 `กรุณาเข้าสู่ระบบ` |
+| 2 | `Origin` / `X-Xchange-Request` | `Request rejected` (no full stop) |
+| 3 | body longer than 2,000 characters | `Request too large` |
+| 4 | role not OWNER/FRONT/BACKEND/MANAGER | `บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก` |
+| 5 | branch shape | `สาขาไม่ถูกต้อง` |
+| 6 | `mode` ≠ `LIVE` | 200 `{state: "SIMULATED", physicalResultConfirmed: false}` |
+| 7 | switched off for the branch | 200 `{state: "DISABLED", physicalResultConfirmed: false}` |
+| 8 | `orderId` not 36 of `[a-f0-9-]` | `รหัสออเดอร์ไม่ถูกต้อง` |
+| 9 | kiosk order not held by the caller in ACCEPTED/ID_CHECKED | `ต้องเป็นผู้รับเรื่องของคิวนี้ก่อนเปิดลิ้นชัก` |
+| 10 | the order already asked, by someone else | `ออเดอร์นี้เป็นของพนักงานคนอื่น` |
+| 11 | the order already asked, by the caller | 200 the earlier state + `duplicate: true` |
+| 12 | first ask | the request is stored (`REQUESTED`), the pulse is sent, 200 `SUBMITTED_TO_CUPS` or `UNCERTAIN` |
+
+The desk script reads only `state` (labels for `SIMULATED`, `DISABLED`, `REQUESTED`, `SUBMITTED_TO_CUPS`, `UNCERTAIN`;
+anything else → *โปรดตรวจลิ้นชัก*) and `error` (`desk-passport-drawer.js:7`, `14`).
+
+**Data (v2).** `passport_drawer_commands` (`(branch_id, order_key)` PK, `actor`, `state`, `requested_at`, `updated_at`,
+`cups_job`, `detail`, `transaction_ref`) plus `device_events` lines `PASSPORT_DRAWER_REQUEST` / `PASSPORT_DRAWER_<state>`;
+the save links `transaction_ref` (`passport-drawer.mjs:43`). Additive.
+
+**Bytes and transport.** v2 sends `ESC p 0 25 125` (`1B 70 00 19 7D`, no `ESC @`) through CUPS: `lp -d POS80_ -o raw`,
+after checking with `lpstat` that the queue is the expected USB printer and empty (`passport-drawer.mjs:2-12`); the
+owner confirmed that it opens a real drawer (notes: job `POS80_-501`); open/closed is not sensed. v3 has no CUPS path
+and will not grow one: §5.4b, as written, sends `ESC @` + `ESC p pin on off` of **the branch's printer model** over TCP
+(`EscposDriver::run_with`); the NEOCAL entry is `0/25/250` [proposed], unmeasured; v2's counter used `25/125`. The
+passport trigger uses the branch model's pulse, never bytes of its own.
+
+**v3 today.** `git grep` of `drawer-passport`, `passport_drawer`, `PassportDrawer`: nothing. Drawer requests exist only
+as `DRAWER_REQUEST` jobs (§5.4b), which DRV-2 (held) would send.
+
+**Design — two rows.** The route must exist before the desk script is injected (row PG): without it every passport
+step would print *ตรวจคำสั่งเปิดลิ้นชัก: …* with a parse error. So the route lands now in v2's switched-off state —
+what every v2 server without `XC_PASSPORT_DRAWER=1` answers — and the integration is a held row.
+
+| Class | File | Row | What |
+|---|---|---|---|
+| `PassportDrawerDevice` (trait), `passport_drawer_device(state) -> Option<Arc<dyn PassportDrawerDevice>>` answering `None` | `api/src/application/workflows/passport_drawer_device.rs` (trait), `api/src/infrastructure/devices/passport_drawer_device.rs` (the builder) | S0 creates both as seams; PD-1 fills the builder | `request(branch, order_key, actor, now) -> PassportDrawerState` |
+| `PassportDrawerWorkflow` | `api/src/application/workflows/passport_drawer.rs` | PD-0 | rows 4–11 above in v2's order; `device: None` → `DISABLED` at row 7 for every branch; with a device, row 7 asks the switch |
+| `PassportDrawerState` | `api/src/application/workflows/passport_drawer_device.rs` | S0 | the five state words v2's desk script knows, beside the trait that returns them |
+| route + JSON | `api/src/presentation/http/drawer_passport.rs` (file from S0), `api/src/presentation/dto/drawer_passport.rs` | PD-0 | rows 1–3, `Policy::allow(actor, EntryPath::DrawerPassport, …)` for rows 1 and 4, `Policy::branch` |
+| the switch `devices.passportDrawerBranches` | `api/configuration/base.yaml`, `api/src/config/mod.rs` | PD-1 **HELD** | [proposed] a list of branch ids, empty by default — v2's `XC_DRAWER_BRANCH` widened to several branches; configuration because v2 has no screen for it |
+| `DevicePassportDrawer` | `api/src/infrastructure/devices/passport_drawer_device.rs` | PD-1 **HELD** | (as first drawn; the two notes under this table change how it reaches the device layer) queues a `DRAWER_REQUEST` with request id `auto-drawer:<branch>:passport:<KIOSK\|DESK>:<orderId>` (the `device_jobs (branch_id, request_id)` key gives the once-per-order rule; a job with another actor → row 10; the same actor → row 11 with the job's state), then runs DRV-2's three-step `process` on that one job outside any transaction so the answer says what happened; `DeviceWorker` is the fallback because of the `auto-drawer:` prefix. Refused (state `UNCERTAIN`, nothing sent) when the branch's `hasDrawer` is `0`. State mapping: QUEUED, SENDING → `REQUESTED`; `DRAWER_OPENED` → `SUBMITTED_TO_CUPS` (sent, physical result unconfirmed — the word stays because the kept script only knows v2's words); FAILED, EXPIRED → `UNCERTAIN`; `COMMAND_SIMULATED` → `SIMULATED` |
+
+**Notes on PD-1, added after the review of PR 323** (lane controller 2026-10-07). A parallel design makes every drawer kick
+a job that a counter device agent pulls, because v3 runs in the cloud (owner: "คลาวด์ ใช้ A ทำเลย"); that design, not this
+one, decides how a kick reaches the drawer. PD-1 stays HELD, and:
+
+- (a) `DeviceService::queue` takes only 36-character request ids of `0-9 a-f -` (`device_service.rs:93-98`, refused
+  `รหัสคำขอไม่ถูกต้อง`) and holds the `hasDrawer = 0` refusal (DRV-4), so the passport id above cannot go through it.
+  PD-1 needs an internal entry on `DeviceService` in `device_service.rs`, as the cash save has (`after_save_in`); the
+  agent design's rows own that file and that entry, and PD-1 calls it.
+- (b) The cash save's drawer job id is `auto:<branch>:<ref>` on `main` (`device_service.rs:628`), while §5.4b / DRV-2
+  planned `auto-drawer:` and the `DeviceWorker` prefix. The agent design reconciles the two; the passport id follows
+  whatever it settles.
+
+Not designed for v3, with the reason (known difference, for when PD-1 lands): no `passport_drawer_commands` table — the
+device job and its event lines are the record; no link from the drawer job to the saved exchange (`drawerOrderId` is
+ignored by the save) — the job and the exchange are both logged with person and time; no "queue busy" check — a
+network printer has no CUPS queue, and the 120 s freshness rule (§5.4b) already stops a late kick.
+
+[required] A save whose payload carries `drawerOrderId` is answered exactly as the same save without it (PD-0 pins this,
+because the desk script adds the key to every save, `desk-passport-drawer.js:17`).
+
+#### 5.5.6 Pages: the scripts the 10-06 bundle injects
+
+v2's lists (`server.mjs:8208-8209`) gain, in this order: admin `"/admin-payments.js", "/admin-workspace.js",
+"/queue-panel.js", "/admin-queue.js"` after `account-bar.js`; desk and `/staff/desk` `"/desk-payments.js",
+"/desk-passport-drawer.js"` after `account-bar.js`. v3's `PAGE_SPECS` (`api/src/presentation/pages.rs:46-147`) gain the same,
+in the same order (row PG). The files come from `web.dir`: a v3 install takes `web.dir` from the **10-06 zip** only once PG
+is merged — the new `kiosk-queue.html` calls `list` with `filter`/`page` and the new `account-bar.js` raises the events
+`admin-queue.js` listens to, so an earlier extraction would show a queue with no buttons. Extract from the zip, not from
+the Finder folder: `extract-v2-pages.mjs --check` on the folder lists `.DS_Store` as a public file.
+
+`desk-payments.js` disables *บันทึก* whenever `deskConfig.paymentMethods` is missing (`desk-payments.js:14-16`), so PG
+must not be merged before PM-D; `admin-payments.js` needs PM-API; the queue scripts need K-HTTP; `desk-passport-drawer.js`
+needs PD-0.
+
+#### 5.5.7 Class diagram additions
+
+```mermaid
+classDiagram
+  direction LR
+  class PaymentRules { <<xc-kernel/src/payment/payment_rules.rs>> +defaults()$ PaymentRules; +from_rows(rows)$ Option; +rows() ChannelRule[5]; +rule(method) Option; +allows(method, side) bool }
+  class ChannelRule { <<xc-kernel/src/payment/channel_rule.rs>> +id; +enabled; +buy; +sell; +account; +instruction }
+  class BranchSettingStore { <<infrastructure/settings/branch_setting_store.rs>> +read(branch, name); +read_in(tx, branch, name); +write_in(tx, branch, name, expected, first_before, body, actor, at); +history(branch, name, limit) }
+  class StoredSetting { <<infrastructure/settings/stored_setting.rs>> +version; +body; +updated_at; +updated_by }
+  class PaymentSettingsService { <<application/settings/payment_settings.rs>> +rules(branch); +rules_in(tx, branch); +view(branch, actor); +save(branch, version, methods, actor, now) }
+  class PaymentInput { <<fn, application/settings/payment_input.rs>> +parse_methods(Value) Result~PaymentRules~; +parse_version(Value) }
+  class PaymentJson { <<fn, application/settings/payment_json.rs>> +rules_json(rules, full) V2Json }
+  class PaymentSaveStep { <<application/workflows/payment_save_step.rs>> +new(payments) }
+  class PaymentGate { <<xc-kiosk entities/payment_gate.rs>> +quote(request, rules)$; +confirm(result, request, rules)$ }
+  class KioskPorts { <<trait, xc-kiosk repositories/kiosk_ports.rs>> +payment_rules(branch); +payment_rules_in(tx, branch) }
+  class PgKioskPorts { <<infrastructure/kiosk/kiosk_ports.rs>> }
+  class SnapshotSources { <<trait, application/compat/snapshot_sources.rs>> +payment_rules(branch) }
+  class WorkTimes { <<xc-kiosk value_objects/work_times.rs>> +started_at; +completed_at; +duration_seconds() }
+  class QueuePage { <<xc-kiosk value_objects/queue_page.rs>> +page; +has_more; +items: QueueItem[] }
+  class QueueFilter { <<xc-kiosk value_objects/queue_filter.rs>> Waiting; Working; Completed; All }
+  class AcceptOutcome { <<xc-kiosk value_objects/accept_outcome.rs>> Claimed; AlreadyMine; HeldBy; Unavailable }
+  class KioskRepository { <<trait, xc-kiosk>> +queue_page(); +working(); +mark_started_in(); +mark_completed_in() }
+  class KioskServiceDesk { <<xc-kiosk application/kiosk/desk.rs>> +list(); +accept() AcceptOutcome; +notifications() }
+  class PassportDrawerWorkflow { <<application/workflows/passport_drawer.rs>> +enter(branch, input, actor, now) PassportDrawerState }
+  class PassportDrawerDevice { <<trait, application/workflows/passport_drawer_device.rs>> +request(branch, order_key, actor, now) }
+  class DevicePassportDrawer { <<infrastructure/devices/passport_drawer_device.rs — HELD>> }
+  class SaveStep
+  class DeviceService
+  class Policy
+
+  PaymentRules --> ChannelRule
+  PaymentSettingsService --> BranchSettingStore : name paymentMethods, under BranchTx
+  PaymentSettingsService --> PaymentInput
+  BranchSettingStore --> StoredSetting
+  PaymentSaveStep ..|> SaveStep
+  PaymentSaveStep --> PaymentSettingsService : rules_in on the save's tx
+  PgKioskPorts ..|> KioskPorts
+  PgKioskPorts --> PaymentSettingsService
+  PaymentGate --> PaymentRules
+  SnapshotSources ..> PaymentRules
+  KioskServiceDesk --> KioskRepository
+  KioskServiceDesk --> QueuePage
+  KioskServiceDesk --> AcceptOutcome
+  QueuePage --> WorkTimes
+  PassportDrawerWorkflow --> PassportDrawerDevice : None = DISABLED
+  DevicePassportDrawer ..|> PassportDrawerDevice
+  DevicePassportDrawer --> DeviceService : DRAWER_REQUEST + process (DRV-2)
+  PassportDrawerWorkflow ..> Policy : DrawerPassport path
+  PaymentSettingsService ..> Policy : PaymentMethods path
+```
+
+Paths in `<<…>>` are under `api/src/` unless they name a crate (`api/crates/<crate>/src/domain/kiosk/…` for the kiosk ones).
+
+[required] **Policy** (row POL, `api/crates/xc-auth/src/domain/policy/{entities/policy.rs,value_objects/entry_path.rs,value_objects/policy_error.rs}`):
+two new entry paths. `PaymentMethods`: nobody → `SignIn` (401); `list` any signed-in caller; `save` the owner only, else
+`PaymentOwnerOnly` (403 `เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้`); any other name → `InvalidRequest` (400
+`คำขอไม่ถูกต้อง`). `DrawerPassport`: nobody → `SignIn`; OWNER, FRONT, BACKEND, MANAGER; else `DrawerRoleNotAllowed`
+(400 `บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก`).
+
+[required] **The kiosk's role table gets one home: `Policy`** (lane controller 2026-10-07, on the review of PR 323). Today it
+has two: `Policy::allow_kiosk` (`policy.rs:275`), which no route asks (`git grep "EntryPath::Kiosk"` hits only `policy.rs`
+and its tests), and `KioskMachine::authorize` (`kiosk_machine.rs:25` at `f72b979`), which decides — the route asks it at
+`presentation/http/kiosk.rs:237` and the service again through its `allow` helper (`service.rs:65`, before each staff
+method). POL makes the route ask `Policy::allow(actor, EntryPath::Kiosk, action)` like every other route (an employee who
+must change the password is nobody, as the route treats them today), removes `KioskMachine::authorize` and the service's
+`allow` calls, and keeps the machine's non-role checks: a step that needs a holder still refuses a caller without a
+username (`KioskActor::Customer`) with `Staff access required.`. The sentences are already equal (`PolicyError` R14–R16 =
+`KioskError::{OwnerOrRatesRequired, StaffRequired}`), and the recorded fixtures of both pin that nothing else changes.
+The 10-06 change — `Kiosk` `list` for any signed-in caller, as `notifications` — then lands in `Policy` only.
+`policy_common::path_name` is exhaustive on purpose, so POL's ticket author updates it and re-records
+`v2_policy_cases.json` from the 10-06 bundle (`gen_policy.mjs` with that bundle's `server.mjs`; the add-on modules beside it).
+
+#### 5.5.8 Who provides, who uses
+
+| Provided | By row | Used by |
+|---|---|---|
+| `PaymentRules`, `ChannelRule` | PM-R | PM-API, PM-K, PM-D, PM-S, K-HTTP |
+| `BranchSettingStore` + its two tables | SET | PM-API (the only writer and reader) |
+| `EntryPath::{PaymentMethods, DrawerPassport}`; the kiosk role table in `Policy` only, `list` for any signed-in caller | POL | PM-API, PD-0, the kiosk route (K-HTTP builds on POL's call site) |
+| empty `configure` of `http/payment_methods.rs`, `http/drawer_passport.rs`; the kiosk service split (`customer.rs`, `desk.rs`, `currencies.rs`, `save_hooks.rs`); the passport-drawer seams | S0 | PM-API, PD-0, PM-K, Q1, PD-1 |
+| `PaymentSettingsService` (`rules`, `rules_in`, `view`, `save`), `rules_json` | PM-API | PM-K (`PgKioskPorts`), PM-D, PM-S, K-HTTP |
+| `KioskPorts::payment_rules[_in]`, `PaymentGate`, `PublicRates.payment` | PM-K | K-HTTP (`rates` answer); the Flutter kiosk through it (F8) |
+| `QueuePage`, `AcceptOutcome`, `WorkTimes`, `Notifications.working`, the two columns | Q1 | K-HTTP |
+| `/api/kiosk` answers of the 10-06 bundle | K-HTTP | `queue-panel.js`, `admin-queue.js`, `account-bar.js`, `kiosk-queue.html`; F8 |
+| `/api/payment-methods` | PM-API | `admin-payments.js` |
+| `adminDeskConfig.paymentMethods` | PM-D | `desk-payments.js` |
+| the payment check of a save | PM-S | every save, both RPC routes |
+| `/api/drawer-passport` (switched off) | PD-0 | `desk-passport-drawer.js` |
+| the script lists | PG | the kept admin and desk pages |
+| `DevicePassportDrawer`, the switch | PD-1 (HELD) | PD-0's workflow, through the S0 builder |
 
 ## 6. Authorisation
 
@@ -1105,6 +1542,7 @@ Not covered by fixtures, written by hand: per-branch locking under concurrency, 
 | F5 | Flutter CI (#4) | `.github/workflows/app.yml` | F1 |
 | F6 | nginx file for the customer host + deploy notes | `deploy/nginx/xc-customer.conf`, `deploy/README.md` | F1; applying it on the server is the owner's call |
 | F7 | Bundle the fallback fonts so the kiosk does not depend on fetching them | `app/assets/fonts/`, `app/pubspec.yaml`, `app/lib/shared/theme/theme.dart` | F1 |
+| F8 | The kiosk offers only the channels the branch has switched on for the chosen direction and shows the channel's instruction, from `rates.paymentMethods` (§5.5.2; v2 `kiosk.js:42`, `51-54` of the 10-06 bundle); review is blocked while the chosen channel is off. [proposed] When the answer has no `paymentMethods` (the deployed v2 server, or v3 before K-HTTP), today's fixed lists stay | `app/lib/features/kiosk/domain/entities/kiosk_models.dart`, `app/lib/features/kiosk/presentation/controllers/kiosk_controller.dart`, `app/lib/features/kiosk/presentation/pages/select_page.dart`; provided: `app/test/features/kiosk/payment_methods_test.dart` | F1; #321 (merged, PR 322 — re-read the controller and select page it changed); K-HTTP to run it against v3 |
 
 F1 was written in one piece by the session the owner gave it to; F5–F7 are independent of each other.
  All of phase 1 is developed and tested against the running v2 server.
@@ -1192,6 +1630,33 @@ Tickets that hold `api/Cargo.lock` are handed out one at a time: T5a (merged, PR
 Parity check before the phase 2 cutover: the kept screens and the phase 1 kiosk are driven against v3
 and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a browser pass covers the page rewriting in T1c/T11c).
 
+#### The 10-06 add-ons (§5.5, D10)
+
+Among the rows that can run side by side, no file is shared; a `mod.rs` line is the only shared edit (§5.2 file rule).
+POL and then S0 run first, one after the other, as seams: a later row edits a file of theirs only after they merged
+(POL → `kiosk_machine.rs`, `presentation/http/kiosk.rs`, the kiosk tests it re-records; S0 → the files it creates), the
+same pattern as T1b's empty route files. POL takes the kiosk role move instead of K-HTTP because that keeps K-HTTP an
+HTTP-only row and lets PM-K and Q1 start after the two seams instead of after the largest row. Files that rows outside
+this set hold are named in Depends-on. Fixtures are recorded from the **10-06 bundle** by the ticket author, through a
+script that reads the bundle from a path given at run time (`api/tools/v2-fixtures/README.md`: no v2 function body is
+committed); the add-on modules sit beside `server.mjs` in that bundle and are loaded from there.
+
+| # | Ticket | Files owned | Depends on |
+|---|---|---|---|
+| PM-R | `PaymentRules`, `ChannelRule`, `METHODS` (§5.5.2): defaults, `allows(method, side)` with `SCB Transfer` read as Bank Transfer, `from_rows` refusing rows that break the BUY-channel, direction and one-per-side rules. Pure; no `Cargo.toml` change | `api/crates/xc-kernel/src/lib.rs` (one `pub mod payment;`), `api/crates/xc-kernel/src/payment/{mod.rs,payment_rules.rs,channel_rule.rs}`; provided: `api/crates/xc-kernel/tests/payment_rules_test.rs`, `api/crates/xc-kernel/tests/fixtures/v2_payment_rules_cases.json`, `api/tools/v2-fixtures/gen_payment_rules.mjs` | T2c (merged) |
+| SET | `BranchSettingStore`, `StoredSetting`, `SettingChange`, `VersionConflict` and the two tables (§5.5.1, with its data-migration section): version check, history row in the same transaction, no row = version 0 | `api/src/infrastructure/settings/{mod.rs,branch_setting_store.rs,stored_setting.rs}`, one `pub mod settings;` line in `api/src/infrastructure/mod.rs`, `api/migrations/20261008100000_branch_settings.sql`; provided: `api/tests/branch_setting_store_test.rs` (database; two branches never see each other's document; a stale version is refused and writes no history) | T2d, T5a (merged) |
+| POL | All authorisation of §5.5 (§5.5.7 *Policy*): `EntryPath::PaymentMethods`, `EntryPath::DrawerPassport`, `PolicyError::{PaymentOwnerOnly, DrawerRoleNotAllowed}`; the kiosk role table's one home — the kiosk route asks `Policy::allow(actor, EntryPath::Kiosk, action)` at its one check (`kiosk.rs:237`), `KioskMachine::authorize` and the service's `allow` calls go, the machine's non-role checks stay; then `list` for any signed-in caller in `Policy` only. The ticket author moves the role cases of `kiosk_machine_test.rs` / `v2_kiosk_cases.json` to the policy tests | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/crates/xc-auth/src/domain/policy/value_objects/{entry_path.rs,policy_error.rs}`, `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs`, `api/crates/xc-kiosk/src/application/kiosk/service.rs` (the `allow` helper and its calls, before S0 splits the file), `api/src/presentation/http/kiosk.rs` (the check at `:237` and building the policy `Actor`); provided and re-recorded from the 10-06 bundle: `api/crates/xc-auth/tests/{policy_test.rs,policy_common/mod.rs,fixtures/v2_policy_cases.json}`, `api/tools/v2-fixtures/gen_policy.mjs`, `api/crates/xc-kiosk/tests/{kiosk_machine_test.rs,fixtures/v2_kiosk_cases.json}` (role cases out) | T4a, DRV-3b (merged); PR 318 (#315, merged `f72b979`) also edited `kiosk_machine.rs` |
+| S0 | Seams, no behaviour (every existing test passes unchanged): `http/payment_methods.rs` and `http/drawer_passport.rs` with an empty `configure(cfg, state)`, declared and called in the one route table; `KioskService`'s methods moved unchanged into `impl` blocks by family — `customer.rs` (`public_rates`, `quote`, `confirm`, `status`, `customer_receipt`), `desk.rs` (`notifications`, `list`, `accept`, `identity_checked`, `get`, `publish_receipt`), `currencies.rs` (`manage`, `configure`), `save_hooks.rs` (`check_save_in`, `complete_in`); `service.rs` keeps the struct, `new` and the helpers; the passport-drawer seams of §5.5.5 (`PassportDrawerDevice`, `PassportDrawerState`, and the builder answering `None`) | `api/src/presentation/http/{mod.rs,payment_methods.rs,drawer_passport.rs}`, `api/crates/xc-kiosk/src/application/kiosk/{mod.rs,service.rs,customer.rs,desk.rs,currencies.rs,save_hooks.rs}`, `api/src/application/workflows/passport_drawer_device.rs` (+ its line in `workflows/mod.rs`), `api/src/infrastructure/devices/passport_drawer_device.rs` (+ its line in `devices/mod.rs`) | POL (it edits `service.rs` before the split); T1b, T12b (merged) |
+| PM-API | `PaymentSettingsService`, `parse_methods`/`parse_version`, `rules_json`, and `POST /api/payment-methods` with the seventeen answers of §5.5.2 in v2's order | `api/src/application/settings/{mod.rs,payment_settings.rs,payment_input.rs,payment_json.rs}`, one `pub mod settings;` line in `api/src/application/mod.rs`, `api/src/presentation/http/payment_methods.rs`, `api/src/presentation/dto/payment_methods.rs` (+ its line in `dto/mod.rs`); provided: `api/tests/payment_methods_http_test.rs`, `api/tests/fixtures/payment_methods/`, `api/tools/v2-fixtures/gen_payment_methods.mjs` | PM-R, SET, POL, S0; T4c (merged) |
+| PM-K | The kiosk honours the branch's channels: `KioskPorts::payment_rules[_in]` (defaults in the trait) and `PgKioskPorts`'s override; `PaymentGate` (`quote` last, `confirm` before the rate check); `PublicRates.payment`. `KioskMachine` is not edited. [required] `PgKioskPorts` builds its `PaymentSettingsService` from the pool it already holds (`kiosk_ports.rs:122-126`): no change to `PgKioskPorts::new`, no edit at `presentation/http/kiosk.rs:278` or `presentation/http/rpc.rs:290` | `api/crates/xc-kiosk/src/domain/kiosk/repositories/kiosk_ports.rs`, `api/src/infrastructure/kiosk/kiosk_ports.rs`, `api/crates/xc-kiosk/src/domain/kiosk/entities/payment_gate.rs` (+ its line in `entities/mod.rs`), `api/crates/xc-kiosk/src/domain/kiosk/value_objects/public_rates.rs`, `api/crates/xc-kiosk/src/application/kiosk/customer.rs`; provided: `api/crates/xc-kiosk/tests/kiosk_payment_test.rs`, `api/crates/xc-kiosk/tests/fixtures/v2_kiosk_payment_cases.json`, `api/tools/v2-fixtures/gen_kiosk_payment.mjs`, `api/tests/kiosk_ports_payment_test.rs` | PM-R, PM-API, S0 |
+| PM-D | `adminDeskConfig` carries `paymentMethods` (full rows): `SnapshotSources::payment_rules` (defaults in the trait) and its real source. [required] `ServiceSnapshotSources` builds its `PaymentSettingsService` from what it already holds (the `BranchTx` of its `TransactionService`, hence its pool): no change to `ServiceSnapshotSources::new`, no edit at `presentation/http/rpc.rs:315` | `api/src/application/compat/{snapshot.rs,snapshot_sources.rs}`, `api/src/infrastructure/compat/snapshot_sources.rs`; provided: `api/tests/desk_config_payment_test.rs` | PM-API; T11c (merged) |
+| PM-S | `PaymentSaveStep` and `SaveAction::with_payment_check`, chained in `registered_actions`: a first LIVE save on a switched-off channel is refused and undone; repeats and DEMO are not checked | `api/src/application/workflows/payment_save_step.rs` (+ its line in `workflows/mod.rs`), `api/src/application/compat/actions/save.rs`, `api/src/presentation/http/rpc.rs` (`registered_actions` only); provided: `api/tests/payment_save_step_test.rs` | PM-API; P2-S (merged); PR 317 (#314) holds `rpc.rs` |
+| Q1 | Queue work in the kiosk context (§5.5.3 with its data-migration section): the two time columns, `WorkTimes`, `QueueFilter`, `QueuePage`, `AcceptOutcome`, `Notifications.working`; `KioskMachine` (the holder's repeat `accept`; roles are POL's); the repository's `queue_page`, `working`, `mark_started_in`, `mark_completed_in`; the desk methods and `complete_in` stamping | `api/migrations/20261008110000_kiosk_work_times.sql`, `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs`, `api/crates/xc-kiosk/src/domain/kiosk/value_objects/{work_times.rs,queue_filter.rs,queue_page.rs,accept_outcome.rs,notifications.rs}` (+ their lines in `value_objects/mod.rs`), `api/crates/xc-kiosk/src/domain/kiosk/repositories/kiosk_repository.rs`, `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs`, `api/crates/xc-kiosk/src/application/kiosk/{desk.rs,save_hooks.rs}`; provided, re-recorded from the 10-06 bundle where the `accept` and `list` answers changed: `api/crates/xc-kiosk/tests/{kiosk_machine_test.rs,kiosk_service_test.rs,kiosk_queue_work_test.rs}`, `api/crates/xc-kiosk/tests/fixtures/{v2_kiosk_cases.json,v2_kiosk_service_cases.json,v2_queue_work_cases.json}`, `api/tools/v2-fixtures/{gen_kiosk.mjs,gen_kiosk_service.mjs,gen_queue_work.mjs}` | POL (after it, edits `kiosk_machine.rs` and the two kiosk test files again), S0; PR 318 (#315, merged `f72b979`) also edited `kiosk_machine.rs` and the infrastructure `kiosk_repository.rs` |
+| K-HTTP | `POST /api/kiosk` as the 10-06 bundle answers it: `rates` with `paymentMethods` (public), `notifications` with `serverNow`/`workingCount`/`working`, `list` with filter and page, `accept` with the claim and its times and the two Thai refusals, usernames for `staff` | `api/src/presentation/http/kiosk.rs`, `api/src/presentation/dto/kiosk.rs`; provided, re-recorded from the 10-06 bundle: `api/tests/{kiosk_http_test.rs,kiosk_http_common/mod.rs,fixtures/kiosk/}`, `api/tools/v2-fixtures/gen_kiosk_http.mjs` | POL (after it, edits `kiosk.rs` again), PM-K, Q1, PM-API (`rules_json`) |
+| PD-0 | `POST /api/drawer-passport` in v2's switched-off state (§5.5.5 rows 1–7; row 7 answers `DISABLED` in every branch because the S0 builder gives no device): `PassportDrawerWorkflow` and the route; a save carrying `drawerOrderId` is answered as without it | `api/src/application/workflows/passport_drawer.rs` (+ its line in `workflows/mod.rs`), `api/src/presentation/http/drawer_passport.rs`, `api/src/presentation/dto/drawer_passport.rs` (+ its line in `dto/mod.rs`); provided: `api/tests/drawer_passport_route_test.rs`, `api/tests/fixtures/drawer_passport/`, `api/tools/v2-fixtures/gen_drawer_passport.mjs` | POL, S0; P2-S (merged) |
+| PD-1 | **HELD — not cut until the owner says integrate (#274).** The passport step opens the drawer: `DevicePassportDrawer` behind the S0 builder; the switch `devices.passportDrawerBranches` [proposed]; rows 8–12 of §5.5.5 on a `DRAWER_REQUEST` job with the branch model's pulse. Notes (a) and (b) of §5.5.5: it calls an internal `DeviceService` entry that the counter-agent design's rows own (`queue` takes only 36-character ids and holds the `hasDrawer` refusal), and its job id follows the prefix that design settles (`auto:` on `main`, `device_service.rs:628`, against DRV-2's `auto-drawer:`) | `api/src/infrastructure/devices/passport_drawer_device.rs`, `api/configuration/base.yaml`, `api/src/config/mod.rs`; provided: `api/tests/passport_drawer_device_test.rs` | PD-0, S0; the counter-agent design and its `DeviceService` entry (replacing the dependency on DRV-2); DRV-4 (merged); the owner |
+| PG | The kept pages load the 10-06 scripts in v2's order (§5.5.6). `web.dir` of an install is extracted from the 10-06 zip from this row on | `api/src/presentation/pages.rs` (the two script lists only); provided: `api/tests/pages_addon_scripts_test.rs` | FV (merged, PR 320), PM-API, PM-D, K-HTTP, PD-0 |
+
 ## 11. Open items that block specific tickets
 
 | Item | Phase | Blocks | Who |
@@ -1203,3 +1668,5 @@ and v2 side by side with the same inputs (§9 fixtures cover the RPC layer; a br
 | D5 port bookings/members or not | 2 | T15, and the member flag in T11b | owner |
 | A recording of v2's devices HTTP wrapper and receipt archive (`server.mjs:7545`, `7562-7766`, `7794`): the `/api/devices` envelope, what `/devices/receipt` returns, the columns of `receipt_images` (§5.4) | 2 | T13b's tests; `POST /api/devices` could go first if T13b is cut in two | lane controller (the bundle is not in this repository) |
 | Role table in §6 (v2's two allow-lists disagree) | 2 | nothing — the decision in force is that both paths are reproduced as recorded from v2, and `Policy` is on `main` that way (PR 70, `2314003`); T11a is not blocked by it. The owner may still rule which path is right for the cells listed in §6; that ruling would change the merged table and T11a's behaviour | owner, if and when |
+| Integrate the passport-step drawer (D10, §5.5.5) | 2 | PD-1 (held with DRV-2) | owner: "integrate" — and, when it does, whether branches are switched on by configuration ([proposed] `devices.passportDrawerBranches`) |
+| The 10-06 bundle is undeployed and untested against PostgreSQL (manifest `"deployed": false`; its notes: mock database only) | 2 | nothing — §5.5's fixtures are recorded from its code, not from a running server; a later bundle that changes these add-ons reopens the recording | lane controller |
