@@ -1,6 +1,6 @@
 // Records what the kiosk module of the v2 server stores and answers when its actions are played
 // one after another — the part of the kiosk that needs a database (ticket T12b).
-//   node gen_kiosk_service.mjs path/to/server.mjs > ../../crates/xc-kiosk/tests/fixtures/v2_kiosk_service_cases.json
+//   node gen_kiosk_service.mjs path/to/server.mjs path/to/10-06-bundle-dir > ../../crates/xc-kiosk/tests/fixtures/v2_kiosk_service_cases.json
 //
 // `gen_kiosk.mjs` (T12a) recorded the rules one call at a time; this script records stories: who
 // sees which request from which branch, which quotes are swept away and when, what the queue
@@ -32,10 +32,24 @@
 //
 // The script stops, and writes nothing, when v2 says a sentence it was not expected to say, when a
 // refused call wrote something, or when a figure v2 computed is not the exact decimal.
+//
+// Row Q1 (design §5.5.3, ticket #328): `accept` and the queue's page size are recorded from the
+// 10-06 bundle (`XC-Desk-v2-Passport-Drawer-20261006.zip`, design §5.5), whose kiosk module hands
+// `accept` and `list` to its `queue-work.mjs`. The directory of that bundle is the second argument:
+//   node gen_kiosk_service.mjs path/to/10-05/server.mjs path/to/10-06-bundle-dir > ...
+// From it, the same slice of its `server.mjs` is evaluated unchanged, with `queueWork` made by its own
+// `queue-work.mjs` over the same store (`paymentSettings` and `paymentAllowed` are supplied as names
+// that stop the script if reached: no step here goes through them). Every `accept` step is played on
+// the 10-06 module; everything else on the 10-05 module as before. Every `list` step is still recorded
+// from the 10-05 module and is played on the 10-06 one as well: the script stops if the two differ, so
+// the recorded queues are what both bundles list (page 0, all four statuses).
 import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
-const file = process.argv[2];
-if (!file) throw Error('usage: node gen_kiosk_service.mjs path/to/server.mjs');
+const file = process.argv[2], newDir = process.argv[3];
+if (!file || !newDir) throw Error('usage: node gen_kiosk_service.mjs path/to/server.mjs path/to/10-06-bundle-dir');
 const bundle = fs.readFileSync(file, 'utf8');
 const from = bundle.indexOf('// src/currencies.mjs'), to = bundle.indexOf('// src/staff-routes.mjs');
 if (from < 0 || to < from) throw Error('the kiosk module was not found in ' + file);
@@ -44,9 +58,26 @@ for (const needle of ['async function action2(', 'async function beforeSave(', '
 if (/^import /m.test(src)) throw Error('the kiosk module must not contain an import line');
 if (/new Date|setTimeout|Math\.random|fetch\(/.test(src)) throw Error('the kiosk module reads something this script does not replace');
 
+// ── the 10-06 bundle, told apart by its own hashes (design §5.5) ────────────
+const sha256 = (f) => createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+const NEW_SERVER = path.join(newDir, 'server.mjs'), NEW_QUEUE_WORK = path.join(newDir, 'queue-work.mjs');
+if (sha256(NEW_SERVER) !== '99ddcd107bd4107226ce3065efcefea11a8b2a58d86a45b9a5872e571a8b1b0b') throw Error(NEW_SERVER + ' is not the server.mjs of the 10-06 bundle');
+if (sha256(NEW_QUEUE_WORK) !== 'e03bc3499d599cf397d61a4d9138c7ae99269cf390ee076d60d10d3c348bfb30') throw Error(NEW_QUEUE_WORK + ' is not the queue-work.mjs of the 10-06 bundle');
+const bundle6 = fs.readFileSync(NEW_SERVER, 'utf8');
+const from6 = bundle6.indexOf('// src/currencies.mjs'), to6 = bundle6.indexOf('// src/staff-routes.mjs');
+if (from6 < 0 || to6 < from6) throw Error('the kiosk module was not found in ' + NEW_SERVER);
+const src6 = bundle6.slice(from6, to6);
+for (const needle of ['async function action2(', 'queueWork.accept(', 'queueWork.list(']) if (!src6.includes(needle)) throw Error('10-06 kiosk module: ' + needle + ' not found');
+if (/^import /m.test(src6)) throw Error('the 10-06 kiosk module must not contain an import line');
+// its one `new Date()` is the `serverNow` of `notifications`, which is never played on it: `Date` is
+// supplied without a constructor, so reaching it stops the script
+if (/setTimeout|Math\.random|fetch\(/.test(src6)) throw Error('the 10-06 kiosk module reads something this script does not replace');
+const { createQueueWork } = await import(pathToFileURL(NEW_QUEUE_WORK).href);
+
 // ── the store ────────────────────────────────────────────────────────────────
 const COLS = {
-  kiosk_requests: ['id', 'branch_id', 'data', 'status', 'created', 'staff'],
+  // the last two are the 10-06 bundle's (`queue-work.sql`); the 10-05 module inserts without them
+  kiosk_requests: ['id', 'branch_id', 'data', 'status', 'created', 'staff', 'started_at', 'completed_at'],
   kiosk_currencies: ['branch_id', 'code', 'enabled'],
   kiosk_transactions: ['request_id', 'submission_id', 'transaction_ref'],
   kiosk_receipts: ['id', 'image', 'updated'],
@@ -76,6 +107,18 @@ class Store {
       return (r) => tests.every((f) => f(r));
     };
     let m;
+    // the 10-06 queue (`queue-work.mjs` `list`): one page of a branch's requests of some statuses,
+    // newest first then id descending, with the document number of the saved transaction
+    if ((m = sql.match(/^SELECT r\.\*,t\.transaction_ref FROM kiosk_requests r LEFT JOIN kiosk_transactions t ON t\.request_id=r\.id WHERE r\.branch_id=\$1 AND r\.status=ANY\(\$2::text\[\]\) ORDER BY r\.created DESC,r\.id DESC LIMIT (\d+) OFFSET \$3$/))) {
+      const [branch, statuses, offset] = args;
+      if (!Array.isArray(statuses) || !Number.isSafeInteger(offset)) bad();
+      const rows = table('kiosk_requests').filter((r) => r.branch_id === branch && statuses.includes(r.status));
+      // the tie on `created` is broken by id under PostgreSQL's collation, which this store does not have
+      if (new Set(rows.map((r) => r.created)).size !== rows.length) throw Error('store: two requests of one queue share a quote time');
+      rows.sort((a, b) => b.created - a.created);
+      const page = rows.slice(offset, offset + Number(m[1]));
+      return { rows: page.map((r) => ({ ...Object.fromEntries(COLS.kiosk_requests.map((c) => [c, NUMERIC.has(c) ? String(r[c]) : r[c]])), transaction_ref: this.t.kiosk_transactions.find((x) => x.request_id === r.id)?.transaction_ref ?? null })), rowCount: page.length };
+    }
     if ((m = sql.match(/^SELECT (\*|[\w,]+) FROM (\w+) WHERE (.+?)( ORDER BY created DESC)?( LIMIT (\d+))?$/))) {
       let rows = table(m[2]).filter(where(m[2], m[3]));
       if (m[4]) rows = rows.slice().sort((a, b) => b.created - a.created);
@@ -91,8 +134,10 @@ class Store {
     }
     if ((m = sql.match(/^INSERT INTO (\w+) VALUES\(([^)]+)\)(?: ON CONFLICT(?: \(([\w,]+)\))? DO (NOTHING|UPDATE SET (.+)))?$/))) {
       const name = m[1], values = m[2].split(',').map(term), cols = COLS[name] ?? bad();
-      if (values.length !== cols.length || values.some((v) => v === undefined)) bad();
-      const row = Object.fromEntries(cols.map((c, i) => [c, values[i]]));
+      if (values.length > cols.length || values.some((v) => v === undefined)) bad();
+      // PostgreSQL gives the columns a VALUES list leaves out their default, NULL here: so the 10-05
+      // insert meets the 10-06 table
+      const row = Object.fromEntries(cols.map((c, i) => [c, i < values.length ? values[i] : null]));
       if (m[3] && m[3] !== KEY[name].join(',')) bad();
       const old = table(name).find((r) => KEY[name].every((k) => r[k] === row[k]));
       if (!old) { table(name).push(row); return { rows: [], rowCount: 1 }; }
@@ -102,7 +147,8 @@ class Store {
       return { rows: [], rowCount: 1 };
     }
     if ((m = sql.match(/^UPDATE (\w+) SET (.+?) WHERE (.+?)(?: RETURNING (\*|\w+))?$/))) {
-      const name = m[1], sets = m[2].split(',').map((s) => { const x = s.match(/^(\w+)=(\$\d+|'[^']*')$/); return x ? [col(name, x[1]), term(x[2])] : bad(); });
+      // `clock_timestamp()` is the clock this script sets; node-postgres hands a timestamptz back as a Date
+      const name = m[1], sets = m[2].split(',').map((s) => { const x = s.match(/^(\w+)=(\$\d+|'[^']*'|clock_timestamp\(\))$/); return x ? [col(name, x[1]), x[2] === 'clock_timestamp()' ? new Date(W.clock) : term(x[2])] : bad(); });
       const hit = table(name).filter(where(name, m[3]));
       for (const r of hit) for (const [k, v] of sets) r[k] = v;
       const cols = !m[4] ? [] : m[4] === '*' ? COLS[name] : [col(name, m[4])];
@@ -126,8 +172,9 @@ const modelOf = (branchId) => {
     rates: structuredClone(b.rates),
   };
 };
-const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', src + '\nreturn { action2, beforeSave, afterSave, currencies_default };')(
-  { query: async (sql, args) => W.store.query(sql, args) },
+const POOL = { query: async (sql, args) => W.store.query(sql, args) };
+const OUTSIDE = [
+  POOL,
   async (name, p, actor) => {
     if (name === 'adminSnapshot') return modelOf(p.branchId);
     if (name === 'adminSaveRate') {
@@ -143,6 +190,15 @@ const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'p
   () => idAt(++W.ids),
   { now: () => W.clock },
   { env: {} },
+];
+const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', src + '\nreturn { action2, beforeSave, afterSave, currencies_default };')(...OUTSIDE);
+// the 10-06 module, over the same store and with the same five names, plus its three new ones
+const notPlayed = (name) => { throw Error('fixture: the 10-06 ' + name + ' is not played by this script'); };
+const v2q = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', 'queueWork', 'paymentSettings', 'paymentAllowed', src6 + '\nreturn { action2 };')(
+  ...OUTSIDE,
+  createQueueWork(POOL),
+  new Proxy({}, { get: () => notPlayed('paymentSettings') }),
+  () => notPlayed('paymentAllowed'),
 );
 
 // ── figures: the fixture writes money and rates as text, v2 holds doubles ───
@@ -188,8 +244,13 @@ const SENTENCES = [
   'คิวนี้ไม่พร้อมบันทึกหรือบันทึกแล้ว', 'คิวต้องบันทึกเป็นรายการจริง', 'สกุลเงินและจำนวนต้องตรงกับคิว', 'ช่องทางต้องตรงกับที่ลูกค้าเลือก',
   'Invalid receipt image.', 'Invalid currency settings.', 'Set valid counter buy and sell rates first.',
   NO_SUCH_BRANCH, 'เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน',
+  // the 10-06 `accept` (queue-work.mjs): nothing to claim; and, below, the request has a holder
+  'คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด',
 ];
+const HELD_BY = /^ออเดอร์นี้มี (.+) กำลังทำรายการแล้ว$/;
 const seen = new Set();
+/** A timestamptz as the fixture writes it: milliseconds after `t0`. */
+const msOf = (d) => { if (d == null) return null; if (!(d instanceof Date)) throw Error('v2 answered a time that is not a timestamptz: ' + d); return d.getTime() - T0; };
 
 // ── what is stored, written the way the Rust side holds it ──────────────────
 const quoteOf = (d) => ({ type: d.type, currency: d.currency, rate: rateText(d.rate), foreign: money(cents(d.foreign)), thb: money(cents(d.thb)), inputAmount: money(cents(d.inputAmount)), paymentMethod: d.paymentMethod });
@@ -214,6 +275,11 @@ const eventOut = (e) => {
   if (e.type === 'KIOSK_REQUEST') {
     if (e.details.financialTransaction !== false) throw Error('v2 audit line of a request lacks financialTransaction:false');
     out.quote = quoteOf(e.details);
+  } else if (e.type === 'KIOSK_ACCEPTED') {
+    // the 10-06 claim copies its start into the audit line; v3 keeps the start once, on the request
+    // (design §5.5.3), so the line is written without it
+    const { startedAt, ...rest } = e.details;
+    if (Object.keys(rest).length || !(startedAt instanceof Date)) throw Error('v2 audit line of a claim carries other details: ' + JSON.stringify(e));
   } else if (e.type === 'KIOSK_COMPLETED') out.documentRef = e.details.transactionNo;
   else if (e.type === 'KIOSK_CURRENCY_CONFIGURED') Object.assign(out, { enabled: e.details.enabled, buy: String(e.details.buy), sell: String(e.details.sell) });
   else if (Object.keys(e.details).length) throw Error('v2 audit line carries details this script does not know: ' + JSON.stringify(e));
@@ -255,10 +321,13 @@ async function play(step) {
       if (args.id !== undefined) p.id = args.id;
       if (op === 'identityChecked') p.confirmed = args.confirmed;
       if (op === 'publishReceipt') p.image = image(args.image);
-      out = await v2.action2(op, p, user);
+      out = await (op === 'accept' ? v2q : v2).action2(op, p, user);
     }
   } catch (e) {
-    if (!SENTENCES.includes(e.message)) throw Error(`v2 crashed on ${JSON.stringify(step)}: ${e.message}`);
+    const held = e.message.match(HELD_BY);
+    if (!SENTENCES.includes(e.message) && !held) throw Error(`v2 crashed on ${JSON.stringify(step)}: ${e.message}`);
+    // the name in the sentence is the holder's, as stored
+    if (held && W.store.t.kiosk_requests.find((r) => r.id === args.id && r.branch_id === branch)?.staff !== held[1]) throw Error('v2 named someone who does not hold the request: ' + e.message);
     error = e.message; seen.add(error);
   }
   const events = W.events.slice(eventsBefore);
@@ -276,17 +345,26 @@ async function play(step) {
   } else if (['confirm', 'status', 'identityChecked'].includes(op)) rec.answer = identity(out);
   else if (op === 'customerReceipt') rec.answer = { ...identity(out), image: out.image === null ? null : { length: out.image.length } };
   else if (op === 'notifications') rec.answer = { branchName: out.branchName, count: out.count, latest: out.latest };
-  else if (op === 'list') rec.answer = out.requests.map((r) => {
-    if (r.branch !== branch || r.data !== undefined) throw Error('v2 listed something unexpected');
-    return { ...identity(r), staff: r.staff === '' ? null : r.staff, created: Number(r.created) - T0, quote: quoteOf(r) };
-  });
-  else if (op === 'get') {
+  else if (op === 'list') {
+    const listed = (requests) => requests.map((r) => {
+      if (r.branch !== branch || r.data !== undefined) throw Error('v2 listed something unexpected');
+      return { ...identity(r), staff: r.staff === '' ? null : r.staff, created: Number(r.created) - T0, quote: quoteOf(r) };
+    });
+    rec.answer = listed(out.requests);
+    // the same step on the 10-06 queue (it writes nothing): its first page of all four statuses
+    const again = await v2q.action2('list', { branchId: branch }, user);
+    if (again.page !== 0 || again.hasMore || JSON.stringify(listed(again.requests)) !== JSON.stringify(rec.answer)) throw Error('the 10-06 queue lists this step otherwise: ' + JSON.stringify(step));
+  } else if (op === 'accept') {
+    if (out.saved !== true) throw Error('v2 did not say saved');
+    // what `queue-work.mjs` answers a claim (`claimed: true`) and the holder again (no `claimed`)
+    rec.answer = { claimed: out.claimed === true, startedAt: msOf(out.startedAt), completedAt: msOf(out.completedAt), durationSeconds: out.durationSeconds };
+  } else if (op === 'get') {
     if (out.id !== args.id || out.queue !== 'K-' + args.id.slice(0, 8).toUpperCase()) throw Error('v2 get answered another request');
     rec.answer = { id: out.id, queue: out.queue, quote: quoteOf(out) };
   } else if (op === 'manage') {
     if (out.currencies.map((c) => c.code).join() !== v2.currencies_default.map((c) => c.code).join()) throw Error('v2 manage lists other currencies than its list');
     rec.answer = { enabled: out.currencies.filter((c) => c.enabled).map((c) => c.code) };
-  } else if (['accept', 'publishReceipt', 'configure'].includes(op)) { if (out.saved !== true) throw Error('v2 did not say saved'); }
+  } else if (['publishReceipt', 'configure'].includes(op)) { if (out.saved !== true) throw Error('v2 did not say saved'); }
   else if (op !== 'checkSave' && op !== 'complete') throw Error('fixture: unknown op ' + op);
   if (op === 'configure') rec.rateSaves = W.rateSaves.slice(savesBefore).map((s) => ({ branch: s.branch, code: s.code, buy: String(s.buy), sell: String(s.sell), previousUpdated: s.previousUpdated, partnerName: s.partnerName, partnerCost: s.partnerCost == null ? null : String(s.partnerCost), actor: s.actor }));
   rec.events = events.map(eventOut);
@@ -594,19 +672,26 @@ await scenario('the save must match the queue', [
 ]);
 
 // ═══ measured limits ═════════════════════════════════════════════════════════
-// The queue shows at most this many requests; the waiting count is not cut.
+// The queue shows pages of this many requests (the 10-06 bundle's `queue-work.mjs`); the waiting
+// count is not cut.
 fresh();
 const many = 103;
 for (let i = 0; i < many; i++) { W.clock = T0 + i * 10; await v2.action2('quote', { branchId: 'MAIN', type: 'BUY', currency: 'USD', amount: '100' }, null); }
 for (let i = 0; i < many; i++) { W.clock = T0 + 5000 + i; await v2.action2('confirm', { branchId: 'MAIN', id: idAt(i + 1) }, null); }
 W.clock = T0 + 9000;
-const listed = (await v2.action2('list', { branchId: 'MAIN' }, PEOPLE.F1)).requests, noted = await v2.action2('notifications', { branchId: 'MAIN' }, PEOPLE.F1);
-if (listed[0].id !== idAt(many) || noted.latest !== idAt(many) || noted.count !== many) throw Error('fixture: the queue is not newest first');
+const pages = [];
+for (let page = 0; page < 3; page++) pages.push(await v2q.action2('list', { branchId: 'MAIN', page }, PEOPLE.F1));
+const noted = await v2.action2('notifications', { branchId: 'MAIN' }, PEOPLE.F1);
+const ids = pages.flatMap((p) => p.requests.map((r) => r.id));
+if (ids.join() !== Array.from({ length: many }, (_, i) => idAt(many - i)).join() || noted.latest !== idAt(many) || noted.count !== many) throw Error('fixture: the queue is not newest first, page after page');
+if (pages.some((p, n) => p.page !== n)) throw Error('fixture: a page answered another number');
 fresh();
 const defaults = (await v2.action2('manage', { branchId: 'MAIN' }, PEOPLE.owner)).currencies.filter((c) => c.enabled).map((c) => c.code);
 const limits = {
-  listLimit: listed.length,
-  listedOldestOf103: (many - listed.length) + 1, // the n-th quote made is the oldest one still listed
+  pageSize: pages[0].requests.length,
+  pagesOf103: pages.map((p) => p.requests.length),
+  hasMoreOf103: pages.map((p) => p.hasMore),
+  firstPageOldestOf103: (many - pages[0].requests.length) + 1, // the n-th quote made is the oldest one on page 0
   waitingCountOf103: noted.count,
   defaults,
   currencies: v2.currencies_default.map((c) => c.code),
@@ -614,7 +699,7 @@ const limits = {
   receiptReadableBelowMs: 600_000,
   quoteSweptAboveMs: 600_000,
 };
-if (limits.listLimit !== 100) throw Error('fixture: v2 lists ' + limits.listLimit);
+if (limits.pageSize !== 50) throw Error('fixture: v2 pages by ' + limits.pageSize);
 
 const ACCESS = ['Staff access required.', 'Owner or Rates access required.'];
 const DESK = ['OWNER', 'FRONT', 'BACKEND', 'MANAGER'];
@@ -623,7 +708,7 @@ const roleStep = (s) => ACCESS.includes(s.error) && (ROLE_ONLY.includes(s.op) ||
 for (const sc of scenarios) sc.steps = sc.steps.filter((s) => !roleStep(s));
 const count = scenarios.reduce((n, s) => n + s.steps.length, 0);
 process.stdout.write(JSON.stringify({
-  source: 'xchange-online@3ffc5a5 — the kiosk module of the deployed server.mjs, run by api/tools/v2-fixtures/gen_kiosk_service.mjs',
+  source: 'xchange-online@3ffc5a5 — the kiosk module of the deployed server.mjs; accept and the page size from the 10-06 bundle (queue-work.mjs); run by api/tools/v2-fixtures/gen_kiosk_service.mjs',
   t0: T0,
   people,
   // every scenario starts from this: the branches, whether a shift is open, and the counter rates

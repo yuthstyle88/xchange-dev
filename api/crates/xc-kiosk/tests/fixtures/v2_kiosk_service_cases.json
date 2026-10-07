@@ -1,5 +1,5 @@
 {
- "source": "xchange-online@3ffc5a5 — the kiosk module of the deployed server.mjs, run by api/tools/v2-fixtures/gen_kiosk_service.mjs",
+ "source": "xchange-online@3ffc5a5 — the kiosk module of the deployed server.mjs; accept and the page size from the 10-06 bundle (queue-work.mjs); run by api/tools/v2-fixtures/gen_kiosk_service.mjs",
  "t0": 1791262800000,
  "people": {
   "customer": null,
@@ -115,16 +115,27 @@
   "Set valid counter buy and sell rates first.",
   "Staff access required.",
   "The assigned employee must confirm the passport check.",
-  "This request is already assigned or unavailable.",
   "คิวต้องบันทึกเป็นรายการจริง",
   "คิวนี้ไม่พร้อมบันทึกหรือบันทึกแล้ว",
+  "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด",
   "ช่องทางต้องตรงกับที่ลูกค้าเลือก",
   "สกุลเงินและจำนวนต้องตรงกับคิว",
+  "ออเดอร์นี้มี front1 กำลังทำรายการแล้ว",
   "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน"
  ],
  "limits": {
-  "listLimit": 100,
-  "listedOldestOf103": 4,
+  "pageSize": 50,
+  "pagesOf103": [
+   50,
+   50,
+   3
+  ],
+  "hasMoreOf103": [
+   true,
+   true,
+   false
+  ],
+  "firstPageOldestOf103": 54,
   "waitingCountOf103": 103,
   "defaults": [
    "AUD",
@@ -698,6 +709,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 6000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -725,7 +742,12 @@
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
      "note": "twice",
-     "error": "This request is already assigned or unavailable.",
+     "answer": {
+      "claimed": false,
+      "startedAt": 6000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [],
      "rows": [
       {
@@ -745,7 +767,7 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
-     "error": "This request is already assigned or unavailable.",
+     "error": "ออเดอร์นี้มี front1 กำลังทำรายการแล้ว",
      "events": [],
      "rows": [
       {
@@ -1744,7 +1766,7 @@
      "op": "accept",
      "branch": "B2",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
-     "error": "This request is already assigned or unavailable.",
+     "error": "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด",
      "events": [],
      "rows": [
       {
@@ -1772,7 +1794,7 @@
      "op": "accept",
      "branch": "B2",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
-     "error": "This request is already assigned or unavailable.",
+     "error": "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด",
      "events": [],
      "rows": [
       {
@@ -1800,6 +1822,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5100,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -2031,6 +2059,12 @@
      "branch": "B2",
      "id": "ad56c2e0-7e57-4000-8000-000000000002",
      "note": "the owner accepts in the branch named",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5500,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "B2",
@@ -4182,6 +4216,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ae57c3e1-7e57-4000-8000-000000000003",
+     "answer": {
+      "claimed": true,
+      "startedAt": 9000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -4240,6 +4280,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ad56c2e0-7e57-4000-8000-000000000002",
+     "answer": {
+      "claimed": true,
+      "startedAt": 9100,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -4689,6 +4735,12 @@
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
      "note": "a day later",
+     "answer": {
+      "claimed": true,
+      "startedAt": 93600000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -4903,6 +4955,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -5388,6 +5446,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -7500,6 +7564,12 @@
      "branch": "MAIN",
      "id": "ad56c2e0-7e57-4000-8000-000000000002",
      "note": "the desk does not look at the counter",
+     "answer": {
+      "claimed": true,
+      "startedAt": 6000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -7813,6 +7883,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",
@@ -7991,6 +8067,12 @@
      "op": "accept",
      "branch": "MAIN",
      "id": "ac55c1df-7e57-4000-8000-000000000001",
+     "answer": {
+      "claimed": true,
+      "startedAt": 5000,
+      "completedAt": null,
+      "durationSeconds": null
+     },
      "events": [
       {
        "branch": "MAIN",

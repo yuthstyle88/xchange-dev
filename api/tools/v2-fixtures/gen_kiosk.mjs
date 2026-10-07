@@ -1,6 +1,6 @@
 // Drives the kiosk module of the v2 server (`action2`, `beforeSave`, `afterSave`; server.mjs:7894-8076
 // of the deployed bundle, `xchange-online@3ffc5a5`) and records what it answered.
-//   node gen_kiosk.mjs > ../../crates/xc-kiosk/tests/fixtures/v2_kiosk_cases.json
+//   node gen_kiosk.mjs path/to/10-06-bundle-dir > ../../crates/xc-kiosk/tests/fixtures/v2_kiosk_cases.json
 //
 // It needs `kiosk.mjs` beside it: lines 7894-8076 of the bundle's `server.mjs`, unchanged (from the
 // line `// src/currencies.mjs` up to, not including, `// src/staff-routes.mjs`). The bundle is not in
@@ -26,16 +26,50 @@
 // outside the desk (not OWNER, FRONT, BACKEND, MANAGER) with one of its two access sentences. The
 // refusals of a caller nobody signed in as stay: a step that needs a holder still refuses a caller
 // without a name (`KioskActor::Customer`), and that check is the machine's.
+//
+// Row Q1 (design §5.5.3, ticket #328): the holder's repeat `accept` is recorded from the 10-06 bundle
+// (`XC-Desk-v2-Passport-Drawer-20261006.zip`, design §5.5), whose kiosk module hands `accept` to its
+// `queue-work.mjs`. The directory of that bundle is the one argument:
+//   node gen_kiosk.mjs path/to/10-06-bundle-dir > ../../crates/xc-kiosk/tests/fixtures/v2_kiosk_cases.json
+// The same slice of its `server.mjs` is evaluated unchanged, with `queueWork` made by its own
+// `queue-work.mjs` over the same store. Every `accept` is played on both modules from the same state:
+// where both claim, the record is the claim; where the 10-05 module refuses with "This request is
+// already assigned or unavailable." the 10-06 one either answers the holder again (recorded: answered,
+// nothing written) or refuses with one of its two new sentences, which `AcceptOutcome` leaves to the
+// route (`HeldBy`, `Unavailable`) — the machine keeps the 10-05 sentence, and so does the record.
+// Any other pair stops the script.
 import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 const src = fs.readFileSync(new URL('./kiosk.mjs', import.meta.url), 'utf8');
 for (const needle of ['async function action2(', 'async function beforeSave(', 'async function afterSave(', 'var currencies_default = [']) if (!src.includes(needle)) throw Error('kiosk.mjs: ' + needle + ' not found');
 if (/^import /m.test(src)) throw Error('kiosk.mjs must not contain an import line');
 if (/new Date|setTimeout|Math\.random|fetch\(/.test(src)) throw Error('kiosk.mjs reads something this script does not replace');
 
+// ── the 10-06 bundle, told apart by its own hashes (design §5.5) ────────────
+const newDir = process.argv[2];
+if (!newDir) throw Error('usage: node gen_kiosk.mjs path/to/10-06-bundle-dir');
+const sha256 = (f) => createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+const NEW_SERVER = path.join(newDir, 'server.mjs'), NEW_QUEUE_WORK = path.join(newDir, 'queue-work.mjs');
+if (sha256(NEW_SERVER) !== '99ddcd107bd4107226ce3065efcefea11a8b2a58d86a45b9a5872e571a8b1b0b') throw Error(NEW_SERVER + ' is not the server.mjs of the 10-06 bundle');
+if (sha256(NEW_QUEUE_WORK) !== 'e03bc3499d599cf397d61a4d9138c7ae99269cf390ee076d60d10d3c348bfb30') throw Error(NEW_QUEUE_WORK + ' is not the queue-work.mjs of the 10-06 bundle');
+const bundle6 = fs.readFileSync(NEW_SERVER, 'utf8');
+const from6 = bundle6.indexOf('// src/currencies.mjs'), to6 = bundle6.indexOf('// src/staff-routes.mjs');
+if (from6 < 0 || to6 < from6) throw Error('the kiosk module was not found in ' + NEW_SERVER);
+const src6 = bundle6.slice(from6, to6);
+for (const needle of ['async function action2(', 'queueWork.accept(']) if (!src6.includes(needle)) throw Error('10-06 kiosk module: ' + needle + ' not found');
+if (/^import /m.test(src6)) throw Error('the 10-06 kiosk module must not contain an import line');
+// its one `new Date()` is the `serverNow` of `notifications`, which is never played on it: `Date` is
+// supplied without a constructor, so reaching it stops the script
+if (/setTimeout|Math\.random|fetch\(/.test(src6)) throw Error('the 10-06 kiosk module reads something this script does not replace');
+const { createQueueWork } = await import(pathToFileURL(NEW_QUEUE_WORK).href);
+
 // ── the store ────────────────────────────────────────────────────────────────
 const COLS = {
-  kiosk_requests: ['id', 'branch_id', 'data', 'status', 'created', 'staff'],
+  // the last two are the 10-06 bundle's (`queue-work.sql`); the 10-05 module inserts without them
+  kiosk_requests: ['id', 'branch_id', 'data', 'status', 'created', 'staff', 'started_at', 'completed_at'],
   kiosk_currencies: ['branch_id', 'code', 'enabled'],
   kiosk_transactions: ['request_id', 'submission_id', 'transaction_ref'],
   kiosk_receipts: ['id', 'image', 'updated'],
@@ -83,8 +117,10 @@ class Store {
     }
     if ((m = sql.match(/^INSERT INTO (\w+) VALUES\(([^)]+)\)(?: ON CONFLICT(?: \(([\w,]+)\))? DO (NOTHING|UPDATE SET (.+)))?$/))) {
       const name = m[1], values = m[2].split(',').map(term), cols = COLS[name] ?? bad();
-      if (values.length !== cols.length || values.some((v) => v === undefined)) bad();
-      const row = Object.fromEntries(cols.map((c, i) => [c, values[i]]));
+      if (values.length > cols.length || values.some((v) => v === undefined)) bad();
+      // PostgreSQL gives the columns a VALUES list leaves out their default, NULL here: so the 10-05
+      // insert meets the 10-06 table
+      const row = Object.fromEntries(cols.map((c, i) => [c, i < values.length ? values[i] : null]));
       if (m[3] && m[3] !== KEY[name].join(',')) bad();
       const old = table(name).find((r) => KEY[name].every((k) => r[k] === row[k]));
       if (!old) { table(name).push(row); return { rows: [], rowCount: 1 }; }
@@ -94,7 +130,8 @@ class Store {
       return { rows: [], rowCount: 1 };
     }
     if ((m = sql.match(/^UPDATE (\w+) SET (.+?) WHERE (.+?)(?: RETURNING (\*|\w+))?$/))) {
-      const name = m[1], sets = m[2].split(',').map((s) => { const x = s.match(/^(\w+)=(\$\d+|'[^']*')$/); return x ? [col(name, x[1]), term(x[2])] : bad(); });
+      // `clock_timestamp()` is the clock this script sets; node-postgres hands a timestamptz back as a Date
+      const name = m[1], sets = m[2].split(',').map((s) => { const x = s.match(/^(\w+)=(\$\d+|'[^']*'|clock_timestamp\(\))$/); return x ? [col(name, x[1]), x[2] === 'clock_timestamp()' ? new Date(W.clock) : term(x[2])] : bad(); });
       const hit = table(name).filter(where(name, m[3]));
       for (const r of hit) for (const [k, v] of sets) r[k] = v;
       const cols = !m[4] ? [] : m[4] === '*' ? COLS[name] : [col(name, m[4])];
@@ -108,8 +145,9 @@ class Store {
 const W = { store: new Store(), clock: 0, ids: 0, events: [], model: null, configuring: false };
 // ids look like v2's (lower-case hex) and differ in their first eight characters, which is what the queue number shows
 const idAt = (n) => ((0xab54c0de + n * 0x01010101) >>> 0).toString(16).padStart(8, '0') + '-7e57-4000-8000-' + n.toString(16).padStart(12, '0');
-const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', src + '\nreturn { action2, beforeSave, afterSave };')(
-  { query: async (sql, args) => W.store.query(sql, args) },
+const POOL = { query: async (sql, args) => W.store.query(sql, args) };
+const OUTSIDE = [
+  POOL,
   async (name) => {
     if (name === 'adminSnapshot') return structuredClone(W.model);
     // `configure` saves a rate through the engine before it stores the switch; section A lets that one call through
@@ -120,6 +158,15 @@ const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'p
   () => idAt(++W.ids),
   { now: () => W.clock },
   { env: {} },
+];
+const v2 = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', src + '\nreturn { action2, beforeSave, afterSave };')(...OUTSIDE);
+// the 10-06 module, over the same store and with the same five names, plus its three new ones
+const notPlayed = (name) => { throw Error('fixture: the 10-06 ' + name + ' is not played by this script'); };
+const v2q = new Function('pool', 'execute', 'logEvent', 'randomUUID9', 'Date', 'process', 'queueWork', 'paymentSettings', 'paymentAllowed', src6 + '\nreturn { action2 };')(
+  ...OUTSIDE,
+  createQueueWork(POOL),
+  new Proxy({}, { get: () => notPlayed('paymentSettings') }),
+  () => notPlayed('paymentAllowed'),
 );
 
 // ── figures: the fixture writes money and rates as text, v2 holds doubles ───
@@ -158,6 +205,40 @@ function fresh({ open = true, rates = RATES } = {}) {
 }
 const snap = () => ({ store: W.store.clone(), clock: W.clock, ids: W.ids, events: W.events.slice(), model: structuredClone(W.model) });
 const restore = (s) => { W.store = s.store.clone(); W.clock = s.clock; W.ids = s.ids; W.events = s.events.slice(); W.model = structuredClone(s.model); };
+
+// ── `accept` on both bundles (see the head of this file) ─────────────────────
+const ALREADY = 'This request is already assigned or unavailable.';
+const UNAVAILABLE = 'คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด', HELD_BY = /^ออเดอร์นี้มี (.+) กำลังทำรายการแล้ว$/;
+const sameRequests = (a, b) => JSON.stringify(a.kiosk_requests.map(({ started_at, completed_at, ...r }) => r)) === JSON.stringify(b.kiosk_requests.map(({ started_at, completed_at, ...r }) => r));
+async function acceptOnBoth(p, user) {
+  const start = snap();
+  let old = null, oldError = null;
+  try { old = await v2.action2('accept', p, user); } catch (e) { oldError = e.message; }
+  const oldEnd = snap();
+  restore(start);
+  let now = null, nowError = null;
+  try { now = await v2q.action2('accept', p, user); } catch (e) { nowError = e.message; }
+  const nowEvents = W.events.slice(start.events.length), oldEvents = oldEnd.events.slice(start.events.length);
+  const pair = `${user?.username ?? 'customer'} accept ${p.id}: 10-05 ${oldError ?? 'claims'}, 10-06 ${nowError ?? JSON.stringify(now)}`;
+  if (!oldError) {
+    // both claim: the same request, the same line (the 10-06 line also carries the start, which v3 keeps on the request)
+    if (nowError || now.claimed !== true || !sameRequests(oldEnd.store.t, W.store.t) || nowEvents.length !== 1 || oldEvents.length !== 1
+      || ['branch', 'actor', 'type', 'subject'].some((k) => nowEvents[0][k] !== oldEvents[0][k])) throw Error('the bundles claim otherwise: ' + pair);
+    return old;
+  }
+  if (oldError === ALREADY && !nowError) {
+    // the holder again: answered, nothing written
+    if (now.claimed || nowEvents.length || JSON.stringify(W.store.t) !== JSON.stringify(start.store.t)) throw Error('the 10-06 repeat wrote something: ' + pair);
+    const held = start.store.t.kiosk_requests.find((r) => r.id === p.id);
+    if (held?.staff !== user.username || !['ACCEPTED', 'ID_CHECKED'].includes(held.status)) throw Error('the 10-06 repeat answered someone who does not hold it: ' + pair);
+    return now;
+  }
+  restore(start);
+  const held = nowError?.match(HELD_BY);
+  if (oldError === ALREADY && (nowError === UNAVAILABLE || (held && start.store.t.kiosk_requests.find((r) => r.id === p.id)?.staff === held[1]))) throw Error(ALREADY);
+  if (oldError === nowError) throw Error(oldError);
+  throw Error('the bundles refuse otherwise: ' + pair);
+}
 const DEFAULTS = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD']; // the kiosk's currencies when nothing is configured
 /** What the caller of the machine will look up: is the counter open, and the counter rate for this currency and side. */
 function facts(currency, type) {
@@ -228,7 +309,7 @@ async function run(who, step, { at, keep = true, note, mayDiffer = false } = {})
       const p = { id };
       if (step.action === 'identityChecked') { rec.confirmed = step.confirmed; if (step.confirmed !== undefined) p.confirmed = step.confirmed; }
       if (step.action === 'publishReceipt') p.image = PNG;
-      out = await v2.action2(step.action, p, user);
+      out = step.action === 'accept' ? await acceptOnBoth(p, user) : await v2.action2(step.action, p, user);
     }
   } catch (e) {
     if (!SENTENCES.includes(e.message)) throw Error(`v2 crashed on ${who} ${JSON.stringify(step)}: ${e.message}`);
@@ -472,7 +553,7 @@ async function stories() {
     await s('FIN1', { action: 'accept', id }, { at: T0 + 10000 });
     await s('F1', { action: 'accept', id }, { at: T0 + 11000 });
     await s('F2', { action: 'accept', id }, { at: T0 + 12000, note: 'a second employee is too late' });
-    await s('F1', { action: 'accept', id }, { at: T0 + 12500, note: 'accepting twice is refused too, even by the one who holds it' });
+    await s('F1', { action: 'accept', id }, { at: T0 + 12500, note: 'the one who holds it, again: answered, nothing written (10-06 bundle)' });
     await s('F2', { action: 'get', id }, { at: T0 + 13000 });
     await s('F1', { action: 'get', id }, { at: T0 + 13500 });
     await s('F1', { action: 'publishReceipt', id }, { at: T0 + 14000, note: 'no receipt before the passport check' });
@@ -597,6 +678,6 @@ if (never.length) throw Error('v2 never answered: ' + never.join(' | '));
 const differs = quotes.filter((q) => q.v2DiffersFromExact).length, onPurpose = all.filter((r) => r.v2DiffersOnPurpose).length;
 console.error(`access=${access.length} (played, not written) quotes=${quotes.length} (refused=${quotes.filter((q) => q.error).length}, v2_differs_from_exact=${differs}) states=${states.length} matrix_cases=${states.reduce((n, s) => n + s.cases.length, 0)} confirms=${confirms.length} saves=${saves.length} stories=${told.length} story_steps=${told.reduce((n, s) => n + s.steps.length, 0)} sweep=${sweep.length} receipt=${receipt.length} v2_differs_on_purpose=${onPurpose} sentences=${seen.size}/${SENTENCES.length} sql_statements=${statements.size}`);
 console.log(JSON.stringify({
-  source: 'v2 kiosk module (server.mjs:7894-8076 of the deployed bundle, xchange-online@3ffc5a5), evaluated unchanged with a set clock, counted ids and an in-memory store in place of PostgreSQL; driven by gen_kiosk.mjs',
+  source: 'v2 kiosk module (server.mjs:7894-8076 of the deployed bundle, xchange-online@3ffc5a5), evaluated unchanged with a set clock, counted ids and an in-memory store in place of PostgreSQL; driven by gen_kiosk.mjs; the holder\'s repeat accept from the 10-06 bundle (queue-work.mjs)',
   people, quotes, states, confirms, saves, stories: told, sweep, receipt,
 }, null, 1));

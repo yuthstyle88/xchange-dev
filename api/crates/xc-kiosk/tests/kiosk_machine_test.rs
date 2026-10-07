@@ -14,6 +14,11 @@
 //! employee outside the desk was refused) to `crates/xc-auth/tests/policy_kiosk_test.rs` and
 //! the path `Kiosk` of `v2_policy_cases.json`. What the machine still decides about the caller
 //! stays here: a step that needs a holder refuses a caller with no name.
+//!
+//! Edited by the author of ticket #328 (row Q1, design §5.5.3): in the 10-06 bundle the holder of an
+//! ACCEPTED or ID_CHECKED request who accepts it again is answered, with nothing written. That is
+//! now the machine's answer here and in the fixture (`gen_kiosk.mjs` plays every `accept` on both
+//! bundles); every other `accept` keeps its refusal.
 
 mod kiosk_common;
 
@@ -700,16 +705,35 @@ fn the_first_of_the_desk_staff_to_accept_holds_the_request() {
         refusal(step(&w, Cmd::Accept, &customer(), &no_facts(), T0 + MIN)),
         E::StaffRequired
     );
-    // only a waiting request can be accepted — not a quote, and not one already held, even by its holder
+    // only a waiting request is claimed — not a quote, not one somebody else holds, and not a
+    // completed one, even by its holder
     for held in [quoted(), accepted(), id_checked(), completed()] {
-        for who in [front1(), front2()] {
-            assert_eq!(
-                refusal(step(&held, Cmd::Accept, &who, &no_facts(), T0 + MIN)),
-                E::AlreadyAssignedOrUnavailable,
-                "{:?} {who:?}",
-                held.status
-            );
-        }
+        assert_eq!(
+            refusal(step(&held, Cmd::Accept, &front2(), &no_facts(), T0 + MIN)),
+            E::AlreadyAssignedOrUnavailable,
+            "{:?} front2",
+            held.status
+        );
+    }
+    for held in [quoted(), completed()] {
+        assert_eq!(
+            refusal(step(&held, Cmd::Accept, &front1(), &no_facts(), T0 + MIN)),
+            E::AlreadyAssignedOrUnavailable,
+            "{:?} front1",
+            held.status
+        );
+    }
+    // the holder again, while the request is at the desk (10-06 bundle, `queue-work.mjs:6-13`):
+    // answered with the request as it is and no audit event (row Q1, design §5.5.3)
+    for held in [accepted(), id_checked()] {
+        let t = step(&held, Cmd::Accept, &front1(), &no_facts(), T0 + MIN)
+            .unwrap_or_else(|e| panic!("{:?}: the holder again was refused: {e}", held.status));
+        assert_eq!(
+            t.request, held,
+            "{:?}: the request is unchanged",
+            held.status
+        );
+        assert_eq!(t.event, None, "{:?}: nothing to audit", held.status);
     }
 }
 

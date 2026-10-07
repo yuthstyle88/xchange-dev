@@ -9,20 +9,22 @@ use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
-use crate::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
+use crate::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_service_error::KioskServiceError;
+use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::notifications::Notifications;
+use crate::domain::kiosk::value_objects::queue_filter::QueueFilter;
+use crate::domain::kiosk::value_objects::queue_page::{QueueItem, QueuePage};
 use crate::domain::kiosk::value_objects::receipt_image::ReceiptImage;
 use crate::domain::kiosk::value_objects::request_identity::RequestIdentity;
+use crate::domain::kiosk::value_objects::work_times::WorkTimes;
 
-use super::service::{
-    KioskService, NO_COUNTER, QUEUE_LIMIT, cut_to_millis, line_for, refuse, time, username,
-};
+use super::service::{KioskService, NO_COUNTER, cut_to_millis, line_for, refuse, time, username};
 
 impl KioskService {
-    /// `notifications`: how many requests wait, for anyone signed in.
+    /// `notifications`: how many requests wait, who is working, for anyone signed in.
     pub async fn notifications(
         &self,
         branch: &BranchId,
@@ -30,31 +32,46 @@ impl KioskService {
     ) -> AppResult<Notifications> {
         let branch_name = self.branch_name(branch).await?;
         let (count, latest) = self.repo.waiting(branch).await?;
+        let (working, working_count) = self.repo.working(branch, 10).await?;
         Ok(Notifications {
             branch_name,
             count,
             latest,
+            working,
+            working_count,
         })
     }
 
-    /// `list`: the queue of the branch, newest first, at most [`QUEUE_LIMIT`].
+    /// `list`: the queue of the branch, filtered and paged, at most 50 items.
     pub async fn list(
         &self,
         branch: &BranchId,
         _actor: &KioskActor,
+        filter: QueueFilter,
+        page: u32,
         now: DateTime<Utc>,
-    ) -> AppResult<Vec<IdentifiedRequest>> {
+    ) -> AppResult<QueuePage> {
         self.branch_name(branch).await?;
         let now = time(now);
-        self.repo
-            .queue(branch, QUEUE_LIMIT)
-            .await?
-            .into_iter()
-            .map(|request| {
-                let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
-                Ok(IdentifiedRequest { request, identity })
-            })
-            .collect()
+        let mut rows = self.repo.queue_page(branch, filter, page).await?;
+        let has_more = rows.len() == 51;
+        if has_more {
+            rows.pop();
+        }
+        let mut items = Vec::with_capacity(rows.len());
+        for (request, times) in rows {
+            let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
+            items.push(QueueItem {
+                request,
+                identity,
+                times,
+            });
+        }
+        Ok(QueuePage {
+            page,
+            has_more,
+            items,
+        })
     }
 
     /// `accept`: a desk employee takes a waiting request.
@@ -64,10 +81,72 @@ impl KioskService {
         actor: &KioskActor,
         id: &str,
         now: DateTime<Utc>,
-    ) -> AppResult<()> {
-        self.desk_step(branch, actor, id, KioskCommand::Accept, now)
+    ) -> AppResult<AcceptOutcome> {
+        let user = match actor {
+            KioskActor::Staff { username, .. } => username.clone(),
+            KioskActor::Customer => return Err(refuse(KioskError::StaffRequired)),
+        };
+        self.branch_name(branch).await?;
+        let at = cut_to_millis(now);
+        let now_kiosk = time(now);
+        let (repo, ports, b, id, actor) = (
+            self.repo.clone(),
+            self.ports.clone(),
+            branch.clone(),
+            id.to_owned(),
+            actor.clone(),
+        );
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let stored = repo.find_in(tx, &b, &id).await?;
+                    let req = match stored {
+                        Some(r) => r,
+                        None => return Ok(AcceptOutcome::Unavailable),
+                    };
+
+                    match req.status {
+                        KioskStatus::Quoted | KioskStatus::Expired => {
+                            Ok(AcceptOutcome::Unavailable)
+                        }
+                        KioskStatus::Completed => {
+                            let holder = req.staff.unwrap_or_default();
+                            Ok(AcceptOutcome::HeldBy(holder))
+                        }
+                        KioskStatus::Accepted | KioskStatus::IdChecked => {
+                            let current_holder = req.staff.as_deref().unwrap_or("");
+                            if current_holder == user {
+                                let times = repo.times_in(tx, &b, &id).await?;
+                                Ok(AcceptOutcome::AlreadyMine(times))
+                            } else {
+                                Ok(AcceptOutcome::HeldBy(current_holder.to_owned()))
+                            }
+                        }
+                        KioskStatus::Waiting => {
+                            let moved = KioskMachine::next(
+                                Some(&req),
+                                &KioskCommand::Accept,
+                                &actor,
+                                &NO_COUNTER,
+                                now_kiosk,
+                            )
+                            .map_err(refuse)?;
+                            if let Some(event) = moved.event {
+                                repo.update_in(tx, &b, &moved.request).await?;
+                                repo.mark_started_in(tx, &b, &id, at).await?;
+                                let line = line_for(event, &moved.request, username(&actor));
+                                ports.record_in(tx, &b, &line, at).await?;
+                            }
+                            let times = WorkTimes {
+                                started_at: Some(now_kiosk),
+                                completed_at: None,
+                            };
+                            Ok(AcceptOutcome::Claimed(times))
+                        }
+                    }
+                })
+            })
             .await
-            .map(|_| ())
     }
 
     /// `identityChecked`: the employee holding the request confirms the passport check.

@@ -5,6 +5,7 @@
 
 use std::future::Future;
 
+use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
@@ -12,7 +13,10 @@ use xc_kernel::money::CurrencyCode;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
+use crate::domain::kiosk::value_objects::notifications::WorkingRequest;
+use crate::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use crate::domain::kiosk::value_objects::receipt_image::ReceiptImage;
+use crate::domain::kiosk::value_objects::work_times::WorkTimes;
 
 /// A stored receipt picture and when it was published.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +93,47 @@ pub trait KioskRepository: Send + Sync {
         branch: &BranchId,
         limit: i64,
     ) -> impl Future<Output = AppResult<Vec<KioskRequest>>> + Send;
+
+    /// Confirmed requests for the page, newest first then id DESC, 51 at most.
+    fn queue_page(
+        &self,
+        branch: &BranchId,
+        filter: QueueFilter,
+        page: u32,
+    ) -> impl Future<Output = AppResult<Vec<(KioskRequest, WorkTimes)>>> + Send;
+
+    /// Requests currently at work (ACCEPTED / ID_CHECKED), up to `limit`, and the total count.
+    fn working(
+        &self,
+        branch: &BranchId,
+        limit: i64,
+    ) -> impl Future<Output = AppResult<(Vec<WorkingRequest>, i64)>> + Send;
+
+    /// Stamps started_at on a request.
+    fn mark_started_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// Stamps completed_at on a request once; repeat keeps the first time.
+    fn mark_completed_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// Reads started_at and completed_at for a request inside a transaction.
+    fn times_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> impl Future<Output = AppResult<WorkTimes>> + Send;
 
     fn switches(
         &self,

@@ -56,13 +56,19 @@ fn engine_sentences(fixture: &Fixture) -> Vec<usize> {
 }
 
 /// Steps of the recordings (made from the 10-05 bundle) that the 10-06 bundle answers
-/// otherwise, decided by ticket POL: `list` is let through for anybody signed in
+/// otherwise, decided by ticket POL and Q1: `list` is let through for anybody signed in
 /// (`server.mjs:8026` of the 10-06 bundle; `Policy`, path `Kiosk`), so the six roles outside
 /// the desk (`queue.json` #67–#72: RT1, MO1, FI1, SY1, DO1, RV1) are shown the queue MG1 was
-/// shown the step before (#66). Row K-HTTP re-records these files from the 10-06 bundle.
+/// shown the step before (#66); `accept` by the current holder answers `{"saved":true}`
+/// (`queue.json` #105; ticket #328, row Q1). Row K-HTTP re-records these files from the 10-06 bundle.
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     match name {
-        "kiosk/queue.json" => (67..=72).map(|n| (n, Rule::AnswersAs(66))).collect(),
+        "kiosk/queue.json" => {
+            let mut rules: Vec<(usize, Rule)> =
+                (67..=72).map(|n| (n, Rule::AnswersAs(66))).collect();
+            rules.push((105, Rule::AnswersAs(103)));
+            rules
+        }
         _ => Vec::new(),
     }
 }
@@ -526,5 +532,37 @@ async fn the_answers_keep_v2s_key_order() {
         "{}",
         rates.text
     );
+    counter.finish().await;
+}
+
+/// The holder pressing accept again gets {"saved":true} (ticket #328).
+#[actix_web::test]
+async fn a_holder_accepting_again_gets_saved() {
+    let fr1 = person("FR1", "FRONT", 0x11);
+    let fr2 = person("FR2", "FRONT", 0x12);
+    let counter = Counter::open(&[fr1.clone(), fr2.clone()]).await;
+    let id = counter
+        .waiting_request("00000000-0000-4000-8000-0000000c0001")
+        .await;
+
+    let accepted = counter
+        .ask(Some("FR1"), "accept", json!({ "id": id }))
+        .await;
+    assert_eq!(accepted.status, 200, "{}", accepted.text);
+    assert_eq!(accepted.text, "{\"saved\":true}");
+
+    // The holder presses accept again: answered as saved, not refused.
+    let repeat = counter
+        .ask(Some("FR1"), "accept", json!({ "id": id }))
+        .await;
+    assert_eq!(repeat.status, 200, "{}", repeat.text);
+    assert_eq!(repeat.text, "{\"saved\":true}");
+
+    // Another employee pressing accept is refused as already assigned.
+    counter
+        .ask(Some("FR2"), "accept", json!({ "id": id }))
+        .await
+        .assert_refused(400, ALREADY_ASSIGNED, "another employee");
+
     counter.finish().await;
 }

@@ -23,9 +23,13 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
+use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
+use xc_kiosk::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
+use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
@@ -399,48 +403,66 @@ async fn handle_kiosk(
             }
             Err(err) => handle_service_error(err),
         },
-        KioskAction::List => match service.list(&branch, &kiosk_actor, now).await {
-            Ok(requests) => {
-                let mut staff_names = Vec::with_capacity(requests.len());
-                for req in &requests {
-                    if let Some(ref staff_id) = req.request.staff {
-                        let maybe_username: Option<String> = sqlx::query_scalar(
-                            "SELECT username FROM employees WHERE id = $1 \
-                             UNION ALL \
-                             SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
-                             LIMIT 1",
-                        )
-                        .bind(staff_id)
-                        .fetch_optional(pool)
-                        .await
-                        .ok()
-                        .flatten();
-                        staff_names.push(maybe_username.unwrap_or_else(|| staff_id.clone()));
-                    } else {
-                        staff_names.push(String::new());
+        KioskAction::List => {
+            match service
+                .list(&branch, &kiosk_actor, QueueFilter::All, 0, now)
+                .await
+            {
+                Ok(queue_page) => {
+                    let requests: Vec<IdentifiedRequest> = queue_page
+                        .items
+                        .into_iter()
+                        .map(|item| IdentifiedRequest {
+                            request: item.request,
+                            identity: item.identity,
+                        })
+                        .collect();
+                    let mut staff_names = Vec::with_capacity(requests.len());
+                    for req in &requests {
+                        if let Some(ref staff_id) = req.request.staff {
+                            let maybe_username: Option<String> = sqlx::query_scalar(
+                                "SELECT username FROM employees WHERE id = $1 \
+                                 UNION ALL \
+                                 SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
+                                 LIMIT 1",
+                            )
+                            .bind(staff_id)
+                            .fetch_optional(pool)
+                            .await
+                            .ok()
+                            .flatten();
+                            staff_names.push(maybe_username.unwrap_or_else(|| staff_id.clone()));
+                        } else {
+                            staff_names.push(String::new());
+                        }
                     }
+                    let branch_name: String =
+                        sqlx::query_scalar("SELECT name FROM branches WHERE id = $1")
+                            .bind(branch.as_str())
+                            .fetch_optional(pool)
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default();
+                    json_response(dto_kiosk::list_json(
+                        &branch,
+                        &requests,
+                        &staff_names,
+                        &branch_name,
+                    ))
                 }
-                let branch_name: String =
-                    sqlx::query_scalar("SELECT name FROM branches WHERE id = $1")
-                        .bind(branch.as_str())
-                        .fetch_optional(pool)
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default();
-                json_response(dto_kiosk::list_json(
-                    &branch,
-                    &requests,
-                    &staff_names,
-                    &branch_name,
-                ))
+                Err(err) => handle_service_error(err),
             }
-            Err(err) => handle_service_error(err),
-        },
+        }
         KioskAction::Accept => {
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
             match service.accept(&branch, &kiosk_actor, id, now).await {
-                Ok(()) => saved_response(),
+                Ok(AcceptOutcome::Claimed(_)) | Ok(AcceptOutcome::AlreadyMine(_)) => {
+                    saved_response()
+                }
+                Ok(AcceptOutcome::HeldBy(_)) | Ok(AcceptOutcome::Unavailable) => {
+                    refuse(400, &KioskError::AlreadyAssignedOrUnavailable.to_string())
+                }
                 Err(err) => handle_service_error(err),
             }
         }

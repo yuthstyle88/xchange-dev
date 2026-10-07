@@ -49,6 +49,9 @@ impl KioskService {
             .map_err(refuse)?;
         if let Some(event) = moved.event {
             self.repo.update_in(tx, branch, &moved.request).await?;
+            self.repo
+                .mark_completed_in(tx, branch, id, cut_to_millis(now))
+                .await?;
             let line = line_for(event, &moved.request, username(actor));
             self.ports
                 .record_in(tx, branch, &line, cut_to_millis(now))

@@ -1,3 +1,4 @@
+pub mod accept_outcome;
 pub mod audit_line;
 pub mod counter_facts;
 pub mod counter_view;
@@ -17,9 +18,12 @@ pub mod kiosk_time;
 pub mod notifications;
 pub mod payment_method;
 pub mod public_rates;
+pub mod queue_filter;
+pub mod queue_page;
 pub mod quote_limit;
 pub mod receipt_image;
 pub mod request_identity;
 pub mod save_attempt;
 pub mod transaction_link;
 pub mod transition;
+pub mod work_times;

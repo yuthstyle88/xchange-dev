@@ -12,6 +12,10 @@
 //! `api/migrations/` applied, so tests run in parallel and the migration is
 //! exercised from an empty schema every time. SQL in the migration and in the
 //! implementation must therefore name tables without a schema prefix.
+//!
+//! Edited by the author of ticket #328 (row Q1, design §5.5.3): `list` takes a filter and a page
+//! and answers a `QueuePage`, `accept` answers an `AcceptOutcome`. `play` prints the outcome in the
+//! words of the 10-06 bundle, which the fixture recorded (see `accept_answer`).
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
@@ -35,7 +39,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
 
-pub use xc_kiosk::application::kiosk::service::{KioskService, QUEUE_LIMIT};
+pub use xc_kiosk::application::kiosk::service::KioskService;
 pub use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 pub use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 pub use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
@@ -43,6 +47,7 @@ pub use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_request::KioskRequest;
 pub use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
+pub use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 pub use xc_kiosk::domain::kiosk::value_objects::audit_line::{
     AuditLine, CUSTOMER_KIOSK, KioskAudit,
 };
@@ -60,11 +65,14 @@ pub use xc_kiosk::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_time::KioskTime;
 pub use xc_kiosk::domain::kiosk::value_objects::notifications::Notifications;
 pub use xc_kiosk::domain::kiosk::value_objects::public_rates::PublicRates;
+pub use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
+pub use xc_kiosk::domain::kiosk::value_objects::queue_page::QueuePage;
 pub use xc_kiosk::domain::kiosk::value_objects::quote_limit::QuoteLimit;
 pub use xc_kiosk::domain::kiosk::value_objects::receipt_image::ReceiptImage;
 pub use xc_kiosk::domain::kiosk::value_objects::request_identity::RequestIdentity;
 pub use xc_kiosk::domain::kiosk::value_objects::save_attempt::SaveAttempt;
 pub use xc_kiosk::domain::kiosk::value_objects::transaction_link::TransactionLink;
+pub use xc_kiosk::domain::kiosk::value_objects::work_times::WorkTimes;
 
 /// Upper bound for anything that must finish.
 pub const MUST_FINISH: Duration = Duration::from_secs(30);
@@ -76,6 +84,13 @@ pub const TOO_MANY_QUOTES: &str = "Too many requests. Please wait a moment and t
 pub const INVALID_IMAGE: &str = "Invalid receipt image.";
 pub const NOT_READY: &str = "คิวนี้ไม่พร้อมบันทึกหรือบันทึกแล้ว";
 pub const PNG: &str = "data:image/png;base64,iVBORw0KGgo=";
+/// The 10-06 bundle's `accept` with nothing to claim (`queue-work.mjs:12`).
+pub const NOTHING_TO_CLAIM: &str = "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด";
+
+/// The 10-06 bundle's `accept` of a request somebody holds (`queue-work.mjs:12`).
+pub fn held_by(holder: &str) -> String {
+    format!("ออเดอร์นี้มี {holder} กำลังทำรายการแล้ว")
+}
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -932,9 +947,10 @@ pub async fn play(name: &str) -> Vec<String> {
             "notifications" => service.notifications(&b, &actor).await.map(|n| {
                 json!({ "branchName": n.branch_name, "count": n.count, "latest": n.latest })
             }),
-            "list" => service.list(&b, &actor, now).await.map(|list| {
+            "list" => service.list(&b, &actor, QueueFilter::All, 0, now).await.map(|page| {
                 Value::Array(
-                    list.iter()
+                    page.items
+                        .iter()
                         .map(|x| {
                             let mut out = identity_json(&x.identity);
                             out["staff"] = json!(x.request.staff);
@@ -948,7 +964,7 @@ pub async fn play(name: &str) -> Vec<String> {
             "accept" => service
                 .accept(&b, &actor, id, now)
                 .await
-                .map(|()| Value::Null),
+                .and_then(accept_answer),
             "get" => service.get(&b, &actor, id).await.map(|r| {
                 let queue = KioskMachine::identity(Some(&r), kiosk_time(now))
                     .expect("identity of a stored request")
@@ -1104,6 +1120,27 @@ pub async fn play(name: &str) -> Vec<String> {
         db.finish().await;
     }
     wrong
+}
+
+/// An `AcceptOutcome` in the words the 10-06 bundle answers with (`queue-work.mjs:6-13`): a claim and
+/// the holder again are answers with the times, in milliseconds after `T0`; `HeldBy` and
+/// `Unavailable` are its two refusals, as the route says them (row K-HTTP). The service writes nothing
+/// for the last three.
+pub fn accept_answer(outcome: AcceptOutcome) -> AppResult<Value> {
+    let answer = |claimed: bool, t: WorkTimes| {
+        json!({
+            "claimed": claimed,
+            "startedAt": t.started_at.map(|s| s.epoch_millis() - T0),
+            "completedAt": t.completed_at.map(|c| c.epoch_millis() - T0),
+            "durationSeconds": t.duration_seconds(),
+        })
+    };
+    match outcome {
+        AcceptOutcome::Claimed(t) => Ok(answer(true, t)),
+        AcceptOutcome::AlreadyMine(t) => Ok(answer(false, t)),
+        AcceptOutcome::HeldBy(holder) => Err(AppError::Domain(held_by(&holder))),
+        AcceptOutcome::Unavailable => Err(AppError::Domain(NOTHING_TO_CLAIM.to_owned())),
+    }
 }
 
 /// `now` as the machine counts it.

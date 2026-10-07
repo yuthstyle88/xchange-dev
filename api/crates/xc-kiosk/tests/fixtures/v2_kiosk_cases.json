@@ -1,5 +1,5 @@
 {
- "source": "v2 kiosk module (server.mjs:7894-8076 of the deployed bundle, xchange-online@3ffc5a5), evaluated unchanged with a set clock, counted ids and an in-memory store in place of PostgreSQL; driven by gen_kiosk.mjs",
+ "source": "v2 kiosk module (server.mjs:7894-8076 of the deployed bundle, xchange-online@3ffc5a5), evaluated unchanged with a set clock, counted ids and an in-memory store in place of PostgreSQL; driven by gen_kiosk.mjs; the holder's repeat accept from the 10-06 bundle (queue-work.mjs)",
  "people": {
   "customer": null,
   "owner": {
@@ -13215,7 +13215,9 @@
     {
      "actor": "F1",
      "action": "accept",
-     "error": "This request is already assigned or unavailable."
+     "error": null,
+     "event": null,
+     "unchanged": true
     },
     {
      "actor": "F2",
@@ -13929,7 +13931,9 @@
     {
      "actor": "F1",
      "action": "accept",
-     "error": "This request is already assigned or unavailable."
+     "error": null,
+     "event": null,
+     "unchanged": true
     },
     {
      "actor": "F2",
@@ -16773,7 +16777,7 @@
      "actor": "F1",
      "action": "accept",
      "now": 1791262812500,
-     "note": "accepting twice is refused too, even by the one who holds it",
+     "note": "the one who holds it, again: answered, nothing written (10-06 bundle)",
      "before": {
       "id": "ac55c1df-7e57-4000-8000-000000000001",
       "status": "ACCEPTED",
@@ -16790,7 +16794,24 @@
       },
       "transaction": null
      },
-     "error": "This request is already assigned or unavailable."
+     "error": null,
+     "after": {
+      "id": "ac55c1df-7e57-4000-8000-000000000001",
+      "status": "ACCEPTED",
+      "created": 1791262800000,
+      "staff": "front1",
+      "quote": {
+       "type": "BUY",
+       "currency": "USD",
+       "rate": "32.1000",
+       "foreign": "250.50",
+       "thb": "8041.05",
+       "inputAmount": "250.50",
+       "paymentMethod": "Cash"
+      },
+      "transaction": null
+     },
+     "event": null
     },
     {
      "actor": "F2",

@@ -166,13 +166,24 @@ impl KioskMachine {
                     KioskActor::Customer => return Err(KioskError::StaffRequired),
                 };
 
-                // 2. request is None, or its status is not Waiting -> AlreadyAssignedOrUnavailable.
                 let req = match request {
-                    Some(r) if r.status == KioskStatus::Waiting => r,
-                    _ => return Err(KioskError::AlreadyAssignedOrUnavailable),
+                    Some(r) => r,
+                    None => return Err(KioskError::AlreadyAssignedOrUnavailable),
                 };
 
-                // 3. Ok: status = Accepted, staff = Some(me); event Accepted.
+                if (req.status == KioskStatus::Accepted || req.status == KioskStatus::IdChecked)
+                    && req.staff.as_deref() == Some(username.as_str())
+                {
+                    return Ok(Transition {
+                        request: req.clone(),
+                        event: None,
+                    });
+                }
+
+                if req.status != KioskStatus::Waiting {
+                    return Err(KioskError::AlreadyAssignedOrUnavailable);
+                }
+
                 let mut next_req = req.clone();
                 next_req.status = KioskStatus::Accepted;
                 next_req.staff = Some(username.clone());

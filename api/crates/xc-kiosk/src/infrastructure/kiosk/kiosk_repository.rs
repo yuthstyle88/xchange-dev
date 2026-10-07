@@ -13,9 +13,12 @@ use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
 use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
+use crate::domain::kiosk::value_objects::notifications::WorkingRequest;
 use crate::domain::kiosk::value_objects::payment_method::PaymentMethod;
+use crate::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use crate::domain::kiosk::value_objects::receipt_image::ReceiptImage;
 use crate::domain::kiosk::value_objects::transaction_link::TransactionLink;
+use crate::domain::kiosk::value_objects::work_times::WorkTimes;
 
 type Tx<'a, 'c> = &'a mut sqlx::Transaction<'c, sqlx::Postgres>;
 
@@ -145,6 +148,50 @@ impl RequestRow {
 
 fn into_requests(rows: Vec<RequestRow>) -> AppResult<Vec<KioskRequest>> {
     rows.into_iter().map(RequestRow::into_request).collect()
+}
+
+#[derive(sqlx::FromRow)]
+struct QueueRow {
+    id: String,
+    status: String,
+    created_at: DateTime<Utc>,
+    staff: Option<String>,
+    side: String,
+    currency: String,
+    rate: Decimal,
+    foreign_amount: Decimal,
+    thb: Decimal,
+    input_amount: Decimal,
+    payment_method: String,
+    submission_id: Option<String>,
+    document_ref: Option<String>,
+    started_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+}
+
+impl QueueRow {
+    fn into_request_and_times(self) -> AppResult<(KioskRequest, WorkTimes)> {
+        let times = WorkTimes {
+            started_at: self.started_at.map(time_from),
+            completed_at: self.completed_at.map(time_from),
+        };
+        let row = RequestRow {
+            id: self.id,
+            status: self.status,
+            created_at: self.created_at,
+            staff: self.staff,
+            side: self.side,
+            currency: self.currency,
+            rate: self.rate,
+            foreign_amount: self.foreign_amount,
+            thb: self.thb,
+            input_amount: self.input_amount,
+            payment_method: self.payment_method,
+            submission_id: self.submission_id,
+            document_ref: self.document_ref,
+        };
+        Ok((row.into_request()?, times))
+    }
 }
 
 fn into_switches(rows: Vec<(String, bool)>) -> AppResult<Vec<CurrencySwitch>> {
@@ -318,6 +365,153 @@ impl KioskRepository for PgKioskRepository {
             .fetch_all(&self.pool)
             .await?;
         into_requests(rows)
+    }
+
+    async fn queue_page(
+        &self,
+        branch: &BranchId,
+        filter: QueueFilter,
+        page: u32,
+    ) -> AppResult<Vec<(KioskRequest, WorkTimes)>> {
+        let offset = (page as i64) * 50;
+        let query_str = match filter {
+            QueueFilter::All => {
+                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                 started_at, completed_at \
+                 FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
+                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
+            }
+            QueueFilter::Waiting => {
+                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                 started_at, completed_at \
+                 FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
+                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
+            }
+            QueueFilter::Working => {
+                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                 started_at, completed_at \
+                 FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
+                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
+            }
+            QueueFilter::Completed => {
+                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                 started_at, completed_at \
+                 FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
+                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
+            }
+        };
+        let rows = sqlx::query_as::<_, QueueRow>(query_str)
+            .bind(branch.as_str())
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(QueueRow::into_request_and_times)
+            .collect()
+    }
+
+    async fn working(
+        &self,
+        branch: &BranchId,
+        limit: i64,
+    ) -> AppResult<(Vec<WorkingRequest>, i64)> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM kiosk_requests \
+             WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED')",
+        )
+        .bind(branch.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+
+        #[derive(sqlx::FromRow)]
+        struct WorkingRow {
+            id: String,
+            staff: Option<String>,
+            started_at: Option<DateTime<Utc>>,
+            status: String,
+        }
+
+        let rows = sqlx::query_as::<_, WorkingRow>(
+            "SELECT id, staff, started_at, status FROM kiosk_requests \
+             WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
+             ORDER BY started_at ASC NULLS LAST, id ASC LIMIT $2",
+        )
+        .bind(branch.as_str())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut working = Vec::with_capacity(rows.len());
+        for row in rows {
+            working.push(WorkingRequest {
+                id: row.id,
+                staff: row.staff.unwrap_or_default(),
+                started_at: row.started_at.map(time_from),
+                status: status_from(&row.status)?,
+            });
+        }
+        Ok((working, count))
+    }
+
+    async fn mark_started_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        at: DateTime<Utc>,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE kiosk_requests SET started_at = $3 WHERE branch_id = $1 AND id = $2")
+            .bind(branch.as_str())
+            .bind(id)
+            .bind(at)
+            .execute(&mut **tx)
+            .await?;
+        Ok(())
+    }
+
+    async fn mark_completed_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        at: DateTime<Utc>,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE kiosk_requests SET completed_at = COALESCE(completed_at, $3) WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(at)
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn times_in(&self, tx: Tx<'_, '_>, branch: &BranchId, id: &str) -> AppResult<WorkTimes> {
+        #[derive(sqlx::FromRow)]
+        struct TimesRow {
+            started_at: Option<DateTime<Utc>>,
+            completed_at: Option<DateTime<Utc>>,
+        }
+
+        let row = sqlx::query_as::<_, TimesRow>(
+            "SELECT started_at, completed_at FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        match row {
+            Some(r) => Ok(WorkTimes {
+                started_at: r.started_at.map(time_from),
+                completed_at: r.completed_at.map(time_from),
+            }),
+            None => Ok(WorkTimes::default()),
+        }
     }
 
     async fn switches(&self, branch: &BranchId) -> AppResult<Vec<CurrencySwitch>> {

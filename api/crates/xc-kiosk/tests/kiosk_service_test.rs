@@ -20,6 +20,11 @@
 //! route asks it — so the role steps left the fixture (`gen_kiosk_service.mjs` says which) and
 //! the role refusals left `a_branch_that_does_not_exist_is_refused_whatever_is_asked`.
 //! They are pinned in `crates/xc-auth/tests/policy_kiosk_test.rs` and `api/tests/kiosk_policy_route_test.rs`.
+//!
+//! Edited by the author of ticket #328 (row Q1, design §5.5.3): the queue is read a page of fifty at a
+//! time and `accept` answers an `AcceptOutcome`, as the 10-06 bundle's `queue-work.mjs` does — so the
+//! fixture's `accept` steps and its page size are recorded from that bundle (`gen_kiosk_service.mjs`),
+//! and the hand-written cases below ask the same questions of the new shapes.
 
 mod kiosk_service_common;
 
@@ -132,7 +137,7 @@ fn every_story_of_the_fixture_is_played_above() {
 #[test]
 fn the_limits_are_the_ones_measured_on_v2() {
     let limits = &fixture()["limits"];
-    assert_eq!(limits["listLimit"], QUEUE_LIMIT);
+    assert_eq!(limits["pageSize"], 50);
     assert_eq!(limits["receiptImageMaxLength"], ReceiptImage::MAX_LENGTH);
     let mut defaults: Vec<&str> = DEFAULT_CODES.to_vec();
     defaults.sort_unstable();
@@ -202,9 +207,9 @@ fn the_sentences_of_the_service_are_these() {
     );
 }
 
-/// 103 confirmed requests: the queue shows the newest 100, the bell counts all.
+/// 103 confirmed requests: the queue shows them fifty to a page, newest first; the bell counts all.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_queue_shows_the_newest_hundred_and_the_bell_counts_them_all() {
+async fn the_queue_shows_fifty_to_a_page_and_the_bell_counts_them_all() {
     let db = TestDb::start().await;
     let service = db.service(FakePorts::standard());
     let main = branch(MAIN);
@@ -223,19 +228,35 @@ async fn the_queue_shows_the_newest_hundred_and_the_bell_counts_them_all() {
             .await
             .expect("confirm");
     }
-    let listed = service
-        .list(&main, &front1(), at(9000))
-        .await
-        .expect("list");
+    let mut pages = Vec::new();
+    for n in 0..3 {
+        pages.push(
+            service
+                .list(&main, &front1(), QueueFilter::All, n, at(9000))
+                .await
+                .expect("list"),
+        );
+    }
     let limits = &fixture()["limits"];
-    assert_eq!(json!(listed.len()), limits["listLimit"]);
-    assert_eq!(listed.len(), 100);
-    assert_eq!(listed[0].request.id, id(103), "newest first");
+    let sizes: Vec<usize> = pages.iter().map(|p| p.items.len()).collect();
+    let more: Vec<bool> = pages.iter().map(|p| p.has_more).collect();
+    assert_eq!(json!(sizes), limits["pagesOf103"]);
+    assert_eq!(sizes, [50, 50, 3]);
+    assert_eq!(json!(more), limits["hasMoreOf103"]);
+    let numbers: Vec<u32> = pages.iter().map(|p| p.page).collect();
+    assert_eq!(numbers, [0, 1, 2]);
+    assert_eq!(pages[0].items[0].request.id, id(103), "newest first");
     assert_eq!(
-        json!(listed[99].request.id),
-        json!(id(limits["listedOldestOf103"].as_i64().expect("n"))),
-        "the three oldest are cut"
+        json!(pages[0].items[49].request.id),
+        json!(id(limits["firstPageOldestOf103"].as_i64().expect("n"))),
+        "the first page ends at the 54th request made"
     );
+    let all: Vec<String> = pages
+        .iter()
+        .flat_map(|p| p.items.iter().map(|i| i.request.id.clone()))
+        .collect();
+    let newest_first: Vec<String> = (1..=103).rev().map(id).collect();
+    assert_eq!(all, newest_first, "every request once, page after page");
     let bell = service.notifications(&main, &front1()).await.expect("bell");
     assert_eq!(json!(bell.count), limits["waitingCountOf103"]);
     assert_eq!(bell.latest, Some(id(103)));
@@ -279,7 +300,11 @@ async fn a_branch_that_does_not_exist_is_refused_whatever_is_asked() {
         NO_SUCH_BRANCH
     );
     assert_eq!(
-        refusal(service.list(&nope, &f1, at(7000)).await),
+        refusal(
+            service
+                .list(&nope, &f1, QueueFilter::All, 0, at(7000))
+                .await
+        ),
         NO_SUCH_BRANCH
     );
     assert_eq!(
@@ -796,7 +821,7 @@ async fn every_write_waits_for_the_branch_lock() {
             let (s, b, f) = (service.clone(), main.clone(), f1.clone());
             Box::new(move || {
                 let (s, b, f) = (s.clone(), b.clone(), f.clone());
-                tokio::spawn(async move { s.accept(&b, &f, "q2", at(7000)).await })
+                tokio::spawn(async move { s.accept(&b, &f, "q2", at(7000)).await.map(|_| ()) })
             })
         }),
         ("identityChecked", {
@@ -902,7 +927,8 @@ async fn every_write_waits_for_the_branch_lock() {
         .await;
 }
 
-/// Two employees accept the same request at the same moment: one gets it.
+/// Two employees accept the same request at the same moment: one claims it, the other is told who
+/// holds it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_request_accepted_twice_at_once_goes_to_one_employee() {
     let db = TestDb::start().await;
@@ -927,11 +953,25 @@ async fn a_request_accepted_twice_at_once_goes_to_one_employee() {
             service.accept(&main, &f1, &id, at(5000)),
             service.accept(&main, &f2, &id, at(5000))
         );
-        let refused = match (a, b) {
-            (Ok(()), other) | (other, Ok(())) => refusal(other),
-            (a, b) => panic!("round {round}: nobody got the request: {a:?} / {b:?}"),
+        let (a, b) = (a.expect("front1's outcome"), b.expect("front2's outcome"));
+        let (holder, times, other) = match (&a, &b) {
+            (AcceptOutcome::Claimed(t), other) => ("front1", t, other),
+            (other, AcceptOutcome::Claimed(t)) => ("front2", t, other),
+            _ => panic!("round {round}: nobody got the request: {a:?} / {b:?}"),
         };
-        assert_eq!(refused, "This request is already assigned or unavailable.");
+        assert_eq!(
+            other,
+            &AcceptOutcome::HeldBy(holder.to_owned()),
+            "round {round}"
+        );
+        assert_eq!(
+            times,
+            &WorkTimes {
+                started_at: Some(kiosk_time(exact(5000))),
+                completed_at: None,
+            },
+            "round {round}"
+        );
         assert_eq!(db.status(MAIN, &id).await.as_deref(), Some("ACCEPTED"));
     }
     assert_eq!(
@@ -1013,13 +1053,13 @@ async fn a_quote_answers_the_request_it_stored() {
         .await
         .expect("confirm");
     let listed = service
-        .list(&main, &front1(), at(5000))
+        .list(&main, &front1(), QueueFilter::All, 0, at(5000))
         .await
         .expect("list");
-    assert_eq!(listed.len(), 1);
+    assert_eq!(listed.items.len(), 1);
     let mut expected = made.request.clone();
     expected.status = KioskStatus::Waiting;
-    assert_eq!(listed[0].request, expected);
+    assert_eq!(listed.items[0].request, expected);
 
     service
         .accept(&main, &front1(), &made.request.id, at(6000))
@@ -1054,10 +1094,10 @@ async fn a_computed_figure_far_above_the_entry_cap_is_stored_whole() {
         .await
         .expect("confirm");
     let listed = service
-        .list(&main, &front1(), at(5000))
+        .list(&main, &front1(), QueueFilter::All, 0, at(5000))
         .await
         .expect("list");
-    assert_eq!(listed[0].request.quote, made.request.quote);
+    assert_eq!(listed.items[0].request.quote, made.request.quote);
     db.finish().await;
 }
 
@@ -1076,10 +1116,10 @@ async fn the_service_does_not_ask_who_may_call() {
     let main = branch(MAIN);
 
     let listed = service
-        .list(&main, &rates1(), at(7000))
+        .list(&main, &rates1(), QueueFilter::All, 0, at(7000))
         .await
         .expect("the queue, to an employee of Rates");
-    assert_eq!(listed.len(), 1, "the one waiting request");
+    assert_eq!(listed.items.len(), 1, "the one waiting request");
 
     let currencies = service
         .manage(&main, &front1())
