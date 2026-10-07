@@ -292,6 +292,19 @@ class _SelectPageState extends ConsumerState<SelectPage> {
             ],
             onChanged: c.setPaymentMethod,
           ),
+          // The owner's instruction for the chosen channel (v2 `kiosk.js:51`).
+          if (s.paymentInstruction.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              s.paymentInstruction,
+              key: const Key('payment-instruction'),
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: KioskColors.ink,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             l.text('callAgent'),

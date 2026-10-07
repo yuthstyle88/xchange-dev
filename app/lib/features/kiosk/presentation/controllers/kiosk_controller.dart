@@ -122,8 +122,29 @@ class KioskState {
     return null;
   }
 
-  List<String> get availablePaymentMethods =>
-      type == ExchangeType.buy ? buyPaymentMethods : paymentMethods;
+  List<String> get availablePaymentMethods => offeredPaymentMethods(type);
+
+  /// The channels offered for [direction]: with the branch's channels, those
+  /// on for it, in the kiosk's order (v2 `kiosk.js:42`; a channel with no row
+  /// is not offered); without them, the fixed lists.
+  List<String> offeredPaymentMethods(ExchangeType direction) {
+    final channels = model?.paymentMethods;
+    if (channels == null) {
+      return direction == ExchangeType.buy ? buyPaymentMethods : paymentMethods;
+    }
+    return [
+      for (final id in paymentMethods)
+        if (channels.any((c) => c.id == id && c.offeredFor(direction))) id,
+    ];
+  }
+
+  /// The chosen channel's instruction for the customer, '' when there is none.
+  String get paymentInstruction {
+    for (final c in model?.paymentMethods ?? const <PaymentChannel>[]) {
+      if (c.id == paymentMethod) return c.instruction;
+    }
+    return '';
+  }
 
   Estimate? get estimate {
     final rate = selectedRate?.rateFor(type) ?? 0;
@@ -149,7 +170,8 @@ class KioskState {
         (model?.open ?? false) &&
         e != null &&
         e.foreign > 0 &&
-        paymentMethod != null;
+        paymentMethod != null &&
+        availablePaymentMethods.contains(paymentMethod);
   }
 
   bool get canConfirm =>
@@ -240,12 +262,14 @@ class KioskController extends Notifier<KioskState> {
       if (_disposed) return;
       final keep = m.rates.any((r) => r.code == state.currency);
       _set(
-        state.copyWith(
-          model: m,
-          currency: keep
-              ? state.currency
-              : (m.rates.isEmpty ? null : m.rates.first.code),
-          error: m.open ? '' : _t.text('closed'),
+        _keepOfferedMethod(
+          state.copyWith(
+            model: m,
+            currency: keep
+                ? state.currency
+                : (m.rates.isEmpty ? null : m.rates.first.code),
+            error: m.open ? '' : _t.text('closed'),
+          ),
         ),
       );
     } catch (e) {
@@ -287,7 +311,11 @@ class KioskController extends Notifier<KioskState> {
       final error = openChanged
           ? (m.open ? '' : _t.text('closed'))
           : state.error;
-      _set(state.copyWith(model: m, currency: currency, error: error));
+      _set(
+        _keepOfferedMethod(
+          state.copyWith(model: m, currency: currency, error: error),
+        ),
+      );
     } catch (_) {}
   }
 
@@ -310,9 +338,7 @@ class KioskController extends Notifier<KioskState> {
   }
 
   void setType(ExchangeType value) {
-    final allowed = value == ExchangeType.buy
-        ? buyPaymentMethods
-        : paymentMethods;
+    final allowed = state.offeredPaymentMethods(value);
     _set(
       state.copyWith(
         type: value,
@@ -322,6 +348,13 @@ class KioskController extends Notifier<KioskState> {
       ),
     );
   }
+
+  /// [next] with its chosen channel cleared when the channels it now has do
+  /// not offer it (v2 `kiosk.js:42`).
+  KioskState _keepOfferedMethod(KioskState next) =>
+      next.availablePaymentMethods.contains(next.paymentMethod)
+      ? next
+      : next.copyWith(paymentMethod: null);
 
   void setCurrency(String code) => _set(state.copyWith(currency: code));
 

@@ -69,26 +69,68 @@ class CurrencyRate {
   );
 }
 
+/// One payment channel as `rates` prints it (§5.5.2): whether the branch has
+/// it on, for which direction, and the owner's instruction for the customer.
+class PaymentChannel {
+  const PaymentChannel({
+    required this.id,
+    required this.enabled,
+    required this.buy,
+    required this.sell,
+    required this.instruction,
+  });
+  final String id;
+  final bool enabled, buy, sell;
+  final String instruction;
+
+  /// On for [type]: BUY pays baht out, SELL takes baht in.
+  bool offeredFor(ExchangeType type) =>
+      enabled && (type == ExchangeType.buy ? buy : sell);
+
+  factory PaymentChannel.fromJson(Map<String, dynamic> j) => PaymentChannel(
+    id: '${j['id'] ?? ''}',
+    enabled: j['enabled'] == true,
+    buy: j['buy'] == true,
+    sell: j['sell'] == true,
+    instruction: '${j['instruction'] ?? ''}',
+  );
+}
+
 class RatesModel {
   const RatesModel({
     required this.branchId,
     required this.branchName,
     required this.open,
     required this.rates,
+    this.paymentMethods,
   });
   final String branchId, branchName;
   final bool open;
   final List<CurrencyRate> rates;
 
-  factory RatesModel.fromJson(Map<String, dynamic> j) => RatesModel(
-    branchId: '${j['branchId'] ?? ''}',
-    branchName: '${j['branchName'] ?? ''}',
-    open: j['open'] == true,
-    rates: [
-      for (final r in (j['rates'] as List?) ?? const [])
-        CurrencyRate.fromJson(r as Map<String, dynamic>),
-    ],
-  );
+  /// The branch's channels, or null when the answer has none (the deployed
+  /// v2 server, or v3 before K-HTTP): the kiosk then keeps its fixed lists.
+  final List<PaymentChannel>? paymentMethods;
+
+  factory RatesModel.fromJson(Map<String, dynamic> j) {
+    final methods = j['paymentMethods'];
+    return RatesModel(
+      branchId: '${j['branchId'] ?? ''}',
+      branchName: '${j['branchName'] ?? ''}',
+      open: j['open'] == true,
+      rates: [
+        for (final r in (j['rates'] as List?) ?? const [])
+          CurrencyRate.fromJson(r as Map<String, dynamic>),
+      ],
+      paymentMethods: methods is List
+          ? [
+              for (final m in methods)
+                if (m is Map)
+                  PaymentChannel.fromJson(Map<String, dynamic>.from(m)),
+            ]
+          : null,
+    );
+  }
 }
 
 /// The identity block every kiosk answer carries.
