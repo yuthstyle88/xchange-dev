@@ -16,10 +16,14 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
+use crate::infrastructure::device_agents::agent_repository::AgentRepository;
+use crate::infrastructure::device_agents::pg_agent_repository::PgAgentRepository;
+
 use super::device_commands::{QueueJob, SavedExchange};
 use super::device_event::DeviceEvent;
 use super::device_job::{DeviceJob, JobKind, JobStatus};
 use super::device_repository::{DeviceRepository, NewEvent, NewJob, PRINTER_ONLINE, StoredJob};
+use super::drawer_job::{DrawerJobKey, DrawerJobOutcome};
 use super::job_ids::JobIds;
 use super::pg_device_repository::PgDeviceRepository;
 use super::printer_models::{DrawerSettings, HAS_DRAWER, PRINTER_MODEL, PrinterModels};
@@ -67,6 +71,7 @@ pub struct DeviceService {
     branch_tx: BranchTx,
     branches: BranchService,
     repo: PgDeviceRepository,
+    agents: PgAgentRepository,
     exchanges: Arc<dyn SavedExchanges>,
     ids: Arc<dyn JobIds>,
     driver: Arc<dyn DeviceDriver>,
@@ -136,11 +141,13 @@ impl DeviceService {
         ids: Arc<dyn JobIds>,
     ) -> Self {
         let repo = PgDeviceRepository::new(branch_tx.pool().clone());
+        let agents = PgAgentRepository::new(branch_tx.pool().clone());
         let branches = BranchService::new(branch_tx.clone());
         Self {
             branch_tx,
             branches,
             repo,
+            agents,
             exchanges,
             ids,
             driver: Arc::new(SimulatedDriver),
@@ -275,6 +282,135 @@ impl DeviceService {
             .await
     }
 
+    /// Runs on the caller's transaction, which already holds the branch lock.
+    pub async fn queue_drawer_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        key: DrawerJobKey,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<DrawerJobOutcome> {
+        if !is_branch_name(branch.as_str()) {
+            return refuse(BAD_BRANCH);
+        }
+
+        let now = cut_to_millis(now)?;
+        let request_id = key.request_id(branch);
+
+        if let Some(stored) = self
+            .repo
+            .find_job_by_request(tx, branch, &request_id)
+            .await?
+        {
+            return Ok(DrawerJobOutcome::Existing(stored.job));
+        }
+
+        if !self.agents.has_active_agent_in(tx, branch).await? {
+            return Ok(DrawerJobOutcome::NoAgent);
+        }
+
+        let settings =
+            DrawerSettings::read_in(tx, &self.repo, branch, &self.printer_models).await?;
+        let has_pulse = self
+            .printer_models
+            .get(&settings.model)
+            .and_then(|m| m.drawer_pulse.as_ref())
+            .is_some();
+
+        if settings.has_drawer == Some(false) || !has_pulse {
+            let line = NewEvent {
+                dedupe: None,
+                actor,
+                kind: "DRAWER_SKIPPED",
+                reference: key.reference(),
+                detail: &json!({}),
+                amounts: &[],
+                at: now,
+            };
+            self.repo.insert_event(tx, branch, &line).await?;
+            return Ok(DrawerJobOutcome::NoDrawer);
+        }
+
+        let kind = JobKind::DrawerRequest;
+        let id = self.ids.next();
+        let reference = key.reference();
+        let reason = key.reason();
+        let hash = sha256_hex(&json!([kind.as_str(), reference, reason, actor]).to_string());
+        let new_job = NewJob {
+            id: &id,
+            request_id: &request_id,
+            request_hash: &hash,
+            reference,
+            kind,
+            actor,
+            at: now,
+        };
+
+        if self.repo.insert_job(tx, branch, &new_job).await? {
+            let detail = json!({
+                "job": id,
+                "reason": reason,
+                "mode": self.driver.mode(),
+                "physicalAction": false,
+            });
+            let line = NewEvent {
+                dedupe: None,
+                actor,
+                kind: kind.as_str(),
+                reference,
+                detail: &detail,
+                amounts: &[],
+                at: now,
+            };
+            self.repo.insert_event(tx, branch, &line).await?;
+            return Ok(DrawerJobOutcome::Queued(DeviceJob {
+                id,
+                request_id,
+                branch_id: branch.as_str().to_owned(),
+                reference: reference.to_owned(),
+                kind,
+                status: JobStatus::Queued,
+                actor: actor.to_owned(),
+                created_at: now,
+                updated_at: now,
+            }));
+        }
+
+        if let Some(prior) = self
+            .repo
+            .find_job_by_request(tx, branch, &request_id)
+            .await?
+        {
+            return Ok(DrawerJobOutcome::Existing(prior.job));
+        }
+
+        Err(AppError::Internal(format!(
+            "drawer job for request {request_id} neither stored nor found"
+        )))
+    }
+
+    /// Queues a drawer job in its own branch transaction.
+    pub async fn queue_drawer(
+        &self,
+        branch: &BranchId,
+        key: DrawerJobKey,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<DrawerJobOutcome> {
+        if !is_branch_name(branch.as_str()) {
+            return refuse(BAD_BRANCH);
+        }
+        let this = self.clone();
+        let b = branch.clone();
+        let actor = actor.to_owned();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { this.queue_drawer_in(tx, &b, key, &actor, now).await })
+            })
+            .await
+    }
+
     /// Carries a queued job out. A job that is not queued is returned as it is.
     pub async fn process(
         &self,
@@ -286,6 +422,7 @@ impl DeviceService {
         self.require_branch(branch).await?;
         let now = cut_to_millis(now)?;
         let repo = self.repo.clone();
+        let agents = self.agents.clone();
         let driver = self.driver.clone();
         let models = self.printer_models.clone();
         let b = branch.clone();
@@ -298,6 +435,11 @@ impl DeviceService {
                         return refuse(NO_SUCH_JOB);
                     };
                     if job.status != JobStatus::Queued {
+                        return Ok(job);
+                    }
+                    if job.kind == JobKind::DrawerRequest
+                        && agents.has_active_agent_in(tx, &b).await?
+                    {
                         return Ok(job);
                     }
                     let printer = PrinterSettings::read_in(tx, &repo, &b).await?;
@@ -651,6 +793,20 @@ impl DeviceService {
             };
             self.repo.insert_event(tx, branch, &line).await?;
         }
+
+        if saved.cash {
+            self.queue_drawer_in(
+                tx,
+                branch,
+                DrawerJobKey::CashSave {
+                    reference: saved.document_ref.clone(),
+                },
+                actor,
+                now,
+            )
+            .await?;
+        }
+
         Ok(())
     }
 }
