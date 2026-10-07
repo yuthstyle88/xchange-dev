@@ -85,7 +85,7 @@ impl KioskMachine {
         let rate = facts.rate.ok_or(KioskError::AmountOrCurrencyInvalid)?;
         let currency = input.currency.ok_or(KioskError::AmountOrCurrencyInvalid)?;
         let amount = input.amount.ok_or(KioskError::AmountOrCurrencyInvalid)?;
-        if amount.is_zero() || amount.minor() > 1_000_000_000 {
+        if amount.is_zero() || amount.minor_i128() > 1_000_000_000 {
             return Err(KioskError::AmountOrCurrencyInvalid);
         }
 
