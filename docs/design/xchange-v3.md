@@ -212,7 +212,7 @@ classDiagram
   class ClientAddress { <<fn, presentation::http::client_address>> +client_address(req) str }
   KioskAuditLog --> DeviceRepository : insert_event into device_events (v2's place)
   KioskService --> ClientAddress : the route takes the quote's client address from client_address only (X-Real-IP)
-  class DeviceService { +queue(); +process(); +retry(); +set_printer_online(); +drawer_observation(); +scan_imported(); +overview(); +require_count_confirmed(cash, confirmed)$; +after_save_in(tx, branch, saved, actor, now) }
+  class DeviceService { +queue(); +process(); +retry(); +set_printer_online(); +drawer_observation(); +scan_imported(); +overview(); +require_count_confirmed(cash, confirmed)$; +after_save_in(tx, branch, saved, actor, now); +set_printer(); +set_drawer(); +with_printer_models(models) }
   class SaveStep { <<trait, application::workflows::save_step>> +before_in(tx, ctx); +after_in(tx, ctx, saved) }
   class DeviceSaveStep { <<application::workflows::device_save_step>> +new(DeviceService) }
   class SavedExchanges { <<trait, infrastructure::devices::saved_exchanges>> +find(branch, ref) Option~ExchangeState~ }
@@ -235,13 +235,13 @@ classDiagram
   class SnapshotBuilder { +admin_snapshot(branch, actor) Json; +desk_config(branch) Json }
   class PageServer { +page(name, actor) Html; +static_file(path) }
   class RateSource { <<trait>> +fetch() Result~ReferenceRates~ }
-  class DeviceDriver { <<trait, async>> +mode() str; +run(kind, printer: PrinterSettings) JobStatus }
+  class DeviceDriver { <<trait, async>> +mode() str; +run(kind, printer: PrinterSettings) JobStatus; +run_with(kind, printer, drawer: DrawerSettings) JobStatus }
   class PrinterSettings { <<infrastructure::devices::printer_settings>> +online: bool; +kind: PrinterKind; +read_in(tx, repo, branch) PrinterSettings }
   class PrinterKind { <<enum>> Simulated; Network(host, port) }
   class PrinterModel { <<infrastructure::devices::printer_models>> +id: String; +name: String; +paper_mm: u16; +drawer_pulse: Option~DrawerPulse~ }
-  class DrawerSettings { <<infrastructure::devices::printer_models>> +model: String; +has_drawer: Option~bool~; +read_in(tx, repo, branch) DrawerSettings }
+  class DrawerSettings { <<infrastructure::devices::printer_models>> +model: String; +has_drawer: Option~bool~; +read_in(tx, repo, branch, models: PrinterModels) DrawerSettings }
   class DrawerPulse { +pin: u8; +on: u8; +off: u8; +kick_bytes() Vec~u8~ }
-  class PrinterModels { <<registry, from Settings.devices.printer_models>> +get(id) Option~PrinterModel~; +default_id() str }
+  class PrinterModels { <<registry, from Settings.devices.printer_models>> +new(models) Result~PrinterModels~; +get(id) Option~&PrinterModel~; +default_id() str }
   class EscposDriver { <<infrastructure::devices::escpos_driver>> +new(transport: Arc~dyn PrinterTransport~) }
   class PrinterTransport { <<trait>> +send(host, port, bytes) Result }
   class DeviceWorker { <<infrastructure::devices::device_worker>> +spawn(devices, every) JoinHandle }
@@ -549,12 +549,13 @@ Owner, verbatim: "ยังไม่integrate ตอนนี้" · "ทำใ�
   `{id, name, paperMm, drawerPulse: {pin, on, off} | null}`; adding a model is a config edit and a restart, never a code
   change. The first entry is `NEOCAL_NTP_8220BT` with pulse [proposed] `pin 0, on 25, off 250` — the same bytes DRV-1
   sends today, unmeasured on the device; v2's counter used `25/125` (`passport-drawer.mjs`, 20261006 bundle).
-  `PrinterModels` refuses at startup a duplicate id or a pulse outside `pin 0..=1`, `on/off 1..=255`.
+  `PrinterModels::new` refuses a duplicate id, an empty list, or a pulse outside `pin 0..=1`, `on/off 1..=255`;
+  `Settings::load_from` runs it, so a bad list stops the server at startup with a `ConfigError`.
 - [required] **Nothing DRV-1 provided changes shape** (its tests in `api/tests/escpos_driver_test.rs` stay untouched):
   `PrinterSettings { online, kind }`, `PrinterSettings::read_in`, `DeviceService::set_printer(branch, kind, actor, now)`,
   `EscposDriver::new(transport)` and `DeviceService::new` keep their signatures and meaning.
 - [required] **The drawer is its own setting.** `DrawerSettings { model: String, has_drawer: Option<bool> }` in
-  `printer_models.rs`, with its own `DrawerSettings::read_in(tx, repo, branch)` from `device_settings` keys `printerModel`
+  `printer_models.rs`, with its own `DrawerSettings::read_in(tx, repo, branch, models: &PrinterModels)` (the registry gives the default) from `device_settings` keys `printerModel`
   (default = the first model) and `hasDrawer` (`None` when the row does not exist). `DeviceService::set_drawer(branch,
   model, has_drawer, actor, now)` (owner only, unknown model → `ตั้งค่าเครื่องพิมพ์ไม่ถูกต้อง`) is the only writer;
   `set_printer` never writes `hasDrawer`, so `process_hands_the_driver_the_branch_printer` keeps passing unchanged.
@@ -694,6 +695,149 @@ The v2 binary never sees the v3 schema, so there is no old-binary/new-schema win
 
 **(4) What `down` loses** — rollback is repointing nginx to v2. Everything written to v3 after cutover is lost
 unless re-entered; there is no v3→v2 exporter. This is the reason D6 needs an answer.
+
+## 7b. Backups and log retention of the v3 server (row BK, #121 D)
+
+Owner, 2026-10-07, verbatim: *"ตามที่เสนอทุกข้อ backup วันละครั้ง เก็บ 7 ชุด"* (recorded on #228,
+comment `6035849925`). The proposal it accepts: once a day, a `pg_dump -Fc` of the v3 database and an archive of
+the uploads directory, taken together as one set; keep 7 sets; one off-host copy on Dell under `/data`.
+`deploy/README.md` §5 lists all three (database, uploads, log retention) as not written (`deploy/README.md:155-163`,
+`main` `3a23eb9`).
+
+**No database schema change** — no table, column, constraint or migration is added, so there is no data-migration part.
+Nothing here runs on a host by being merged: installing the units, enabling the timer and creating the off-host key are
+the owner's acts (`deploy/README.md`, top).
+
+Paths and names below are the defaults of `deploy/server/common.sh:9-23` and `env.example:30-48`: database `xc_v3`
+(`APP_DATABASE__DATABASE_NAME`), role `xc_v3`, uploads `/var/lib/xc-v3/uploads` (`APP_FILES__DIR`, owner `xc-v3`,
+mode 700), env file `/etc/xc-v3/env`.
+
+**One set** [required]
+- The stamp is `date -u +%Y%m%dT%H%M%SZ`, taken once per run. A set is the directory `$XC_BACKUP_DIR/<stamp>/` holding
+  `db-<stamp>.dump` (`pg_dump -Fc` of `APP_DATABASE__DATABASE_NAME`) and `uploads-<stamp>.tar.gz` (`tar -czf` of
+  `APP_FILES__DIR`).
+- `XC_BACKUP_DIR` is root:root, mode 0700 — a set holds password hashes and customer data. The `deploy/README.md`
+  install step creates it before the timer is enabled (`install -d -m 0700 -o root -g root <XC_BACKUP_DIR>`, with the
+  value set in `/etc/xc-v3/env`), because the unit cannot start without it (Scheduling, below). `backup.sh` still
+  creates it with that mode when it is missing, for a run outside the unit; one that exists with another mode, or owned by another user than the one running the
+  script (root under the unit), is refused before anything is written and is not changed (as `common.sh` `judge_dir`
+  does for the install's own directories). Each set directory is mode 0700.
+- The set is built in a working directory inside `XC_BACKUP_DIR` named `.work-<stamp>` — a leading dot, so it can never
+  match the set pattern or the off-host include pattern below — and renamed to `<stamp>` only when both pieces exited 0. When either fails, the working directory is removed, nothing is pruned,
+  and `backup.sh` exits non-zero. A `<stamp>` directory that already exists is refused (non-zero), never overwritten.
+- The dump is taken first, the archive second. The server writes a file before its `files` row and deletes a file only
+  when that insert failed (`api/src/infrastructure/files/file_service.rs:141-157`), so every row in the dump names a file
+  that was on disk before the archive started. A file uploaded between the two lands in the archive with no row — harmless.
+- The password goes from `APP_DATABASE__PASSWORD` into `pg_dump`'s environment (`PGPASSWORD`), never onto a command line.
+- [proposed] One run at a time: `flock` on `$XC_BACKUP_DIR/.lock`; a second run while one holds it exits non-zero with one line.
+- The last line `backup.sh` writes to standard output is the finished set's path, `$XC_BACKUP_DIR/<stamp>` — after the
+  off-host copy or its skip line. It lands in the unit's journal; `update.sh` (#290) finds the same set as the newest
+  `<stamp>/` in `XC_BACKUP_DIR` once `systemctl start` has returned.
+- `backup.sh` takes its settings only from its environment, and that environment is the unit's
+  `EnvironmentFile=/etc/xc-v3/env`. It is always run through the unit — by the timer, by hand
+  (`sudo systemctl start xc-v3-backup.service`) and by `update.sh` — never as a plain command.
+
+**Retention** [required] — after a set succeeded, the entries of `XC_BACKUP_DIR` that are directories named
+`^[0-9]{8}T[0-9]{6}Z$` are sorted by name and all but the newest `XC_BACKUP_KEEP` (default 7) are removed. Nothing
+else in the directory is touched. A failed run prunes nothing.
+
+**Off-host copy** [required] — runs last: local set, then local prune, then the copy.
+- `XC_BACKUP_OFFHOST` empty: one line `off-host copy skipped: XC_BACKUP_OFFHOST is empty`, exit 0.
+- `XC_BACKUP_OFFHOST` set (e.g. `<user>@<dell host>:/data/xc-v3-backups`): the *contents* of `XC_BACKUP_DIR` with a
+  filter, over `ssh -i $XC_BACKUP_SSH_KEY -o BatchMode=yes`:
+  ```
+  rsync -a [--delete] --include='/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z/***' \
+        --exclude='*' "$XC_BACKUP_DIR"/ "$XC_BACKUP_OFFHOST"/
+  ```
+  The include matches only a top-level `<stamp>/` and everything under it; `.work-<stamp>`, `.lock` and anything else
+  are excluded. Passing the set directories themselves as sources would not do: `--delete` acts only inside the
+  directories transferred, so an old `<stamp>/` on Dell would never be removed (review of PR 295, comment
+  `6036113182`). Excluded names on Dell are protected from `--delete` (no `--delete-excluded`), so Dell keeps anything
+  else in the target. Checked with rsync 3.2.7 (Ubuntu 24.04) on scratch directories: with `--delete` an old `<stamp>/`
+  missing locally was removed, `.work-*`, `.lock` and `notes.txt` were not sent, and other names already on the target
+  were kept. A failed copy exits non-zero; the local set stays, already complete.
+- Off-host keeps 7 as well: the copy passes `--delete` only when the local directory holds `XC_BACKUP_KEEP` sets, so
+  off-host then mirrors the local 7 and an off-host set no longer held locally is removed. With fewer local sets — a new host, or one whose disk was replaced — it copies
+  without `--delete`, so the first runs on an empty disk cannot erase the off-host sets a restore would need; off-host
+  comes back to 7 on the day the local directory reaches 7.
+
+**Restore rehearsal** [required] — `restore.sh <set-dir> <scratch-database> <scratch-uploads-dir>`.
+- It reads the live database name and uploads directory from `XC_ENV_FILE` (default `/etc/xc-v3/env`) key by key, never
+  sourcing the file; a missing file or key is a refusal, since what is live cannot be told.
+- It refuses, before creating anything: a scratch name equal to the live name; a scratch name that is not a plain
+  PostgreSQL name (`^[a-z_][a-z0-9_]{0,62}$`, as `common.sh` `check_names`); a scratch database that already exists;
+  a scratch directory that is the live uploads directory, lies inside it or contains it; a scratch directory that exists
+  and is not empty; a set directory missing either piece.
+- Then it creates the scratch database as the PostgreSQL superuser — `runuser -u postgres -- createdb <scratch>` — because
+  the role `xc_v3` has no `CREATEDB` (`install.sh:96` creates it `LOGIN` only; the database itself is made by the
+  superuser at `install.sh:104`). The existence check runs the same way. `pg_restore` runs as `postgres` too, but
+  `postgres` cannot open a path under `XC_BACKUP_DIR` (root 0700, each set 0700), so `restore.sh` opens the dump as root
+  and hands it over on standard input — pg_restore reads a custom-format archive from stdin when no file is named:
+  `runuser -u postgres -- pg_restore --no-owner -d <scratch> < "<set-dir>/db-<stamp>.dump"` (review of PR 295, comment
+  `6036246361`). Only the database steps run as `postgres`; root extracts the archive with `tar` into the scratch
+  directory. It prints what it made with the
+  commands that remove them (`runuser -u postgres -- dropdb <scratch>`, `rm -rf <scratch-dir>`). When `pg_restore` or
+  the extraction fails, it drops the scratch database it created (`runuser -u postgres -- dropdb`), removes the scratch
+  directory, and exits non-zero. `restore.sh` runs as root (`runuser` needs it). It never stops or starts `xc-v3`,
+  never writes the live uploads directory, the live database or the env file.
+- A real restore (stop the server, replace `xc_v3` and the uploads) is written in `deploy/README.md` as commands the
+  owner runs; it is not scripted.
+
+**Scheduling** [required]
+- `xc-v3-backup.service`: `Type=oneshot`, `EnvironmentFile=/etc/xc-v3/env`, `ExecStart=/opt/xc-v3/backup.sh`, run as
+  root — it must read the uploads directory (`xc-v3`, 700) and the off-host key. Hardening (lane controller,
+  2026-10-07, kept): `ProtectSystem=strict`, `ReadWritePaths=/var/backups/xc-v3` (the value of `XC_BACKUP_DIR`; edited
+  together when it differs), `PrivateTmp=true`, `NoNewPrivileges=true`, `ProtectHome=read-only` (root's `known_hosts`
+  is read). A `ReadWritePaths=` path that does not exist stops the unit before `backup.sh` runs (`226/NAMESPACE`), and
+  a `-` prefix would leave `/var` read-only so the `mkdir` fails instead — hence the README creates the directory first
+  (see `XC_BACKUP_DIR` above). A failed run is a failed unit (`systemctl --failed`, the journal).
+- `xc-v3-backup.timer`: `OnCalendar=daily`, `Persistent=true` (a day missed while the host was off runs at the next
+  boot), `WantedBy=timers.target`.
+
+**Log retention** — `deploy/server/journald-xc-v3.conf`, an example installed as
+`/etc/systemd/journald.conf.d/xc-v3.conf`: `[Journal]` `SystemMaxUse=1G`, `MaxRetentionSec=30day`. journald's limits
+are host-wide, not per unit, so the host's owner applies it; the two numbers are a proposal the owner has not ruled on.
+
+**Settings** — the `XC_BACKUP_*` names live in the same `/etc/xc-v3/env`; the server reads only names with the `APP_`
+prefix (`api/src/config/mod.rs:118`), so it ignores them.
+
+| Setting | Default | Read by |
+|---|---|---|
+| `XC_BACKUP_DIR` | `/var/backups/xc-v3`; root:root, 0700, created by the README install step (and by `backup.sh` when missing); also the unit's `ReadWritePaths=` | `backup.sh` |
+| `XC_BACKUP_KEEP` | `7`; an integer of at least 1, anything else refused | `backup.sh` |
+| `XC_BACKUP_OFFHOST` | empty (copy skipped) | `backup.sh` |
+| `XC_BACKUP_SSH_KEY` | `/etc/xc-v3/backup-offhost.key`; read only when `XC_BACKUP_OFFHOST` is set | `backup.sh` |
+| `APP_DATABASE__HOST`, `APP_DATABASE__PORT`, `APP_DATABASE__USERNAME`, `APP_DATABASE__PASSWORD`, `APP_DATABASE__DATABASE_NAME` | the server's own: `127.0.0.1`, `5432`, `xc_v3`, generated by `install.sh`, `xc_v3` | `backup.sh` (environment) |
+| `APP_FILES__DIR` | `/var/lib/xc-v3/uploads` | `backup.sh` (environment), `restore.sh` (from the file) |
+| `XC_ENV_FILE` | `/etc/xc-v3/env` | `restore.sh` |
+
+**The off-host key** is set up by the owner at install: an ed25519 key at `XC_BACKUP_SSH_KEY` (root, 600) on the v3
+host, its public half authorised on Dell for a user that can write only the `/data` target, and Dell's host key in
+root's `known_hosts`. Nothing in this repository holds a key, a host key or the real target.
+
+Not in BK: `install.sh` and `update.sh` do not install the backup files (installing them is a `deploy/README.md` step
+the owner runs); a scheduled, automatic restore rehearsal is not designed. `update.sh`'s use of the backup is #290's
+(below).
+
+**Overlap with #290** (a dump before `update.sh` stops the service, opened 2026-10-07 by another session): it proposes
+`BACKUP_DIR` defaulting to `/var/backups/$SERVICE_NAME` — the same directory as `XC_BACKUP_DIR` here — with its own
+file names (`<stamp>-<sha>.dump`), its own retention (10) and its own `pg_dump` call, and it reserves
+`deploy/server/scripts.test.sh` and `deploy/README.md` as BK does. Each prunes only its own name pattern, so neither
+deletes the other's files, but that is two dump paths and two retentions in one directory. **Decided (lane controller,
+2026-10-07): one dump path.** #290 therefore writes no `pg_dump` of its own, adds no `BACKUP_DIR`, and is cut after BK
+merges; it touches `update.sh`, its cases in `scripts.test.sh`, and the README step. What #290's `update.sh` does
+[required]:
+- Before `systemctl stop`, it runs `sudo systemctl start xc-v3-backup.service`. Starting a oneshot waits until the run
+  ends and fails when the run failed, so the update and the timer share one environment (the unit's `EnvironmentFile`)
+  and one lock. `update.sh` never runs `backup.sh` directly. A non-zero start stops the update with the old service still
+  running. The pre-update set is a full set (database and uploads), counted in the same 7.
+- On a host where `xc-v3-backup.service` is not installed, `update.sh` refuses to update, with a message naming BK
+  (`deploy/README.md` §5 installs it). There is no fallback without a backup — the right default before production.
+- #290 keeps its own checks on the set it just caused: it reads the newest `<stamp>/` in `XC_BACKUP_DIR` (the value in `/etc/xc-v3/env`, read like `common.sh` `env_value`,
+  default `/var/backups/xc-v3`), runs
+  `pg_restore --list` on its `db-<stamp>.dump` (must succeed and list `_sqlx_migrations`) before `systemctl stop`, and,
+  after an update that applied migrations, prints a NOTE naming that dump with the restore commands. BK does not run
+  `pg_restore --list`.
 
 ## 8. Flutter — customer kiosk only
 
@@ -967,11 +1111,12 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | P2-S (#236) | The save family on both RPC routes: `SaveAction` answers `saveTransaction` (the owner and FRONT on `/api/rpc`, FRONT on `/api/staff/rpc`; `Policy` has judged the role before). `run` reads the payload into `SaveTransaction` (the 23 fields as `rpc_common::save_behind` reads them; a `passport`/`slip` that is present and truthy but carries no text `uploadKey` is the key `""`, so the save answers `ไฟล์แนบไม่ถูกต้อง`, `engine_actions.json` #108, v2 `server.mjs:6987-6988`), `SaveExtras` (`staffDraftId`, `kioskRequestId` as text; `countConfirmed` only for the JSON `true`, §5.4) and `SaveActor` (the account's id, the caller's username, the employee's id for staff, the role), calls `SaveTransactionWorkflow::save_as`, and prints v2's nine keys in v2's order: `saved`, `mode`, `documentRef`, `receiptNo` (the document number), `passportUrl`, `slipUrl`, `receiptUrl`, `folderUrl` = `/documents?branch=<branch>&ref=<number>`, `sheetUrl` = `/?branch=<branch>#transactions` (`server.mjs:6853`; the staff route's dispatcher rewrites links, `staff_view.rs`). [required] `SaveAction::new(workflow, devices: DeviceService, kiosk: KioskService, custody: CustodyService)` registers the steps in v2's order — `DeviceSaveStep`, `KioskSaveStep`, `CustodySaveStep` (count check in v2's proxy, then the kiosk's `beforeSave`, then custody in the engine; #153) — and `registered_actions` builds the two new services. Its tests are provided on `feat/save-action-p2s`: `gap_save::WIRED = true`, `Desk::state()` sharing the upload directory, and `rpc_save_test.rs` (the named draft completed, the branch in both links, a kiosk request nobody made refused) | `api/src/application/compat/actions/save.rs`, `api/src/presentation/http/rpc.rs` (`registered_actions` only); provided: `api/tests/rpc_save_test.rs`, `api/tests/rpc_common/{gap_save.rs,mod.rs}` | T11a-0 (#155), T8c-1 (#138), T8c-2a (#153), #154 (a save completes only the saver's own matching draft); T8c-2b (#234, `DeviceSaveStep`), T13b-S (#237, `PgSavedExchanges`, the `SavedExchanges` `registered_actions` builds `DeviceService` with) |
 | T13b-S (#237) | `PgSavedExchanges`: the server's `SavedExchanges`, split out of T13b because nothing of it waits for the recording T13b needs (lane controller, 2026-10-07). [required] `new(transactions: TransactionService)`; `find(branch, reference)` answers from `TransactionService::find` with no SQL of its own: `Some(Completed)` for a live exchange of that branch with exactly that document number, `None` when there is none or it is `DEMO` (only live exchanges count, `saved_exchanges.rs`), the error on a database failure. v3 stores no pending or cancelled exchange, so `NotCompleted` is never answered. Its stub and tests are provided on `feat/pg-saved-exchanges-t13b-s` | `api/src/infrastructure/devices/pg_saved_exchanges.rs` and its `pub mod` line in `api/src/infrastructure/devices/mod.rs`; provided: `api/tests/pg_saved_exchanges_test.rs` | T8 (`TransactionService::find`), T13a (`SavedExchanges`) — both merged |
 | CS (#158) | One home for the custody port and one way to build `CustodyService`. `EmployeeCustody` moves, unchanged, to `application::custody::employee_custody` (new file); `presentation::http::employees` keeps the name with `pub use`, so the provided tests compile unchanged. `pg_custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService` (new file `infrastructure/custody/custody_service.rs`, the body of `rpc.rs`'s private `custody_service`) is the only place the four parts are put together: `rpc.rs` and `PgEmployeeCustody::new(pool)` (same signature) both call it. No `crate::presentation` import remains under `application` or `infrastructure` | `api/src/application/mod.rs`, `api/src/application/custody/{mod.rs,employee_custody.rs}`, `api/src/application/workflows/disable_employee.rs`, `api/src/presentation/http/{employees.rs,rpc.rs}`, `api/src/infrastructure/custody/{mod.rs,custody_service.rs,employee_custody.rs}` | DE (#157), #145 (both merged); BS (#163, merged) also edited `employee_custody.rs` |
-| DRV-1 (#274) | The driver layer (§5.4b): `DeviceDriver` async with `PrinterSettings`; `EscposDriver` + `PrinterTransport` + `TcpTransport` over `pos_printer::network_printer` (a `NETWORK` drawer request sends `ESC @ ESC p 0 25 250` → `DRAWER_OPENED`); `process` awaits it on the tx (only `SimulatedDriver` is installed — `new` is not changed here); `DeviceService::set_printer`; the `pos-printer` git dependency | `api/src/infrastructure/devices/{simulated_driver.rs,printer_settings.rs,escpos_driver.rs,device_service.rs,mod.rs}`, `api/Cargo.toml`, `api/Cargo.lock`, `api/tests/escpos_driver_test.rs` | T13a (merged) |
+| DRV-1 (#274) | The driver layer (§5.4b): `DeviceDriver` async with `PrinterSettings`; `EscposDriver` + `PrinterTransport` + `TcpTransport` over `pos_printer::network_printer` (a `NETWORK` drawer request sends `ESC @ ESC p 0 25 250` → `DRAWER_OPENED`); `process` awaits it on the tx (only `SimulatedDriver` is installed — `new` is not changed here); `DeviceService::set_printer`; the `pos-printer` git dependency | `api/src/infrastructure/devices/{simulated_driver.rs,printer_settings.rs,escpos_driver.rs,device_service.rs,device_job.rs,mod.rs}`, `api/Cargo.toml`, `api/Cargo.lock`, `api/tests/escpos_driver_test.rs` | T13a (merged) |
 | DRV-2 (#274) | `process` in three steps with `SENDING`/`EXPIRED` and the 120 s rule; `new` installs `EscposDriver`; the cash-save drawer job; `DeviceWorker` started in the bootstrap; the status migration and partial index (§5.4b, data migration) | `api/src/infrastructure/devices/{device_service.rs,device_job.rs,device_repository.rs,pg_device_repository.rs,device_worker.rs,mod.rs}`, `api/src/bootstrap/mod.rs`, `api/migrations/20261007200000_device_job_statuses.sql`, `api/tests/device_drawer_flow_test.rs` | DRV-1; P2-S (#236) for the cash-save path |
 | DRV-3 (#274) | `POST /api/devices` (C2) with the actions of §5.4b | `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/tests/devices_route_test.rs` | DRV-1 (`set_printer`); runs beside DRV-2 — no shared file |
 | DRV-4 (#274) | Printer models from configuration and the per-branch drawer switch (§5.4b *Printer models and the drawer switch*): `Settings.devices.printer_models` seeded with `NEOCAL_NTP_8220BT`; `PrinterModels`, `DrawerSettings` and `DeviceService::set_drawer`; the default trait method `DeviceDriver::run_with`, which `process` calls; `EscposDriver::with_models` and its override building the kick from the model; `queue` refuses a drawer request where `hasDrawer = 0`. DRV-1's provided tests and every caller of `new` stay untouched | `api/configuration/base.yaml`, `api/src/config/mod.rs`, `api/src/infrastructure/devices/printer_models.rs`, `api/src/infrastructure/devices/simulated_driver.rs`, `api/src/infrastructure/devices/escpos_driver.rs`, `api/src/infrastructure/devices/device_service.rs`, `api/src/infrastructure/devices/mod.rs`, `api/tests/printer_models_test.rs` | DRV-1 (#280) |
-| DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` shows the branch's model and drawer switch | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/tests/devices_set_printer_test.rs` | DRV-4 |
+| DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` gains two keys, `printerModel` (the model id) and `hasDrawer` (`true`/`false`/`null`); the key `model` stays T13b's admin snapshot (§5.4), so the same name never carries two meanings | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/tests/devices_set_printer_test.rs` | DRV-4 |
+| BK (#121) | Backups and log retention of the v3 server (§7b): `backup.sh` makes one set (`pg_dump -Fc` + uploads archive, one UTC stamp, both or nothing), keeps the newest 7, copies off-host by `rsync` of the directory's contents filtered to the set directories (`--delete` only once the local directory holds 7); runs only through the unit and prints the set's path last; `restore.sh` rehearses a restore into a scratch database (made as `postgres` through `runuser`, the dump handed to `pg_restore` on stdin) and directory and refuses the live ones; a oneshot service (hardened, `ReadWritePaths=` the backup directory) with a daily `Persistent=true` timer; a journald drop-in example; the `XC_BACKUP_*` settings; the README install step creates `XC_BACKUP_DIR` (`install -d -m 0700 -o root -g root`) before the timer is enabled | `deploy/server/backup.sh`, `deploy/server/restore.sh`, `deploy/server/xc-v3-backup.service`, `deploy/server/xc-v3-backup.timer`, `deploy/server/journald-xc-v3.conf`, `deploy/server/env.example`, `deploy/server/scripts.test.sh`, `deploy/README.md` | — |
 
 [required] Every row that owns a file under `api/src/presentation/http/` depends on T1b, whether or not its cell says so (T4c, T5b, T6b, T8, T11a, T12b, T13, T15); and "T1" in a Depends-on cell means T1a **and** T1b are merged. The T1 row is the name of the original undivided ticket; T1a, T1b and T1c are its parts.
 
