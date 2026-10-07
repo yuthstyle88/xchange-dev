@@ -1788,10 +1788,49 @@ Paths and names below are the defaults of `deploy/server/common.sh:9-23` and `en
 (`APP_DATABASE__DATABASE_NAME`), role `xc_v3`, uploads `/var/lib/xc-v3/uploads` (`APP_FILES__DIR`, owner `xc-v3`,
 mode 700), env file `/etc/xc-v3/env`.
 
+**Implemented** — measured on `main` `9ee5635`: `deploy/server/backup.sh` (PR 305, `86ba000`), `restore.sh`, the units
+and the self-test `deploy/server/scripts.test.sh` (cases B1–B10); `update.sh` backs up first (#290, PR 310, `de22d99`;
+cases U1–U5c). Until BK-ENC (below) merges, a set is two **plain** files: `backup.sh:62-66` writes
+`db-<stamp>.dump` and `uploads-<stamp>.tar.gz`, and `backup.sh:98-111` copies them as they are to `XC_BACKUP_OFFHOST`
+— Dell, a machine the whole fleet shares. The bullets below describe the design after BK-ENC.
+
+**Encryption of every set** [required] (BK-ENC; lane controller, 2026-10-07, answering the owner's question whether
+the system needs AES "because this is finance")
+- Transport is already TLS (§7c); the exposure this closes is **at rest**: a set holds password hashes, customer names,
+  passport numbers and the uploaded passport and slip images, and it is copied to a shared machine.
+- Each piece of a set is encrypted with **age** to an X25519 **recipient** (a public key) before it leaves the working
+  directory: `db-<stamp>.dump.age` and `uploads-<stamp>.tar.gz.age`. The server holds only the public half
+  (`XC_BACKUP_RECIPIENTS`, default `/etc/xc-v3/backup.age-recipients`, one `age1…` line per recipient, root 0644);
+  the private half (the *identity*) is made and kept by the owner off the server. A compromised server, or anyone
+  who can read Dell's `/data`, therefore cannot read any set — not even the ones the server itself made.
+- Why age and not AES-256-GCM: age is public-key, streaming, authenticated encryption (X25519 + ChaCha20-Poly1305 in
+  64 KiB chunks) with one fixed algorithm and no options to get wrong; `openssl enc` refuses AEAD modes and has no
+  public-key recipient, and gpg's default is AES-256 in CFB with an MDC (not GCM) and needs a keyring under the unit's
+  `ProtectHome=read-only` — ChaCha20-Poly1305 meets the same audit wording, "256-bit authenticated encryption".
+- **No plaintext leaves the working directory.** `backup.sh` may write the plain dump inside `.work-<stamp>` (root 0700,
+  on the same disk as the live database), checks it, encrypts it, and removes it before the rename; the uploads archive
+  may be streamed straight into `age`. When the rename happens the set holds exactly the two `.age` files and nothing
+  else. When any step fails, the working directory — plain files included — is removed, nothing is pruned, and the run
+  exits non-zero.
+- **A missing key is a failed backup, never a plain one.** Before `pg_dump` runs, `backup.sh` refuses (non-zero, one
+  line naming `XC_BACKUP_RECIPIENTS`) when `age` is not installed, or the recipients file is missing, unreadable, or
+  holds no line starting `age1`. There is no setting that turns encryption off.
+- **The dump is checked before it is encrypted.** Once encrypted the server cannot read it, so the check #290 put in
+  `update.sh` (`pg_restore --list` succeeds and lists `_sqlx_migrations`, `update.sh:55-63`) moves into `backup.sh`,
+  on the plain dump in the working directory; a dump that fails it makes no set. `update.sh` keeps a check it can still
+  make: the new set holds `db-<stamp>.dump.age` and `uploads-<stamp>.tar.gz.age`, each starting with the line
+  `age-encryption.org/v1`, and no plain `db-<stamp>.dump`; anything else stops the update before `systemctl stop`.
+- Retention and the off-host copy act on these sets only, and the off-host filter sends only `*.age` files of the set
+  directories (*Off-host copy*, below).
+- Measured 2026-10-07 in a throw-away `ubuntu:24.04` container (age 1.1.1, rsync 3.2.7): encrypting to a recipients
+  file of two lines, either identity decrypts; the ciphertext does not contain the plaintext; a missing file, an empty
+  file and a comment-only file each make `age -R` exit 1 and write no output file; a wrong identity exits 1
+  (`no identity matched any of the recipients`).
+
 **One set** [required]
 - The stamp is `date -u +%Y%m%dT%H%M%SZ`, taken once per run. A set is the directory `$XC_BACKUP_DIR/<stamp>/` holding
-  `db-<stamp>.dump` (`pg_dump -Fc` of `APP_DATABASE__DATABASE_NAME`) and `uploads-<stamp>.tar.gz` (`tar -czf` of
-  `APP_FILES__DIR`).
+  `db-<stamp>.dump.age` (`pg_dump -Fc` of `APP_DATABASE__DATABASE_NAME`, then age) and `uploads-<stamp>.tar.gz.age`
+  (`tar -cz` of `APP_FILES__DIR`, then age).
 - `XC_BACKUP_DIR` is root:root, mode 0700 — a set holds password hashes and customer data. The `deploy/README.md`
   install step creates it before the timer is enabled (`install -d -m 0700 -o root -g root <XC_BACKUP_DIR>`, with the
   value set in `/etc/xc-v3/env`), because the unit cannot start without it (Scheduling, below). `backup.sh` still
@@ -1805,6 +1844,8 @@ mode 700), env file `/etc/xc-v3/env`.
   when that insert failed (`api/src/infrastructure/files/file_service.rs:141-157`), so every row in the dump names a file
   that was on disk before the archive started. A file uploaded between the two lands in the archive with no row — harmless.
 - The password goes from `APP_DATABASE__PASSWORD` into `pg_dump`'s environment (`PGPASSWORD`), never onto a command line.
+- When `APP_DATABASE__HOST` is not a local host (the rule of §7c *The database link*), `pg_dump` runs with
+  `PGSSLMODE=require` in its environment, never weaker; a local host is left as it is.
 - [proposed] One run at a time: `flock` on `$XC_BACKUP_DIR/.lock`; a second run while one holds it exits non-zero with one line.
 - The last line `backup.sh` writes to standard output is the finished set's path, `$XC_BACKUP_DIR/<stamp>` — after the
   off-host copy or its skip line. It lands in the unit's journal; `update.sh` (#290) finds the same set as the newest
@@ -1825,8 +1866,18 @@ else in the directory is touched. A failed run prunes nothing.
   rsync -a [--delete] --include='/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z/***' \
         --exclude='*' "$XC_BACKUP_DIR"/ "$XC_BACKUP_OFFHOST"/
   ```
-  The include matches only a top-level `<stamp>/` and everything under it; `.work-<stamp>`, `.lock` and anything else
-  are excluded. Passing the set directories themselves as sources would not do: `--delete` acts only inside the
+  That is the filter on `main` (`backup.sh:107-108`). After BK-ENC [required] it sends only the encrypted files of the
+  set directories — the include that sends a whole `<stamp>/` becomes two, [proposed]:
+  ```
+  --include='/<stamp glob>/' --include='/<stamp glob>/*.age' --exclude='*'
+  ```
+  so a plain file inside a set directory (a set made before BK-ENC, or anything left there by hand) is never sent.
+  Measured with rsync 3.2.7 on scratch directories (same container as above): with `--delete`, a `<stamp>/` on the
+  target missing locally was removed; `*.age` files of the local sets were sent; a plain `db-*.dump` in a local set,
+  `.work-*`, `.lock` and `notes.txt` were not; other names on the target were kept. A target `<stamp>/` that still
+  holds a plain file is not removed (`cannot delete non-empty directory`, exit 0) — the plain file is an excluded
+  name and so protected; removing the plain sets already on Dell is the owner's one-time step (`deploy/README.md` §5).
+  The include matches only a top-level `<stamp>/`; `.work-<stamp>`, `.lock` and anything else are excluded. Passing the set directories themselves as sources would not do: `--delete` acts only inside the
   directories transferred, so an old `<stamp>/` on Dell would never be removed (review of PR 295, comment
   `6036113182`). Excluded names on Dell are protected from `--delete` (no `--delete-excluded`), so Dell keeps anything
   else in the target. Checked with rsync 3.2.7 (Ubuntu 24.04) on scratch directories: with `--delete` an old `<stamp>/`
@@ -1856,8 +1907,26 @@ else in the directory is touched. A failed run prunes nothing.
   the extraction fails, it drops the scratch database it created (`runuser -u postgres -- dropdb`), removes the scratch
   directory, and exits non-zero. `restore.sh` runs as root (`runuser` needs it). It never stops or starts `xc-v3`,
   never writes the live uploads directory, the live database or the env file.
+- After BK-ENC [required]: `restore.sh` needs the identity, given as a path in `XC_BACKUP_IDENTITY` (no default). It
+  refuses, before creating anything, when that variable is empty, the file is missing, or the file is readable by group
+  or others (mode not `0600`/`0400`). The set must hold both `.age` files. The dump is decrypted as root and piped into
+  `pg_restore` on standard input (`age -d -i "$XC_BACKUP_IDENTITY" <set>/db-<stamp>.dump.age | runuser -u postgres --
+  pg_restore --no-owner -d <scratch>`), the archive the same way into `tar -xz -C <scratch-dir>`; a failed decryption
+  (wrong identity, damaged file) is a failed step and drops what the rehearsal made, as a failed `pg_restore` does.
+  The identity is never copied into `XC_BACKUP_DIR`, never written to the env file, and `restore.sh` never prints it.
+  The owner brings it to the server only for a restore — the README's step puts it on tmpfs
+  (`/run/xc-v3-restore/identity`, root 0600) and removes it afterwards.
+- **The check that a restore works needs no server** [required, README]: on the owner's machine, with the identity,
+  for a set copied from Dell: `age -d -i <identity> db-<stamp>.dump.age | pg_restore --list` succeeds and lists
+  `_sqlx_migrations`, and `age -d -i <identity> uploads-<stamp>.tar.gz.age | tar -tzf -` lists the files. This also
+  proves the off-host copy is usable and that the identity the owner holds matches the recipient on the server.
+- **Keys** [required, README]: the owner makes the identity with `age-keygen` on a machine they control, and keeps two
+  copies apart (or two identities, both listed as recipients) — a lost identity makes every set unreadable, with no way
+  back. Only `age-keygen -y <identity>` (the `age1…` line) goes to the server. Rotating means adding the new recipient
+  line, then removing the old one after 7 days, when no local set needs it any more.
 - A real restore (stop the server, replace `xc_v3` and the uploads) is written in `deploy/README.md` as commands the
-  owner runs; it is not scripted.
+  owner runs; it is not scripted. After BK-ENC its commands decrypt with `age -d -i <identity>` piped into
+  `pg_restore` and `tar`, as above.
 
 **Scheduling** [required]
 - `xc-v3-backup.service`: `Type=oneshot`, `EnvironmentFile=/etc/xc-v3/env`, `ExecStart=/opt/xc-v3/backup.sh`, run as
@@ -1883,6 +1952,8 @@ prefix (`api/src/config/mod.rs:118`), so it ignores them.
 | `XC_BACKUP_KEEP` | `7`; an integer of at least 1, anything else refused | `backup.sh` |
 | `XC_BACKUP_OFFHOST` | empty (copy skipped) | `backup.sh` |
 | `XC_BACKUP_SSH_KEY` | `/etc/xc-v3/backup-offhost.key`; read only when `XC_BACKUP_OFFHOST` is set | `backup.sh` |
+| `XC_BACKUP_RECIPIENTS` (BK-ENC) | `/etc/xc-v3/backup.age-recipients`; one `age1…` public key per line; missing, unreadable or without an `age1` line = the backup fails before `pg_dump` | `backup.sh` |
+| `XC_BACKUP_IDENTITY` (BK-ENC) | no default; the path of the owner's age identity, given on the command line of a restore only — never in `/etc/xc-v3/env` | `restore.sh` |
 | `APP_DATABASE__HOST`, `APP_DATABASE__PORT`, `APP_DATABASE__USERNAME`, `APP_DATABASE__PASSWORD`, `APP_DATABASE__DATABASE_NAME` | the server's own: `127.0.0.1`, `5432`, `xc_v3`, generated by `install.sh`, `xc_v3` | `backup.sh` (environment) |
 | `APP_FILES__DIR` | `/var/lib/xc-v3/uploads` | `backup.sh` (environment), `restore.sh` (from the file) |
 | `XC_ENV_FILE` | `/etc/xc-v3/env` | `restore.sh` |
@@ -1913,7 +1984,144 @@ merges; it touches `update.sh`, its cases in `scripts.test.sh`, and the README s
   default `/var/backups/xc-v3`), runs
   `pg_restore --list` on its `db-<stamp>.dump` (must succeed and list `_sqlx_migrations`) before `systemctl stop`, and,
   after an update that applied migrations, prints a NOTE naming that dump with the restore commands. BK does not run
-  `pg_restore --list`.
+  `pg_restore --list`. **After BK-ENC this paragraph is replaced** by *Encryption of every set* above: `backup.sh` runs
+  the `pg_restore --list` check on the plain dump before encrypting it, and `update.sh` checks only that the new set
+  is encrypted (both `.age` files, each starting `age-encryption.org/v1`, no plain dump); the NOTE names
+  `db-<stamp>.dump.age`.
+
+## 7c. Data in transit and at rest (lane controller, 2026-10-07)
+
+The owner asked whether the system needs an AES channel "because this is finance". Answer, decided by the lane
+controller (security decisions are delegated to it): **no application-level AES layer**. What travels is already
+carried by TLS (AES-GCM or ChaCha20-Poly1305 suites) — where TLS is actually in place. The work is to put it in place
+on the one leg where it is missing, to encrypt the backups (§7b), and to keep the database link from ever going out
+in the clear.
+
+**No database schema change** in this section — no table, column, constraint or migration, so there is no
+data-migration part.
+
+### The leg from Cloudflare to the server (TLS-ORIGIN)
+
+**Before 2026-10-07 ~16:00Z** — measured by the lane controller on the v3 host (`do-sgp1`, read-only; not re-measured
+here): `/etc/nginx/sites-enabled/xc-v3.spacing.cloud.conf:4-8` said TLS terminates at Cloudflare and listened on plain
+HTTP only — `listen 80`, `proxy_pass http://127.0.0.1:8094`; the zone's SSL/TLS mode is **Flexible** (named in
+`chain-slip.conf:6-8` on the same host); `ss -ltn` showed only `0.0.0.0:80` and `[::]:80`. Between Cloudflare and the
+server, passwords, session cookies, quotes and passport images crossed the internet in plain HTTP, and port 80
+answered anyone, not only Cloudflare.
+
+**On the host now** — done by the lane controller on the owner's order *"ทำ config 443 ทุก vhost เลย"* (2026-10-07),
+live from about 16:00Z, as the controller reported it (not re-measured here): certbot 2.9 with a webroot issues one
+Let's Encrypt certificate per name (14 names), renewed by `certbot.timer` with a deploy hook that reloads nginx;
+`/etc/nginx/snippets/acme-challenge.conf` (`location ^~ /.well-known/acme-challenge/`, `auth_basic off`) and
+`/etc/nginx/snippets/ssl-params.conf` (TLSv1.2 and TLSv1.3 only, session tickets off); each vhost's single server
+block gained `listen 443 ssl http2` and the certificate lines, its port-80 listeners unchanged; on all 14 names :443
+answers what :80 answers, and xc-v3 negotiates TLSv1.3 with `TLS_AES_256_GCM_SHA384`. Backup of the previous nginx
+tree: `/root/nginx-backup-20261007T155048Z.tgz`.
+
+**The repository still has the old shape** (`main` `9ee5635`): `deploy/nginx/xc-v3-desk.conf.example:11-13`,
+`:20-21` (`listen 80` only), `:52-56` (`X-Forwarded-Proto https` fixed); `xc-v3-customer.conf.example:14-20`,
+`:68-71`; the phase-1 file `xc-customer.conf:2-4`, `:23`; `deploy/README.md:313-330` and `:338` describe TLS ending
+at Cloudflare. A fresh install from the repository would come up plain-:80 again. TLS-ORIGIN makes the repository
+match the host.
+
+**Decided** [required] — the shape of every xc server block, in the repository and on the host:
+- **One server block** per host name listening on both `80` and `443 ssl` (as on the host), with
+  `include snippets/acme-challenge.conf;` and `include snippets/ssl-params.conf;`, and the certificate lines
+  `ssl_certificate /etc/letsencrypt/live/<name>/fullchain.pem;` `ssl_certificate_key /etc/letsencrypt/live/<name>/privkey.pem;`.
+  The two snippets ship as examples in `deploy/nginx/snippets/` with the content above. `http2` is [proposed]: the
+  host's nginx takes `listen 443 ssl http2`; nginx 1.25.1 and later want `http2 on;` instead — the example says which.
+- `ssl_protocols TLSv1.2 TLSv1.3` (in `ssl-params.conf`) — nothing older.
+- **Port 80 never serves the application, and always serves the ACME challenge** [required]. certbot's webroot
+  renewal is an HTTP-01 check, so `/.well-known/acme-challenge/` must answer `200` on port 80 before any redirect.
+  The redirect is therefore written **inside the locations**, never at server level:
+  `if ($scheme = http) { return 301 https://$host$request_uri; }` as the first line of `location /` and of every
+  other location that serves or proxies the application (the customer files' `location = /api/kiosk` and their
+  cache location; the desk file's `location /api/`). A server-level `if`/`return` runs in nginx's server rewrite
+  phase, before any location is chosen, so it redirects the challenge too however it is ordered against the
+  challenge location (review of PR 351, comment `6041947088`, measured on nginx 1.31.6: server-level `if` → `301`
+  for `/.well-known/acme-challenge/t1`; the same `if` inside `location /` → `200`). A port-80-only block whose
+  only locations are the challenge include and `location / { return 301 https://$host$request_uri; }` is
+  equivalent; the single 80+443 block (as on the host) with the per-location `if` is [proposed]. Measured
+  2026-10-07 on nginx 1.27.5 (`nginx:1.27-alpine`, self-signed certificate), one 80+443 block shaped like the
+  customer file with the per-location `if`: on 80, the challenge `200`, `GET /`, `/index.html`, `GET`/`POST
+  /api/kiosk` `301 https://…`; on 443, all `200` with `Strict-Transport-Security`.
+- **HSTS** on HTTPS answers only: `add_header Strict-Transport-Security "max-age=31536000" always;`, without
+  `includeSubDomains` or `preload` — the zone serves other applications this lane does not control.
+- `X-Forwarded-Proto $scheme`, replacing the fixed `https`: on 443 it is `https`; on 80 nothing is proxied once the
+  redirect is in, and until then a plain request is honestly reported as `http` (so `same_origin` refuses a POST that
+  arrived in the clear — the right answer).
+- The README's install steps gain the certbot webroot steps (install certbot, create the webroot, `certbot certonly
+  --webroot -w <webroot> -d <name>`, the deploy hook `systemctl reload nginx`, `certbot renew --dry-run`) in the order
+  the host used them: snippets and port-80 block first, certificate second, `listen 443 ssl` third.
+
+**The application needs no change** (measured on `main` `9ee5635`):
+- The scheme the server believes is `https` exactly when `X-Forwarded-Proto` is the bytes `https`, else `http`:
+  `api/src/presentation/extractors/origin.rs:20-28` (the same-origin rule of every write), and the three redirect
+  builders `api/src/presentation/http/documents.rs:61-72`, `api/src/presentation/http/files.rs:63-74`,
+  `api/src/presentation/pages.rs:346-358`. Through Cloudflare on 443, `$scheme` is `https`, the value the examples
+  fix today, so `same_origin` and redirects behave as now.
+- The session cookies are `__Host-xc_owner` / `__Host-xc_staff` (`api/src/presentation/extractors/actor.rs:23-24`),
+  always set `Path=/; HttpOnly; Secure; SameSite=Strict` (`actor.rs:47-52`). The `__Host-` prefix and `Secure` are
+  judged by the browser against the scheme *it* used — `https` to Cloudflare, before and after — so nothing changes.
+- The server listens on `127.0.0.1` only (`deploy/server/env.example:15-17`), so `X-Forwarded-Proto`, `X-Real-IP` and
+  `Host` can still come from nginx alone; `cloudflare-realip.conf.example` stays as it is (the peer is still a
+  Cloudflare address).
+
+**Owner checklist** [required — owner steps; nothing in the repository performs them]. Order matters.
+1. *(done on `do-sgp1`, 2026-10-07)* Certificates by certbot webroot, `listen 443 ssl` on every vhost, the two snippets.
+2. Cloudflare → SSL/TLS: set **Full (strict)** for the xc hostnames — zone-wide is now possible, since every vhost on
+   the host answers on 443 with a valid certificate; a Configuration Rule per hostname is the alternative if another
+   name in the zone lives elsewhere. Then check every xc name through Cloudflare: `curl -sI https://<name>/healthz`
+   (xc-v3) or `/` answers as before, no 525/526.
+3. Once step 2 is verified, **lock the origin to Cloudflare**: Authenticated Origin Pulls (Cloudflare presents a
+   client certificate; nginx `ssl_client_certificate <Cloudflare origin-pull CA>` + `ssl_verify_client on` on 443)
+   [recommended], or a firewall admitting 80 and 443 from Cloudflare's published ranges only
+   (`https://www.cloudflare.com/ips-v4`, `/ips-v6`). The zone-level origin-pull certificate is the same for every
+   Cloudflare customer, so AOP and the allowlist together are stronger than either. Every xc name must stay proxied
+   (orange cloud): a DNS-only name would send Let's Encrypt's renewal check straight to the origin, which the
+   allowlist would refuse — and a name switched to DNS-only later breaks renewal silently, 90 days on. After the
+   lock, `sudo certbot renew --dry-run` succeeds for every name.
+4. **Port 80 redirect-only**: apply the TLS-ORIGIN nginx files (or the same lines by hand: the `if ($scheme = http)
+   { return 301 https://$host$request_uri; }` inside `location /` and every other application location, never at
+   server level), `sudo nginx -t`, reload. Then, on the origin, `curl -s -o /dev/null -w '%{http_code}'
+   -H 'Host: <name>' http://127.0.0.1/.well-known/acme-challenge/<a file placed in the webroot>` answers `200`;
+   through Cloudflare `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://<name>/` answers `301
+   https://<name>/`; and `sudo certbot renew --dry-run` still succeeds.
+5. **HSTS**: comes with the step-4 files; `curl -sI https://<name>/ | grep -i strict-transport-security` shows
+   `max-age=31536000`. Cloudflare → Edge Certificates: **Always Use HTTPS** on, **Minimum TLS Version** 1.2.
+
+### The database link (DB-LINK)
+
+Measured on `main` `9ee5635`: the server connects to PostgreSQL with `settings.database.with_db()`
+(`api/src/bootstrap/mod.rs:87`), from the shared `pos_infra` `DatabaseSettings` (`api/src/config/mod.rs:8`; the crate
+is pinned at `108-platform-services` `8b53cee`, `crates/pos-infra/src/config/settings.rs:584-617`). `require_ssl:
+false` — the default in `api/configuration/base.yaml:15`, left commented in `deploy/server/env.example:36-37` —
+becomes sqlx `PgSslMode::Prefer`: TLS if the server offers it, plain otherwise, the certificate never checked; `true`
+becomes `Require`. `APP_DATABASE__HOST` is any string (`base.yaml:10` `localhost`, `env.example:26` `127.0.0.1`,
+`install.sh:70` writes `$DB_HOST`, `common.sh:24` default `127.0.0.1`, overridable).
+
+Today's install is local by construction — `install.sh` creates the role and database through the local superuser
+(`common.sh:61`, `sudo -u postgres psql`) and `restore.sh` restores through `runuser -u postgres` — but nothing stops
+the setting from naming another host, and then the password and every row would cross the network under `Prefer`.
+
+**Rule** [required], in `Settings::load_from` (`api/src/config/mod.rs:143-151`, beside the existing checks): a
+database host that is not local requires `database.require_ssl = true`; otherwise loading the settings fails with a
+message naming `database.require_ssl` and the host, and the server does not start. *Local* means: `localhost` (any
+letter case), an IP address that is loopback (`127.0.0.0/8`, `::1`), or a path starting with `/` (a Unix socket
+directory). Everything else — including `localhost.example.com` and `0.0.0.0` — is not local. `backup.sh` follows the
+same rule for `pg_dump` (§7b). [proposed] One private function `is_local_database_host(&str) -> bool` in the same
+file; no new type, no public signature, no new file (the 📐 exception for a one-file change), tests in a new file.
+
+`Require` encrypts but does not check the server's certificate (sqlx); checking it (`verify-full`) needs a root
+certificate setting the shared `DatabaseSettings` does not have. A v3 database on another host is not a supported
+installation today (install and restore are local); moving it is a design change that adds `verify-full` first (§11).
+
+### At rest on the server
+
+The live database files and the uploads directory (`/var/lib/xc-v3/uploads`: passport and slip images) are plain
+files on the server's disk, protected by file modes (uploads `xc-v3` 0700, backups root 0700) and by whatever disk
+encryption the hosting provider applies. That cannot be measured from the repository — it is an owner item (§11).
+The backups are encrypted by the application itself (§7b), because they leave the server.
 
 ## 8. Flutter — customer kiosk only
 
@@ -2194,6 +2402,9 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | DRV-4 (#274) | Printer models from configuration and the per-branch drawer switch (§5.4b *Printer models and the drawer switch*): `Settings.devices.printer_models` seeded with `NEOCAL_NTP_8220BT`; `PrinterModels`, `DrawerSettings` and `DeviceService::set_drawer`; the default trait method `DeviceDriver::run_with`, which `process` calls; `EscposDriver::with_models` and its override building the kick from the model; `queue` refuses a drawer request where `hasDrawer = 0`. DRV-1's provided tests and every caller of `new` stay untouched | `api/configuration/base.yaml`, `api/src/config/mod.rs`, `api/src/infrastructure/devices/printer_models.rs`, `api/src/infrastructure/devices/simulated_driver.rs`, `api/src/infrastructure/devices/escpos_driver.rs`, `api/src/infrastructure/devices/device_service.rs`, `api/src/infrastructure/devices/mod.rs`, `api/tests/printer_models_test.rs` | DRV-1 (#280) |
 | DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` gains two keys, `printerModel` (the model id) and `hasDrawer` (`true`/`false`/`null`); the key `model` stays T13b's admin snapshot (§5.4), so the same name never carries two meanings; the snapshot reads them through `DeviceService::drawer_settings(branch)`, which uses the service's own registry | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/src/infrastructure/devices/device_service.rs` (the one reader), `api/tests/devices_set_printer_test.rs` | DRV-4 |
 | BK (#121) | Backups and log retention of the v3 server (§7b): `backup.sh` makes one set (`pg_dump -Fc` + uploads archive, one UTC stamp, both or nothing), keeps the newest 7, copies off-host by `rsync` of the directory's contents filtered to the set directories (`--delete` only once the local directory holds 7); runs only through the unit and prints the set's path last; `restore.sh` rehearses a restore into a scratch database (made as `postgres` through `runuser`, the dump handed to `pg_restore` on stdin) and directory and refuses the live ones; a oneshot service (hardened, `ReadWritePaths=` the backup directory) with a daily `Persistent=true` timer; a journald drop-in example; the `XC_BACKUP_*` settings; the README install step creates `XC_BACKUP_DIR` (`install -d -m 0700 -o root -g root`) before the timer is enabled | `deploy/server/backup.sh`, `deploy/server/restore.sh`, `deploy/server/xc-v3-backup.service`, `deploy/server/xc-v3-backup.timer`, `deploy/server/journald-xc-v3.conf`, `deploy/server/env.example`, `deploy/server/scripts.test.sh`, `deploy/README.md` | — |
+| BK-ENC (#357) | Encrypted backups (§7b *Encryption of every set*): `backup.sh` refuses before `pg_dump` without `age` or a recipients file holding an `age1` line; checks the plain dump with `pg_restore --list` (`_sqlx_migrations`); a set holds exactly `db-<stamp>.dump.age` and `uploads-<stamp>.tar.gz.age`, no plain file survives a run that succeeds or fails; `PGSSLMODE=require` toward a non-local host; the off-host filter sends only `*.age` of the set directories; `restore.sh` decrypts with `XC_BACKUP_IDENTITY` (refused when empty, missing or group/other-readable) and drops what it made when decryption fails; `update.sh` checks the new set is encrypted instead of running `pg_restore`; `print_rollback` names the identity; README §5 (keys, recipients file, restore and off-server check, one-time removal of plain sets on Dell) | `deploy/server/backup.sh`, `deploy/server/restore.sh`, `deploy/server/update.sh`, `deploy/server/common.sh`, `deploy/server/env.example`, `deploy/README.md`; provided: `deploy/server/scripts.test.sh` | BK, #290 (both merged) |
+| TLS-ORIGIN (#358) | The repository's nginx files follow the host (§7c *Decided*): one server block on `80` and `443 ssl` with the Let's Encrypt certificate lines, `include snippets/acme-challenge.conf` and `snippets/ssl-params.conf` (both shipped as examples), port 80 answering only the ACME challenge and a 301 to https, HSTS on HTTPS answers, `X-Forwarded-Proto $scheme`; README §1/§6 and the customer-host guide gain the certbot webroot steps and the owner checklist. No application change (§7c) | `deploy/nginx/xc-v3-desk.conf.example`, `deploy/nginx/xc-v3-customer.conf.example`, `deploy/nginx/xc-customer.conf`, `deploy/nginx/snippets/acme-challenge.conf.example` (new), `deploy/nginx/snippets/ssl-params.conf.example` (new), `deploy/README.md` | BK-ENC (both hold `deploy/README.md`; or the reverse order) |
+| DB-LINK (#359) | A non-local database host requires `database.require_ssl = true` (§7c *The database link*), in `Settings::load_from` | `api/src/config/mod.rs`; provided: `api/tests/database_link_test.rs` (new), `api/tests/config_test.rs` (one test gains `APP_DATABASE__REQUIRE_SSL=true`) | — |
 | FV | The shared form helper (§5.3 *The shared form helper*): every HTML page gets the one tag `<script src="/_xc/forms.js" defer></script>` immediately before the version line, on both page paths; `GET /_xc/forms.js` answers the compiled-in script; the script repairs a `pattern` the `v` flag rejects (and maps login's 3–30 to the door's 3–40), lets the browser block an invalid submit with focus on the field, marks invalid fields red, points the cited server refusals at their field, and gives every password field a show/hide button. v2's files are not edited; the server's validation rules are not changed. A Node step in `api.yml` runs the helper's pure-function test | `api/src/presentation/pages.rs`, `api/static/xc-forms.js` (new), `api/tests/pages_forms_test.rs` and `api/tests/js/xc_forms.test.mjs` (new, provided), `api/tests/pages_test.rs` (its strip helper, provided), `.github/workflows/api.yml` (the Node step) | — |
 | DK-1 (#332) | The kept desk's dead ends (§5.3 *The kept desk's dead ends*): `GET /_xc/desk.js` compiled in through the new helper `compiled_script`, tagged as the last entry of `DESK_SCRIPTS` (both desk paths); the script shows the server's own refusal on the passport step, fills and locks `#staff` on `/staff/desk`, and after a **refused** LIVE save offers a way back to the rate step and enables New (Print stays disabled), Retry staying the only exit after an **unknown** outcome; on `/staff/desk` it clears `staffDraftId` on the way back and on New. v2's files, `STAFF_DESK_SCRIPT`, `xc-forms.js` and the server's rules are not edited | `api/src/presentation/pages.rs` (the helper, one `compiled_script` call, one entry in `DESK_SCRIPTS`), `api/static/xc-desk.js` (new); provided on `fix/desk-dead-ends-332` (tests `5f8d6b8`): `api/tests/pages_desk_script_test.rs`, `api/tests/js/xc_desk.test.mjs` (new), `api/tests/pages_test.rs` (the widened strip) | FV (merged, PR 320). Holds `pages.rs`: first in the order below |
 | SP-1 (#331) | The staff's own password change (§5.3 *The staff's own password change*; lane controller's option A): `AccountService::change_password` asks for `currentPassword` when `must_change` is false, counts the attempt on the employee's sign-in name counter, refuses a wrong or missing one with `รหัสผ่านปัจจุบันไม่ถูกต้อง` and an unchanged one with `รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน`; the first-password path is unchanged. `GET /_xc/staff-password.js` (one `compiled_script` call) on `/staff` (its `scripts` list) renders the form when `mustChange` is false. `auth.rs`, the owner's door and `/api/employees` are not edited | `api/crates/xc-auth/src/application/account/service.rs`, `api/src/presentation/pages.rs` (one `compiled_script` call, `/staff`'s `scripts` list), `api/static/xc-staff-password.js` (new); provided on `fix/staff-password-331` (tests `5358040`): `api/crates/xc-auth/tests/account_voluntary_password_test.rs`, `api/tests/pages_staff_password_test.rs`, `api/tests/js/xc_staff_password.test.mjs` (new), `api/crates/xc-auth/tests/account_test.rs` (the eight-changes test sends the current password), `api/crates/xc-auth/tests/account_common/mod.rs` (the v2 replay sends the password of the session's sign-in as `currentPassword`; v2's screen never had a voluntary change) | DK-1 (`compiled_script` and the widened strip of `pages_test.rs`; until DK-1 merges, `every_page_answers_as_v2_does` cannot pass with the `/staff` tag); T4b, T4c (merged) |
@@ -2280,3 +2491,8 @@ and AG-2; AG-PD needs AG-3 and PD-0/S0.
 | macOS code signing / notarization of `xc-device-agent` (§5.4c *Distribution and versioning*) | 2 | nothing for a test install (the binary is copied, not downloaded, and run by launchd); a download from a page would be stopped by Gatekeeper | owner (an Apple developer account) — **proposed:** no notarization for the first shops; the install copies the binary and removes the quarantine attribute |
 | The drawer pulse of the NEOCAL NTP-8220BT: `0/25/250` [proposed] or v2's `0/25/125` | 2 | nothing — a configuration edit (§5.4b); the agent sends what the branch's model says | owner, measured on the device at the first install: **proposed** keep `0/25/250` unless the drawer fails to open |
 | Freshness of a drawer job: 10 s [proposed] (pos108 allows 120 s) | 2 | nothing — one constant (§5.4c) | lane controller; owner may widen it if a slow counter network misses kicks |
+| Disk encryption at rest on the v3 host: the live database and `/var/lib/xc-v3/uploads` (passport and slip images) rely on the hosting provider's disk encryption (§7c *At rest on the server*); it cannot be measured from the repository | 2 | nothing in the repository; the answer decides whether the first release needs more | owner — confirm with the hosting provider for `do-sgp1` (and any later host) |
+| The backup identity (§7b *Encryption of every set*): made with `age-keygen` by the owner off the server, two copies kept apart, the `age1…` line placed in `/etc/xc-v3/backup.age-recipients` | 2 | every backup after BK-ENC merges and is installed: without the recipients file the timer's runs fail, and so does `update.sh` | owner |
+| The Cloudflare steps of TLS-ORIGIN (§7c *Owner checklist* 2–5): Full (strict), then lock the origin to Cloudflare (Authenticated Origin Pulls and/or an allowlist), port 80 redirect-only, HSTS. Step 1 (certificates, `listen 443 ssl`) is done on `do-sgp1` (2026-10-07) | 2 | until step 2, Cloudflare still reaches the origin in plain HTTP (Flexible), whatever the origin offers | owner |
+| Other applications on the v3 host and zone (ledger, txlog, botadmin, chain-slip, rate) have the same nginx-behind-Cloudflare shape | — | nothing in this lane | outside this lane |
+| A v3 database on another host would need `verify-full` and a root-certificate setting the shared `DatabaseSettings` lacks (§7c *The database link*) | 2 | nothing — install and restore are local-only today | lane controller, if a remote database is ever wanted |
