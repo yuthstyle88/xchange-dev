@@ -94,17 +94,72 @@ async fn a_graceful_stop_waits_as_long_as_the_settings_say() {
         .expect("the client thread");
     assert!(health.contains(" 200 "), "{health}");
 
-    // A request whose body never comes: its handler waits for the bytes, so
-    // the connection stays busy until the server gives up on it.
-    let mut held = TcpStream::connect(("127.0.0.1", port)).expect("connect to the server");
-    write!(
-        held,
-        "POST /api/staff/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
-         Content-Type: application/json\r\nContent-Length: 64\r\n\r\n"
-    )
-    .expect("send the request head");
-    // let a worker take the connection before the stop begins
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Use HTTP/1.1 keep-alive on the held connection for readiness without sleeping (PR 204):
+    // 1. Sends GET /healthz and reads its complete 200 answer. Only a worker writes
+    //    that answer, so the connection belongs to a worker.
+    // 2. On the same connection, sends the head of POST /api/staff/login with
+    //    Content-Length: 64 and no body. The same worker now waits for the body.
+    let held = tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to the server");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("set a read timeout");
+
+        write!(
+            stream,
+            "GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n"
+        )
+        .expect("send GET /healthz");
+        stream.flush().expect("flush GET /healthz");
+
+        let mut header_bytes = Vec::new();
+        let mut byte = [0u8; 1];
+        while !header_bytes.ends_with(b"\r\n\r\n") {
+            stream
+                .read_exact(&mut byte)
+                .expect("read /healthz header byte; keep-alive not held");
+            header_bytes.push(byte[0]);
+        }
+
+        let header_str = String::from_utf8_lossy(&header_bytes);
+        assert!(
+            header_str.contains(" 200 "),
+            "healthz did not return 200: {header_str}"
+        );
+
+        let content_length: usize = header_str
+            .lines()
+            .find_map(|line| {
+                let lower = line.to_ascii_lowercase();
+                if lower.starts_with("content-length:") {
+                    lower
+                        .split_once(':')
+                        .and_then(|(_, v)| v.trim().parse().ok())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        if content_length > 0 {
+            let mut body = vec![0u8; content_length];
+            stream.read_exact(&mut body).expect("read /healthz body");
+        }
+
+        write!(
+            stream,
+            "POST /api/staff/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             Content-Type: application/json\r\nContent-Length: 64\r\n\r\n"
+        )
+        .expect("send POST /api/staff/login head");
+        stream.flush().expect("flush POST head");
+
+        stream
+    })
+    .await
+    .expect("the client thread");
 
     let stopped_at = Instant::now();
     let kill = std::process::Command::new("kill")
