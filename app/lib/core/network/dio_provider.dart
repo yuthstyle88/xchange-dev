@@ -12,18 +12,15 @@ final apiBaseUrlProvider = Provider<String>((ref) {
   return endpoint.origin;
 });
 
-final dioProvider = Provider<Dio>((ref) {
-  final baseUrl = ref.watch(apiBaseUrlProvider);
-  final endpoint = ref.watch(kioskEndpointProvider);
-  final store = ref.watch(endpointStoreProvider);
-  final origin = endpoint != null ? store.originHeader(endpoint) : null;
-
+/// The kiosk's HTTP client for one server. [origin] is the `Origin` header,
+/// set only where the platform lets a client set it (not in a browser).
+/// Shared by [dioProvider] and setup's connection test.
+Dio buildKioskDio({required String baseUrl, String? origin}) {
   final headers = <String, dynamic>{
     'X-Xchange-Request': '1',
     'Origin': ?origin,
   };
-
-  final dio = Dio(
+  return Dio(
     BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -32,6 +29,15 @@ final dioProvider = Provider<Dio>((ref) {
       headers: headers,
     ),
   );
+}
+
+final dioProvider = Provider<Dio>((ref) {
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+  final endpoint = ref.watch(kioskEndpointProvider);
+  final store = ref.watch(endpointStoreProvider);
+  final origin = endpoint != null ? store.originHeader(endpoint) : null;
+
+  final dio = buildKioskDio(baseUrl: baseUrl, origin: origin);
   ref.onDispose(dio.close);
   return dio;
 });

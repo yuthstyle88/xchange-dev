@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/router/app_router.dart';
 import '../../../../l10n/kiosk_l10n.dart';
 import '../../../../shared/theme/colors.dart';
+import '../../../setup/app/setup_providers.dart';
 import '../../app/kiosk_providers.dart';
 import '../controllers/kiosk_controller.dart';
 import 'quote_page.dart';
@@ -138,10 +143,22 @@ class _Header extends ConsumerStatefulWidget {
 }
 
 class _HeaderState extends ConsumerState<_Header> {
+  static const setupHold = Duration(seconds: 10);
+
   final _search = TextEditingController();
+  Timer? _hold;
+
+  void _startHold() {
+    _hold?.cancel();
+    if (!ref.read(setupAvailableProvider)) return;
+    _hold = Timer(setupHold, () {
+      if (mounted) context.go(setupPath);
+    });
+  }
 
   @override
   void dispose() {
+    _hold?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -157,10 +174,18 @@ class _HeaderState extends ConsumerState<_Header> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Row(
         children: [
-          Image.asset(
-            'assets/img/logo.png',
-            height: 56,
-            semanticLabel: 'XCHANGE Currency Exchange',
+          // Ten seconds on the logo opens setup on an installed kiosk; a
+          // kiosk has no menu, and a customer must not reach it by accident.
+          Listener(
+            key: const Key('kiosk-logo'),
+            onPointerDown: (_) => _startHold(),
+            onPointerUp: (_) => _hold?.cancel(),
+            onPointerCancel: (_) => _hold?.cancel(),
+            child: Image.asset(
+              'assets/img/logo.png',
+              height: 56,
+              semanticLabel: 'XCHANGE Currency Exchange',
+            ),
           ),
           const SizedBox(width: 14),
           const Flexible(

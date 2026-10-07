@@ -90,14 +90,16 @@ class WaitingPage extends ConsumerWidget {
                     Text(l.text('usdtScan')),
                     TextButton(
                       onPressed: () async {
+                        // Read before the await: the page may be gone when
+                        // it fails.
+                        final actions = ref.read(deviceActionsProvider);
+                        final kiosk = ref.read(
+                          kioskControllerProvider.notifier,
+                        );
                         try {
-                          await ref
-                              .read(deviceActionsProvider)
-                              .openExternal(telegramUrl);
+                          await actions.openExternal(telegramUrl);
                         } on DeviceActionException {
-                          ref
-                              .read(kioskControllerProvider.notifier)
-                              .reportError('errGeneric');
+                          kiosk.reportError('errGeneric');
                         }
                       },
                       style: TextButton.styleFrom(

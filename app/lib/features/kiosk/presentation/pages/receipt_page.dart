@@ -73,14 +73,13 @@ class ReceiptPage extends ConsumerWidget {
               key: const Key('save-receipt'),
               label: l.text('saveImage'),
               onPressed: () async {
+                // Read before the await: the page may be gone when it fails.
+                final actions = ref.read(deviceActionsProvider);
+                final kiosk = ref.read(kioskControllerProvider.notifier);
                 try {
-                  await ref
-                      .read(deviceActionsProvider)
-                      .saveImage(image, filename(id));
+                  await actions.saveImage(image, filename(id));
                 } on DeviceActionException {
-                  ref
-                      .read(kioskControllerProvider.notifier)
-                      .reportError('errGeneric');
+                  kiosk.reportError('errGeneric');
                 }
               },
             ),

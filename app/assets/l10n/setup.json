@@ -1,0 +1,36 @@
+{
+  "en": {
+    "title": "Kiosk setup",
+    "server": "Server address",
+    "branch": "Branch code",
+    "test": "Test connection",
+    "testing": "Testing…",
+    "save": "Save and start",
+    "back": "Back to the kiosk",
+    "connected": "Connected to branch",
+    "serverMissing": "Enter the server address.",
+    "serverInvalid": "This is not a server address.",
+    "serverNotSecure": "The server must use https:// — plain http is not allowed.",
+    "branchMissing": "Enter the branch code.",
+    "branchInvalid": "A branch code has no spaces and is at most 80 characters.",
+    "unreachable": "The server did not answer. Check the address and the network.",
+    "notTested": "Test the connection with these values before saving."
+  },
+  "th": {
+    "title": "ตั้งค่าตู้",
+    "server": "ที่อยู่เซิร์ฟเวอร์",
+    "branch": "รหัสสาขา",
+    "test": "ทดสอบการเชื่อมต่อ",
+    "testing": "กำลังทดสอบ…",
+    "save": "บันทึกและเริ่มใช้งาน",
+    "back": "กลับไปหน้าตู้",
+    "connected": "เชื่อมต่อสาขา",
+    "serverMissing": "กรุณาใส่ที่อยู่เซิร์ฟเวอร์",
+    "serverInvalid": "ที่อยู่นี้ไม่ใช่ที่อยู่เซิร์ฟเวอร์",
+    "serverNotSecure": "เซิร์ฟเวอร์ต้องใช้ https:// — ไม่อนุญาต http ธรรมดา",
+    "branchMissing": "กรุณาใส่รหัสสาขา",
+    "branchInvalid": "รหัสสาขาต้องไม่มีช่องว่างและยาวไม่เกิน 80 ตัวอักษร",
+    "unreachable": "เซิร์ฟเวอร์ไม่ตอบ ตรวจที่อยู่และเครือข่ายอีกครั้ง",
+    "notTested": "ทดสอบการเชื่อมต่อด้วยค่านี้ก่อนบันทึก"
+  }
+}

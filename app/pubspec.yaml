@@ -30,6 +30,7 @@ flutter:
   assets:
     - assets/l10n/kiosk.json
     - assets/l10n/display_names.json
+    - assets/l10n/setup.json
     - assets/img/logo.png
     - assets/img/telegram_qr.png
 

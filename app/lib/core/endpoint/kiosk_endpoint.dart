@@ -21,15 +21,19 @@ class KioskEndpoint {
   final String branchId;
 
   String get origin {
+    // Uri.host drops the brackets of an IPv6 literal; an origin needs them.
+    final host = serverOrigin.host.contains(':')
+        ? '[${serverOrigin.host}]'
+        : serverOrigin.host;
     if (serverOrigin.hasPort) {
       final isDefaultPort =
           (serverOrigin.scheme == 'https' && serverOrigin.port == 443) ||
           (serverOrigin.scheme == 'http' && serverOrigin.port == 80);
       if (!isDefaultPort) {
-        return '${serverOrigin.scheme}://${serverOrigin.host}:${serverOrigin.port}';
+        return '${serverOrigin.scheme}://$host:${serverOrigin.port}';
       }
     }
-    return '${serverOrigin.scheme}://${serverOrigin.host}';
+    return '${serverOrigin.scheme}://$host';
   }
 
   factory KioskEndpoint.parse(

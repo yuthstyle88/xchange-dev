@@ -163,7 +163,7 @@ class KioskController extends Notifier<KioskState> {
   static const restartAfterDone = Duration(seconds: 30);
   static const ratesRefresh = Duration(seconds: 30);
 
-  late final KioskRepository _repo = ref.read(kioskRepositoryProvider);
+  KioskRepository get _repo => ref.read(kioskRepositoryProvider);
   late final KioskL10n _l10n = ref.read(kioskL10nProvider);
 
   /// The language the screen returns to on every reset.
