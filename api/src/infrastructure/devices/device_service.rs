@@ -22,6 +22,7 @@ use super::device_job::{DeviceJob, JobKind, JobStatus};
 use super::device_repository::{DeviceRepository, NewEvent, NewJob, PRINTER_ONLINE};
 use super::job_ids::JobIds;
 use super::pg_device_repository::PgDeviceRepository;
+use super::printer_models::{DrawerSettings, HAS_DRAWER, PRINTER_MODEL, PrinterModels};
 use super::printer_settings::{
     PRINTER_HOST, PRINTER_KIND, PRINTER_PORT, PrinterKind, PrinterSettings,
 };
@@ -42,6 +43,7 @@ pub const NOT_HERE: &str = "ไม่พบรายการในสาขา�
 pub const BAD_STATE: &str = "สถานะไม่ถูกต้อง";
 pub const COUNT_FIRST: &str = "ยืนยันการนับเงินก่อนบันทึกรายการเงินสด";
 pub const BAD_PRINTER: &str = "ตั้งค่าเครื่องพิมพ์ไม่ถูกต้อง";
+pub const NO_DRAWER: &str = "สาขานี้ไม่มีลิ้นชัก";
 
 /// How many jobs and lines the overview carries.
 pub const OVERVIEW_JOBS: i64 = 100;
@@ -68,6 +70,7 @@ pub struct DeviceService {
     exchanges: Arc<dyn SavedExchanges>,
     ids: Arc<dyn JobIds>,
     driver: Arc<dyn DeviceDriver>,
+    printer_models: Arc<PrinterModels>,
 }
 
 fn refuse<T>(sentence: &str) -> AppResult<T> {
@@ -134,12 +137,19 @@ impl DeviceService {
             exchanges,
             ids,
             driver: Arc::new(SimulatedDriver),
+            printer_models: Arc::new(PrinterModels::built_in()),
         }
     }
 
     /// The same service with another driver.
     pub fn with_driver(mut self, driver: Arc<dyn DeviceDriver>) -> Self {
         self.driver = driver;
+        self
+    }
+
+    /// The same service with another printer models registry.
+    pub fn with_printer_models(mut self, models: Arc<PrinterModels>) -> Self {
+        self.printer_models = models;
         self
     }
 
@@ -203,6 +213,19 @@ impl DeviceService {
         self.branch_tx
             .run(branch, move |tx| {
                 Box::pin(async move {
+                    if kind == JobKind::DrawerRequest
+                        && repo.setting_in(tx, &b, HAS_DRAWER).await?.as_deref() == Some("0")
+                    {
+                        if let Some(prior) =
+                            repo.find_job_by_request(tx, &b, &cmd.request_id).await?
+                        {
+                            if prior.request_hash != hash {
+                                return refuse(REQUEST_CHANGED);
+                            }
+                            return Ok(prior.job);
+                        }
+                        return refuse(NO_DRAWER);
+                    }
                     let new = NewJob {
                         id: &id,
                         request_id: &cmd.request_id,
@@ -263,6 +286,7 @@ impl DeviceService {
         let now = cut_to_millis(now)?;
         let repo = self.repo.clone();
         let driver = self.driver.clone();
+        let models = self.printer_models.clone();
         let b = branch.clone();
         let job_id = job_id.to_owned();
         let actor = actor.to_owned();
@@ -276,7 +300,8 @@ impl DeviceService {
                         return Ok(job);
                     }
                     let printer = PrinterSettings::read_in(tx, &repo, &b).await?;
-                    let status = driver.run(job.kind, &printer).await;
+                    let drawer = DrawerSettings::read_in(tx, &repo, &b, &models).await?;
+                    let status = driver.run_with(job.kind, &printer, &drawer).await;
                     repo.set_job_status(tx, &b, &job.id, status, now).await?;
                     let detail = json!({
                         "job": job.id, "physicalAction": false, "physicalOpenConfirmed": false,
@@ -412,6 +437,39 @@ impl DeviceService {
                             repo.put_setting(tx, &b, PRINTER_PORT, &port_str).await?;
                         }
                     }
+                    Ok(())
+                })
+            })
+            .await
+    }
+
+    /// Sets which printer model the branch uses and whether a drawer is connected. Owner only.
+    pub async fn set_drawer(
+        &self,
+        branch: &BranchId,
+        model: &str,
+        has_drawer: bool,
+        actor: &Actor,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        self.require_branch(branch).await?;
+        if actor.kind() != ActorKind::Owner {
+            return refuse("เฉพาะเจ้าของระบบเท่านั้น");
+        }
+        if self.printer_models.get(model).is_none() {
+            return refuse(BAD_PRINTER);
+        }
+        let now = cut_to_millis(now)?;
+        let _ = now;
+        let repo = self.repo.clone();
+        let b = branch.clone();
+        let model_str = model.to_owned();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    repo.put_setting(tx, &b, PRINTER_MODEL, &model_str).await?;
+                    repo.put_setting(tx, &b, HAS_DRAWER, if has_drawer { "1" } else { "0" })
+                        .await?;
                     Ok(())
                 })
             })

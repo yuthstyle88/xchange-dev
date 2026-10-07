@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 
 use super::device_job::{JobKind, JobStatus};
+use super::printer_models::DrawerSettings;
 use super::printer_settings::PrinterSettings;
 
 /// What carries a queued job out.
@@ -13,6 +14,17 @@ pub trait DeviceDriver: Send + Sync {
 
     /// Carries the job out on the branch's printer and says where it stands afterwards.
     async fn run(&self, kind: JobKind, printer: &PrinterSettings) -> JobStatus;
+
+    /// Carries the job out on the branch's printer and drawer settings and says where it stands afterwards.
+    async fn run_with(
+        &self,
+        kind: JobKind,
+        printer: &PrinterSettings,
+        drawer: &DrawerSettings,
+    ) -> JobStatus {
+        let _ = drawer;
+        self.run(kind, printer).await
+    }
 }
 
 /// Touches no hardware: it only says what a device would have done.

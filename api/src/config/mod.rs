@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::infrastructure::devices::printer_models::{PrinterModel, PrinterModels};
+
 pub use pos_infra::config::settings::{DatabaseSettings, TelemetrySettings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -59,6 +61,20 @@ impl Default for AuthSettings {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct DevicesSettings {
+    #[serde(rename = "printerModels")]
+    pub printer_models: Vec<PrinterModel>,
+}
+
+impl Default for DevicesSettings {
+    fn default() -> Self {
+        Self {
+            printer_models: PrinterModels::built_in_models(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
     pub channel: Channel,
@@ -68,6 +84,8 @@ pub struct Settings {
     pub files: FilesSettings,
     #[serde(default)]
     pub auth: AuthSettings,
+    #[serde(default)]
+    pub devices: DevicesSettings,
 }
 
 impl Settings {
@@ -127,6 +145,9 @@ impl Settings {
             return Err(config::ConfigError::Message(
                 "auth.purge_interval_secs must be at least 1".to_string(),
             ));
+        }
+        if let Err(e) = PrinterModels::new(settings.devices.printer_models.clone()) {
+            return Err(config::ConfigError::Message(e));
         }
         Ok(settings)
     }

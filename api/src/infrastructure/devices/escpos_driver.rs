@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::device_job::{JobKind, JobStatus};
+use super::printer_models::{DrawerSettings, PrinterModels};
 use super::printer_settings::{PrinterKind, PrinterSettings};
 use super::simulated_driver::DeviceDriver;
 
@@ -29,11 +30,16 @@ impl PrinterTransport for TcpTransport {
 /// Answers a simulated printer as `SimulatedDriver` does and drives a network one.
 pub struct EscposDriver {
     transport: Arc<dyn PrinterTransport>,
+    models: Arc<PrinterModels>,
 }
 
 impl EscposDriver {
     pub fn new(transport: Arc<dyn PrinterTransport>) -> Self {
-        Self { transport }
+        Self::with_models(transport, Arc::new(PrinterModels::built_in()))
+    }
+
+    pub fn with_models(transport: Arc<dyn PrinterTransport>, models: Arc<PrinterModels>) -> Self {
+        Self { transport, models }
     }
 }
 
@@ -44,6 +50,19 @@ impl DeviceDriver for EscposDriver {
     }
 
     async fn run(&self, kind: JobKind, printer: &PrinterSettings) -> JobStatus {
+        let drawer = DrawerSettings {
+            model: self.models.default_id().to_owned(),
+            has_drawer: None,
+        };
+        self.run_with(kind, printer, &drawer).await
+    }
+
+    async fn run_with(
+        &self,
+        kind: JobKind,
+        printer: &PrinterSettings,
+        drawer: &DrawerSettings,
+    ) -> JobStatus {
         if !printer.online {
             return JobStatus::Failed;
         }
@@ -56,7 +75,16 @@ impl DeviceDriver for EscposDriver {
             PrinterKind::Network(host, port) => match kind {
                 JobKind::PrintReceipt => JobStatus::SimulatedPrinted,
                 JobKind::DrawerRequest => {
-                    let kick = pos_printer::escpos::render_drawer_kick();
+                    if drawer.has_drawer == Some(false) {
+                        return JobStatus::Failed;
+                    }
+                    let Some(model) = self.models.get(&drawer.model) else {
+                        return JobStatus::Failed;
+                    };
+                    let Some(pulse) = &model.drawer_pulse else {
+                        return JobStatus::Failed;
+                    };
+                    let kick = pulse.kick_bytes();
                     match self.transport.send(host, *port, &kick).await {
                         Ok(()) => JobStatus::DrawerOpened,
                         Err(_) => JobStatus::Failed,

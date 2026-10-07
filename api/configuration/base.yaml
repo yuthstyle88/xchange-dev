@@ -31,3 +31,11 @@ files:
 auth:
   # seconds between two purges of expired sessions and past sign-in windows
   purge_interval_secs: 3600
+
+devices:
+  printerModels:
+    - id: NEOCAL_NTP_8220BT
+      name: "NEOCAL NTP-8220BT"
+      paperMm: 80
+      drawerPulse: { pin: 0, on: 25, off: 250 }
+
