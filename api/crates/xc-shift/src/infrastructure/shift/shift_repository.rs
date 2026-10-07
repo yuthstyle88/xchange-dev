@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
@@ -53,49 +53,64 @@ fn format_delta(d: MoneyDelta) -> String {
     format!("{sign}{}.{:02}", abs / 100, abs % 100)
 }
 
-fn parse_money_unbounded(s: &str) -> Option<Money> {
-    let s = s.trim();
-    if s.starts_with('-') {
-        return None;
+fn undecodable(table: &str, column: &str, value: &str) -> AppError {
+    AppError::Internal(format!("undecodable {table}.{column}: {value}"))
+}
+
+fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Result<Money, AppError> {
+    let trimmed = s.trim();
+    if trimmed.starts_with('-') {
+        return Err(undecodable(table, column, s));
     }
-    let d = Decimal::from_str(s).ok()?;
+    let d = Decimal::from_str(trimmed).map_err(|_| undecodable(table, column, s))?;
     if d < Decimal::ZERO || d.scale() > 2 {
-        return None;
+        return Err(undecodable(table, column, s));
     }
     let mut d = d;
     d.rescale(2);
     let minor = d.mantissa();
-    MoneyDelta::from_minor(minor).to_money().ok()
+    MoneyDelta::from_minor(minor)
+        .to_money()
+        .map_err(|_| undecodable(table, column, s))
 }
 
-fn parse_delta_str(s: &str) -> MoneyDelta {
-    let s = s.trim();
-    let (negative, num_str) = if let Some(rest) = s.strip_prefix('-') {
+fn parse_delta_str(table: &str, column: &str, s: &str) -> Result<MoneyDelta, AppError> {
+    let trimmed = s.trim();
+    let (negative, num_str) = if let Some(rest) = trimmed.strip_prefix('-') {
         (true, rest)
-    } else if let Some(rest) = s.strip_prefix('+') {
+    } else if let Some(rest) = trimmed.strip_prefix('+') {
         (false, rest)
     } else {
-        (false, s)
+        (false, trimmed)
     };
     if let Ok(d) = Decimal::from_str(num_str) {
         if d >= Decimal::ZERO && d.scale() <= 2 {
             let mut d = d;
             d.rescale(2);
             let minor = d.mantissa();
-            return if negative {
+            return Ok(if negative {
                 MoneyDelta::from_minor(-minor)
             } else {
                 MoneyDelta::from_minor(minor)
-            };
+            });
         }
     }
-    MoneyDelta::ZERO
+    Err(undecodable(table, column, s))
 }
 
-fn parse_direction(s: &str) -> Direction {
+fn parse_direction(s: &str) -> Result<Direction, AppError> {
     match s.trim() {
-        "OUT" => Direction::Out,
-        _ => Direction::In,
+        "IN" => Ok(Direction::In),
+        "OUT" => Ok(Direction::Out),
+        other => Err(undecodable("stock_movements", "direction", other)),
+    }
+}
+
+fn parse_shift_status(s: &str) -> Result<ShiftStatus, AppError> {
+    match s.trim() {
+        "OPEN" => Ok(ShiftStatus::Open),
+        "CLOSED" => Ok(ShiftStatus::Closed),
+        other => Err(undecodable("shifts", "status", other)),
     }
 }
 
@@ -121,30 +136,30 @@ where
     let mut diff_pairs = Vec::new();
 
     for (code_str, opening_str, expected_str, counted_opt, diff_opt) in rows {
-        if let Ok(code) = CurrencyCode::parse(code_str.trim()) {
-            if let Some(m) = parse_money_unbounded(&opening_str) {
-                if !m.is_zero() {
-                    opening_pairs.push((code, m));
+        let code = CurrencyCode::parse(code_str.trim())
+            .map_err(|_| undecodable("shift_balances", "code", &code_str))?;
+
+        let opening = parse_money_unbounded("shift_balances", "opening", &opening_str)?;
+        if !opening.is_zero() {
+            opening_pairs.push((code, opening));
+        }
+
+        let expected = parse_money_unbounded("shift_balances", "expected", &expected_str)?;
+        if !expected.is_zero() {
+            expected_pairs.push((code, expected));
+        }
+
+        if status == ShiftStatus::Closed {
+            if let Some(c_str) = counted_opt {
+                let counted = parse_money_unbounded("shift_balances", "counted", &c_str)?;
+                if !counted.is_zero() {
+                    counted_pairs.push((code, counted));
                 }
             }
-            if let Some(m) = parse_money_unbounded(&expected_str) {
-                if !m.is_zero() {
-                    expected_pairs.push((code, m));
-                }
-            }
-            if status == ShiftStatus::Closed {
-                if let Some(c_str) = counted_opt {
-                    if let Some(m) = parse_money_unbounded(&c_str) {
-                        if !m.is_zero() {
-                            counted_pairs.push((code, m));
-                        }
-                    }
-                }
-                if let Some(d_str) = diff_opt {
-                    let d = parse_delta_str(&d_str);
-                    if !d.is_zero() {
-                        diff_pairs.push((code, d));
-                    }
+            if let Some(d_str) = diff_opt {
+                let diff = parse_delta_str("shift_balances", "difference", &d_str)?;
+                if !diff.is_zero() {
+                    diff_pairs.push((code, diff));
                 }
             }
         }
@@ -163,13 +178,14 @@ where
     Ok((opening, expected, counted, difference))
 }
 
-fn map_movement_row(row: MovementRow) -> StockMovement {
+fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
     let (id, shift_id, at, by, code_str, dir_str, amount_str, reason, request_id) = row;
-    let currency = CurrencyCode::parse(code_str.trim()).unwrap_or(CurrencyCode::THB);
-    let direction = parse_direction(&dir_str);
-    let amount = parse_money_unbounded(&amount_str).unwrap_or(Money::ZERO);
+    let currency = CurrencyCode::parse(code_str.trim())
+        .map_err(|_| undecodable("stock_movements", "code", &code_str))?;
+    let direction = parse_direction(&dir_str)?;
+    let amount = parse_money_unbounded("stock_movements", "amount", &amount_str)?;
 
-    StockMovement {
+    Ok(StockMovement {
         id,
         shift_id,
         at,
@@ -179,7 +195,7 @@ fn map_movement_row(row: MovementRow) -> StockMovement {
         amount,
         reason,
         request_id,
-    }
+    })
 }
 
 #[derive(Clone)]
@@ -216,7 +232,7 @@ impl ShiftRepository for PgShiftRepository {
         .await?;
 
         if let Some(r) = row {
-            let status = ShiftStatus::Open;
+            let status = parse_shift_status(&r.2)?;
             let (opening, expected, counted, difference) =
                 load_shift_balances(&self.pool, &r.0, status).await?;
             Ok(Some(Shift {
@@ -251,10 +267,7 @@ impl ShiftRepository for PgShiftRepository {
 
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
-            let status = match r.2.as_str() {
-                "OPEN" => ShiftStatus::Open,
-                _ => ShiftStatus::Closed,
-            };
+            let status = parse_shift_status(&r.2)?;
             let (opening, expected, counted, difference) =
                 load_shift_balances(&self.pool, &r.0, status).await?;
             out.push(Shift {
@@ -286,7 +299,7 @@ impl ShiftRepository for PgShiftRepository {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(map_movement_row).collect())
+        rows.into_iter().map(map_movement_row).collect()
     }
 
     async fn is_request_abandoned(
@@ -321,10 +334,7 @@ impl ShiftRepository for PgShiftRepository {
         .await?;
 
         if let Some(r) = row {
-            let status = match r.2.as_str() {
-                "OPEN" => ShiftStatus::Open,
-                _ => ShiftStatus::Closed,
-            };
+            let status = parse_shift_status(&r.2)?;
             let (opening, expected, counted, difference) =
                 load_shift_balances(&mut **tx, &r.0, status).await?;
             Ok(Some(Shift {
@@ -364,10 +374,7 @@ impl ShiftRepository for PgShiftRepository {
         .await?;
 
         if let Some(r) = row {
-            let status = match r.2.as_str() {
-                "OPEN" => ShiftStatus::Open,
-                _ => ShiftStatus::Closed,
-            };
+            let status = parse_shift_status(&r.2)?;
             let (opening, expected, counted, difference) =
                 load_shift_balances(&mut **tx, &r.0, status).await?;
             Ok(Some(Shift {
@@ -405,7 +412,7 @@ impl ShiftRepository for PgShiftRepository {
         .await?;
 
         if let Some(r) = row {
-            let status = ShiftStatus::Open;
+            let status = parse_shift_status(&r.2)?;
             let (opening, expected, counted, difference) =
                 load_shift_balances(&mut **tx, &r.0, status).await?;
             Ok(Some(Shift {
@@ -477,7 +484,7 @@ impl ShiftRepository for PgShiftRepository {
         .fetch_optional(&mut **tx)
         .await?;
 
-        Ok(row.map(map_movement_row))
+        row.map(map_movement_row).transpose()
     }
 
     async fn insert_movement(
