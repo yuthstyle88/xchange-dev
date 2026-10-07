@@ -163,7 +163,7 @@ using the backup set `update.sh` created and named just before the update
 (`$XC_BACKUP_DIR/<stamp>/`):
 - Rehearsal:
   ```bash
-  sudo /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
+  sudo XC_BACKUP_IDENTITY=<identity> /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
   ```
 - Real restore: see Section 5 "Real restore". This start refusal follows
 from sqlx's documented default and was not exercised here.
@@ -174,15 +174,16 @@ upstream is pointed back at v2 by the host's owner; v3's database is kept.
 ## 5. Backups and log retention
 
 Every backup run creates one **set** under `$XC_BACKUP_DIR` (default `/var/backups/xc-v3`), named by a UTC timestamp `<stamp>/` (format `YYYYMMDDTHHMMSSZ`), containing:
-- `db-<stamp>.dump` — PostgreSQL custom-format archive (`pg_dump -Fc`) of `APP_DATABASE__DATABASE_NAME`.
-- `uploads-<stamp>.tar.gz` — gzip-compressed archive (`tar -czf`) of `APP_FILES__DIR`.
+- `db-<stamp>.dump.age` — age-encrypted PostgreSQL custom-format archive (`pg_dump -Fc` of `APP_DATABASE__DATABASE_NAME`).
+- `uploads-<stamp>.tar.gz.age` — age-encrypted gzip-compressed archive (`tar -czf`) of `APP_FILES__DIR`.
 
 Both the backup directory and each set directory are mode `0700` owned by `root:root`. The set is created in a temporary working directory `.work-<stamp>` and renamed to `<stamp>` only when both pieces exit 0. After each successful run, local sets are pruned so only the newest `XC_BACKUP_KEEP` sets (default 7) remain. If configured, `XC_BACKUP_OFFHOST` mirrors the local sets to a remote host via `rsync`.
 
 ### Installing the backup units
 
-1. Copy the scripts and units to the host:
+1. Install `age` and copy the scripts and units to the host:
    ```bash
+   sudo apt update && sudo apt install -y age
    sudo install -m 0755 server/backup.sh /opt/xc-v3/backup.sh
    sudo install -m 0755 server/restore.sh /opt/xc-v3/restore.sh
    sudo install -m 0644 server/xc-v3-backup.service /etc/systemd/system/xc-v3-backup.service
@@ -190,13 +191,30 @@ Both the backup directory and each set directory are mode `0700` owned by `root:
    sudo systemctl daemon-reload
    ```
 
-2. **Create the backup directory before enabling the timer** (the unit's `ReadWritePaths=` requires it to exist beforehand):
+2. **Configure age encryption recipients**:
+   The backup identity is generated and kept off the server by the owner; only the public recipient key is stored on the server.
+   - On the owner's machine, generate the identity with `age-keygen` and keep two copies apart (e.g. offline storage and password manager):
+     ```bash
+     age-keygen -o xc-backup-identity.txt
+     ```
+   - Extract the public recipient line (`age1...`):
+     ```bash
+     age-keygen -y xc-backup-identity.txt
+     ```
+   - On the server, place the `age1...` recipient in `/etc/xc-v3/backup.age-recipients` (root:root, mode 0644):
+     ```bash
+     sudo sh -c 'echo "age1..." > /etc/xc-v3/backup.age-recipients'
+     sudo chown root:root /etc/xc-v3/backup.age-recipients
+     sudo chmod 0644 /etc/xc-v3/backup.age-recipients
+     ```
+
+3. **Create the backup directory before enabling the timer** (the unit's `ReadWritePaths=` requires it to exist beforehand):
    ```bash
    sudo install -d -m 0700 -o root -g root /var/backups/xc-v3
    ```
    If `/etc/xc-v3/env` overrides `XC_BACKUP_DIR`, use that path instead (and update `ReadWritePaths=` in `xc-v3-backup.service`).
 
-3. If off-host backups are used, generate an SSH key, configure the remote target, and record the remote host key before enabling the timer:
+4. If off-host backups are used, generate an SSH key, configure the remote target, and record the remote host key before enabling the timer:
    ```bash
    # Generate dedicated SSH key (root-owned, mode 0600)
    sudo ssh-keygen -t ed25519 -N "" -f /etc/xc-v3/backup-offhost.key
@@ -228,24 +246,46 @@ Both the backup directory and each set directory are mode `0700` owned by `root:
    > [!NOTE]
    > Why this step is required: `xc-v3-backup.service` runs `backup.sh` non-interactively (`BatchMode=yes`) under systemd hardening with `ProtectHome=read-only`. If the off-host host key is not already present in `/root/.ssh/known_hosts`, SSH cannot prompt the operator and cannot write the key to `/root/.ssh/known_hosts` at runtime, causing every daily off-host backup run to fail with `Host key verification failed`.
 
-4. Enable and start the timer:
+   **One-time owner step for existing off-host plain files:**
+   Because rsync's include filter sends only `*.age` files and protects excluded target files, any plain files from backups taken before BK-ENC remain on the off-host target until removed manually:
+   ```bash
+   # On the off-host machine, list plain files in the target directory:
+   find <target> -type f ! -name '*.age' -print
+
+   # After reading the list and confirming, delete them:
+   find <target> -type f ! -name '*.age' -delete
+   ```
+
+5. Enable and start the timer:
    ```bash
    sudo systemctl enable --now xc-v3-backup.timer
    ```
 
-5. To run a backup by hand at any time:
+6. To run a backup by hand at any time:
    ```bash
    sudo systemctl start xc-v3-backup.service
    ```
    Check the output in the journal: `journalctl -u xc-v3-backup.service`. The last line of stdout is the path to the completed set.
 
+### Verifying a backup on the owner's machine
+
+The owner can check that a backup set is valid and that their identity key works directly on their own machine, without needing server access:
+```bash
+age -d -i <identity> db-<stamp>.dump.age | pg_restore --list
+age -d -i <identity> uploads-<stamp>.tar.gz.age | tar -tzf -
+```
+The first command checks that `_sqlx_migrations` is listed in the archive table of contents; the second lists the archived files.
+
 ### Rehearsing a restore
 
-To verify a backup set without touching live data, run `restore.sh`:
+To verify a backup set on the server without touching live data, run `restore.sh`. The owner brings the identity temporarily to tmpfs (`/run/xc-v3-restore/identity`, mode 0600) and passes it in `XC_BACKUP_IDENTITY`:
 ```bash
-sudo /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
+sudo install -d -m 0700 /run/xc-v3-restore
+sudo install -m 0600 <identity-file> /run/xc-v3-restore/identity
+sudo XC_BACKUP_IDENTITY=/run/xc-v3-restore/identity /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
+sudo rm -rf /run/xc-v3-restore
 ```
-`restore.sh` strictly refuses the live database name (or case variations) and refuses the live uploads directory or paths inside it. It creates the scratch database as `postgres`, restores the dump via stdin, extracts uploads, and prints cleanup instructions. On failure, it drops the scratch database and cleans up the scratch directory automatically.
+`restore.sh` strictly refuses the live database name (or case variations) and refuses the live uploads directory or paths inside it. It creates the scratch database as `postgres`, decrypts the dump with `age -d -i "$XC_BACKUP_IDENTITY"` into `pg_restore` via stdin, decrypts and extracts uploads, and prints cleanup instructions. On failure, it drops the scratch database and cleans up the scratch directory automatically.
 
 To remove scratch rehearsal resources:
 ```bash
@@ -255,29 +295,35 @@ sudo rm -rf <scratch-uploads-dir>
 
 ### Real restore (disaster recovery)
 
-A real restore replaces live data and must be performed with the service stopped:
-1. Stop the server:
+A real restore replaces live data and must be performed with the service stopped, decrypting with `age -d`:
+1. Place identity on tmpfs:
+   ```bash
+   sudo install -d -m 0700 /run/xc-v3-restore
+   sudo install -m 0600 <identity-file> /run/xc-v3-restore/identity
+   ```
+2. Stop the server:
    ```bash
    sudo systemctl stop xc-v3.service
    ```
-2. Restore database:
+3. Restore database:
    ```bash
    sudo runuser -u postgres -- dropdb xc_v3
    sudo runuser -u postgres -- createdb xc_v3
-   sudo sh -c 'runuser -u postgres -- pg_restore --no-owner -d xc_v3 < /var/backups/xc-v3/<stamp>/db-<stamp>.dump'
+   sudo sh -c 'age -d -i /run/xc-v3-restore/identity /var/backups/xc-v3/<stamp>/db-<stamp>.dump.age | runuser -u postgres -- pg_restore --no-owner -d xc_v3'
    ```
-3. Restore uploads:
+4. Restore uploads:
    ```bash
    # Clear existing uploads without relying on caller shell glob expansion:
    sudo find /var/lib/xc-v3/uploads -mindepth 1 -delete
-   sudo tar -xzf /var/backups/xc-v3/<stamp>/uploads-<stamp>.tar.gz -C /var/lib/xc-v3/uploads
+   sudo sh -c 'age -d -i /run/xc-v3-restore/identity /var/backups/xc-v3/<stamp>/uploads-<stamp>.tar.gz.age | tar -xzf - -C /var/lib/xc-v3/uploads'
    sudo chown -R xc-v3:xc-v3 /var/lib/xc-v3/uploads
    ```
    > [!NOTE]
    > Why `find ... -delete`: A plain `sudo rm -rf /var/lib/xc-v3/uploads/*` expands the `*` glob in the operator's shell before `sudo` executes. Because `/var/lib/xc-v3/uploads` is mode `0700` owned by `xc-v3:xc-v3`, an unprivileged operator's shell cannot list the directory, leaving the `*` pattern unexpanded so `rm` removes nothing. Using `sudo find ... -mindepth 1 -delete` ensures existing files are removed before the archive is extracted.
-4. Restart the server:
+5. Restart the server and remove the identity from tmpfs:
    ```bash
    sudo systemctl start xc-v3.service
+   sudo rm -rf /run/xc-v3-restore
    ```
 
 ### Log retention

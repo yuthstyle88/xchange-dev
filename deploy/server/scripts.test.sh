@@ -46,6 +46,32 @@
 #   B8   the timer is daily and Persistent=true; the service is a oneshot
 #   B9   env.example names every XC_BACKUP_* setting
 #
+# Cases marked BK-ENC are the encrypted backups (design §7b "Encryption of
+# every set"), with age stubbed (base64 under the age header line, so the
+# plain text never appears in what it writes):
+#   B1   (BK-ENC) the set holds db-<stamp>.dump.age and uploads-<stamp>.tar.gz.age
+#        only, each starting "age-encryption.org/v1", encrypted to the
+#        recipients file; no plain dump or archive is left anywhere in the
+#        backup directory or TMPDIR; the plain dump was checked with
+#        pg_restore --list
+#   B6   (BK-ENC) the off-host filter sends the .age files of the set
+#        directories only — never a plain file inside a set directory (a set
+#        made before BK-ENC), the working directory, the lock or another name
+#   B7c  (BK-ENC) restore decrypts with XC_BACKUP_IDENTITY and hands the plain
+#        dump to pg_restore on stdin
+#   B7e  (BK-ENC) restore refuses an empty, missing, or group/other-readable
+#        XC_BACKUP_IDENTITY before creating anything
+#   B7f  (BK-ENC) a decryption that fails drops the scratch database and
+#        directory the rehearsal made
+#   B9b  (BK-ENC) env.example names XC_BACKUP_RECIPIENTS, holds no identity
+#   B11  (BK-ENC) a missing, empty or comment-only recipients file fails the
+#        backup before pg_dump, with nothing written
+#   B11b (BK-ENC) a failing age leaves no set, no plain file, prunes nothing
+#   B12  (BK-ENC) a dump pg_restore cannot list, or that lists no
+#        _sqlx_migrations, makes no set
+#   B13  (BK-ENC) pg_dump toward a non-local host runs with PGSSLMODE=require
+#        (or verify-full); toward a local host it is not forced
+#
 # Cases U1-U5c are update.sh taking a backup first (#290, design §7b, the
 # #290 paragraph), run as full update.sh runs on an installed host laid out
 # under the scratch root, with their own stubs first on PATH (sudo mapping
@@ -59,8 +85,16 @@
 #        and there is no NOTE
 #   U3   a failing backup: no stop, nothing replaced, the message names BK
 #   U4   xc-v3-backup.service not installed: refused the same way
-#   U5/U5b/U5c  the new set's dump fails pg_restore --list, or lists no
-#        _sqlx_migrations, or no new set appeared: no stop, nothing replaced
+#   U5c  no new set appeared: no stop, nothing replaced
+# After BK-ENC the server cannot read a set, so update.sh checks that the new
+# set is encrypted instead of running pg_restore (backup.sh runs that check):
+#   U1/U2 (BK-ENC) the new set's .age dump is read (through sudo) before the
+#        stop; pg_restore never runs and age never decrypts; the NOTE names
+#        db-<stamp>.dump.age; the rollback names XC_BACKUP_IDENTITY
+#   U5   (BK-ENC) a .age dump without the age header line: no stop, nothing
+#        replaced, the message names the file
+#   U5b  (BK-ENC) a plain (pre-BK-ENC) set: no stop, nothing replaced
+#   U5d  (BK-ENC) a set without the .age uploads archive: no stop
 # Nothing here touches a host: all paths live under a /var/tmp scratch root
 # (not /tmp or /home: check_own_path refuses those).
 set -euo pipefail
@@ -433,6 +467,7 @@ report T6 "ensure_dir still refuses an existing directory of another mode"
 write_stub pg_dump <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/pg_dump.log"
+printf 'PGSSLMODE=%s\n' "${PGSSLMODE:-}" >>"${XC_TEST_LOG:?}/pg_dump.env"
 out="" take=0
 for a in "$@"; do
   if [ "$take" = 1 ]; then
@@ -482,6 +517,9 @@ if [ "$create" = 1 ]; then
     printf 'tar stub archive\n'
   fi
   [ "${XC_STUB_TAR_FAIL:-0}" = 1 ] && exit 2
+elif [ -z "$out" ] || [ "$out" = - ]; then
+  # extracting from standard input (e.g. "age -d ... | tar -xz"): read it all
+  cat >/dev/null
 fi
 exit 0
 STUB
@@ -496,9 +534,116 @@ STUB
 write_stub pg_restore <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/pg_restore.log"
+list=0
+for a in "$@"; do
+  case "$a" in --list | -l) list=1 ;; esac
+done
+if [ "$list" = 1 ]; then
+  # BK-ENC: backup.sh lists the plain dump before encrypting it. A table of
+  # contents with _sqlx_migrations (default), without it (XC_STUB_LIST=nomig),
+  # or a failure (XC_STUB_LIST=fail).
+  cat >/dev/null
+  case "${XC_STUB_LIST:-ok}" in
+    fail)
+      echo "pg_restore: error: input file does not appear to be a valid archive" >&2
+      exit 1
+      ;;
+    nomig) printf ';\n215; 1259 16390 TABLE public files xc_v3\n' ;;
+    *) printf ';\n214; 1259 16385 TABLE public _sqlx_migrations xc_v3\n215; 1259 16390 TABLE public files xc_v3\n' ;;
+  esac
+  exit 0
+fi
 cat >"${XC_TEST_LOG:?}/pg_restore.stdin"
 [ "${XC_STUB_PG_RESTORE_FAIL:-0}" = 1 ] && exit 1
 exit 0
+STUB
+
+# age (BK-ENC): logs its command line to age.log. Encrypting needs -r age1…
+# or -R <file> holding a line starting "age1" (a missing, empty or
+# comment-only file is refused before any output is written, as age 1.1.1
+# does); it writes the three header lines of this stub's format and then its
+# input in base64 — so the plain text never appears in its output — to -o
+# <file> or stdout, reading the last operand or stdin. XC_STUB_AGE_FAIL=1:
+# writes the first header line and exits 1 (a partial file). Decrypting (-d)
+# needs -i <file> holding a line starting "AGE-SECRET-KEY-1" and an input
+# starting "age-encryption.org/v1"; it writes the decoded body.
+write_stub age <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/age.log"
+mode=enc out="" in="" rcpt=0 idf="" take=""
+for a in "$@"; do
+  if [ -n "$take" ]; then
+    case "$take" in
+      o) out="$a" ;;
+      R)
+        if [ -r "$a" ] && grep -q '^age1' "$a"; then
+          rcpt=1
+        else
+          echo "age: error: failed to parse recipient file \"$a\"" >&2
+          exit 1
+        fi
+        ;;
+      r)
+        case "$a" in
+          age1*) rcpt=1 ;;
+          *)
+            echo "age: error: malformed recipient \"$a\"" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      i) idf="$a" ;;
+    esac
+    take=""
+    continue
+  fi
+  case "$a" in
+    -d | --decrypt) mode=dec ;;
+    -o | --output) take=o ;;
+    --output=*) out="${a#--output=}" ;;
+    -R | --recipients-file) take=R ;;
+    -r | --recipient) take=r ;;
+    -i | --identity) take=i ;;
+    -e | --encrypt) ;;
+    -) in="" ;;
+    -*)
+      echo "age stub: unknown flag $a" >&2
+      exit 2
+      ;;
+    *) in="$a" ;;
+  esac
+done
+src() { if [ -n "$in" ]; then cat -- "$in"; else cat; fi; }
+emit() { if [ -n "$out" ] && [ "$out" != - ]; then cat >"$out"; else cat; fi; }
+if [ "$mode" = enc ]; then
+  if [ "$rcpt" != 1 ]; then
+    echo "age: error: missing recipients" >&2
+    exit 1
+  fi
+  if [ "${XC_STUB_AGE_FAIL:-0}" = 1 ]; then
+    src >/dev/null
+    printf 'age-encryption.org/v1\n' | emit
+    exit 1
+  fi
+  { printf 'age-encryption.org/v1\n-> X25519 stub\n--- stub\n'; src | base64; } | emit
+  exit 0
+fi
+if [ -z "$idf" ] || [ ! -r "$idf" ] || ! grep -q '^AGE-SECRET-KEY-1' "$idf"; then
+  src >/dev/null
+  echo "age: error: no identity matched any of the recipients" >&2
+  exit 1
+fi
+tmp="$(mktemp)"
+src >"$tmp"
+if [ "$(head -n 1 "$tmp")" != age-encryption.org/v1 ]; then
+  rm -f "$tmp"
+  echo "age: error: failed to read header" >&2
+  exit 1
+fi
+tail -n +4 "$tmp" | base64 -d | emit
+rc=$?
+rm -f "$tmp"
+exit "$rc"
 STUB
 
 write_stub runuser <<'STUB'
@@ -546,13 +691,17 @@ BK_ROLE=xc_bk_role
 BK_SECRET=pBackupStubSecret42
 
 # bk_case <dir> <stamp...> — a case directory: log/, an uploads directory
-# var/up-files with one file in it, and the stamps the date stub hands out.
+# var/up-files with one file in it, the stamps the date stub hands out, a
+# TMPDIR tmp/, the recipients file (BK-ENC) and the owner's identity (0600).
 bk_case() {
   local c="$1"
   shift
-  mkdir -p "$c/log" "$c/var/up-files"
+  mkdir -p "$c/log" "$c/var/up-files" "$c/tmp"
   printf 'an uploaded file\n' >"$c/var/up-files/f1"
   printf '%s\n' "$@" >"$c/stamps"
+  printf '# xc-v3 backups\nage1stubrecipientxcv3backups\n' >"$c/recipients"
+  printf '# created: stub\nAGE-SECRET-KEY-1STUBIDENTITYXCV3\n' >"$c/identity"
+  chmod 600 "$c/identity"
 }
 
 # run_backup <case dir> [NAME=value...] — backup.sh with the stubs and the
@@ -565,17 +714,20 @@ run_backup() {
   set +e
   OUT="$({ env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_TEST_STAMPS="$c/stamps" \
     XC_BACKUP_DIR="$c/backups" XC_BACKUP_KEEP=7 XC_BACKUP_OFFHOST= \
-    XC_BACKUP_SSH_KEY="$c/offhost.key" \
+    XC_BACKUP_SSH_KEY="$c/offhost.key" XC_BACKUP_RECIPIENTS="$c/recipients" \
+    TMPDIR="$c/tmp" PGSSLMODE= \
     APP_DATABASE__HOST=127.0.0.1 APP_DATABASE__PORT=5432 \
     APP_DATABASE__USERNAME="$BK_ROLE" APP_DATABASE__PASSWORD="$BK_SECRET" \
     APP_DATABASE__DATABASE_NAME="$BK_DB" APP_FILES__DIR="$c/var/up-files" \
-    "$@" bash "$HERE/backup.sh" 2>&3 | tee "$c/stdout"; } 3>&1)"
+    "$@" bash "$HERE/backup.sh" </dev/null 2>&3 | tee "$c/stdout"; } 3>&1)"
   RC=$?
   set -e
 }
 
-# run_restore <case dir> <args...> — restore.sh with the stubs and an env
-# file naming the live database and uploads directory.
+# run_restore <case dir> <args...> — restore.sh with the stubs, an env
+# file naming the live database and uploads directory, and
+# XC_BACKUP_IDENTITY=<case>/identity (BK-ENC) — or $RESTORE_IDENTITY when that
+# is set, even to empty.
 run_restore() {
   local c="$1"
   shift
@@ -586,6 +738,7 @@ run_restore() {
     "APP_FILES__DIR=$c/var/up-files" >"$c/env"
   set +e
   OUT="$(env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_ENV_FILE="$c/env" \
+    XC_BACKUP_IDENTITY="${RESTORE_IDENTITY-$c/identity}" \
     bash "$HERE/restore.sh" "$@" </dev/null 2>&1)"
   RC=$?
   set -e
@@ -604,11 +757,42 @@ sets_in() {
 # entries_of <dir> — every entry but the lock file, space-separated
 entries_of() { (ls -A1 "$1" 2>/dev/null || true) | (grep -vx '.lock' || true) | tr '\n' ' '; }
 
+# age_stub_file <text> <file> — <text> in the age stub's format (BK-ENC)
+age_stub_file() {
+  { printf 'age-encryption.org/v1\n-> X25519 stub\n--- stub\n'; printf '%s\n' "$1" | base64; } >"$2"
+}
+
 # make_set <backups dir> <stamp> — a finished set, as backup.sh leaves one
+# after BK-ENC: the two pieces encrypted
 make_set() {
   mkdir -p "$1/$2"
-  printf 'old dump\n' >"$1/$2/db-$2.dump"
-  printf 'old archive\n' >"$1/$2/uploads-$2.tar.gz"
+  age_stub_file 'old dump' "$1/$2/db-$2.dump.age"
+  age_stub_file 'old archive' "$1/$2/uploads-$2.tar.gz.age"
+}
+
+# make_plain_set <backups dir> <stamp> — a set as backup.sh made it before
+# BK-ENC: the two pieces in plain text
+make_plain_set() {
+  mkdir -p "$1/$2"
+  printf 'PGDMP stub dump\n' >"$1/$2/db-$2.dump"
+  printf 'tar stub archive\n' >"$1/$2/uploads-$2.tar.gz"
+}
+
+# no_plaintext <dir...> — no file under the directories holds the plain text
+# the pg_dump and tar stubs write
+no_plaintext() { ! grep -rqsE 'PGDMP stub dump|tar stub archive' "$@"; }
+
+# all_age <dir> — the directory holds at least one file, and every entry is a
+# file whose first line is the age header
+all_age() {
+  local f n=0
+  for f in "$1"/* "$1"/.[!.]*; do
+    [ -e "$f" ] || continue
+    [ -f "$f" ] || return 1
+    [ "$(head -n 1 "$f")" = age-encryption.org/v1 ] || return 1
+    n=$((n + 1))
+  done
+  [ "$n" -gt 0 ]
 }
 
 # last_line <file> — its last line, or "missing"
@@ -628,10 +812,15 @@ printf '%s\n' "$OUT" >"$LOGS/b1.out"
 s=20261007T010203Z
 ck "backup.sh exited 0" test "$RC" -eq 0
 ckeq "exactly one set" "$s " "$(sets_in "$b1/backups")"
-ckeq "the set holds the dump and the archive, same stamp" \
-  "db-$s.dump uploads-$s.tar.gz " "$(entries_of "$b1/backups/$s")"
-ck "the dump is not empty" test -s "$b1/backups/$s/db-$s.dump"
-ck "the archive is not empty" test -s "$b1/backups/$s/uploads-$s.tar.gz"
+ckeq "the set holds the encrypted dump and archive only, same stamp (BK-ENC)" \
+  "db-$s.dump.age uploads-$s.tar.gz.age " "$(entries_of "$b1/backups/$s")"
+ck "every file of the set starts with the age header (BK-ENC)" all_age "$b1/backups/$s"
+ck "no plain dump or archive anywhere in the backup directory or TMPDIR (BK-ENC)" \
+  no_plaintext "$b1/backups" "$b1/tmp"
+ck "age encrypted to the recipients file (BK-ENC)" grep -qsF -- "$b1/recipients" "$b1/log/age.log"
+ck "the plain dump was checked with pg_restore --list (BK-ENC)" \
+  grep -Eqs -- '(^| )(--list|-l)( |$)' "$b1/log/pg_restore.log"
+ck "the server never decrypts (BK-ENC)" absent '(^| )(-d|--decrypt)( |$)' "$b1/log/age.log"
 ck "pg_dump asked for the custom format" \
   grep -Eqs -- '(^| )(-Fc|-F c|--format=c|--format=custom)( |$)' "$b1/log/pg_dump.log"
 ck "pg_dump named the database" grep -qs -- "$BK_DB" "$b1/log/pg_dump.log"
@@ -641,7 +830,7 @@ ckeq "nothing but the set is left in the backup directory" "$s " "$(entries_of "
 ckeq "the last line of stdout is the set's path" "$b1/backups/$s" "$(last_line "$b1/stdout")"
 ckeq "the backup directory it created is 0700" "700" "$(mode_of "$b1/backups")"
 ckeq "the set directory is 0700" "700" "$(mode_of "$b1/backups/$s")"
-report B1 "one run makes one set: dump and uploads archive under one UTC stamp"
+report B1 "one run makes one set: encrypted dump and uploads archive under one UTC stamp"
 
 # ---- B1b: a stamp that already exists is refused ---------------------------
 b1b="$ROOT/b1b"
@@ -649,14 +838,14 @@ bk_case "$b1b" 20261007T020000Z 20261007T020000Z
 run_backup "$b1b"
 B1B_FIRST_RC=$RC
 s=20261007T020000Z
-cp "$b1b/backups/$s/db-$s.dump" "$b1b/first.dump" 2>/dev/null || true
+cp "$b1b/backups/$s/db-$s.dump.age" "$b1b/first.dump" 2>/dev/null || true
 run_backup "$b1b"
 printf '%s\n' "$OUT" >"$LOGS/b1b.out"
 ck "the first run exited 0" test "$B1B_FIRST_RC" -eq 0
 ck "the second run exited non-zero" test "$RC" -ne 0
 ck "the refusal names the stamp" grep -qs -- "$s" "$LOGS/b1b.out"
 ckeq "still one set" "$s " "$(sets_in "$b1b/backups")"
-ck "the first set's dump is unchanged" cmp -s "$b1b/first.dump" "$b1b/backups/$s/db-$s.dump"
+ck "the first set's dump is unchanged" cmp -s "$b1b/first.dump" "$b1b/backups/$s/db-$s.dump.age"
 report B1b "a set whose stamp already exists is refused, not overwritten"
 
 # ---- B1c: a backup directory of another mode is refused, not changed --------
@@ -764,12 +953,15 @@ run_backup "$b5" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups 
 printf '%s\n' "$OUT" >"$LOGS/b5.out"
 ck "backup.sh exited non-zero" test "$RC" -ne 0
 ck "rsync was run toward the target" grep -qs "xcbackup@offhost.invalid:/data/xc-v3-backups" "$b5/log/rsync.log"
-ckeq "the local set is kept, both pieces" "db-$s.dump uploads-$s.tar.gz " "$(entries_of "$b5/backups/$s")"
+ckeq "the local set is kept, both pieces" "db-$s.dump.age uploads-$s.tar.gz.age " "$(entries_of "$b5/backups/$s")"
 report B5 "a failing off-host copy exits non-zero and keeps the local set"
 
 # ---- B6: --delete only once the local directory holds 7 sets ---------------
 b6="$ROOT/b6"
 bk_case "$b6" 20261007T080000Z
+mkdir -m 700 "$b6/backups"
+# a set made before BK-ENC, plain, still in the local directory
+make_plain_set "$b6/backups" 20260901T000009Z
 run_backup "$b6" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups
 B6_RC1=$RC
 printf '%s\n' "$OUT" >"$LOGS/b6.out"
@@ -780,38 +972,126 @@ for i in 1 2 3 4 5 6; do make_set "$b6f/backups" "20260901T00000${i}Z"; done
 run_backup "$b6f" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups
 B6_RC7=$RC
 printf '%s\n' "$OUT" >>"$LOGS/b6.out"
-# include_globs <args file> — the patterns given to --include, one per line
-include_globs() {
-  local take=0 a
+# ---- an rsync filter, evaluated as rsync 3.2 does (BK-ENC) -------------------
+# not_sends <args file> <path> [is_dir] — rsync_sends fails
+not_sends() { ! rsync_sends "$@"; }
+# rsync_rules <args file> — "+ <pattern>" / "- <pattern>" for every
+# --include/--exclude (one argument or two), in order. The implementation must
+# filter with --include/--exclude; --filter/-f forms are not read here.
+rsync_rules() {
+  local take="" a
+  [ -f "$1" ] || return 0
   while IFS= read -r a; do
-    if [ "$take" = 1 ]; then
-      printf '%s\n' "$a"
-      take=0
+    if [ -n "$take" ]; then
+      printf '%s %s\n' "$take" "$a"
+      take=""
       continue
     fi
     case "$a" in
-      --include=*) printf '%s\n' "${a#--include=}" ;;
-      --include) take=1 ;;
+      --include=*) printf '+ %s\n' "${a#--include=}" ;;
+      --exclude=*) printf -- '- %s\n' "${a#--exclude=}" ;;
+      --include) take=+ ;;
+      --exclude) take=- ;;
     esac
   done <"$1"
 }
-# include_takes <args file> <name> — whether a top-level directory <name> is
-# sent: some include pattern "/<glob>/***" matches it (bash globbing of the
-# [0-9]/*/? forms is the same as rsync's for these patterns)
-include_takes() {
-  local g
-  while IFS= read -r g; do
-    case "$g" in
-      /*/\*\*\*)
-        g="${g#/}"
-        g="${g%/\*\*\*}"
-        # shellcheck disable=SC2053  # $g is a pattern on purpose
-        [[ "$2" == $g ]] && return 0
-        ;;
-    esac
-  done < <(include_globs "$1" 2>/dev/null || true)
-  return 1
+# glob_path <pattern> <path> — the same number of /-separated components, each
+# matched by bash globbing ("*", "?" and "[..]" never cross a "/", as in rsync)
+glob_path() {
+  local -a pc sc
+  local i
+  IFS=/ read -ra pc <<<"$1"
+  IFS=/ read -ra sc <<<"$2"
+  [ "${#pc[@]}" -eq "${#sc[@]}" ] || return 1
+  for i in "${!pc[@]}"; do
+    # shellcheck disable=SC2053  # the component is a pattern on purpose
+    [[ "${sc[i]}" == ${pc[i]} ]] || return 1
+  done
 }
+# rule_matches <pattern> <path> <is_dir 0|1> — rsync's matching of one rule:
+# a trailing "/***" matches the directory and everything below it; a
+# trailing "/" matches directories only; a leading "/" anchors at the
+# transfer root; a pattern with no "/" matches the last component; one with
+# an inner "/" matches the trailing components.
+rule_matches() {
+  local p="$1" path="$2" isdir="$3" k n pre
+  local -a cs
+  if [[ "$p" == */\*\*\* ]]; then
+    p="${p%/\*\*\*}"
+    IFS=/ read -ra cs <<<"$path"
+    n="${#cs[@]}"
+    pre=""
+    for ((k = 0; k < n; k++)); do
+      pre="${pre:+$pre/}${cs[k]}"
+      if [ "$k" -lt $((n - 1)) ] || [ "$isdir" = 1 ]; then
+        rule_matches "$p/" "$pre" 1 && return 0
+      fi
+      rule_matches "$p" "$pre" 0 && return 0
+    done
+    return 1
+  fi
+  if [[ "$p" == */ ]]; then
+    [ "$isdir" = 1 ] || return 1
+    p="${p%/}"
+  fi
+  if [[ "$p" == /* ]]; then
+    glob_path "${p#/}" "$path"
+    return
+  fi
+  if [[ "$p" == */* ]]; then
+    local -a pc
+    IFS=/ read -ra pc <<<"$p"
+    IFS=/ read -ra cs <<<"$path"
+    [ "${#cs[@]}" -ge "${#pc[@]}" ] || return 1
+    local IFS=/
+    glob_path "$p" "${cs[*]: -${#pc[@]}}"
+    return
+  fi
+  # shellcheck disable=SC2053  # $p is a pattern on purpose
+  [[ "${path##*/}" == $p ]]
+}
+# rsync_sends <args file> <relative path> [is_dir 0|1] — whether rsync, given
+# those arguments, sends that path: the first matching rule decides for each
+# component from the top (no match = included), and an excluded directory is
+# never entered.
+rsync_sends() {
+  local args="$1" path="$2" isdir="${3:-0}" rules pre="" k n d t pat verdict
+  local -a cs
+  rules="$(rsync_rules "$args")"
+  IFS=/ read -ra cs <<<"$path"
+  n="${#cs[@]}"
+  for ((k = 0; k < n; k++)); do
+    pre="${pre:+$pre/}${cs[k]}"
+    d=1
+    [ "$k" -eq $((n - 1)) ] && d="$isdir"
+    verdict=+
+    while read -r t pat; do
+      [ -n "$t" ] || continue
+      if rule_matches "$pat" "$pre" "$d"; then
+        verdict="$t"
+        break
+      fi
+    done <<<"$rules"
+    [ "$verdict" = - ] && return 1
+  done
+  return 0
+}
+# The simulator against what rsync 3.2.7 did on scratch directories
+# (design §7b, Off-host copy): it must agree before the cases use it.
+SIM="$ROOT/sim.args"
+G='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
+printf '%s\n' -a "--include=/$G/" "--include=/$G/*.age" '--exclude=*' src/ dst/ >"$SIM"
+ck "sim: a set directory is entered" rsync_sends "$SIM" 20261007T080000Z 1
+ck "sim: its .age file is sent" rsync_sends "$SIM" 20261007T080000Z/db-20261007T080000Z.dump.age
+ck "sim: a plain file in it is not" not_sends "$SIM" 20261007T080000Z/stray.dump
+ck "sim: the working directory is not" not_sends "$SIM" .work-20261007T090000Z/db.dump
+ck "sim: the lock is not" not_sends "$SIM" .lock
+ck "sim: another directory is not" not_sends "$SIM" manual/k
+printf '%s\n' -a "--include=/$G/***" '--exclude=*' src/ dst/ >"$SIM"
+ck "sim: /<stamp>/*** sends a plain file of a set" rsync_sends "$SIM" 20261007T080000Z/stray.dump
+ck "sim: /<stamp>/*** does not send the lock" not_sends "$SIM" .lock
+report B0 "the rsync filter simulator agrees with rsync 3.2.7 on the measured cases"
+
 # excludes_all <args file> — --exclude='*' given as one argument or as two
 excludes_all() {
   local prev="" a
@@ -828,24 +1108,30 @@ not() { ! "$@"; }
 B6_ARGS="$b6/log/rsync.args"
 B6_OFF=xcbackup@offhost.invalid:/data/xc-v3-backups
 ck "the run with one set exited 0" test "$B6_RC1" -eq 0
-ckeq "one rsync with one local set" "1" "$( (cat "$b6/log/rsync.log" 2>/dev/null || true) | wc -l | tr -d ' ')"
-ck "no --delete with one local set" absent '^--delete$' "$B6_ARGS"
+ckeq "one rsync with two local sets" "1" "$( (cat "$b6/log/rsync.log" 2>/dev/null || true) | wc -l | tr -d ' ')"
+ck "no --delete with two local sets" absent '^--delete$' "$B6_ARGS"
 ck "the ssh key is used" grep -qs -- "$b6/offhost.key" "$b6/log/rsync.log"
 ck "ssh never prompts (BatchMode=yes)" grep -qs "BatchMode=yes" "$b6/log/rsync.log"
 ckeq "the source is the backup directory's contents" "$b6/backups/" "$(tail -n 2 "$B6_ARGS" 2>/dev/null | head -n 1)"
 ckeq "the target is the off-host directory" "$B6_OFF/" "$(last_line "$B6_ARGS")"
 ck "everything not included is excluded (--exclude='*')" excludes_all "$B6_ARGS"
 ck "excluded names on the target are never deleted" absent '^--delete-excluded$' "$B6_ARGS"
-ck "a set directory is included" include_takes "$B6_ARGS" 20261007T080000Z
-ck "the working directory is not" not include_takes "$B6_ARGS" .work-20261007T080000Z
-ck "the lock is not" not include_takes "$B6_ARGS" .lock
-ck "a stamp with a suffix is not" not include_takes "$B6_ARGS" 20261007T080000Z.old
-ck "another name is not" not include_takes "$B6_ARGS" notes.txt
+ck "a set directory is entered" rsync_sends "$B6_ARGS" 20261007T080000Z 1
+ck "its encrypted dump is sent (BK-ENC)" rsync_sends "$B6_ARGS" 20261007T080000Z/db-20261007T080000Z.dump.age
+ck "its encrypted archive is sent (BK-ENC)" rsync_sends "$B6_ARGS" 20261007T080000Z/uploads-20261007T080000Z.tar.gz.age
+ck "a plain dump in a set directory is not sent (BK-ENC)" \
+  not_sends "$B6_ARGS" 20260901T000009Z/db-20260901T000009Z.dump
+ck "a plain archive in a set directory is not sent (BK-ENC)" \
+  not_sends "$B6_ARGS" 20260901T000009Z/uploads-20260901T000009Z.tar.gz
+ck "the working directory is not" not_sends "$B6_ARGS" .work-20261007T080000Z/db-20261007T080000Z.dump
+ck "the lock is not" not_sends "$B6_ARGS" .lock
+ck "a stamp with a suffix is not" not_sends "$B6_ARGS" 20261007T080000Z.old/db-20261007T080000Z.dump.age
+ck "another name is not" not_sends "$B6_ARGS" notes.txt
 ck "the run reaching 7 sets exited 0" test "$B6_RC7" -eq 0
 ck "--delete once 7 sets are local" grep -qsx -- '--delete' "$b6f/log/rsync.args"
 ckeq "with 7 sets the source is still the directory's contents" "$b6f/backups/" "$(tail -n 2 "$b6f/log/rsync.args" 2>/dev/null | head -n 1)"
-ck "with 7 sets a set directory is included" include_takes "$b6f/log/rsync.args" 20260901T000001Z
-report B6 "the off-host copy sends the set directories only, with --delete once 7 are local"
+ck "with 7 sets a set's encrypted dump is sent" rsync_sends "$b6f/log/rsync.args" 20260901T000001Z/db-20260901T000001Z.dump.age
+report B6 "the off-host copy sends the .age files of the set directories only, with --delete once 7 are local"
 
 # ---- B7: restore.sh refuses the live database ------------------------------
 b7="$ROOT/b7"
@@ -897,13 +1183,17 @@ ck "pg_restore wrote into the scratch database" grep -qs "xc_bk_rehearsal" "$b7c
 ckeq "pg_restore read the set's dump on stdin" "old dump" "$(cat "$b7c/log/pg_restore.stdin" 2>/dev/null || echo missing)"
 ck "the dump is not named to pg_restore as a path (postgres cannot open it)" absent "db-$s.dump" "$b7c/log/pg_restore.log"
 ck "pg_restore never named the live database" absent "(^|[ =])$BK_DB( |$)" "$b7c/log/pg_restore.log"
-ck "tar extracted the set's archive" grep -qs -- "uploads-$s.tar.gz" "$b7c/log/tar.log"
+ck "age decrypted the set's dump with the identity (BK-ENC)" \
+  grep -Eqs -- "(^| )(-d|--decrypt)( |$).*$b7c/identity|$b7c/identity.*(^| )(-d|--decrypt)( |$)" "$b7c/log/age.log"
+ck "age decrypted the set's dump (BK-ENC)" grep -qs -- "db-$s.dump.age" "$b7c/log/age.log"
+ck "age decrypted the set's archive (BK-ENC)" grep -qs -- "uploads-$s.tar.gz.age" "$b7c/log/age.log"
+ck "the identity's key is never printed (BK-ENC)" absent 'AGE-SECRET-KEY' "$LOGS/b7c.out"
 ck "tar extracted into the scratch directory" grep -qs -- "$b7c/scratch-files" "$b7c/log/tar.log"
 ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7c/var/up-files")"
 ck "createdb ran as postgres through runuser" grep -Eqs -- '^-u postgres -- createdb( .*)? xc_bk_rehearsal( |$)' "$b7c/log/runuser.log"
 ck "pg_restore ran as postgres through runuser" grep -Eqs -- '^-u postgres -- pg_restore( |$).*xc_bk_rehearsal' "$b7c/log/runuser.log"
 ck "nothing was dropped" test ! -s "$b7c/log/dropdb.log"
-report B7c "a rehearsal restores into the scratch database and directory"
+report B7c "a rehearsal decrypts and restores into the scratch database and directory"
 
 # ---- B7d: a failed pg_restore drops what the rehearsal created ------------
 b7d="$ROOT/b7d"
@@ -923,6 +1213,58 @@ ck "the scratch directory was removed" test ! -e "$b7d/scratch-files"
 ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7d/var/up-files")"
 report B7d "a failed pg_restore drops the scratch database and directory it made"
 
+# ---- B7e: restore.sh needs the identity, closed to others (BK-ENC) ----------
+b7e="$ROOT/b7e"
+bk_case "$b7e"
+s=20261007T121500Z
+make_set "$b7e/backups" "$s"
+RESTORE_IDENTITY=""
+run_restore "$b7e" "$b7e/backups/$s" xc_bk_rehearsal "$b7e/scratch-files"
+B7E_RC_EMPTY=$RC
+printf '%s\n' "$OUT" >"$LOGS/b7e-1.out"
+RESTORE_IDENTITY="$b7e/no-such-identity"
+run_restore "$b7e" "$b7e/backups/$s" xc_bk_rehearsal "$b7e/scratch-files"
+B7E_RC_MISSING=$RC
+printf '%s\n' "$OUT" >"$LOGS/b7e-2.out"
+cp "$b7e/identity" "$b7e/identity-open"
+chmod 644 "$b7e/identity-open"
+RESTORE_IDENTITY="$b7e/identity-open"
+run_restore "$b7e" "$b7e/backups/$s" xc_bk_rehearsal "$b7e/scratch-files"
+B7E_RC_OPEN=$RC
+printf '%s\n' "$OUT" >"$LOGS/b7e-3.out"
+unset RESTORE_IDENTITY
+ck "an empty XC_BACKUP_IDENTITY exited non-zero" test "$B7E_RC_EMPTY" -ne 0
+ck "a missing identity file exited non-zero" test "$B7E_RC_MISSING" -ne 0
+ck "an identity readable by others exited non-zero" test "$B7E_RC_OPEN" -ne 0
+for i in 1 2 3; do
+  ck "refusal $i names XC_BACKUP_IDENTITY" grep -qs XC_BACKUP_IDENTITY "$LOGS/b7e-$i.out"
+done
+ck "no database was created" test ! -s "$b7e/log/createdb.log"
+ck "pg_restore never ran" test ! -s "$b7e/log/pg_restore.log"
+ck "nothing was decrypted" absent '(^| )(-d|--decrypt)( |$)' "$b7e/log/age.log"
+ck "the scratch directory was not created" test ! -e "$b7e/scratch-files"
+ck "the identity's key is never printed" not grep -qs 'AGE-SECRET-KEY' "$LOGS/b7e-1.out" "$LOGS/b7e-2.out" "$LOGS/b7e-3.out"
+report B7e "restore.sh refuses an empty, missing or group/other-readable identity before anything"
+
+# ---- B7f: a failed decryption drops what the rehearsal made (BK-ENC) --------
+b7f="$ROOT/b7f"
+bk_case "$b7f"
+s=20261007T123000Z
+make_set "$b7f/backups" "$s"
+printf '# another key\nNOT-THE-SECRET\n' >"$b7f/wrong-identity"
+chmod 600 "$b7f/wrong-identity"
+RESTORE_IDENTITY="$b7f/wrong-identity"
+run_restore "$b7f" "$b7f/backups/$s" xc_bk_rehearsal "$b7f/scratch-files"
+unset RESTORE_IDENTITY
+printf '%s\n' "$OUT" >"$LOGS/b7f.out"
+ck "restore.sh exited non-zero" test "$RC" -ne 0
+ck "age was asked to decrypt" grep -Eqs -- '(^| )(-d|--decrypt)( |$)' "$b7f/log/age.log"
+ck "the scratch database was dropped as postgres" grep -Eqs -- '^-u postgres -- dropdb( .*)? xc_bk_rehearsal( |$)' "$b7f/log/runuser.log"
+ck "the live database was never dropped" absent "(^| )$BK_DB( |$)" "$b7f/log/dropdb.log"
+ck "the scratch directory was removed" test ! -e "$b7f/scratch-files"
+ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7f/var/up-files")"
+report B7f "a failed decryption drops the scratch database and directory it made"
+
 # ---- B8: the units -----------------------------------------------------------
 timer="$HERE/xc-v3-backup.timer"
 service="$HERE/xc-v3-backup.service"
@@ -940,6 +1282,12 @@ for v in XC_BACKUP_DIR XC_BACKUP_KEEP XC_BACKUP_OFFHOST XC_BACKUP_SSH_KEY; do
 done
 report B9 "env.example names every XC_BACKUP_* setting"
 
+# ---- B9b: the recipients setting, and no identity in the env file (BK-ENC) --
+ck "env.example names XC_BACKUP_RECIPIENTS" grep -Eqs "^#?XC_BACKUP_RECIPIENTS=" "$HERE/env.example"
+ck "env.example sets no XC_BACKUP_IDENTITY" absent '^#?XC_BACKUP_IDENTITY=' "$HERE/env.example"
+ck "env.example holds no secret key" absent 'AGE-SECRET-KEY' "$HERE/env.example"
+report B9b "env.example names XC_BACKUP_RECIPIENTS and holds no identity"
+
 # ---- B10: restore.sh refuses the live database name written in capitals ------
 b10="$ROOT/b10"
 bk_case "$b10"
@@ -954,6 +1302,7 @@ printf '%s\n' \
   "APP_FILES__DIR=$b10/var/up-files" >"$b10/env-upper"
 set +e
 OUT_ENV_UPPER="$(env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$b10/log" XC_ENV_FILE="$b10/env-upper" \
+  XC_BACKUP_IDENTITY="$b10/identity" \
   bash "$HERE/restore.sh" "$b10/backups/20261007T130000Z" "$BK_DB" "$b10/scratch-files" </dev/null 2>&1)"
 B10_RC_ENV_UPPER=$?
 set -e
@@ -968,6 +1317,82 @@ ck "pg_restore never ran" test ! -s "$b10/log/pg_restore.log"
 ck "nothing was extracted" test ! -s "$b10/log/tar.log"
 ck "the scratch directory was not created" test ! -e "$b10/scratch-files"
 report B10 "restore.sh refuses the live database name written in capitals"
+
+# ---- B11: no usable recipient = no backup, before pg_dump (BK-ENC) ----------
+b11="$ROOT/b11"
+bk_case "$b11" 20261007T131500Z 20261007T131501Z 20261007T131502Z
+mkdir -m 700 "$b11/backups"
+: >"$b11/recipients-empty"
+printf '# no key here\n\n' >"$b11/recipients-comment"
+B11_RCS=""
+i=0
+for r in "$b11/no-such-recipients" "$b11/recipients-empty" "$b11/recipients-comment"; do
+  i=$((i + 1))
+  run_backup "$b11" XC_BACKUP_RECIPIENTS="$r"
+  B11_RCS="$B11_RCS$RC "
+  printf '%s\n' "$OUT" >"$LOGS/b11-$i.out"
+done
+ck "a missing file exited non-zero" test "$(echo "$B11_RCS" | cut -d' ' -f1)" -ne 0
+ck "an empty file exited non-zero" test "$(echo "$B11_RCS" | cut -d' ' -f2)" -ne 0
+ck "a comment-only file exited non-zero" test "$(echo "$B11_RCS" | cut -d' ' -f3)" -ne 0
+for i in 1 2 3; do
+  ck "refusal $i names XC_BACKUP_RECIPIENTS" grep -qs XC_BACKUP_RECIPIENTS "$LOGS/b11-$i.out"
+done
+ck "pg_dump never ran" test ! -s "$b11/log/pg_dump.log"
+ck "tar never ran" test ! -s "$b11/log/tar.log"
+ckeq "nothing was written in the backup directory" "" "$(entries_of "$b11/backups")"
+ck "no plain file anywhere" no_plaintext "$b11/backups" "$b11/tmp"
+report B11 "a missing, empty or comment-only recipients file fails before pg_dump"
+
+# ---- B11b: a failing age leaves no set and no plain file (BK-ENC) ------------
+b11b="$ROOT/b11b"
+bk_case "$b11b" 20261007T132000Z
+mkdir -m 700 "$b11b/backups"
+for i in 1 2 3 4 5 6 7; do make_set "$b11b/backups" "20260901T00000${i}Z"; done
+B11B_BEFORE="$(entries_of "$b11b/backups")"
+run_backup "$b11b" XC_STUB_AGE_FAIL=1
+printf '%s\n' "$OUT" >"$LOGS/b11b.out"
+ck "backup.sh exited non-zero" test "$RC" -ne 0
+ck "age was run" test -s "$b11b/log/age.log"
+ckeq "the directory is as before: no partial set, nothing pruned" "$B11B_BEFORE" "$(entries_of "$b11b/backups")"
+ck "no plain file anywhere" no_plaintext "$b11b/backups" "$b11b/tmp"
+report B11b "a failing encryption leaves no set and no plain file, prunes nothing"
+
+# ---- B12: the plain dump is checked before it is encrypted (BK-ENC) ---------
+b12="$ROOT/b12"
+bk_case "$b12" 20261007T133000Z 20261007T133001Z
+mkdir -m 700 "$b12/backups"
+run_backup "$b12" XC_STUB_LIST=nomig
+B12_RC_NOMIG=$RC
+printf '%s\n' "$OUT" >"$LOGS/b12.out"
+run_backup "$b12" XC_STUB_LIST=fail
+B12_RC_FAIL=$RC
+printf '%s\n' "$OUT" >>"$LOGS/b12.out"
+ck "a dump listing no _sqlx_migrations exited non-zero" test "$B12_RC_NOMIG" -ne 0
+ck "a dump pg_restore cannot list exited non-zero" test "$B12_RC_FAIL" -ne 0
+ck "pg_restore --list was run" grep -Eqs -- '(^| )(--list|-l)( |$)' "$b12/log/pg_restore.log"
+ck "the message names _sqlx_migrations" grep -qs '_sqlx_migrations' "$LOGS/b12.out"
+ckeq "no set was made" "" "$(sets_in "$b12/backups")"
+ck "no plain file anywhere" no_plaintext "$b12/backups" "$b12/tmp"
+report B12 "a dump that pg_restore cannot list, or that lists no _sqlx_migrations, makes no set"
+
+# ---- B13: pg_dump toward a non-local host requires TLS (BK-ENC, §7c) --------
+b13="$ROOT/b13"
+bk_case "$b13" 20261007T134000Z 20261007T134001Z 20261007T134002Z
+run_backup "$b13" APP_DATABASE__HOST=db.example.invalid
+B13_RC_REMOTE=$RC
+B13_ENV_REMOTE="$(tail -n 1 "$b13/log/pg_dump.env" 2>/dev/null || echo missing)"
+printf '%s\n' "$OUT" >"$LOGS/b13.out"
+run_backup "$b13" APP_DATABASE__HOST=localhost
+B13_ENV_LOCAL="$(tail -n 1 "$b13/log/pg_dump.env" 2>/dev/null || echo missing)"
+run_backup "$b13" APP_DATABASE__HOST=/var/run/postgresql
+B13_ENV_SOCKET="$(tail -n 1 "$b13/log/pg_dump.env" 2>/dev/null || echo missing)"
+ck "the remote run exited 0" test "$B13_RC_REMOTE" -eq 0
+ck "a non-local host gets PGSSLMODE=require or verify-full" \
+  grep -Eqx 'PGSSLMODE=(require|verify-full)' <<<"$B13_ENV_REMOTE"
+ckeq "localhost is not forced" "PGSSLMODE=" "$B13_ENV_LOCAL"
+ckeq "a socket directory is not forced" "PGSSLMODE=" "$B13_ENV_SOCKET"
+report B13 "pg_dump toward a non-local database host runs with PGSSLMODE=require"
 
 # ==== update.sh backs up first (#290, design §7b) ===========================
 # ---- stubs of the update cases (first on PATH for these runs only) ---------
@@ -1009,7 +1434,10 @@ STUB
 # a missing unit; start of a missing unit exits 5. A start of the present
 # unit exits $XC_STUB_BACKUP_RC (default 0) and, when that is 0 and
 # $XC_STUB_BACKUP_SET is set, leaves that set directory as backup.sh would
-# (dump "fresh dump").
+# after BK-ENC — both pieces in the age stub's format (dump "fresh dump") —
+# or, with XC_STUB_BACKUP_FORM: plain (the two pieces as before BK-ENC),
+# noheader (.age files that do not start with the age header), nouploads
+# (the encrypted dump only).
 write_ustub systemctl <<'STUB'
 #!/usr/bin/env bash
 printf 'systemctl %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
@@ -1036,9 +1464,26 @@ case "$sub" in
     rc="${XC_STUB_BACKUP_RC:-0}"
     if [ "$rc" = 0 ] && [ -n "${XC_STUB_BACKUP_SET:-}" ]; then
       s="${XC_STUB_BACKUP_SET##*/}"
-      mkdir -m 700 "$XC_STUB_BACKUP_SET"
-      printf 'fresh dump\n' >"$XC_STUB_BACKUP_SET/db-$s.dump"
-      printf 'fresh archive\n' >"$XC_STUB_BACKUP_SET/uploads-$s.tar.gz"
+      d="$XC_STUB_BACKUP_SET"
+      mkdir -m 700 "$d"
+      hdr='age-encryption.org/v1\n-> X25519 stub\n--- stub\n'
+      case "${XC_STUB_BACKUP_FORM:-enc}" in
+        plain)
+          printf 'fresh dump\n' >"$d/db-$s.dump"
+          printf 'fresh archive\n' >"$d/uploads-$s.tar.gz"
+          ;;
+        noheader)
+          printf 'fresh dump\n' | base64 >"$d/db-$s.dump.age"
+          printf 'fresh archive\n' | base64 >"$d/uploads-$s.tar.gz.age"
+          ;;
+        nouploads)
+          { printf "$hdr"; printf 'fresh dump\n' | base64; } >"$d/db-$s.dump.age"
+          ;;
+        *)
+          { printf "$hdr"; printf 'fresh dump\n' | base64; } >"$d/db-$s.dump.age"
+          { printf "$hdr"; printf 'fresh archive\n' | base64; } >"$d/uploads-$s.tar.gz.age"
+          ;;
+      esac
     fi
     exit "$rc"
     ;;
@@ -1184,7 +1629,8 @@ first_line() {
 }
 
 U_BACKUP_START='^systemctl (.* )?start (.* )?xc-v3-backup(\.service)?( |$)'
-U_LIST='^pg_restore (.* )?(--list|-l)( |$)'
+# BK-ENC: the new set's encrypted dump, read through sudo (the set is root 0700)
+U_READ_DUMP="^sudo (.* )?[^ ]*/$U_NEW_SET/db-$U_NEW_SET\\.dump\\.age( |\$)"
 U_STOP='^systemctl (.* )?stop (.* )?xc-v3(\.service)?( |$)'
 
 # u_before <case dir> <ERE a> <ERE b> — a call matching a happened, and before
@@ -1204,13 +1650,6 @@ u_untouched() {
   [ "$(cat "$1/opt/xc-v3/xchange")" = old-binary-A ] && [ ! -e "$1/opt/xc-v3/xchange.prev" ]
 }
 
-# u_as_postgres <case dir> — pg_restore was run as postgres: sudo -u postgres
-# or runuser -u postgres, directly or inside a root shell
-u_as_postgres() {
-  grep -Eqs -- '^sudo (.* )?-u postgres (-- )?pg_restore( |$)' "$1/log/calls.log" ||
-    grep -Eqs -- '^-u postgres -- pg_restore( |$)' "$1/log/runuser.log"
-}
-
 # names_bk <file> — the word BK appears
 names_bk() { grep -Eqs -- '(^|[^A-Za-z0-9_])BK([^A-Za-z0-9_]|$)' "$1"; }
 
@@ -1224,14 +1663,13 @@ u1="$ROOT/u1"
 u_case "$u1"
 run_update "$u1"
 printf '%s\n' "$OUT" >"$LOGS/u1.out"
-U1_DUMP="$u1/backups/$U_NEW_SET/db-$U_NEW_SET.dump"
+U1_DUMP="$u1/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age"
 ck "update.sh exited 0" test "$RC" -eq 0
 ck "the backup unit was started before xc-v3 was stopped" u_before "$u1" "$U_BACKUP_START" "$U_STOP"
-ck "the dump was checked with pg_restore --list before the stop" u_before "$u1" "$U_LIST" "$U_STOP"
-ck "the check came after the backup" u_before "$u1" "$U_BACKUP_START" "$U_LIST"
-ck "pg_restore ran as postgres" u_as_postgres "$u1"
-ckeq "pg_restore read the new set's dump on stdin" "fresh dump" "$(cat "$u1/log/pg_restore.stdin" 2>/dev/null || echo missing)"
-ck "the dump is not named to pg_restore as a path" absent "db-" "$u1/log/pg_restore.log"
+ck "the new set's encrypted dump was read before the stop (BK-ENC)" u_before "$u1" "$U_READ_DUMP" "$U_STOP"
+ck "the check came after the backup" u_before "$u1" "$U_BACKUP_START" "$U_READ_DUMP"
+ck "pg_restore never ran: the server cannot read a set (BK-ENC)" test ! -s "$u1/log/pg_restore.log"
+ck "age never decrypted on the server (BK-ENC)" absent '(^| )(-d|--decrypt)( |$)' "$u1/log/age.log"
 ck "xc-v3 was stopped and started" grep -Eqs -- '^systemctl (.* )?start (.* )?xc-v3(\.service)?( |$)' "$u1/log/calls.log"
 ckeq "the new binary is installed" "$(cat "$u1/stage/xchange")" "$(cat "$u1/opt/xc-v3/xchange" 2>/dev/null || echo missing)"
 ck "a NOTE says migrations were applied" grep -qs '^NOTE:' "$LOGS/u1.out"
@@ -1239,8 +1677,9 @@ ck "the NOTE names the new set's dump" note_names "$LOGS/u1.out" "$U1_DUMP"
 ck "no 'backup: not written yet' any more" absent 'not written yet' "$LOGS/u1.out"
 ck "the rollback names restore.sh" grep -qs 'restore\.sh' "$LOGS/u1.out"
 ck "the rollback names the new set" grep -qsF -- "$u1/backups/$U_NEW_SET" "$LOGS/u1.out"
+ck "the rollback names XC_BACKUP_IDENTITY (BK-ENC)" grep -qs 'XC_BACKUP_IDENTITY' "$LOGS/u1.out"
 ck "the older set is not the one named" absent "$U_OLD_SET" "$LOGS/u1.out"
-report U1 "a migrating update backs up and checks the dump before the stop, and names the set"
+report U1 "a migrating update backs up and checks the set is encrypted before the stop, and names it"
 
 # ---- U2: no migration applied — still backed up first, no NOTE ---------------
 u2="$ROOT/u2"
@@ -1250,7 +1689,7 @@ run_update "$u2"
 printf '%s\n' "$OUT" >"$LOGS/u2.out"
 ck "update.sh exited 0" test "$RC" -eq 0
 ck "the backup unit was started before xc-v3 was stopped" u_before "$u2" "$U_BACKUP_START" "$U_STOP"
-ck "the dump was checked before the stop" u_before "$u2" "$U_LIST" "$U_STOP"
+ck "the encrypted dump was checked before the stop (BK-ENC)" u_before "$u2" "$U_READ_DUMP" "$U_STOP"
 ck "no NOTE without a migration" absent '^NOTE:' "$LOGS/u2.out"
 report U2 "an update with no migration is still backed up first, and prints no NOTE"
 
@@ -1281,29 +1720,39 @@ ck "the message names xc-v3-backup.service" grep -qs 'xc-v3-backup\.service' "$L
 ck "the message says it is not installed" grep -qsi 'not installed' "$LOGS/u4.out"
 report U4 "a host without xc-v3-backup.service refuses to update"
 
-# ---- U5: the new dump fails pg_restore --list ---------------------------------
+# ---- U5: the new dump does not start with the age header (BK-ENC) ------------
 u5="$ROOT/u5"
 u_case "$u5"
-run_update "$u5" XC_STUB_LIST=fail
+run_update "$u5" XC_STUB_BACKUP_FORM=noheader
 printf '%s\n' "$OUT" >"$LOGS/u5.out"
 ck "update.sh exited non-zero" test "$RC" -ne 0
-ck "pg_restore --list was run" grep -Eqs -- "$U_LIST" "$u5/log/calls.log"
 ck "xc-v3 was never stopped" u_no_stop "$u5"
 ck "nothing was replaced" u_untouched "$u5"
-ck "the message names the dump" grep -qsF -- "$u5/backups/$U_NEW_SET/db-$U_NEW_SET.dump" "$LOGS/u5.out"
-report U5 "a dump pg_restore cannot list means no update"
+ck "the message names the dump" grep -qsF -- "$u5/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age" "$LOGS/u5.out"
+report U5 "a set whose dump is not age-encrypted means no update"
 
-# ---- U5b: the new dump lists no _sqlx_migrations ------------------------------
+# ---- U5b: the new set is plain, as before BK-ENC -----------------------------
 u5b="$ROOT/u5b"
 u_case "$u5b"
-run_update "$u5b" XC_STUB_LIST=nomig
+run_update "$u5b" XC_STUB_BACKUP_FORM=plain
 printf '%s\n' "$OUT" >"$LOGS/u5b.out"
 ck "update.sh exited non-zero" test "$RC" -ne 0
-ck "pg_restore --list was run" grep -Eqs -- "$U_LIST" "$u5b/log/calls.log"
 ck "xc-v3 was never stopped" u_no_stop "$u5b"
 ck "nothing was replaced" u_untouched "$u5b"
-ck "the message names _sqlx_migrations" grep -qs '_sqlx_migrations' "$LOGS/u5b.out"
-report U5b "a dump that lists no _sqlx_migrations means no update"
+ck "the message names the new set" grep -qsF -- "$u5b/backups/$U_NEW_SET" "$LOGS/u5b.out"
+ck "pg_restore never ran" test ! -s "$u5b/log/pg_restore.log"
+report U5b "a plain (unencrypted) set means no update"
+
+# ---- U5d: the new set has no encrypted uploads archive (BK-ENC) --------------
+u5d="$ROOT/u5d"
+u_case "$u5d"
+run_update "$u5d" XC_STUB_BACKUP_FORM=nouploads
+printf '%s\n' "$OUT" >"$LOGS/u5d.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "xc-v3 was never stopped" u_no_stop "$u5d"
+ck "nothing was replaced" u_untouched "$u5d"
+ck "the message names the uploads archive" grep -qs -- "uploads-$U_NEW_SET.tar.gz.age" "$LOGS/u5d.out"
+report U5d "a set without its encrypted uploads archive means no update"
 
 # ---- U5c: the backup left no new set — the older one does not count ----------
 u5c="$ROOT/u5c"

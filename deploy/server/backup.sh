@@ -8,6 +8,7 @@ XC_BACKUP_DIR="${XC_BACKUP_DIR:-/var/backups/xc-v3}"
 XC_BACKUP_KEEP="${XC_BACKUP_KEEP:-7}"
 XC_BACKUP_OFFHOST="${XC_BACKUP_OFFHOST:-}"
 XC_BACKUP_SSH_KEY="${XC_BACKUP_SSH_KEY:-/etc/xc-v3/backup-offhost.key}"
+XC_BACKUP_RECIPIENTS="${XC_BACKUP_RECIPIENTS:-/etc/xc-v3/backup.age-recipients}"
 
 APP_DATABASE__HOST="${APP_DATABASE__HOST:-127.0.0.1}"
 APP_DATABASE__PORT="${APP_DATABASE__PORT:-5432}"
@@ -15,6 +16,34 @@ APP_DATABASE__USERNAME="${APP_DATABASE__USERNAME:-xc_v3}"
 APP_DATABASE__PASSWORD="${APP_DATABASE__PASSWORD:-}"
 APP_DATABASE__DATABASE_NAME="${APP_DATABASE__DATABASE_NAME:-xc_v3}"
 APP_FILES__DIR="${APP_FILES__DIR:-/var/lib/xc-v3/uploads}"
+
+# age must be installed
+if ! command -v age >/dev/null 2>&1; then
+  echo "ERROR: age is not installed" >&2
+  exit 1
+fi
+
+# XC_BACKUP_RECIPIENTS file must exist, be readable, and contain at least one age1 recipient line
+if [ ! -r "$XC_BACKUP_RECIPIENTS" ] || ! grep -q '^age1' "$XC_BACKUP_RECIPIENTS" 2>/dev/null; then
+  echo "ERROR: XC_BACKUP_RECIPIENTS file '$XC_BACKUP_RECIPIENTS' is missing, unreadable, or contains no age1 recipient" >&2
+  exit 1
+fi
+
+# For a non-local database host, PGSSLMODE=require is required
+is_local_db_host() {
+  local h="${1,,}"
+  [ "$h" = "localhost" ] && return 0
+  [[ "$h" == /* ]] && return 0
+  [[ "$h" =~ ^127\. ]] && return 0
+  [ "$h" = "::1" ] && return 0
+  return 1
+}
+
+if ! is_local_db_host "$APP_DATABASE__HOST"; then
+  if [ -z "${PGSSLMODE:-}" ] || [ "$PGSSLMODE" != "verify-full" ]; then
+    export PGSSLMODE=require
+  fi
+fi
 
 # XC_BACKUP_KEEP must be an integer >= 1
 if ! [[ "$XC_BACKUP_KEEP" =~ ^[0-9]+$ ]] || [ "$XC_BACKUP_KEEP" -lt 1 ]; then
@@ -62,8 +91,23 @@ trap 'rm -rf "$work_dir"' EXIT
 dump_file="$work_dir/db-$stamp.dump"
 PGPASSWORD="$APP_DATABASE__PASSWORD" pg_dump -h "$APP_DATABASE__HOST" -p "$APP_DATABASE__PORT" -U "$APP_DATABASE__USERNAME" -Fc -f "$dump_file" "$APP_DATABASE__DATABASE_NAME"
 
-archive_file="$work_dir/uploads-$stamp.tar.gz"
-tar -czf "$archive_file" -C "$APP_FILES__DIR" .
+# Check the plain dump with pg_restore --list before encrypting
+if ! dump_list="$(pg_restore --list "$dump_file" </dev/null 2>&1)"; then
+  echo "ERROR: pg_restore --list failed on dump (expected _sqlx_migrations): $dump_list" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$dump_list" | grep -qs '_sqlx_migrations'; then
+  echo "ERROR: backup dump does not contain _sqlx_migrations" >&2
+  exit 1
+fi
+
+# Encrypt dump to age recipient and remove the plain dump
+age -R "$XC_BACKUP_RECIPIENTS" -o "$dump_file.age" "$dump_file"
+rm -f "$dump_file"
+
+# Stream tar into age to produce encrypted archive
+archive_file="$work_dir/uploads-$stamp.tar.gz.age"
+tar -czf - -C "$APP_FILES__DIR" . | age -R "$XC_BACKUP_RECIPIENTS" -o "$archive_file"
 
 chmod 0700 "$work_dir"
 mv "$work_dir" "$set_dir"
@@ -104,8 +148,10 @@ else
     rsync_args+=(--delete)
   fi
   rsync_args+=(-e "ssh -i $XC_BACKUP_SSH_KEY -o BatchMode=yes")
-  rsync_args+=(--include=/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z/***)
-  rsync_args+=(--exclude=*)
+  stamp_glob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
+  rsync_args+=(--include="/$stamp_glob/")
+  rsync_args+=(--include="/$stamp_glob/*.age")
+  rsync_args+=(--exclude='*')
   rsync_args+=("${XC_BACKUP_DIR%/}/" "${XC_BACKUP_OFFHOST%/}/")
   rsync "${rsync_args[@]}"
 fi

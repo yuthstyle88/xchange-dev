@@ -374,7 +374,7 @@ print_rollback() {
   if [ -n "$set_dir" ]; then
     echo
     echo "To restore the database (and uploads) from the backup taken before this update:"
-    echo "  Rehearsal: sudo /opt/xc-v3/restore.sh $set_dir <scratch-db> <scratch-dir>"
+    echo "  Rehearsal: sudo XC_BACKUP_IDENTITY=<identity> /opt/xc-v3/restore.sh $set_dir <scratch-db> <scratch-dir>"
     echo "  Real restore: see deploy/README.md §5 \"Real restore\""
   fi
 }

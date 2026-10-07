@@ -46,20 +46,31 @@ if [ -z "$AFTER_SET" ] || [ "$AFTER_SET" = "$BEFORE_SET" ]; then
 fi
 
 SET_DIR="$BACKUP_DIR/$AFTER_SET"
-DUMP_PATH="$SET_DIR/db-$AFTER_SET.dump"
+DUMP_PATH="$SET_DIR/db-$AFTER_SET.dump.age"
+ARCHIVE_PATH="$SET_DIR/uploads-$AFTER_SET.tar.gz.age"
+
+# Refuse a plain (unencrypted) set
+if sudo test -f "$SET_DIR/db-$AFTER_SET.dump"; then
+  die "backup set is unencrypted (plain): $SET_DIR"
+fi
 
 if ! sudo test -f "$DUMP_PATH"; then
-  die "backup dump file not found: $DUMP_PATH"
+  die "encrypted backup dump file not found: $DUMP_PATH"
 fi
 
-say "verifying backup dump $DUMP_PATH with pg_restore --list..."
-if ! LIST="$(sudo cat "$DUMP_PATH" | sudo -u postgres pg_restore --list 2>&1)"; then
-  echo "$LIST" >&2
-  die "pg_restore --list failed on dump $DUMP_PATH"
+if ! sudo test -f "$ARCHIVE_PATH"; then
+  die "encrypted backup uploads archive not found: $ARCHIVE_PATH"
 fi
 
-if ! printf '%s\n' "$LIST" | grep -qs '_sqlx_migrations'; then
-  die "backup dump $DUMP_PATH does not contain _sqlx_migrations"
+say "verifying backup set is encrypted ($DUMP_PATH and $ARCHIVE_PATH)..."
+dump_header="$(sudo head -n 1 "$DUMP_PATH" 2>/dev/null || true)"
+if [ "$dump_header" != "age-encryption.org/v1" ]; then
+  die "backup dump is not age-encrypted ($DUMP_PATH does not start with age-encryption.org/v1)"
+fi
+
+archive_header="$(sudo head -n 1 "$ARCHIVE_PATH" 2>/dev/null || true)"
+if [ "$archive_header" != "age-encryption.org/v1" ]; then
+  die "backup uploads archive is not age-encrypted ($ARCHIVE_PATH does not start with age-encryption.org/v1)"
 fi
 
 # From the stop until the start, a failure must not leave the service down
