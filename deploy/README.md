@@ -11,7 +11,7 @@ and lane names say which settings file is read, not that a real shop is using it
 | `server/xc-v3.service` | systemd unit of the v3 server: own system user, env file, read-only file system except the uploads directory |
 | `server/env.example` | every setting the server reads from the environment, names and placeholders only |
 | `server/common.sh` | the variables (port, paths, database/role name, v2 bundle directory) and helpers of the two scripts below |
-| `server/install.sh` | first install on a host; safe to run again |
+| `server/install.sh` | first install on a host; safe to run again — a re-run keeps what it replaces as `xchange.prev`/`configuration.prev`, like `update.sh` |
 | `server/update.sh` | replace binary and configuration, keep the previous ones, print the way back |
 | `server/smoke.sh` | checks a running server through a base URL; exit status says pass/fail |
 | `server/build.md` | how the binary is built, checked against the target, and copied |
@@ -115,10 +115,12 @@ cd ~/xc-v3-stage && ./update.sh
 It stops the service; replaces the binary when it differs (keeping the running
 one as `xchange.prev`) and the configuration when it differs (keeping the
 running one as `configuration.prev` — also when only the configuration
-changed); starts the service; runs the smoke check (the `build` reported must
-be the staged one); and prints the number of applied migrations before and
-after. Running it twice with the same stage replaces nothing and leaves both
-`.prev` copies as they were.
+changed); removes every installed `*.yaml` the stage no longer carries, so
+the installed set mirrors the stage's (each removed one stays in
+`configuration.prev`); starts the service; runs the smoke check (the `build`
+reported must be the staged one); and prints the number of applied migrations
+before and after. Running it twice with the same stage replaces nothing and
+leaves both `.prev` copies as they were.
 
 When the smoke check fails it prints the service log and the rollback commands
 and exits non-zero. If a step fails between the stop and the start, it says

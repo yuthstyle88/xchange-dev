@@ -94,13 +94,14 @@ check_own_path() {
   return 0
 }
 
-# ensure_dir <path> <owner> <group> <mode>
-# Creates the directory with that owner and mode when it is missing; missing
-# parents are created root:root 755. NEVER changes a directory that already
-# exists — neither a parent nor the directory itself: when it exists with
-# another owner or mode this stops and says so, for a person to decide.
-ensure_dir() {
-  local path="$1" owner="$2" group="$3" mode="$4" p missing=() i have
+# judge_dir <path> <owner> <group> <mode>
+# The read-only half of ensure_dir: judges what ensure_dir would judge, but
+# creates nothing — so install.sh can refuse before it has created anything
+# at all (including the service user). An existing path must be a directory
+# with exactly this owner, group and mode; a missing path's nearest existing
+# ancestor must be a directory.
+judge_dir() {
+  local path="$1" owner="$2" group="$3" mode="$4" p have
   if sudo test -e "$path"; then
     sudo test -d "$path" || die "$path exists and is not a directory"
     have="$(sudo stat -c '%U %G %a' "$path")"
@@ -110,10 +111,25 @@ ensure_dir() {
   fi
   p="$(dirname "$path")"
   while ! sudo test -e "$p"; do
-    missing=("$p" "${missing[@]}")
     p="$(dirname "$p")"
   done
   sudo test -d "$p" || die "$p exists and is not a directory"
+}
+
+# ensure_dir <path> <owner> <group> <mode>
+# Creates the directory with that owner and mode when it is missing; missing
+# parents are created root:root 755. NEVER changes a directory that already
+# exists — neither a parent nor the directory itself: when it exists with
+# another owner or mode this stops and says so, for a person to decide.
+ensure_dir() {
+  local path="$1" owner="$2" group="$3" mode="$4" p missing=() i
+  judge_dir "$path" "$owner" "$group" "$mode"
+  sudo test -e "$path" && return 0
+  p="$(dirname "$path")"
+  while ! sudo test -e "$p"; do
+    missing=("$p" "${missing[@]}")
+    p="$(dirname "$p")"
+  done
   for i in "${missing[@]}"; do
     sudo mkdir -m 755 "$i"
     sudo chown root:root "$i"
@@ -123,8 +139,23 @@ ensure_dir() {
   sudo chmod "$mode" "$path"
 }
 
+# listed_in_sums <name>
+# Whether SHA256SUMS carries <name> by exact name: the name field of a line
+# (everything after "<64 hex><space><space-or-star>") must equal <name>, so a
+# merely similar name — old/xchange, xchange.bak, "old xchange" — never
+# counts, and a binary-mode "hash *name" line does.
+listed_in_sums() {
+  awk -v want="$1" '
+    substr($0, 67) == want { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$STAGE/SHA256SUMS"
+}
+
 # The stage must be ours and closed to other users, hold what is needed, and
-# match the checksums written on the build host.
+# match the checksums written on the build host: sha256sum -c checks only the
+# files SHA256SUMS lists, so every file named here and every staged
+# configuration/*.yaml must be listed too, each by its exact name — anything
+# the stage holds but does not list is never compared.
 check_stage() {
   [ -d "$STAGE" ] || die "stage directory missing: $STAGE"
   local owner mode
@@ -141,8 +172,39 @@ check_stage() {
   done
   (cd "$STAGE" && sha256sum --quiet -c SHA256SUMS) ||
     die "checksum mismatch in $STAGE — copy the files again"
-  grep -q ' [ *]\?xchange$' "$STAGE/SHA256SUMS" ||
-    die "SHA256SUMS does not list the binary 'xchange'"
+  for f in "$@"; do
+    listed_in_sums "$f" || die "SHA256SUMS does not list $f"
+  done
+  for f in "$STAGE"/configuration/*.yaml; do
+    [ -e "$f" ] || continue
+    listed_in_sums "configuration/$(basename "$f")" ||
+      die "SHA256SUMS does not list configuration/$(basename "$f")"
+  done
+}
+
+# can_enter_as <user> <dir> — whether <user> can cross <dir> (execute on it).
+can_enter_as() { sudo -u "$1" test -x "$2"; }
+
+# warn_if_unreachable <user> <path> — walks the ancestors of <path> from /
+# down and, at the first one <user> cannot enter, prints one WARNING line
+# naming it: the service could not reach <path> through it, and this script
+# does not change directories it did not create. Returns 0 in every case —
+# it warns, it never stops the install.
+warn_if_unreachable() {
+  local user="$1" path="$2" d
+  local -a chain=()
+  d="$path"
+  while [ "$d" != / ]; do
+    d="$(dirname "$d")"
+    chain=("$d" "${chain[@]}")
+  done
+  for d in "${chain[@]}"; do
+    if ! can_enter_as "$user" "$d"; then
+      echo "WARNING: $user cannot enter $d, so the service cannot reach $path; this script does not change $d" >&2
+      return 0
+    fi
+  done
+  return 0
 }
 
 # The unit file with the six "(rendered)" lines set from the variables above.
@@ -197,6 +259,76 @@ applied_migrations() {
 }
 
 sha_of() { sudo sha256sum "$1" | cut -d' ' -f1; }
+
+# replace_binary — installs the stage's binary as $BIN and keeps the
+# installed one as $BIN.prev when it differs; nothing is replaced when it
+# is already the same binary (the real .prev is kept, not overwritten with
+# itself); with no installed binary it just installs. Sets BIN_SAVED=1 only
+# when a copy was saved.
+replace_binary() {
+  local new old
+  if ! sudo test -e "$BIN"; then
+    sudo install -o root -g root -m 755 "$STAGE/xchange" "$BIN"
+    BIN_SAVED=0
+    say "binary installed: $BIN (there was no previous one)"
+    return 0
+  fi
+  new="$(sha256sum "$STAGE/xchange" | cut -d' ' -f1)"
+  old="$(sha_of "$BIN")"
+  if [ "$new" = "$old" ]; then
+    # same binary again: keep the real previous one, do not overwrite it with itself
+    say "binary unchanged ($new); xchange.prev kept"
+    BIN_SAVED=0
+  else
+    sudo cp -p "$BIN" "$BIN.prev"
+    # shellcheck disable=SC2034  # read by install.sh after the call
+    BIN_SAVED=1
+    sudo install -o root -g root -m 755 "$STAGE/xchange" "$BIN"
+    say "binary replaced: $old -> $new (previous kept as $BIN.prev)"
+  fi
+}
+
+# replace_configuration — makes $CONFIG_DIR mirror the stage's configuration/
+# both ways: every staged *.yaml installed, every installed *.yaml the stage
+# no longer carries removed. What is replaced is kept first as
+# $CONFIG_DIR.prev; when the installed set and contents already match the
+# stage's, nothing is touched and the real .prev is kept. Sets
+# CONFIG_SAVED=1 only when a copy was saved.
+replace_configuration() {
+  local f installed=0 changed=0
+  for f in "$CONFIG_DIR"/*.yaml; do
+    [ -e "$f" ] && installed=1
+  done
+  if [ "$installed" = 0 ]; then
+    sudo install -o root -g root -m 644 "$STAGE"/configuration/*.yaml "$CONFIG_DIR/"
+    CONFIG_SAVED=0
+    say "configuration installed: $CONFIG_DIR (there was no previous one)"
+    return 0
+  fi
+  for f in "$STAGE"/configuration/*.yaml; do
+    [ -e "$f" ] || die "no *.yaml in $STAGE/configuration"
+    sudo cmp -s "$f" "$CONFIG_DIR/$(basename "$f")" || changed=1
+  done
+  for f in "$CONFIG_DIR"/*.yaml; do
+    [ -e "$f" ] || continue
+    [ -e "$STAGE/configuration/$(basename "$f")" ] || changed=1
+  done
+  if [ "$changed" = 0 ]; then
+    say "configuration unchanged; configuration.prev kept"
+    CONFIG_SAVED=0
+    return 0
+  fi
+  sudo rm -rf "${CONFIG_DIR:?}.prev"
+  sudo cp -a "$CONFIG_DIR" "$CONFIG_DIR.prev"
+  # shellcheck disable=SC2034  # read by install.sh after the call
+  CONFIG_SAVED=1
+  sudo install -o root -g root -m 644 "$STAGE"/configuration/*.yaml "$CONFIG_DIR/"
+  for f in "$CONFIG_DIR"/*.yaml; do
+    [ -e "$f" ] || continue
+    [ -e "$STAGE/configuration/$(basename "$f")" ] || sudo rm -f "$f"
+  done
+  say "configuration replaced (previous kept as $CONFIG_DIR.prev)"
+}
 
 # Build sha the stage says it carries (file BUILD, written on the build host).
 expected_build() {

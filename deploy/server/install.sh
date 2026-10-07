@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # First install of the XCHANGE v3 server on this host (Ubuntu, systemd,
 # PostgreSQL on the same machine). Run as a sudo-capable user, never as root
-# directly. Safe to run again: every step looks before it writes.
+# directly. Safe to run again: every step looks before it writes, and a
+# re-run keeps what it replaces as xchange.prev and configuration.prev,
+# like update.sh.
 #
 # Nothing in this repository runs this for you. It is run on a host only on the
 # owner's order (deploy/README.md).
@@ -23,6 +25,17 @@ check_stage xchange configuration/base.yaml extract-v2-pages.mjs
 FIRST_INSTALL=0
 sudo test -f "$UNIT_FILE" || FIRST_INSTALL=1
 
+# 0. judge every directory before anything is created: a run that refuses
+#    must leave nothing behind — not even the service user.
+judge_dir "$INSTALL_DIR" root root 755
+judge_dir "$CONFIG_DIR" root root 755
+judge_dir "$ETC_DIR" root "$SERVICE_USER" 750
+judge_dir "$UPLOADS_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
+# WEB_DIR only when step 6 will create it (missing or empty).
+if ! sudo test -d "$WEB_DIR" || [ -z "$(sudo ls -A "$WEB_DIR")" ]; then
+  judge_dir "$WEB_DIR" root root 755
+fi
+
 # 1. the service user: no home, no shell
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   sudo useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
@@ -36,6 +49,9 @@ ensure_dir "$INSTALL_DIR" root root 755
 ensure_dir "$CONFIG_DIR" root root 755
 ensure_dir "$ETC_DIR" root "$SERVICE_USER" 750
 ensure_dir "$UPLOADS_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
+# an existing parent the service user cannot enter would lock the service
+# out of its uploads; this script does not change such a directory, so say so
+warn_if_unreachable "$SERVICE_USER" "$UPLOADS_DIR"
 
 # 3. the env file, written once; the database password is generated here and
 #    goes from openssl into the file without touching a command line or the screen
@@ -90,8 +106,11 @@ if [ -z "$(pg -Atc "select 1 from pg_database where datname = '$DB_NAME'")" ]; t
 fi
 
 # 5. binary and configuration (root-owned; the service can read, not change)
-sudo install -o root -g root -m 755 "$STAGE/xchange" "$BIN"
-sudo install -o root -g root -m 644 "$STAGE"/configuration/*.yaml "$CONFIG_DIR/"
+#    The same swap as update.sh: what a re-run replaces it keeps first.
+BIN_SAVED=0
+CONFIG_SAVED=0
+replace_binary
+replace_configuration
 say "binary installed: $BIN sha256 $(sha_of "$BIN")"
 
 # 6. pages: extracted on this host from the installed v2 bundle, once.
@@ -137,4 +156,7 @@ Next (deploy/README.md):
   - nginx is the host owner's to apply: deploy/nginx/*.conf.example
   - remove the stage directory when done: $STAGE
 TXT
+else
+  # a re-run replaced what differed and kept it first; say the way back
+  print_rollback "$BIN_SAVED" "$CONFIG_SAVED"
 fi

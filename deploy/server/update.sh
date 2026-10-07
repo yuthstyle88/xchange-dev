@@ -23,13 +23,6 @@ fi
 sudo test -d "$UPLOADS_DIR" || die "uploads directory missing: $UPLOADS_DIR (run install.sh; it creates it)"
 
 BEFORE="$(applied_migrations)"
-NEW_SHA="$(sha256sum "$STAGE/xchange" | cut -d' ' -f1)"
-OLD_SHA="$(sha_of "$BIN")"
-
-CONFIG_CHANGED=0
-for f in "$STAGE"/configuration/*.yaml; do
-  sudo cmp -s "$f" "$CONFIG_DIR/$(basename "$f")" || CONFIG_CHANGED=1
-done
 
 # From the stop until the start, a failure must not leave the service down
 # without a word: say what state it is in and how to bring it back.
@@ -56,24 +49,8 @@ trap on_exit EXIT
 
 PHASE=swap
 sudo systemctl stop "$SERVICE_NAME.service"
-if [ "$NEW_SHA" = "$OLD_SHA" ]; then
-  # same binary again: keep the real previous one, do not overwrite it with itself
-  say "binary unchanged ($NEW_SHA); xchange.prev kept"
-else
-  sudo cp -p "$BIN" "$BIN.prev"
-  BIN_SAVED=1
-  sudo install -o root -g root -m 755 "$STAGE/xchange" "$BIN"
-  say "binary replaced: $OLD_SHA -> $NEW_SHA (previous kept as $BIN.prev)"
-fi
-if [ "$CONFIG_CHANGED" = 1 ]; then
-  sudo rm -rf "${CONFIG_DIR:?}.prev"
-  sudo cp -a "$CONFIG_DIR" "$CONFIG_DIR.prev"
-  CONFIG_SAVED=1
-  sudo install -o root -g root -m 644 "$STAGE"/configuration/*.yaml "$CONFIG_DIR/"
-  say "configuration replaced (previous kept as $CONFIG_DIR.prev)"
-else
-  say "configuration unchanged; configuration.prev kept"
-fi
+replace_binary
+replace_configuration
 install_unit
 sudo systemctl start "$SERVICE_NAME.service"
 PHASE=started
