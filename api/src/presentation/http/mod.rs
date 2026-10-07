@@ -7,10 +7,12 @@ pub mod device_agent;
 pub mod device_setup;
 pub mod devices;
 pub mod documents;
+pub mod drawer_passport;
 pub mod employees;
 pub mod files;
 pub mod health;
 pub mod kiosk;
+pub mod payment_methods;
 pub mod reference_rates;
 pub mod rpc;
 
@@ -28,9 +30,11 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     device_setup::configure(cfg, state);
     devices::configure(cfg, state);
     documents::configure(cfg, state);
+    drawer_passport::configure(cfg, state);
     employees::configure(cfg, state);
     files::configure(cfg, state);
     kiosk::configure(cfg, state);
+    payment_methods::configure(cfg, state);
     reference_rates::configure(cfg, state);
     rpc::configure(cfg, state);
 }
