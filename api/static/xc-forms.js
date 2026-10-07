@@ -1,389 +1,363 @@
-(function () {
-  'use strict';
-
-  const LOGIN = '[a-zA-Z0-9._-]{3,30}';
-  const LOGIN_FIXED = '[a-zA-Z0-9._\\-]{3,40}';
-
-  const PATTERN_OVERRIDES = Object.freeze({
-    [LOGIN]: LOGIN_FIXED,
+// GENERATED from api/web/forms/src by api/web/forms/build.mjs — do not edit.
+// Rebuild: npm --prefix api/web/forms ci && npm --prefix api/web/forms run build
+"use strict";
+(() => {
+  // src/patterns.ts
+  var LOGIN = "[a-zA-Z0-9._-]{3,30}";
+  var LOGIN_FIXED = "[a-zA-Z0-9._\\-]{3,40}";
+  var PATTERN_OVERRIDES = Object.freeze({
+    [LOGIN]: LOGIN_FIXED
   });
-
-  const BRANCH = 'ไม่พบสาขาที่เลือก กรุณารีเฟรช';
-  const PASSWORD = 'รหัสผ่านต้องมี 12–128 ตัวอักษร'; // U+2013 en-dash
-
-  const REFUSALS = Object.freeze({
-    'employee-error': Object.freeze({
-      [BRANCH]: 'employee-branch',
-      [PASSWORD]: 'employee-password',
-    }),
-    'reset-error': Object.freeze({
-      [PASSWORD]: 'reset-employee-password',
-    }),
-  });
-
-  const CSS = `
-.xc-invalid, :user-invalid {
-  border-color: #c62828 !important;
-  background-color: #fdecea !important;
-}
-.xc-reveal {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 4px;
-  vertical-align: middle;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-`;
-
+  function backslashesBefore(s, i) {
+    let count = 0;
+    for (let j = i - 1; j >= 0 && s[j] === "\\"; j--) count++;
+    return count;
+  }
   function repairDashes(p) {
-    let result = '';
+    let result = "";
     let inClass = false;
-    let i = 0;
-    while (i < p.length) {
+    for (let i = 0; i < p.length; i++) {
+      const ch = p[i];
+      const escaped = backslashesBefore(p, i) % 2 === 1;
       if (!inClass) {
-        if (p[i] === '[') {
-          let bs = 0;
-          let j = i - 1;
-          while (j >= 0 && p[j] === '\\') {
-            bs++;
-            j--;
-          }
-          if (bs % 2 === 0) {
-            inClass = true;
-          }
+        if (ch === "[" && !escaped) inClass = true;
+      } else if (ch === "]" && !escaped) {
+        if (result.endsWith("-") && backslashesBefore(result, result.length - 1) % 2 === 0) {
+          result = result.slice(0, -1) + "\\-";
         }
-        result += p[i];
-        i++;
-      } else {
-        if (p[i] === ']') {
-          let bs = 0;
-          let j = i - 1;
-          while (j >= 0 && p[j] === '\\') {
-            bs++;
-            j--;
-          }
-          if (bs % 2 === 0) {
-            if (result.endsWith('-')) {
-              let dashBs = 0;
-              let k = result.length - 2;
-              while (k >= 0 && result[k] === '\\') {
-                dashBs++;
-                k--;
-              }
-              if (dashBs % 2 === 0) {
-                result = result.slice(0, result.length - 1) + '\\-';
-              }
-            }
-            inClass = false;
-          }
-        }
-        result += p[i];
-        i++;
+        inClass = false;
       }
+      result += ch;
     }
     return result;
   }
-
-  function fixPattern(p) {
-    if (typeof p !== 'string') return null;
-    if (Object.prototype.hasOwnProperty.call(PATTERN_OVERRIDES, p)) {
-      return PATTERN_OVERRIDES[p];
-    }
+  function compiles(p) {
     try {
-      new RegExp(`^(?:${p})$`, 'v');
-      return null;
-    } catch (_) {}
-
-    const repaired = repairDashes(p);
-    if (repaired !== p) {
-      try {
-        new RegExp(`^(?:${repaired})$`, 'v');
-        return repaired;
-      } catch (_) {}
+      new RegExp(`^(?:${p})$`, "v");
+      return true;
+    } catch {
+      return false;
     }
-    return null;
+  }
+  function fixPattern(p) {
+    if (typeof p !== "string") return null;
+    if (Object.prototype.hasOwnProperty.call(PATTERN_OVERRIDES, p)) return PATTERN_OVERRIDES[p];
+    if (compiles(p)) return null;
+    const repaired = repairDashes(p);
+    return repaired !== p && compiles(repaired) ? repaired : null;
   }
 
+  // src/marks.ts
   function firstInvalid(elements) {
     if (!elements) return null;
     for (let i = 0; i < elements.length; i++) {
       const el = elements[i];
-      if (el && el.willValidate && typeof el.checkValidity === 'function' && !el.checkValidity()) {
+      if (el && el.willValidate && typeof el.checkValidity === "function" && !el.checkValidity()) {
         return el;
       }
     }
     return null;
   }
-
   function markInvalid(el) {
     if (!el) return;
-    if (el.classList && typeof el.classList.add === 'function') {
-      el.classList.add('xc-invalid');
-    }
-    if (typeof el.setAttribute === 'function') {
-      el.setAttribute('aria-invalid', 'true');
-    }
+    if (el.classList && typeof el.classList.add === "function") el.classList.add("xc-invalid");
+    if (typeof el.setAttribute === "function") el.setAttribute("aria-invalid", "true");
   }
-
   function clearMark(el) {
     if (!el) return;
-    if (el.classList && typeof el.classList.remove === 'function') {
-      el.classList.remove('xc-invalid');
-    }
-    if (typeof el.removeAttribute === 'function') {
-      el.removeAttribute('aria-invalid');
-    }
+    if (el.classList && typeof el.classList.remove === "function") el.classList.remove("xc-invalid");
+    if (typeof el.removeAttribute === "function") el.removeAttribute("aria-invalid");
   }
 
+  // src/refusals.ts
+  var BRANCH = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
+  var PASSWORD = "รหัสผ่านต้องมี 12–128 ตัวอักษร";
+  var REFUSALS = Object.freeze({
+    "employee-error": Object.freeze({
+      [BRANCH]: "employee-branch",
+      [PASSWORD]: "employee-password"
+    }),
+    "reset-error": Object.freeze({
+      [PASSWORD]: "reset-employee-password"
+    })
+  });
   function fieldFor(errorId, text) {
-    if (typeof errorId !== 'string' || typeof text !== 'string') return null;
+    if (typeof errorId !== "string" || typeof text !== "string") return null;
     if (!Object.prototype.hasOwnProperty.call(REFUSALS, errorId)) return null;
     const mapping = REFUSALS[errorId];
-    const trimmed = text.trim();
-    if (Object.prototype.hasOwnProperty.call(mapping, trimmed)) {
-      return mapping[trimmed];
-    }
-    return null;
+    const sentence = text.trim();
+    return Object.prototype.hasOwnProperty.call(mapping, sentence) ? mapping[sentence] : null;
   }
 
+  // src/password-field.ts
+  var WRAPPER_CLASS = "xc-password";
+  var REVEAL_CLASS = "xc-reveal";
+  var REVEALABLE_ATTR = "data-xc-revealable";
+  var REVEAL_ATTR = "data-xc-reveal";
   function revealLabel(shown) {
-    return shown ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน';
+    return shown ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน";
   }
-
   function flipReveal(input) {
     if (!input) return false;
     const start = input.selectionStart;
     const end = input.selectionEnd;
-    const shown = input.type === 'password';
-    input.type = shown ? 'text' : 'password';
-    if (
-      typeof input.setSelectionRange === 'function' &&
-      start !== null &&
-      end !== null &&
-      start !== undefined &&
-      end !== undefined
-    ) {
+    const shown = input.type === "password";
+    input.type = shown ? "text" : "password";
+    if (typeof input.setSelectionRange === "function" && start != null && end != null) {
       try {
         input.setSelectionRange(start, end);
-      } catch (_) {}
+      } catch {
+      }
     }
-    if (typeof input.focus === 'function') {
+    if (typeof input.focus === "function") {
       try {
         input.focus();
-      } catch (_) {}
+      } catch {
+      }
     }
     return shown;
   }
-
-  function makeRevealButton(doc, input) {
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('type', 'button');
-    btn.classList.add('xc-reveal');
-    btn.setAttribute('aria-label', revealLabel(false));
-    btn.setAttribute('aria-pressed', 'false');
-
-    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '18');
-    svg.setAttribute('height', '18');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.setAttribute('aria-hidden', 'true');
-
-    const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z');
-    svg.appendChild(path);
-
-    const circle = doc.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', '12');
-    circle.setAttribute('cy', '12');
-    circle.setAttribute('r', '3');
-    svg.appendChild(circle);
-
-    btn.appendChild(svg);
-
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      const shown = flipReveal(input);
-      btn.setAttribute('aria-label', revealLabel(shown));
-      btn.setAttribute('aria-pressed', String(shown));
-    });
-
-    return btn;
+  function syncReveal(button, shown) {
+    button.setAttribute("aria-label", revealLabel(shown));
+    button.setAttribute("aria-pressed", String(shown));
   }
-
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function svg(doc, tag, attrs) {
+    const el = doc.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
+    return el;
+  }
+  function makeRevealButton(doc, input) {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.setAttribute("type", "button");
+    button.classList.add(REVEAL_CLASS);
+    syncReveal(button, false);
+    const icon = svg(doc, "svg", {
+      viewBox: "0 0 24 24",
+      width: "18",
+      height: "18",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": "true"
+    });
+    icon.appendChild(svg(doc, "path", { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }));
+    icon.appendChild(svg(doc, "circle", { cx: "12", cy: "12", r: "3" }));
+    button.appendChild(icon);
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      syncReveal(button, flipReveal(input));
+    });
+    return button;
+  }
   function concealAll(inputs) {
     if (!inputs) return;
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i];
-      if (input && input.type === 'text') {
-        input.type = 'password';
+      if (input && input.type === "text") input.type = "password";
+    }
+  }
+  function isWrapper(node) {
+    const el = node;
+    return !!el && !!el.classList && typeof el.classList.contains === "function" && el.classList.contains(WRAPPER_CLASS);
+  }
+  function carryMargins(doc, input, wrapper) {
+    const view = doc.defaultView;
+    if (!view || typeof view.getComputedStyle !== "function") return;
+    const style = view.getComputedStyle(input);
+    wrapper.style.marginTop = style.marginTop;
+    wrapper.style.marginBottom = style.marginBottom;
+    input.style.marginTop = "0";
+    input.style.marginBottom = "0";
+  }
+  function wrapPasswordField(doc, input) {
+    const parent = input.parentNode;
+    if (!parent) return null;
+    if (isWrapper(parent)) return parent;
+    const wrapper = doc.createElement("span");
+    wrapper.classList.add(WRAPPER_CLASS);
+    parent.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+    carryMargins(doc, input, wrapper);
+    input.setAttribute(REVEALABLE_ATTR, "true");
+    const button = makeRevealButton(doc, input);
+    button.setAttribute(REVEAL_ATTR, "true");
+    wrapper.appendChild(button);
+    return wrapper;
+  }
+
+  // src/style.ts
+  var STYLE_ID = "xc-forms-style";
+  var BRAND = "var(--brand, #a5003c)";
+  var INVALID = "#c62828";
+  var EYE = "#6b6b66";
+  var CSS = `
+.xc-invalid, :user-invalid {
+  border-color: ${INVALID} !important;
+}
+.xc-invalid:focus, :user-invalid:focus {
+  outline: none;
+}
+.xc-password {
+  display: block;
+  position: relative;
+}
+.xc-password > input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 44px;
+}
+.xc-password > input:focus {
+  outline: none;
+  border-color: ${BRAND};
+}
+.xc-password .xc-reveal {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: ${EYE};
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.xc-password .xc-reveal:hover,
+.xc-password .xc-reveal[aria-pressed="true"] {
+  color: ${BRAND};
+}
+.xc-password .xc-reveal:focus-visible {
+  outline: 2px solid ${BRAND};
+  outline-offset: -6px;
+}
+`;
+
+  // src/install.ts
+  function addStyle(doc) {
+    if (doc.getElementById(STYLE_ID)) return;
+    const style = doc.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    (doc.head || doc.documentElement)?.appendChild(style);
+  }
+  function repairPatterns(doc) {
+    for (const el of doc.querySelectorAll("input[pattern]")) {
+      const pattern = el.getAttribute("pattern");
+      const fixed = fixPattern(pattern);
+      if (fixed !== null && fixed !== pattern) el.setAttribute("pattern", fixed);
+    }
+  }
+  function wrapPasswordFields(doc) {
+    for (const el of doc.querySelectorAll('input[type="password"]')) {
+      if (!el.hasAttribute(REVEALABLE_ATTR)) wrapPasswordField(doc, el);
+    }
+  }
+  function sweepOrphans(doc) {
+    for (const button of doc.querySelectorAll(`[${REVEAL_ATTR}]`)) {
+      const field = button.previousElementSibling;
+      if (field && doc.contains(field) && field.hasAttribute(REVEALABLE_ATTR)) continue;
+      const wrapper = button.parentElement;
+      button.remove();
+      if (wrapper && wrapper.classList.contains(WRAPPER_CLASS) && wrapper.childElementCount === 0) {
+        wrapper.remove();
       }
     }
   }
-
+  function pointAtField(doc, errorEl, errorId) {
+    const text = errorEl.textContent || "";
+    const fieldId = fieldFor(errorId, text);
+    if (!fieldId) return;
+    const field = doc.getElementById(fieldId);
+    if (!field) return;
+    markInvalid(field);
+    if (typeof field.setCustomValidity === "function") field.setCustomValidity(text.trim());
+    if (typeof field.focus === "function") field.focus();
+    if (typeof field.reportValidity === "function") field.reportValidity();
+  }
   function install(doc) {
     if (!doc) return;
-
-    if (!doc.getElementById('xc-forms-style')) {
-      const style = doc.createElement('style');
-      style.id = 'xc-forms-style';
-      style.textContent = CSS;
-      const target = doc.head || doc.documentElement;
-      if (target) {
-        target.appendChild(style);
-      }
-    }
-
-    function scan() {
-      const patternInputs = doc.querySelectorAll('input[pattern]');
-      for (let i = 0; i < patternInputs.length; i++) {
-        const el = patternInputs[i];
-        const p = el.getAttribute('pattern');
-        const fixed = fixPattern(p);
-        if (fixed !== null && fixed !== p) {
-          el.setAttribute('pattern', fixed);
-        }
-      }
-
-      const passwordInputs = doc.querySelectorAll('input[type="password"]');
-      for (let i = 0; i < passwordInputs.length; i++) {
-        const el = passwordInputs[i];
-        if (!el.hasAttribute('data-xc-revealable')) {
-          el.setAttribute('data-xc-revealable', 'true');
-          const btn = makeRevealButton(doc, el);
-          btn.setAttribute('data-xc-reveal', 'true');
-          el.insertAdjacentElement('afterend', btn);
-        }
-      }
-
-      const revealButtons = doc.querySelectorAll('[data-xc-reveal]');
-      for (let i = 0; i < revealButtons.length; i++) {
-        const btn = revealButtons[i];
-        const prev = btn.previousElementSibling;
-        if (!prev || !doc.contains(prev) || !prev.hasAttribute('data-xc-revealable')) {
-          btn.remove();
-        }
-      }
-
-      watchRefusals();
-    }
-
-    const watchedErrors = new Set();
+    addStyle(doc);
+    const watchedErrors = /* @__PURE__ */ new Set();
     function watchRefusals() {
       for (const errorId of Object.keys(REFUSALS)) {
         const el = doc.getElementById(errorId);
-        if (el && !watchedErrors.has(el)) {
-          watchedErrors.add(el);
-          if (typeof MutationObserver !== 'undefined') {
-            const obs = new MutationObserver(function () {
-              handleRefusal(el, errorId);
-            });
-            obs.observe(el, { characterData: true, childList: true, subtree: true });
-          }
-          handleRefusal(el, errorId);
+        if (!el || watchedErrors.has(el)) continue;
+        watchedErrors.add(el);
+        if (typeof MutationObserver !== "undefined") {
+          new MutationObserver(() => pointAtField(doc, el, errorId)).observe(el, {
+            characterData: true,
+            childList: true,
+            subtree: true
+          });
         }
+        pointAtField(doc, el, errorId);
       }
     }
-
-    function handleRefusal(el, errorId) {
-      const text = el.textContent || '';
-      const fieldId = fieldFor(errorId, text);
-      if (fieldId) {
-        const field = doc.getElementById(fieldId);
-        if (field) {
-          markInvalid(field);
-          if (typeof field.setCustomValidity === 'function') {
-            field.setCustomValidity(text.trim());
-          }
-          if (typeof field.focus === 'function') {
-            field.focus();
-          }
-          if (typeof field.reportValidity === 'function') {
-            field.reportValidity();
-          }
-        }
-      }
+    function scan() {
+      repairPatterns(doc);
+      wrapPasswordFields(doc);
+      sweepOrphans(doc);
+      watchRefusals();
     }
-
     scan();
-
-    if (typeof MutationObserver !== 'undefined' && doc.documentElement) {
-      const observer = new MutationObserver(function () {
-        scan();
-      });
-      observer.observe(doc.documentElement, {
+    if (typeof MutationObserver !== "undefined" && doc.documentElement) {
+      new MutationObserver(scan).observe(doc.documentElement, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['pattern', 'type'],
+        attributeFilter: ["pattern", "type"]
       });
     }
-
-    doc.addEventListener(
-      'invalid',
-      function (e) {
-        markInvalid(e.target);
-      },
-      true,
-    );
-
+    doc.addEventListener("invalid", (e) => markInvalid(e.target), true);
     function onInput(e) {
       const target = e.target;
       if (!target) return;
-      if (typeof target.setCustomValidity === 'function') {
-        target.setCustomValidity('');
-      }
-      if (target.validity && target.validity.valid) {
-        clearMark(target);
-      }
+      if (typeof target.setCustomValidity === "function") target.setCustomValidity("");
+      if (target.validity && target.validity.valid) clearMark(target);
     }
-    doc.addEventListener('input', onInput, true);
-    doc.addEventListener('change', onInput, true);
-
+    doc.addEventListener("input", onInput, true);
+    doc.addEventListener("change", onInput, true);
     doc.addEventListener(
-      'submit',
-      function (e) {
+      "submit",
+      (e) => {
         const form = e.target;
         if (!form) return;
-        if (typeof form.querySelectorAll === 'function') {
-          const revealables = form.querySelectorAll('[data-xc-revealable]');
+        if (typeof form.querySelectorAll === "function") {
+          const revealables = form.querySelectorAll(`[${REVEALABLE_ATTR}]`);
           concealAll(revealables);
-          for (let i = 0; i < revealables.length; i++) {
-            const btn = revealables[i].nextElementSibling;
-            if (btn && btn.classList && btn.classList.contains('xc-reveal')) {
-              btn.setAttribute('aria-label', revealLabel(false));
-              btn.setAttribute('aria-pressed', 'false');
-            }
+          for (const field of revealables) {
+            const button = field.nextElementSibling;
+            if (button && button.classList.contains(REVEAL_CLASS)) syncReveal(button, false);
           }
         }
-        if (form.noValidate && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+        if (form.noValidate && typeof form.checkValidity === "function" && !form.checkValidity()) {
           e.preventDefault();
           e.stopImmediatePropagation();
           const first = firstInvalid(form.elements);
           if (first) {
             markInvalid(first);
-            if (typeof first.focus === 'function') {
-              first.focus();
-            }
+            if (typeof first.focus === "function") first.focus();
           }
-          if (typeof form.reportValidity === 'function') {
-            form.reportValidity();
-          }
+          if (typeof form.reportValidity === "function") form.reportValidity();
         }
       },
-      true,
+      true
     );
   }
 
-  if (typeof module === 'object' && module.exports) {
+  // src/index.ts
+  if (typeof module === "object" && module && module.exports) {
     module.exports = {
       fixPattern,
       PATTERN_OVERRIDES,
@@ -397,8 +371,9 @@
       flipReveal,
       makeRevealButton,
       concealAll,
+      wrapPasswordField
     };
-  } else if (typeof document !== 'undefined') {
+  } else if (typeof document !== "undefined") {
     install(document);
   }
 })();

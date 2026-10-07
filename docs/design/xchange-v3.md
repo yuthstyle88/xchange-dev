@@ -465,7 +465,7 @@ into dialogs after load):
 | 2 | **An invalid form does not submit.** Forms without `novalidate` are blocked by the browser itself once (1) has run: it focuses the first invalid field (caret blinking) and shows its message. For a form with `novalidate`, a capture-phase `submit` listener does the same (`checkValidity` false → `preventDefault`, focus the first invalid field, `reportValidity`). Measured: the v2 bundle has no `novalidate` form (the hits in `staff.js`/`staff-report.js` are React's attribute table) and the employee dialog submits through a real `<form>` (`onsubmit`), so no click hook is needed. | `firstInvalid(elements)` |
 | 3 | **The wrong field turns red.** A capture-phase `invalid` listener adds class `xc-invalid` and `aria-invalid="true"`; `:user-invalid` is styled the same; the mark goes when the field is edited and valid again. | `markInvalid(el)`, `clearMark(el)`, `CSS` |
 | 4 | **A server refusal points at its field**, only where the sentence names exactly one field. One table, `REFUSALS`: error element id → sentence → field id. The script watches those error elements; when one shows a listed sentence, it marks that field, sets it as the field's custom validity (cleared on the next edit) and focuses it. | `fieldFor(errorId, text)` |
-| 5 | **Show / hide a password.** Every `<input type="password">` gets one `<button type="button" class="xc-reveal">` right after it with an eye icon, `aria-label` `แสดงรหัสผ่าน` / `ซ่อนรหัสผ่าน` and `aria-pressed`. A click (or Enter/Space — it is a button, in the tab order) flips the type `password`↔`text` and gives focus back with the caret where it was. It never submits (`type="button"`), and on submit every revealed field turns back to `password` first, so the browser does not keep the typed password as text in its form history. The script never reads a field's value. A button whose field has left the document is removed. | `flipReveal(input)`, `revealLabel(shown)`, `makeRevealButton(doc, input)`, `concealAll(inputs)` |
+| 5 | **Show / hide a password.** Every `<input type="password">` becomes a *PasswordField* (#378): it is wrapped in place in `<span class="xc-password">`, and one `<button type="button" class="xc-reveal">` follows it inside the wrapper, pinned to the field's right edge, with an eye icon, `aria-label` `แสดงรหัสผ่าน` / `ซ่อนรหัสผ่าน` and `aria-pressed`. A click (or Enter/Space — it is a button, in the tab order) flips the type `password`↔`text` and gives focus back with the caret where it was. It never submits (`type="button"`), and on submit every revealed field turns back to `password` first, so the browser does not keep the typed password as text in its form history. The script never reads a field's value. A button whose field has left the document is removed. | `flipReveal(input)`, `revealLabel(shown)`, `makeRevealButton(doc, input)`, `concealAll(inputs)`, `wrapPasswordField(doc, input)` |
 
 [required] `REFUSALS` holds only sentences that name one field, each cited from v3's code:
 
@@ -488,6 +488,59 @@ to `[a-zA-Z0-9._\-]{3,40}` — the range the door accepts. The server is not cha
 
 Known difference: v3's pages now validate in the browser where v2's rule was silently dropped, and add the password button
 (`docs/design/xchange-v3-known-differences.md`, row *Pages · shared form helper*).
+
+#### The form helper's source is TypeScript (row FV-TS, #378, owner 2026-10-08)
+
+Owner, on the employee dialog: the eye rendered under the field (*"ไม่สวย เลย"*); wanted one border and the eye inside
+the field (*"เอาแบบนี้ ดิ"*), as one reusable component (*"ทำเป็น คอมโพเน้นท์แล้ว reuse"*), and the helper in TypeScript
+(*"refactor to type script"*). Root cause of the look: FV inserted the eye as the input's next sibling, and the kept
+stylesheets make every input `display:block;width:100%`, so the eye started a new line; the invalid style added a pink fill
+under the page's 3 px focus ring.
+
+[required] The source lives in `api/web/forms/src/*.ts` (strict `tsc --noEmit`), and esbuild bundles it into **the same
+classic script** `api/static/xc-forms.js`, committed. The server still embeds that file (`include_str!`), so `cargo build`
+never needs Node. The script keeps FV's Node contract (`module.exports` of the pure parts, nothing installed under Node), so
+`api/tests/js/xc_forms.test.mjs` runs unchanged. [required] CI runs `npm --prefix api/web/forms run check`, which fails when
+the committed script is not the build of its source.
+
+```mermaid
+classDiagram
+  class index { <<api/web/forms/src/index.ts>> module.exports | install(document) }
+  class install { <<install.ts>> +install(doc) }
+  class patterns { <<patterns.ts>> +PATTERN_OVERRIDES +fixPattern(p) +repairDashes(p) }
+  class marks { <<marks.ts>> +firstInvalid(els) +markInvalid(el) +clearMark(el) }
+  class refusals { <<refusals.ts>> +REFUSALS +fieldFor(errorId, text) }
+  class PasswordField { <<password-field.ts>> +wrapPasswordField(doc, input) +makeRevealButton(doc, input) +flipReveal(input) +revealLabel(shown) +concealAll(inputs) +syncReveal(button, shown) }
+  class style { <<style.ts>> +CSS +STYLE_ID }
+  index --> install
+  index --> patterns
+  index --> marks
+  index --> refusals
+  index --> PasswordField
+  index --> style
+  install --> patterns : repair on every scan
+  install --> PasswordField : wrap every password input
+  install --> refusals : point a refusal at its field
+  install --> marks
+  install --> style : one style element
+```
+
+| Module | File | Provides | Used by |
+|---|---|---|---|
+| entry | `src/index.ts` | the Node exports / the browser install | `build.mjs` |
+| `install` | `src/install.ts` | scan + observers + `invalid`/`input`/`submit` listeners | entry |
+| `patterns` | `src/patterns.ts` | behaviour 1 | `install`, tests |
+| `marks` | `src/marks.ts` | behaviours 2–3 | `install`, tests |
+| `refusals` | `src/refusals.ts` | behaviour 4 | `install`, tests |
+| `PasswordField` | `src/password-field.ts` | behaviour 5: the wrapper `<span class="xc-password">` (input + eye), idempotent; moves the input's vertical margins onto the wrapper so the eye is centred | `install`, tests |
+| `style` | `src/style.ts` | the one style sheet: invalid = red border only (no fill, no outer ring when focused); a focused PasswordField changes its border to the page's `--brand` | `install`, tests |
+
+The eye stays the input's **next sibling** (inside the wrapper), which the submit handler and the orphan sweep rely on; a
+sweep that removes an orphaned eye also removes its wrapper when it is left empty. Pinned by
+`api/tests/js/xc_password_field.test.mjs`.
+
+Not in this row: the other compiled-in scripts (`xc-desk.js`, `xc-staff-password.js`, `xc-device-agents.html`) stay as they
+are; moving every screen to TypeScript is the separate front-end design the owner asked for next (phase 2).
 
 **Known debt, kept on purpose.** `adminSnapshot` returns the whole branch on every call and the screens
 poll it. v3 builds it with SQL instead of replaying the ledger, and keeps v2's 10,000-row cap (`6600`),
@@ -2423,6 +2476,7 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | TLS-ORIGIN (#358) | The repository's nginx files follow the host (§7c *Decided*): one server block on `80` and `443 ssl` with the Let's Encrypt certificate lines, `include snippets/acme-challenge.conf` and `snippets/ssl-params.conf` (both shipped as examples), port 80 answering only the ACME challenge and a 301 to https, HSTS on HTTPS answers, `X-Forwarded-Proto $scheme`; README §1/§6 and the customer-host guide gain the certbot webroot steps and the owner checklist. No application change (§7c) | `deploy/nginx/xc-v3-desk.conf.example`, `deploy/nginx/xc-v3-customer.conf.example`, `deploy/nginx/xc-customer.conf`, `deploy/nginx/snippets/acme-challenge.conf.example` (new), `deploy/nginx/snippets/ssl-params.conf.example` (new), `deploy/README.md` | BK-ENC (both hold `deploy/README.md`; or the reverse order) |
 | DB-LINK (#359) | A non-local database host requires `database.require_ssl = true` (§7c *The database link*), in `Settings::load_from` | `api/src/config/mod.rs`; provided: `api/tests/database_link_test.rs` (new), `api/tests/config_test.rs` (one test gains `APP_DATABASE__REQUIRE_SSL=true`) | — |
 | FV | The shared form helper (§5.3 *The shared form helper*): every HTML page gets the one tag `<script src="/_xc/forms.js" defer></script>` immediately before the version line, on both page paths; `GET /_xc/forms.js` answers the compiled-in script; the script repairs a `pattern` the `v` flag rejects (and maps login's 3–30 to the door's 3–40), lets the browser block an invalid submit with focus on the field, marks invalid fields red, points the cited server refusals at their field, and gives every password field a show/hide button. v2's files are not edited; the server's validation rules are not changed. A Node step in `api.yml` runs the helper's pure-function test | `api/src/presentation/pages.rs`, `api/static/xc-forms.js` (new), `api/tests/pages_forms_test.rs` and `api/tests/js/xc_forms.test.mjs` (new, provided), `api/tests/pages_test.rs` (its strip helper, provided), `.github/workflows/api.yml` (the Node step) | — |
+| FV-TS (#378) | The form helper's source becomes TypeScript under `api/web/forms/src` (§5.3 *The form helper's source is TypeScript*), bundled by esbuild into the committed `api/static/xc-forms.js`; password fields become the PasswordField component (eye inside the field); the invalid style loses its fill. CI checks the committed script equals the build | `api/web/forms/**` (new), `api/static/xc-forms.js` (generated), `api/tests/js/xc_password_field.test.mjs` (new, written first), `.github/workflows/api.yml` (the check step) | FV (merged, PR 320) |
 | DK-1 (#332) | The kept desk's dead ends (§5.3 *The kept desk's dead ends*): `GET /_xc/desk.js` compiled in through the new helper `compiled_script`, tagged as the last entry of `DESK_SCRIPTS` (both desk paths); the script shows the server's own refusal on the passport step, fills and locks `#staff` on `/staff/desk`, and after a **refused** LIVE save offers a way back to the rate step and enables New (Print stays disabled), Retry staying the only exit after an **unknown** outcome; on `/staff/desk` it clears `staffDraftId` on the way back and on New. v2's files, `STAFF_DESK_SCRIPT`, `xc-forms.js` and the server's rules are not edited | `api/src/presentation/pages.rs` (the helper, one `compiled_script` call, one entry in `DESK_SCRIPTS`), `api/static/xc-desk.js` (new); provided on `fix/desk-dead-ends-332` (tests `5f8d6b8`): `api/tests/pages_desk_script_test.rs`, `api/tests/js/xc_desk.test.mjs` (new), `api/tests/pages_test.rs` (the widened strip) | FV (merged, PR 320). Holds `pages.rs`: first in the order below |
 | SP-1 (#331) | The staff's own password change (§5.3 *The staff's own password change*; lane controller's option A): `AccountService::change_password` asks for `currentPassword` when `must_change` is false, counts the attempt on the employee's sign-in name counter, refuses a wrong or missing one with `รหัสผ่านปัจจุบันไม่ถูกต้อง` and an unchanged one with `รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน`; the first-password path is unchanged. `GET /_xc/staff-password.js` (one `compiled_script` call) on `/staff` (its `scripts` list) renders the form when `mustChange` is false. `auth.rs`, the owner's door and `/api/employees` are not edited | `api/crates/xc-auth/src/application/account/service.rs`, `api/src/presentation/pages.rs` (one `compiled_script` call, `/staff`'s `scripts` list), `api/static/xc-staff-password.js` (new); provided on `fix/staff-password-331` (tests `5358040`): `api/crates/xc-auth/tests/account_voluntary_password_test.rs`, `api/tests/pages_staff_password_test.rs`, `api/tests/js/xc_staff_password.test.mjs` (new), `api/crates/xc-auth/tests/account_test.rs` (the eight-changes test sends the current password), `api/crates/xc-auth/tests/account_common/mod.rs` (the v2 replay sends the password of the session's sign-in as `currentPassword`; v2's screen never had a voluntary change) | DK-1 (`compiled_script` and the widened strip of `pages_test.rs`; until DK-1 merges, `every_page_answers_as_v2_does` cannot pass with the `/staff` tag); T4b, T4c (merged) |
 

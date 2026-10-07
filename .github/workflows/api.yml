@@ -114,6 +114,14 @@ jobs:
         with:
           node-version: 24
 
+      # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
+      # api/static/xc-forms.js, so this fails when that file is not the build of its source.
+      - name: Form helper typecheck and build check
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        run: |
+          npm --prefix api/web/forms ci --no-audit --no-fund
+          npm --prefix api/web/forms run check
+
       - name: Form validation JS tests
         if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: node --test api/tests/js/*.test.mjs

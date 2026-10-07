@@ -1,0 +1,15 @@
+{
+  "name": "xc-forms",
+  "private": true,
+  "type": "module",
+  "description": "The form helper v3 adds to every page it serves (row FV). Builds api/static/xc-forms.js.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "build": "node build.mjs",
+    "check": "tsc --noEmit -p . && node build.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}
