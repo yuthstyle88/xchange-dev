@@ -1,6 +1,6 @@
 //! File service.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
@@ -121,7 +121,15 @@ impl FileService {
         // The directory is created when missing, parents included.
         // Write to a temporary name inside <dir> that no other upload can share, then rename.
         // On Unix the file's mode is 0600.
-        self.write_file(&key, bytes)?;
+        let dir = self.dir.clone();
+        let key_for_write = key.clone();
+        let bytes_for_write = bytes.to_vec();
+        tokio::task::spawn_blocking(move || {
+            write_file_blocking(&dir, &key_for_write, &bytes_for_write)
+        })
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         let target_path = self.dir.join(&key);
 
         // 4. One row: key, branch_id = the branch, owner_id, mime as given, sha256, created_at = now cut to milliseconds.
@@ -144,7 +152,7 @@ impl FileService {
         .await;
 
         if let Err(e) = db_res {
-            let _ = std::fs::remove_file(&target_path);
+            let _ = tokio::task::spawn_blocking(move || remove_file_blocking(&target_path)).await;
             return Err(AppError::Database(e));
         }
 
@@ -172,10 +180,13 @@ impl FileService {
         };
 
         let path = self.dir.join(&key);
-        let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(AppError::Internal(e.to_string())),
+        let bytes = tokio::task::spawn_blocking(move || read_file_blocking(&path))
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        let Some(bytes) = bytes else {
+            return Ok(None);
         };
 
         Ok(Some(StoredFile {
@@ -214,10 +225,13 @@ impl FileService {
         };
 
         let path = self.dir.join(&key);
-        let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(AppError::Internal(e.to_string())),
+        let bytes = tokio::task::spawn_blocking(move || read_file_blocking(&path))
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        let Some(bytes) = bytes else {
+            return Ok(None);
         };
 
         Ok(Some(StoredFile {
@@ -242,40 +256,6 @@ impl FileService {
                 .await
                 .map_err(AppError::Database)?;
         Ok(row.map(|(mime,)| mime))
-    }
-
-    /// Writes `bytes` to `<dir>/<key>`: a temporary name of its own first, then a
-    /// rename, so a reader never sees half a file. Creates the directory when missing.
-    fn write_file(&self, key: &str, bytes: &[u8]) -> AppResult<()> {
-        std::fs::create_dir_all(&self.dir).map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let temp_path = self.dir.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
-        let target_path = self.dir.join(key);
-
-        let write_res = (|| -> Result<(), std::io::Error> {
-            #[cfg(unix)]
-            {
-                use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true).mode(0o600);
-                let mut file = options.open(&temp_path)?;
-                file.write_all(bytes)?;
-                file.sync_all()?;
-            }
-            #[cfg(not(unix))]
-            {
-                std::fs::write(&temp_path, bytes)?;
-            }
-            std::fs::rename(&temp_path, &target_path)?;
-            Ok(())
-        })();
-
-        if let Err(e) = write_res {
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(AppError::Internal(e.to_string()));
-        }
-        Ok(())
     }
 
     /// The record of an upload this owner stored in this branch, whatever is on
@@ -321,7 +301,15 @@ impl FileService {
         let sha256_hex = format!("{:x}", Sha256::digest(html.as_bytes()));
         let key = format!("receipt-{sha256_hex}");
         if !self.on_disk(&key) {
-            self.write_file(&key, html.as_bytes())?;
+            let dir = self.dir.clone();
+            let key_for_write = key.clone();
+            let bytes_for_write = html.as_bytes().to_vec();
+            tokio::task::spawn_blocking(move || {
+                write_file_blocking(&dir, &key_for_write, &bytes_for_write)
+            })
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         }
         let created_at = chrono::Utc
             .timestamp_millis_opt(now.timestamp_millis())
@@ -341,6 +329,54 @@ impl FileService {
         .map_err(AppError::Database)?;
         Ok(key)
     }
+}
+
+/// Writes `bytes` to `<dir>/<key>`: a temporary name of its own first, then a
+/// rename, so a reader never sees half a file. Creates the directory when missing.
+fn write_file_blocking(dir: &Path, key: &str, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+
+    let temp_path = dir.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
+    let target_path = dir.join(key);
+
+    let write_res = (|| -> Result<(), std::io::Error> {
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true).mode(0o600);
+            let mut file = options.open(&temp_path)?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&temp_path, bytes)?;
+        }
+        std::fs::rename(&temp_path, &target_path)?;
+        Ok(())
+    })();
+
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Reads the bytes of a file from disk. Returns `Ok(None)` if the file is not found.
+fn read_file_blocking(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(b) => Ok(Some(b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Removes a file from disk, ignoring errors if it is already gone.
+fn remove_file_blocking(path: &Path) {
+    let _ = std::fs::remove_file(path);
 }
 
 /// The key must be either exactly 36 characters each one of 0-9 a-f -,
