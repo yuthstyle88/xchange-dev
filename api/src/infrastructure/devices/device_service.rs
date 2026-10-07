@@ -19,7 +19,7 @@ use xc_rate::application::branch::service::BranchService;
 use super::device_commands::{QueueJob, SavedExchange};
 use super::device_event::DeviceEvent;
 use super::device_job::{DeviceJob, JobKind, JobStatus};
-use super::device_repository::{DeviceRepository, NewEvent, NewJob, PRINTER_ONLINE};
+use super::device_repository::{DeviceRepository, NewEvent, NewJob, PRINTER_ONLINE, StoredJob};
 use super::job_ids::JobIds;
 use super::pg_device_repository::PgDeviceRepository;
 use super::printer_models::{DrawerSettings, HAS_DRAWER, PRINTER_MODEL, PrinterModels};
@@ -75,6 +75,13 @@ pub struct DeviceService {
 
 fn refuse<T>(sentence: &str) -> AppResult<T> {
     Err(AppError::Domain(sentence.to_owned()))
+}
+
+fn replayed(prior: StoredJob, hash: &str) -> AppResult<DeviceJob> {
+    if prior.request_hash != hash {
+        return refuse(REQUEST_CHANGED);
+    }
+    Ok(prior.job)
 }
 
 /// 1 to 70 characters of `A-Z a-z 0-9 -`.
@@ -219,10 +226,7 @@ impl DeviceService {
                         if let Some(prior) =
                             repo.find_job_by_request(tx, &b, &cmd.request_id).await?
                         {
-                            if prior.request_hash != hash {
-                                return refuse(REQUEST_CHANGED);
-                            }
-                            return Ok(prior.job);
+                            return replayed(prior, &hash);
                         }
                         return refuse(NO_DRAWER);
                     }
@@ -265,10 +269,7 @@ impl DeviceService {
                             cmd.request_id
                         )));
                     };
-                    if prior.request_hash != hash {
-                        return refuse(REQUEST_CHANGED);
-                    }
-                    Ok(prior.job)
+                    replayed(prior, &hash)
                 })
             })
             .await
@@ -405,7 +406,7 @@ impl DeviceService {
         branch: &BranchId,
         kind: PrinterKind,
         actor: &Actor,
-        now: DateTime<Utc>,
+        _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;
         if actor.kind() != ActorKind::Owner {
@@ -419,8 +420,6 @@ impl DeviceService {
             }
             PrinterKind::Simulated => {}
         }
-        let now = cut_to_millis(now)?;
-        let _ = now;
         let repo = self.repo.clone();
         let b = branch.clone();
         self.branch_tx
@@ -450,7 +449,7 @@ impl DeviceService {
         model: &str,
         has_drawer: bool,
         actor: &Actor,
-        now: DateTime<Utc>,
+        _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;
         if actor.kind() != ActorKind::Owner {
@@ -459,8 +458,6 @@ impl DeviceService {
         if self.printer_models.get(model).is_none() {
             return refuse(BAD_PRINTER);
         }
-        let now = cut_to_millis(now)?;
-        let _ = now;
         let repo = self.repo.clone();
         let b = branch.clone();
         let model_str = model.to_owned();
