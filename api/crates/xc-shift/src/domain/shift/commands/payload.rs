@@ -13,12 +13,9 @@ pub fn read_text(p: &Value, key: &str, max: usize, required: bool) -> Result<Str
         Some(Value::Number(n)) => n.to_string(),
         Some(_) => return Err(ShiftError::TextInvalid),
     };
-    let trimmed = raw.trim();
-    let count = trimmed.encode_utf16().count();
-    if (required && count == 0) || count > max {
-        return Err(ShiftError::TextInvalid);
-    }
-    Ok(trimmed.to_owned())
+    xc_kernel::input::text(&raw, max, required)
+        .map(str::to_owned)
+        .map_err(|_| ShiftError::TextInvalid)
 }
 
 pub fn read_request_id(p: &Value, key: &str) -> Result<String, ShiftError> {
