@@ -26,7 +26,7 @@ use crate::presentation::extractors::actor::{
     payload_of, read, refuse, server_error,
 };
 use crate::presentation::extractors::origin::same_origin;
-use crate::presentation::http::rpc::RpcClock;
+use crate::presentation::http::rpc::{RpcClock, caller_of, compat_rpc, rate_source};
 use crate::presentation::pages;
 
 const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
@@ -108,13 +108,36 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let branch = Policy::branch(Some(&actor), named.as_ref());
 
     match action {
-        "snapshot" => match devices.overview(&branch).await {
-            Ok(overview) => match devices.drawer_settings(&branch).await {
-                Ok(drawer) => answer(200, overview_json(&overview, &drawer), true),
-                Err(e) => failure(e),
-            },
-            Err(e) => failure(e),
-        },
+        "snapshot" => {
+            let Some(state) = req.app_data::<web::Data<AppState>>() else {
+                return server_error();
+            };
+            let Some(caller) = who.as_ref().and_then(caller_of) else {
+                return server_error();
+            };
+            let overview = match devices.overview(&branch).await {
+                Ok(overview) => overview,
+                Err(e) => return failure(e),
+            };
+            let drawer = match devices.drawer_settings(&branch).await {
+                Ok(drawer) => drawer,
+                Err(e) => return failure(e),
+            };
+            let rpc = compat_rpc(&state.db, rate_source(&req), accounts.get_ref().clone());
+            let model = match rpc
+                .snapshots()
+                .admin_snapshot(&branch, &caller.username, now)
+                .await
+            {
+                Ok(model) => model,
+                Err(e) => return failure(e),
+            };
+            answer(
+                200,
+                overview_json(&overview, &drawer, model.to_value()),
+                true,
+            )
+        }
         "queue" => {
             let kind = payload
                 .get("kind")

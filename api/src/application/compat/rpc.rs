@@ -194,6 +194,11 @@ impl CompatRpc {
         self
     }
 
+    /// The snapshot builder used by this dispatcher.
+    pub fn snapshots(&self) -> &SnapshotBuilder {
+        &self.snapshots
+    }
+
     /// Whether `caller` may ask for `action` on `route`: `Policy::allow` with
     /// the route's entry path, the refusal in the route's own sentence.
     ///

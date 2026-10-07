@@ -36,12 +36,13 @@ pub fn event_json(event: &DeviceEvent) -> Value {
 }
 
 /// The overview (snapshot) of device jobs, events, and printer status.
-pub fn overview_json(overview: &DeviceOverview, drawer: &DrawerSettings) -> Value {
+pub fn overview_json(overview: &DeviceOverview, drawer: &DrawerSettings, model: Value) -> Value {
     json!({
         "jobs": overview.jobs.iter().map(job_json).collect::<Vec<_>>(),
         "events": overview.events.iter().map(event_json).collect::<Vec<_>>(),
         "printerOnline": overview.printer_online,
         "printerModel": drawer.model,
         "hasDrawer": drawer.has_drawer,
+        "model": model,
     })
 }

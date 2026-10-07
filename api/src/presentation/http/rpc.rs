@@ -173,12 +173,7 @@ async fn answer(
     CompatRpc::allow(route, request.action(), &caller)?;
     let (action, payload) = request.into_parts()?;
 
-    let source = req
-        .app_data::<web::Data<Arc<dyn RateSource>>>()
-        .map_or_else(
-            || Arc::new(BotRateSource::bot()) as Arc<dyn RateSource>,
-            |source| source.get_ref().clone(),
-        );
+    let source = rate_source(req);
     let actions = req
         .app_data::<web::Data<RpcActions>>()
         .ok_or_else(|| not_wired("the rpc actions"))?;
@@ -203,7 +198,15 @@ fn body_text(
     Ok(text.strip_prefix('\u{feff}').unwrap_or(&text).to_string())
 }
 
-fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
+pub(crate) fn rate_source(req: &HttpRequest) -> Arc<dyn RateSource> {
+    req.app_data::<web::Data<Arc<dyn RateSource>>>()
+        .map_or_else(
+            || Arc::new(BotRateSource::bot()) as Arc<dyn RateSource>,
+            |source| source.get_ref().clone(),
+        )
+}
+
+pub(crate) fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
     let actor = actor_of(who)?;
     let (username, name) = match who {
         SignedIn::Owner(owner) => (owner.username.clone(), owner.name.clone()),
@@ -307,7 +310,11 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
 }
 
 /// The dispatcher over the services of every context it calls.
-fn compat_rpc(pool: &PgPool, source: Arc<dyn RateSource>, accounts: Accounts) -> CompatRpc {
+pub(crate) fn compat_rpc(
+    pool: &PgPool,
+    source: Arc<dyn RateSource>,
+    accounts: Accounts,
+) -> CompatRpc {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = shift_service(pool, &branch_tx);
     let custody = pg_custody_service(pool, &shifts, &branch_tx);
