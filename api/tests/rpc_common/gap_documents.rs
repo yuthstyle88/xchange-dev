@@ -1,9 +1,9 @@
 //! The gap of one family of T11a part two: `documents`.
 //!
-//! `false`: the family's file (`api/src/application/compat/actions/documents.rs`)
-//! answers no name yet, and the routes answer its names as names nobody knows
-//! — which `rpc_test.rs` holds them to. The ticket that wires the family
-//! (P2-D) sets this to `true` in the same change; from then on the recorded
-//! steps of these names are held to what v2 answered.
+//! `true` since ticket T11a-D: the family's file
+//! (`api/src/application/compat/actions/documents.rs`) answers `documents` on
+//! the staff route, so the recorded steps of that name are held to what v2
+//! answered (`rpc_test.rs`: `rpc/engine_actions.json` #127, #128) and the name
+//! is no longer part of the gap test. Its own tests are `rpc_documents_test.rs`.
 
-pub const WIRED: bool = false;
+pub const WIRED: bool = true;
