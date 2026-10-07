@@ -1,0 +1,2572 @@
+{
+ "source": "payment-settings.mjs of the 10-06 bundle (XC-Desk-v2-Passport-Drawer-20261006.zip, sha256 6514b4c8…4375f570), through gen_payment_rules.mjs",
+ "methods": [
+  "Cash",
+  "Credit Card",
+  "Alipay",
+  "PromptPay",
+  "Bank Transfer"
+ ],
+ "defaults": [
+  {
+   "id": "Cash",
+   "enabled": true,
+   "buy": true,
+   "sell": true,
+   "account": "",
+   "instruction": ""
+  },
+  {
+   "id": "Credit Card",
+   "enabled": true,
+   "buy": false,
+   "sell": true,
+   "account": "",
+   "instruction": ""
+  },
+  {
+   "id": "Alipay",
+   "enabled": true,
+   "buy": false,
+   "sell": true,
+   "account": "",
+   "instruction": ""
+  },
+  {
+   "id": "PromptPay",
+   "enabled": true,
+   "buy": false,
+   "sell": true,
+   "account": "",
+   "instruction": ""
+  },
+  {
+   "id": "Bank Transfer",
+   "enabled": true,
+   "buy": true,
+   "sell": true,
+   "account": "",
+   "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+  }
+ ],
+ "fromRows": [
+  {
+   "label": "the defaults",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "the defaults in reverse order",
+   "rows": [
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "the defaults with texts",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "Drawer 1",
+     "instruction": "Pay at the counter"
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "PP 000",
+     "instruction": "Scan the code"
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "Drawer 1",
+     "instruction": "Pay at the counter"
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "PP 000",
+     "instruction": "Scan the code"
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "everything off but Cash",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "everything off but Bank Transfer",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "Cash for SELL only, Bank Transfer for BUY only",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": false,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": false,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "Credit Card off but still marked for SELL",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "a channel off with neither direction",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "accepted": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ]
+  },
+  {
+   "label": "BUY on Credit Card",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+  },
+  {
+   "label": "BUY on Alipay while Alipay is off",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+  },
+  {
+   "label": "BUY on PromptPay",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+  },
+  {
+   "label": "Cash on with neither direction",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท"
+  },
+  {
+   "label": "PromptPay on with neither direction",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท"
+  },
+  {
+   "label": "no channel on for BUY",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+  },
+  {
+   "label": "BUY only on channels that are off",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+  },
+  {
+   "label": "no channel on for SELL",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": false,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+  },
+  {
+   "label": "every channel off",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+  },
+  {
+   "label": "four rows",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    }
+   ],
+   "refused": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+  },
+  {
+   "label": "six rows",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    },
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    }
+   ],
+   "refused": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+  },
+  {
+   "label": "Cash twice, Bank Transfer missing",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    }
+   ],
+   "refused": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+  },
+  {
+   "label": "an unknown channel instead of Alipay",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Cheque",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+  },
+  {
+   "label": "SCB Transfer instead of Bank Transfer",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "SCB Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "refused": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+  }
+ ],
+ "allows": [
+  {
+   "label": "the defaults",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "the defaults in reverse order",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "the defaults with texts",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "Drawer 1",
+     "instruction": "Pay at the counter"
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "PP 000",
+     "instruction": "Scan the code"
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "everything off but Cash",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "everything off but Bank Transfer",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": false,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "Cash for SELL only, Bank Transfer for BUY only",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": false,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "Credit Card off but still marked for SELL",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": false,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  },
+  {
+   "label": "a channel off with neither direction",
+   "rows": [
+    {
+     "id": "Cash",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Credit Card",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Alipay",
+     "enabled": false,
+     "buy": false,
+     "sell": false,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "PromptPay",
+     "enabled": true,
+     "buy": false,
+     "sell": true,
+     "account": "",
+     "instruction": ""
+    },
+    {
+     "id": "Bank Transfer",
+     "enabled": true,
+     "buy": true,
+     "sell": true,
+     "account": "",
+     "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+    }
+   ],
+   "answers": [
+    {
+     "method": "Cash",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Cash",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Credit Card",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Credit Card",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Alipay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Alipay",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "PromptPay",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "Bank Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "BUY",
+     "allowed": true
+    },
+    {
+     "method": "SCB Transfer",
+     "type": "SELL",
+     "allowed": true
+    },
+    {
+     "method": "Cheque",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Cheque",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "cash",
+     "type": "SELL",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "BUY",
+     "allowed": false
+    },
+    {
+     "method": "Bank transfer",
+     "type": "SELL",
+     "allowed": false
+    }
+   ]
+  }
+ ]
+}
