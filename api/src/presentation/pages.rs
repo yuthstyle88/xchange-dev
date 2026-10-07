@@ -10,7 +10,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 
-use crate::bootstrap::AppState;
+use crate::bootstrap::{AppState, BuildInfo};
 
 /// The sessions one request carries. A browser can hold an owner session and a
 /// staff session at the same time.
@@ -202,6 +202,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
             content.insert_str(pos, STAFF_DESK_SCRIPT);
         }
         content = add_scripts(content, spec.scripts);
+        content = add_version_line(content, &state.build, state.settings.channel.as_str());
 
         return HttpResponse::Ok()
             .content_type("text/html; charset=utf-8")
@@ -284,6 +285,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     }
 
     content = add_scripts(content, spec.scripts);
+    content = add_version_line(content, &state.build, state.settings.channel.as_str());
 
     let mut resp = HttpResponse::Ok();
     resp.content_type("text/html; charset=utf-8")
@@ -353,6 +355,43 @@ fn redirect_origin(req: &HttpRequest) -> String {
 fn read_page_file(web_dir: &Path, file_name: &str) -> Option<String> {
     let file_path = web_dir.join(file_name);
     std::fs::read_to_string(file_path).ok()
+}
+
+/// The running build, on every page (#293): `v{version} · {build, 7} · {channel}`,
+/// the values `/health/ready` reports, placed where `add_scripts` puts its tags.
+fn add_version_line(mut content: String, build: &BuildInfo, channel: &str) -> String {
+    let short: String = build.build.chars().take(7).collect();
+    let line = format!(
+        "<div id=\"xc-version\" style=\"position:fixed;right:8px;bottom:4px;\
+         font:11px/1.4 system-ui,sans-serif;color:#999;pointer-events:none;\
+         z-index:2147483647\">v{} · {} · {}</div>",
+        escape_html(&build.version),
+        escape_html(&short),
+        escape_html(channel),
+    );
+    if let Some(pos) = content.find("</body>") {
+        content.insert_str(pos, &line);
+    } else if let Some(pos) = content.find("</html>") {
+        content.insert_str(pos, &line);
+    } else {
+        content.push_str(&line);
+    }
+    content
+}
+
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 fn add_scripts(mut content: String, scripts: &[&str]) -> String {

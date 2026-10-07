@@ -276,6 +276,21 @@ async fn the_web_directory_is_a_setting() {
 
 // -------------------------------------------------------------------- pages
 
+/// The body without the one `<div id="xc-version" …>…</div>` the server adds to
+/// a page (#293); `is_page` says whether exactly one must be there, or none.
+fn without_version_line(body: &str, is_page: bool, what: &str) -> String {
+    const MARK: &str = "<div id=\"xc-version\"";
+    let count = body.matches(MARK).count();
+    if !is_page {
+        assert_eq!(count, 0, "{what}: a static file carries no version line");
+        return body.to_owned();
+    }
+    assert_eq!(count, 1, "{what}: exactly one version line");
+    let start = body.find(MARK).unwrap();
+    let end = start + body[start..].find("</div>").expect("the line is closed") + "</div>".len();
+    format!("{}{}", &body[..start], &body[end..])
+}
+
 #[actix_web::test]
 async fn every_page_answers_as_v2_does() {
     let cases = cases();
@@ -306,11 +321,15 @@ async fn every_page_answers_as_v2_does() {
                 200 => {
                     seen[0] += 1;
                     headers_are(&answer, &case["headers"], &what);
-                    assert_eq!(
-                        String::from_utf8_lossy(&answer.body),
-                        case["body"].as_str().unwrap(),
-                        "{what}: body"
-                    );
+                    // #293: every page (every 200 recorded here is an HTML page,
+                    // `/kiosk-queue.html` included) carries one version line v2
+                    // did not have.
+                    let is_page = answer
+                        .header("content-type")
+                        .is_some_and(|c| c.starts_with("text/html"));
+                    let body = String::from_utf8_lossy(&answer.body);
+                    let body = without_version_line(&body, is_page, &what);
+                    assert_eq!(body, case["body"].as_str().unwrap(), "{what}: body");
                 }
                 400 => {
                     seen[1] += 1;
@@ -571,7 +590,7 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     scratch.write("late.js", "first();");
     let answer = ask(&app, get("/login", "none").to_request()).await;
     assert_eq!(
-        String::from_utf8_lossy(&answer.body),
+        without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
         "<html><body>first</body></html>"
     );
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
@@ -587,7 +606,7 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     scratch.write("late.js", "second();");
     let answer = ask(&app, get("/login", "none").to_request()).await;
     assert_eq!(
-        String::from_utf8_lossy(&answer.body),
+        without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
         "<html><body>second</body></html>"
     );
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
