@@ -34,6 +34,7 @@ pub use xc_exchange::application::exchange::service::TransactionService;
 pub use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 pub use xc_exchange::domain::customer::value_objects::mode::Mode;
 pub use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
+#[allow(unused_imports)]
 pub use xc_exchange::domain::exchange::entities::transaction::Transaction;
 pub use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 pub use xc_shift::application::shift::service::ShiftService;

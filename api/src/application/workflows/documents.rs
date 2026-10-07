@@ -81,9 +81,8 @@ impl DocumentsLookup {
         for (label, key) in keys {
             let mime = self
                 .files
-                .open_in_branch(&key, branch)
+                .mime_in_branch(&key, branch)
                 .await?
-                .map(|f| f.mime)
                 .unwrap_or_default();
             links.push(DocumentLink {
                 label: label.to_owned(),

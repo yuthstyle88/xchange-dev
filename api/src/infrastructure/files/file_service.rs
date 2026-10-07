@@ -236,6 +236,19 @@ impl FileService {
         }))
     }
 
+    /// The stored type of a file's record in a branch, whatever is on the disk:
+    /// what a listing needs to know of a file, without reading its bytes.
+    pub async fn mime_in_branch(&self, key: &str, branch: &BranchId) -> AppResult<Option<String>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT mime FROM files WHERE key = $1 AND branch_id = $2")
+                .bind(key)
+                .bind(branch.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+        Ok(row.map(|(mime,)| mime))
+    }
+
     /// Writes `bytes` to `<dir>/<key>`: a temporary name of its own first, then a
     /// rename, so a reader never sees half a file. Creates the directory when missing.
     fn write_file(&self, key: &str, bytes: &[u8]) -> AppResult<()> {

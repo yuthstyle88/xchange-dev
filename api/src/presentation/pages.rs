@@ -296,7 +296,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     resp.body(content)
 }
 
-fn is_valid_branch(name: &str) -> bool {
+pub(crate) fn is_valid_branch(name: &str) -> bool {
     if name.is_empty() || name.len() > 70 {
         return false;
     }

@@ -1,6 +1,5 @@
 //! Documents routes: the two pages that list the documents of one exchange.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use actix_web::http::header;
@@ -20,7 +19,7 @@ use xc_rate::application::branch::service::BranchService;
 use crate::application::compat::staff_view::rewrite_urls;
 use crate::application::workflows::documents::{Documents, DocumentsLookup, PASSPORT, RECEIPT};
 use crate::bootstrap::AppState;
-use crate::infrastructure::files::file_service::FileService;
+use crate::infrastructure::files::file_service::{BAD_BRANCH, FileService};
 use crate::presentation::pages::{self, SessionReader, Sessions};
 
 const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
@@ -78,10 +77,17 @@ fn redirect(req: &HttpRequest, status: u16, path: &str) -> HttpResponse {
         .finish()
 }
 
+/// Of a repeated query name the first counts, as v2's `searchParams.get` reads it.
 fn query(req: &HttpRequest, name: &str) -> Option<String> {
-    web::Query::<HashMap<String, String>>::from_query(req.query_string())
+    web::Query::<Vec<(String, String)>>::from_query(req.query_string())
         .ok()
-        .and_then(|q| q.get(name).cloned())
+        .and_then(|pairs| {
+            pairs
+                .into_inner()
+                .into_iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v)
+        })
 }
 
 /// v2's `esc3`.
@@ -172,6 +178,12 @@ async fn documents(req: HttpRequest) -> HttpResponse {
             .filter(|b| !b.is_empty())
             .unwrap_or_else(|| "MAIN".to_owned()),
     };
+    // v2's `execute` refuses a name that cannot be a branch id before anything runs
+    if !pages::is_valid_branch(&branch) {
+        return HttpResponse::NotFound()
+            .insert_header((header::CONTENT_TYPE, "text/plain;charset=UTF-8"))
+            .body(BAD_BRANCH.to_owned());
+    }
     let Some(lookup) = req.app_data::<web::Data<DocumentsLookup>>() else {
         return server_error(&AppError::Internal("no DocumentsLookup".into()));
     };

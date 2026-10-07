@@ -28,7 +28,9 @@
 //   env.DB, pool   → one in-memory store that interprets the code's own SQL texts
 //   execute        → the engine's action `documents`, **written out here from the engine's text**
 //                    (engine piece of the same bundle, `runEngine`, the branch `action3 ===
-//                    "documents"` and `branchBook_`): the branch must exist
+//                    "documents"` and `branchBook_`), after the check `execute` itself makes
+//                    before the engine (`server.mjs:6999`): a branch name that is not 1-70 of
+//                    A-Za-z0-9- is `สาขาไม่ถูกต้อง` (ticket #139); the branch must exist
 //                    (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`), the exchange is looked for by its number
 //                    among the branch's LIVE exchanges only (`ไม่พบเอกสารรายการ`), and the answer is
 //                    `{ref, links}` with the links that are not empty, in the order passport,
@@ -84,10 +86,12 @@ for (const x of EXCHANGES) {
   if (x.slip) t.file_records.push({ key: x.files.slip, branch_id: x.branchId, mime: x.slip });
   t.file_records.push({ key: x.files.receipt, branch_id: x.branchId, mime: 'text/html' });
 }
-const NO_SUCH_BRANCH = 'ไม่พบสาขาที่เลือก กรุณารีเฟรช', NO_DOCUMENTS = 'ไม่พบเอกสารรายการ';
+const NO_SUCH_BRANCH = 'ไม่พบสาขาที่เลือก กรุณารีเฟรช', NO_DOCUMENTS = 'ไม่พบเอกสารรายการ', BAD_BRANCH = 'สาขาไม่ถูกต้อง';
 async function execute(action, input) {
   if (action !== 'documents') throw Error('execute: these routes never call ' + action);
   const branch = input.branchId || 'MAIN';
+  // v2's `execute` (server.mjs:6999), before the engine runs — ticket #139
+  if (!/^[A-Za-z0-9-]{1,70}$/.test(branch)) throw Error(BAD_BRANCH);
   if (!BRANCHES.includes(branch)) throw Error(NO_SUCH_BRANCH);
   const x = EXCHANGES.find((e) => e.mode === 'LIVE' && e.branchId === branch && e.ref === input.ref);
   if (!x) throw Error(NO_DOCUMENTS);
@@ -168,7 +172,7 @@ is(await step('documents, owner: an exchange of another branch, with that branch
 is(await step('documents, owner: an exchange of another branch without naming it', { path: '/documents?ref=' + X.other, as: ['owner'] }), 404, 'o other main', NO_DOCUMENTS);
 is(await step('documents, owner: the wrong branch named', { path: '/documents?branch=BR-2&ref=' + X.cash, as: ['owner'] }), 404, 'o wrong', NO_DOCUMENTS);
 is(await step('documents, owner: a branch that does not exist', { path: '/documents?branch=NOWHERE&ref=' + X.cash, as: ['owner'] }), 404, 'o nowhere', NO_SUCH_BRANCH);
-is(await step('documents, owner: a name that is no branch is answered the same way', { path: '/documents?branch=MAIN_1&ref=' + X.cash, as: ['owner'] }), 404, 'o bad', NO_SUCH_BRANCH);
+is(await step('documents, owner: a name that cannot be a branch id is refused before the branch is looked for', { path: '/documents?branch=MAIN_1&ref=' + X.cash, as: ['owner'] }), 404, 'o bad', BAD_BRANCH);
 is(await step('documents, owner: a number nobody was given', { path: '/documents?ref=XC-NOPE', as: ['owner'] }), 404, 'o unknown', NO_DOCUMENTS);
 is(await step('documents, owner: no ref', { path: '/documents', as: ['owner'] }), 404, 'o none', NO_DOCUMENTS);
 is(await step('documents, owner: an empty ref', { path: '/documents?ref=', as: ['owner'] }), 404, 'o empty', NO_DOCUMENTS);

@@ -280,7 +280,7 @@
    }
   },
   {
-   "note": "documents, owner: a name that is no branch is answered the same way",
+   "note": "documents, owner: a name that cannot be a branch id is refused before the branch is looked for",
    "request": {
     "method": "GET",
     "path": "/documents?branch=MAIN_1&ref=%24cash.ref",
@@ -293,7 +293,7 @@
     "headers": {
      "content-type": "text/plain;charset=UTF-8"
     },
-    "text": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+    "text": "สาขาไม่ถูกต้อง"
    }
   },
   {
@@ -847,7 +847,7 @@
     "headers": {
      "content-type": "text/plain;charset=UTF-8"
     },
-    "text": "ไม่พบสาขาที่เลือก กรุณารีเฟรช"
+    "text": "สาขาไม่ถูกต้อง"
    }
   }
  ]
