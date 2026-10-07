@@ -87,6 +87,7 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
     let db_options = settings.database.with_db();
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(settings.database.max_connections)
+        .min_connections(settings.database.min_connections)
         .acquire_timeout(std::time::Duration::from_secs(
             settings.database.acquire_timeout_secs,
         ))
@@ -158,6 +159,7 @@ impl Application {
         let listener = std::net::TcpListener::bind(&address)?;
         let port = listener.local_addr()?.port();
         let workers = settings.application.workers;
+        let shutdown_timeout = settings.application.shutdown_timeout_secs;
 
         let accounts = AccountService::new(
             Arc::new(PgAccountRepository::new(pool.clone())),
@@ -177,6 +179,7 @@ impl Application {
             actix_web::App::new().configure(|cfg| configure(cfg, state.clone()))
         })
         .workers(workers)
+        .shutdown_timeout(shutdown_timeout)
         .listen(listener)?
         .run();
 
