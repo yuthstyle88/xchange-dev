@@ -425,6 +425,11 @@ Owner, on the kept "สร้างบัญชีพนักงาน" dialog 
 *"มันต้อง focus.ไป ที่ช่อง ที่มันผิดแล้วมี cursor กระพริบ"* · *"ควรเปลี่ยนสีตรงช่องที่ผิดด้วย"* · and for password fields
 *"ตรง รหัส ให้ เปิดดู ได้ ด้วยบางที ลืม"*.
 
+The `server.mjs` and `create-owner.mjs` lines cited in this section are those of the **10-06 bundle** (sha256
+`6514b4c8…4375f570`, §5.5; re-checked 2026-10-08), except the route table, whose range is given in both bundles. Both bundles
+carry `xchange-online@3ffc5a5`, so the sha256 is what tells them apart; the bundle on the staging host is a third one with
+other line numbers (review of PR 316, issuecomment-6039510747).
+
 Root cause, measured on the v2 bundle 2026-10-07: the kept pages carry their own client rules, but two of them never run.
 `public/employees.js` renders `<input id="employee-username" pattern="[a-z0-9._-]{3,40}" required>` and `public/login.html`
 renders `pattern="[a-zA-Z0-9._-]{3,30}"`. Current browsers compile `pattern` with the `v` flag, where a `-` that ends a
@@ -445,7 +450,8 @@ the seam the version line uses (`add_version_line`, `api/src/presentation/pages.
   into the binary (`include_str!` of `api/static/xc-forms.js`), so it is always the one that matches the running build, and
   a file of the same name in `web.dir` cannot replace it. Headers as a static file (`text/javascript; charset=utf-8`,
   `Cache-Control: no-cache`, `X-Content-Type-Options: nosniff`); any other method is the plain 404. `/_xc/` was chosen
-  because v2 has no such directory or route (its `public/` and route table `server.mjs:8143-8188`, measured 2026-10-07),
+  because v2 has no such directory or route (its `public/` and route table `server.mjs:8143-8188` of the 10-05 bundle, sha256
+  `4d99a8de…6c93e02`, which is `:8152-8199` of the 10-06 bundle; measured 2026-10-07),
   so it cannot shadow a kept file.
 - [proposed] The CSS travels inside the script (one `<style id="xc-forms-style">` added to `<head>` once), so a page
   carries one tag and the asset is one file.
@@ -552,9 +558,20 @@ page load and never clears it. Since #154 a save completes a draft only when the
 exchange's (`custody_machine.rs:78-83`), and from 22:50 or after the cut-off a save needs such a draft, its own and of the open shift (`:1202-1212`). So on
 `/staff/desk` the script sets `staffDraftId = ''` **on the way back and on every New that goes ahead** (saved or not): the next
 customer step then begins a fresh draft with the figures of that moment, exactly as the page's first exchange did. The
-draft left behind stays `Open`; nothing reads an open draft except the match of a save (measured at `d6084ea`: `DraftStatus::Open`
-appears only in `custody_machine.rs` and the repository's mapping), so it changes no balance. `STAFF_DESK_SCRIPT` itself is
+draft left behind stays `Open`. It changes no balance: `holds()` (`api/src/infrastructure/custody/employee_custody.rs:114-120`)
+looks only at the custodian and pending requests, and the only other decision that reads an open draft is the match of a
+save. It stays **visible**, though:
+the ops snapshot prints every draft with its status (`api/src/application/compat/v2_json.rs:806`, `draft_json`, listed under
+`operations.drafts` at `:509`), so drafts the way back left behind are shown there as `OPEN`. `STAFF_DESK_SCRIPT` itself is
 not edited.
+
+**Follow-ups from the review of PR 336** (reviewer claude/087e0c, issuecomment-6041622769). [required] **The observation is
+cleared at each attempt.** The record the `fetch` wrapper keeps for `saveTransaction` is cleared when an attempt starts, that
+is, when `gasCall('saveTransaction')` is called, before anything is sent. Otherwise a save the page refuses before sending
+(the count check, a failed upload) would read the previous attempt's answer and could show **unknown** or **refused** for the
+wrong reason; with the record cleared, "nothing observed" means this attempt sent nothing, which is row 1 of the table above.
+DK-1's JS test (`xc_desk.test.mjs`) pins it with a case: an attempt that answered 5xx, then an attempt refused before sending,
+reads **refused**. The second follow-up, that abandoned open drafts stay visible in the ops snapshot, is the paragraph above.
 
 Behaviour (each row is a case of the JS test or of the browser check in #332):
 
