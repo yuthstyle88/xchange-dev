@@ -77,10 +77,42 @@ fn state(web_dir: &Path, build: Option<BuildInfo>) -> AppState {
     }
 }
 
+fn state_on(web_dir: &Path, channel: &str, build: Option<BuildInfo>) -> AppState {
+    let state = state_with(
+        settings(&[
+            ("APP_WEB__DIR", web_dir.to_str().expect("a UTF-8 path")),
+            (
+                "APP_ENVIRONMENT",
+                if channel == "release" {
+                    "production"
+                } else {
+                    channel
+                },
+            ),
+            ("APP_CHANNEL", channel),
+        ]),
+        FakeDatabase::Up,
+    );
+    match build {
+        Some(b) => state.with_build(b),
+        None => state,
+    }
+}
+
 macro_rules! app {
     ($web_dir:expr, $build:expr) => {{
         let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions);
         let state = state($web_dir, $build);
+        test::init_service(
+            App::new()
+                .configure(move |cfg| bootstrap::configure(cfg, state))
+                .app_data(web::Data::from(reader)),
+        )
+        .await
+    }};
+    ($web_dir:expr, $build:expr, $channel:expr) => {{
+        let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+        let state = state_on($web_dir, $channel, $build);
         test::init_service(
             App::new()
                 .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -210,4 +242,29 @@ async fn a_page_without_a_body_end_gets_the_line_at_the_end_once() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.matches(MARK).count(), 1, "{body}");
     assert!(body.trim_end().ends_with("</div>"), "{body}");
+}
+
+#[actix_web::test]
+async fn a_release_server_says_release_on_every_page() {
+    let app = app!(&fixtures().join("web"), None, "release");
+
+    let (status, body) = get!(&app, "/health/ready", "none");
+    assert_eq!(status, StatusCode::OK);
+    let v: Value = serde_json::from_str(&body).expect("health json");
+    assert_eq!(v["channel"], "release");
+
+    let want = expected!(&app);
+    assert!(
+        want.ends_with(" · release"),
+        "expected! must end with ` · release`: {want}"
+    );
+
+    let (status, body) = get!(&app, "/login", "none");
+    assert_eq!(status, StatusCode::OK);
+    let got = version_text(&body, "/login");
+    assert_eq!(got, want);
+    assert!(
+        got.ends_with(" · release"),
+        "version line must end with ` · release`: {got}"
+    );
 }
