@@ -1,7 +1,4 @@
 //! The input rules every context reads a request with, and their sentences (ticket #88).
-//!
-//! STUB of the first commit: the signatures of the class diagram (`docs/design/xchange-v3.md`,
-//! row IN-K) with wrong bodies, so `tests/input_test.rs` compiles and fails on wrong answers.
 
 mod date;
 mod input_error;

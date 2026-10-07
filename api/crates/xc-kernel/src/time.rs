@@ -1,6 +1,4 @@
 //! Bangkok's clock (ticket #88).
-//!
-//! STUB of the first commit: wrong values, so `tests/input_test.rs` fails on wrong answers.
 
 use chrono::FixedOffset;
 

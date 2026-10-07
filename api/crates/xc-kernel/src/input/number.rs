@@ -1,4 +1,4 @@
-//! STUB (ticket #88).
+//! Mapping number parse errors to input refusals (ticket #88).
 
 use super::InputError;
 use crate::money::NumberError;

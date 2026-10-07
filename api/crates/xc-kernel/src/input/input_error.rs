@@ -1,4 +1,4 @@
-//! STUB (ticket #88).
+//! Input refusal errors and their sentences (ticket #88).
 
 /// A refusal of an input rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

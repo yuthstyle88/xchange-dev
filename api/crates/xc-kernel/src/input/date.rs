@@ -1,4 +1,4 @@
-//! STUB (ticket #88).
+//! Calendar date validation and floor (ticket #88).
 
 use chrono::NaiveDate;
 

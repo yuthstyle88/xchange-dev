@@ -1,4 +1,4 @@
-//! STUB (ticket #88).
+//! Text validation: trimmed, UTF-16 character limit, required or optional (ticket #88).
 
 use super::InputError;
 
