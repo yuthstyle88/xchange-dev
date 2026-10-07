@@ -136,9 +136,9 @@ erDiagram
 
 None of these tables exists in any v3 database yet (the first migrations are in tickets #54 and #48), so a change to this section before they merge migrates nothing; after that, a change here needs its own data-migration section.
 
-Concurrency: every write handler opens one transaction and takes `SELECT … FOR UPDATE` on that
-branch's `branch_versions` row first. That gives per-branch serialisation (v2 serialised the whole system)
-and makes "one PENDING custody request", "one OPEN shift" and the stock guard race-free without retries.
+Concurrency: a write handler opens a transaction and takes `SELECT … FOR UPDATE` on `branch_versions`. Most writes operate on a single branch (a write on `MAIN` alone, or on one other branch alone, takes one lock as before). That gives per-branch serialisation (v2 serialised the whole system) and makes "one PENDING custody request", "one OPEN shift" and the stock guard race-free without retries.
+
+A write that depends on what two branches hold takes two locks. Lock order: `MAIN` first through `BranchTx::run`, then the other branch through `BranchTx::lock_also` — never the reverse. A transaction run on a branch other than `MAIN` never calls `lock_also` for `MAIN`. With one global lock order there is no cycle to deadlock in. `BranchService::create` (#117) is the one such write today. The doc comment of `BranchTx::lock_also` in `api/crates/xc-kernel/src/branch_tx.rs` records this rule in code.
 
 [required] That lock is `BranchTx` (§5.1, §5.2: crate `xc-kernel`). `pos_infra::transactions::Transactor` gives a transaction but
 nothing branch-scoped and no `FOR UPDATE` (`108-platform-services` `crates/pos-infra/src/transactions.rs`: `new`, `pool`, `run`).
@@ -189,7 +189,7 @@ classDiagram
   class KioskService { +public_rates(); +quote(); +confirm(); +staff_action() }
   class DeviceService { +queue(); +process(); +retry() }
   class FileService { +upload(); +open() }
-  class BranchTx { +run(branch, f) Result — locks the branch row, runs f, bumps the version, commits }
+  class BranchTx { +run(branch, f) Result — locks the branch row, runs f, bumps the version, commits; +lock_also(tx, branch) }
   class CompatRpc { +dispatch(action, payload, actor) Result~Json~ }
   class SnapshotBuilder { +admin_snapshot(branch, actor) Json; +desk_config(branch) Json }
   class PageServer { +page(name, actor) Html; +static_file(path) }
