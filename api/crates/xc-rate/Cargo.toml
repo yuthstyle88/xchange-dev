@@ -9,7 +9,6 @@ license = "Proprietary"
 publish = false
 
 [dependencies]
-pos-kernel = { workspace = true }
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-kernel = { workspace = true }

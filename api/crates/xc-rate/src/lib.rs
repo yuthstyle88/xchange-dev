@@ -1,8 +1,6 @@
 //! `xc-rate` — branch and rate bounded context.
 
 pub mod shared {
-    pub use pos_kernel::{ids, money, pagination, time};
-
     pub mod error {
         pub use pos_error::{AppError, AppResult};
     }

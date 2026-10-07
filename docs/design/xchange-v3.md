@@ -314,13 +314,13 @@ Measured from `108-Plaza/pos108-core` at `405605de` and reproduced here so nothi
 | `domain/<context>/{entities,value_objects,repositories,commands}/` — repositories are **traits** | same |
 | `application/<context>/<use_case>.rs` — one file per use case, `pub async fn execute(cmd, repo: &Arc<R>, transactor: &Transactor) -> AppResult<…>`, plus `service.rs` | same |
 | `infrastructure/<context>/<x>_repository.rs` — the sqlx implementation of the trait | same |
-| Each crate's `lib.rs` re-exports the kernel as `crate::shared::{…}` and `crate::shared::error::{AppError, AppResult}` | same |
-| `pos-kernel`, `pos-error`, `pos-infra` come from `108-platform-services` as git dependencies pinned to one `rev` in `[workspace.dependencies]` | **reused, not copied**: `pos-error` (`AppError`/`AppResult`), `pos-infra` (`Transactor`, config, telemetry), `pos-kernel` (`pagination`, `time`) — same pinning rule |
+| Each crate's `lib.rs` re-exports `crate::shared::error::{AppError, AppResult}` | same |
+| `pos-kernel`, `pos-error`, `pos-infra` come from `108-platform-services` as git dependencies pinned to one `rev` in `[workspace.dependencies]` | **reused, not copied**: `pos-error` (`AppError`/`AppResult`), `pos-infra` (`Transactor`, config, telemetry) — same pinning rule |
 | `migrations/`, `configuration/`, `tests/`, `deny.toml`, `rust-toolchain.toml` at the workspace root | under `api/` |
 | edition 2024, `rust-version = "1.85"`, toolchain `1.98.1` | same |
 
 Two things are **not** taken from `pos-kernel`, with the reason:
-- `pos_kernel::money::Money::new` rounds with `round_dp(2)` (banker's rounding) and has no input cap. An exchange principal must round **half up** and an entered amount is capped at 100,000,000 (§3). This server therefore has its own `Money`, `Rate`, `Side` and `Quote`, and they live in **`xc-kernel`** (`src/money/`), not in a context crate: the quote is needed by the exchange (save), the kiosk (quote action) and the shift (stock delta), and context crates do not depend on one another (rule below). [required] No file of this server imports `pos_kernel::money`; each crate's `shared` module re-exports it only because the `pos108-core` `lib.rs` shape is copied line for line, and a `Money` taken from there would round a principal differently without any test noticing a type error.
+- `pos_kernel::money::Money::new` rounds with `round_dp(2)` (banker's rounding) and has no input cap. An exchange principal must round **half up** and an entered amount is capped at 100,000,000 (§3). This server therefore has its own `Money`, `Rate`, `Side` and `Quote`, and they live in **`xc-kernel`** (`src/money/`), not in a context crate: the quote is needed by the exchange (save), the kiosk (quote action) and the shift (stock delta), and context crates do not depend on one another (rule below). [required] No file of this server imports `pos_kernel::money`; the direct dependency and the re-export were removed so the wrong `Money` cannot be imported, as a `Money` taken from there would round a principal differently without any test noticing a type error.
 - `pos_kernel::ids` are UUID newtypes. A branch id here is text (`MAIN`, `B<request id>`) because the kept screens create and send it; ids are newtypes local to each crate.
 
 **How much of it fits.** `pos108-core` is 42 crates for a multi-tenant product with sync, outbox and

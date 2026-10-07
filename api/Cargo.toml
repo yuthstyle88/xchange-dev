@@ -2,7 +2,6 @@
 members = ["crates/*"]
 
 [workspace.dependencies]
-pos-kernel = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-error = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-infra = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 rust_decimal = "1"
@@ -27,7 +26,6 @@ license = "Proprietary"
 publish = false
 
 [dependencies]
-pos-kernel = { workspace = true }
 pos-error = { workspace = true }
 pos-infra = { workspace = true, features = ["config", "telemetry"] }
 xc-kernel = { workspace = true }
