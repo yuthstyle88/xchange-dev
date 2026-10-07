@@ -233,7 +233,7 @@ classDiagram
   class BranchTx { +run(branch, f) Result — locks the branch row, runs f, bumps the version, commits; the bump happens whether or not f wrote: higher = may have changed; +lock_also(tx, branch) }
   class CompatRpc { +dispatch(action, payload, actor) Result~Json~ }
   class SnapshotBuilder { +admin_snapshot(branch, actor) Json; +desk_config(branch) Json }
-  class PageServer { +page(name, actor) Html; +static_file(path) }
+  class PageServer { +page(name, actor) Html; +static_file(path); +forms_script() JS — /_xc/forms.js, compiled in (FV) }
   class RateSource { <<trait>> +fetch() Result~ReferenceRates~ }
   class DeviceDriver { <<trait, async>> +mode() str; +run(kind, printer: PrinterSettings) JobStatus; +run_with(kind, printer, drawer: DrawerSettings) JobStatus }
   class PrinterSettings { <<infrastructure::devices::printer_settings>> +online: bool; +kind: PrinterKind; +read_in(tx, repo, branch) PrinterSettings }
@@ -410,6 +410,70 @@ the v2 bundle (`5357`, `5558`). [required] v3 serves these pages and v2's `publi
 setting `web.dir`, read at run time; **no v2 file is committed to this repository** (the owner's rule for the deployed
 bundle). A script in the repository, `api/tools/extract-v2-pages.mjs`, writes that directory from a v2 bundle on the
 server at deploy time (the embedded pages byte-for-byte, `public/` copied). `PageServer`'s tests use small pages of their own.
+
+#### The shared form helper (row FV, owner 2026-10-07)
+
+Owner, on the kept "สร้างบัญชีพนักงาน" dialog after `t1` as รหัสบัญชี answered only `ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง`:
+*"มันต้อง focus.ไป ที่ช่อง ที่มันผิดแล้วมี cursor กระพริบ"* · *"ควรเปลี่ยนสีตรงช่องที่ผิดด้วย"* · and for password fields
+*"ตรง รหัส ให้ เปิดดู ได้ ด้วยบางที ลืม"*.
+
+Root cause, measured on the v2 bundle 2026-10-07: the kept pages carry their own client rules, but two of them never run.
+`public/employees.js` renders `<input id="employee-username" pattern="[a-z0-9._-]{3,40}" required>` and `public/login.html`
+renders `pattern="[a-zA-Z0-9._-]{3,30}"`. Current browsers compile `pattern` with the `v` flag, where a `-` that ends a
+character class is a syntax error (`Invalid character in character class`); a pattern that does not compile is ignored, so
+the form submits. The server then answers one sentence for four different fields (`EMPLOYEE_DATA`,
+`api/crates/xc-auth/src/application/account/service.rs:19`, `:391-412` — username, name, role and branch all refuse with it),
+and nothing tells the screen which field it was.
+
+[required] **v2's files stay untouched.** They are the extracted bundle under `web.dir` and are not in this repository (above);
+editing them would be lost at the next extraction. Instead v3 adds **one** script of its own to every HTML page it serves, on
+the seam the version line uses (`add_version_line`, `api/src/presentation/pages.rs`, #293):
+
+- [required] The tag is exactly `<script src="/_xc/forms.js" defer></script>`, placed **immediately before** the version
+  line's `<div id="xc-version"`, on both page paths (plain and `/staff/desk`). The version line therefore still ends right
+  before `</body>`, which `api/tests/pages_version_test.rs` pins, and a page byte-compare strips the two together.
+  Static files, redirects, 400s and 404s carry neither.
+- [required] `GET /_xc/forms.js` is a route registered in `pages::configure`, not a file in `web.dir`: the script is compiled
+  into the binary (`include_str!` of `api/static/xc-forms.js`), so it is always the one that matches the running build, and
+  a file of the same name in `web.dir` cannot replace it. Headers as a static file (`text/javascript; charset=utf-8`,
+  `Cache-Control: no-cache`, `X-Content-Type-Options: nosniff`); any other method is the plain 404. `/_xc/` was chosen
+  because v2 has no such directory or route (its `public/` and route table `server.mjs:8143-8188`, measured 2026-10-07),
+  so it cannot shadow a kept file.
+- [proposed] The CSS travels inside the script (one `<style id="xc-forms-style">` added to `<head>` once), so a page
+  carries one tag and the asset is one file.
+
+What the script does, on load and again on every DOM change (`MutationObserver`; the kept pages render their forms
+into dialogs after load):
+
+| # | Behaviour | Pure part the JS test pins |
+|---|---|---|
+| 1 | **Repair a broken `pattern`.** A pattern that does not compile with `new RegExp('^(?:'+p+')$','v')` is rewritten only if escaping each unescaped `-` that ends a character class (`_-]` → `_\-]`) makes it compile; otherwise it is left alone. A per-pattern override table may replace a pattern whole (login, below). | `fixPattern(p)` → the new text or `null` |
+| 2 | **An invalid form does not submit.** Forms without `novalidate` are blocked by the browser itself once (1) has run: it focuses the first invalid field (caret blinking) and shows its message. For a form with `novalidate`, a capture-phase `submit` listener does the same (`checkValidity` false → `preventDefault`, focus the first invalid field, `reportValidity`). Measured: the v2 bundle has no `novalidate` form (the hits in `staff.js`/`staff-report.js` are React's attribute table) and the employee dialog submits through a real `<form>` (`onsubmit`), so no click hook is needed. | `firstInvalid(elements)` |
+| 3 | **The wrong field turns red.** A capture-phase `invalid` listener adds class `xc-invalid` and `aria-invalid="true"`; `:user-invalid` is styled the same; the mark goes when the field is edited and valid again. | `markInvalid(el)`, `clearMark(el)`, `CSS` |
+| 4 | **A server refusal points at its field**, only where the sentence names exactly one field. One table, `REFUSALS`: error element id → sentence → field id. The script watches those error elements; when one shows a listed sentence, it marks that field, sets it as the field's custom validity (cleared on the next edit) and focuses it. | `fieldFor(errorId, text)` |
+| 5 | **Show / hide a password.** Every `<input type="password">` gets one `<button type="button" class="xc-reveal">` right after it with an eye icon, `aria-label` `แสดงรหัสผ่าน` / `ซ่อนรหัสผ่าน` and `aria-pressed`. A click (or Enter/Space — it is a button, in the tab order) flips the type `password`↔`text` and gives focus back with the caret where it was. It never submits (`type="button"`), and on submit every revealed field turns back to `password` first, so the browser does not keep the typed password as text in its form history. The script never reads a field's value. A button whose field has left the document is removed. | `flipReveal(input)`, `revealLabel(shown)`, `makeRevealButton(doc, input)`, `concealAll(inputs)` |
+
+[required] `REFUSALS` holds only sentences that name one field, each cited from v3's code:
+
+| error element | sentence | field | source |
+|---|---|---|---|
+| `employee-error` | `ไม่พบสาขาที่เลือก กรุณารีเฟรช` | `employee-branch` | `api/src/presentation/http/employees.rs:149-157` → `BranchService::require` (`api/crates/xc-rate/src/application/branch/service.rs:33-37`) |
+| `employee-error` | `รหัสผ่านต้องมี 12–128 ตัวอักษร` | `employee-password` | `PasswordHasher::hash` (`api/crates/xc-auth/src/domain/account/value_objects/password_hasher.rs:12`, `:41`), called on create |
+| `reset-error` | `รหัสผ่านต้องมี 12–128 ตัวอักษร` | `reset-employee-password` | the same hash, on reset (`service.rs:455`) |
+
+Not mapped, on purpose: `ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง` (four fields, above — the username case is caught by (1) before
+the request is sent) and the sign-in sentence `ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง` (it must not say which half was wrong).
+
+**The sign-in username range.** `login.html` says 3–30, but the door it posts to (`/api/auth` `login`) takes the owner
+**and** every employee: an unknown owner name falls through to the employee path, in v2 (`server.mjs:7871-7883`) and in v3
+(`service.rs:150-197`, `None => self.login_employee`). Owners are 3–30 (`create-owner.mjs:5521`; v3 `create_owner`,
+`service.rs:523`), employees 3–40 (`server.mjs:7323`, refused above 40 at `7346`; v3 `service.rs:393`, `:215`). So 3–30 is
+the owner's rule only; repaired as written it would newly stop an employee whose name is 31–40 characters from signing in
+on `/login`, which no current browser stops today. [required] The override table therefore maps `[a-zA-Z0-9._-]{3,30}`
+to `[a-zA-Z0-9._\-]{3,40}` — the range the door accepts. The server is not changed.
+
+Known difference: v3's pages now validate in the browser where v2's rule was silently dropped, and add the password button
+(`docs/design/xchange-v3-known-differences.md`, row *Pages · shared form helper*).
 
 **Known debt, kept on purpose.** `adminSnapshot` returns the whole branch on every call and the screens
 poll it. v3 builds it with SQL instead of replaying the ledger, and keeps v2's 10,000-row cap (`6600`),
@@ -1117,6 +1181,7 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | DRV-4 (#274) | Printer models from configuration and the per-branch drawer switch (§5.4b *Printer models and the drawer switch*): `Settings.devices.printer_models` seeded with `NEOCAL_NTP_8220BT`; `PrinterModels`, `DrawerSettings` and `DeviceService::set_drawer`; the default trait method `DeviceDriver::run_with`, which `process` calls; `EscposDriver::with_models` and its override building the kick from the model; `queue` refuses a drawer request where `hasDrawer = 0`. DRV-1's provided tests and every caller of `new` stay untouched | `api/configuration/base.yaml`, `api/src/config/mod.rs`, `api/src/infrastructure/devices/printer_models.rs`, `api/src/infrastructure/devices/simulated_driver.rs`, `api/src/infrastructure/devices/escpos_driver.rs`, `api/src/infrastructure/devices/device_service.rs`, `api/src/infrastructure/devices/mod.rs`, `api/tests/printer_models_test.rs` | DRV-1 (#280) |
 | DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` gains two keys, `printerModel` (the model id) and `hasDrawer` (`true`/`false`/`null`); the key `model` stays T13b's admin snapshot (§5.4), so the same name never carries two meanings; the snapshot reads them through `DeviceService::drawer_settings(branch)`, which uses the service's own registry | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/src/infrastructure/devices/device_service.rs` (the one reader), `api/tests/devices_set_printer_test.rs` | DRV-4 |
 | BK (#121) | Backups and log retention of the v3 server (§7b): `backup.sh` makes one set (`pg_dump -Fc` + uploads archive, one UTC stamp, both or nothing), keeps the newest 7, copies off-host by `rsync` of the directory's contents filtered to the set directories (`--delete` only once the local directory holds 7); runs only through the unit and prints the set's path last; `restore.sh` rehearses a restore into a scratch database (made as `postgres` through `runuser`, the dump handed to `pg_restore` on stdin) and directory and refuses the live ones; a oneshot service (hardened, `ReadWritePaths=` the backup directory) with a daily `Persistent=true` timer; a journald drop-in example; the `XC_BACKUP_*` settings; the README install step creates `XC_BACKUP_DIR` (`install -d -m 0700 -o root -g root`) before the timer is enabled | `deploy/server/backup.sh`, `deploy/server/restore.sh`, `deploy/server/xc-v3-backup.service`, `deploy/server/xc-v3-backup.timer`, `deploy/server/journald-xc-v3.conf`, `deploy/server/env.example`, `deploy/server/scripts.test.sh`, `deploy/README.md` | — |
+| FV | The shared form helper (§5.3 *The shared form helper*): every HTML page gets the one tag `<script src="/_xc/forms.js" defer></script>` immediately before the version line, on both page paths; `GET /_xc/forms.js` answers the compiled-in script; the script repairs a `pattern` the `v` flag rejects (and maps login's 3–30 to the door's 3–40), lets the browser block an invalid submit with focus on the field, marks invalid fields red, points the cited server refusals at their field, and gives every password field a show/hide button. v2's files are not edited; the server's validation rules are not changed. A Node step in `api.yml` runs the helper's pure-function test | `api/src/presentation/pages.rs`, `api/static/xc-forms.js` (new), `api/tests/pages_forms_test.rs` and `api/tests/js/xc_forms.test.mjs` (new, provided), `api/tests/pages_test.rs` (its strip helper, provided), `.github/workflows/api.yml` (the Node step) | — |
 
 [required] Every row that owns a file under `api/src/presentation/http/` depends on T1b, whether or not its cell says so (T4c, T5b, T6b, T8, T11a, T12b, T13, T15); and "T1" in a Depends-on cell means T1a **and** T1b are merged. The T1 row is the name of the original undivided ticket; T1a, T1b and T1c are its parts.
 
