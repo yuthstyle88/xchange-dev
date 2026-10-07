@@ -84,12 +84,7 @@ impl PgEmployeeCustody {
 fn branch_of(payload: &Value) -> AppResult<BranchId> {
     match payload.get("branchId") {
         None | Some(Value::Null) => Ok(BranchId::new(DEFAULT_BRANCH)),
-        Some(Value::String(id))
-            if (1..=70).contains(&id.len())
-                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') =>
-        {
-            Ok(BranchId::new(id.as_str()))
-        }
+        Some(Value::String(id)) if BranchId::is_well_formed(id) => Ok(BranchId::new(id.as_str())),
         Some(_) => Err(AppError::Domain(BAD_REQUEST.to_owned())),
     }
 }

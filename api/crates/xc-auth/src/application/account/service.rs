@@ -6,6 +6,7 @@ use pos_error::{AppError, AppResult};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
+use xc_kernel::ids::BranchId;
 
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
@@ -415,10 +416,7 @@ impl<R: AccountRepository> AccountService<R> {
                     Some(b) => b,
                     None => return Err(AppError::Domain(EMPLOYEE_DATA.to_string())),
                 };
-                let is_valid_branch = (1..=70).contains(&branch_id.len())
-                    && branch_id
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+                let is_valid_branch = BranchId::is_well_formed(branch_id);
 
                 if !is_valid_username || !is_valid_name || !is_valid_role || !is_valid_branch {
                     return Err(AppError::Domain(EMPLOYEE_DATA.to_string()));

@@ -70,7 +70,7 @@ fn refuse<T>(sentence: &str) -> AppResult<T> {
 
 /// 1 to 70 characters of `A-Z a-z 0-9 -`.
 fn is_branch_name(text: &str) -> bool {
-    (1..=70).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    BranchId::is_well_formed(text)
 }
 
 /// Exactly 36 characters of `0-9 a-f -`.

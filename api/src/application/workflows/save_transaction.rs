@@ -207,10 +207,7 @@ impl SaveTransactionWorkflow {
         stepped: Option<(SaveExtras, SaveActor)>,
     ) -> AppResult<SavedTransaction> {
         let b = branch.as_str();
-        if b.is_empty()
-            || b.len() > 70
-            || !b.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
-        {
+        if !BranchId::is_well_formed(b) {
             return refuse(BAD_BRANCH);
         }
         let passport = match &cmd.passport {

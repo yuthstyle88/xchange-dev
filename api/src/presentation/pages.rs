@@ -8,6 +8,7 @@ use actix_web::http::Method;
 use actix_web::{HttpRequest, HttpResponse, web};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 
@@ -297,10 +298,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
 }
 
 pub(crate) fn is_valid_branch(name: &str) -> bool {
-    if name.is_empty() || name.len() > 70 {
-        return false;
-    }
-    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    BranchId::is_well_formed(name)
 }
 
 fn extract_branch_query(query_str: &str) -> Option<String> {

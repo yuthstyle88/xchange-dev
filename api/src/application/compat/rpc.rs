@@ -493,11 +493,7 @@ fn branch_of(caller: &RpcCaller, payload: &Map<String, Value>) -> Result<BranchI
         Some(value) if js_truthy(value) => js_text(Some(value)),
         _ => MAIN.to_string(),
     };
-    let shaped = (1..=70).contains(&named.len())
-        && named
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-');
-    if !shaped {
+    if !BranchId::is_well_formed(&named) {
         return Err(RpcRefusal::refused(BAD_BRANCH));
     }
     Ok(Policy::branch(

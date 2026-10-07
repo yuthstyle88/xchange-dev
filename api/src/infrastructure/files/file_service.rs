@@ -63,12 +63,7 @@ impl FileService {
     ) -> AppResult<String> {
         // 1. branch is 1 to 70 characters of A-Z a-z 0-9 -
         let branch_str = branch.as_str();
-        if branch_str.is_empty()
-            || branch_str.len() > 70
-            || !branch_str
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        {
+        if !BranchId::is_well_formed(branch_str) {
             return Err(AppError::Domain(BAD_BRANCH.to_string()));
         }
 

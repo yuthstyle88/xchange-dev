@@ -252,8 +252,7 @@ async fn handle_kiosk(
             Some(Value::String(s)) => {
                 if s.is_empty() {
                     BranchId::new("MAIN")
-                } else if s.len() <= 70 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-                {
+                } else if BranchId::is_well_formed(s) {
                     BranchId::new(s)
                 } else {
                     return refuse(400, "Invalid branch.");
