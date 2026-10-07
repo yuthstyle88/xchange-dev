@@ -21,7 +21,7 @@ const STEP_COUNTS: [(&str, usize); 9] = [
     ("snapshot/transactions.json", 56),
     ("snapshot/custody.json", 255),
     ("snapshot/branches.json", 39),
-    ("rpc/transport.json", 94),
+    ("rpc/transport.json", 99),
     ("rpc/engine_actions.json", 184),
     ("rpc/ops_actions.json", 140),
 ];
@@ -68,7 +68,8 @@ fn all_ten_files_load_with_the_recorded_number_of_steps() {
     }
     let index = Index::load();
     assert_eq!(index.actions.len(), 30, "{INDEX_FILE}");
-    assert_eq!(index.sentences.len(), 96, "{INDEX_FILE}");
+    // 97 since ticket #146 recorded the owner's ORIGIN_REJECTED
+    assert_eq!(index.sentences.len(), 97, "{INDEX_FILE}");
 }
 
 #[test]

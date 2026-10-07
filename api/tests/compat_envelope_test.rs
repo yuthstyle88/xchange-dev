@@ -245,7 +245,7 @@ fn padded(pad: char, units: usize) -> String {
 #[test]
 fn every_step_of_the_recording_is_accounted_for() {
     let fx = transport();
-    assert_eq!(fx.steps().len(), 94);
+    assert_eq!(fx.steps().len(), 99);
     let mut before = BTreeMap::<&str, Vec<usize>>::new();
     let mut from_body = Vec::new();
     for step in fx.steps() {
@@ -258,7 +258,8 @@ fn every_step_of_the_recording_is_accounted_for() {
     assert_eq!(before["path or host"], vec![92, 93, 94]);
     assert_eq!(
         before["same-origin headers"],
-        vec![2, 3, 4, 5, 6, 50, 51, 52, 53, 54, 58]
+        // 95-99: the same five cases asked by the owner (ticket #146)
+        vec![2, 3, 4, 5, 6, 50, 51, 52, 53, 54, 58, 95, 96, 97, 98, 99]
     );
     assert_eq!(
         before["session"],
@@ -463,6 +464,10 @@ fn steps_answered_before_the_body_have_the_recorded_shape() {
             continue;
         }
         let refusal = match why {
+            // ticket #146: v2 tells the owner ORIGIN_REJECTED and an employee คำขอไม่ถูกต้อง
+            "same-origin headers" if fx.sender(step).is_some_and(|p| p.is_owner()) => {
+                RpcRefusal::refused("ORIGIN_REJECTED")
+            }
             "same-origin headers" | "path or host" => RpcRefusal::invalid_request(),
             "session" => {
                 let route = route_of(step).unwrap_or_else(|| panic!("step {n}: route"));
@@ -478,7 +483,7 @@ fn steps_answered_before_the_body_have_the_recorded_shape() {
         assert_answers_as_recorded(&fx, step, &refusal);
         json_answers += 1;
     }
-    assert_eq!((json_answers, plain_answers), (22, 8));
+    assert_eq!((json_answers, plain_answers), (27, 8));
 }
 
 // ---------------------------------------------------------------------------

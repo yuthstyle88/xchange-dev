@@ -65,6 +65,7 @@ use crate::presentation::pages;
 /// byte-order mark that is not counted. Anything longer is over v2's limit
 /// whatever it holds, so it is not read.
 const MAX_BODY_BYTES: usize = MAX_BODY_UTF16_UNITS * 3 + 3;
+const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
 
 /// The clock a request is stamped with: `syncedAt` of a snapshot and the time
 /// of every write. Looked up as `web::Data<dyn RpcClock>`; when none is
@@ -142,11 +143,16 @@ async fn answer(
             let caller = caller_of_rpc(accounts, req, now)
                 .await?
                 .ok_or_else(|| RpcRefusal::not_signed_in(route))?;
+            let staff = caller.actor.branch_id().is_some();
             if !same_origin(req) {
-                return Err(RpcRefusal::invalid_request().into());
+                let refusal = if staff {
+                    RpcRefusal::invalid_request()
+                } else {
+                    RpcRefusal::refused(ORIGIN_REJECTED)
+                };
+                return Err(refusal.into());
             }
             let text = body_text(body, route)?;
-            let staff = caller.actor.branch_id().is_some();
             (RpcRequest::parse(route, &text, staff)?, caller)
         }
         RpcRoute::StaffRpc => {

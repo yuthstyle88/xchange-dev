@@ -160,7 +160,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     }
     assert_eq!(same_text, 24, "answers compared as text");
 
-    assert_eq!(fixture.steps().len(), 94);
+    // #95-#99 since ticket #146: the owner with a rejected origin
+    assert_eq!(fixture.steps().len(), 99);
     assert_eq!(
         replay.tally.differences,
         [ENGINE_SENTENCES.to_vec(), ops_differs].concat()
@@ -168,7 +169,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     // `opsNope` on the staff route reaches custody in v2: part two
     assert_eq!(replay.tally.part_two, ops_gap);
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
-    assert_eq!(replay.tally.replayed.len(), 83);
+    // 88 since ticket #146 added #95-#99
+    assert_eq!(replay.tally.replayed.len(), 88);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
@@ -314,7 +316,8 @@ async fn each_route_makes_its_checks_in_v2s_order() {
             .cookie(&cookies["OWNER"]),
     )
     .await
-    .assert_refused(400, INVALID_REQUEST, "no origin, too long");
+    // ticket #146: the owner is told v2's ORIGIN_REJECTED (rpc/transport.json #95)
+    .assert_refused(400, "ORIGIN_REJECTED", "no origin, too long");
     app.send(Call::post(ORIGIN, RPC, format!("{too_long} not json")).cookie(&cookies["OWNER"]))
         .await
         .assert_refused(400, "ข้อมูลคำขอใหญ่เกินกำหนด", "too long, not JSON");

@@ -153,6 +153,7 @@ const REFUSALS = new Set((process.env.XC_COMPAT_DISCOVER ? [] : [
   "EMPLOYEE_AUTH_REQUIRED",
   "Expected ',' or '}' after property value in JSON at position 31 (line 1 column 32)",
   "Not found",
+  "ORIGIN_REJECTED",
   "Unexpected end of JSON input",
   "Unexpected token 'o', \"not json\" is not valid JSON",
   "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
@@ -715,6 +716,13 @@ async function transport() {
   await w.raw('no', 'FR1', '/api/staff/nope', snap, {}, 'a staff route that does not exist');
   const res = await v2.handle(new Request('http://customer.test/api/rpc', { method: 'POST', headers: { origin: 'http://customer.test', 'x-xchange-request': '1', cookie: w.tokens.get('owner') }, body: snap }));
   w.record({ as: 'owner', method: 'POST', route: 'http://customer.test/api/rpc', raw: snap, note: 'the customer host serves the kiosk only' }, { status: res.status, headers: Object.fromEntries(res.headers), text: await res.text() }, 'no');
+  // the same-origin rule, asked by the owner (ticket #146): v2's owner route says ORIGIN_REJECTED where
+  // the employee is told คำขอไม่ถูกต้อง. Appended after every other step so no earlier step changes its number.
+  await w.raw('no', 'owner', '/api/rpc', status, { headers: { origin: null } }, 'no Origin, asked by the owner');
+  await w.raw('no', 'owner', '/api/rpc', status, { headers: { origin: 'http://elsewhere.test' } }, 'another Origin, asked by the owner');
+  await w.raw('no', 'owner', '/api/rpc', status, { headers: { origin: ORIGIN + '/' } }, 'the Origin with a slash after it, asked by the owner');
+  await w.raw('no', 'owner', '/api/rpc', status, { headers: { 'x-xchange-request': null } }, 'no X-Xchange-Request, asked by the owner');
+  await w.raw('no', 'owner', '/api/rpc', status, { headers: { 'x-xchange-request': 'true' } }, 'X-Xchange-Request that is not 1, asked by the owner');
   return w;
 }
 

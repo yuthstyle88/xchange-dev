@@ -52,6 +52,7 @@
   ["EMPLOYEE_AUTH_REQUIRED",5],
   ["Expected ',' or '}' after property value in JSON at position 31 (line 1 column 32)",2],
   ["Not found",8],
+  ["ORIGIN_REJECTED",5],
   ["Unexpected end of JSON input",1],
   ["Unexpected token 'o', \"not json\" is not valid JSON",3],
   ["กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",2],
