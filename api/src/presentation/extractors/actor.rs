@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
-use pos_error::{AppError, AppResult};
+use pos_error::AppError;
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::entities::employee::Employee;
@@ -120,36 +120,6 @@ pub fn actor_of(who: &SignedIn) -> Option<Actor> {
     match who {
         SignedIn::Owner(_) => Some(Actor::owner(OWNER_ID)),
         SignedIn::Employee(e) => staff_actor(e),
-    }
-}
-
-/// Who the two cookies are: the owner session first, else the staff session — the answer of
-/// `AccountService::status`, except that a database failure is an error here.
-///
-/// stopgap: `AccountService::status` on `main` turns every error of `employee_session` into
-/// "nobody" (`xc-auth/src/application/account/service.rs`, the `Err(_) => return Ok(None)` arm),
-/// so with the database down a staff cookie would be answered 200 `user: null` instead of the
-/// 500 of §8.1. The root cause is in `xc-auth` (issue #98); once `status` reports the failure
-/// itself this function is one call to it.
-pub async fn signed_in(
-    accounts: &Accounts,
-    owner_token: &str,
-    staff_token: &str,
-    now: SystemTime,
-) -> AppResult<Option<SignedIn>> {
-    if let Some(who) = accounts.status(owner_token, "", now.into()).await? {
-        return Ok(Some(who));
-    }
-    if staff_token.is_empty() {
-        return Ok(None);
-    }
-    match accounts
-        .employee_session(staff_token, false, now.into())
-        .await
-    {
-        Ok(employee) => Ok(Some(SignedIn::Employee(employee))),
-        Err(AppError::Unauthenticated | AppError::Domain(_)) => Ok(None),
-        Err(other) => Err(other),
     }
 }
 

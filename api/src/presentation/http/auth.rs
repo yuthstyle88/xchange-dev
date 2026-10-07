@@ -15,7 +15,7 @@ use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{
     AccountSessionReader, Accounts, BAD_REQUEST, OWNER_COOKIE, OWNER_ID, SESSION_SECONDS,
     STAFF_COOKIE, accounts, answer, cookie, failure, payload_of, read, refuse, same_origin,
-    server_error, set_cookie, signed_in,
+    server_error, set_cookie,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::pages::{self, SessionReader};
@@ -90,7 +90,7 @@ async fn auth(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let (owner, staff) = (cookie(&req, OWNER_COOKIE), cookie(&req, STAFF_COOKIE));
     let now = SystemTime::now().into();
     match body["action"].as_str() {
-        Some("status") => match signed_in(accounts, &owner, &staff, SystemTime::now()).await {
+        Some("status") => match accounts.status(&owner, &staff, now).await {
             Ok(who) => answer(
                 200,
                 json!({ "setupRequired": false, "user": who.as_ref().map(user_json) }),

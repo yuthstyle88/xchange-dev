@@ -24,7 +24,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
     BAD_REQUEST, OWNER_COOKIE, OWNER_ID, STAFF_COOKIE, accounts, actor_of, answer, cookie, failure,
-    payload_of, read, refuse, same_origin, server_error, signed_in,
+    payload_of, read, refuse, same_origin, server_error,
 };
 use crate::presentation::http::auth::employee_json;
 use crate::presentation::pages;
@@ -102,13 +102,13 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         return server_error();
     };
     let now = || SystemTime::now().into();
-    let who = match signed_in(
-        accounts,
-        &cookie(&req, OWNER_COOKIE),
-        &cookie(&req, STAFF_COOKIE),
-        SystemTime::now(),
-    )
-    .await
+    let who = match accounts
+        .status(
+            &cookie(&req, OWNER_COOKIE),
+            &cookie(&req, STAFF_COOKIE),
+            now(),
+        )
+        .await
     {
         Ok(who) => who,
         Err(e) => return failure(e),

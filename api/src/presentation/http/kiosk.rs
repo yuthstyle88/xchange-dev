@@ -33,7 +33,7 @@ use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, STAFF_COOKIE, accounts, cookie, refuse, same_origin, signed_in,
+    OWNER_COOKIE, STAFF_COOKIE, accounts, cookie, refuse, same_origin,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
@@ -167,10 +167,13 @@ async fn handle_kiosk(
     };
     let owner_cookie = cookie(&req, OWNER_COOKIE);
     let staff_cookie = cookie(&req, STAFF_COOKIE);
-    let who = match signed_in(accounts_service, &owner_cookie, &staff_cookie, now.into()).await {
+    let who = match accounts_service
+        .status(&owner_cookie, &staff_cookie, now)
+        .await
+    {
         Ok(w) => w,
         Err(err) => {
-            tracing::error!(error = ?err, "signed_in failed");
+            tracing::error!(error = ?err, "status failed");
             return kiosk_server_error();
         }
     };

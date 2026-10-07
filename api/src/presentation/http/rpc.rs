@@ -57,7 +57,7 @@ use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
 use crate::infrastructure::files::file_service::FileService;
 use crate::presentation::extractors::actor::{
     Accounts, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin, server_error,
-    signed_in, staff_actor,
+    staff_actor,
 };
 use crate::presentation::pages;
 
@@ -219,13 +219,9 @@ async fn caller_of_rpc(
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
-    let who = signed_in(
-        accounts,
-        &cookie(req, OWNER_COOKIE),
-        &cookie(req, STAFF_COOKIE),
-        now.into(),
-    )
-    .await?;
+    let who = accounts
+        .status(&cookie(req, OWNER_COOKIE), &cookie(req, STAFF_COOKIE), now)
+        .await?;
     Ok(who.as_ref().and_then(caller_of))
 }
 
