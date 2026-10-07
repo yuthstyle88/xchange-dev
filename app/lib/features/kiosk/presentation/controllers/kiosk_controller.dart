@@ -32,6 +32,16 @@ class Estimate {
   final double foreign, receive;
 }
 
+/// [typed] as the server reads a number: a digit on each side of the dot.
+/// The amount box accepts `100.` and `.5` while the customer is typing; v2
+/// read them with JavaScript's `Number`, v3 refuses them (design §3, #67).
+String plainDecimal(String typed) {
+  var t = typed.trim();
+  if (t.endsWith('.')) t = t.substring(0, t.length - 1);
+  if (t.startsWith('.')) t = '0$t';
+  return t;
+}
+
 const _keep = Object();
 
 class KioskState {
@@ -294,7 +304,7 @@ class KioskController extends Notifier<KioskState> {
       final quote = await _repo.quote(
         type: state.type,
         currency: state.currency!,
-        amount: state.amountText.trim(),
+        amount: plainDecimal(state.amountText),
         paymentMethod: state.paymentMethod!,
       );
       if (_disposed) return;

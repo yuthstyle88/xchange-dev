@@ -242,6 +242,32 @@ void main() {
     });
   });
 
+  test('an amount the box accepts mid-typing is sent as a plain decimal, '
+      'the only shape v3 reads (#171)', () {
+    for (final (typed, sent) in [
+      ('100', '100'),
+      ('100.', '100'),
+      ('.5', '0.5'),
+      ('12.34', '12.34'),
+      ('0100', '0100'),
+    ]) {
+      fakeAsync((async) {
+        c = make();
+        c.start();
+        async.flushMicrotasks();
+        c
+          ..setCurrency('USD')
+          ..setAmount(typed)
+          ..setPaymentMethod('Cash');
+        expect(st().canReview, isTrue, reason: 'typed "$typed"');
+        c.submitQuote();
+        async.flushMicrotasks();
+        expect(server.lastQuote!['amount'], sent, reason: 'typed "$typed"');
+        container.dispose();
+      });
+    }
+  });
+
   test('confirm unlocks only after the three-second review', () {
     fakeAsync((async) {
       c = make();
