@@ -35,9 +35,7 @@ use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
-use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::abandon_request::AbandonRequest;
@@ -54,7 +52,7 @@ use crate::application::workflows::documents::DocumentsLookup;
 use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::bootstrap::AppState;
 use crate::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
-use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
+use crate::infrastructure::custody::custody_service::pg_custody_service;
 use crate::infrastructure::devices::device_service::DeviceService;
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
@@ -265,15 +263,6 @@ fn shift_service(pool: &PgPool, branch_tx: &BranchTx) -> ShiftService {
     )
 }
 
-fn custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService {
-    CustodyService::new(
-        Arc::new(PgCustodyRepository::new(pool.clone())),
-        shifts.clone(),
-        Arc::new(PgCustodyPorts),
-        branch_tx.clone(),
-    )
-}
-
 fn transaction_service(pool: &PgPool, branch_tx: &BranchTx) -> TransactionService {
     TransactionService::new(
         Arc::new(PgTransactionRepository::new(pool.clone())),
@@ -289,7 +278,7 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let files = FileService::new(pool.clone(), state.settings.files.dir.clone());
     let shifts = shift_service(pool, &branch_tx);
-    let custody = custody_service(pool, &shifts, &branch_tx);
+    let custody = pg_custody_service(pool, &shifts, &branch_tx);
     let documents = DocumentsLookup::new(
         transaction_service(pool, &branch_tx),
         BranchService::new(branch_tx.clone()),
@@ -321,7 +310,7 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
 fn compat_rpc(pool: &PgPool, source: Arc<dyn RateSource>, accounts: Accounts) -> CompatRpc {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = shift_service(pool, &branch_tx);
-    let custody = custody_service(pool, &shifts, &branch_tx);
+    let custody = pg_custody_service(pool, &shifts, &branch_tx);
     let transactions = transaction_service(pool, &branch_tx);
     let sources = Arc::new(ServiceSnapshotSources::new(transactions, accounts.clone()));
     CompatRpc::new(

@@ -32,8 +32,8 @@ use xc_shift::domain::custody::value_objects::request_status::RequestStatus;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
-use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
-use crate::presentation::http::employees::EmployeeCustody;
+use crate::application::custody::employee_custody::EmployeeCustody;
+use crate::infrastructure::custody::custody_service::pg_custody_service;
 
 /// The old server's sentence for a request it cannot read.
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
@@ -56,11 +56,9 @@ impl PgEmployeeCustody {
             Arc::new(PgShiftRepository::new(pool.clone())),
             branch_tx.clone(),
         );
+        let custody = pg_custody_service(&pool, &shifts, &branch_tx);
         let repo = Arc::new(PgCustodyRepository::new(pool));
-        Self {
-            custody: CustodyService::new(repo.clone(), shifts, Arc::new(PgCustodyPorts), branch_tx),
-            repo,
-        }
+        Self { custody, repo }
     }
 
     async fn command(&self, action: &str, payload: &Value, actor: &Actor) -> AppResult<Value> {

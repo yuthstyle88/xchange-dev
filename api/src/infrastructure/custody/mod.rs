@@ -1,3 +1,4 @@
 //! What custody needs from the other contexts, and what they need from custody.
 pub mod custody_ports;
+pub mod custody_service;
 pub mod employee_custody;

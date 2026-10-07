@@ -16,7 +16,7 @@ use xc_auth::domain::account::repositories::account_repository::AccountRepositor
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
-use crate::presentation::http::employees::EmployeeCustody;
+use crate::application::custody::employee_custody::EmployeeCustody;
 
 /// What a disable came to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

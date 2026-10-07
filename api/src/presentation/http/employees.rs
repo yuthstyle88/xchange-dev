@@ -1,19 +1,15 @@
 //! Employee routes: `/api/employees`, the owner's employee screen.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use actix_web::{HttpRequest, HttpResponse, web};
-use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
-use serde_json::{Value, json};
+use serde_json::json;
 use xc_auth::application::account::service::EmployeesAnswer;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -33,39 +29,7 @@ const HOLDS_CASH: &str = "ส่งมอบเงินและงานค้
 const SIX_ROLES: &str =
     "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน";
 
-/// What the employee screen needs from custody. Looked up as `web::Data<dyn EmployeeCustody>`;
-/// `configure` registers `PgEmployeeCustody`. In an app without one nobody holds cash and the
-/// two custody actions are bad requests.
-pub trait EmployeeCustody: Send + Sync {
-    fn holds_cash_or_pending<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + 'a>>;
-    /// The same question, read through `tx` — the transaction that holds the branch's lock
-    /// while `disable` closes the account (`DisableEmployee`). The future is `Send` because it
-    /// runs inside `BranchTx::run`. By default `false`: a port with no transaction to ask in
-    /// has answered on the pool already, by `holds_cash_or_pending`.
-    fn holds_cash_or_pending_in<'a>(
-        &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + Send + 'a>> {
-        let _ = (tx, branch, employee_id);
-        Box::pin(async { Ok(false) })
-    }
-    fn set_entity<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>>;
-    fn enable<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>>;
-}
+pub use crate::application::custody::employee_custody::EmployeeCustody;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
