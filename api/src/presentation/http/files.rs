@@ -1,7 +1,5 @@
 //! Files routes: uploading a file and reading one back, for the owner and at the staff door.
 
-use std::collections::HashMap;
-
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
@@ -100,10 +98,18 @@ fn not_found() -> HttpResponse {
         .body("Not found")
 }
 
+/// The **first** value of a name, as v2's `searchParams.get` reads it: of a repeated name
+/// (`?branch=A&branch=B`) the first counts, and a later one does not overwrite it.
 fn query(req: &HttpRequest, name: &str) -> Option<String> {
-    web::Query::<HashMap<String, String>>::from_query(req.query_string())
+    web::Query::<Vec<(String, String)>>::from_query(req.query_string())
         .ok()
-        .and_then(|q| q.get(name).cloned())
+        .and_then(|pairs| {
+            pairs
+                .into_inner()
+                .into_iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value)
+        })
 }
 
 fn mime_of(req: &HttpRequest) -> &str {
@@ -143,7 +149,6 @@ async fn store(
 }
 
 async fn upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
-    let bytes = read_upload(payload).await;
     let Sessions { owner, staff } = sessions(&req).await;
     let actor = owner.or(staff);
     let allowed = Policy::allow(actor.as_ref(), EntryPath::Upload, &Action::new("upload"));
@@ -158,9 +163,13 @@ async fn upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
             if !same_origin(&req) {
                 return refuse(400, ORIGIN_REJECTED, false);
             }
+            if let Err(refusal) = allowed {
+                return refuse(refusal.status(), &refusal.to_string(), false);
+            }
             let branch = query(&req, "branch")
                 .filter(|b| !b.is_empty())
                 .unwrap_or_else(|| "MAIN".to_owned());
+            let bytes = read_upload(payload).await;
             store(&req, &BranchId::new(branch), &actor, &bytes, false).await
         }
         ActorKind::Staff => {
@@ -173,13 +182,13 @@ async fn upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
             let Some(branch) = actor.branch_id().cloned() else {
                 return refuse(400, BAD_REQUEST, true);
             };
+            let bytes = read_upload(payload).await;
             store(&req, &branch, &actor, &bytes, true).await
         }
     }
 }
 
 async fn staff_upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
-    let bytes = read_upload(payload).await;
     if !same_origin(&req) {
         return refuse(400, BAD_REQUEST, true);
     }
@@ -194,6 +203,7 @@ async fn staff_upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
     let Some((actor, branch)) = staff.and_then(|a| a.branch_id().cloned().map(|b| (a, b))) else {
         return refuse(401, "EMPLOYEE_AUTH_REQUIRED", true);
     };
+    let bytes = read_upload(payload).await;
     store(&req, &branch, &actor, &bytes, true).await
 }
 
