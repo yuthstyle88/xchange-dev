@@ -11,8 +11,8 @@
 # other path reaches the server from here; sign-in, desk and admin live on the
 # desk host (xc-v3-desk.conf.example).
 #
-# Replace before use: server_name, the port, the web root. See the desk example
-# for why each header line is there and for the Cloudflare notes (realip).
+# Replace before use: server_name, the port, the web root. Behind Cloudflare,
+# the http-level realip configuration is required (cloudflare-realip.conf.example).
 
 server {
     listen 80;
@@ -23,6 +23,22 @@ server {
 
     root /var/www/xc-customer/web;
     index index.html;
+
+    # --- Behind Cloudflare (required: cloudflare-realip.conf) ---------------
+    # Behind Cloudflare, $remote_addr is a Cloudflare edge address unless nginx
+    # replaces it (ngx_http_realip_module). Without realip, all kiosk customers
+    # share edge addresses and one busy minute exhausts the 20/min quote limit
+    # for everyone.
+    #
+    # Required: generate and install the http-level realip configuration from
+    # deploy/nginx/cloudflare-realip.conf.example (/etc/nginx/conf.d/cloudflare-realip.conf).
+    # That sets the trusted Cloudflare ranges and real_ip_header CF-Connecting-IP at
+    # http level — do not add real_ip_header inside this server block.
+    #
+    # Close this host's port 80 to everything but Cloudflare's ranges (firewall).
+    # With realip active, $remote_addr carries the real visitor, X-Real-IP forwards
+    # it to the server, and CF-Connecting-IP stays cleared.
+    # -----------------------------------------------------------------------
 
     location = /api/kiosk {
         if ($request_method != POST) {
@@ -35,12 +51,23 @@ server {
 
         proxy_pass http://127.0.0.1:8094/api/kiosk;
         proxy_http_version 1.1;
+
+        # Passed through unchanged: the server verifies Origin against Host.
         proxy_set_header Host $host;
-        # From the connection, never the client's own value (see desk example).
+
+        # Overwrites whatever the client sent. The server reads only X-Real-IP
+        # at every door: /api/kiosk's per-address quote limit (20 a minute) keys
+        # on this header (api/src/presentation/http/client_address.rs).
         proxy_set_header X-Real-IP $remote_addr;
+
+        # Clear untrusted client headers; the server reads only X-Real-IP.
         proxy_set_header CF-Connecting-IP "";
+
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        # TLS ends at Cloudflare, so the value is fixed (see the desk example).
+
+        # The server uses this to build its origin (https://<host>) and redirects.
+        # TLS ends at Cloudflare and this block listens on plain port 80, so the
+        # value is fixed (for a host where TLS ends on this nginx, use $scheme).
         proxy_set_header X-Forwarded-Proto https;
         proxy_read_timeout 60s;
     }

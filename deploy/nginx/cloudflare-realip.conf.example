@@ -1,0 +1,32 @@
+# Example only; the host's owner generates and applies it.
+# Nothing in this repository installs or reloads nginx.
+#
+# Real IP configuration for hosts behind Cloudflare (http level, e.g. for
+# /etc/nginx/conf.d/cloudflare-realip.conf).
+#
+# When behind Cloudflare, $remote_addr is a Cloudflare edge IP unless nginx
+# replaces it using ngx_http_realip_module. The v3 server reads only X-Real-IP
+# at every door (api/src/presentation/http/client_address.rs): all per-address
+# limits (owner sign-in, staff sign-in, kiosk quotes) key on X-Real-IP, which is
+# proxied from $remote_addr. Behind Cloudflare, this file is required so that
+# $remote_addr becomes the visitor's real address.
+#
+# Generate the live file directly from Cloudflare's published IP lists — do not
+# type or paste addresses from memory:
+#
+#   (for url in https://www.cloudflare.com/ips-v4 https://www.cloudflare.com/ips-v6; do \
+#       curl -s "$url"; echo; \
+#   done | sed -e '/^$/d' -e 's/^/set_real_ip_from /; s/$/;/'; \
+#   echo "real_ip_header CF-Connecting-IP;") > /etc/nginx/conf.d/cloudflare-realip.conf
+#
+# The ranges change over time: whoever applies this (the host's owner) keeps them
+# current by re-running the command.
+#
+# A host that terminates TLS itself (no Cloudflare) does not use this file:
+# $remote_addr is already the visitor.
+#
+# -----------------------------------------------------------------------------
+# Required directive (placed at http level, applied to all servers):
+real_ip_header CF-Connecting-IP;
+
+# The set_real_ip_from lines are written by the command above.

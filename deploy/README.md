@@ -166,8 +166,26 @@ The examples in `nginx/` are examples; the host's owner applies them. What the
 server depends on, whatever the file looks like in the end:
 
 - `X-Real-IP` set from the connection (`$remote_addr`), overwriting the client's
-  value — the sign-in attempt limit keys on it. `CF-Connecting-IP` cleared or
-  set by nginx for the same reason: staff sign-in prefers it over `X-Real-IP`.
+  value. The server reads only `X-Real-IP` at every door (api/src/presentation/http/client_address.rs):
+  all per-address limits (owner sign-in 30/addr, staff sign-in 30/addr, kiosk quotes
+  20/min/addr) key on this header. `CF-Connecting-IP` is cleared (`""`) by nginx
+  so that an untrusted header sent by a client never reaches downstream.
+- Behind Cloudflare, the http-level realip configuration
+  (`deploy/nginx/cloudflare-realip.conf.example`, installed as
+  `/etc/nginx/conf.d/cloudflare-realip.conf`) is required. Without it,
+  `$remote_addr` is a Cloudflare edge address: all visitors share edge IPs,
+  one busy minute refuses all kiosk quotes, and 30 failed passwords lock out everyone.
+  The host's owner generates `cloudflare-realip.conf` from Cloudflare's published
+  IP lists (`https://www.cloudflare.com/ips-v4` and `/ips-v6`) using the command
+  in `cloudflare-realip.conf.example`, and keeps the ranges current when Cloudflare
+  updates them.
+- A host that terminates TLS itself (no Cloudflare) does not use
+  `cloudflare-realip.conf`: `$remote_addr` is already the visitor.
+- Firewall: the host's port 80 should accept traffic from Cloudflare's ranges
+  only. If port 80 is open to direct connections, a direct caller connects directly
+  to nginx, so its own address becomes `$remote_addr` and is counted under its own
+  per-address limit (there is no way around the rate limit), but the origin server's
+  IP is exposed to direct access.
 - `Host` passed through and `X-Forwarded-Proto` telling the truth about what the
   browser used (`https` when TLS ends at Cloudflare) — a POST is refused unless
   `Origin` equals `<proto>://<host>`.
@@ -178,9 +196,9 @@ server depends on, whatever the file looks like in the end:
 The examples are written for a host reached through Cloudflare (nginx on port
 80, `X-Forwarded-Proto https` fixed); the `$scheme` variant for a host that
 terminates TLS itself is in the file as a comment. `nginx -t` passes on both
-examples in a throw-away `nginx:1.27-alpine` container; that says the syntax is
-right, not that the file fits a given host — its owner runs `nginx -t` there
-before any reload.
+site examples together with `cloudflare-realip.conf` in a throw-away
+`nginx:1.27-alpine` container; that says the syntax is right, not that the file
+fits a given host — its owner runs `nginx -t` there before any reload.
 
 ---
 

@@ -34,17 +34,17 @@ server {
     # refuses a POST whose Origin differs.
     proxy_set_header Host $host;
 
-    # Overwrites whatever the client sent. The sign-in attempt limit (30 per
-    # address) keys on this header (api/src/presentation/http/auth.rs): if the
-    # client's own X-Real-IP were passed on, one machine could pick a new
-    # "address" for every guess and the limit would count nothing.
+    # Overwrites whatever the client sent. The server reads only X-Real-IP at
+    # every door (owner sign-in, staff sign-in, kiosk): all per-address rate
+    # and attempt limits key on this header (api/src/presentation/http/client_address.rs).
+    # If the client's own X-Real-IP were passed on, one machine could pick a new
+    # "address" for every guess and the limits would count nothing.
     proxy_set_header X-Real-IP $remote_addr;
 
-    # Staff sign-in reads CF-Connecting-IP BEFORE X-Real-IP. nginx forwards
-    # request headers it is not told about, so a client reaching this host
-    # could send its own. An empty value removes the header; the server then
-    # falls back to X-Real-IP above. Keep this line behind Cloudflare too (see
-    # the Cloudflare block below: there $remote_addr already is the visitor).
+    # The server reads only X-Real-IP and never trusts CF-Connecting-IP directly.
+    # nginx forwards request headers it is not told about, so an untrusted client
+    # reaching this host could send its own CF-Connecting-IP. An empty value removes
+    # the header so nothing downstream can see or trust it.
     proxy_set_header CF-Connecting-IP "";
 
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -58,20 +58,19 @@ server {
     # the line above:
     #     proxy_set_header X-Forwarded-Proto $scheme;
 
-    # --- Behind Cloudflare -------------------------------------------------
-    # $remote_addr is then a Cloudflare edge address, shared by all visitors:
-    # the per-address sign-in limit would lock everyone out together. Let
-    # nginx (ngx_http_realip_module; check `nginx -V 2>&1 | grep -o
-    # http_realip_module`) replace $remote_addr with the visitor's address,
-    # trusting the header ONLY from Cloudflare's own ranges:
+    # --- Behind Cloudflare (required: cloudflare-realip.conf) ---------------
+    # Behind Cloudflare, $remote_addr is a Cloudflare edge address unless nginx
+    # replaces it (ngx_http_realip_module). Without realip, all visitors share
+    # edge addresses and the per-address sign-in limit locks everyone out together.
     #
-    #     set_real_ip_from <each range of https://www.cloudflare.com/ips/>;
-    #     real_ip_header CF-Connecting-IP;
+    # Required: generate and install the http-level realip configuration from
+    # deploy/nginx/cloudflare-realip.conf.example (/etc/nginx/conf.d/cloudflare-realip.conf).
+    # That sets the trusted Cloudflare ranges and real_ip_header CF-Connecting-IP at
+    # http level — do not add real_ip_header inside this server block.
     #
-    # and close this host's port to everything but those ranges (firewall).
-    # With that, X-Real-IP $remote_addr above carries the real visitor, and
-    # CF-Connecting-IP stays cleared. The ranges change: whoever applies this
-    # keeps them current. Do not paste them from memory.
+    # Close this host's port 80 to everything but Cloudflare's ranges (firewall).
+    # With realip active, $remote_addr carries the real visitor, X-Real-IP forwards
+    # it to the server, and CF-Connecting-IP stays cleared.
     # -----------------------------------------------------------------------
 
     # API answers are per user and must never be stored or replayed.
