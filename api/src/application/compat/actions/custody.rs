@@ -24,15 +24,14 @@
 
 use serde_json::Value;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 
 use crate::application::compat::actions::{ActionFuture, RpcAction, RpcCall};
 use crate::application::compat::envelope::RpcRoute;
 use crate::application::compat::rpc::RpcCaller;
 use crate::application::compat::v2_json::V2Json;
+use crate::application::custody_role::custody_role_of;
 
 /// The thirteen custody actions an employee may send, as the staff page and
 /// the staff desk name them.
@@ -106,22 +105,7 @@ fn custody_actor(caller: &RpcCaller) -> CustodyActor {
     CustodyActor {
         id,
         employee_id,
-        role: custody_role(caller.actor.role()),
-    }
-}
-
-/// The part a role plays in custody. The four roles with none (Rates, System,
-/// Documents, Document review) are `Other`: they clock in and out and nothing
-/// else.
-fn custody_role(role: Role) -> CustodyRole {
-    match role {
-        Role::Owner => CustodyRole::Owner,
-        Role::Front => CustodyRole::Front,
-        Role::Finance => CustodyRole::Finance,
-        Role::Monitor => CustodyRole::Monitor,
-        Role::Manager => CustodyRole::Manager,
-        Role::Backend => CustodyRole::Backend,
-        Role::Rates | Role::System | Role::Documents | Role::DocumentReview => CustodyRole::Other,
+        role: custody_role_of(caller.actor.role()),
     }
 }
 

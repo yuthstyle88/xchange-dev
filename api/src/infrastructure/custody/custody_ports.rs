@@ -21,25 +21,14 @@ use xc_rate::domain::validation::format_iso;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 
+use crate::application::custody_role::employee_custody_role;
+
 /// The trait's future: `futures::future::BoxFuture` spelled out.
 type Answer<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 
 /// Answers `CustodyPorts` from the tables of the other contexts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PgCustodyPorts;
-
-/// The custody role of an employee's role as stored. A role with no part in
-/// custody, and anything unknown, is `Other`; an employee is never `Owner`.
-fn custody_role(stored: &str) -> CustodyRole {
-    match stored {
-        "FRONT" => CustodyRole::Front,
-        "FINANCE" => CustodyRole::Finance,
-        "MONITOR" => CustodyRole::Monitor,
-        "MANAGER" => CustodyRole::Manager,
-        "BACKEND" => CustodyRole::Backend,
-        _ => CustodyRole::Other,
-    }
-}
 
 impl CustodyPorts for PgCustodyPorts {
     /// - `has_live_rate`: the branch has a counter rate (every stored rate has a
@@ -147,7 +136,7 @@ impl CustodyPorts for PgCustodyPorts {
             .fetch_optional(&mut **tx)
             .await
             .map_err(AppError::Database)?;
-            Ok(stored.as_deref().map(custody_role))
+            Ok(stored.as_deref().map(employee_custody_role))
         })
     }
 }

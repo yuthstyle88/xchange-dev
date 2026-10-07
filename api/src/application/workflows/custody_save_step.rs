@@ -1,14 +1,13 @@
 //! Custody's part in the save of an exchange.
 
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::money::CurrencyCode;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 
+use crate::application::custody_role::custody_role_of;
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 
 /// Asks custody whether a live exchange may be saved now by this person, and
@@ -21,19 +20,6 @@ pub struct CustodySaveStep {
 impl CustodySaveStep {
     pub fn new(custody: CustodyService) -> Self {
         Self { custody }
-    }
-}
-
-/// The custody role of a role. A role with no part in custody is `Other`.
-fn custody_role(role: Role) -> CustodyRole {
-    match role {
-        Role::Owner => CustodyRole::Owner,
-        Role::Front => CustodyRole::Front,
-        Role::Finance => CustodyRole::Finance,
-        Role::Monitor => CustodyRole::Monitor,
-        Role::Manager => CustodyRole::Manager,
-        Role::Backend => CustodyRole::Backend,
-        Role::Rates | Role::System | Role::Documents | Role::DocumentReview => CustodyRole::Other,
     }
 }
 
@@ -70,7 +56,7 @@ impl SaveStep for CustodySaveStep {
             let actor = CustodyActor {
                 id: ctx.actor.id.clone(),
                 employee_id: ctx.actor.employee_id.clone(),
-                role: custody_role(ctx.actor.role),
+                role: custody_role_of(ctx.actor.role),
             };
             self.custody
                 .check_save_in(tx, ctx.branch, &attempt, &actor, ctx.now)
