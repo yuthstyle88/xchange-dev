@@ -621,7 +621,11 @@ fn open_service() -> CustodyState {
 async fn put_state(shop: &Shop, state: &CustodyState) {
     let repo = PgCustodyRepository::new(shop.pool.clone());
     let mut tx = shop.pool.begin().await.expect("begin");
-    repo.store_state_in(&mut tx, &branch(MAIN), state)
+    let before = repo
+        .load_state_in(&mut tx, &branch(MAIN))
+        .await
+        .expect("load the custody state");
+    repo.store_state_in(&mut tx, &branch(MAIN), &before, state)
         .await
         .expect("store the custody state");
     tx.commit().await.expect("commit");

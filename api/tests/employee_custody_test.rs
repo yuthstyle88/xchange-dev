@@ -94,7 +94,10 @@ async fn put_state(desk: &Desk, branch: &str, state: CustodyState) {
     let inner = id.clone();
     branch_tx(desk)
         .run(&id, move |tx| {
-            Box::pin(async move { repo.store_state_in(tx, &inner, &state).await })
+            Box::pin(async move {
+                let before = repo.load_state_in(tx, &inner).await?;
+                repo.store_state_in(tx, &inner, &before, &state).await
+            })
         })
         .await
         .expect("store the custody state");

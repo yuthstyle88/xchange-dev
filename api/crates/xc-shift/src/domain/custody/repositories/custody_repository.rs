@@ -18,11 +18,15 @@ pub trait CustodyRepository: Send + Sync + 'static {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<CustodyState>>;
 
+    /// Stores what a command made of the branch's state: `before` is the state
+    /// as loaded in this transaction, `after` what it became. Only what is new
+    /// or differs is written.
     fn store_state_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
-        state: &'a CustodyState,
+        before: &'a CustodyState,
+        after: &'a CustodyState,
     ) -> BoxFuture<'a, AppResult<()>>;
 
     fn append_events_in<'a>(

@@ -199,22 +199,6 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         }
     }
 
-    pub fn repo(&self) -> &Arc<R> {
-        &self.repo
-    }
-
-    pub fn shifts(&self) -> &ShiftService<S> {
-        &self.shifts
-    }
-
-    pub fn ports(&self) -> &Arc<dyn CustodyPorts> {
-        &self.ports
-    }
-
-    pub fn branch_tx(&self) -> &BranchTx {
-        &self.branch_tx
-    }
-
     pub async fn state(&self, branch: &BranchId) -> AppResult<CustodyState> {
         self.repo.load_state(branch).await
     }
@@ -280,7 +264,9 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
     ) -> AppResult<()> {
         let state = self.repo.load_state_in(tx, branch).await?;
         let new_state = CustodyMachine::complete_draft(&state, draft_id, document_ref);
-        self.repo.store_state_in(tx, branch, &new_state).await?;
+        self.repo
+            .store_state_in(tx, branch, &state, &new_state)
+            .await?;
         Ok(())
     }
 
@@ -461,7 +447,7 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         }
 
         self.repo
-            .store_state_in(tx, branch, &transition.state)
+            .store_state_in(tx, branch, &state, &transition.state)
             .await?;
 
         let mut stored_events = Vec::with_capacity(transition.events.len());

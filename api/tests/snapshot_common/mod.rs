@@ -1169,11 +1169,13 @@ impl<'f> Replay<'f> {
         let events = events_of(operations);
         let (repo, b) = (self.shop.custody_repo.clone(), here.clone());
         self.shop
-            .custody
+            .db
             .branch_tx()
             .run(here, move |tx| {
                 Box::pin(async move {
-                    repo.store_state_in(tx, &b, &state).await?;
+                    // what the branch holds now is what the store compares with
+                    let before = repo.load_state_in(tx, &b).await?;
+                    repo.store_state_in(tx, &b, &before, &state).await?;
                     repo.append_events_in(tx, &b, &events).await
                 })
             })

@@ -99,11 +99,12 @@ async fn store_custody(shop: &Shop, here: &BranchId, ops: &Value) {
     let state = state_of(ops);
     let events = events_of(ops);
     let (repo, b) = (shop.custody_repo.clone(), here.clone());
-    shop.custody
+    shop.db
         .branch_tx()
         .run(here, move |tx| {
             Box::pin(async move {
-                repo.store_state_in(tx, &b, &state).await?;
+                let before = repo.load_state_in(tx, &b).await?;
+                repo.store_state_in(tx, &b, &before, &state).await?;
                 repo.append_events_in(tx, &b, &events).await
             })
         })
