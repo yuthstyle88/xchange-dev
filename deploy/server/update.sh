@@ -16,13 +16,51 @@ need sudo systemctl curl sha256sum stat sed psql
 adopt_installed_settings
 check_names
 check_stage xchange configuration/base.yaml
-[ -f "$HERE/xc-v3.service" ] && [ -f "$HERE/smoke.sh" ] || die "xc-v3.service and smoke.sh must sit next to this script"
+if [ ! -f "$HERE/xc-v3.service" ] || [ ! -f "$HERE/smoke.sh" ]; then
+  die "xc-v3.service and smoke.sh must sit next to this script"
+fi
 if ! { sudo test -f "$UNIT_FILE" && sudo test -f "$ENV_FILE" && sudo test -x "$BIN"; }; then
   die "$SERVICE_NAME is not installed here (run install.sh first)"
 fi
 sudo test -d "$UPLOADS_DIR" || die "uploads directory missing: $UPLOADS_DIR (run install.sh; it creates it)"
 
 BEFORE="$(applied_migrations)"
+
+BACKUP_DIR="$(env_value XC_BACKUP_DIR)"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/xc-v3}"
+
+if ! sudo systemctl cat xc-v3-backup.service >/dev/null 2>&1; then
+  die "xc-v3-backup.service is not installed (BK is required before updating; see deploy/README.md §5)"
+fi
+
+BEFORE_SET="$(newest_backup_set "$BACKUP_DIR")"
+
+say "taking backup before update: starting xc-v3-backup.service..."
+if ! sudo systemctl start xc-v3-backup.service; then
+  die "backup failed: xc-v3-backup.service exited non-zero (BK)"
+fi
+
+AFTER_SET="$(newest_backup_set "$BACKUP_DIR")"
+if [ -z "$AFTER_SET" ] || [ "$AFTER_SET" = "$BEFORE_SET" ]; then
+  die "backup failed: no new backup set was created in $BACKUP_DIR"
+fi
+
+SET_DIR="$BACKUP_DIR/$AFTER_SET"
+DUMP_PATH="$SET_DIR/db-$AFTER_SET.dump"
+
+if ! sudo test -f "$DUMP_PATH"; then
+  die "backup dump file not found: $DUMP_PATH"
+fi
+
+say "verifying backup dump $DUMP_PATH with pg_restore --list..."
+if ! LIST="$(sudo cat "$DUMP_PATH" | sudo -u postgres pg_restore --list 2>&1)"; then
+  echo "$LIST" >&2
+  die "pg_restore --list failed on dump $DUMP_PATH"
+fi
+
+if ! printf '%s\n' "$LIST" | grep -qs '_sqlx_migrations'; then
+  die "backup dump $DUMP_PATH does not contain _sqlx_migrations"
+fi
 
 # From the stop until the start, a failure must not leave the service down
 # without a word: say what state it is in and how to bring it back.
@@ -40,7 +78,7 @@ on_exit() {
         echo "  sudo systemctl start $SERVICE_NAME"
       else
         echo "A replacement was begun and may be incomplete. Put back what was saved and start:"
-        print_rollback "$BIN_SAVED" "$CONFIG_SAVED"
+        print_rollback "$BIN_SAVED" "$CONFIG_SAVED" "${SET_DIR:-}"
       fi
     } >&2
   fi
@@ -59,7 +97,7 @@ if ! run_smoke; then
   echo "---- last lines of the service log ----" >&2
   sudo journalctl -u "$SERVICE_NAME.service" -n 20 --no-pager -o cat >&2 || true
   echo "applied migrations: before $BEFORE, now $(applied_migrations)" >&2
-  print_rollback "$BIN_SAVED" "$CONFIG_SAVED" >&2
+  print_rollback "$BIN_SAVED" "$CONFIG_SAVED" "${SET_DIR:-}" >&2
   die "smoke check failed after the update; nothing was rolled back automatically"
 fi
 
@@ -67,6 +105,7 @@ AFTER="$(applied_migrations)"
 say "updated. applied migrations: before $BEFORE, now $AFTER"
 if [ "$BEFORE" != "$AFTER" ]; then
   echo "NOTE: this update applied migrations. xchange.prev will not start on this schema;"
-  echo "      going back now needs a database restore as well (backup: not written yet)."
+  echo "      going back now needs a database restore as well."
+  echo "      Backup dump: $DUMP_PATH"
 fi
-print_rollback "$BIN_SAVED" "$CONFIG_SAVED"
+print_rollback "$BIN_SAVED" "$CONFIG_SAVED" "$SET_DIR"

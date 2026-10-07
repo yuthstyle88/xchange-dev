@@ -118,7 +118,14 @@ Build, stage, copy and verify as for an install, then on the target:
 cd ~/xc-v3-stage && ./update.sh
 ```
 
-It stops the service; replaces the binary when it differs (keeping the running
+Before stopping the service, it takes a backup of the database and uploads directory
+by running `sudo systemctl start xc-v3-backup.service`. It strictly refuses to
+update if `xc-v3-backup.service` is not installed (pointing to §5 below, per BK).
+It checks that a new backup set was created under `$XC_BACKUP_DIR`, verifies the
+dump file with `pg_restore --list` (run as `postgres` on standard input) ensuring
+`_sqlx_migrations` is present, and only then stops the service.
+
+It then replaces the binary when it differs (keeping the running
 one as `xchange.prev`) and the configuration when it differs (keeping the
 running one as `configuration.prev` — also when only the configuration
 changed); removes every installed `*.yaml` the stage no longer carries, so
@@ -151,8 +158,14 @@ sudo systemctl start xc-v3
 forward-only and run at start; the migration runner (sqlx, default settings)
 refuses to start a binary that does not know a migration already applied to the
 database. If `update.sh` reported a different migration count before and after,
-going back needs the database restored to its state before the update as well —
-and there is no backup procedure yet (next section). This start refusal follows
+going back needs the database restored to its state before the update as well,
+using the backup set `update.sh` created and named just before the update
+(`$XC_BACKUP_DIR/<stamp>/`):
+- Rehearsal:
+  ```bash
+  sudo /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
+  ```
+- Real restore: see Section 5 "Real restore". This start refusal follows
 from sqlx's documented default and was not exercised here.
 
 Rolling the whole cutover back (v3 → v2) is a different thing: the nginx
@@ -196,8 +209,18 @@ Both the backup directory and each set directory are mode `0700` owned by `root:
    # In /etc/xc-v3/env:
    # Set XC_BACKUP_OFFHOST=<offhost-user>@<offhost-host>:/data/<path>
 
+   # Ensure /root/.ssh exists with mode 0700 before scanning keys:
+   sudo install -d -m 0700 /root/.ssh
+
    # Scan and record the off-host machine's host key into root's known_hosts:
    sudo ssh-keyscan -t ed25519 <offhost-host> | sudo tee -a /root/.ssh/known_hosts
+
+   # Verify fingerprints match before trusting the scanned key:
+   # On the off-host machine:
+   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+   # On the v3 host:
+   sudo ssh-keygen -lf /root/.ssh/known_hosts
+   # If the fingerprint does not match the one shown on the off-host machine, run sudo ssh-keygen -R <offhost-host> -f /root/.ssh/known_hosts and stop (do not proceed to the BatchMode step).
 
    # Verify the SSH connection succeeds non-interactively:
    sudo ssh -i /etc/xc-v3/backup-offhost.key -o BatchMode=yes <offhost-user>@<offhost-host> true
@@ -241,7 +264,7 @@ A real restore replaces live data and must be performed with the service stopped
    ```bash
    sudo runuser -u postgres -- dropdb xc_v3
    sudo runuser -u postgres -- createdb xc_v3
-   sudo runuser -u postgres -- pg_restore --no-owner -d xc_v3 < /var/backups/xc-v3/<stamp>/db-<stamp>.dump
+   sudo sh -c 'runuser -u postgres -- pg_restore --no-owner -d xc_v3 < /var/backups/xc-v3/<stamp>/db-<stamp>.dump'
    ```
 3. Restore uploads:
    ```bash

@@ -346,11 +346,18 @@ run_smoke() {
   SMOKE_WAIT_SECS="$SMOKE_WAIT_SECS" bash "$HERE/smoke.sh" "http://127.0.0.1:$(installed_port)" $build
 }
 
-# print_rollback <binary-replaced 0|1> <configuration-replaced 0|1>
+# newest_backup_set <dir>
+# Prints the newest backup set timestamp (YYYYMMDDTHHMMSSZ) in <dir>, or empty.
+newest_backup_set() {
+  local dir="$1"
+  sudo ls -1 "$dir" 2>/dev/null | grep -Ex '[0-9]{8}T[0-9]{6}Z' | sort | tail -n 1 || true
+}
+
+# print_rollback <binary-replaced 0|1> <configuration-replaced 0|1> [backup-set-dir]
 # Prints the commands that undo what THIS run replaced, and only for copies
 # that are really on disk.
 print_rollback() {
-  local bin=0 conf=0
+  local bin=0 conf=0 set_dir="${3:-}"
   [ "${1:-0}" = 1 ] && sudo test -f "$BIN.prev" && bin=1
   [ "${2:-0}" = 1 ] && sudo test -d "$CONFIG_DIR.prev" && conf=1
   if [ "$bin" = 0 ] && [ "$conf" = 0 ]; then
@@ -364,4 +371,10 @@ print_rollback() {
   [ "$conf" = 1 ] && echo "  sudo rm -rf $CONFIG_DIR && sudo cp -a $CONFIG_DIR.prev $CONFIG_DIR"
   echo "  sudo systemctl start $SERVICE_NAME"
   echo "  bash $HERE/smoke.sh http://127.0.0.1:$(installed_port)"
+  if [ -n "$set_dir" ]; then
+    echo
+    echo "To restore the database (and uploads) from the backup taken before this update:"
+    echo "  Rehearsal: sudo /opt/xc-v3/restore.sh $set_dir <scratch-db> <scratch-dir>"
+    echo "  Real restore: see deploy/README.md §5 \"Real restore\""
+  fi
 }

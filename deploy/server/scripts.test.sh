@@ -45,6 +45,22 @@
 #        when pg_restore fails
 #   B8   the timer is daily and Persistent=true; the service is a oneshot
 #   B9   env.example names every XC_BACKUP_* setting
+#
+# Cases U1-U5c are update.sh taking a backup first (#290, design §7b, the
+# #290 paragraph), run as full update.sh runs on an installed host laid out
+# under the scratch root, with their own stubs first on PATH (sudo mapping
+# /etc/systemd/system/ into the case, systemctl answering for
+# xc-v3-backup.service, pg_restore, psql counting migrations, curl answering
+# the smoke check):
+#   U1   with a migration applied: the backup unit is started, the new set's
+#        dump checked with pg_restore --list (as postgres, dump on stdin), both
+#        before the stop; the NOTE and the rollback name that set
+#   U2   with no migration applied: the backup still comes before the stop,
+#        and there is no NOTE
+#   U3   a failing backup: no stop, nothing replaced, the message names BK
+#   U4   xc-v3-backup.service not installed: refused the same way
+#   U5/U5b/U5c  the new set's dump fails pg_restore --list, or lists no
+#        _sqlx_migrations, or no new set appeared: no stop, nothing replaced
 # Nothing here touches a host: all paths live under a /var/tmp scratch root
 # (not /tmp or /home: check_own_path refuses those).
 set -euo pipefail
@@ -952,6 +968,355 @@ ck "pg_restore never ran" test ! -s "$b10/log/pg_restore.log"
 ck "nothing was extracted" test ! -s "$b10/log/tar.log"
 ck "the scratch directory was not created" test ! -e "$b10/scratch-files"
 report B10 "restore.sh refuses the live database name written in capitals"
+
+# ==== update.sh backs up first (#290, design §7b) ===========================
+# ---- stubs of the update cases (first on PATH for these runs only) ---------
+# Every stub appends its command line to $XC_TEST_LOG/calls.log, so the order
+# of the calls can be read back.
+U_STUBS="$ROOT/ustubs"
+mkdir -m 700 "$U_STUBS"
+write_ustub() {
+  cat >"$U_STUBS/$1"
+  chmod 755 "$U_STUBS/$1"
+}
+
+# sudo: as the shared stub (no privilege; -u/-o/-g and chown dropped), and
+# every argument under /etc/systemd/system/ is mapped into $XC_TEST_SYSTEMD,
+# so the installed units of the case are where update.sh looks for them.
+write_ustub sudo <<'STUB'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+skip=0
+argv=()
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then
+    skip=0
+    continue
+  fi
+  case "$a" in
+    -u | -o | -g) skip=1 ;;
+    chown) exit 0 ;;
+    /etc/systemd/system/*) argv+=("${XC_TEST_SYSTEMD:?}/${a#/etc/systemd/system/}") ;;
+    *) argv+=("$a") ;;
+  esac
+done
+exec "${argv[@]}"
+STUB
+
+# systemctl: logs. For xc-v3-backup(.service) it answers from whether
+# $XC_TEST_SYSTEMD/xc-v3-backup.service exists: cat, list-unit-files,
+# status, is-enabled and show -p LoadState as systemd does for a present or
+# a missing unit; start of a missing unit exits 5. A start of the present
+# unit exits $XC_STUB_BACKUP_RC (default 0) and, when that is 0 and
+# $XC_STUB_BACKUP_SET is set, leaves that set directory as backup.sh would
+# (dump "fresh dump").
+write_ustub systemctl <<'STUB'
+#!/usr/bin/env bash
+printf 'systemctl %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+printf 'systemctl %s\n' "$*" >>"${XC_TEST_LOG:?}/systemctl.log"
+unit_file="${XC_TEST_SYSTEMD:?}/xc-v3-backup.service"
+backup=0
+sub=""
+for a in "$@"; do
+  case "$a" in
+    xc-v3-backup | xc-v3-backup.service) backup=1 ;;
+    -*) ;;
+    *) [ -z "$sub" ] && sub="$a" ;;
+  esac
+done
+[ "$backup" = 1 ] || exit 0
+present=0
+[ -f "$unit_file" ] && present=1
+case "$sub" in
+  start)
+    if [ "$present" = 0 ]; then
+      echo "Failed to start xc-v3-backup.service: Unit xc-v3-backup.service not found." >&2
+      exit 5
+    fi
+    rc="${XC_STUB_BACKUP_RC:-0}"
+    if [ "$rc" = 0 ] && [ -n "${XC_STUB_BACKUP_SET:-}" ]; then
+      s="${XC_STUB_BACKUP_SET##*/}"
+      mkdir -m 700 "$XC_STUB_BACKUP_SET"
+      printf 'fresh dump\n' >"$XC_STUB_BACKUP_SET/db-$s.dump"
+      printf 'fresh archive\n' >"$XC_STUB_BACKUP_SET/uploads-$s.tar.gz"
+    fi
+    exit "$rc"
+    ;;
+  cat)
+    [ "$present" = 1 ] && cat "$unit_file" && exit 0
+    echo "No files found for xc-v3-backup.service." >&2
+    exit 1
+    ;;
+  list-unit-files)
+    [ "$present" = 1 ] && echo "xc-v3-backup.service static -" && exit 0
+    echo "0 unit files listed."
+    exit 1
+    ;;
+  status) [ "$present" = 1 ] && exit 3 || exit 4 ;;
+  is-enabled)
+    [ "$present" = 1 ] && echo static && exit 0
+    echo "Failed to get unit file state for xc-v3-backup.service: No such file or directory" >&2
+    exit 1
+    ;;
+  show)
+    [ "$present" = 1 ] && echo "LoadState=loaded" || echo "LoadState=not-found"
+    exit 0
+    ;;
+esac
+exit 0
+STUB
+
+# pg_restore: logs, copies its stdin to pg_restore.stdin, and for --list/-l
+# prints a table of contents: with _sqlx_migrations (default), without it
+# (XC_STUB_LIST=nomig), or fails (XC_STUB_LIST=fail).
+write_ustub pg_restore <<'STUB'
+#!/usr/bin/env bash
+printf 'pg_restore %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/pg_restore.log"
+cat >"${XC_TEST_LOG:?}/pg_restore.stdin"
+case "${XC_STUB_LIST:-ok}" in
+  fail)
+    echo "pg_restore: error: input file does not appear to be a valid archive" >&2
+    exit 1
+    ;;
+  nomig)
+    printf ';\n; Archive created by stub\n;\n215; 1259 16390 TABLE public files xc_v3\n'
+    ;;
+  *)
+    printf ';\n; Archive created by stub\n;\n214; 1259 16385 TABLE public _sqlx_migrations xc_v3\n215; 1259 16390 TABLE public files xc_v3\n'
+    ;;
+esac
+exit 0
+STUB
+
+# psql: the migration count answers the lines of $XC_TEST_MIGRATIONS in
+# turn, the last one repeating; anything else prints nothing.
+write_ustub psql <<'STUB'
+#!/usr/bin/env bash
+printf 'psql %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+case "$*" in
+  *_sqlx_migrations*)
+    f="${XC_TEST_MIGRATIONS:?}"
+    head -n 1 "$f"
+    if [ "$(wc -l <"$f")" -gt 1 ]; then
+      tail -n +2 "$f" >"$f.next"
+      mv "$f.next" "$f"
+    fi
+    ;;
+esac
+exit 0
+STUB
+
+# curl: the smoke check's four requests answer 200, /health/ready with a body
+# that has every field smoke.sh reads.
+write_ustub curl <<'STUB'
+#!/usr/bin/env bash
+out="" take=0 url=""
+for a in "$@"; do
+  if [ "$take" = 1 ]; then
+    out="$a"
+    take=0
+    continue
+  fi
+  case "$a" in
+    -o) take=1 ;;
+    http://* | https://*) url="$a" ;;
+  esac
+done
+body=""
+case "$url" in
+  */health/ready) body='{"version":"1.0.0","build":"0123456789ab","builtAt":"2026-10-07T00:00:00Z","channel":"staging","database":true}' ;;
+esac
+[ -n "$out" ] && printf '%s' "$body" >"$out"
+printf '200'
+STUB
+
+# ---- helpers ----------------------------------------------------------------
+U_OLD_SET=20261006T000000Z
+U_NEW_SET=20261007T140000Z
+
+# u_case <dir> — an installed xc-v3 under <dir>: the binary and
+# configuration, the env file (naming the uploads and the backup directory),
+# xc-v3.service and xc-v3-backup.service in <dir>/systemd, a backup directory
+# holding one older set, a stage with another binary, and the migration
+# counts 9 then 10.
+u_case() {
+  local c="$1"
+  mkdir -p "$c/log" "$c/opt/xc-v3/configuration" "$c/etc/xc-v3" "$c/var/lib/xc-v3/uploads" "$c/systemd"
+  mkdir -m 700 "$c/backups"
+  printf 'old-binary-A' >"$c/opt/xc-v3/xchange"
+  chmod 755 "$c/opt/xc-v3/xchange"
+  printf '# base, installed\n' >"$c/opt/xc-v3/configuration/base.yaml"
+  printf '%s\n' \
+    "APP_ENVIRONMENT=staging" \
+    "APP_APPLICATION__PORT=8094" \
+    "APP_DATABASE__DATABASE_NAME=xc_v3" \
+    "APP_DATABASE__PASSWORD=pUpdateStubSecret42" \
+    "APP_FILES__DIR=$c/var/lib/xc-v3/uploads" \
+    "XC_BACKUP_DIR=$c/backups" >"$c/etc/xc-v3/env"
+  cp "$HERE/xc-v3.service" "$c/systemd/xc-v3.service"
+  printf '[Service]\nType=oneshot\nExecStart=/opt/xc-v3/backup.sh\n' >"$c/systemd/xc-v3-backup.service"
+  make_set "$c/backups" "$U_OLD_SET"
+  make_stage "$c/stage"
+  printf '9\n10\n' >"$c/migrations"
+}
+
+# run_update <case dir> [NAME=value...] — the repository's update.sh against
+# the case; the backup unit's start leaves the set $U_NEW_SET. OUT/RC.
+run_update() {
+  local c="$1"
+  shift
+  set +e
+  OUT="$(env PATH="$U_STUBS:$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_TEST_SYSTEMD="$c/systemd" \
+    XC_TEST_MIGRATIONS="$c/migrations" XC_STUB_BACKUP_SET="$c/backups/$U_NEW_SET" \
+    STAGE="$c/stage" INSTALL_DIR="$c/opt/xc-v3" ETC_DIR="$c/etc/xc-v3" \
+    UPLOADS_DIR="$c/var/lib/xc-v3/uploads" SMOKE_WAIT_SECS=0 \
+    "$@" bash "$HERE/update.sh" </dev/null 2>&1)"
+  RC=$?
+  set -e
+}
+
+# first_line <file> <ERE> — number of the first line matching, or 999999
+first_line() {
+  local n
+  n="$(grep -En -- "$2" "$1" 2>/dev/null | head -n 1 | cut -d: -f1)"
+  echo "${n:-999999}"
+}
+
+U_BACKUP_START='^systemctl (.* )?start (.* )?xc-v3-backup(\.service)?( |$)'
+U_LIST='^pg_restore (.* )?(--list|-l)( |$)'
+U_STOP='^systemctl (.* )?stop (.* )?xc-v3(\.service)?( |$)'
+
+# u_before <case dir> <ERE a> <ERE b> — a call matching a happened, and before
+# the first call matching b (or b never happened)
+u_before() {
+  local a b
+  a="$(first_line "$1/log/calls.log" "$2")"
+  b="$(first_line "$1/log/calls.log" "$3")"
+  [ "$a" != 999999 ] && [ "$a" -lt "$b" ]
+}
+
+# u_no_stop <case dir> — xc-v3 was never stopped
+u_no_stop() { absent "$U_STOP" "$1/log/calls.log"; }
+
+# u_untouched <case dir> — the installed binary is the old one, no .prev
+u_untouched() {
+  [ "$(cat "$1/opt/xc-v3/xchange")" = old-binary-A ] && [ ! -e "$1/opt/xc-v3/xchange.prev" ]
+}
+
+# u_as_postgres <case dir> — pg_restore was run as postgres: sudo -u postgres
+# or runuser -u postgres, directly or inside a root shell
+u_as_postgres() {
+  grep -Eqs -- '^sudo (.* )?-u postgres (-- )?pg_restore( |$)' "$1/log/calls.log" ||
+    grep -Eqs -- '^-u postgres -- pg_restore( |$)' "$1/log/runuser.log"
+}
+
+# names_bk <file> — the word BK appears
+names_bk() { grep -Eqs -- '(^|[^A-Za-z0-9_])BK([^A-Za-z0-9_]|$)' "$1"; }
+
+# note_names <out file> <text> — <text> is on the NOTE: line or the 3 after it
+note_names() {
+  awk -v want="$2" '/^NOTE:/ { n = 4 } n > 0 { if (index($0, want)) found = 1; n-- } END { exit(found ? 0 : 1) }' "$1"
+}
+
+# ---- U1: a migration applied — backup, check, then stop; NOTE names the set --
+u1="$ROOT/u1"
+u_case "$u1"
+run_update "$u1"
+printf '%s\n' "$OUT" >"$LOGS/u1.out"
+U1_DUMP="$u1/backups/$U_NEW_SET/db-$U_NEW_SET.dump"
+ck "update.sh exited 0" test "$RC" -eq 0
+ck "the backup unit was started before xc-v3 was stopped" u_before "$u1" "$U_BACKUP_START" "$U_STOP"
+ck "the dump was checked with pg_restore --list before the stop" u_before "$u1" "$U_LIST" "$U_STOP"
+ck "the check came after the backup" u_before "$u1" "$U_BACKUP_START" "$U_LIST"
+ck "pg_restore ran as postgres" u_as_postgres "$u1"
+ckeq "pg_restore read the new set's dump on stdin" "fresh dump" "$(cat "$u1/log/pg_restore.stdin" 2>/dev/null || echo missing)"
+ck "the dump is not named to pg_restore as a path" absent "db-" "$u1/log/pg_restore.log"
+ck "xc-v3 was stopped and started" grep -Eqs -- '^systemctl (.* )?start (.* )?xc-v3(\.service)?( |$)' "$u1/log/calls.log"
+ckeq "the new binary is installed" "$(cat "$u1/stage/xchange")" "$(cat "$u1/opt/xc-v3/xchange" 2>/dev/null || echo missing)"
+ck "a NOTE says migrations were applied" grep -qs '^NOTE:' "$LOGS/u1.out"
+ck "the NOTE names the new set's dump" note_names "$LOGS/u1.out" "$U1_DUMP"
+ck "no 'backup: not written yet' any more" absent 'not written yet' "$LOGS/u1.out"
+ck "the rollback names restore.sh" grep -qs 'restore\.sh' "$LOGS/u1.out"
+ck "the rollback names the new set" grep -qsF -- "$u1/backups/$U_NEW_SET" "$LOGS/u1.out"
+ck "the older set is not the one named" absent "$U_OLD_SET" "$LOGS/u1.out"
+report U1 "a migrating update backs up and checks the dump before the stop, and names the set"
+
+# ---- U2: no migration applied — still backed up first, no NOTE ---------------
+u2="$ROOT/u2"
+u_case "$u2"
+printf '9\n' >"$u2/migrations"
+run_update "$u2"
+printf '%s\n' "$OUT" >"$LOGS/u2.out"
+ck "update.sh exited 0" test "$RC" -eq 0
+ck "the backup unit was started before xc-v3 was stopped" u_before "$u2" "$U_BACKUP_START" "$U_STOP"
+ck "the dump was checked before the stop" u_before "$u2" "$U_LIST" "$U_STOP"
+ck "no NOTE without a migration" absent '^NOTE:' "$LOGS/u2.out"
+report U2 "an update with no migration is still backed up first, and prints no NOTE"
+
+# ---- U3: a failing backup stops the update before anything -------------------
+u3="$ROOT/u3"
+u_case "$u3"
+run_update "$u3" XC_STUB_BACKUP_RC=1
+printf '%s\n' "$OUT" >"$LOGS/u3.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "the backup unit was started" grep -Eqs -- "$U_BACKUP_START" "$u3/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$u3"
+ck "nothing was replaced" u_untouched "$u3"
+ck "pg_restore never ran" test ! -s "$u3/log/pg_restore.log"
+ck "the message names BK" names_bk "$LOGS/u3.out"
+report U3 "a failing backup means no stop and no binary swap"
+
+# ---- U4: no backup unit installed — refused -----------------------------------
+u4="$ROOT/u4"
+u_case "$u4"
+rm -f "$u4/systemd/xc-v3-backup.service"
+run_update "$u4"
+printf '%s\n' "$OUT" >"$LOGS/u4.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "xc-v3 was never stopped" u_no_stop "$u4"
+ck "nothing was replaced" u_untouched "$u4"
+ck "the message names BK" names_bk "$LOGS/u4.out"
+ck "the message names xc-v3-backup.service" grep -qs 'xc-v3-backup\.service' "$LOGS/u4.out"
+ck "the message says it is not installed" grep -qsi 'not installed' "$LOGS/u4.out"
+report U4 "a host without xc-v3-backup.service refuses to update"
+
+# ---- U5: the new dump fails pg_restore --list ---------------------------------
+u5="$ROOT/u5"
+u_case "$u5"
+run_update "$u5" XC_STUB_LIST=fail
+printf '%s\n' "$OUT" >"$LOGS/u5.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "pg_restore --list was run" grep -Eqs -- "$U_LIST" "$u5/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$u5"
+ck "nothing was replaced" u_untouched "$u5"
+ck "the message names the dump" grep -qsF -- "$u5/backups/$U_NEW_SET/db-$U_NEW_SET.dump" "$LOGS/u5.out"
+report U5 "a dump pg_restore cannot list means no update"
+
+# ---- U5b: the new dump lists no _sqlx_migrations ------------------------------
+u5b="$ROOT/u5b"
+u_case "$u5b"
+run_update "$u5b" XC_STUB_LIST=nomig
+printf '%s\n' "$OUT" >"$LOGS/u5b.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "pg_restore --list was run" grep -Eqs -- "$U_LIST" "$u5b/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$u5b"
+ck "nothing was replaced" u_untouched "$u5b"
+ck "the message names _sqlx_migrations" grep -qs '_sqlx_migrations' "$LOGS/u5b.out"
+report U5b "a dump that lists no _sqlx_migrations means no update"
+
+# ---- U5c: the backup left no new set — the older one does not count ----------
+u5c="$ROOT/u5c"
+u_case "$u5c"
+run_update "$u5c" XC_STUB_BACKUP_SET=
+printf '%s\n' "$OUT" >"$LOGS/u5c.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "the backup unit was started" grep -Eqs -- "$U_BACKUP_START" "$u5c/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$u5c"
+ck "nothing was replaced" u_untouched "$u5c"
+ck "the older set's dump was not taken for the new one" absent '^old dump$' "$u5c/log/pg_restore.stdin"
+ck "the message names the backup directory" grep -qsF -- "$u5c/backups" "$LOGS/u5c.out"
+report U5c "a backup that left no new set means no update"
 
 echo "# $PASS passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]
