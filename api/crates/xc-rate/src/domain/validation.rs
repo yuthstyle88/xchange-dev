@@ -31,12 +31,7 @@ pub fn format_iso(t: DateTime<Utc>) -> String {
 }
 
 pub fn validate_text(s: &str, max: usize, required: bool) -> Result<&str, AppError> {
-    let trimmed = s.trim();
-    let len = trimmed.encode_utf16().count();
-    if (required && trimmed.is_empty()) || len > max {
-        return Err(AppError::Domain(BAD_TEXT.to_string()));
-    }
-    Ok(trimmed)
+    Ok(xc_kernel::input::text(s, max, required)?)
 }
 
 pub fn validate_request_id(s: &str) -> Result<&str, AppError> {
@@ -53,10 +48,7 @@ pub fn validate_request_id(s: &str) -> Result<&str, AppError> {
 }
 
 pub fn map_number_error(e: NumberError) -> AppError {
-    match e {
-        NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_string()),
-        _ => AppError::Domain(BAD_NUMBER.to_string()),
-    }
+    xc_kernel::input::number_error(e).into()
 }
 
 pub fn parse_rate(s: &str) -> Result<Rate, AppError> {
