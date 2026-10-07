@@ -235,7 +235,12 @@ classDiagram
   class SnapshotBuilder { +admin_snapshot(branch, actor) Json; +desk_config(branch) Json }
   class PageServer { +page(name, actor) Html; +static_file(path) }
   class RateSource { <<trait>> +fetch() Result~ReferenceRates~ }
-  class DeviceDriver { <<trait>> +run(job) Result~JobOutcome~ }
+  class DeviceDriver { <<trait, async>> +mode() str; +run(kind, printer: PrinterSettings) JobStatus }
+  class PrinterSettings { <<infrastructure::devices::printer_settings>> +online: bool; +kind: PrinterKind; +read_in(tx, repo, branch) PrinterSettings }
+  class PrinterKind { <<enum>> Simulated; Network(host, port) }
+  class EscposDriver { <<infrastructure::devices::escpos_driver>> +new(transport: Arc~dyn PrinterTransport~) }
+  class PrinterTransport { <<trait>> +send(host, port, bytes) Result }
+  class DeviceWorker { <<infrastructure::devices::device_worker>> +spawn(devices, every) JoinHandle }
   class BotRateSource
   class SimulatedDriver
 
@@ -267,6 +272,10 @@ classDiagram
   DeviceService --> DeviceDriver
   RateSource <|.. BotRateSource
   DeviceDriver <|.. SimulatedDriver
+  DeviceDriver <|.. EscposDriver
+  EscposDriver --> PrinterTransport : Network kind only; Simulated kind answers as SimulatedDriver
+  DeviceWorker --> DeviceService : process(auto drawer jobs) outside the save tx
+  DeviceService --> PrinterSettings : read on the claim tx
   TxService --> BranchTx
   ShiftService --> BranchTx
   CustodyService --> BranchTx
@@ -482,6 +491,53 @@ statement):
 4. *What `down` loses.* There are no down migrations in `api/migrations/`; dropping the table by hand loses which
    stored file is the image of which receipt. The image files stay in `files` (unreferenced); the receipt HTML they
    were made from stays with its exchange (`transaction_files`, kind `RECEIPT`).
+
+### 5.4b A real cash drawer (#274)
+
+Owner's decisions 2026-10-07 on #274: **A1** a network printer per branch that the server reaches (TCP, ESC/POS), **B2**
+the drawer opens by itself after every CASH save and on a staff request with a reason, **C2** `POST /api/devices` is built
+from this design, not from a v2 recording (v2 never drove real hardware: every recorded case is `SIMULATION`).
+
+The logic is pos108's (pos108-core `4f8717f`, crate `pos-printer` of `108-platform-services` @ `8b53cee`): the backend
+decides and sends; the bytes are `ESC @` + `ESC p 0 25 250` (`pos-printer/src/escpos.rs:77-78`, `render_drawer_kick`);
+the transport is a raw TCP write (`network_printer::send`); a kick older than 120 s is never delivered
+(`DRAWER_KICK_FRESHNESS_SECS`, `receipt_printer.rs:33`). `api/deny.toml:54-56` already allows that repository as a git source.
+
+[required] **No device I/O inside a branch transaction.** `process` today calls the driver inside `branch_tx.run`
+(`device_service.rs:249-296`); a network send can take up to 15 s and would hold every save of the branch. `process`
+becomes three steps: (1) on a branch tx, claim — a `QUEUED` job becomes `SENDING`, the branch's `PrinterSettings` are read;
+a `DRAWER_REQUEST` whose `created_at` is more than 120 s before `now` becomes `EXPIRED` instead and is not sent;
+(2) outside any tx, `driver.run(kind, &printer).await`; (3) on a new branch tx, the job goes from `SENDING` to the result
+and the event line is written with `"physicalAction": true` when the driver touched hardware. A job found `SENDING` more
+than 120 s old (a crash between 1 and 3) is `FAILED`, never sent again by itself. `retry` of a `DRAWER_REQUEST` puts it
+back to `QUEUED` with its first `created_at`, so retrying one older than 120 s always ends `EXPIRED`: a drawer is opened by a
+new request, never by an old one.
+
+[required] **Production wiring, without touching `rpc.rs`** (held by #236, then #158): `DeviceService::new` installs
+`EscposDriver::new(Arc::new(TcpTransport))` instead of `SimulatedDriver`. A branch with no `PRINTER_KIND`, or `SIMULATED`, is
+answered exactly as today, so nothing changes until an owner sets a branch to `NETWORK`; tests keep `with_driver` for fakes.
+`DeviceWorker::spawn` is started in `api/src/bootstrap/mod.rs` `build()`, beside the session purge timer and aborted with the
+server the same way. It needs no nudge: it polls every 1 s, on a partial index of queued jobs.
+[proposed] The worker needs a `DeviceService` of its own; DRV-2 adds one builder `pg_device_service(pool, branch_tx,
+transactions) -> DeviceService` in `device_service.rs` and the bootstrap calls it. Moving `rpc.rs` (where #236 builds one
+inline) onto that builder is a follow-up after #158, because `rpc.rs` is held until then.
+
+| Class | File | What |
+|---|---|---|
+| `DeviceDriver` (changed) | `simulated_driver.rs` | `#[async_trait]`, `run(kind, &PrinterSettings) -> JobStatus`; `SimulatedDriver` answers as today from `printer.online` |
+| `PrinterSettings`, `PrinterKind` | `printer_settings.rs` (new) | read from `device_settings`: `PRINTER_ONLINE` (as today), `PRINTER_KIND` (`SIMULATED` default, `NETWORK`), `PRINTER_HOST`, `PRINTER_PORT` (default 9100) |
+| `EscposDriver`, `PrinterTransport`, `TcpTransport` | `escpos_driver.rs` (new) | `Simulated` kind → as `SimulatedDriver`; `Network` → `DRAWER_REQUEST` sends `render_drawer_kick()` through the transport → `DRAWER_OPENED`, or `FAILED` on any send error; `PRINT_RECEIPT` stays `SIMULATED_PRINTED` until T13b decides the renderer. `TcpTransport` wraps `pos_printer::network_printer::send` |
+| `JobStatus` (changed) | `device_job.rs` | adds `Sending`, `DrawerOpened`, `Expired` |
+| `DeviceService` (changed) | `device_service.rs` | DRV-1: `process` awaits the async driver with `PrinterSettings` (still on the tx — safe while only `SimulatedDriver` is installed) and `set_printer` (owner only) writes the three settings. DRV-2: `process` in three steps (above); `new` installs `EscposDriver`; `after_save_in` also queues a `DRAWER_REQUEST` for a cash save, reason `CASH_EXCHANGE`, request id `auto-drawer:<branch>:<document ref>` |
+| `DeviceWorker` | `device_worker.rs` (new) | one task, started in `bootstrap/mod.rs`: every 1 s processes `QUEUED` jobs whose request id starts `auto-drawer:`, oldest first, across branches (partial index `device_jobs (created_at) WHERE status = 'QUEUED'`) |
+| route | `presentation/http/devices.rs`, `presentation/dto/device.rs` | `POST /api/devices` `{action: snapshot\|queue\|process\|retry\|printerOnline\|setPrinter\|drawerObservation, ...}` answering `DeviceOverview`/the job; roles as `Policy::allow_devices` (`xc-auth/.../policy.rs:230`); `setPrinter` OWNER only |
+
+**Data migration** (`device_jobs.status`): (1) existing rows keep their value — the CHECK only widens to add `SENDING`,
+`DRAWER_OPENED`, `EXPIRED`, and a partial index on queued jobs is added; (2) no backfill: no row needs a new value; (3) migration before the new binary; the old binary
+never writes the new values and reads only rows it knows (a row with a new status read by the old binary would fail
+`JobStatus::parse` — the install runs one binary at a time, so this does not happen); (4) `down` narrows the CHECK and fails
+while any row holds a new value — delete or convert those rows first. No v3 install exists yet (owner 2026-10-06), so this
+is the approved-migration window.
 
 ## 6. Authorisation
 
@@ -873,6 +929,9 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | P2-S (#236) | The save family on both RPC routes: `SaveAction` answers `saveTransaction` (the owner and FRONT on `/api/rpc`, FRONT on `/api/staff/rpc`; `Policy` has judged the role before). `run` reads the payload into `SaveTransaction` (the 23 fields as `rpc_common::save_behind` reads them; a `passport`/`slip` that is present and truthy but carries no text `uploadKey` is the key `""`, so the save answers `ไฟล์แนบไม่ถูกต้อง`, `engine_actions.json` #108, v2 `server.mjs:6987-6988`), `SaveExtras` (`staffDraftId`, `kioskRequestId` as text; `countConfirmed` only for the JSON `true`, §5.4) and `SaveActor` (the account's id, the caller's username, the employee's id for staff, the role), calls `SaveTransactionWorkflow::save_as`, and prints v2's nine keys in v2's order: `saved`, `mode`, `documentRef`, `receiptNo` (the document number), `passportUrl`, `slipUrl`, `receiptUrl`, `folderUrl` = `/documents?branch=<branch>&ref=<number>`, `sheetUrl` = `/?branch=<branch>#transactions` (`server.mjs:6853`; the staff route's dispatcher rewrites links, `staff_view.rs`). [required] `SaveAction::new(workflow, devices: DeviceService, kiosk: KioskService, custody: CustodyService)` registers the steps in v2's order — `DeviceSaveStep`, `KioskSaveStep`, `CustodySaveStep` (count check in v2's proxy, then the kiosk's `beforeSave`, then custody in the engine; #153) — and `registered_actions` builds the two new services. Its tests are provided on `feat/save-action-p2s`: `gap_save::WIRED = true`, `Desk::state()` sharing the upload directory, and `rpc_save_test.rs` (the named draft completed, the branch in both links, a kiosk request nobody made refused) | `api/src/application/compat/actions/save.rs`, `api/src/presentation/http/rpc.rs` (`registered_actions` only); provided: `api/tests/rpc_save_test.rs`, `api/tests/rpc_common/{gap_save.rs,mod.rs}` | T11a-0 (#155), T8c-1 (#138), T8c-2a (#153), #154 (a save completes only the saver's own matching draft); T8c-2b (#234, `DeviceSaveStep`), T13b-S (#237, `PgSavedExchanges`, the `SavedExchanges` `registered_actions` builds `DeviceService` with) |
 | T13b-S (#237) | `PgSavedExchanges`: the server's `SavedExchanges`, split out of T13b because nothing of it waits for the recording T13b needs (lane controller, 2026-10-07). [required] `new(transactions: TransactionService)`; `find(branch, reference)` answers from `TransactionService::find` with no SQL of its own: `Some(Completed)` for a live exchange of that branch with exactly that document number, `None` when there is none or it is `DEMO` (only live exchanges count, `saved_exchanges.rs`), the error on a database failure. v3 stores no pending or cancelled exchange, so `NotCompleted` is never answered. Its stub and tests are provided on `feat/pg-saved-exchanges-t13b-s` | `api/src/infrastructure/devices/pg_saved_exchanges.rs` and its `pub mod` line in `api/src/infrastructure/devices/mod.rs`; provided: `api/tests/pg_saved_exchanges_test.rs` | T8 (`TransactionService::find`), T13a (`SavedExchanges`) — both merged |
 | CS (#158) | One home for the custody port and one way to build `CustodyService`. `EmployeeCustody` moves, unchanged, to `application::custody::employee_custody` (new file); `presentation::http::employees` keeps the name with `pub use`, so the provided tests compile unchanged. `pg_custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService` (new file `infrastructure/custody/custody_service.rs`, the body of `rpc.rs`'s private `custody_service`) is the only place the four parts are put together: `rpc.rs` and `PgEmployeeCustody::new(pool)` (same signature) both call it. No `crate::presentation` import remains under `application` or `infrastructure` | `api/src/application/mod.rs`, `api/src/application/custody/{mod.rs,employee_custody.rs}`, `api/src/application/workflows/disable_employee.rs`, `api/src/presentation/http/{employees.rs,rpc.rs}`, `api/src/infrastructure/custody/{mod.rs,custody_service.rs,employee_custody.rs}` | DE (#157), #145 (both merged); BS (#163, merged) also edited `employee_custody.rs` |
+| DRV-1 (#274) | The driver layer (§5.4b): `DeviceDriver` async with `PrinterSettings`; `EscposDriver` + `PrinterTransport` + `TcpTransport` over `pos_printer::network_printer` (a `NETWORK` drawer request sends `ESC @ ESC p 0 25 250` → `DRAWER_OPENED`); `process` awaits it on the tx (only `SimulatedDriver` is installed — `new` is not changed here); `DeviceService::set_printer`; the `pos-printer` git dependency | `api/src/infrastructure/devices/{simulated_driver.rs,printer_settings.rs,escpos_driver.rs,device_service.rs,mod.rs}`, `api/Cargo.toml`, `api/Cargo.lock`, `api/tests/escpos_driver_test.rs` | T13a (merged) |
+| DRV-2 (#274) | `process` in three steps with `SENDING`/`EXPIRED` and the 120 s rule; `new` installs `EscposDriver`; the cash-save drawer job; `DeviceWorker` started in the bootstrap; the status migration and partial index (§5.4b, data migration) | `api/src/infrastructure/devices/{device_service.rs,device_job.rs,device_repository.rs,pg_device_repository.rs,device_worker.rs,mod.rs}`, `api/src/bootstrap/mod.rs`, `api/migrations/20261007200000_device_job_statuses.sql`, `api/tests/device_drawer_flow_test.rs` | DRV-1; P2-S (#236) for the cash-save path |
+| DRV-3 (#274) | `POST /api/devices` (C2) with the actions of §5.4b | `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/tests/devices_route_test.rs` | DRV-1 (`set_printer`); runs beside DRV-2 — no shared file |
 
 [required] Every row that owns a file under `api/src/presentation/http/` depends on T1b, whether or not its cell says so (T4c, T5b, T6b, T8, T11a, T12b, T13, T15); and "T1" in a Depends-on cell means T1a **and** T1b are merged. The T1 row is the name of the original undivided ticket; T1a, T1b and T1c are its parts.
 
