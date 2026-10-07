@@ -249,7 +249,12 @@ impl CompatRpc {
                 branch: &branch,
                 now,
             };
-            let answer = family.run(call).await?;
+            let answer = family.run(call).await.map_err(|err| match err {
+                RpcFailure::Failed(AppError::Unauthenticated) => {
+                    RpcFailure::Refused(RpcRefusal::not_signed_in(route))
+                }
+                other => other,
+            })?;
             return self.answered(route, action, answer, caller).await;
         }
 

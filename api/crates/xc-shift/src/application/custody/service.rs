@@ -306,6 +306,22 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         actor: &CustodyActor,
         now: DateTime<Utc>,
     ) -> AppResult<Value> {
+        if !matches!(
+            cmd,
+            CustodyCommand::SetEntity { .. } | CustodyCommand::Enable
+        ) {
+            if let Some(ref employee_id) = actor.employee_id {
+                if self
+                    .ports
+                    .employee_role(tx, branch, employee_id)
+                    .await?
+                    .is_none()
+                {
+                    return Err(AppError::Unauthenticated);
+                }
+            }
+        }
+
         let custody_now = CustodyTime::from_epoch_millis(now.timestamp_millis());
         if let CustodyCommand::Propose(ref proposal) = cmd {
             if let Some(ref receiver) = proposal.receiver {
