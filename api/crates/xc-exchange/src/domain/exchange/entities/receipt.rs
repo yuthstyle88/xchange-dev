@@ -1,6 +1,7 @@
 //! Receipt HTML generation.
 
 use xc_kernel::money::{Money, Side};
+use xc_kernel::time::bangkok;
 
 use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -52,8 +53,7 @@ fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> 
         Side::Sell => "SELL",
     };
 
-    let bangkok_offset = chrono::FixedOffset::east_opt(7 * 3600).expect("UTC+7 offset");
-    let bkk_time = form.paid_at.with_timezone(&bangkok_offset);
+    let bkk_time = form.paid_at.with_timezone(&bangkok());
     let time_str = bkk_time.format("%d/%m/%Y %H:%M").to_string();
     let value_date_str = form.value_date.format("%Y-%m-%d").to_string();
 
