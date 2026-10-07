@@ -29,20 +29,26 @@ if [ ! -r "$XC_BACKUP_RECIPIENTS" ] || ! grep -q '^age1' "$XC_BACKUP_RECIPIENTS"
   exit 1
 fi
 
-# For a non-local database host, PGSSLMODE=require is required
+# For a non-local database host, PGSSLMODE=require or stricter is required (DB-LINK, #359, #371)
 is_local_db_host() {
   local h="${1,,}"
   [ "$h" = "localhost" ] && return 0
   [[ "$h" == /* ]] && return 0
-  [[ "$h" =~ ^127\. ]] && return 0
-  [ "$h" = "::1" ] && return 0
+  [ "$h" = "::1" ] || [ "$h" = "[::1]" ] && return 0
+  if [[ "$h" =~ ^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    local o1="${BASH_REMATCH[1]}" o2="${BASH_REMATCH[2]}" o3="${BASH_REMATCH[3]}"
+    if [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ]; then
+      return 0
+    fi
+  fi
   return 1
 }
 
 if ! is_local_db_host "$APP_DATABASE__HOST"; then
-  if [ -z "${PGSSLMODE:-}" ] || [ "$PGSSLMODE" != "verify-full" ]; then
-    export PGSSLMODE=require
-  fi
+  case "${PGSSLMODE:-}" in
+    verify-ca | verify-full) ;;
+    *) export PGSSLMODE=require ;;
+  esac
 fi
 
 # XC_BACKUP_KEEP must be an integer >= 1

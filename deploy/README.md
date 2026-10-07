@@ -126,9 +126,11 @@ cd ~/xc-v3-stage && ./update.sh
 Before stopping the service, it takes a backup of the database and uploads directory
 by running `sudo systemctl start xc-v3-backup.service`. It strictly refuses to
 update if `xc-v3-backup.service` is not installed (pointing to §5 below, per BK).
-It checks that a new backup set was created under `$XC_BACKUP_DIR`, verifies the
-dump file with `pg_restore --list` (run as `postgres` on standard input) ensuring
-`_sqlx_migrations` is present, and only then stops the service.
+It checks that a new backup set was created under `$XC_BACKUP_DIR`, verifies
+that both the dump and uploads archive are age-encrypted (starting with
+`age-encryption.org/v1`; `backup.sh` already verified the plain dump with
+`pg_restore --list` ensuring `_sqlx_migrations` is present before encrypting),
+and only then stops the service.
 
 It then replaces the binary when it differs (keeping the running
 one as `xchange.prev`) and the configuration when it differs (keeping the

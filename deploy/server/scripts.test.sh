@@ -71,6 +71,10 @@
 #        _sqlx_migrations, makes no set
 #   B13  (BK-ENC) pg_dump toward a non-local host runs with PGSSLMODE=require
 #        (or verify-full); toward a local host it is not forced
+#   B13b (BK-ENC) locality rule matches DB-LINK: loopback IPs and sockets local;
+#        names that only look local are non-local and require TLS
+#   B13c (BK-ENC) non-local host keeps verify-ca or verify-full and upgrades
+#        weaker modes to require
 #
 # Cases U1-U5c are update.sh taking a backup first (#290, design §7b, the
 # #290 paragraph), run as full update.sh runs on an installed host laid out
@@ -95,6 +99,8 @@
 #        replaced, the message names the file
 #   U5b  (BK-ENC) a plain (pre-BK-ENC) set: no stop, nothing replaced
 #   U5d  (BK-ENC) a set without the .age uploads archive: no stop
+#   U5e  (BK-ENC) a set whose dump lacks the age header is refused even if the
+#        uploads archive has it (mutant E10)
 # Nothing here touches a host: all paths live under a /var/tmp scratch root
 # (not /tmp or /home: check_own_path refuses those).
 set -euo pipefail
@@ -1394,6 +1400,43 @@ ckeq "localhost is not forced" "PGSSLMODE=" "$B13_ENV_LOCAL"
 ckeq "a socket directory is not forced" "PGSSLMODE=" "$B13_ENV_SOCKET"
 report B13 "pg_dump toward a non-local database host runs with PGSSLMODE=require"
 
+# ---- B13b: locality rule matches DB-LINK (#359, #371) ------------------------
+b13b="$ROOT/b13b"
+bk_case "$b13b" \
+  20261007T134101Z 20261007T134102Z 20261007T134103Z \
+  20261007T134104Z 20261007T134105Z 20261007T134106Z 20261007T134107Z
+# Local loopback addresses are not forced
+run_backup "$b13b" APP_DATABASE__HOST=127.0.0.1
+ckeq "127.0.0.1 is not forced" "PGSSLMODE=" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+run_backup "$b13b" APP_DATABASE__HOST=127.0.0.53
+ckeq "127.0.0.53 is not forced" "PGSSLMODE=" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+run_backup "$b13b" APP_DATABASE__HOST=::1
+ckeq "::1 is not forced" "PGSSLMODE=" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+
+# Hosts that only look local are non-local and require TLS
+run_backup "$b13b" APP_DATABASE__HOST=127.0.0.1.example.com
+ckeq "127.0.0.1.example.com requires TLS" "PGSSLMODE=require" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+run_backup "$b13b" APP_DATABASE__HOST=localhost.example.com
+ckeq "localhost.example.com requires TLS" "PGSSLMODE=require" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+run_backup "$b13b" APP_DATABASE__HOST=0.0.0.0
+ckeq "0.0.0.0 requires TLS" "PGSSLMODE=require" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+run_backup "$b13b" APP_DATABASE__HOST=relative/socket/dir
+ckeq "relative socket dir requires TLS" "PGSSLMODE=require" "$(tail -n 1 "$b13b/log/pg_dump.env")"
+report B13b "locality rule treats loopback IPs as local and fake local names as non-local"
+
+# ---- B13c: non-local host sslmode cannot be downgraded (#371) ----------------
+b13c="$ROOT/b13c"
+bk_case "$b13c" 20261007T134201Z 20261007T134202Z 20261007T134203Z 20261007T134204Z
+run_backup "$b13c" APP_DATABASE__HOST=db.example.invalid PGSSLMODE=verify-ca
+ckeq "verify-ca is preserved" "PGSSLMODE=verify-ca" "$(tail -n 1 "$b13c/log/pg_dump.env")"
+run_backup "$b13c" APP_DATABASE__HOST=db.example.invalid PGSSLMODE=verify-full
+ckeq "verify-full is preserved" "PGSSLMODE=verify-full" "$(tail -n 1 "$b13c/log/pg_dump.env")"
+run_backup "$b13c" APP_DATABASE__HOST=db.example.invalid PGSSLMODE=prefer
+ckeq "prefer is upgraded to require" "PGSSLMODE=require" "$(tail -n 1 "$b13c/log/pg_dump.env")"
+run_backup "$b13c" APP_DATABASE__HOST=db.example.invalid PGSSLMODE=disable
+ckeq "disable is upgraded to require" "PGSSLMODE=require" "$(tail -n 1 "$b13c/log/pg_dump.env")"
+report B13c "a non-local host keeps verify-ca/verify-full and upgrades weaker ssl modes"
+
 # ==== update.sh backs up first (#290, design §7b) ===========================
 # ---- stubs of the update cases (first on PATH for these runs only) ---------
 # Every stub appends its command line to $XC_TEST_LOG/calls.log, so the order
@@ -1475,6 +1518,10 @@ case "$sub" in
         noheader)
           printf 'fresh dump\n' | base64 >"$d/db-$s.dump.age"
           printf 'fresh archive\n' | base64 >"$d/uploads-$s.tar.gz.age"
+          ;;
+        nodumpheader)
+          printf 'fresh dump\n' | base64 >"$d/db-$s.dump.age"
+          { printf "$hdr"; printf 'fresh archive\n' | base64; } >"$d/uploads-$s.tar.gz.age"
           ;;
         nouploads)
           { printf "$hdr"; printf 'fresh dump\n' | base64; } >"$d/db-$s.dump.age"
@@ -1766,6 +1813,18 @@ ck "nothing was replaced" u_untouched "$u5c"
 ck "the older set's dump was not taken for the new one" absent '^old dump$' "$u5c/log/pg_restore.stdin"
 ck "the message names the backup directory" grep -qsF -- "$u5c/backups" "$LOGS/u5c.out"
 report U5c "a backup that left no new set means no update"
+
+# ---- U5e: dump lacks age header while uploads archive is encrypted (mutant E10)
+u5e="$ROOT/u5e"
+u_case "$u5e"
+run_update "$u5e" XC_STUB_BACKUP_FORM=nodumpheader
+printf '%s\n' "$OUT" >"$LOGS/u5e.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "xc-v3 was never stopped" u_no_stop "$u5e"
+ck "nothing was replaced" u_untouched "$u5e"
+ck "the message says the dump is not age-encrypted" grep -qs 'backup dump is not age-encrypted' "$LOGS/u5e.out"
+ck "the message names the dump" grep -qsF -- "$u5e/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age" "$LOGS/u5e.out"
+report U5e "a set whose dump lacks the age header is refused even if the archive is encrypted"
 
 echo "# $PASS passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]
