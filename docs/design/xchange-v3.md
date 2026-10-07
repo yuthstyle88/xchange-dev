@@ -56,6 +56,7 @@ authorises in one module, and does post-save work in the same DB transaction.
 | D8 | Kiosk delivery = Flutter **web** served on the customer host | **decided** (owner 2026-10-06) and **extended by D9**. The reason first given here — "an installed app sends no `Origin`" — was wrong: measured 2026-10-06 on a local v2 copy, `POST /api/kiosk` answers 200 when the client itself sends `Origin: <the server's own origin>`, 400 with no `Origin`, 400 with another one. The check is a cross-site guard for browsers, not something an app cannot satisfy |
 | D9 | The same kiosk is also an **Android app distributed through the Play Store** (owner 2026-10-06: "ต้องให้ ลูกค้า ทำผ่าน ทาง pay store", "ลูกค้าใช้ android"). Application id **`com.spacing.xchange`**, store name **`XC.Xchange`** (both typed by the owner). The web build stays; one code base, two targets (§8.1) | **decided** — store identity: never changed without the owner |
 | D10 | v3 targets the kept screens of the **10-06 bundle**: payment settings per branch, queue work and the admin refresh are designed to be cut into tickets; the passport-step drawer is designed and **held** (§5.5) | **decided** (owner 2026-10-07, relayed by the lane controller claude/7ca80c: "B ทำเลย"; the drawer half stays under "ยังไม่integrate ตอนนี้", #274) |
+| D11 | v3 runs in the **cloud**, one server for every branch; the cash drawer on the receipt printer's kick port is driven by a **counter drawer agent** — a small program on the counter computer that pulls its branch's drawer jobs from the server over HTTPS and sends the kick (option A, §5.4c). It controls the drawer only. The owner's "ทำเลย" also lifts the hold "ยังไม่integrate ตอนนี้" for this path (DRV-2) | **decided** (owner 2026-10-07, relayed by the lane controller claude/7ca80c: "คลาวด์ ใช้ A ทำเลย", then "แค่คุมลิ้นชัก") |
 
 ## 3. Domain rules carried over (behaviour table)
 
@@ -246,7 +247,6 @@ classDiagram
   class PrinterModels { <<registry, from Settings.devices.printer_models>> +new(models) Result~PrinterModels~; +get(id) Option~&PrinterModel~; +default_id() str }
   class EscposDriver { <<infrastructure::devices::escpos_driver>> +new(transport: Arc~dyn PrinterTransport~) }
   class PrinterTransport { <<trait>> +send(host, port, bytes) Result }
-  class DeviceWorker { <<infrastructure::devices::device_worker>> +spawn(devices, every) JoinHandle }
   class BotRateSource
   class SimulatedDriver
 
@@ -280,8 +280,7 @@ classDiagram
   DeviceDriver <|.. SimulatedDriver
   DeviceDriver <|.. EscposDriver
   EscposDriver --> PrinterTransport : Network kind only; Simulated kind answers as SimulatedDriver
-  DeviceWorker --> DeviceService : process(auto drawer jobs) outside the save tx
-  DeviceService --> PrinterSettings : read on the claim tx
+  DeviceService --> PrinterSettings : read on the process tx (jobs with no printer only, §5.4c)
   DrawerSettings --> PrinterModels : printerModel names one printer model
   EscposDriver --> DrawerPulse : the kick bytes of the branch model
   TxService --> BranchTx
@@ -400,11 +399,14 @@ screens do arithmetic on it; decimals exist only inside the server and the datab
 | `POST /api/devices` · `GET /devices/receipt` | `{action: snapshot\|queue\|process\|retry\|printerOnline\|drawerObservation}` | `7665`, `7794` |
 | `POST /api/kiosk` | `{action, payload}` — public: `rates`, `quote`, `confirm`, `status`, `customerReceipt`; any signed-in role: `notifications`; OWNER, FRONT, BACKEND, MANAGER: `list`, `accept`, `get`, `identityChecked`, `publishReceipt`; OWNER and RATES: `manage`, `configure`. The 10-06 bundle moves `list` to any signed-in role and changes `rates`, `quote`, `confirm`, `notifications`, `list` and `accept` (§5.5.2, §5.5.3) | `8048` |
 | `POST /api/payment-methods` (10-06 bundle) | `{action: list\|save, payload}` | 10-06 `8154`; §5.5.2 |
-| `POST /api/drawer-passport` (10-06 bundle) | `{branchId, orderId, kiosk, mode}` | 10-06 `8153`; §5.5.5 — switched off until PD-1 |
+| `POST /api/drawer-passport` (10-06 bundle) | `{branchId, orderId, kiosk, mode}` | 10-06 `8153`; §5.5.5 — switched off until AG-PD (which replaces PD-1) |
+| `POST /api/device-agent/{pair,claim,report}` (new, §5.4c) | JSON as §5.4c *Claim*, *Record*, *Identity*; bearer agent token, **not** the same-origin rule | none — v2's server sat on the counter machine |
+| `POST /api/device-setup` · `GET /_xc/device-agents` (new, §5.4c) | `{action: list\|add\|newCode\|revoke, payload}` — the owner's page: pair, list, revoke | none |
 | Pages: `/`, `/desk`, `/staff`, `/staff/report`, `/staff/desk`, `/staff/documents`, `/login`, `/devices`, `/kiosk-queue.html`, `/kiosk-currencies.html`, `/staff-guide`, `/receipt-sample`, static assets | — | route table `8143-8188` |
 
 Request rules carried over unchanged: `Origin` must equal the request origin and `X-Xchange-Request: 1`
-on every POST (`5542`); body size limits per route; host split — the customer host serves only the
+on every POST (`5542`) — except the three `/api/device-agent/*` routes, which are called by a program, not a page, and
+authenticate with a bearer token instead (§5.4c *Security*); body size limits per route; host split — the customer host serves only the
 kiosk and `/api/kiosk` (`8263-8267`); staff are forced onto their own branch (`8280`).
 
 Page serving carries over v2's rewriting, which the screens depend on: `window.XC_BRANCH` injection (`5549`),
@@ -577,33 +579,39 @@ decides and sends; the bytes are `ESC @` + `ESC p 0 25 250` (`pos-printer/src/es
 the transport is a raw TCP write (`network_printer::send`); a kick older than 120 s is never delivered
 (`DRAWER_KICK_FRESHNESS_SECS`, `receipt_printer.rs:33`). `api/deny.toml:54-56` already allows that repository as a git source.
 
-[required] **No device I/O inside a branch transaction.** `process` today calls the driver inside `branch_tx.run`
-(`device_service.rs:249-296`); a network send can take up to 15 s and would hold every save of the branch. `process`
-becomes three steps: (1) on a branch tx, claim — a `QUEUED` job becomes `SENDING`, the branch's `PrinterSettings` are read;
-a `DRAWER_REQUEST` whose `created_at` is more than 120 s before `now` becomes `EXPIRED` instead and is not sent;
-(2) outside any tx, `driver.run(kind, &printer).await`; (3) on a new branch tx, the job goes from `SENDING` to the result
-and the event line is written with `"physicalAction": true` when the driver touched hardware. A job found `SENDING` more
-than 120 s old (a crash between 1 and 3) is `FAILED`, never sent again by itself. `retry` of a `DRAWER_REQUEST` puts it
-back to `QUEUED` with its first `created_at`, so retrying one older than 120 s always ends `EXPIRED`: a drawer is opened by a
-new request, never by an old one.
+**Superseded in part by D11 (owner 2026-10-07, "คลาวด์ ใช้ A ทำเลย").** A1 assumed the server reaches the printer. A cloud
+server cannot reach a printer on a shop's LAN or on a counter's USB port, and a browser page cannot open a USB device, so the
+kick moves to the **counter drawer agent** of §5.4c and DRV-2 is rewritten as the AG rows of §10. What stays from this
+section, unchanged in meaning:
 
-[required] **Production wiring, without touching `rpc.rs`** (held by #236, then #158): `DeviceService::new` installs
-`EscposDriver::new(Arc::new(TcpTransport))` instead of `SimulatedDriver`. A branch with no `PRINTER_KIND`, or `SIMULATED`, is
-answered exactly as today, so nothing changes until an owner sets a branch to `NETWORK`; tests keep `with_driver` for fakes.
-`DeviceWorker::spawn` is started in `api/src/bootstrap/mod.rs` `build()`, beside the session purge timer and aborted with the
-server the same way. It needs no nudge: it polls every 1 s, on a partial index of queued jobs.
-[proposed] The worker needs a `DeviceService` of its own; DRV-2 adds one builder `pg_device_service(pool, branch_tx,
-transactions) -> DeviceService` in `device_service.rs` and the bootstrap calls it. Moving `rpc.rs` (where #236 builds one
-inline) onto that builder is a follow-up after #158, because `rpc.rs` is held until then.
+- [required] **No device I/O inside a branch transaction.** The three steps are kept, but split across the wire:
+  (1) **claim** — on the server, on a branch tx, a `QUEUED` drawer job becomes `LEASED` (DRV-2 called it `SENDING`) for the
+  branch's agent, and the kick bytes are built there; (2) **send** — on the agent, outside any server transaction, through
+  its transport; (3) **record** — on the server, on a new branch tx, the agent's report moves the job from `LEASED` to its result
+  and the event line is written with `"physicalAction": true` when hardware was touched (§5.4c *Claim → send → record*).
+- [required] **The freshness rule**, tightened from pos108's 120 s (`DRAWER_KICK_FRESHNESS_SECS`) to **10 s** [proposed]
+  (§5.4c): a `DRAWER_REQUEST` whose `created_at` is more than 10 s before `now` is `EXPIRED`, never sent. It is checked on
+  both sides: by the server at claim, and by the agent just before it writes the bytes (on its monotonic clock, so a wrong
+  clock on a counter machine cannot widen it).
+- [required] **A lost send is never repeated by itself.** A lease that lapses (DRV-2's "found `SENDING`") becomes `FAILED`
+  with reason `LEASE_LAPSED`; `retry` of a `DRAWER_REQUEST` puts it back to `QUEUED` with its first `created_at`, so retrying
+  one older than 10 s always ends `EXPIRED`: a drawer is opened by a new request, never by an old one.
+- B2 stands: a cash save queues a drawer job (reason `CASH_EXCHANGE`) and a staff member can request one with a reason.
+
+What DRV-2 had that is **dropped**: `DeviceService::new` keeps `SimulatedDriver` in production (it never installs
+`EscposDriver` with `TcpTransport` — the server has no printer to reach); there is no server-side `DeviceWorker` and nothing is
+spawned in `bootstrap/mod.rs`; the request-id prefix `auto-drawer:` is replaced by the one scheme of §5.4c *Server-made drawer jobs*.
+The branch setting `printerKind = NETWORK` (DRV-1, DRV-3b) stays accepted, so its provided tests stay green, but no production
+path sends from the server: the drawer of a LAN printer is driven by the branch's agent (§5.4c), and the owner's agent page
+does not offer the branch-level `NETWORK` kind.
 
 | Class | File | What |
 |---|---|---|
 | `DeviceDriver` (changed) | `simulated_driver.rs` | `#[async_trait]`, `run(kind, &PrinterSettings) -> JobStatus`; `SimulatedDriver` answers as today from `printer.online` |
 | `PrinterSettings`, `PrinterKind` | `printer_settings.rs` (new) | read from `device_settings`: `PRINTER_ONLINE` (as today), `PRINTER_KIND` (`SIMULATED` default, `NETWORK`), `PRINTER_HOST`, `PRINTER_PORT` (default 9100) |
-| `EscposDriver`, `PrinterTransport`, `TcpTransport` | `escpos_driver.rs` (new) | `Simulated` kind → as `SimulatedDriver`; `Network` → `DRAWER_REQUEST` sends `render_drawer_kick()` through the transport → `DRAWER_OPENED`, or `FAILED` on any send error; `PRINT_RECEIPT` stays `SIMULATED_PRINTED` until T13b decides the renderer. `TcpTransport` wraps `pos_printer::network_printer::send` |
-| `JobStatus` (changed) | `device_job.rs` | adds `Sending`, `DrawerOpened`, `Expired` |
-| `DeviceService` (changed) | `device_service.rs` | DRV-1: `process` awaits the async driver with `PrinterSettings` (still on the tx — safe while only `SimulatedDriver` is installed) and `set_printer` (owner only) writes the three settings. DRV-2: `process` in three steps (above); `new` installs `EscposDriver`; `after_save_in` also queues a `DRAWER_REQUEST` for a cash save, reason `CASH_EXCHANGE`, request id `auto-drawer:<branch>:<document ref>` |
-| `DeviceWorker` | `device_worker.rs` (new) | one task, started in `bootstrap/mod.rs`: every 1 s processes `QUEUED` jobs whose request id starts `auto-drawer:`, oldest first, across branches (partial index `device_jobs (created_at) WHERE status = 'QUEUED'`) |
+| `EscposDriver`, `PrinterTransport`, `TcpTransport` | `escpos_driver.rs` (new) | `Simulated` kind → as `SimulatedDriver`; `Network` → `DRAWER_REQUEST` sends the kick through the transport → `DRAWER_OPENED`, or `FAILED` on any send error; `PRINT_RECEIPT` stays `SIMULATED_PRINTED` until T13b decides the renderer. `TcpTransport` wraps `pos_printer::network_printer::send` |
+| `JobStatus` (changed) | `device_job.rs` | DRV-1 added `DrawerOpened`; AG-1 adds `Leased`, `Expired` |
+| `DeviceService` (changed) | `device_service.rs` | DRV-1: `process` awaits the async driver with `PrinterSettings` and `set_printer` (owner only) writes the three settings. AG-3: `process` leaves a drawer job of a branch with an active agent to the agent; `queue_drawer[_in]` for the server-made drawer jobs; the cash-save drawer job (§5.4c) |
 | route | `presentation/http/devices.rs`, `presentation/dto/device.rs` | `POST /api/devices` `{action: snapshot\|queue\|process\|retry\|printerOnline\|setPrinter\|setDrawer\|drawerObservation, ...}` answering `DeviceOverview`/the job; roles as `Policy::allow_devices` (`xc-auth/.../policy.rs:230`); `setPrinter` and `setDrawer` OWNER only (DRV-3b, #300) |
 
 #### Printer models and the drawer switch (owner 2026-10-07, #274)
@@ -636,15 +644,388 @@ Owner, verbatim: "ยังไม่integrate ตอนนี้" · "ทำใ�
   registry holding only the NEOCAL entry. No production code builds `with_models` yet (not integrated).
 - `queue` refuses a `DRAWER_REQUEST` with `สาขานี้ไม่มีลิ้นชัก` only when `hasDrawer` is explicitly `0`. A branch with no
   `hasDrawer` row keeps today's answer, so the v2 fixtures (`v2_device_cases.json`, all `SIMULATION`) stay green.
-- **Not integrated (owner):** nothing here opens a drawer by itself, `DeviceService::new` keeps `SimulatedDriver`, and no
-  worker runs — DRV-2 stays held.
+- **Integration (D11):** the hold "ยังไม่integrate ตอนนี้" is lifted for the agent path. `DeviceService::new` still keeps
+  `SimulatedDriver`; a drawer opens only through the branch's counter drawer agent (§5.4c). The branch's `printerModel` gives
+  the pulse the agent is sent, and `hasDrawer = 0` stops drawer jobs being queued at all.
 
-**Data migration** (`device_jobs.status`): (1) existing rows keep their value — the CHECK only widens to add `SENDING`,
-`DRAWER_OPENED`, `EXPIRED`, and a partial index on queued jobs is added; (2) no backfill: no row needs a new value; (3) migration before the new binary; the old binary
-never writes the new values and reads only rows it knows (a row with a new status read by the old binary would fail
-`JobStatus::parse` — the install runs one binary at a time, so this does not happen); (4) `down` narrows the CHECK and fails
-while any row holds a new value — delete or convert those rows first. No v3 install exists yet (owner 2026-10-06), so this
-is the approved-migration window.
+**Data migration** (`device_jobs.status`): DRV-2's migration (`20261007200000_device_job_statuses.sql`) was never written;
+the widening of the CHECK, with the new columns, is AG-1's migration, whose data-migration section is in §5.4c.
+
+### 5.4c Counter drawer agent (D11, owner 2026-10-07)
+
+Owner, verbatim (relayed by the lane controller claude/7ca80c): **"คลาวด์ ใช้ A ทำเลย"** — v3 runs in the cloud, one
+server for every branch, and the drawer is driven by option A, a small local agent in the shop; then **"แค่คุมลิ้นชัก"** —
+the agent controls the cash drawer and nothing else. "ทำเลย" lifts the hold "ยังไม่integrate ตอนนี้" (#274) for this path;
+the passport step follows the kiosk batch (§11).
+
+**Why an agent, measured from what v2 did.** v2 opened a drawer only because its server ran **on the counter Mac**, with a
+POS80 printer on USB: it sent `ESC p 0 25 125` (`1B 70 00 19 7D`) with `lp -d POS80_ -o raw` (10-06 bundle,
+`passport-drawer.mjs:2-12`). A browser page cannot open a USB device, and a cloud server cannot reach a device on a shop's
+LAN (private address, the shop's router accepts no connection in). So something in the shop must send the kick, and it must
+**call out**: the server never connects to a shop.
+
+**Why it pulls jobs.** A drawer opening is asked for by machines other than the one the drawer hangs off: the kiosk's
+passport step runs on the kiosk, the cash save comes from the desk page, a staff request from the devices page. So the
+server queues a `DRAWER_REQUEST` job as today, and the agent on the counter computer pulls it and sends the kick.
+
+**What the agent drives.** A cash drawer has no network port: it hangs off the receipt printer's RJ11/12 kick port and opens
+when the printer is sent the pulse (§5.4b *Printer models*). The agent only ever sends those 7 bytes to that printer; it
+prints nothing. The printer's connection decides the transport, set in the agent's own configuration at install:
+
+| Printer connection | Transport on the agent | Where the agent must run | Row |
+|---|---|---|---|
+| USB | CUPS raw queue: `lpstat -o <queue>` must show no pending job (else `QUEUE_BUSY`, as v2 checked), then `lp -d <queue> -o raw` with the bytes on stdin | on the machine the printer is plugged into | AG-5 |
+| LAN | raw TCP write to `host:9100`, `pos_printer::network_printer::send` (already a workspace dependency, pinned) | anywhere on the shop's LAN | AG-5 |
+| USB on Windows · Bluetooth | spooler RAW · serial port | — | AG-W, AG-BT (later) |
+
+#### One agent, one drawer, one per branch
+
+[required] An agent is paired to **one branch** and drives **one drawer**; its target (`CUPS` + queue name, or `TCP` +
+host:port) is in its local configuration and reported to the server at every claim, so the owner's page shows it. A branch
+has **at most one active agent** (unique partial index); pairing a second is refused `สาขานี้มีเครื่องคุมลิ้นชักแล้ว`
+until the first is revoked. So every drawer job of a branch is for that agent, and no job, cookie or page has to say which
+counter. Several drawers in one branch, which would need that choice, is row AG-M (later).
+
+[required] Which path a `DRAWER_REQUEST` takes is decided by whether the branch has an active agent:
+
+| Branch | Path |
+|---|---|
+| no active agent | today's: the job waits for `process` (the devices page), which answers through `SimulatedDriver`; every v2 fixture and provided device test is this case. Server-made drawer jobs (below) are **not** queued |
+| an active agent | the agent claims it; `process` on it answers the job as it stands and calls no driver |
+
+`PRINT_RECEIPT` jobs are not touched by any of this (receipts on an agent are AG-R, later).
+
+**The bytes.** [required] Built by the server at claim from the branch's existing drawer settings (DRV-4: `printerModel` →
+the model's pulse in `devices.printerModels`; `DrawerPulse::kick_bytes`, `ESC @` + `ESC p pin on off`). No new setting, no
+registry on the agent, no kick code on the agent: it sends the bytes it is given. `AgentService` reads the branch's `DrawerSettings`
+(`DrawerSettings::read_in`) on the claim transaction, with the registry built once in `http/device_agent.rs`'s `configure`
+from `state.settings.devices.printer_models` (`PrinterModels::new`, as `Settings::load_from` already checks it). A branch with `hasDrawer = 0`, or whose
+model has no pulse, gets no drawer job queued at all (below), and a claim that finds one anyway fails it `NO_PULSE`.
+
+#### Server-made drawer jobs: one entry and one id scheme
+
+The review of PR 323 by claude/087e0c found that `DeviceService::queue` takes only the 36-character request ids of a
+client (`device_service.rs:93-98`, checked at `:192`), and that this is also where the `hasDrawer` refusal lives
+(`:223-231`). The drawer jobs the server makes itself (cash save, passport step) need an entry of their own.
+
+[required] **One id scheme for every server-made job**: `auto:<branch>:<ref>` stays the receipt's, as on `main`
+(`device_service.rs:628`, pinned by `api/tests/devices_test.rs:1001` and the v2 fixture `v2_device_cases.json` lines
+303–308), and every other one is `auto:<branch>:<purpose>:<key>`:
+
+| Job | Request id |
+|---|---|
+| receipt of a save (unchanged, not routed through the new entry) | `auto:<branch>:<document ref>` |
+| drawer after a cash save | `auto:<branch>:drawer:<document ref>` |
+| drawer at the passport step, kiosk or desk (AG-PD) | `auto:<branch>:passport:<KIOSK\|DESK>:<orderId>` |
+
+They cannot collide: a document ref is `XC-…` (§3), never `drawer` or `passport`; a client id is 36 characters of
+`0-9 a-f -` and never starts with `auto:`. DRV-2's `auto-drawer:` is not used anywhere.
+
+[required] `DeviceService::queue_drawer_in(tx, branch, key: DrawerJobKey, actor, now) -> AppResult<DrawerJobOutcome>` runs on
+the caller's transaction (the save's own, which already holds the branch); `queue_drawer(branch, key, actor, now)` runs the
+same in its own `BranchTx::run` (the passport route). `DrawerJobKey::{CashSave{reference}, Passport{source, order_id}}` builds
+the id and the fixed reason (`CASH_EXCHANGE`, `PASSPORT_STEP`).
+
+| Rule | Client `queue` | `queue_drawer[_in]` |
+|---|---|---|
+| request id: 36 of `0-9 a-f -` | refused `รหัสคำขอไม่ถูกต้อง` | skipped — the id comes from `DrawerJobKey` |
+| branch shape | refused | refused (same sentence) |
+| a reason, at most 200 UTF-16 units | refused | kept (the reasons are fixed) |
+| `hasDrawer = 0` | refused `สาขานี้ไม่มีลิ้นชัก` | `DrawerJobOutcome::NoDrawer`, one line `DRAWER_SKIPPED`, nothing queued — never an error, so a save is never undone by it |
+| no active agent in the branch | queued (today's path) | `DrawerJobOutcome::NoAgent`, nothing queued, no line |
+| the same id again | the earlier job, or refused when its content changed | `DrawerJobOutcome::Existing(job)`: the caller compares the actor (rows 10–11 of §5.5.5) |
+| freshness | at claim | at claim |
+
+`after_save_in` keeps its lines and its receipt job exactly as today (the fixtures pin them) and, for a LIVE **cash** save,
+then calls `queue_drawer_in(… CashSave …)` — so a branch without an agent writes exactly what it writes today (B2 applies once
+the shop has an agent).
+
+[required] **How `DeviceService` reaches the agent table without new wiring.** `DeviceService::new(branch_tx, exchanges, ids)`
+keeps its signature; it is called at `api/src/presentation/http/devices.rs:43` and `api/src/presentation/http/rpc.rs:300`,
+which AG-3 does not own. Inside `new` it builds `PgAgentRepository::new(branch_tx.pool().clone())`, the same way
+`device_service.rs:138` builds `PgDeviceRepository`, and asks it `has_active_agent_in(tx, branch)` on the transaction it
+already holds. Nothing under `api/src/infrastructure/` or `api/src/application/` imports `crate::presentation` (measured on
+`main` `d6084ea`: `grep -rn 'use crate::presentation' api/src/infrastructure api/src/application` finds nothing), and the
+rows below keep it so: the agent's identity reaches `AgentService` as plain arguments from the route, never through a
+request-scoped value.
+
+#### Claim → send → record
+
+```mermaid
+sequenceDiagram
+  participant A as Agent (counter)
+  participant S as Server (cloud)
+  participant P as Printer and drawer
+  A->>S: POST /api/device-agent/claim (bearer, waitMs up to 20000)
+  Note over S: lock-free probe, if nothing then wait, probing every 500 ms, then 204
+  S->>S: BranchTx - expire stale, lapse old leases, lease the oldest drawer job, build bytes
+  S-->>A: 200 {jobId, leaseId, bytes, sendWithinMs}
+  A->>A: journal sending, refuse if sendWithinMs has passed (monotonic clock)
+  A->>P: 7 bytes (CUPS raw or TCP 9100)
+  A->>A: journal outcome
+  A->>S: POST /api/device-agent/report {jobId, leaseId, outcome, reason}
+  S->>S: BranchTx - LEASED to outcome, audit line
+```
+
+[required] **Freshness: 10 s** [proposed value] (`DRAWER_FRESH_SECS`). pos108 allows 120 s; a drawer that opens two
+minutes after it was asked for is the danger this rule exists for, and with a long-polling agent a job normally goes out
+within a second. A `DRAWER_REQUEST` whose `created_at` is more than 10 s before `now` is `EXPIRED` and never sent; the lease
+is 10 s; the agent's send limit is 5 s.
+
+[required] **Claim** (`AgentService::claim`, `POST /api/device-agent/claim`, body `{waitMs, version, build, os, host,
+drawer: {transport, target}}`):
+1. The token gives the agent and its branch (*Identity*); the body names no branch. A body carrying a `branchId` other than
+   the token's is refused 403 `AGENT_BRANCH_MISMATCH`, with a line on the token's branch.
+2. Rate: at most 60 claims per agent per minute (`claim_window_start` / `claim_count` on the agent's row, read and updated in
+   one statement); beyond it 429 `RATE_LIMITED` with `Retry-After`.
+3. The agent's row takes `last_seen_at`, version, build, os, host and drawer target from the body.
+4. A lock-free probe on the partial index (`device_jobs_drawer_queued_idx`): is there a `QUEUED` `DRAWER_REQUEST` of the
+   branch, or a `LEASED` one whose lease has lapsed? If not, the server waits, probing every 500 ms, up to `waitMs`
+   (≤ 20,000), then answers **204** — O(1), no branch lock (the fleet's polled-endpoint rule).
+5. Otherwise, in one `BranchTx::run` (no I/O inside): `QUEUED` drawer jobs older than 10 s → `EXPIRED`; `LEASED` jobs whose
+   `lease_until` has passed → `FAILED` `LEASE_LAPSED`; then the oldest `QUEUED` drawer job becomes `LEASED` (`lease_id` a new
+   UUID, `leased_by` the agent, `lease_until = now + 10 s`), with a line `JOB_LEASED`. Each change writes its own line.
+6. Answer 200 `{jobId, leaseId, bytes (base64 of the 7 kick bytes), sendWithinMs = created_at + 10 s − now}`. [required]
+   Nothing else — no document number, amount, customer or employee: a kick needs none, and the counter machine is the least
+   protected place in the system.
+
+[required] **Send** (agent): it writes `sending` to its journal, refuses (`EXPIRED`) when `sendWithinMs` has passed on its
+**monotonic** clock since the answer arrived (a wrong wall clock on the counter cannot widen the window), sends through its
+transport within 5 s, writes the outcome, then reports. For CUPS, `lp`'s `request id is …` goes in the report's
+`detail.cupsJob`.
+
+[required] **Record** (`AgentService::report`, `POST /api/device-agent/report` `{jobId, leaseId, outcome: DRAWER_OPENED |
+FAILED | EXPIRED, reason, detail}`): accepted when the job is in the token's branch, `leased_by` is this agent, `lease_id`
+matches and the job is `LEASED` — or `FAILED` `LEASE_LAPSED` under the same lease: a late report tells what really happened
+at the drawer and replaces the lapse. The same report again answers 200 and writes nothing; any other 409; a job id of
+another branch 404. A report never puts a job back to `QUEUED`.
+
+**Restart and offline.** On start the agent reads its journal: a lease with `sending` and no outcome is reported `FAILED`
+`AGENT_RESTARTED` (the kick may have gone out — it is never sent again); an unacknowledged outcome is reported again, with
+backoff, for 24 hours. Connection errors back off exponentially (1 s doubling to 60 s, ±20 % jitter). While the agent is away,
+drawer jobs expire after 10 s and never fire late. A 401 stops claiming; the agent logs *re-pair needed* and checks again every
+10 minutes.
+
+[required] **Who writes `device_jobs.status`** — two writers once both rows land, each owning disjoint changes; every
+`UPDATE` names the status it changes from in its `WHERE` and runs inside `BranchTx::run` of the job's branch, so the two never
+interleave on one job:
+
+| Change | Writer (file) | Row |
+|---|---|---|
+| insert `QUEUED` (client `queue`, `after_save_in`, `queue_drawer[_in]`) | `DeviceService` → `PgDeviceRepository::insert_job` | today, AG-3 |
+| `QUEUED` → `FAILED` / `SIMULATED_PRINTED` / `COMMAND_SIMULATED` / `DRAWER_OPENED` by `process` — only for a job no agent will take (a receipt, or a drawer job of a branch with no active agent) | `DeviceService::process` → `PgDeviceRepository::set_job_status` | today; AG-3 adds the "left to the agent" rule |
+| `FAILED` → `QUEUED` (`retry`) | `DeviceService::retry` | today |
+| `QUEUED` → `EXPIRED`; `QUEUED` → `LEASED`; `LEASED` → `FAILED` `LEASE_LAPSED`; `LEASED` → `FAILED` `NO_PULSE` | `AgentService::claim` → `PgAgentRepository` | AG-2 (SQL in AG-1) |
+| `LEASED` or `FAILED` `LEASE_LAPSED` → `DRAWER_OPENED` / `FAILED` / `EXPIRED` (report) | `AgentService::report` → `PgAgentRepository` | AG-2 (SQL in AG-1) |
+| `QUEUED` drawer jobs → `FAILED` `AGENT_REVOKED` when the agent is revoked | `AgentAdmin::revoke` → `PgAgentRepository` | AG-4 (SQL in AG-1) |
+
+`retry` of a drawer job keeps its first `created_at`, so retrying one older than 10 s ends `EXPIRED` at the next claim: a
+drawer is opened by a new request, never by an old one.
+
+#### Identity
+
+[required] One credential per agent, scoped to **one branch** and to the three `/api/device-agent/*` routes only.
+
+1. The owner adds an agent on the owner's page (a name, e.g. `Mac เคาน์เตอร์ 1`) and gets a **one-time pairing code**: 10
+   characters of Crockford base32 (50 bits taken from a UUID v4), shown once as `XXXXX-XXXXX`, valid 10 minutes, single use;
+   only its SHA-256 is stored.
+2. On the counter machine: `xc-device-agent install --server https://<desk host> --code XXXXX-XXXXX --cups-queue <q>` (or
+   `--tcp <host>:9100`). `POST /api/device-agent/pair` `{code, host, os, version, build}` answers `{agentId, token, branchId,
+   agentName}`; the token is `xcda_` + the 64 hex digits of two UUID v4 values (244 random bits from the OS generator — `uuid`
+   and `sha2` are already dependencies, so no crate is added). The server stores **only its SHA-256** (unique index) and marks
+   the code used. Unknown, expired and used codes get one answer, 400 `PAIRING_CODE_INVALID`. Attempts are limited per
+   `X-Real-IP` through `auth_attempts` (key `PAIR:<address>`, 10 per 15 minutes), like the sign-in doors (§6).
+3. The agent keeps the token in a file only its service user can read (0600). No owner or employee password is ever on the
+   agent, and the token opens no page and no other route: it is not an `Actor`, so `Policy` never sees it.
+4. A new code for the same agent re-pairs it: on success the old token stops working.
+5. **Revoke** (owner): `revoked_at` is set, the token answers 401 everywhere, the branch's `QUEUED` drawer jobs become `FAILED`
+   `AGENT_REVOKED`; `LEASED` ones lapse. The hash is kept for the audit trail.
+6. Failed token checks are limited per `X-Real-IP` (`auth_attempts` key `AGENT:<address>`, 30 per 15 minutes → 429).
+
+#### Security
+
+- [required] **The same-origin rule is not applied to the agent routes, and they are closed to browsers instead.** The rule
+  (`same_origin`, `api/src/presentation/extractors/origin.rs`) is called by each route itself, not by a middleware (measured:
+  `devices.rs:100`, `rpc.rs:151`, `kiosk.rs:138` and others each call it), so the agent routes, in their own file
+  `http/device_agent.rs`, simply do not call it. CSRF needs a credential the browser sends by itself; these routes read **no
+  cookie**, only `Authorization: Bearer xcda_…`, which a page on another site cannot set without a CORS preflight, and the
+  server sends no CORS headers. A request to them that carries an `Origin` or a `Cookie` header is refused 400
+  `NOT_FOR_BROWSERS`.
+- [required] A claim returns only the token's branch's drawer jobs and only the four fields above.
+- [required] **An audit line for every drawer opening**, in `device_events` of the branch, written on the report's
+  transaction: kind `DRAWER_OPENED`, actor `agent:<agent id>`, detail `{job, reason, queuedBy, queuedAt, agent, agentName,
+  agentVersion, drawerTarget, leaseId, leasedAt, reportedAt, cupsJob, physicalAction: true, physicalOpenConfirmed: false}` —
+  who queued it and why, which agent fired, on which drawer, when. The `JOB_LEASED`, `FAILED` and `EXPIRED` lines carry the same
+  identities.
+- The agent talks HTTPS only (rustls; `http://` refused except `localhost`, for tests); the token never appears in a log line.
+- nginx: the agent uses the desk/admin host (`deploy/nginx/xc-v3-desk.conf.example`, whose `location /api/` already proxies
+  it); the customer host lets only the kiosk through and stays so.
+
+#### The owner's page: pair, list, revoke
+
+[required] A v3 page, **`GET /_xc/device-agents`** (owner only; anyone else is sent to `/login`, as the kept pages are),
+compiled into the binary (`api/static/xc-device-agents.html`, `include_str!`, inline script), calling `POST /api/device-setup`
+(same-origin rule, `EntryPath::DeviceSetup`: owner only). Not the kept `/devices` page: its code is v2's, extracted into
+`web.dir` and never committed (§5.3), so an edit would be lost at the next extraction, and a pairing code shown once should not
+depend on minified markup v3 does not own. There is no link from the kept page; the install notes (AG-6) give the URL.
+
+| Shows, per branch | Actions |
+|---|---|
+| the agent: name, state (`PENDING` until paired, `ONLINE` seen within 60 s, `OFFLINE`, `REVOKED`), last seen, version and build, machine and OS, drawer target | `list` · `add {branchId, name}` → the pairing code once · `newCode {agentId}` (re-pair) · `revoke {agentId}` |
+
+Unknown action → 400 `คำขอไม่ถูกต้อง`, as `/api/devices` (C2).
+
+#### Distribution and versioning
+
+- **Build** (AG-6): `.github/workflows/device-agent.yml`, by hand (`workflow_dispatch`), on `release/**`, and on a PR that
+  changes the workflow file itself (as A5); `api.yml` already builds, lints and tests the crate on every PR as a workspace
+  member. macOS on `[self-hosted, macOS, ARM64]`: `aarch64-apple-darwin` and `x86_64-apple-darwin` joined by `lipo` into one
+  universal binary; Linux on `[self-hosted, Linux, X64]`: `x86_64-unknown-linux-gnu`, with the glibc check of
+  `deploy/server/build.md` §2. Artifacts `xc-device-agent-<version>-<short sha>-<target>.tar.gz` with a `.sha256`.
+- **Version:** the crate's `version` (`1.MINOR.PATCH`, bumped only in a release commit); `build` and `builtAt` baked by its
+  `build.rs` from `XC_AGENT_BUILD_SHA` / `XC_AGENT_BUILT_AT`, as `api/build.rs` does; `channel` from its configuration.
+  `xc-device-agent --version` prints all four; every claim carries `version` and `build`, and the owner's page shows them.
+- **Install:** `install` pairs, writes the configuration and the service: on macOS a **LaunchAgent**
+  `~/Library/LaunchAgents/com.spacing.xc-device-agent.plist` (`RunAtLoad`, `KeepAlive`, `ThrottleInterval 30`) — per user,
+  because CUPS jobs go out as the counter's signed-in user; on Linux a systemd unit `xc-device-agent.service`
+  (`User=xc-agent` in group `lp`, `Restart=always`). `uninstall` removes both and the token. Copying the binary to a shop
+  machine is an install, which is the owner's act.
+
+#### Class diagram additions
+
+```mermaid
+classDiagram
+  direction LR
+  class JobStatus { <<enum, infrastructure::devices::device_job>> Queued; Leased; Failed; SimulatedPrinted; CommandSimulated; DrawerOpened; Expired }
+  class AgentRepository { <<trait, infrastructure::device_agents::agent_repository>> +has_active_agent_in(); +find_by_token_hash(); +insert_agent(); +set_pairing(); +pair(); +touch(); +revoke_in(); +claim_in(); +report_in(); +list() }
+  class PgAgentRepository { <<infrastructure::device_agents::pg_agent_repository>> +new(pool) }
+  class AgentToken { <<infrastructure::device_agents::agent_token>> +new_token(); +new_pairing_code(); +hash(text) }
+  class AgentService { <<infrastructure::device_agents::agent_service>> +pair(); +authenticate(token, address, now); +claim(); +report() }
+  class AgentAdmin { <<infrastructure::device_agents::agent_admin>> +list(branch); +add(branch, name, actor, now); +new_code(agent, actor, now); +revoke(agent, actor, now) }
+  class DrawerJobKey { <<enum, infrastructure::devices::drawer_job>> CashSave; Passport }
+  class DrawerJobOutcome { <<enum, infrastructure::devices::drawer_job>> Queued; Existing; NoDrawer; NoAgent }
+  class DeviceService { +queue_drawer_in(tx, branch, key, actor, now); +queue_drawer(branch, key, actor, now) }
+  class AgentAuth { <<extractor, presentation::extractors::agent_auth>> +agent_id; +branch }
+  class DeviceAgentRoutes { <<presentation::http::device_agent>> pair; claim; report }
+  class DeviceSetupRoutes { <<presentation::http::device_setup>> POST /api/device-setup; GET /_xc/device-agents }
+  class AgentRunner { <<xc-device-agent::runner>> +run(api, transport, journal) }
+  class AgentApi { <<trait, xc-device-agent::client>> +pair(); +claim(); +report() }
+  class HttpAgentApi { <<xc-device-agent::client>> }
+  class Journal { <<xc-device-agent::journal>> +sending(); +outcome(); +pending() }
+  class DrawerTransport { <<trait, xc-device-agent::transport>> +send(bytes) }
+  class CupsTransport { <<xc-device-agent::cups_transport>> }
+  class TcpTransport9100 { <<xc-device-agent::tcp_transport>> }
+  PgAgentRepository ..|> AgentRepository
+  AgentService --> AgentRepository
+  AgentService --> AgentToken
+  AgentService --> BranchTx : claim and report
+  AgentService --> DrawerSettings : the branch pulse at claim
+  AgentAdmin --> AgentRepository
+  AgentAdmin --> AgentToken
+  DeviceService --> DrawerJobKey
+  DeviceService --> AgentRepository : has_active_agent_in, built in new()
+  DeviceAgentRoutes --> AgentAuth
+  DeviceAgentRoutes --> AgentService
+  DeviceSetupRoutes --> AgentAdmin
+  DeviceSetupRoutes --> Policy : the DeviceSetup entry path, owner only
+  AgentRunner --> AgentApi
+  HttpAgentApi ..|> AgentApi
+  AgentRunner --> Journal
+  AgentRunner --> DrawerTransport
+  CupsTransport ..|> DrawerTransport
+  TcpTransport9100 ..|> DrawerTransport
+```
+
+[required] Where each lives — two classes that different rows touch never share a file:
+
+| Class | File | Row |
+|---|---|---|
+| `JobStatus::{Leased, Expired}` (added) | `api/src/infrastructure/devices/device_job.rs` | AG-1 |
+| `AgentRepository`, `PgAgentRepository` (all SQL on `device_agents`, and the agent-side `device_jobs` changes of the writers' table) | `api/src/infrastructure/device_agents/{agent_repository,pg_agent_repository}.rs` | AG-1 |
+| `AgentToken` | `api/src/infrastructure/device_agents/agent_token.rs` | AG-1 |
+| `AgentService` and its claim/report blocks | `api/src/infrastructure/device_agents/{agent_service,claim,report}.rs` | AG-2 |
+| `AgentAuth` | `api/src/presentation/extractors/agent_auth.rs` | AG-2 |
+| `DeviceAgentRoutes`, its DTOs | `api/src/presentation/http/device_agent.rs`, `api/src/presentation/dto/device_agent.rs` | AG-2 |
+| `DrawerJobKey`, `DrawerJobOutcome` | `api/src/infrastructure/devices/drawer_job.rs` | AG-3 |
+| `DeviceService` (changed) | `api/src/infrastructure/devices/device_service.rs` | AG-3 |
+| `AgentAdmin` | `api/src/infrastructure/device_agents/agent_admin.rs` | AG-4 |
+| `DeviceSetupRoutes`, its DTOs, the page | `api/src/presentation/http/device_setup.rs`, `api/src/presentation/dto/device_setup.rs`, `api/static/xc-device-agents.html` | AG-4 |
+| everything of the agent | `api/crates/xc-device-agent/` | AG-5 |
+
+[required] AG-1 creates every new file above that a later row fills (empty, with a `//!` line) and every `mod.rs` line they
+need — `device_agents/mod.rs`, one line each in `infrastructure/mod.rs`, `devices/mod.rs`, `extractors/mod.rs`, `dto/mod.rs`
+and `http/mod.rs` (with the two `configure` calls) — so AG-2, AG-3 and AG-4 edit no `mod.rs`.
+
+[required] **Dependency rule.** `xc-device-agent` depends on nothing of this workspace except `pos-printer` (for the TCP write):
+not the root package (it must not pull in sqlx or actix). The wire between agent and server is the request/answer shapes in
+*Claim*, *Record* and *Identity* above; each side pins them in its own tests, and AG-6 runs the built agent against a
+running server once. No crate is added for the server side: the kick bytes come from `DrawerPulse::kick_bytes`, already on
+`main`.
+
+#### Who provides, who uses
+
+| Provided | By | Used by |
+|---|---|---|
+| the migration, `JobStatus::{Leased, Expired}`, `AgentRepository`, `AgentToken`, the empty files and `mod.rs` lines | AG-1 | AG-2, AG-3, AG-4 |
+| `AgentService`, `/api/device-agent/*` | AG-2 | AG-5 (over HTTP), AG-6 (the end-to-end run) |
+| `queue_drawer[_in]`, the cash-save drawer job, `process` leaving drawer jobs to the agent | AG-3 | AG-PD; the save (through `after_save_in`, signature unchanged) |
+| the owner's page | AG-4 | the owner, to pair and revoke |
+| the agent binary | AG-5 | AG-6 (builds it), the owner (installs it) |
+
+Fallback while a provider has not landed (§5.2): AG-5 tests its runner against a fake `AgentApi` and needs no server row.
+
+#### Data migration — `20261008120000_device_agents.sql` (AG-1)
+
+What it does: creates `device_agents` (`id uuid` PK, `branch_id` → `branches`, `name`, `created_at`, `created_by`,
+`pair_code_hash` unique null, `pair_code_expires_at`, `token_hash` unique null, `paired_at`, `revoked_at`, `revoked_by`,
+`last_seen_at`, `agent_version`, `agent_build`, `agent_os`, `agent_host`, `drawer_transport` CHECK `CUPS`/`TCP` null,
+`drawer_target` null, `claim_window_start`, `claim_count int default 0`; unique partial index on `branch_id` where
+`revoked_at IS NULL` — one active agent per branch); adds to `device_jobs` the nullable columns `lease_id uuid`, `leased_by` →
+`device_agents`, `lease_until timestamptz`, `outcome_reason text`; replaces the `status` CHECK with one that also admits
+`LEASED`, `DRAWER_OPENED`, `EXPIRED`; adds the partial indexes `device_jobs_drawer_queued_idx (branch_id, created_at) WHERE
+status = 'QUEUED' AND kind = 'DRAWER_REQUEST'` and `device_jobs_leased_idx (branch_id, lease_until) WHERE status = 'LEASED'`.
+
+**It fixes a latent bug on `main`.** Measured on `main` `d6084ea`: the `status` CHECK of `device_jobs`
+(`api/migrations/20261007180000_devices.sql:8`) admits only `QUEUED`, `FAILED`, `SIMULATED_PRINTED`, `COMMAND_SIMULATED`,
+although `JobStatus::DrawerOpened` exists (`api/src/infrastructure/devices/device_job.rs`). A `NETWORK` branch whose drawer
+opened would fail at `set_job_status` (`pg_device_repository.rs:240-241`), roll back the whole `process` transaction and leave
+the job `QUEUED`: until this migration a `NETWORK` drawer job cannot record success. It cannot happen in production today:
+nothing outside the tests installs `EscposDriver` (`DeviceService::new` keeps `SimulatedDriver`; `with_driver` is called only by
+tests), and the database tests of `process` use drivers that answer `CommandSimulated`. AG-1's provided test pins that a job
+can be stored as `DRAWER_OPENED`.
+
+1. *Existing rows.* Every `device_jobs` row gets `NULL` in the four new columns — no lease — and keeps its status, which the
+   widened CHECK still admits. `device_agents` is new and empty, so every branch has no active agent and every drawer job
+   keeps today's path.
+2. *Backfill.* None: no existing row needs a value. Measure before deploy, to prove the CHECK can be replaced:
+   `SELECT status, count(*) FROM device_jobs GROUP BY status;` — every status must be one of the four of today.
+3. *Deploy order.* The migration runs at start-up of the binary that contains it (`bootstrap::connect`), before it binds. An
+   older binary never names the new table or columns; a row with a new status (written only by AG-2's claim and report) read
+   by an old binary would fail `JobStatus::parse` — one binary runs at a time, so this does not happen. No agent can pair
+   before a binary with AG-2 runs (the routes answer 404 until then).
+4. *What `down` loses.* There are no down migrations in `api/migrations/`. Dropping `device_agents` by hand loses every
+   pairing (each agent must be paired again) and the agent identities the audit lines name; dropping the new columns loses each
+   job's lease; narrowing the CHECK fails while any row holds a new status — those rows must be deleted or converted first.
+
+No v3 install exists yet (D6; owner 2026-10-06), so this falls in the owner's approval of v3 migrations until the first install.
+
+#### PD-1 (the passport drawer of §5.5.5) becomes an agent job
+
+PR 323 (merged, `d6084ea`) drew PD-1 as running DRV-2's three-step `process` on the job, with `DeviceWorker` as the fallback
+and the id `auto-drawer:<branch>:passport:…`. None of those exists under D11. [required] The row that delivers it is **AG-PD**,
+which replaces PD-1, keeps its files and the rows 8–12 of §5.5.5, and covers both sources of the passport step, the kiosk
+(`KIOSK`) and the desk (`DESK`):
+
+- `DevicePassportDrawer::request` calls `DeviceService::queue_drawer` with `DrawerJobKey::Passport{source, order_id}` (id
+  `auto:<branch>:passport:<KIOSK|DESK>:<orderId>`; the `(branch_id, request_id)` key keeps "once per order"; `Existing(job)`
+  with another actor → row 10, the same actor → row 11). `NoDrawer` → `UNCERTAIN`; `NoAgent` → `SIMULATED`; nothing is sent
+  in either case.
+- It never sends. It reads the job (pool, no lock) every 250 ms for at most 5 s [proposed] — within the 10 s freshness — and
+  answers the state then: `QUEUED`, `LEASED` → `REQUESTED`; `DRAWER_OPENED` → `SUBMITTED_TO_CUPS` (v2's word, which the kept
+  script knows); `FAILED`, `EXPIRED` → `UNCERTAIN`.
+- The switch `devices.passportDrawerBranches` [proposed] stays as §5.5.5 has it.
+
+AG-PD ships in the same batch as the kiosk work (owner 2026-10-07, §11).
 
 ### 5.5 The add-ons of the 10-06 bundle (owner 2026-10-07, "B ทำเลย")
 
@@ -933,13 +1314,15 @@ the save links `transaction_ref` (`passport-drawer.mjs:43`). Additive.
 
 **Bytes and transport.** v2 sends `ESC p 0 25 125` (`1B 70 00 19 7D`, no `ESC @`) through CUPS: `lp -d POS80_ -o raw`,
 after checking with `lpstat` that the queue is the expected USB printer and empty (`passport-drawer.mjs:2-12`); the
-owner confirmed that it opens a real drawer (notes: job `POS80_-501`); open/closed is not sensed. v3 has no CUPS path
-and will not grow one: §5.4b, as written, sends `ESC @` + `ESC p pin on off` of **the branch's printer model** over TCP
-(`EscposDriver::run_with`); the NEOCAL entry is `0/25/250` [proposed], unmeasured; v2's counter used `25/125`. The
-passport trigger uses the branch model's pulse, never bytes of its own.
+owner confirmed that it opens a real drawer (notes: job `POS80_-501`); open/closed is not sensed. Under D11 the v3
+server never sends: the branch's counter drawer agent (§5.4c) does, through CUPS raw for a USB printer (with the same
+`lpstat` queue check) or TCP 9100 for a LAN one, and the bytes are `ESC @` + `ESC p pin on off` of **the branch's printer
+model**, built by the server at claim with `DrawerPulse::kick_bytes` (the bytes `EscposDriver::run_with` also sends); the
+NEOCAL entry is `0/25/250` [proposed], unmeasured; v2's counter used `25/125`. The passport trigger uses the model's pulse,
+never bytes of its own.
 
 **v3 today.** `git grep` of `drawer-passport`, `passport_drawer`, `PassportDrawer`: nothing. Drawer requests exist only
-as `DRAWER_REQUEST` jobs (§5.4b), which DRV-2 (held) would send.
+as `DRAWER_REQUEST` jobs (§5.4b), which the branch's counter drawer agent sends (§5.4c).
 
 **Design — two rows.** The route must exist before the desk script is injected (row PG): without it every passport
 step would print *ตรวจคำสั่งเปิดลิ้นชัก: …* with a parse error. So the route lands now in v2's switched-off state —
@@ -947,29 +1330,28 @@ what every v2 server without `XC_PASSPORT_DRAWER=1` answers — and the integrat
 
 | Class | File | Row | What |
 |---|---|---|---|
-| `PassportDrawerDevice` (trait), `passport_drawer_device(state) -> Option<Arc<dyn PassportDrawerDevice>>` answering `None` | `api/src/application/workflows/passport_drawer_device.rs` (trait), `api/src/infrastructure/devices/passport_drawer_device.rs` (the builder) | S0 creates both as seams; PD-1 fills the builder | `request(branch, order_key, actor, now) -> PassportDrawerState` |
+| `PassportDrawerDevice` (trait), `passport_drawer_device(state) -> Option<Arc<dyn PassportDrawerDevice>>` answering `None` | `api/src/application/workflows/passport_drawer_device.rs` (trait), `api/src/infrastructure/devices/passport_drawer_device.rs` (the builder) | S0 creates both as seams; AG-PD (which replaces PD-1) fills the builder | `request(branch, order_key, actor, now) -> PassportDrawerState` |
 | `PassportDrawerWorkflow` | `api/src/application/workflows/passport_drawer.rs` | PD-0 | rows 4–11 above in v2's order; `device: None` → `DISABLED` at row 7 for every branch; with a device, row 7 asks the switch |
 | `PassportDrawerState` | `api/src/application/workflows/passport_drawer_device.rs` | S0 | the five state words v2's desk script knows, beside the trait that returns them |
 | route + JSON | `api/src/presentation/http/drawer_passport.rs` (file from S0), `api/src/presentation/dto/drawer_passport.rs` | PD-0 | rows 1–3, `Policy::allow(actor, EntryPath::DrawerPassport, …)` for rows 1 and 4, `Policy::branch` |
-| the switch `devices.passportDrawerBranches` | `api/configuration/base.yaml`, `api/src/config/mod.rs` | PD-1 **HELD** | [proposed] a list of branch ids, empty by default — v2's `XC_DRAWER_BRANCH` widened to several branches; configuration because v2 has no screen for it |
-| `DevicePassportDrawer` | `api/src/infrastructure/devices/passport_drawer_device.rs` | PD-1 **HELD** | (as first drawn; the two notes under this table change how it reaches the device layer) queues a `DRAWER_REQUEST` with request id `auto-drawer:<branch>:passport:<KIOSK\|DESK>:<orderId>` (the `device_jobs (branch_id, request_id)` key gives the once-per-order rule; a job with another actor → row 10; the same actor → row 11 with the job's state), then runs DRV-2's three-step `process` on that one job outside any transaction so the answer says what happened; `DeviceWorker` is the fallback because of the `auto-drawer:` prefix. Refused (state `UNCERTAIN`, nothing sent) when the branch's `hasDrawer` is `0`. State mapping: QUEUED, SENDING → `REQUESTED`; `DRAWER_OPENED` → `SUBMITTED_TO_CUPS` (sent, physical result unconfirmed — the word stays because the kept script only knows v2's words); FAILED, EXPIRED → `UNCERTAIN`; `COMMAND_SIMULATED` → `SIMULATED` |
+| the switch `devices.passportDrawerBranches` | `api/configuration/base.yaml`, `api/src/config/mod.rs` | AG-PD (replaces PD-1) | [proposed] a list of branch ids, empty by default — v2's `XC_DRAWER_BRANCH` widened to several branches; configuration because v2 has no screen for it |
+| `DevicePassportDrawer` | `api/src/infrastructure/devices/passport_drawer_device.rs` | **AG-PD** (replaces PD-1) | as §5.4c *PD-1 becomes an agent job* draws it, for the kiosk and the desk: queues through `DeviceService::queue_drawer` with `DrawerJobKey::Passport` (id `auto:<branch>:passport:<KIOSK\|DESK>:<orderId>`; the `device_jobs (branch_id, request_id)` key gives the once-per-order rule; `Existing` with another actor → row 10, the same actor → row 11 with the job's state); `NoDrawer` → `UNCERTAIN`, `NoAgent` → `SIMULATED`, nothing sent. It never sends: it reads the job for at most 5 s [proposed] while the agent claims and reports, then maps QUEUED, LEASED → `REQUESTED`; `DRAWER_OPENED` → `SUBMITTED_TO_CUPS` (sent, physical result unconfirmed — the word stays because the kept script only knows v2's words); FAILED, EXPIRED → `UNCERTAIN` |
 
-**Notes on PD-1, added after the review of PR 323** (lane controller 2026-10-07). A parallel design makes every drawer kick
-a job that a counter device agent pulls, because v3 runs in the cloud (owner: "คลาวด์ ใช้ A ทำเลย"); that design, not this
-one, decides how a kick reaches the drawer. PD-1 stays HELD, and:
+**Notes on PD-1, added after the review of PR 323, and how §5.4c settles them** (lane controller 2026-10-07). PD-1 is
+replaced by row **AG-PD**, which keeps its files and its rows 8–12:
 
 - (a) `DeviceService::queue` takes only 36-character request ids of `0-9 a-f -` (`device_service.rs:93-98`, refused
-  `รหัสคำขอไม่ถูกต้อง`) and holds the `hasDrawer = 0` refusal (DRV-4), so the passport id above cannot go through it.
-  PD-1 needs an internal entry on `DeviceService` in `device_service.rs`, as the cash save has (`after_save_in`); the
-  agent design's rows own that file and that entry, and PD-1 calls it.
-- (b) The cash save's drawer job id is `auto:<branch>:<ref>` on `main` (`device_service.rs:628`), while §5.4b / DRV-2
-  planned `auto-drawer:` and the `DeviceWorker` prefix. The agent design reconciles the two; the passport id follows
-  whatever it settles.
+  `รหัสคำขอไม่ถูกต้อง`) and holds the `hasDrawer = 0` refusal (DRV-4), so the passport id cannot go through it. Settled:
+  the internal entry `DeviceService::queue_drawer[_in]` (row AG-3, §5.4c *Server-made drawer jobs*) skips the client-id rule
+  and keeps the `hasDrawer` and freshness rules; AG-PD calls it.
+- (b) The cash save's job id is `auto:<branch>:<ref>` on `main` (`device_service.rs:628`), while §5.4b / DRV-2 planned
+  `auto-drawer:`. Settled: one scheme, `auto:<branch>:<ref>` for the receipt and `auto:<branch>:<purpose>:<key>` for the
+  rest — the passport id is `auto:<branch>:passport:<KIOSK|DESK>:<orderId>`; `auto-drawer:` is not used anywhere.
 
-Not designed for v3, with the reason (known difference, for when PD-1 lands): no `passport_drawer_commands` table — the
+Not designed for v3, with the reason (known difference, for when AG-PD lands): no `passport_drawer_commands` table — the
 device job and its event lines are the record; no link from the drawer job to the saved exchange (`drawerOrderId` is
-ignored by the save) — the job and the exchange are both logged with person and time; no "queue busy" check — a
-network printer has no CUPS queue, and the 120 s freshness rule (§5.4b) already stops a late kick.
+ignored by the save) — the job and the exchange are both logged with person and time. The "queue busy" check is kept on
+the agent for a CUPS printer (§5.4c *Send*); a LAN printer has no queue, and the 10 s freshness rule (§5.4c) stops a late kick.
 
 [required] A save whose payload carries `drawerOrderId` is answered exactly as the same save without it (PD-0 pins this,
 because the desk script adds the key to every save, `desk-passport-drawer.js:17`).
@@ -1034,7 +1416,7 @@ classDiagram
   QueuePage --> WorkTimes
   PassportDrawerWorkflow --> PassportDrawerDevice : None = DISABLED
   DevicePassportDrawer ..|> PassportDrawerDevice
-  DevicePassportDrawer --> DeviceService : DRAWER_REQUEST + process (DRV-2)
+  DevicePassportDrawer --> DeviceService : queue_drawer (AG-PD), the agent sends
   PassportDrawerWorkflow ..> Policy : DrawerPassport path
   PaymentSettingsService ..> Policy : PaymentMethods path
 ```
@@ -1077,7 +1459,7 @@ The 10-06 change — `Kiosk` `list` for any signed-in caller, as `notifications`
 | the payment check of a save | PM-S | every save, both RPC routes |
 | `/api/drawer-passport` (switched off) | PD-0 | `desk-passport-drawer.js` |
 | the script lists | PG | the kept admin and desk pages |
-| `DevicePassportDrawer`, the switch | PD-1 (HELD) | PD-0's workflow, through the S0 builder |
+| `DevicePassportDrawer`, the switch | AG-PD (replaces PD-1) | PD-0's workflow, through the S0 builder |
 
 ## 6. Authorisation
 
@@ -1614,7 +1996,7 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | T13b-S (#237) | `PgSavedExchanges`: the server's `SavedExchanges`, split out of T13b because nothing of it waits for the recording T13b needs (lane controller, 2026-10-07). [required] `new(transactions: TransactionService)`; `find(branch, reference)` answers from `TransactionService::find` with no SQL of its own: `Some(Completed)` for a live exchange of that branch with exactly that document number, `None` when there is none or it is `DEMO` (only live exchanges count, `saved_exchanges.rs`), the error on a database failure. v3 stores no pending or cancelled exchange, so `NotCompleted` is never answered. Its stub and tests are provided on `feat/pg-saved-exchanges-t13b-s` | `api/src/infrastructure/devices/pg_saved_exchanges.rs` and its `pub mod` line in `api/src/infrastructure/devices/mod.rs`; provided: `api/tests/pg_saved_exchanges_test.rs` | T8 (`TransactionService::find`), T13a (`SavedExchanges`) — both merged |
 | CS (#158) | One home for the custody port and one way to build `CustodyService`. `EmployeeCustody` moves, unchanged, to `application::custody::employee_custody` (new file); `presentation::http::employees` keeps the name with `pub use`, so the provided tests compile unchanged. `pg_custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService` (new file `infrastructure/custody/custody_service.rs`, the body of `rpc.rs`'s private `custody_service`) is the only place the four parts are put together: `rpc.rs` and `PgEmployeeCustody::new(pool)` (same signature) both call it. No `crate::presentation` import remains under `application` or `infrastructure` | `api/src/application/mod.rs`, `api/src/application/custody/{mod.rs,employee_custody.rs}`, `api/src/application/workflows/disable_employee.rs`, `api/src/presentation/http/{employees.rs,rpc.rs}`, `api/src/infrastructure/custody/{mod.rs,custody_service.rs,employee_custody.rs}` | DE (#157), #145 (both merged); BS (#163, merged) also edited `employee_custody.rs` |
 | DRV-1 (#274) | The driver layer (§5.4b): `DeviceDriver` async with `PrinterSettings`; `EscposDriver` + `PrinterTransport` + `TcpTransport` over `pos_printer::network_printer` (a `NETWORK` drawer request sends `ESC @ ESC p 0 25 250` → `DRAWER_OPENED`); `process` awaits it on the tx (only `SimulatedDriver` is installed — `new` is not changed here); `DeviceService::set_printer`; the `pos-printer` git dependency | `api/src/infrastructure/devices/{simulated_driver.rs,printer_settings.rs,escpos_driver.rs,device_service.rs,device_job.rs,mod.rs}`, `api/Cargo.toml`, `api/Cargo.lock`, `api/tests/escpos_driver_test.rs` | T13a (merged) |
-| DRV-2 (#274) | `process` in three steps with `SENDING`/`EXPIRED` and the 120 s rule; `new` installs `EscposDriver`; the cash-save drawer job; `DeviceWorker` started in the bootstrap; the status migration and partial index (§5.4b, data migration) | `api/src/infrastructure/devices/{device_service.rs,device_job.rs,device_repository.rs,pg_device_repository.rs,device_worker.rs,mod.rs}`, `api/src/bootstrap/mod.rs`, `api/migrations/20261007200000_device_job_statuses.sql`, `api/tests/device_drawer_flow_test.rs` | DRV-1; P2-S (#236) for the cash-save path |
+| DRV-2 (#274) | **Replaced by the AG rows below (D11, §5.4c)** — never cut. Its claim → send → record and its freshness rule (now 10 s) are kept on the agent's side of the wire (§5.4b); its `DeviceWorker`, the `EscposDriver` installed by `new`, the bootstrap spawn, the `auto-drawer:` prefix and the migration `20261007200000_device_job_statuses.sql` are dropped; the cash-save drawer job is AG-3's and the status migration AG-1's | — | — |
 | DRV-3 (#274) | `POST /api/devices` (C2) with the actions of §5.4b | `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/tests/devices_route_test.rs` | DRV-1 (`set_printer`); runs beside DRV-2 — no shared file |
 | DRV-4 (#274) | Printer models from configuration and the per-branch drawer switch (§5.4b *Printer models and the drawer switch*): `Settings.devices.printer_models` seeded with `NEOCAL_NTP_8220BT`; `PrinterModels`, `DrawerSettings` and `DeviceService::set_drawer`; the default trait method `DeviceDriver::run_with`, which `process` calls; `EscposDriver::with_models` and its override building the kick from the model; `queue` refuses a drawer request where `hasDrawer = 0`. DRV-1's provided tests and every caller of `new` stay untouched | `api/configuration/base.yaml`, `api/src/config/mod.rs`, `api/src/infrastructure/devices/printer_models.rs`, `api/src/infrastructure/devices/simulated_driver.rs`, `api/src/infrastructure/devices/escpos_driver.rs`, `api/src/infrastructure/devices/device_service.rs`, `api/src/infrastructure/devices/mod.rs`, `api/tests/printer_models_test.rs` | DRV-1 (#280) |
 | DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` gains two keys, `printerModel` (the model id) and `hasDrawer` (`true`/`false`/`null`); the key `model` stays T13b's admin snapshot (§5.4), so the same name never carries two meanings; the snapshot reads them through `DeviceService::drawer_settings(branch)`, which uses the service's own registry | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/src/infrastructure/devices/device_service.rs` (the one reader), `api/tests/devices_set_printer_test.rs` | DRV-4 |
@@ -1654,8 +2036,30 @@ committed); the add-on modules sit beside `server.mjs` in that bundle and are lo
 | Q1 | Queue work in the kiosk context (§5.5.3 with its data-migration section): the two time columns, `WorkTimes`, `QueueFilter`, `QueuePage`, `AcceptOutcome`, `Notifications.working`; `KioskMachine` (the holder's repeat `accept`; roles are POL's); the repository's `queue_page`, `working`, `mark_started_in`, `mark_completed_in`; the desk methods and `complete_in` stamping | `api/migrations/20261008110000_kiosk_work_times.sql`, `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs`, `api/crates/xc-kiosk/src/domain/kiosk/value_objects/{work_times.rs,queue_filter.rs,queue_page.rs,accept_outcome.rs,notifications.rs}` (+ their lines in `value_objects/mod.rs`), `api/crates/xc-kiosk/src/domain/kiosk/repositories/kiosk_repository.rs`, `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs`, `api/crates/xc-kiosk/src/application/kiosk/{desk.rs,save_hooks.rs}`; provided, re-recorded from the 10-06 bundle where the `accept` and `list` answers changed: `api/crates/xc-kiosk/tests/{kiosk_machine_test.rs,kiosk_service_test.rs,kiosk_queue_work_test.rs}`, `api/crates/xc-kiosk/tests/fixtures/{v2_kiosk_cases.json,v2_kiosk_service_cases.json,v2_queue_work_cases.json}`, `api/tools/v2-fixtures/{gen_kiosk.mjs,gen_kiosk_service.mjs,gen_queue_work.mjs}` | POL (after it, edits `kiosk_machine.rs` and the two kiosk test files again), S0; PR 318 (#315, merged `f72b979`) also edited `kiosk_machine.rs` and the infrastructure `kiosk_repository.rs` |
 | K-HTTP | `POST /api/kiosk` as the 10-06 bundle answers it: `rates` with `paymentMethods` (public), `notifications` with `serverNow`/`workingCount`/`working`, `list` with filter and page, `accept` with the claim and its times and the two Thai refusals, usernames for `staff` | `api/src/presentation/http/kiosk.rs`, `api/src/presentation/dto/kiosk.rs`; provided, re-recorded from the 10-06 bundle: `api/tests/{kiosk_http_test.rs,kiosk_http_common/mod.rs,fixtures/kiosk/}`, `api/tools/v2-fixtures/gen_kiosk_http.mjs` | POL (after it, edits `kiosk.rs` again), PM-K, Q1, PM-API (`rules_json`) |
 | PD-0 | `POST /api/drawer-passport` in v2's switched-off state (§5.5.5 rows 1–7; row 7 answers `DISABLED` in every branch because the S0 builder gives no device): `PassportDrawerWorkflow` and the route; a save carrying `drawerOrderId` is answered as without it | `api/src/application/workflows/passport_drawer.rs` (+ its line in `workflows/mod.rs`), `api/src/presentation/http/drawer_passport.rs`, `api/src/presentation/dto/drawer_passport.rs` (+ its line in `dto/mod.rs`); provided: `api/tests/drawer_passport_route_test.rs`, `api/tests/fixtures/drawer_passport/`, `api/tools/v2-fixtures/gen_drawer_passport.mjs` | POL, S0; P2-S (merged) |
-| PD-1 | **HELD — not cut until the owner says integrate (#274).** The passport step opens the drawer: `DevicePassportDrawer` behind the S0 builder; the switch `devices.passportDrawerBranches` [proposed]; rows 8–12 of §5.5.5 on a `DRAWER_REQUEST` job with the branch model's pulse. Notes (a) and (b) of §5.5.5: it calls an internal `DeviceService` entry that the counter-agent design's rows own (`queue` takes only 36-character ids and holds the `hasDrawer` refusal), and its job id follows the prefix that design settles (`auto:` on `main`, `device_service.rs:628`, against DRV-2's `auto-drawer:`) | `api/src/infrastructure/devices/passport_drawer_device.rs`, `api/configuration/base.yaml`, `api/src/config/mod.rs`; provided: `api/tests/passport_drawer_device_test.rs` | PD-0, S0; the counter-agent design and its `DeviceService` entry (replacing the dependency on DRV-2); DRV-4 (merged); the owner |
+| PD-1 | **Replaced by AG-PD** (§5.4c *PD-1 becomes an agent job*, §5.5.5) — never cut. Its files, switch and rows 8–12 of §5.5.5 move to AG-PD, which queues through `DeviceService::queue_drawer` (AG-3) under the id `auto:<branch>:passport:<KIOSK\|DESK>:<orderId>` and lets the branch's drawer agent send | — | — |
 | PG | The kept pages load the 10-06 scripts in v2's order (§5.5.6). `web.dir` of an install is extracted from the 10-06 zip from this row on | `api/src/presentation/pages.rs` (the two script lists only); provided: `api/tests/pages_addon_scripts_test.rs` | FV (merged, PR 320), PM-API, PM-D, K-HTTP, PD-0 |
+
+#### The counter drawer agent (§5.4c, D11)
+
+Every row owns its files alone. AG-5 holds `api/Cargo.lock` and is handed out with the others that hold it; no server row adds
+a crate.
+
+| # | Ticket | Files owned | Depends on |
+|---|---|---|---|
+| AG-1 | Table and seams: the migration with its data-migration section (§5.4c), which **also fixes the latent bug on `main`** that the `device_jobs` status CHECK (`api/migrations/20261007180000_devices.sql:8`) lacks `DRAWER_OPENED` — until it lands a `NETWORK` drawer job cannot record success (it cannot happen in production today: nothing outside the tests installs `EscposDriver`); `JobStatus::{Leased, Expired}`; `AgentRepository` + `PgAgentRepository` (every SQL statement on `device_agents`, and the agent-side `device_jobs` changes of §5.4c *Who writes*), `AgentToken`; every new file a later AG row fills, created empty, with every `mod.rs` line and the two `configure` calls in the route table | `api/migrations/20261008120000_device_agents.sql`, `api/src/infrastructure/devices/device_job.rs`, `api/src/infrastructure/device_agents/{mod,agent_repository,pg_agent_repository,agent_token,agent_service,claim,report,agent_admin}.rs`, `api/src/infrastructure/devices/{mod,drawer_job}.rs` (the line and the empty file), `api/src/infrastructure/mod.rs` (one line), `api/src/presentation/extractors/{mod,agent_auth}.rs`, `api/src/presentation/dto/{mod,device_agent,device_setup}.rs`, `api/src/presentation/http/{mod,device_agent,device_setup}.rs`; provided: `api/tests/agent_repository_test.rs` (with a job stored as `DRAWER_OPENED`) | DRV-4 (merged). Shares `mod.rs` lines with rows of *The 10-06 add-ons*: S0 (`http/mod.rs`, `devices/mod.rs`), SET (`infrastructure/mod.rs`), PD-0 (`dto/mod.rs`) — handed out one after the other |
+| AG-2 | The agent's side of the server: `AgentService` (pair with its attempt limit, authenticate with its attempt limit, claim with the long-poll, expiry, lapse, lease and the kick bytes from the branch's drawer settings, report with lease match, late report and repeat), the audit lines; `AgentAuth` (bearer only; `Origin` or `Cookie` → 400 `NOT_FOR_BROWSERS`); `POST /api/device-agent/{pair,claim,report}` | `api/src/infrastructure/device_agents/{agent_service,claim,report}.rs`, `api/src/presentation/extractors/agent_auth.rs`, `api/src/presentation/http/device_agent.rs`, `api/src/presentation/dto/device_agent.rs`; provided: `api/tests/agent_claim_test.rs`, `api/tests/device_agent_http_test.rs` | AG-1 |
+| AG-3 | The device service's side: `DrawerJobKey`, `DrawerJobOutcome`, `queue_drawer[_in]` (the id scheme and rule table of §5.4c); `after_save_in` adds the cash-save drawer job; `process` leaves a drawer job of a branch with an active agent to the agent. `DeviceService::new` keeps its signature and builds `PgAgentRepository` from `branch_tx.pool()` as `device_service.rs:138` builds `PgDeviceRepository`, so `http/devices.rs:43` and `http/rpc.rs:300` are not edited | `api/src/infrastructure/devices/{drawer_job,device_service}.rs`; provided: `api/tests/device_drawer_job_test.rs` | AG-1; runs **beside AG-2 and AG-4** |
+| AG-4 | The owner's page: `EntryPath::DeviceSetup` (owner only); `AgentAdmin` (`list`, `add` with the code shown once, `newCode`, `revoke` failing the branch's `QUEUED` drawer jobs); `POST /api/device-setup`; `GET /_xc/device-agents` and its compiled-in page | `api/crates/xc-auth/src/domain/policy/{entities/policy.rs,value_objects/entry_path.rs}`, `api/src/infrastructure/device_agents/agent_admin.rs`, `api/src/presentation/http/device_setup.rs`, `api/src/presentation/dto/device_setup.rs`, `api/static/xc-device-agents.html`; provided: `api/tests/device_setup_http_test.rs` | AG-1; POL (§10 *The 10-06 add-ons*) — both edit `policy.rs` and `entry_path.rs`, so the queue hands them out one after the other |
+| AG-5 | The agent `xc-device-agent`: CLI (`install`, `run`, `uninstall`, `status`, `--version`), configuration and token file, the runner (long-poll, backoff, monotonic freshness, report retry), the journal, `CupsTransport` (`lpstat -o` check, `lp -d <queue> -o raw`), the TCP 9100 write (`pos_printer::network_printer::send`), `HttpAgentApi` (rustls, HTTPS only), the LaunchAgent plist and the systemd unit, `build.rs` for `version`/`build`/`builtAt` | `api/crates/xc-device-agent/` (new, every file), `api/Cargo.lock`; provided: `api/crates/xc-device-agent/tests/{runner_test,journal_test,cups_transport_test}.rs` (a fake `AgentApi`, a fake `lp`/`lpstat`) | — (runs **from the start**, beside every server row) |
+| AG-6 | Build and ship the agent: `device-agent.yml` (`workflow_dispatch`, `release/**`, and a PR that changes the workflow file itself, as A5): universal macOS binary on `[self-hosted, macOS, ARM64]`, Linux x86_64 on `[self-hosted, Linux, X64]` with the glibc check, artifacts with `.sha256`; one end-to-end run of the built agent against a server with AG-2 (pair, claim, report through a fake `lp`); install notes with the owner page's URL | `.github/workflows/device-agent.yml`, `deploy/agent/README.md`, `deploy/agent/e2e.sh` | AG-5, AG-2 |
+| AG-PD | **Replaces PD-1** (§5.4c *PD-1 becomes an agent job*, §5.5.5), for the kiosk and the desk: `DevicePassportDrawer` queues through `queue_drawer` and answers from the job's state after at most 5 s; `SIMULATED` on a branch with no agent; the switch `devices.passportDrawerBranches` [proposed]. Ships in the same batch as the kiosk work (owner 2026-10-07, §11) | PD-1's files: `api/src/infrastructure/devices/passport_drawer_device.rs`, `api/configuration/base.yaml`, `api/src/config/mod.rs`; provided: `api/tests/passport_drawer_device_test.rs` | PD-0, S0 (§10 *The 10-06 add-ons*), AG-3 |
+| AG-M | **Later.** Several drawers in one branch: which counter a job is for, and more than one active agent per branch | decided when needed | AG-1 … AG-4 |
+| AG-W | **Later.** Windows: spooler RAW transport and a Windows service; a build on `[self-hosted, Windows, X64]` | `api/crates/xc-device-agent/src/{win_raw_transport,install/windows_service}.rs`, `api/Cargo.lock`, `.github/workflows/device-agent.yml` | AG-5, AG-6 |
+| AG-BT | **Later.** A printer on Bluetooth: a serial transport, the `drawer_transport` CHECK widened with its own data-migration section | `api/crates/xc-device-agent/src/serial_transport.rs`, a new migration | AG-5, AG-1 |
+| AG-R | **Later.** Receipts on the agent, once T13b decides the renderer | decided with T13b | T13b |
+
+**In parallel:** **AG-1 and AG-5** start together. After AG-1, **AG-2, AG-3 and AG-4** run side by side. AG-6 needs AG-5
+and AG-2; AG-PD needs AG-3 and PD-0/S0.
 
 ## 11. Open items that block specific tickets
 
@@ -1668,5 +2072,8 @@ committed); the add-on modules sit beside `server.mjs` in that bundle and are lo
 | D5 port bookings/members or not | 2 | T15, and the member flag in T11b | owner |
 | A recording of v2's devices HTTP wrapper and receipt archive (`server.mjs:7545`, `7562-7766`, `7794`): the `/api/devices` envelope, what `/devices/receipt` returns, the columns of `receipt_images` (§5.4) | 2 | T13b's tests; `POST /api/devices` could go first if T13b is cut in two | lane controller (the bundle is not in this repository) |
 | Role table in §6 (v2's two allow-lists disagree) | 2 | nothing — the decision in force is that both paths are reproduced as recorded from v2, and `Policy` is on `main` that way (PR 70, `2314003`); T11a is not blocked by it. The owner may still rule which path is right for the cells listed in §6; that ruling would change the merged table and T11a's behaviour | owner, if and when |
-| Integrate the passport-step drawer (D10, §5.5.5) | 2 | PD-1 (held with DRV-2) | owner: "integrate" — and, when it does, whether branches are switched on by configuration ([proposed] `devices.passportDrawerBranches`) |
+| Integrate the passport-step drawer (D10, §5.5.5) | 2 | nothing — **answered**: the owner, 2026-10-07, asked whether D11's "ทำเลย" also lifts this hold: "ทำเป็น ชุดเดียวกับ kioks" (recorded on #274, issuecomment-6040657227). AG-PD (which replaces PD-1) ships in the same batch as the kiosk work. Still open inside AG-PD: whether branches are switched on by configuration ([proposed] `devices.passportDrawerBranches`) | — |
 | The 10-06 bundle is undeployed and untested against PostgreSQL (manifest `"deployed": false`; its notes: mock database only) | 2 | nothing — §5.5's fixtures are recorded from its code, not from a running server; a later bundle that changes these add-ons reopens the recording | lane controller |
+| macOS code signing / notarization of `xc-device-agent` (§5.4c *Distribution and versioning*) | 2 | nothing for a test install (the binary is copied, not downloaded, and run by launchd); a download from a page would be stopped by Gatekeeper | owner (an Apple developer account) — **proposed:** no notarization for the first shops; the install copies the binary and removes the quarantine attribute |
+| The drawer pulse of the NEOCAL NTP-8220BT: `0/25/250` [proposed] or v2's `0/25/125` | 2 | nothing — a configuration edit (§5.4b); the agent sends what the branch's model says | owner, measured on the device at the first install: **proposed** keep `0/25/250` unless the drawer fails to open |
+| Freshness of a drawer job: 10 s [proposed] (pos108 allows 120 s) | 2 | nothing — one constant (§5.4c) | lane controller; owner may widen it if a slow counter network misses kicks |
