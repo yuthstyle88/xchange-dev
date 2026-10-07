@@ -3734,6 +3734,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-device-agent"
+version = "1.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "pos-printer",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "xc-exchange"
 version = "0.1.0"
 dependencies = [

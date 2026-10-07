@@ -1,0 +1,25 @@
+[package]
+name = "xc-device-agent"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "XCHANGE counter drawer agent: pulls drawer jobs from the cloud server and sends the kick to the printer"
+license = "Proprietary"
+publish = false
+
+# STUB written by the ticket author of row AG-5 with the provided tests.
+# The implementer adds what the agent needs (HTTP client with rustls, base64,
+# pos-printer for the TCP write, the CLI); `pos-printer` is the only crate of
+# this workspace's family it may depend on (design §5.4c *Dependency rule*).
+
+[dependencies]
+base64 = "0.22"
+pos-printer = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "fs"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util", "process", "io-util", "fs"] }
