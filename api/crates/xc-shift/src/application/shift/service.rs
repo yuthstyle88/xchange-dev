@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use pos_error::AppResult;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, plain_decimal};
 
 use crate::domain::shift::commands::close_shift::CloseShift;
 use crate::domain::shift::commands::move_stock::MoveStock;
@@ -58,8 +58,7 @@ fn verify_claimed_expected(
             }
             Some(serde_json::Value::String(s)) => {
                 let trimmed = s.trim();
-                let d = rust_decimal::Decimal::from_str(trimmed)
-                    .map_err(|_| ShiftError::ExpectedChanged)?;
+                let d = plain_decimal(trimmed).ok_or(ShiftError::ExpectedChanged)?;
                 if d < rust_decimal::Decimal::ZERO || d.scale() > 2 {
                     return Err(ShiftError::ExpectedChanged);
                 }

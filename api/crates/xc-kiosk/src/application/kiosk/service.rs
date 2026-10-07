@@ -14,7 +14,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, plain_decimal};
 
 use crate::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
@@ -458,11 +458,8 @@ impl KioskService {
             .ok()
             .filter(|code| !code.is_thb())
             .ok_or_else(|| refuse(KioskServiceError::InvalidCurrencySettings))?;
-        let rates_valid = match (
-            Decimal::from_str_exact(&cmd.buy),
-            Decimal::from_str_exact(&cmd.sell),
-        ) {
-            (Ok(buy), Ok(sell)) => buy > Decimal::ZERO && sell >= buy,
+        let rates_valid = match (plain_decimal(&cmd.buy), plain_decimal(&cmd.sell)) {
+            (Some(buy), Some(sell)) => buy > Decimal::ZERO && sell >= buy,
             _ => false,
         };
         if !rates_valid {
