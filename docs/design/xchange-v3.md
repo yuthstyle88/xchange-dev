@@ -403,6 +403,8 @@ screens do arithmetic on it; decimals exist only inside the server and the datab
 | `POST /api/device-agent/{pair,claim,report}` (new, §5.4c) | JSON as §5.4c *Claim*, *Record*, *Identity*; bearer agent token, **not** the same-origin rule | none — v2's server sat on the counter machine |
 | `POST /api/device-setup` · `GET /_xc/device-agents` (new, §5.4c) | `{action: list\|add\|newCode\|revoke, payload}` — the owner's page: pair, list, revoke | none |
 | Pages: `/`, `/desk`, `/staff`, `/staff/report`, `/staff/desk`, `/staff/documents`, `/login`, `/devices`, `/kiosk-queue.html`, `/kiosk-currencies.html`, `/staff-guide`, `/receipt-sample`, static assets | — | route table `8143-8188` |
+| `GET /_xc/desk.js` · `GET /_xc/staff-password.js` (compiled in, as FV's `/_xc/forms.js`) | — | v3 only; rows DK-1, SP-1 (*Compiled-in page scripts after FV*, below) |
+| `POST /api/staff/password` when `mustChange` is false | `{payload: {password, currentPassword}}` — v2 read `password` only | v3 differs on purpose: row SP-1 (*The staff's own password change*, below) |
 
 Request rules carried over unchanged: `Origin` must equal the request origin and `X-Xchange-Request: 1`
 on every POST (`5542`) — except the three `/api/device-agent/*` routes, which are called by a program, not a page, and
@@ -485,6 +487,195 @@ Known difference: v3's pages now validate in the browser where v2's rule was sil
 poll it. v3 builds it with SQL instead of replaying the ledger, and keeps v2's 10,000-row cap (`6600`),
 but the response is still O(history). The root cause is the screens' contract, which this phase does not
 change; it goes away when those screens are rewritten. The Flutter kiosk does not use `adminSnapshot`.
+
+#### Compiled-in page scripts after FV (rows DK-1, SP-1)
+
+FV's seam — a script of v3's own, compiled into the binary and served under `/_xc/`, while v2's files stay untouched — is
+used twice more, each by a script file of its own, so the two tickets share no script, no test and no route:
+
+| Script | Pages | Row | Ticket |
+|---|---|---|---|
+| `/_xc/desk.js` ← `api/static/xc-desk.js` | `/desk`, `/staff/desk` | DK-1 | #332 |
+| `/_xc/staff-password.js` ← `api/static/xc-staff-password.js` | `/staff` | SP-1 | #331 |
+
+[required] The route and the tag, for both:
+
+- The route answers as FV's does: GET → the `include_str!` bytes with `text/javascript; charset=utf-8`, `Cache-Control:
+  no-cache`, `X-Content-Type-Options: nosniff`, no session read; any other method → `fallback` (the plain 404); a file of the
+  same name under `web.dir` never replaces it. DK-1 adds **one private helper** to `pages.rs`,
+  `compiled_script(cfg, path: &'static str, body: &'static str)`, which registers exactly that resource; each script is then
+  **one call** in `configure`. FV's own registration (`forms_script`) is left as it is.
+- The tag is **one entry in the page's `scripts` list** (`PAGE_SPECS`, `pages.rs:46-147`), so `add_scripts` writes
+  `<script src="/_xc/…"></script>` (no `defer`) after the page's v2 scripts and therefore **immediately before FV's tag**.
+  DK-1 appends `"/_xc/desk.js"` as the **last** entry of `DESK_SCRIPTS`; SP-1 sets `/staff`'s list to
+  `&["/_xc/staff-password.js"]`. A script at the end of the list runs after the page's inline scripts, after
+  `STAFF_DESK_SCRIPT` (which `page_handler` inserts before the tags) and after every v2 add-on, so its wrappers are the
+  outermost ones. Row PG later inserts the 10-06 desk scripts after `/account-bar.js` and **before** `"/_xc/desk.js"`: v2's
+  order is kept and v3's script stays last.
+- So each ticket's edit of `pages.rs` is two single lines — the tag entry and the `compiled_script` call — plus, in DK-1
+  only, the helper. The route line cannot be avoided: the script is compiled in (FV's rule), and a shared table of compiled
+  scripts would be one more file both tickets edit.
+- [required] **The byte compare.** `every_page_answers_as_v2_does` (`api/tests/pages_test.rs:305`) strips FV's tag and the
+  version line (`without_version_line`, `:279-302`). DK-1's provided tests widen that strip once, the way FV did: it also
+  removes the run of `<script src="/_xc/…"></script>` tags (no `defer`) that ends immediately before FV's tag, and nothing
+  else. Which pages carry which `/_xc/` script is pinned by each row's own page test (`pages_desk_script_test.rs`,
+  `pages_staff_password_test.rs`), so the widened strip hides no misplaced tag. SP-1's `/staff` tag relies on that strip:
+  SP-1 is handed out after DK-1 has merged.
+
+#### The kept desk's dead ends (row DK-1, #332)
+
+Three dead ends on the kept desk page (measured on `/staff/desk` as FRONT, `origin/main` `2e36b18`; #332 §2 has the chain):
+the passport step answers any server refusal with a sentence about the browser's counter (`desk.html:109`); on `/staff/desk`
+the staff code `#staff` is free text that the printed receipt shows although the ledger records the signed-in user
+(`desk.html:116`, `:118`; `save_transaction.rs:190`); and after a LIVE save the server refused, Retry is the only control
+(`desk.html:148-150`). All three are v2 behaviour served as it is. `api/static/xc-desk.js` fixes them by re-assigning the
+page's globals, the pattern v2's own add-ons use (`desk-skip.js`, `desk-devices.js`); it sends no new kind of request.
+
+[required] **A definite refusal and an unknown outcome are told apart by observing `fetch`, never by the error text.**
+The transports throw `Error(result.error)` for every non-2xx answer (`public/transport.js`, `public/staff-transport.js`), so a
+400 and a 500 reach the page as the same kind of error. The script wraps `window.fetch`; for a `POST` to `/api/rpc` or
+`/api/staff/rpc` whose JSON body names an action, it records that action's last answer: `{status, json, error}` read from a
+clone of the response, or `{failed: true}` when `fetch` itself rejected. For one attempt to save (`gasCall('saveTransaction')`):
+
+| What was observed for `saveTransaction` | Outcome |
+|---|---|
+| nothing — the page refused before sending (`desk-devices.js`'s `ยังไม่ยืนยันการนับเงิน`), or an upload failed before the RPC | **refused** |
+| status 400–499 and a JSON body whose `error` is a non-empty string (401 included: nothing was written) | **refused** |
+| `fetch` rejected (network); status 5xx; a body that is not JSON; a 2xx without `saved: true`; anything else | **unknown** |
+
+A refusal wrote nothing: a save is one database transaction, and a repeat of an already saved `submissionId` answers the
+first save, not a refusal. An unknown outcome may have been recorded, so Retry — which re-sends the same `s.cloudPayload` and
+`submissionId` — stays its only exit.
+
+[required] **`staffDraftId`.** `STAFF_DESK_SCRIPT` (`pages.rs:53`) begins one custody draft at the first `reserveCustomer` of a
+page load and never clears it. Since #154 a save completes a draft only when the draft's side, currency and amount equal the
+exchange's (`custody_machine.rs:78-83`), and from 22:50 or after the cut-off a save needs such a draft, its own and of the open shift (`:1202-1212`). So on
+`/staff/desk` the script sets `staffDraftId = ''` **on the way back and on every New that goes ahead** (saved or not): the next
+customer step then begins a fresh draft with the figures of that moment, exactly as the page's first exchange did. The
+draft left behind stays `Open`; nothing reads an open draft except the match of a save (measured at `d6084ea`: `DraftStatus::Open`
+appears only in `custody_machine.rs` and the repository's mapping), so it changes no balance. `STAFF_DESK_SCRIPT` itself is
+not edited.
+
+Behaviour (each row is a case of the JS test or of the browser check in #332):
+
+| # | Case | Required |
+|---|---|---|
+| 1 | LIVE (`cloudOnline`), passport step, the server refused `opsBeginTransaction` or `reserveCustomer` with a JSON `error` | `#customerError` = that `error` as is (custody off on `/staff/desk`: `เจ้าของต้องเปิดใช้ขั้นตอนรับ–ส่งเงินก่อน`); step stays 1; the button is enabled again (v2 does that). No customer is reserved: the hook asks for the draft first |
+| 2 | LIVE, the request got no JSON answer (network, 5xx page, not JSON) | `#customerError` = `สร้างรหัสลูกค้าไม่ได้ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่` |
+| 3 | not LIVE (the browser's counter) | v2's sentence, unchanged |
+| 4 | the skip button `#skipCustomer` | unchanged: it already shows `ข้ามไม่สำเร็จ: <reason>` |
+| 5 | `/staff/desk`, booking step | `#staff` = the signed-in username, `readOnly`, `title` `รหัสจากบัญชีที่เข้าสู่ระบบ`; `s.staff` = the username unless `s.cloudResult?.saved`; re-applied on every change under `#panel` (`MutationObserver`), as `fillStaff` does on `/desk` (`account-bar.js:40-41`). The username comes from `POST /api/auth {action:"status"}`; when that fails, `#staff` stays as v2 leaves it |
+| 6 | `/desk` | `#staff` left to `account-bar.js`, unchanged |
+| 7 | LIVE save **refused** | the result box keeps v2's sentence and **ลองบันทึกซ้ำ**, and gains `<button id="xc-back" type="button">← กลับไปแก้ไขรายการ</button>`. It does what v2's `#cancel` does (`desk.html:117`) and more: `s` keeps the customer, passport, staff, value date, type, currency and amount, and loses `booking`, `bookedAt`, `cloudPayload`, `cloudResult`, `cloudError`, `submissionId`, `paidAt`, `receipt`, `documentRef`; `ref` = `''`; `step = 0`; `render()`; on `/staff/desk` `staffDraftId = ''`. The next pay builds a new payload with a new `submissionId`. **ทำรายการใหม่** is enabled and runs v2's own confirm for an unsaved exchange |
+| 8 | LIVE save refused, **พิมพ์ใบเสร็จ** | disabled: no receipt for an exchange that was not recorded |
+| 9 | LIVE save **unknown** | v2's box with Retry only; New and Print disabled; plus `<p id="xc-save-unknown">` `ยังไม่ทราบผลการบันทึก กด "ลองบันทึกซ้ำ" ได้ ระบบไม่บันทึกรายการเดียวกันซ้ำ` |
+| 10 | LIVE save saved | unchanged (New and Print enabled); on `/staff/desk` New also clears `staffDraftId` |
+| 11 | DEMO | unchanged |
+| 12 | a refused save, then Retry refused again | the way back is still offered |
+
+Not in this row: the connection bar's `มีกะเปิดพร้อมทำรายการ` while custody is off (`desk.html:173`) — the real reason is shown
+where the refusal happens (row 1).
+
+[required] The pure parts, exported through `module.exports` under Node exactly as FV's script does (`xc-forms.js`), and
+pinned by `api/tests/js/xc_desk.test.mjs`:
+
+| Function | Answer |
+|---|---|
+| `rpcAction(url, init)` | the `action` of a `POST` to `/api/rpc` or `/api/staff/rpc` whose body is JSON text naming one, else `null` |
+| `readAnswer(status, text)` | `{status, json, error}`: `json` true for a JSON object, `error` its string `error` or `null` |
+| `saveOutcome(observed)` | `'refused'` or `'unknown'`, by the table above (`observed` = `null`, `{failed: true}` or `readAnswer`'s value) |
+| `customerErrorText(online, observed)` | `null` when not online (keep v2's sentence); the observed `error` when it is a non-empty string; else `CUSTOMER_UNREACHED` |
+| `fillsStaff(pathname, user)` | `true` only on `/staff/desk` with a non-empty `user.username` |
+| `backToEdit(state)` | a new object as row 7 describes; the argument is not changed |
+| `buttons({recordMode, cloudSaving, saved, outcome})` | `{back, newEnabled, printEnabled, unknownNote}` per rows 7–11 |
+| `BACK_LABEL`, `UNKNOWN_NOTE`, `CUSTOMER_UNREACHED`, `STAFF_TITLE` | the four sentences above |
+
+#### The staff's own password change (row SP-1, #331)
+
+The account bar's **เปลี่ยนรหัสผ่าน** (`account-bar.js:11`, a v2 file) sends every role but OWNER to `/staff`, which offers a
+password field only while `mustChange` is true (`staff.js:11`). v2 never had a voluntary change, and its one door,
+`POST /api/staff/password`, does not ask for the current password (v3: `service.rs:352-370`; v2 `server.mjs:7370-7375`).
+A page-only form would let anyone at a counter left signed in set a new password and lock the employee out (a change bumps
+`version`, which ends every session). Lane controller's decision (#331, option A; security decisions are delegated to the lane
+controller): the door asks for the current password whenever `must_change` is false.
+
+[required] `AccountService::change_password(&self, staff_token, payload, now)` keeps its signature (so
+`presentation/http/auth.rs` is not edited) and reads `payload.currentPassword` beside `payload.password`. In this order, each
+refusal writing nothing and ending no session:
+
+| # | Check | Refusal |
+|---|---|---|
+| 1 | the staff session, first-password sessions allowed (unchanged; the session is looked at before anything else — fixture step 57) | 401 `EMPLOYEE_AUTH_REQUIRED` |
+| 2 | `must_change` true → **the first-password path, unchanged**: `currentPassword` is neither asked nor read; go to 6 | — |
+| 3 | **counted as a sign-in attempt:** the name counter `USER:<username>` + 1 in the current 15-minute window — the same row a sign-in of that employee counts (`login_employee`, `service.rs:228-233`); above 10 → refused. Every voluntary attempt is counted before the check, right or wrong, as a sign-in is (§6) | 400 `ลองเข้าสู่ระบบเกินกำหนด กรุณารอ 15 นาที` (v2's `LIMIT`, as is) |
+| 4 | the stored hash is read with the employee's row (`find_employee_by_username(employee.username)`); **a row whose `version` is no longer the session's — or no row — means the session has ended** (another change landed first) | 401 `EMPLOYEE_AUTH_REQUIRED` |
+| 4a | `currentPassword` verified at full cost against that hash (`PasswordHasher::verify_at_full_cost`). Missing, not a string, or wrong are one answer | 400 `รหัสผ่านปัจจุบันไม่ถูกต้อง` (new constant `CURRENT_WRONG`) |
+| 5 | the new password is exactly the current one | 400 `รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน` (new constant `SAME_PASSWORD`) |
+| 6 | the new password's length (`PasswordHasher::hash`, unchanged) | 400 `รหัสผ่านต้องมี 12–128 ตัวอักษร` |
+| 7 | stored against the session's `version` (unchanged); a lost race | 401 `EMPLOYEE_AUTH_REQUIRED` |
+
+Success is unchanged: 200 `{saved: true, loginAgain: true}`, the staff cookie cleared, every session of the employee ended.
+
+Why check 4 compares the version: without it, of several changes sent at once with one session, the ones that read the hash
+after the first change landed see the new hash and answer `CURRENT_WRONG` instead of the 401 a finished session answers.
+Measured on the provided branch with a throwaway implementation: `concurrent_password_changes_with_one_session_change_it_once`
+(`account_test.rs`) counted 1 ok, 4 × 401, 3 × `CURRENT_WRONG` without it, and 1 ok, 7 × 401 with it (three runs).
+
+Why the name counter and not the address counter: this door can only ever try the one account its session names, so the
+per-account counter is the guard that matters, and sharing it with sign-in means guesses here and at the sign-in door draw on
+the same ten. The address counter (30 per address) guards against trying many names from one place, which this door cannot
+do; counting it here would let one employee's typos use up the sign-in budget of every till behind the shop's address.
+The owner's door is not touched (§6: no owner password change is designed).
+
+[required] **The page half**, `api/static/xc-staff-password.js` on `/staff`. On load it sends `POST /api/staff/me` (the call
+`staff.js:9` makes) and renders only on a 200 whose `employee.mustChange` is `false`; otherwise it renders nothing, and the
+first-password form of `staff.js` is the only one. It inserts, before `#root` (which `staff.js` renders into and the script
+never touches), `<details id="xc-staff-password">` with `<summary>เปลี่ยนรหัสผ่าน</summary>`, open when
+`location.hash === '#password'`, holding a form with `#xc-current-password` (`type=password`, `autocomplete=current-password`,
+required), `#xc-new-password` and `#xc-new-password-again` (`type=password`, `autocomplete=new-password`, `minlength=12`,
+`maxlength=128`, required), a submit button `บันทึกรหัสผ่านใหม่` and `<p id="xc-staff-password-error" role="alert">`. FV's helper
+gives each password field its show/hide button. Submitting sends `{payload: {currentPassword, password}}`; on success the page
+shows `เปลี่ยนรหัสผ่านแล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่` and goes to `/login`.
+
+The pure parts, exported under Node and pinned by `api/tests/js/xc_staff_password.test.mjs`:
+
+| Function | Answer |
+|---|---|
+| `shouldOffer(status, body)` | `true` only for 200 with `body.employee.mustChange === false` |
+| `checkLocal(current, next, again)` | the first that applies, else `null`: empty current → `กรุณากรอกรหัสผ่านปัจจุบัน`; `next` outside 12–128 UTF-16 units → `รหัสผ่านต้องมี 12–128 ตัวอักษร`; `next !== again` → `รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน`; `next === current` → `SAME_PASSWORD` |
+| `requestBody(current, next)` | `{payload: {currentPassword: current, password: next}}` |
+| `outcome(status, text)` | `{kind, message, field}`: 200 with `saved: true` → `saved`, `SAVED`; 401 → `signedOut`, `เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่` (account bar's sentence); other 4xx with a JSON `error` → `refused`, that sentence, `fieldFor(it)`; anything else → `failed`, `เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่` |
+| `fieldFor(sentence)` | `'current'` for `CURRENT_WRONG`; `'new'` for `SAME_PASSWORD` and the length sentence; else `null` (the attempt limit names no field) |
+| `CURRENT_WRONG`, `SAME_PASSWORD`, `LENGTH`, `CURRENT_EMPTY`, `MISMATCH`, `SAVED`, `SIGNED_OUT`, `FAILED` | the sentences above |
+
+No database change: the check reads the existing `employees.password_hash` and the counter writes the existing
+`auth_attempts` rows. No migration, no backfill.
+
+#### Class diagram additions (DK-1, SP-1)
+
+```mermaid
+classDiagram
+  direction LR
+  class PageServer { <<presentation/pages.rs>> +compiled_script(cfg, path, body) — one GET route per compiled-in script (DK-1); +forms_script() (FV, unchanged) }
+  class DeskScript { <<api/static/xc-desk.js>> +rpcAction(url, init); +readAnswer(status, text); +saveOutcome(observed); +customerErrorText(online, observed); +fillsStaff(pathname, user); +backToEdit(state); +buttons(view) }
+  class StaffPasswordScript { <<api/static/xc-staff-password.js>> +shouldOffer(status, body); +checkLocal(current, next, again); +requestBody(current, next); +outcome(status, text); +fieldFor(sentence) }
+  class AccountService { <<xc-auth application/account/service.rs>> +change_password(staff_token, payload, now) — currentPassword when must_change is false }
+  class AccountRepository { <<trait, xc-auth>> +increment_attempt(key, window_start); +find_employee_by_username(username) }
+  class PasswordHasher { +verify_at_full_cost(password, stored, spare) bool; +hash(password) }
+  PageServer --> DeskScript : /_xc/desk.js on /desk and /staff/desk
+  PageServer --> StaffPasswordScript : /_xc/staff-password.js on /staff
+  StaffPasswordScript ..> AccountService : POST /api/staff/me, /api/staff/password
+  DeskScript ..> CompatRpc : observes the answers to saveTransaction, reserveCustomer, opsBeginTransaction
+  AccountService --> AccountRepository : USER:name counter, shared with sign-in
+  AccountService --> PasswordHasher : the current password, at full cost
+```
+
+| Provided | By row | Used by |
+|---|---|---|
+| `compiled_script` in `pages.rs`; the widened strip of `pages_test.rs` | DK-1 | SP-1 (one call and one tag line); any later compiled-in script |
+| `/_xc/desk.js` | DK-1 | the kept `desk.html` on `/desk` and `/staff/desk` |
+| `currentPassword` on `POST /api/staff/password` | SP-1 | `/_xc/staff-password.js` |
+| `/_xc/staff-password.js` | SP-1 | the kept `staff.html` on `/staff` |
 
 ### 5.4 Devices after T13a: the save step and the two routes (T8c-2b, T13b)
 
@@ -1508,6 +1699,8 @@ are v2's, pinned by a fixture recorded from v2.
 Attempt limit, as v2 (`7340`, `7845`; v2 keeps the rows in `booking_limits` under an `AUTH:` key, v3 in `auth_attempts`):
 every sign-in attempt is recorded **before** the password is checked, right or wrong; within a 15-minute window more than
 30 attempts from one IP address, or more than 10 for one username, are refused with v2's sentence.
+An employee's voluntary password change (`mustChange` false) asks for the current password and counts on the same
+per-username row; the first-password change does neither (row SP-1, §5.3 *The staff's own password change*).
 
 Password hashing: [required] one type, `PasswordHasher`, in
 `api/crates/xc-auth/src/domain/account/value_objects/password_hasher.rs`, is the only code that hashes or verifies.
@@ -2002,10 +2195,20 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | DRV-3b (#274) | `setPrinter` and `setDrawer` on `POST /api/devices` (owner only, `Policy::allow_devices` gains both arms; staff refused with `บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้`): `setPrinter` → `set_printer(kind, host, port)`, `setDrawer` → `set_drawer(printerModel, hasDrawer)`; `snapshot` gains two keys, `printerModel` (the model id) and `hasDrawer` (`true`/`false`/`null`); the key `model` stays T13b's admin snapshot (§5.4), so the same name never carries two meanings; the snapshot reads them through `DeviceService::drawer_settings(branch)`, which uses the service's own registry | `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/src/infrastructure/devices/device_service.rs` (the one reader), `api/tests/devices_set_printer_test.rs` | DRV-4 |
 | BK (#121) | Backups and log retention of the v3 server (§7b): `backup.sh` makes one set (`pg_dump -Fc` + uploads archive, one UTC stamp, both or nothing), keeps the newest 7, copies off-host by `rsync` of the directory's contents filtered to the set directories (`--delete` only once the local directory holds 7); runs only through the unit and prints the set's path last; `restore.sh` rehearses a restore into a scratch database (made as `postgres` through `runuser`, the dump handed to `pg_restore` on stdin) and directory and refuses the live ones; a oneshot service (hardened, `ReadWritePaths=` the backup directory) with a daily `Persistent=true` timer; a journald drop-in example; the `XC_BACKUP_*` settings; the README install step creates `XC_BACKUP_DIR` (`install -d -m 0700 -o root -g root`) before the timer is enabled | `deploy/server/backup.sh`, `deploy/server/restore.sh`, `deploy/server/xc-v3-backup.service`, `deploy/server/xc-v3-backup.timer`, `deploy/server/journald-xc-v3.conf`, `deploy/server/env.example`, `deploy/server/scripts.test.sh`, `deploy/README.md` | — |
 | FV | The shared form helper (§5.3 *The shared form helper*): every HTML page gets the one tag `<script src="/_xc/forms.js" defer></script>` immediately before the version line, on both page paths; `GET /_xc/forms.js` answers the compiled-in script; the script repairs a `pattern` the `v` flag rejects (and maps login's 3–30 to the door's 3–40), lets the browser block an invalid submit with focus on the field, marks invalid fields red, points the cited server refusals at their field, and gives every password field a show/hide button. v2's files are not edited; the server's validation rules are not changed. A Node step in `api.yml` runs the helper's pure-function test | `api/src/presentation/pages.rs`, `api/static/xc-forms.js` (new), `api/tests/pages_forms_test.rs` and `api/tests/js/xc_forms.test.mjs` (new, provided), `api/tests/pages_test.rs` (its strip helper, provided), `.github/workflows/api.yml` (the Node step) | — |
+| DK-1 (#332) | The kept desk's dead ends (§5.3 *The kept desk's dead ends*): `GET /_xc/desk.js` compiled in through the new helper `compiled_script`, tagged as the last entry of `DESK_SCRIPTS` (both desk paths); the script shows the server's own refusal on the passport step, fills and locks `#staff` on `/staff/desk`, and after a **refused** LIVE save offers a way back to the rate step and enables New (Print stays disabled), Retry staying the only exit after an **unknown** outcome; on `/staff/desk` it clears `staffDraftId` on the way back and on New. v2's files, `STAFF_DESK_SCRIPT`, `xc-forms.js` and the server's rules are not edited | `api/src/presentation/pages.rs` (the helper, one `compiled_script` call, one entry in `DESK_SCRIPTS`), `api/static/xc-desk.js` (new); provided on `fix/desk-dead-ends-332` (tests `5f8d6b8`): `api/tests/pages_desk_script_test.rs`, `api/tests/js/xc_desk.test.mjs` (new), `api/tests/pages_test.rs` (the widened strip) | FV (merged, PR 320). Holds `pages.rs`: first in the order below |
+| SP-1 (#331) | The staff's own password change (§5.3 *The staff's own password change*; lane controller's option A): `AccountService::change_password` asks for `currentPassword` when `must_change` is false, counts the attempt on the employee's sign-in name counter, refuses a wrong or missing one with `รหัสผ่านปัจจุบันไม่ถูกต้อง` and an unchanged one with `รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน`; the first-password path is unchanged. `GET /_xc/staff-password.js` (one `compiled_script` call) on `/staff` (its `scripts` list) renders the form when `mustChange` is false. `auth.rs`, the owner's door and `/api/employees` are not edited | `api/crates/xc-auth/src/application/account/service.rs`, `api/src/presentation/pages.rs` (one `compiled_script` call, `/staff`'s `scripts` list), `api/static/xc-staff-password.js` (new); provided on `fix/staff-password-331` (tests `5358040`): `api/crates/xc-auth/tests/account_voluntary_password_test.rs`, `api/tests/pages_staff_password_test.rs`, `api/tests/js/xc_staff_password.test.mjs` (new), `api/crates/xc-auth/tests/account_test.rs` (the eight-changes test sends the current password), `api/crates/xc-auth/tests/account_common/mod.rs` (the v2 replay sends the password of the session's sign-in as `currentPassword`; v2's screen never had a voluntary change) | DK-1 (`compiled_script` and the widened strip of `pages_test.rs`; until DK-1 merges, `every_page_answers_as_v2_does` cannot pass with the `/staff` tag); T4b, T4c (merged) |
 
 [required] Every row that owns a file under `api/src/presentation/http/` depends on T1b, whether or not its cell says so (T4c, T5b, T6b, T8, T11a, T12b, T13, T15); and "T1" in a Depends-on cell means T1a **and** T1b are merged. The T1 row is the name of the original undivided ticket; T1a, T1b and T1c are its parts.
 
 Tickets that hold `api/Cargo.lock` are handed out one at a time: T5a (merged, PR 60), T6a, T7, T10, T4b, T5b, T6b, T12b, in that order unless one is not ready when its turn comes.
+
+Tickets that hold `api/src/presentation/pages.rs` are handed out one at a time, in this order: **DK-1 (#332), SP-1 (#331),
+PG**. DK-1 is first because it provides `compiled_script` and the widened strip of `pages_test.rs` that SP-1's `/staff` tag
+needs. PG is last because it also waits for PM-API, PM-D, K-HTTP and PD-0; it then inserts the 10-06 desk scripts after
+`/account-bar.js` and before `"/_xc/desk.js"`, which stays the last entry of `DESK_SCRIPTS`. Each of these edits `pages.rs`
+in single lines (a list entry, a `compiled_script` call). The one place two of them meet is `DESK_SCRIPTS` (DK-1 and PG): a
+PG branch cut before DK-1 merged resolves it by keeping every entry, in the order just given — never by taking one side.
+The queue's file lock is what keeps them one at a time.
 
 **For whoever watches the queue:** T2c's file scope takes four files out of `xc-exchange` and changes `xc-kernel`'s manifest and `lib.rs`; T2d changes the same manifest and so follows it. Everything that uses `Money`, `Rate` or `BranchTx` waits for them: after T2c only T3 and T9 can start, and T5a and T7 need T2d as well. That narrow start is intended.
 
