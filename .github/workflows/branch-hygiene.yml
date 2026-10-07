@@ -1,0 +1,83 @@
+name: branch-hygiene
+
+# Deletes branches whose work is already on main or in a pull request ref (issue #162).
+# The sweep is a dry run unless the repository variable BRANCH_SWEEP_APPLY is "true";
+# the owner sets that variable. The rules live in .github/scripts/sweep-merged-branches.sh.
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/sweep-merged-branches.sh
+      - .github/scripts/sweep-merged-branches.test.sh
+      - .github/workflows/branch-hygiene.yml
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('branch-hygiene-pr-{0}', github.event.pull_request.number) || 'branch-hygiene-sweep' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: sweep self-test
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-test sweep-merged-branches
+        run: bash .github/scripts/sweep-merged-branches.test.sh
+
+  sweep:
+    name: sweep merged branches
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Self-test sweep-merged-branches
+        run: bash .github/scripts/sweep-merged-branches.test.sh
+
+      # Bases too: deleting the base branch of a stacked PR makes GitHub close that PR.
+      - name: Heads and bases of open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq '.[] | .head.ref, .base.ref' | sort -u > "$RUNNER_TEMP/open-pr-heads"
+          echo "branches open PRs stand on: $(wc -l < "$RUNNER_TEMP/open-pr-heads")"
+
+      - name: Sweep
+        env:
+          SWEEP_KEEP_FILE: ${{ runner.temp }}/open-pr-heads
+          APPLY: ${{ vars.BRANCH_SWEEP_APPLY == 'true' }}
+        run: |
+          set -euo pipefail
+          if [ "$APPLY" = "true" ]; then
+            bash .github/scripts/sweep-merged-branches.sh --apply | tee "$RUNNER_TEMP/sweep.txt"
+          else
+            echo "dry run: set the repository variable BRANCH_SWEEP_APPLY=true to delete"
+            bash .github/scripts/sweep-merged-branches.sh | tee "$RUNNER_TEMP/sweep.txt"
+          fi
+          {
+            echo "### Branch sweep (apply: $APPLY)"
+            echo '```'
+            cat "$RUNNER_TEMP/sweep.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
