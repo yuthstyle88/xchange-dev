@@ -1,0 +1,6480 @@
+{
+ "source": "payment-settings.mjs of the 10-06 bundle (XC-Desk-v2-Passport-Drawer-20261006.zip, sha256 6514b4c8…4375f570) through its own api(), by gen_payment_methods.mjs",
+ "origin": "http://desk.test",
+ "route": "/api/payment-methods",
+ "branches": [
+  "MAIN",
+  "AIRPORT"
+ ],
+ "people": [
+  {
+   "key": "OWNER",
+   "kind": "owner",
+   "id": "owner",
+   "username": "owner",
+   "role": "OWNER",
+   "branchId": null
+  },
+  {
+   "key": "FRONT",
+   "kind": "staff",
+   "id": "00000000-0000-4000-8000-0000000000f1",
+   "username": "front.main",
+   "role": "FRONT",
+   "branchId": "MAIN"
+  },
+  {
+   "key": "MANAGER",
+   "kind": "staff",
+   "id": "00000000-0000-4000-8000-0000000000f2",
+   "username": "manager.main",
+   "role": "MANAGER",
+   "branchId": "MAIN"
+  },
+  {
+   "key": "MONITOR",
+   "kind": "staff",
+   "id": "00000000-0000-4000-8000-0000000000f3",
+   "username": "monitor.main",
+   "role": "MONITOR",
+   "branchId": "MAIN"
+  },
+  {
+   "key": "AIRPORT_FRONT",
+   "kind": "staff",
+   "id": "00000000-0000-4000-8000-0000000000f4",
+   "username": "front.airport",
+   "role": "FRONT",
+   "branchId": "AIRPORT"
+  }
+ ],
+ "steps": [
+  {
+   "n": 1,
+   "label": "the owner reads MAIN: the defaults at version 0",
+   "at": "2026-10-08T03:00:01.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": true,
+    "history": []
+   }
+  },
+  {
+   "n": 2,
+   "label": "no payload at all reads MAIN",
+   "at": "2026-10-08T03:00:02.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list"
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": true,
+    "history": []
+   }
+  },
+  {
+   "n": 3,
+   "label": "an empty branchId reads MAIN",
+   "at": "2026-10-08T03:00:03.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": ""
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": true,
+    "history": []
+   }
+  },
+  {
+   "n": 4,
+   "label": "an employee reads their own branch, cannot edit, sees no history",
+   "at": "2026-10-08T03:00:04.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 5,
+   "label": "an employee naming another branch reads their own",
+   "at": "2026-10-08T03:00:05.000Z",
+   "as": "AIRPORT_FRONT",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "AIRPORT",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 6,
+   "label": "an employee naming a malformed branch still reads their own",
+   "at": "2026-10-08T03:00:06.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "no such branch!"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 7,
+   "label": "the owner saves MAIN from version 0: Credit Card off, texts trimmed",
+   "at": "2026-10-08T03:00:11.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ],
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:11.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 8,
+   "label": "the owner reads MAIN: version 1, who and when, one change",
+   "at": "2026-10-08T03:00:12.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:11.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 9,
+   "label": "an employee of MAIN reads the new rows without history",
+   "at": "2026-10-08T03:00:13.000Z",
+   "as": "MANAGER",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:11.000Z",
+    "updatedBy": "owner",
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 10,
+   "label": "AIRPORT is untouched: the owner reads its defaults",
+   "at": "2026-10-08T03:00:14.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "AIRPORT"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "AIRPORT",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": true,
+    "history": []
+   }
+  },
+  {
+   "n": 11,
+   "label": "an employee of AIRPORT reads its defaults",
+   "at": "2026-10-08T03:00:15.000Z",
+   "as": "AIRPORT_FRONT",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "AIRPORT",
+    "version": 0,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": null,
+    "updatedBy": null,
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 12,
+   "label": "the owner saves AIRPORT from its own version 0",
+   "at": "2026-10-08T03:00:20.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ],
+     "branchId": "AIRPORT"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "AIRPORT",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": false,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:20.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:20.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": false,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 13,
+   "label": "MAIN is untouched by the AIRPORT save",
+   "at": "2026-10-08T03:00:21.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:11.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 14,
+   "label": "an employee of AIRPORT reads the AIRPORT rows",
+   "at": "2026-10-08T03:00:22.000Z",
+   "as": "AIRPORT_FRONT",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "AIRPORT",
+    "version": 1,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": false,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Credit Card",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:20.000Z",
+    "updatedBy": "owner",
+    "canEdit": false,
+    "history": []
+   }
+  },
+  {
+   "n": 15,
+   "label": "the owner saves MAIN again from version 1",
+   "at": "2026-10-08T03:00:27.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 1,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ],
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 2,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:27.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 16,
+   "label": "the history is newest first",
+   "at": "2026-10-08T03:00:28.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "MAIN"
+    }
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 2,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:27.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 17,
+   "label": "nobody reads",
+   "at": "2026-10-08T03:00:29.000Z",
+   "as": null,
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 1,
+   "status": 401,
+   "answer": {
+    "error": "กรุณาเข้าสู่ระบบ"
+   }
+  },
+  {
+   "n": 18,
+   "label": "nobody, from another origin",
+   "at": "2026-10-08T03:00:30.000Z",
+   "as": null,
+   "headers": {
+    "origin": "http://elsewhere.test"
+   },
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 1,
+   "status": 401,
+   "answer": {
+    "error": "กรุณาเข้าสู่ระบบ"
+   }
+  },
+  {
+   "n": 19,
+   "label": "nobody, with a body too large",
+   "at": "2026-10-08T03:00:31.000Z",
+   "as": null,
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":{\"branchId\":\"MAIN\",\"pad\":\"",
+    "unit": "x",
+    "count": 11945,
+    "tail": "\"}}",
+    "units": 12001
+   },
+   "row": 1,
+   "status": 401,
+   "answer": {
+    "error": "กรุณาเข้าสู่ระบบ"
+   }
+  },
+  {
+   "n": 20,
+   "label": "the owner without the marker header",
+   "at": "2026-10-08T03:00:32.000Z",
+   "as": "OWNER",
+   "headers": {
+    "x-xchange-request": null
+   },
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 2,
+   "status": 403,
+   "answer": {
+    "error": "Request rejected."
+   }
+  },
+  {
+   "n": 21,
+   "label": "the owner with the marker header not 1",
+   "at": "2026-10-08T03:00:33.000Z",
+   "as": "OWNER",
+   "headers": {
+    "x-xchange-request": "yes"
+   },
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 2,
+   "status": 403,
+   "answer": {
+    "error": "Request rejected."
+   }
+  },
+  {
+   "n": 22,
+   "label": "the owner from another origin",
+   "at": "2026-10-08T03:00:34.000Z",
+   "as": "OWNER",
+   "headers": {
+    "origin": "http://elsewhere.test"
+   },
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 2,
+   "status": 403,
+   "answer": {
+    "error": "Request rejected."
+   }
+  },
+  {
+   "n": 23,
+   "label": "the owner with no origin",
+   "at": "2026-10-08T03:00:35.000Z",
+   "as": "OWNER",
+   "headers": {
+    "origin": null
+   },
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "row": 2,
+   "status": 403,
+   "answer": {
+    "error": "Request rejected."
+   }
+  },
+  {
+   "n": 24,
+   "label": "an employee from another origin, with a body too large",
+   "at": "2026-10-08T03:00:36.000Z",
+   "as": "FRONT",
+   "headers": {
+    "origin": "http://elsewhere.test"
+   },
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":{\"branchId\":\"MAIN\",\"pad\":\"",
+    "unit": "x",
+    "count": 11945,
+    "tail": "\"}}",
+    "units": 12001
+   },
+   "row": 2,
+   "status": 403,
+   "answer": {
+    "error": "Request rejected."
+   }
+  },
+  {
+   "n": 25,
+   "label": "a body of 12,001 units",
+   "at": "2026-10-08T03:00:37.000Z",
+   "as": "OWNER",
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":{\"branchId\":\"MAIN\",\"pad\":\"",
+    "unit": "x",
+    "count": 11945,
+    "tail": "\"}}",
+    "units": 12001
+   },
+   "row": 3,
+   "status": 400,
+   "answer": {
+    "error": "คำขอใหญ่เกินกำหนด"
+   }
+  },
+  {
+   "n": 26,
+   "label": "a body of 12,000 units is read",
+   "at": "2026-10-08T03:00:38.000Z",
+   "as": "OWNER",
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":{\"branchId\":\"MAIN\",\"pad\":\"",
+    "unit": "x",
+    "count": 11944,
+    "tail": "\"}}",
+    "units": 12000
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 2,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:27.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 27,
+   "label": "12,000 Thai letters are 12,000 units, not bytes",
+   "at": "2026-10-08T03:00:39.000Z",
+   "as": "OWNER",
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":{\"branchId\":\"MAIN\",\"pad\":\"",
+    "unit": "ก",
+    "count": 11944,
+    "tail": "\"}}",
+    "units": 12000
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 2,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:27.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 28,
+   "label": "a body too large with no payload object",
+   "at": "2026-10-08T03:00:40.000Z",
+   "as": "OWNER",
+   "big": {
+    "head": "{\"action\":\"list\",\"payload\":[",
+    "unit": "1,",
+    "count": 6000,
+    "tail": "1]}",
+    "units": 12031
+   },
+   "row": 3,
+   "status": 400,
+   "answer": {
+    "error": "คำขอใหญ่เกินกำหนด"
+   }
+  },
+  {
+   "n": 29,
+   "label": "a payload that is a list",
+   "at": "2026-10-08T03:00:41.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": []
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 30,
+   "label": "a payload that is text",
+   "at": "2026-10-08T03:00:42.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": "MAIN"
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 31,
+   "label": "a payload that is null",
+   "at": "2026-10-08T03:00:43.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": null
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 32,
+   "label": "a payload that is a number",
+   "at": "2026-10-08T03:00:44.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": 5
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 33,
+   "label": "a payload that is a list, with an unknown action",
+   "at": "2026-10-08T03:00:45.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "delete",
+    "payload": []
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 34,
+   "label": "an employee with a payload that is a list",
+   "at": "2026-10-08T03:00:46.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "save",
+    "payload": []
+   },
+   "row": 4,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 35,
+   "label": "the owner names a branch with a space",
+   "at": "2026-10-08T03:00:47.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "no such branch"
+    }
+   },
+   "row": 5,
+   "status": 400,
+   "answer": {
+    "error": "สาขาไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 36,
+   "label": "the owner names a branch of 71 characters",
+   "at": "2026-10-08T03:00:48.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+   },
+   "row": 5,
+   "status": 400,
+   "answer": {
+    "error": "สาขาไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 37,
+   "label": "a malformed branch comes before an unknown action",
+   "at": "2026-10-08T03:00:49.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "delete",
+    "payload": {
+     "branchId": "MAIN!"
+    }
+   },
+   "row": 5,
+   "status": 400,
+   "answer": {
+    "error": "สาขาไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 38,
+   "label": "a malformed branch comes before the owner-only rule",
+   "at": "2026-10-08T03:00:50.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 1,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ],
+     "branchId": "MAIN!"
+    }
+   },
+   "row": 5,
+   "status": 400,
+   "answer": {
+    "error": "สาขาไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 39,
+   "label": "an unknown action",
+   "at": "2026-10-08T03:00:51.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "delete",
+    "payload": {}
+   },
+   "row": 6,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 40,
+   "label": "no action",
+   "at": "2026-10-08T03:00:52.000Z",
+   "as": "OWNER",
+   "body": {
+    "payload": {}
+   },
+   "row": 6,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 41,
+   "label": "an action in capitals",
+   "at": "2026-10-08T03:00:53.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "LIST",
+    "payload": {}
+   },
+   "row": 6,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 42,
+   "label": "an employee with an unknown action",
+   "at": "2026-10-08T03:00:54.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "delete",
+    "payload": {}
+   },
+   "row": 6,
+   "status": 400,
+   "answer": {
+    "error": "คำขอไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 43,
+   "label": "a manager saves",
+   "at": "2026-10-08T03:00:55.000Z",
+   "as": "MANAGER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 7,
+   "status": 403,
+   "answer": {
+    "error": "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้"
+   }
+  },
+  {
+   "n": 44,
+   "label": "a front saves",
+   "at": "2026-10-08T03:00:56.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 7,
+   "status": 403,
+   "answer": {
+    "error": "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้"
+   }
+  },
+  {
+   "n": 45,
+   "label": "an employee of AIRPORT saves bad rows",
+   "at": "2026-10-08T03:00:57.000Z",
+   "as": "AIRPORT_FRONT",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": "x",
+     "methods": []
+    }
+   },
+   "row": 7,
+   "status": 403,
+   "answer": {
+    "error": "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้"
+   }
+  },
+  {
+   "n": 46,
+   "label": "the owner reads a branch that does not exist",
+   "at": "2026-10-08T03:00:58.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "NOWHERE"
+    }
+   },
+   "row": 8,
+   "status": 500,
+   "answer": {
+    "error": "โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน"
+   }
+  },
+  {
+   "n": 47,
+   "label": "the owner names a branch of 70 characters that does not exist",
+   "at": "2026-10-08T03:00:59.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {
+     "branchId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+   },
+   "row": 8,
+   "status": 500,
+   "answer": {
+    "error": "โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน"
+   }
+  },
+  {
+   "n": 48,
+   "label": "the owner saves bad rows to a branch that does not exist",
+   "at": "2026-10-08T03:01:00.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [],
+     "branchId": "NOWHERE"
+    }
+   },
+   "row": 8,
+   "status": 500,
+   "answer": {
+    "error": "โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน"
+   }
+  },
+  {
+   "n": 49,
+   "label": "no methods",
+   "at": "2026-10-08T03:01:01.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 50,
+   "label": "methods that are not a list",
+   "at": "2026-10-08T03:01:02.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": {
+      "Cash": true
+     }
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 51,
+   "label": "four rows",
+   "at": "2026-10-08T03:01:03.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 52,
+   "label": "six rows",
+   "at": "2026-10-08T03:01:04.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      },
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 53,
+   "label": "Cash twice and no Bank Transfer",
+   "at": "2026-10-08T03:01:05.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 54,
+   "label": "a row that is null: five ids, one of them missing, so a channel is missing",
+   "at": "2026-10-08T03:01:06.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      null
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 55,
+   "label": "an unknown channel instead of Alipay",
+   "at": "2026-10-08T03:01:07.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Cheque",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 56,
+   "label": "SCB Transfer instead of Bank Transfer",
+   "at": "2026-10-08T03:01:08.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "SCB Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 57,
+   "label": "enabled as text",
+   "at": "2026-10-08T03:01:09.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": "true",
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 58,
+   "label": "buy as a number",
+   "at": "2026-10-08T03:01:10.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": 1,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 59,
+   "label": "sell missing",
+   "at": "2026-10-08T03:01:11.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 10,
+   "status": 400,
+   "answer": {
+    "error": "ข้อมูลช่องทางชำระเงินไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 60,
+   "label": "BUY on Credit Card",
+   "at": "2026-10-08T03:01:12.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 11,
+   "status": 400,
+   "answer": {
+    "error": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+   }
+  },
+  {
+   "n": 61,
+   "label": "BUY on Alipay while Alipay is off",
+   "at": "2026-10-08T03:01:13.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": false,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 11,
+   "status": 400,
+   "answer": {
+    "error": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+   }
+  },
+  {
+   "n": 62,
+   "label": "PromptPay on with neither direction",
+   "at": "2026-10-08T03:01:14.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 12,
+   "status": 400,
+   "answer": {
+    "error": "ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท"
+   }
+  },
+  {
+   "n": 63,
+   "label": "Cash on with neither direction comes before BUY on Credit Card",
+   "at": "2026-10-08T03:01:15.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": false,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 12,
+   "status": 400,
+   "answer": {
+    "error": "ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท"
+   }
+  },
+  {
+   "n": 64,
+   "label": "BUY on Credit Card comes before Credit Card with a bad text",
+   "at": "2026-10-08T03:01:16.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 11,
+   "status": 400,
+   "answer": {
+    "error": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+   }
+  },
+  {
+   "n": 65,
+   "label": "a bad text on Cash comes before BUY on Credit Card",
+   "at": "2026-10-08T03:01:17.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 66,
+   "label": "an account of 101 characters",
+   "at": "2026-10-08T03:01:18.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 67,
+   "label": "an account of 99 characters and two spaces: counted before trimming",
+   "at": "2026-10-08T03:01:19.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 68,
+   "label": "an instruction of 401 characters",
+   "at": "2026-10-08T03:01:20.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 69,
+   "label": "an account of 51 emoji: 102 units",
+   "at": "2026-10-08T03:01:21.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵💵",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 70,
+   "label": "a bell in an account",
+   "at": "2026-10-08T03:01:22.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "Drawer\u0007",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 71,
+   "label": "a unit separator in an instruction",
+   "at": "2026-10-08T03:01:23.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "a\u001fb"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 72,
+   "label": "a vertical tab in an instruction",
+   "at": "2026-10-08T03:01:24.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "a\u000bb"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 73,
+   "label": "an account that is a number",
+   "at": "2026-10-08T03:01:25.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": 5,
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 74,
+   "label": "an account that is null",
+   "at": "2026-10-08T03:01:26.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": null,
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 75,
+   "label": "no instruction",
+   "at": "2026-10-08T03:01:27.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 76,
+   "label": "a bad account on a channel that is off",
+   "at": "2026-10-08T03:01:28.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 13,
+   "status": 400,
+   "answer": {
+    "error": "ข้อความยาวเกินกำหนดหรือไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 77,
+   "label": "no channel on for BUY",
+   "at": "2026-10-08T03:01:29.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 14,
+   "status": 400,
+   "answer": {
+    "error": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+   }
+  },
+  {
+   "n": 78,
+   "label": "BUY only on channels that are off",
+   "at": "2026-10-08T03:01:30.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": false,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": false,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 14,
+   "status": 400,
+   "answer": {
+    "error": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+   }
+  },
+  {
+   "n": 79,
+   "label": "no channel on for SELL",
+   "at": "2026-10-08T03:01:31.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": false,
+       "buy": false,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": false,
+       "buy": false,
+       "sell": false,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": false,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 14,
+   "status": 400,
+   "answer": {
+    "error": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+   }
+  },
+  {
+   "n": 80,
+   "label": "every channel off",
+   "at": "2026-10-08T03:01:32.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 2,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": false,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": false,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 14,
+   "status": 400,
+   "answer": {
+    "error": "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง"
+   }
+  },
+  {
+   "n": 81,
+   "label": "bad rows come before a bad version",
+   "at": "2026-10-08T03:01:33.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": "two",
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 11,
+   "status": 400,
+   "answer": {
+    "error": "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร"
+   }
+  },
+  {
+   "n": 82,
+   "label": "bad rows come before a stale version",
+   "at": "2026-10-08T03:01:34.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 9,
+   "status": 400,
+   "answer": {
+    "error": "กรุณาตั้งค่าให้ครบทั้ง 5 ช่องทาง"
+   }
+  },
+  {
+   "n": 83,
+   "label": "no version",
+   "at": "2026-10-08T03:01:35.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 84,
+   "label": "a version as text",
+   "at": "2026-10-08T03:01:36.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": "2",
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 85,
+   "label": "a version with a fraction",
+   "at": "2026-10-08T03:01:37.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 1.5,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 86,
+   "label": "a negative version",
+   "at": "2026-10-08T03:01:38.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": -1,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 87,
+   "label": "a version of null",
+   "at": "2026-10-08T03:01:39.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": null,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 88,
+   "label": "a version beyond a safe integer",
+   "at": "2026-10-08T03:01:40.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 9007199254740992,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 15,
+   "status": 400,
+   "answer": {
+    "error": "เวอร์ชันข้อมูลไม่ถูกต้อง"
+   }
+  },
+  {
+   "n": 89,
+   "label": "a save from version 1 when MAIN is at 2",
+   "at": "2026-10-08T03:01:41.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 1,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 16,
+   "status": 409,
+   "answer": {
+    "error": "มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก"
+   }
+  },
+  {
+   "n": 90,
+   "label": "a save from version 0 when MAIN is at 2",
+   "at": "2026-10-08T03:01:42.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 16,
+   "status": 409,
+   "answer": {
+    "error": "มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก"
+   }
+  },
+  {
+   "n": 91,
+   "label": "a save from version 3 when MAIN is at 2",
+   "at": "2026-10-08T03:01:43.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 3,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ]
+    }
+   },
+   "row": 16,
+   "status": 409,
+   "answer": {
+    "error": "มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก"
+   }
+  },
+  {
+   "n": 92,
+   "label": "a stale save of AIRPORT",
+   "at": "2026-10-08T03:01:44.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 0,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Credit Card",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+      }
+     ],
+     "branchId": "AIRPORT"
+    }
+   },
+   "row": 16,
+   "status": 409,
+   "answer": {
+    "error": "มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก"
+   }
+  },
+  {
+   "n": 93,
+   "label": "nothing was written by the refusals",
+   "at": "2026-10-08T03:01:45.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 2,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:00:27.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 94,
+   "label": "a version written 2.0 is the whole number 2",
+   "at": "2026-10-08T03:01:50.000Z",
+   "as": "OWNER",
+   "raw": "{\"action\":\"save\",\"payload\":{\"version\":2.0,\"methods\":[{\"id\":\"Cash\",\"enabled\":true,\"buy\":true,\"sell\":true,\"account\":\"  Drawer 1  \",\"instruction\":\"\\tPay at the counter\\n\"},{\"id\":\"Credit Card\",\"enabled\":false,\"buy\":false,\"sell\":true,\"account\":\"\",\"instruction\":\"\"},{\"id\":\"Alipay\",\"enabled\":true,\"buy\":false,\"sell\":true,\"account\":\"\",\"instruction\":\"\"},{\"id\":\"PromptPay\",\"enabled\":true,\"buy\":false,\"sell\":true,\"account\":\"PP 000\",\"instruction\":\"Scan · สแกนจ่าย\"},{\"id\":\"Bank Transfer\",\"enabled\":true,\"buy\":true,\"sell\":true,\"account\":\"\",\"instruction\":\"\"}]}}",
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 3,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:01:50.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 3,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:01:50.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 95,
+   "label": "the owner reads MAIN at version 3",
+   "at": "2026-10-08T03:01:51.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "status": 200,
+   "answer": {
+    "branchId": "MAIN",
+    "version": 3,
+    "methods": [
+     {
+      "id": "Cash",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "Drawer 1",
+      "instruction": "Pay at the counter"
+     },
+     {
+      "id": "Credit Card",
+      "enabled": false,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "Alipay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     },
+     {
+      "id": "PromptPay",
+      "enabled": true,
+      "buy": false,
+      "sell": true,
+      "account": "PP 000",
+      "instruction": "Scan · สแกนจ่าย"
+     },
+     {
+      "id": "Bank Transfer",
+      "enabled": true,
+      "buy": true,
+      "sell": true,
+      "account": "",
+      "instruction": ""
+     }
+    ],
+    "updatedAt": "2026-10-08T03:01:50.000Z",
+    "updatedBy": "owner",
+    "canEdit": true,
+    "history": [
+     {
+      "version": 3,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:01:50.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 2,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:27.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       }
+      ]
+     },
+     {
+      "version": 1,
+      "actor": "owner",
+      "created_at": "2026-10-08T03:00:11.000Z",
+      "before_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Credit Card",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ],
+      "after_methods": [
+       {
+        "id": "Cash",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "Drawer 1",
+        "instruction": "Pay at the counter"
+       },
+       {
+        "id": "Credit Card",
+        "enabled": false,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "Alipay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "",
+        "instruction": ""
+       },
+       {
+        "id": "PromptPay",
+        "enabled": true,
+        "buy": false,
+        "sell": true,
+        "account": "PP 000",
+        "instruction": "Scan · สแกนจ่าย"
+       },
+       {
+        "id": "Bank Transfer",
+        "enabled": true,
+        "buy": true,
+        "sell": true,
+        "account": "",
+        "instruction": "If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "n": 96,
+   "label": "the database is down: an employee reads",
+   "at": "2026-10-08T03:01:52.000Z",
+   "as": "FRONT",
+   "body": {
+    "action": "list",
+    "payload": {}
+   },
+   "databaseDown": true,
+   "row": 17,
+   "status": 500,
+   "answer": {
+    "error": "โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน"
+   }
+  },
+  {
+   "n": 97,
+   "label": "the database is down: the owner saves",
+   "at": "2026-10-08T03:01:53.000Z",
+   "as": "OWNER",
+   "body": {
+    "action": "save",
+    "payload": {
+     "version": 3,
+     "methods": [
+      {
+       "id": "Cash",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "  Drawer 1  ",
+       "instruction": "\tPay at the counter\n"
+      },
+      {
+       "id": "Credit Card",
+       "enabled": false,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "Alipay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      },
+      {
+       "id": "PromptPay",
+       "enabled": true,
+       "buy": false,
+       "sell": true,
+       "account": "PP 000",
+       "instruction": "Scan · สแกนจ่าย"
+      },
+      {
+       "id": "Bank Transfer",
+       "enabled": true,
+       "buy": true,
+       "sell": true,
+       "account": "",
+       "instruction": ""
+      }
+     ]
+    }
+   },
+   "row": 17,
+   "status": 500,
+   "answer": {
+    "error": "โหลดการตั้งค่าไม่ได้ กรุณาตรวจการเชื่อมต่อและติดตั้งตารางวิธีชำระเงิน"
+   }
+  }
+ ]
+}
