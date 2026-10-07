@@ -21,8 +21,12 @@
 //!   same way: a `\u` escape of half a surrogate pair, a number too large for
 //!   a double, more than 128 levels of nesting;
 //! - on the staff route a name written as a fraction is printed as Rust
-//!   prints it, and a payload written as text with half a surrogate pair
-//!   cannot occur (the text was refused as JSON).
+//!   prints it, where v2 differs: `1.0` stays `1.0` where v2 prints `1`,
+//!   and an integer beyond 2^53 prints exactly where v2 rounds it. A
+//!   payload written as text holding a letter of two UTF-16 units is
+//!   spread, like v2, into one key per unit, but v2's value at each key
+//!   is half a surrogate pair while here it is U+FFFD (Rust text cannot
+//!   hold half a pair).
 
 use serde_json::{Map, Value};
 

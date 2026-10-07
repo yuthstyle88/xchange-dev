@@ -965,3 +965,39 @@ fn the_two_routes_read_the_same_body_differently() {
     assert!(RpcRequest::parse(RpcRoute::StaffRpc, "", true).is_ok());
     assert!(RpcRequest::parse(RpcRoute::Rpc, "", true).is_err());
 }
+
+#[test]
+fn staff_route_a_name_written_as_minus_zero_is_the_empty_name() {
+    // v2's `String(body.action || "")`: `-0 || ""` is `""`, as `0 || ""` is.
+    // `serde_json` reads `-0` as the double -0.0, which is not `0.0` by sign.
+    for written in ["-0", "-0.0", "-0e3"] {
+        let body = format!("{{\"action\":{written},\"payload\":{{}}}}");
+        let request = parsed(RpcRoute::StaffRpc, &body, true);
+        assert_eq!(request.action(), "", "{body}");
+    }
+}
+
+#[test]
+fn staff_route_a_text_payload_is_spread_per_utf16_unit_not_per_letter() {
+    // v2's `{ ..."😀" }` has the keys `0` and `1`, one half of the surrogate
+    // pair each. Rust text cannot hold half a pair, so each half is U+FFFD
+    // here; what must hold is the count and the keys, one per UTF-16 unit.
+    let half = "\u{FFFD}";
+    let cases: [(&str, Value); 4] = [
+        ("\"😀\"", json!({"0": half, "1": half})),
+        ("\"\\ud83d\\ude00\"", json!({"0": half, "1": half})),
+        (
+            "\"a😀b\"",
+            json!({"0": "a", "1": half, "2": half, "3": "b"}),
+        ),
+        (
+            "\"ก😀😀\"",
+            json!({"0": "ก", "1": half, "2": half, "3": half, "4": half}),
+        ),
+    ];
+    for (written, payload) in cases {
+        let body = format!("{{\"action\":\"adminSnapshot\",\"payload\":{written}}}");
+        let request = parsed(RpcRoute::StaffRpc, &body, true);
+        assert_eq!(request.payload(), Ok(&object(payload)), "{body}");
+    }
+}
