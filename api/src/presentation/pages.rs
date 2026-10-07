@@ -48,6 +48,7 @@ const DESK_SCRIPTS: &[&str] = &[
     "/desk-devices.js",
     "/desk-kiosk.js",
     "/account-bar.js",
+    "/_xc/desk.js",
 ];
 
 const STAFF_DESK_SCRIPT: &str = "<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const draft=await staffGasOriginal('opsBeginTransaction',{type:s.type,currency:s.currency,amount:Number(s.amount)});staffDraftId=draft.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script>";
@@ -153,6 +154,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
             .route(web::get().to(forms_script))
             .default_service(web::to(fallback)),
     );
+    compiled_script(cfg, "/_xc/desk.js", include_str!("../../static/xc-desk.js"));
 
     for spec in PAGE_SPECS {
         cfg.service(
@@ -444,6 +446,20 @@ async fn forms_script() -> HttpResponse {
         .insert_header(("Cache-Control", "no-cache"))
         .insert_header(("X-Content-Type-Options", "nosniff"))
         .body(include_str!("../../static/xc-forms.js"))
+}
+
+fn compiled_script(cfg: &mut web::ServiceConfig, path: &'static str, body: &'static str) {
+    cfg.service(
+        web::resource(path)
+            .route(web::get().to(move || async move {
+                HttpResponse::Ok()
+                    .content_type("text/javascript; charset=utf-8")
+                    .insert_header(("Cache-Control", "no-cache"))
+                    .insert_header(("X-Content-Type-Options", "nosniff"))
+                    .body(body)
+            }))
+            .default_service(web::to(fallback)),
+    );
 }
 
 /// What answers when no route matched. T1c serves static files here before the 404.

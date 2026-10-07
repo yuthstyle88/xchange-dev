@@ -279,6 +279,12 @@ async fn the_web_directory_is_a_setting() {
 /// The body without what the server adds to a page: the form helper's tag (row FV)
 /// and, immediately after it, the one `<div id="xc-version" …>…</div>` (#293);
 /// `is_page` says whether exactly one of each must be there, or none.
+///
+/// Also stripped: the run of v3's compiled-in page scripts that ends immediately
+/// before the helper's tag — tags of the exact form `<script src="/_xc/…"></script>`
+/// (rows DK-1, SP-1; `docs/design/xchange-v3.md` §5.3 *Compiled-in page scripts
+/// after FV*). Nothing else. Which page carries which of them is pinned by each
+/// script's own page test (`pages_desk_script_test.rs`, `pages_staff_password_test.rs`).
 fn without_version_line(body: &str, is_page: bool, what: &str) -> String {
     const MARK: &str = "<div id=\"xc-version\"";
     const HELPER: &str = "<script src=\"/_xc/forms.js\" defer></script>";
@@ -296,9 +302,27 @@ fn without_version_line(body: &str, is_page: bool, what: &str) -> String {
         body[..line].ends_with(HELPER),
         "{what}: the form helper tag sits immediately before the version line"
     );
-    let start = line - HELPER.len();
+    let mut start = line - HELPER.len();
+    while let Some(tag) = compiled_script_tag_ending_at(body, start) {
+        start -= tag;
+    }
     let end = line + body[line..].find("</div>").expect("the line is closed") + "</div>".len();
     format!("{}{}", &body[..start], &body[end..])
+}
+
+/// The length of the tag `<script src="/_xc/NAME"></script>` that ends exactly at
+/// `end`, where NAME holds no quote and no angle bracket; `None` when another text
+/// ends there.
+fn compiled_script_tag_ending_at(body: &str, end: usize) -> Option<usize> {
+    const OPEN: &str = "<script src=\"/_xc/";
+    const CLOSE: &str = "\"></script>";
+    let before = body[..end].strip_suffix(CLOSE)?;
+    let open = before.rfind(OPEN)?;
+    let name = &before[open + OPEN.len()..];
+    if name.is_empty() || name.contains(['"', '<', '>']) {
+        return None;
+    }
+    Some(end - open)
 }
 
 #[actix_web::test]
