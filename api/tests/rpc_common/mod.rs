@@ -20,6 +20,11 @@
 //! `FileService`, behind the routes. Every step is accounted for in a
 //! [`Tally`]: replayed, known difference, excluded, or applied behind.
 //!
+//! Since T11a-0 "not dispatched" is decided per family ([`Family`]): a family
+//! whose `gap_*.rs` says `WIRED` is sent and held to v2 like any other step.
+//! (That edit — `Family`, `is_part_two` — is the lane controller's, made on
+//! ticket T11a-0; with no family wired nothing here changes.)
+//!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 #![allow(dead_code)]
 
@@ -97,9 +102,56 @@ pub const PART_ONE: [&str; 10] = [
     "reserveCustomer",
 ];
 
-/// A name of part two: `saveTransaction`, `documents`, anything starting `ops`.
+pub mod gap_custody;
+pub mod gap_documents;
+pub mod gap_save;
+
+/// A family of part two: the names one file of
+/// `api/src/application/compat/actions/` answers once it is wired. Whether it
+/// is wired is the constant `WIRED` of the family's own `gap_*.rs` here, so the
+/// ticket that wires a family edits that one file and no shared one (T11a-0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    /// `documents`.
+    Documents,
+    /// Anything starting `ops`.
+    Custody,
+    /// `saveTransaction`.
+    Save,
+}
+
+impl Family {
+    pub const ALL: [Family; 3] = [Family::Documents, Family::Custody, Family::Save];
+
+    /// The family `action` belongs to; `None` for a name of part one and for a
+    /// name nobody knows.
+    pub fn of(action: &str) -> Option<Family> {
+        if action == "saveTransaction" {
+            Some(Family::Save)
+        } else if action == "documents" {
+            Some(Family::Documents)
+        } else if action.starts_with("ops") {
+            Some(Family::Custody)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the family's ticket says its file answers its names.
+    pub fn wired(self) -> bool {
+        match self {
+            Family::Documents => gap_documents::WIRED,
+            Family::Custody => gap_custody::WIRED,
+            Family::Save => gap_save::WIRED,
+        }
+    }
+}
+
+/// A name of part two that is still answered through the gap: `saveTransaction`,
+/// `documents`, anything starting `ops` — each for as long as its family is not
+/// wired. With no family wired this is every name of part two.
 pub fn is_part_two(action: &str) -> bool {
-    action == "saveTransaction" || action == "documents" || action.starts_with("ops")
+    Family::of(action).is_some_and(|family| !family.wired())
 }
 
 const PNG: &[u8] = &[

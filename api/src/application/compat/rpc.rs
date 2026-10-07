@@ -16,12 +16,18 @@
 //! ([`RpcFailure::Refused`]); anything else that goes wrong is handed back for
 //! the route to answer as a server error ([`RpcFailure::Failed`]).
 //!
-//! **Part one** (this file as it stands) dispatches ten actions:
+//! **Part one** (this file) dispatches ten actions itself:
 //! `adminSnapshot`, `adminDeskConfig`, `getConnectionStatus`, `adminSaveRate`,
 //! `adminCreateBranch`, `adminOpenShift`, `adminMoveStock`, `adminCloseShift`,
-//! `adminAbandonRequest`, `reserveCustomer`. The actions of part two —
-//! `saveTransaction`, `documents` and every name starting with `ops` — are
-//! answered as v2 answers a name it does not know; see [`not_dispatched_yet`].
+//! `adminAbandonRequest`, `reserveCustomer`.
+//!
+//! **Part two** — `saveTransaction`, `documents` and every name starting with
+//! `ops` — is one file per family under `actions/`, behind [`RpcAction`]. A
+//! name that is not one of the ten is offered to the registered families
+//! ([`CompatRpc::with_actions`]) in the order registered; the first that
+//! handles it answers, and steps 1, 2 and 4 above stay here. A name no family
+//! handles is answered as v2 answers a name it does not know; see
+//! [`not_dispatched_yet`].
 //!
 //! Known differences from v2, each decided before this file was written:
 //!
@@ -60,6 +66,7 @@ use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
 
 use crate::application::compat::abandon_request::AbandonRequest;
+use crate::application::compat::actions::{RpcAction, RpcActions, RpcCall};
 use crate::application::compat::envelope::{RpcRefusal, RpcRoute};
 use crate::application::compat::snapshot::{SnapshotBuilder, write_answer};
 use crate::application::compat::snapshot_sources::SnapshotSources;
@@ -157,6 +164,7 @@ pub struct RpcServices {
 pub struct CompatRpc {
     services: RpcServices,
     snapshots: SnapshotBuilder,
+    actions: RpcActions,
 }
 
 impl CompatRpc {
@@ -174,7 +182,16 @@ impl CompatRpc {
         Self {
             services,
             snapshots,
+            actions: Vec::new(),
         }
+    }
+
+    /// The same dispatcher with `actions` as its families of part two, in
+    /// place of any it had. The order is the order they are asked in: of two
+    /// that handle the same name on the same route, the first answers.
+    pub fn with_actions(mut self, actions: RpcActions) -> Self {
+        self.actions = actions;
+        self
     }
 
     /// Whether `caller` may ask for `action` on `route`: `Policy::allow` with
@@ -195,10 +212,11 @@ impl CompatRpc {
     /// print it with `V2Json::to_text`.
     ///
     /// `now` is the server clock at the request. Refusals, in this order: the
-    /// role may not ask for the name here; the name is one of part two's
-    /// ([`not_dispatched_yet`]); the owner's `branchId` is not a branch id
-    /// (`สาขาไม่ถูกต้อง`); the branch does not exist
-    /// (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`); then whatever the use case says.
+    /// role may not ask for the name here; the name is neither one of the ten
+    /// nor one a registered family handles ([`not_dispatched_yet`]); the
+    /// owner's `branchId` is not a branch id (`สาขาไม่ถูกต้อง`); the branch does
+    /// not exist (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`); then whatever the use case
+    /// or the family says.
     pub async fn dispatch(
         &self,
         route: RpcRoute,
@@ -208,13 +226,32 @@ impl CompatRpc {
         now: DateTime<Utc>,
     ) -> Result<V2Json, RpcFailure> {
         Self::allow(route, action, caller)?;
-        if !is_part_one(action) {
-            return Err(not_dispatched_yet(route, caller).into());
-        }
+        // a name of part two: its family's, when one is registered for it
+        let family = if is_part_one(action) {
+            None
+        } else {
+            match self.family_of(route, action) {
+                Some(family) => Some(family),
+                None => return Err(not_dispatched_yet(route, caller).into()),
+            }
+        };
 
         let branch = branch_of(caller, &payload)?;
         self.services.branches.require(&branch).await?;
         let who = caller.username.as_str();
+
+        if let Some(family) = family {
+            let call = RpcCall {
+                route,
+                action,
+                payload,
+                caller,
+                branch: &branch,
+                now,
+            };
+            let answer = family.run(call).await?;
+            return self.answered(route, action, answer, caller).await;
+        }
 
         let answer = match action {
             "adminSnapshot" => self.snapshots.admin_snapshot(&branch, who, now).await?,
@@ -272,6 +309,26 @@ impl CompatRpc {
             _ => return Err(not_dispatched_yet(route, caller).into()),
         };
 
+        self.answered(route, action, answer, caller).await
+    }
+
+    /// The first registered family that handles `action` on `route`.
+    fn family_of(&self, route: RpcRoute, action: &str) -> Option<&dyn RpcAction> {
+        self.actions
+            .iter()
+            .find(|family| family.handles(route, action))
+            .map(|family| family.as_ref())
+    }
+
+    /// `answer` as `route` prints it: as it is on `/api/rpc`, the staff view
+    /// of it on `/api/staff/rpc`.
+    async fn answered(
+        &self,
+        route: RpcRoute,
+        action: &str,
+        answer: V2Json,
+        caller: &RpcCaller,
+    ) -> Result<V2Json, RpcFailure> {
         match route {
             RpcRoute::Rpc => Ok(answer),
             RpcRoute::StaffRpc => Ok(self.staff_answer(action, answer, caller).await?),
@@ -375,7 +432,7 @@ impl CompatRpc {
     }
 }
 
-/// The ten actions this part dispatches.
+/// The ten actions this file dispatches itself.
 fn is_part_one(action: &str) -> bool {
     matches!(
         action,
@@ -395,12 +452,13 @@ fn is_part_one(action: &str) -> bool {
 /// ── NOT DISPATCHED YET — ticket T11a part two ────────────────────────────────
 ///
 /// `saveTransaction`, `documents` and every `ops*` name pass `Policy` for the
-/// callers who may use them, and have no arm in [`CompatRpc::dispatch`] yet.
-/// Until part two adds the arms they are answered exactly as v2 answers a name
-/// it does not know (`rpc/transport.json` #33, #41, #81): on `/api/rpc`
+/// callers who may use them, and are answered by a family under `actions/`
+/// once that family is wired. Until then — whenever no registered family
+/// handles the name — they are answered exactly as v2 answers a name it does
+/// not know (`rpc/transport.json` #33, #41, #81): on `/api/rpc`
 /// `คำขอไม่ถูกต้อง` to the owner and the role sentence to an employee, on
-/// `/api/staff/rpc` the staff route's role sentence. Part two deletes this
-/// function together with `is_part_one`.
+/// `/api/staff/rpc` the staff route's role sentence. The last ticket of part
+/// two deletes this function together with `is_part_one`.
 fn not_dispatched_yet(route: RpcRoute, caller: &RpcCaller) -> RpcRefusal {
     match (route, caller.is_staff()) {
         (RpcRoute::Rpc, false) => RpcRefusal::invalid_request(),

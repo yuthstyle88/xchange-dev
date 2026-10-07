@@ -1,5 +1,6 @@
 //! Compatibility layer with v2 JSON RPC.
 pub mod abandon_request;
+pub mod actions;
 pub mod envelope;
 pub mod rpc;
 pub mod snapshot;

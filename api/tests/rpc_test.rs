@@ -17,6 +17,12 @@
 //! Each replay asserts how many steps it held to v2, how many to a decided
 //! difference and which it left out, so a step cannot be skipped silently.
 //!
+//! Since T11a-0 the names of part two are counted per family
+//! (`rpc_common::Family`, one `rpc_common/gap_*.rs` each): the tallies below and
+//! the gap test are computed from the three `WIRED` constants. With none wired
+//! every number, name and answer is what it was before. (Those edits are the
+//! lane controller's, made on ticket T11a-0.)
+//!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 
 mod common;
@@ -27,7 +33,7 @@ mod snapshot_common;
 use chrono::{Duration, Utc};
 use compat_common::{Fixture, Index, Person};
 use rpc_common::{
-    Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY,
+    Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY, Family,
     INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, ROLE_NOT_ALLOWED_RPC, ROLE_NOT_ALLOWED_STAFF,
     RPC, Replay, Rule, SERVER_ERROR, SIGN_IN, STAFF_RPC, USE_CUSTODY, V2_HEADERS_FAULT,
     one_of_each_role, sign_in,
@@ -40,8 +46,27 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
+use xchange::application::compat::envelope::RpcRoute;
+use xchange::presentation::http::rpc::registered_actions;
 
 const ORIGIN: &str = "http://desk.test";
+
+/// True while no family of part two is wired: every tally is then the number
+/// it was when part one was written.
+const NO_FAMILY_WIRED: bool = !rpc_common::gap_documents::WIRED
+    && !rpc_common::gap_custody::WIRED
+    && !rpc_common::gap_save::WIRED;
+
+/// The names the gap is held with, family by family in the order asked, and
+/// how many (caller, route) pairs `Policy` lets through for them:
+/// `saveTransaction` — the owner and FRONT on `/api/rpc`, FRONT on the staff
+/// route (3); `documents` — seven roles on the staff route (7); three `ops*`
+/// names — nine roles on the staff route each (27).
+const GAP_NAMES: [(Family, &[&str], usize); 3] = [
+    (Family::Save, &["saveTransaction"], 3),
+    (Family::Documents, &["documents"], 7),
+    (Family::Custody, &["opsClock", "opsPropose", "opsNope"], 27),
+];
 
 /// The steps of `rpc/transport.json` v2 answers in the JavaScript engine's own
 /// English (a body that is not JSON, or is `null`). Decided: v3 answers
@@ -103,6 +128,21 @@ async fn transport_json_is_answered_as_v2_answered_it() {
             94,
             Rule::Excluded("the customer host: v3 does not tell hosts apart yet"),
         );
+    // `opsNope` on the staff route (#84) reaches custody in v2, which answers
+    // it by the state of the branch. Decided: once custody is wired v3 answers
+    // an `ops` name it does not know `คำขอไม่ถูกต้อง`; until then it is the gap.
+    let (ops_gap, ops_differs) = if Family::Custody.wired() {
+        replay = replay.rule(
+            84,
+            Rule::Differs {
+                status: 400,
+                sentence: INVALID_REQUEST,
+            },
+        );
+        (vec![], vec![84])
+    } else {
+        (vec![84], vec![])
+    };
     replay.run().await;
 
     // the answers of the one action here are v2's bytes, key order included
@@ -121,9 +161,12 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     assert_eq!(same_text, 24, "answers compared as text");
 
     assert_eq!(fixture.steps().len(), 94);
-    assert_eq!(replay.tally.differences, ENGINE_SENTENCES.to_vec());
+    assert_eq!(
+        replay.tally.differences,
+        [ENGINE_SENTENCES.to_vec(), ops_differs].concat()
+    );
     // `opsNope` on the staff route reaches custody in v2: part two
-    assert_eq!(replay.tally.part_two, vec![84]);
+    assert_eq!(replay.tally.part_two, ops_gap);
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
     assert_eq!(replay.tally.replayed.len(), 83);
     assert!(replay.tally.applied_behind.is_empty());
@@ -434,18 +477,31 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     assert_eq!(replay.tally.differences, vec![159]);
     assert_eq!(numbers(&replay.tally.excluded), vec![82, 83, 109]);
     let saves: Vec<usize> = (84..=108).chain(110..=123).chain([125, 144]).collect();
-    let documents = vec![127, 128];
-    let mut part_two = [saves.clone(), documents].concat();
+    let documents = [127, 128];
+    assert_eq!(saves.len() + documents.len(), 43);
+    // of those 43, the steps of a family that is not wired yet are part two
+    let mut part_two = Vec::new();
+    if !Family::Save.wired() {
+        part_two.extend(saves.iter().copied());
+    }
+    if !Family::Documents.wired() {
+        part_two.extend(documents.iter().copied());
+    }
     part_two.sort_unstable();
     assert_eq!(replay.tally.part_two, part_two);
-    assert_eq!(part_two.len(), 43);
-    // 184 − 3 uploads − 43 of part two − 1 difference
-    assert_eq!(replay.tally.replayed.len(), 137);
-    // the three uploads, and the four accepted saves (one of them sent twice)
-    assert_eq!(
-        replay.tally.applied_behind,
-        vec![82, 83, 109, 120, 121, 123, 125]
-    );
+    if NO_FAMILY_WIRED {
+        assert_eq!(part_two.len(), 43);
+    }
+    // 184 − 3 uploads − 43 of part two − 1 difference; a step of a wired
+    // family is held to v2 instead
+    assert_eq!(replay.tally.replayed.len(), 137 + (43 - part_two.len()));
+    // the three uploads, and — while the save is not wired — the four accepted
+    // saves (one of them sent twice)
+    let mut applied_behind = vec![82, 83, 109];
+    if !Family::Save.wired() {
+        applied_behind.extend([120, 121, 123, 125]);
+    }
+    assert_eq!(replay.tally.applied_behind, applied_behind);
 
     // every step of the ten actions was held to v2 or to the decided difference
     for step in fixture.steps() {
@@ -1009,13 +1065,14 @@ async fn the_ops_names_policy_refuses_are_refused_as_v2_refused_them() {
 }
 
 // ╔═══════════════════════════════════════════════════════════════════════════╗
-// ║ GAP PINNED ON PURPOSE — ticket T11a part two replaces this test.         ║
+// ║ GAP PINNED ON PURPOSE — T11a part two closes it one family at a time.    ║
 // ║                                                                           ║
 // ║ `saveTransaction`, `documents` and the `ops*` names are not dispatched   ║
 // ║ by part one. Where `Policy` lets a caller through, the routes answer     ║
-// ║ what v2 answers for a name it does not know. This test holds that, so    ║
-// ║ the gap is visible and cannot change by accident; it is NOT what v2      ║
-// ║ answers for these names. Part two deletes it.                            ║
+// ║ what v2 answers for a name it does not know. This test holds that for    ║
+// ║ every family whose `rpc_common/gap_*.rs` says it is not wired, so the    ║
+// ║ gap is visible and cannot change by accident; it is NOT what v2 answers  ║
+// ║ for these names. The last ticket of part two deletes it.                 ║
 // ╚═══════════════════════════════════════════════════════════════════════════╝
 #[actix_web::test]
 async fn gap_part_two_names_are_answered_as_unknown_names() {
@@ -1026,38 +1083,86 @@ async fn gap_part_two_names_are_answered_as_unknown_names() {
     let cookies = sign_in(&app, ORIGIN, &people).await;
 
     let mut let_through = 0;
-    for action in [
-        "saveTransaction",
-        "documents",
-        "opsClock",
-        "opsPropose",
-        "opsNope",
-    ] {
-        for person in &people {
-            let actor = actor_of(person);
-            for (path, entry) in [(RPC, EntryPath::Rpc), (STAFF_RPC, EntryPath::StaffRpc)] {
-                let answer = ask(&app, &cookies, path, action, &person.key).await;
-                let label = format!("{action} on {path} as {}", person.key);
-                match Policy::allow(Some(&actor), entry, &Action::new(action)) {
-                    Err(refusal) => {
-                        answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
-                    }
-                    Ok(()) => {
-                        let sentence = match (path, person.is_owner()) {
-                            (RPC, true) => INVALID_REQUEST,
-                            (RPC, false) => ROLE_NOT_ALLOWED_RPC,
-                            _ => ROLE_NOT_ALLOWED_STAFF,
-                        };
-                        answer.assert_refused(400, sentence, &label);
-                        let_through += 1;
+    let mut expected = 0;
+    for (family, names, pairs) in GAP_NAMES {
+        if family.wired() {
+            continue;
+        }
+        expected += pairs;
+        for action in names {
+            for person in &people {
+                let actor = actor_of(person);
+                for (path, entry) in [(RPC, EntryPath::Rpc), (STAFF_RPC, EntryPath::StaffRpc)] {
+                    let answer = ask(&app, &cookies, path, action, &person.key).await;
+                    let label = format!("{action} on {path} as {}", person.key);
+                    match Policy::allow(Some(&actor), entry, &Action::new(*action)) {
+                        Err(refusal) => {
+                            answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
+                        }
+                        Ok(()) => {
+                            let sentence = match (path, person.is_owner()) {
+                                (RPC, true) => INVALID_REQUEST,
+                                (RPC, false) => ROLE_NOT_ALLOWED_RPC,
+                                _ => ROLE_NOT_ALLOWED_STAFF,
+                            };
+                            answer.assert_refused(400, sentence, &label);
+                            let_through += 1;
+                        }
                     }
                 }
             }
         }
+        assert_eq!(let_through, expected, "{family:?}: callers let through");
     }
     // saveTransaction: the owner and FRONT on /api/rpc, FRONT on the staff
     // route (3); documents: seven roles on the staff route (7); three `ops*`
     // names: nine roles on the staff route each (27)
-    assert_eq!(let_through, 37);
+    assert_eq!(let_through, expected);
+    if NO_FAMILY_WIRED {
+        assert_eq!(let_through, 37);
+    }
+    desk.finish().await;
+}
+
+/// A family is marked `WIRED` exactly when its file under
+/// `api/src/application/compat/actions/` answers its names — asked of the
+/// families the server registers (`registered_actions`), on either route. So a
+/// family cannot be marked wired while its names still go through the gap
+/// (which would take them out of the gap test and hold nothing instead), nor
+/// start answering while the tallies still count it as the gap.
+#[actix_web::test]
+async fn a_family_is_marked_wired_exactly_when_its_file_answers_its_names() {
+    let desk = Desk::open().await;
+    let actions = registered_actions(&desk.state());
+    // one registered file per family, wired or not
+    assert_eq!(actions.len(), Family::ALL.len());
+    for (family, names, _) in GAP_NAMES {
+        for action in names {
+            let answered = [RpcRoute::Rpc, RpcRoute::StaffRpc]
+                .into_iter()
+                .any(|route| actions.iter().any(|a| a.handles(route, action)));
+            assert_eq!(
+                answered,
+                family.wired(),
+                "{action}: {family:?} is marked WIRED = {}, but a registered family answering \
+                 it is {answered}",
+                family.wired()
+            );
+            assert_eq!(Family::of(action), Some(family), "{action}");
+        }
+    }
+    // every family has its names here, and no part-one name belongs to one
+    for family in Family::ALL {
+        assert!(GAP_NAMES.iter().any(|(f, _, _)| *f == family), "{family:?}");
+    }
+    for action in PART_ONE {
+        assert_eq!(Family::of(action), None, "{action}");
+        assert!(
+            !actions
+                .iter()
+                .any(|a| a.handles(RpcRoute::Rpc, action) || a.handles(RpcRoute::StaffRpc, action)),
+            "{action} is the dispatcher's own"
+        );
+    }
     desk.finish().await;
 }

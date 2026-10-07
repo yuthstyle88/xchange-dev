@@ -10,6 +10,9 @@
 //!   (401, or the sentence about the first password) → the name against the
 //!   role.
 //!
+//! The families of part two (`application/compat/actions/`) are built once, in
+//! [`configure`], and read by a request as `web::Data<RpcActions>`.
+//!
 //! Every answer is JSON, a refusal `{"error": sentence}`; the body goes out as
 //! `V2Json` prints it, keys in v2's order.
 
@@ -37,14 +40,21 @@ use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::abandon_request::AbandonRequest;
+use crate::application::compat::actions::RpcActions;
+use crate::application::compat::actions::custody::CustodyAction;
+use crate::application::compat::actions::documents::DocumentsAction;
+use crate::application::compat::actions::save::SaveAction;
 use crate::application::compat::envelope::{
     MAX_BODY_UTF16_UNITS, RpcRefusal, RpcRequest, RpcResponse, RpcRoute,
 };
 use crate::application::compat::rpc::{CompatRpc, RpcCaller, RpcFailure, RpcServices};
 use crate::application::compat::v2_json::V2Json;
+use crate::application::workflows::documents::DocumentsLookup;
+use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::bootstrap::AppState;
 use crate::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
 use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
+use crate::infrastructure::files::file_service::FileService;
 use crate::presentation::extractors::actor::{
     Accounts, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin, server_error,
     signed_in, staff_actor,
@@ -64,7 +74,8 @@ pub trait RpcClock: Send + Sync {
 }
 
 /// Routes of this module; registered through the one route table.
-pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
+pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
+    cfg.app_data(web::Data::new(registered_actions(state)));
     for (path, route) in [
         ("/api/rpc", RpcRoute::Rpc),
         ("/api/staff/rpc", RpcRoute::StaffRpc),
@@ -158,7 +169,11 @@ async fn answer(
             || Arc::new(BotRateSource::bot()) as Arc<dyn RateSource>,
             |source| source.get_ref().clone(),
         );
+    let actions = req
+        .app_data::<web::Data<RpcActions>>()
+        .ok_or_else(|| not_wired("the rpc actions"))?;
     compat_rpc(&state.db, source, accounts.get_ref().clone())
+        .with_actions(actions.get_ref().clone())
         .dispatch(route, &action, payload, &caller, now)
         .await
 }
@@ -235,23 +250,57 @@ async fn caller_of_staff_rpc(
     })
 }
 
-/// The dispatcher over the services of every context it calls.
-fn compat_rpc(pool: &PgPool, source: Arc<dyn RateSource>, accounts: Accounts) -> CompatRpc {
-    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
-    let shifts = ShiftService::new(
+fn shift_service(pool: &PgPool, branch_tx: &BranchTx) -> ShiftService {
+    ShiftService::new(
         Arc::new(PgShiftRepository::new(pool.clone())),
         branch_tx.clone(),
-    );
-    let custody = CustodyService::new(
+    )
+}
+
+fn custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService {
+    CustodyService::new(
         Arc::new(PgCustodyRepository::new(pool.clone())),
         shifts.clone(),
         Arc::new(PgCustodyPorts),
         branch_tx.clone(),
-    );
-    let transactions = TransactionService::new(
+    )
+}
+
+fn transaction_service(pool: &PgPool, branch_tx: &BranchTx) -> TransactionService {
+    TransactionService::new(
         Arc::new(PgTransactionRepository::new(pool.clone())),
         branch_tx.clone(),
+    )
+}
+
+/// The families of part two the server registers, in the order the dispatcher
+/// asks them: documents, custody, the save. Each is built here once, from the
+/// parts its own file needs; wiring a family does not change this function.
+pub fn registered_actions(state: &AppState) -> RpcActions {
+    let pool = &state.db;
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let files = FileService::new(pool.clone(), state.settings.files.dir.clone());
+    let shifts = shift_service(pool, &branch_tx);
+    let custody = custody_service(pool, &shifts, &branch_tx);
+    let documents = DocumentsLookup::new(
+        transaction_service(pool, &branch_tx),
+        BranchService::new(branch_tx.clone()),
+        files.clone(),
     );
+    let save = SaveTransactionWorkflow::new(branch_tx, shifts, files);
+    vec![
+        Arc::new(DocumentsAction::new(documents)),
+        Arc::new(CustodyAction::new(custody.clone())),
+        Arc::new(SaveAction::new(save, custody)),
+    ]
+}
+
+/// The dispatcher over the services of every context it calls.
+fn compat_rpc(pool: &PgPool, source: Arc<dyn RateSource>, accounts: Accounts) -> CompatRpc {
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let shifts = shift_service(pool, &branch_tx);
+    let custody = custody_service(pool, &shifts, &branch_tx);
+    let transactions = transaction_service(pool, &branch_tx);
     let sources = Arc::new(ServiceSnapshotSources::new(transactions, accounts.clone()));
     CompatRpc::new(
         RpcServices {
