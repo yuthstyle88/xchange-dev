@@ -7,10 +7,14 @@
 
 mod compat_common;
 
+use std::fmt::Debug;
+use std::path::PathBuf;
+
 use compat_common::{
-    Fixture, INDEX_FILE, IdMap, Index, RPC_FILES, SNAPSHOT_FILES, Step, expand_shared,
-    has_shared_reference, server_ids,
+    ActionRecord, Fixture, INDEX_FILE, IdMap, Index, Person, RPC_FILES, RecordedRefusal,
+    SNAPSHOT_FILES, Step, expand_shared, fixtures_dir, has_shared_reference, server_ids,
 };
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 /// Every step file with the number of steps it was recorded with.
@@ -466,4 +470,119 @@ fn pairs_once_learned_are_kept_across_steps() {
     ids.learn(&lonely, &json!([]));
     assert_eq!(ids.len(), 2);
     assert_eq!(ids.to_actual(&lonely), lonely);
+}
+
+/// A key no record of the reader has: what a regenerated file could add.
+const UNKNOWN_KEY: &str = "xNotInTheReader";
+
+/// `name` under `tests/fixtures`, as plain JSON (no reader in between).
+fn plain_json(name: &str) -> Value {
+    let path = fixtures_dir().join(name);
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{name}: cannot read {}: {e}", path.display()));
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{name}: not JSON: {e}"))
+}
+
+/// `recorded` reads as a `T`, and the same object with one key more does not:
+/// the refusal is the key's, not the shape's.
+fn refuses_a_key_it_does_not_know<T: DeserializeOwned + Debug>(what: &str, recorded: &Value) {
+    if let Err(e) = serde_json::from_value::<T>(recorded.clone()) {
+        panic!("{what}: the recorded record does not read: {e}");
+    }
+    let mut widened = recorded.clone();
+    widened
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("{what}: not an object"))
+        .insert(UNKNOWN_KEY.to_string(), json!(1));
+    match serde_json::from_value::<T>(widened) {
+        Ok(read) => panic!("{what}: `{UNKNOWN_KEY}` was read past: {read:?}"),
+        Err(e) => assert!(
+            e.to_string()
+                .contains(&format!("unknown field `{UNKNOWN_KEY}`")),
+            "{what}: refused, but not for the key: {e}"
+        ),
+    }
+}
+
+#[test]
+fn every_record_the_reader_reads_refuses_a_key_it_does_not_know() {
+    let mut people = 0;
+    let mut steps = 0;
+    for name in step_files() {
+        let file = plain_json(name);
+        let shared = file["shared"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{name}: `shared` is not an object"));
+        let expanded = expand_shared(&file["steps"], shared);
+        for step in expanded.as_array().expect("`steps` is an array") {
+            refuses_a_key_it_does_not_know::<Step>(&format!("{name} step {}", step["n"]), step);
+            steps += 1;
+        }
+        for person in file["people"].as_array().expect("`people` is an array") {
+            refuses_a_key_it_does_not_know::<Person>(
+                &format!("{name} person {}", person["key"]),
+                person,
+            );
+            people += 1;
+        }
+    }
+    assert_eq!(steps, STEP_COUNTS.iter().map(|(_, n)| n).sum::<usize>());
+    assert!(people > 0);
+
+    let index = plain_json(INDEX_FILE);
+    refuses_a_key_it_does_not_know::<Index>(INDEX_FILE, &index);
+    let mut refusals = 0;
+    for (action, routes) in index["actions"].as_object().expect("`actions`") {
+        for (route, record) in routes.as_object().expect("routes") {
+            let at = format!("{INDEX_FILE} {action} {route}");
+            refuses_a_key_it_does_not_know::<ActionRecord>(&at, record);
+            for refusal in record["refusals"].as_array().expect("`refusals`") {
+                refuses_a_key_it_does_not_know::<RecordedRefusal>(&at, refusal);
+                refusals += 1;
+            }
+        }
+    }
+    assert!(refusals > 0);
+}
+
+#[test]
+#[should_panic(expected = "a step is not what the reader expects: unknown field `xNotInTheReader`")]
+fn a_step_file_regenerated_with_a_new_step_key_does_not_load() {
+    let mut file = plain_json("rpc/transport.json");
+    file["steps"][0]
+        .as_object_mut()
+        .expect("step 1 is written out, not a reference")
+        .insert(UNKNOWN_KEY.to_string(), json!(1));
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("compat_unknown_step_key.json");
+    std::fs::write(&path, serde_json::to_string(&file).expect("JSON"))
+        .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+    // `fixtures_dir().join` of an absolute path is that path.
+    Fixture::load(path.to_str().expect("a UTF-8 path"));
+}
+
+#[test]
+fn ids_pair_by_position_so_one_uuid_more_before_an_echoed_id_shifts_the_pairs() {
+    let request = "00000000-0000-4000-8000-0000000a0001";
+    let recorded_made = "00000000-0000-4000-8000-000000000015";
+    let actual_made = "7d0c2f5e-8a51-4c57-9a43-0c1f6c1b2a01";
+    let actual_extra = "5e6f7a8b-3333-4c9d-a0b1-c2d3e4f5a604";
+
+    // At the same position on both sides the echoed id pairs with itself.
+    let ids = IdMap::pair(
+        &json!([request, recorded_made]),
+        &json!([request, actual_made]),
+    );
+    assert_eq!(ids.actual(request), Some(request));
+    assert_eq!(ids.actual(recorded_made), Some(actual_made));
+
+    // One server-made uuid more in front on the actual side moves every pair
+    // after it: the echoed id now pairs with the extra one, and the comparison
+    // fails at the echoed id rather than at the extra uuid.
+    let recorded = json!([request, recorded_made]);
+    let actual = json!([actual_extra, request, actual_made]);
+    let ids = IdMap::pair(&recorded, &actual);
+    assert_eq!(ids.actual(request), Some(actual_extra));
+    assert_eq!(ids.actual(recorded_made), Some(request));
+    assert_eq!(ids.recorded(actual_made), None);
+    assert_eq!(ids.to_actual(&recorded), json!([actual_extra, request]));
 }

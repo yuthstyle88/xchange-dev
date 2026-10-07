@@ -12,7 +12,8 @@
 //!   workspace does not switch on `preserve_order`). Where a page shows key
 //!   order, compare against [`Fixture::body_text`], which is v2's own text.
 //! - Ids v2 made (`SH-…`, `MV-…`, bare uuids) differ from the ones v3 makes;
-//!   [`IdMap`] pairs them by order of first appearance.
+//!   [`IdMap`] pairs them by position within their kind, so one extra id on
+//!   one side shifts the later pairs of that kind (see [`IdMap`]).
 
 #![allow(dead_code)]
 
@@ -512,10 +513,17 @@ fn id_spans(text: &str) -> Vec<(usize, usize)> {
 
 /// Pairs the ids of a recorded answer with the ids of the answer under test.
 ///
-/// The n-th distinct `SH-…` of the recorded answer is paired with the n-th of
-/// the actual one, and likewise `MV-…` and bare uuids. An id the caller sent
-/// (a `requestId`) is echoed by both servers, so it pairs with itself. A pair
-/// once learned is kept: learn from the steps in the order they were recorded.
+/// Within a kind (`SH-…`, `MV-…`, bare uuids) ids pair by **position**: the
+/// n-th distinct one of the recorded answer pairs with the n-th of the actual
+/// one. That position is the cost: one server-made id more or fewer earlier
+/// on one side shifts every later pair of that kind. An echoed `requestId`
+/// pairs with itself only while it stands at the same position among the
+/// uuids of its kind on both sides — one extra uuid in front of it on the
+/// actual side pairs the echo with that extra id, and the comparison that
+/// follows fails at the shifted id rather than at the extra one. To place
+/// the difference exactly: learn from an answer where the extra id does not
+/// occur first, or compare the extra id's field on its own. A pair once
+/// learned is kept: learn from the steps in the order they were recorded.
 ///
 /// ```ignore
 /// let mut ids = IdMap::new();
