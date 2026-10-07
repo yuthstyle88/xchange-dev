@@ -48,7 +48,8 @@ fn verify_claimed_expected(
             None | Some(serde_json::Value::Null) => 0,
             Some(serde_json::Value::Number(n)) => {
                 let d = rust_decimal::Decimal::from_str(&n.to_string())
-                    .map_err(|_| ShiftError::ExpectedChanged)?;
+                    .map_err(|_| ShiftError::ExpectedChanged)?
+                    .normalize();
                 if d < rust_decimal::Decimal::ZERO || d.scale() > 2 {
                     return Err(ShiftError::ExpectedChanged);
                 }
@@ -58,7 +59,12 @@ fn verify_claimed_expected(
             }
             Some(serde_json::Value::String(s)) => {
                 let trimmed = s.trim();
-                let d = plain_decimal(trimmed).ok_or(ShiftError::ExpectedChanged)?;
+                // "250.000" claims 250 (#48 § 8.2 step 4): the zeros past the second
+                // decimal are the written form, not the value. Dropping them keeps
+                // 250.004 at scale 3 — a figure no balance can hold, never rounded.
+                let d = plain_decimal(trimmed)
+                    .ok_or(ShiftError::ExpectedChanged)?
+                    .normalize();
                 if d < rust_decimal::Decimal::ZERO || d.scale() > 2 {
                     return Err(ShiftError::ExpectedChanged);
                 }
