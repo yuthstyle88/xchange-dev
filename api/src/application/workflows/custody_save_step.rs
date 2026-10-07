@@ -37,21 +37,8 @@ impl SaveStep for CustodySaveStep {
             if ctx.form.customer.mode != Mode::Live {
                 return Ok(());
             }
-            let Ok(currency) = CurrencyCode::parse(&ctx.form.currency) else {
+            let Some(attempt) = attempt_of(ctx) else {
                 return Ok(());
-            };
-            let prior = match ctx.prior {
-                None => PriorSave::None,
-                Some(saved) if saved.recorded_by == ctx.actor.id => PriorSave::SavedByActor,
-                Some(_) => PriorSave::SavedByOther,
-            };
-            let attempt = SaveAttempt {
-                customer_id: ctx.form.customer_id.clone(),
-                draft_id: ctx.extras.staff_draft_id.clone(),
-                side: ctx.form.side,
-                currency,
-                amount: ctx.form.amount,
-                prior,
             };
             let actor = CustodyActor {
                 id: ctx.actor.id.clone(),
@@ -65,7 +52,8 @@ impl SaveStep for CustodySaveStep {
     }
 
     /// The draft named with the save, if any, is completed with the exchange's
-    /// document number.
+    /// document number — but only the draft that fits the exchange (ticket
+    /// #154). Not limited to live exchanges, because it is not today.
     fn after_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -73,14 +61,35 @@ impl SaveStep for CustodySaveStep {
         saved: &'a Transaction,
     ) -> StepFuture<'a> {
         Box::pin(async move {
-            match &ctx.extras.staff_draft_id {
-                Some(draft_id) => {
-                    self.custody
-                        .complete_draft_in(tx, ctx.branch, draft_id, &saved.document_ref)
-                        .await
-                }
-                None => Ok(()),
+            let Some(attempt) = attempt_of(ctx) else {
+                return Ok(());
+            };
+            if attempt.draft_id.is_none() {
+                return Ok(());
             }
+            self.custody
+                .complete_draft_in(tx, ctx.branch, &attempt, &saved.document_ref)
+                .await
         })
     }
+}
+
+/// The save as custody sees it: the figures of the form, the draft the staff
+/// named with it, and what is already stored of this submission. `None` when
+/// the form's currency is no currency — the save itself refuses it.
+fn attempt_of(ctx: &SaveContext<'_>) -> Option<SaveAttempt> {
+    let currency = CurrencyCode::parse(&ctx.form.currency).ok()?;
+    let prior = match ctx.prior {
+        None => PriorSave::None,
+        Some(saved) if saved.recorded_by == ctx.actor.id => PriorSave::SavedByActor,
+        Some(_) => PriorSave::SavedByOther,
+    };
+    Some(SaveAttempt {
+        customer_id: ctx.form.customer_id.clone(),
+        draft_id: ctx.extras.staff_draft_id.clone(),
+        side: ctx.form.side,
+        currency,
+        amount: ctx.form.amount,
+        prior,
+    })
 }

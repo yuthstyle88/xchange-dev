@@ -1395,7 +1395,8 @@ fn a_started_transaction_may_be_finished_after_the_cut_off_until_eleven() {
     // A used draft does not open the gate again.
     let mut d = Desk::open();
     let draft = d.ok("F1", begin()).id.unwrap();
-    d.state = CustodyMachine::complete_draft(&d.state, &draft, "XC-20261006-000001");
+    d.state =
+        CustodyMachine::complete_draft(&d.state, &save(&d, Some(&draft)), "XC-20261006-000001");
     let done = d.state.drafts.last().unwrap();
     assert_eq!(
         (done.status, done.document_ref.as_deref()),
@@ -1405,7 +1406,7 @@ fn a_started_transaction_may_be_finished_after_the_cut_off_until_eleven() {
         gate(&d, "F1", &save(&d, Some(&draft)), "22:55"),
         Err(E::SaveClosed)
     );
-    let same = CustodyMachine::complete_draft(&d.state, "nope", "XC-1");
+    let same = CustodyMachine::complete_draft(&d.state, &save(&d, Some("nope")), "XC-1");
     assert_eq!(same, d.state);
 }
 

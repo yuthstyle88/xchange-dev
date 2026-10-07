@@ -698,7 +698,19 @@ async fn a_draft_is_completed_inside_the_callers_transaction_or_not_at_all() {
                 .run(&branch, move |tx| {
                     Box::pin(async move {
                         service
-                            .complete_draft_in(tx, &b, &draft, "XC-20261006-000001")
+                            .complete_draft_in(
+                                tx,
+                                &b,
+                                &SaveAttempt {
+                                    customer_id: "CX-00000001".into(),
+                                    draft_id: Some(draft.clone()),
+                                    side: Side::Sell,
+                                    currency: code("USD"),
+                                    amount: money("25.50"),
+                                    prior: PriorSave::None,
+                                },
+                                "XC-20261006-000001",
+                            )
                             .await?;
                         if fail {
                             return Err(AppError::Internal("the save failed afterwards".into()));

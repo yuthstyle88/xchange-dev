@@ -72,6 +72,17 @@ fn has_non_zero(opt: &Option<StockDelta>) -> bool {
     opt.as_ref().is_some_and(|d| !d.non_zero().is_empty())
 }
 
+/// The draft a save names and can finish: the one it names, still open, for
+/// exactly the figures it saved. Who opened the draft and which shift it
+/// belongs to are not part of the match (ticket #154, decision B).
+fn draft_matches_save(draft: &TxDraft, save: &SaveAttempt) -> bool {
+    save.draft_id.as_deref() == Some(draft.id.as_str())
+        && draft.status == DraftStatus::Open
+        && draft.side == save.side
+        && draft.currency == save.currency
+        && draft.amount == save.amount
+}
+
 fn validate_count_sheet(sheet: &CountSheet) -> Result<(), CustodyError> {
     if sheet.denominations.is_empty() || sheet.denominations.len() > 200 {
         return Err(CustodyError::DenominationsRequired);
@@ -1192,13 +1203,9 @@ impl CustodyMachine {
             if needs_draft {
                 let open_shift_id = facts.open_shift.as_ref().map(|s| s.id.as_str());
                 let has_matching_draft = state.drafts.iter().any(|d| {
-                    save.draft_id.as_deref() == Some(d.id.as_str())
+                    draft_matches_save(d, save)
                         && d.employee_id == me
                         && open_shift_id == Some(d.shift_id.as_str())
-                        && d.side == save.side
-                        && d.currency == save.currency
-                        && d.amount == save.amount
-                        && d.status == DraftStatus::Open
                 });
                 if !has_matching_draft {
                     return Err(CustodyError::SaveClosed);
@@ -1221,12 +1228,21 @@ impl CustodyMachine {
 
     pub fn complete_draft(
         state: &CustodyState,
-        draft_id: &str,
+        save: &SaveAttempt,
         document_ref: &str,
     ) -> CustodyState {
+        // One exchange completes at most one draft: its number already
+        // finished one, so this repeat finishes no other (ticket #154).
+        if state
+            .drafts
+            .iter()
+            .any(|d| d.document_ref.as_deref() == Some(document_ref))
+        {
+            return state.clone();
+        }
         let mut new_state = state.clone();
         for draft in &mut new_state.drafts {
-            if draft.id == draft_id {
+            if draft_matches_save(draft, save) {
                 draft.status = DraftStatus::Completed;
                 draft.document_ref = Some(document_ref.to_string());
                 break;

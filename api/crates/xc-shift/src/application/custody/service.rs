@@ -259,11 +259,11 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        draft_id: &str,
+        save: &SaveAttempt,
         document_ref: &str,
     ) -> AppResult<()> {
         let state = self.repo.load_state_in(tx, branch).await?;
-        let new_state = CustodyMachine::complete_draft(&state, draft_id, document_ref);
+        let new_state = CustodyMachine::complete_draft(&state, save, document_ref);
         self.repo
             .store_state_in(tx, branch, &state, &new_state)
             .await?;
