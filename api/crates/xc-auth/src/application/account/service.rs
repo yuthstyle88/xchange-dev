@@ -211,8 +211,8 @@ impl<R: AccountRepository> AccountService<R> {
             .unwrap_or("");
         let username = raw_username.trim().to_lowercase();
 
-        // (1) staff path only: a username longer than 40 -> WRONG, nothing counted
-        if username.len() > 40 {
+        // (1) staff path only: a username longer than 40 UTF-16 units -> WRONG, nothing counted
+        if username.encode_utf16().count() > 40 {
             return Err(AppError::Domain(WRONG.to_string()));
         }
 
