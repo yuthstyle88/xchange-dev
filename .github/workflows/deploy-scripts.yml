@@ -1,0 +1,53 @@
+name: deploy-scripts
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-scripts.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-scripts.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('deploy-scripts-pr-{0}', github.event.pull_request.number) || format('deploy-scripts-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-scripts:
+    name: deploy-scripts
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required tools
+        run: |
+          missing=0
+          for tool in openssl sha256sum; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "Missing required tool: $tool" >&2
+              missing=1
+            fi
+          done
+          if ! stat -c %s . >/dev/null 2>&1; then
+            echo "Missing required tool: stat -c" >&2
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Test
+        run: bash deploy/server/scripts.test.sh
