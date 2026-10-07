@@ -24,3 +24,10 @@ answered with a sentence it did not expect.
 
 `out dir` defaults to `../../tests/fixtures`. The reader of these files is
 `api/tests/compat_common/mod.rs`.
+
+## What of v2 may be committed here
+
+Lane controller ruling, 2026-10-07 (#228 item 5(c), from the PR 107 review):
+- **Allowed:** the text or the shape (e.g. a regex) of a v2 SQL statement that a stand-in store must answer, v2's sentences, and line citations of the bundle. `gen_account.mjs`, `gen_auth_http.mjs`, `gen_file_routes.mjs`, `gen_documents.mjs` and `gen_devices.mjs` already do this.
+- **Never:** a v2 function body or any file of the bundle. A script reads the bundle from a path given at run time and slices it in memory.
+

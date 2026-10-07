@@ -155,7 +155,7 @@ tests named in §9 exist to catch exactly that.
 classDiagram
   direction LR
   class Money { +parse(str) Result~Money~; +minor() i64; +minor_i128() i128; +from_minor(i64) Result~Money~; +try_from_minor_i128(i128) Result~Money~; +is_zero() bool; +ZERO }
-  class Rate { +Decimal value; +parse(str) Result~Rate~ }
+  class Rate { <<xc_kernel::money::rate>> +parse(str) Result~Rate~; +value() Decimal }
   class PlainDecimal { <<fn, xc-kernel::money>> +plain_decimal(text) Option~Decimal~ }
   class InputRules { <<fn, xc-kernel::input>> +text(raw, max_utf16, required) Result~str~; +calendar_date(text) Result~NaiveDate~; +number_error(NumberError) InputError; +DATE_FLOOR }
   class InputError { <<enum, xc-kernel::input>> Text; DateFormat; Date; Number; TooManyDecimals; +sentence() str }
