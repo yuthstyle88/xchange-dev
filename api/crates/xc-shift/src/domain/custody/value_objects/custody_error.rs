@@ -91,6 +91,9 @@ pub enum CustodyError {
     #[error("หมายเหตุยาวเกินกำหนด")]
     NoteTooLong,
 
+    #[error("ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด")]
+    TextInvalid,
+
     #[error("ผู้ดูแลเรทต้องตั้งเรทจริงก่อนเปิดกะ")]
     NoLiveRate,
 

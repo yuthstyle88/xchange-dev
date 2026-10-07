@@ -57,6 +57,10 @@ fn looks_like_an_id(s: &str) -> bool {
     s.len() == 36 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
 }
 
+fn movement_reason(kind: RequestKind, note_or_id: &str) -> String {
+    format!("{} · {}", kind.as_str(), note_or_id)
+}
+
 fn is_clocked_in(state: &CustodyState, employee_id: &str) -> bool {
     state
         .attendance
@@ -601,7 +605,7 @@ impl CustodyMachine {
                                 currency,
                                 direction: Direction::In,
                                 amount,
-                                reason: format!("{} · {}", req.kind.as_str(), note_or_id),
+                                reason: movement_reason(req.kind, note_or_id),
                             });
                         } else if req.kind == RequestKind::SafeIn {
                             let safe =
@@ -968,6 +972,11 @@ impl CustodyMachine {
         }
         // 7. note is p.note.trim(). length > 500 -> NoteTooLong
         let note_trimmed = p.note.trim();
+        if matches!(kind, RequestKind::SafeOut | RequestKind::ExternalIn)
+            && utf16_len(&movement_reason(kind, note_trimmed)) > 200
+        {
+            return Err(CustodyError::TextInvalid);
+        }
         if utf16_len(note_trimmed) > 500 {
             return Err(CustodyError::NoteTooLong);
         }

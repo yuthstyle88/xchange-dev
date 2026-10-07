@@ -51,6 +51,10 @@ const BRANCH_NOT_FOUND: &str = "ไม่พบสาขาที่เลือ
 const USE_CUSTODY: &str = "ใช้ขั้นตอนรับ–ส่งเงินและการลงชื่อในเมนูปฏิบัติงาน";
 const REQUEST_PENDING: &str = "มีรายการรับ–ส่งที่ยังไม่เสร็จ กรุณาตรวจรายการเดิมก่อน";
 const USD_SHORT: &str = "ยอด USD ไม่เพียงพอ กรุณาตรวจนับหรือบันทึกรับเงินเข้าก่อน";
+/// The shift's sentence for a text that is too long (ticket #68).
+const TEXT_INVALID: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
+/// The story whose steps 78–82 v3 answers differently on purpose (ticket #68).
+const A_DAY: &str = "a day: set-up, safe, opening, service, transfers";
 
 // ── two days, against v2 ────────────────────────────────────────────────────
 
@@ -92,12 +96,24 @@ async fn replay(db: &TestDb, story: &Story) -> (usize, usize) {
                 .map(|w| format!(" ({w})"))
                 .unwrap_or_default()
         );
+        // Decided difference from v2 (ticket #68, owner 2026-10-06): v2 accepted at step 78 an
+        // EXTERNAL_IN whose note makes the commit's movement reason longer than 200 units, and
+        // then refused the commit (step 82), leaving the money in transit. v3 refuses the note at
+        // propose with the shift's sentence; steps 79–82 act on the request it never creates.
+        if story.name == A_DAY && (79..=82).contains(&n) {
+            continue;
+        }
+        let v2_error = if story.name == A_DAY && n == 78 {
+            Some(TEXT_INVALID.to_string())
+        } else {
+            step.v2_error.clone()
+        };
         let now = at_millis(step.now.unwrap());
         let got = service
             .command(&branch, action, &ids.resolve(payload), &actor(who), now)
             .await;
 
-        match (&step.v2_error, got) {
+        match (&v2_error, got) {
             (Some(sentence), Err(AppError::Domain(text))) => {
                 assert_eq!(&text, sentence, "{here}");
                 // a refusal leaves everything as it was
@@ -145,7 +161,8 @@ async fn a_day_of_custody_ends_where_v2_ended() {
     let f = fixture();
     let db = TestDb::start().await;
     let (accepted, refused) = replay(&db, &f.stories[0]).await;
-    assert!(accepted >= 37 && refused >= 41, "{accepted} / {refused}");
+    // 37 accepted in v2; #68 makes step 78 a refusal and skips 79–81 (accepted) and 82 (refused)
+    assert!(accepted >= 33 && refused >= 41, "{accepted} / {refused}");
     db.drop_schema().await;
 }
 
