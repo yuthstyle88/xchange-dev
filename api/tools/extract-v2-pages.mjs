@@ -215,9 +215,11 @@ function main() {
   const publicFiles = scanPublic(publicDir);
 
   const pageNames = new Set(["admin.html", "desk.html", "receipt-sample.html"]);
-  for (const pf of publicFiles) {
-    if (pageNames.has(pf.relPath)) {
-      refuse(`public/ already has ${pf.relPath}`);
+  // A clash is any top-level entry named like a page — file or directory —
+  // so it is judged before the first write, in both forms of the command.
+  for (const entry of fs.readdirSync(publicDir)) {
+    if (pageNames.has(entry)) {
+      refuse(`public/ already has ${entry}`);
     }
   }
 
