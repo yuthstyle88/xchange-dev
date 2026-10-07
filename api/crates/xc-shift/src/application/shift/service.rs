@@ -270,6 +270,7 @@ impl<R: ShiftRepository> ShiftService<R> {
             return Err(match e {
                 StockError::Insufficient(c) => ShiftError::Insufficient(c).into(),
                 StockError::NotAStockCurrency => ShiftError::MovementInvalid.into(),
+                StockError::OutOfRange => ShiftError::AmountInvalid.into(),
             });
         }
 
@@ -278,6 +279,7 @@ impl<R: ShiftRepository> ShiftService<R> {
                 |e| match e {
                     StockError::Insufficient(c) => ShiftError::Insufficient(c),
                     StockError::NotAStockCurrency => ShiftError::MovementInvalid,
+                    StockError::OutOfRange => ShiftError::AmountInvalid,
                 },
             )?;
 
@@ -386,6 +388,7 @@ impl<R: ShiftRepository> ShiftService<R> {
             return Err(match e {
                 StockError::Insufficient(c) => ShiftError::Insufficient(c).into(),
                 StockError::NotAStockCurrency => ShiftError::MovementInvalid.into(),
+                StockError::OutOfRange => ShiftError::AmountInvalid.into(),
             });
         }
 
@@ -394,6 +397,7 @@ impl<R: ShiftRepository> ShiftService<R> {
                 |e| match e {
                     StockError::Insufficient(c) => ShiftError::Insufficient(c),
                     StockError::NotAStockCurrency => ShiftError::MovementInvalid,
+                    StockError::OutOfRange => ShiftError::AmountInvalid,
                 },
             )?;
 

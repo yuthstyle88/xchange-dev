@@ -1,6 +1,6 @@
 //! Custody state machine.
 
-use xc_kernel::money::{CurrencyCode, Money};
+use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 
 use crate::domain::custody::commands::custody_command::{ClockDirection, CustodyCommand};
 use crate::domain::custody::commands::proposal::Proposal;
@@ -418,7 +418,9 @@ impl CustodyMachine {
                 } else if req.kind == RequestKind::SafeOut {
                     let safe = new_state.safe.as_mut().ok_or(CustodyError::SafeNotOpened)?;
                     let curr_money = safe.get(currency);
-                    let new_money = Money::from_minor(curr_money.minor() - amount.minor())
+                    let new_money = MoneyDelta::from(curr_money)
+                        .checked_minus(amount)
+                        .and_then(MoneyDelta::to_money)
                         .map_err(|_| CustodyError::AmountInvalid)?;
                     let mut pairs = safe.non_zero();
                     pairs.push((currency, new_money));
@@ -611,7 +613,9 @@ impl CustodyMachine {
                             let safe =
                                 new_state.safe.as_mut().ok_or(CustodyError::SafeNotOpened)?;
                             let curr_money = safe.get(currency);
-                            let new_money = Money::from_minor(curr_money.minor() + amount.minor())
+                            let new_money = MoneyDelta::from(curr_money)
+                                .checked_plus(amount)
+                                .and_then(MoneyDelta::to_money)
                                 .map_err(|_| CustodyError::AmountInvalid)?;
                             let mut pairs = safe.non_zero();
                             pairs.push((currency, new_money));

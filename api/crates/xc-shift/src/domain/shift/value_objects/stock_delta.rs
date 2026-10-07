@@ -18,6 +18,8 @@ pub enum StockError {
     NotAStockCurrency,
     #[error("insufficient stock for {0}")]
     Insufficient(CurrencyCode),
+    #[error("an amount is past what the type holds")]
+    OutOfRange,
 }
 
 /// A signed amount per currency.

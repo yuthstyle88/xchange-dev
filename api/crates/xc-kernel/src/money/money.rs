@@ -60,7 +60,9 @@ impl Money {
         Ok(Money(Decimal::new(minor, 2)))
     }
 
-    pub(crate) fn from_minor_i128(minor: i128) -> Result<Money, NumberError> {
+    /// Hundredths as an amount: `Err(NumberError::Invalid)` when negative or past what
+    /// `Decimal` holds at scale 2.
+    pub fn try_from_minor_i128(minor: i128) -> Result<Money, NumberError> {
         if minor < 0 {
             return Err(NumberError::Invalid);
         }

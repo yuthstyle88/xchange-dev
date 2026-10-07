@@ -38,6 +38,30 @@ impl MoneyDelta {
         MoneyDelta(self.0 + other.0)
     }
 
+    /// Adds a non-negative Money amount; `Err(NumberError::Invalid)` past `i128`.
+    pub fn checked_plus(self, m: Money) -> Result<MoneyDelta, NumberError> {
+        self.0
+            .checked_add(m.minor_i128())
+            .map(MoneyDelta)
+            .ok_or(NumberError::Invalid)
+    }
+
+    /// Subtracts a non-negative Money amount; `Err(NumberError::Invalid)` past `i128`.
+    pub fn checked_minus(self, m: Money) -> Result<MoneyDelta, NumberError> {
+        self.0
+            .checked_sub(m.minor_i128())
+            .map(MoneyDelta)
+            .ok_or(NumberError::Invalid)
+    }
+
+    /// Adds another MoneyDelta; `Err(NumberError::Invalid)` past `i128`.
+    pub fn checked_add(self, other: MoneyDelta) -> Result<MoneyDelta, NumberError> {
+        self.0
+            .checked_add(other.0)
+            .map(MoneyDelta)
+            .ok_or(NumberError::Invalid)
+    }
+
     /// True if the delta is negative.
     pub fn is_negative(self) -> bool {
         self.0 < 0
@@ -48,9 +72,10 @@ impl MoneyDelta {
         self.0 == 0
     }
 
-    /// Converts back to Money if non-negative; returns `Err(NumberError::Invalid)` if negative.
+    /// Converts back to Money if non-negative and inside what `Decimal` holds;
+    /// `Err(NumberError::Invalid)` otherwise.
     pub fn to_money(self) -> Result<Money, NumberError> {
-        Money::from_minor_i128(self.0)
+        Money::try_from_minor_i128(self.0)
     }
 }
 

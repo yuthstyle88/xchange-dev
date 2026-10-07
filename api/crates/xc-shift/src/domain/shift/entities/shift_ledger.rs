@@ -13,20 +13,23 @@ impl ShiftLedger {
     /// Calculates the expected balances after applying every delta to opening balances.
     /// Only the end balance is judged: if any currency ends negative, returns
     /// `Err(Insufficient(code))` naming the first such currency in register order.
+    /// A currency whose sum, or end balance, is past what the types hold is
+    /// `Err(OutOfRange)` — never left out of the result.
     pub fn expected(opening: &Balances, deltas: &[StockDelta]) -> Result<Balances, StockError> {
         let mut final_pairs = Vec::new();
         for &code in CurrencyCode::all() {
             let mut current = MoneyDelta::from(opening.get(code));
             for delta in deltas {
-                current = current.add(delta.get(code));
+                current = current
+                    .checked_add(delta.get(code))
+                    .map_err(|_| StockError::OutOfRange)?;
             }
             if current.is_negative() {
                 return Err(StockError::Insufficient(code));
             }
-            if let Ok(money) = current.to_money() {
-                if !money.is_zero() {
-                    final_pairs.push((code, money));
-                }
+            let money = current.to_money().map_err(|_| StockError::OutOfRange)?;
+            if !money.is_zero() {
+                final_pairs.push((code, money));
             }
         }
         Ok(Balances::of(&final_pairs))
@@ -38,7 +41,9 @@ impl ShiftLedger {
         for &code in CurrencyCode::all() {
             let bal = balance.get(code);
             let d = delta.get(code);
-            let sum = MoneyDelta::from(bal).add(d);
+            let sum = MoneyDelta::from(bal)
+                .checked_add(d)
+                .map_err(|_| StockError::OutOfRange)?;
             if sum.is_negative() {
                 return Err(StockError::Insufficient(code));
             }
