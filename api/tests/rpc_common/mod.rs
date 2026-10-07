@@ -284,8 +284,16 @@ impl Desk {
         }
     }
 
+    /// The server's state, its upload directory the one [`Desk::files`] keeps
+    /// files in: a save through the routes finds the files uploaded behind
+    /// them (P2-S).
     pub fn state(&self) -> AppState {
-        AppState::new(Arc::new(settings(&[])), self.db.pool.clone())
+        let uploads = self.scratch.join("uploads");
+        let uploads = uploads.to_str().expect("a scratch path in UTF-8");
+        AppState::new(
+            Arc::new(settings(&[("APP_FILES__DIR", uploads)])),
+            self.db.pool.clone(),
+        )
     }
 
     /// The employees of a recorded file, with the ids v2 gave them (a staff

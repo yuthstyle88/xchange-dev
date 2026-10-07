@@ -30,6 +30,7 @@ use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
+use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
@@ -54,7 +55,12 @@ use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::bootstrap::AppState;
 use crate::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
 use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
+use crate::infrastructure::devices::device_service::DeviceService;
+use crate::infrastructure::devices::job_ids::UuidJobIds;
+use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
+use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
 use crate::infrastructure::files::file_service::FileService;
+use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::extractors::actor::{
     Accounts, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin, server_error,
     staff_actor,
@@ -289,11 +295,25 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
         BranchService::new(branch_tx.clone()),
         files.clone(),
     );
-    let save = SaveTransactionWorkflow::new(branch_tx, shifts, files);
+    let save = SaveTransactionWorkflow::new(branch_tx.clone(), shifts, files);
+    let kiosk = KioskService::new(
+        branch_tx.clone(),
+        Arc::new(PgKioskPorts::new(
+            pool.clone(),
+            Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(pool.clone()))),
+            Arc::new(BotRateSource::bot()),
+        )),
+    );
+    let transactions = transaction_service(pool, &branch_tx);
+    let devices = DeviceService::new(
+        branch_tx,
+        Arc::new(PgSavedExchanges::new(transactions)),
+        Arc::new(UuidJobIds),
+    );
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(CustodyAction::new(custody.clone())),
-        Arc::new(SaveAction::new(save, custody)),
+        Arc::new(SaveAction::new(save, devices, kiosk, custody)),
     ]
 }
 
