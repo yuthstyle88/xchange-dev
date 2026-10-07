@@ -148,6 +148,12 @@ const PAGE_SPECS: &[PageSpec] = &[
 
 /// Page routes; registers the page routes of §8.1.
 pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
+    cfg.service(
+        web::resource("/_xc/forms.js")
+            .route(web::get().to(forms_script))
+            .default_service(web::to(fallback)),
+    );
+
     for spec in PAGE_SPECS {
         cfg.service(
             web::resource(spec.path)
@@ -202,6 +208,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
             content.insert_str(pos, STAFF_DESK_SCRIPT);
         }
         content = add_scripts(content, spec.scripts);
+        content = add_forms_helper(content);
         content = add_version_line(content, &state.build, state.settings.channel.as_str());
 
         return HttpResponse::Ok()
@@ -285,6 +292,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     }
 
     content = add_scripts(content, spec.scripts);
+    content = add_forms_helper(content);
     content = add_version_line(content, &state.build, state.settings.channel.as_str());
 
     let mut resp = HttpResponse::Ok();
@@ -412,6 +420,30 @@ fn add_scripts(mut content: String, scripts: &[&str]) -> String {
         content.push_str(&tags);
     }
     content
+}
+
+const FORMS_TAG: &str = "<script src=\"/_xc/forms.js\" defer></script>";
+
+/// Adds the shared form helper tag immediately before `</body>` or `</html>`,
+/// or appends it if neither is found, before `add_version_line` runs.
+/// Known difference: every HTML page loads the shared form helper `/_xc/forms.js` (row FV).
+fn add_forms_helper(mut content: String) -> String {
+    if let Some(pos) = content.find("</body>") {
+        content.insert_str(pos, FORMS_TAG);
+    } else if let Some(pos) = content.find("</html>") {
+        content.insert_str(pos, FORMS_TAG);
+    } else {
+        content.push_str(FORMS_TAG);
+    }
+    content
+}
+
+async fn forms_script() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/javascript; charset=utf-8")
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("X-Content-Type-Options", "nosniff"))
+        .body(include_str!("../../static/xc-forms.js"))
 }
 
 /// What answers when no route matched. T1c serves static files here before the 404.

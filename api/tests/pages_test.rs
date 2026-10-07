@@ -276,18 +276,28 @@ async fn the_web_directory_is_a_setting() {
 
 // -------------------------------------------------------------------- pages
 
-/// The body without the one `<div id="xc-version" …>…</div>` the server adds to
-/// a page (#293); `is_page` says whether exactly one must be there, or none.
+/// The body without what the server adds to a page: the form helper's tag (row FV)
+/// and, immediately after it, the one `<div id="xc-version" …>…</div>` (#293);
+/// `is_page` says whether exactly one of each must be there, or none.
 fn without_version_line(body: &str, is_page: bool, what: &str) -> String {
     const MARK: &str = "<div id=\"xc-version\"";
+    const HELPER: &str = "<script src=\"/_xc/forms.js\" defer></script>";
     let count = body.matches(MARK).count();
+    let helpers = body.matches(HELPER).count();
     if !is_page {
         assert_eq!(count, 0, "{what}: a static file carries no version line");
+        assert_eq!(helpers, 0, "{what}: a static file carries no form helper");
         return body.to_owned();
     }
     assert_eq!(count, 1, "{what}: exactly one version line");
-    let start = body.find(MARK).unwrap();
-    let end = start + body[start..].find("</div>").expect("the line is closed") + "</div>".len();
+    assert_eq!(helpers, 1, "{what}: exactly one form helper tag");
+    let line = body.find(MARK).unwrap();
+    assert!(
+        body[..line].ends_with(HELPER),
+        "{what}: the form helper tag sits immediately before the version line"
+    );
+    let start = line - HELPER.len();
+    let end = line + body[line..].find("</div>").expect("the line is closed") + "</div>".len();
     format!("{}{}", &body[..start], &body[end..])
 }
 
