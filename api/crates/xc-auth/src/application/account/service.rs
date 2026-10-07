@@ -369,6 +369,9 @@ impl<R: AccountRepository> AccountService<R> {
     }
 
     /// `action`: "list" | "create" | "reset" | "disable". `actor` is written to the audit trail as given.
+    ///
+    /// `disable` here takes no lock; `/api/employees` closes a found account through the
+    /// `DisableEmployee` workflow instead, which asks custody again under the branch's lock.
     pub async fn employees(
         &self,
         action: &str,
@@ -474,6 +477,24 @@ impl<R: AccountRepository> AccountService<R> {
                 Err(AppError::Domain(BAD_REQUEST.to_string()))
             }
         }
+    }
+
+    /// Closes the account of employee `id` inside `tx`, for a caller that holds
+    /// a lock the closing must happen under (the route's `DisableEmployee`
+    /// workflow, under the employee's branch lock). An id that names nobody is
+    /// answered as `employees("disable")` answers it.
+    pub async fn disable_employee_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &str,
+        now: DateTime<Utc>,
+        actor: &str,
+    ) -> AppResult<()> {
+        self.repo
+            .find_employee_by_id(id)
+            .await?
+            .ok_or_else(|| AppError::Domain(NOT_FOUND.to_string()))?;
+        self.repo.disable_employee_in(tx, id, now, actor).await
     }
 
     /// Deletes the sessions that have run out and the attempt counters of

@@ -19,6 +19,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
+use crate::application::workflows::disable_employee::{DisableEmployee, DisableOutcome};
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
@@ -41,6 +42,19 @@ pub trait EmployeeCustody: Send + Sync {
         branch: &'a BranchId,
         employee_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + 'a>>;
+    /// The same question, read through `tx` — the transaction that holds the branch's lock
+    /// while `disable` closes the account (`DisableEmployee`). The future is `Send` because it
+    /// runs inside `BranchTx::run`. By default `false`: a port with no transaction to ask in
+    /// has answered on the pool already, by `holds_cash_or_pending`.
+    fn holds_cash_or_pending_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        employee_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + Send + 'a>> {
+        let _ = (tx, branch, employee_id);
+        Box::pin(async { Ok(false) })
+    }
     fn set_entity<'a>(
         &'a self,
         payload: &'a Value,
@@ -54,7 +68,9 @@ pub trait EmployeeCustody: Send + Sync {
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
-    let branches = BranchService::new(BranchTx::new(Transactor::new(state.db.clone())));
+    let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
+    let branches = BranchService::new(branch_tx.clone());
+    let disable = DisableEmployee::new(branch_tx);
     // For the whole app, not for this resource alone: a test that registers its own port
     // after `.configure(...)` replaces this one.
     let custody: Arc<dyn EmployeeCustody> = Arc::new(PgEmployeeCustody::new(state.db.clone()));
@@ -63,6 +79,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         web::resource("/api/employees")
             .app_data(web::PayloadConfig::new(1 << 20))
             .app_data(web::Data::new(branches))
+            .app_data(web::Data::new(disable))
             .route(web::post().to(employees))
             .default_service(web::to(pages::fallback)),
     );
@@ -140,6 +157,29 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                     Ok(true) => return refuse(400, HOLDS_CASH),
                     Err(e) => return failure(e),
                 }
+            }
+            // The answer above is a quick refusal on the pool; the one that counts is asked
+            // again under the employee's branch lock, together with the closing (#157). An id
+            // that names nobody goes on to the accounts' own answer below.
+            if let Some(employee) = found {
+                let Some(disable) = req.app_data::<web::Data<DisableEmployee>>() else {
+                    return server_error();
+                };
+                return match disable
+                    .run(
+                        accounts,
+                        custody.cloned().map(web::Data::into_inner),
+                        &BranchId::new(employee.branch_id.clone()),
+                        &employee.id,
+                        actor.id(),
+                        now(),
+                    )
+                    .await
+                {
+                    Ok(DisableOutcome::Closed) => answer(200, json!({ "saved": true }), true),
+                    Ok(DisableOutcome::HoldsCash) => refuse(400, HOLDS_CASH),
+                    Err(e) => failure(e),
+                };
             }
         }
         "create" => {

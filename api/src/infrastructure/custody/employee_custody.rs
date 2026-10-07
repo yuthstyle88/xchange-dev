@@ -24,6 +24,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
@@ -39,27 +40,26 @@ const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 /// The branch a payload means when it names none.
 const DEFAULT_BRANCH: &str = "MAIN";
 
-/// Answers `EmployeeCustody` from the custody service.
+/// Answers `EmployeeCustody` from the custody service, and from the custody
+/// repository it is built on for the question asked inside another transaction.
 #[derive(Clone)]
 pub struct PgEmployeeCustody {
     custody: CustodyService,
+    repo: Arc<PgCustodyRepository>,
 }
 
 impl PgEmployeeCustody {
-    /// The custody service on this pool, with the real ports.
+    /// The custody service on this pool, with the real ports, and its repository.
     pub fn new(pool: PgPool) -> Self {
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
         let shifts = ShiftService::new(
             Arc::new(PgShiftRepository::new(pool.clone())),
             branch_tx.clone(),
         );
+        let repo = Arc::new(PgCustodyRepository::new(pool));
         Self {
-            custody: CustodyService::new(
-                Arc::new(PgCustodyRepository::new(pool)),
-                shifts,
-                Arc::new(PgCustodyPorts),
-                branch_tx,
-            ),
+            custody: CustodyService::new(repo.clone(), shifts, Arc::new(PgCustodyPorts), branch_tx),
+            repo,
         }
     }
 
@@ -133,6 +133,18 @@ impl EmployeeCustody for PgEmployeeCustody {
         employee_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + 'a>> {
         Box::pin(async move { Ok(holds(&self.custody.state(branch).await?, employee_id)) })
+    }
+
+    fn holds_cash_or_pending_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        employee_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let state = self.repo.load_state_in(tx, branch).await?;
+            Ok(holds(&state, employee_id))
+        })
     }
 
     fn set_entity<'a>(

@@ -1,7 +1,8 @@
 //! Account repository trait.
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
+use sqlx::{Postgres, Transaction};
 use std::future::Future;
 
 use crate::domain::account::entities::employee::Employee;
@@ -88,6 +89,24 @@ pub trait AccountRepository: Send + Sync + 'static {
         now: DateTime<Utc>,
         actor: &str,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// Closes the account `id` inside `tx` and writes its `DISABLE` audit line
+    /// there: both exist exactly when `tx` commits. A repository with no
+    /// transactions of its own (a test double) answers `Internal`.
+    fn disable_employee_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: &str,
+        now: DateTime<Utc>,
+        actor: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send {
+        let _ = (tx, id, now, actor);
+        async {
+            Err(AppError::Internal(
+                "this repository has no transaction to close an account in".to_owned(),
+            ))
+        }
+    }
 
     fn change_employee_password(
         &self,

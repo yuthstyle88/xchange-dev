@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 
 use crate::domain::account::entities::employee::Employee;
 use crate::domain::account::entities::owner::Owner;
@@ -337,10 +337,21 @@ impl AccountRepository for PgAccountRepository {
 
     async fn disable_employee(&self, id: &str, now: DateTime<Utc>, actor: &str) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        self.disable_employee_in(&mut tx, id, now, actor).await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(())
+    }
 
+    async fn disable_employee_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: &str,
+        now: DateTime<Utc>,
+        actor: &str,
+    ) -> AppResult<()> {
         sqlx::query("UPDATE employees SET active = false, version = version + 1 WHERE id = $1")
             .bind(id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(AppError::Database)?;
 
@@ -350,11 +361,9 @@ impl AccountRepository for PgAccountRepository {
         .bind(actor)
         .bind(id)
         .bind(now)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
-
-        tx.commit().await.map_err(AppError::Database)?;
 
         Ok(())
     }
