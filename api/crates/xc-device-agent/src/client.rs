@@ -151,6 +151,7 @@ impl HttpAgentApi {
         Self::validate_url(&server_url)?;
         let client = reqwest::Client::builder()
             .use_rustls_tls()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| ApiError::Connection(e.to_string()))?;
         Ok(Self {

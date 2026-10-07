@@ -38,6 +38,12 @@ enum JournalEntry {
         job_id: String,
         lease_id: String,
     },
+    Rejected {
+        job_id: String,
+        lease_id: String,
+        status: u16,
+        reason: String,
+    },
 }
 
 enum EntryState {
@@ -123,6 +129,23 @@ impl Journal {
         })
     }
 
+    /// The server rejected the report of this lease (e.g. 409 conflict, 404).
+    /// Recorded in the journal with its status and reason, and no longer owed.
+    pub fn rejected(
+        &mut self,
+        job_id: &str,
+        lease_id: &str,
+        status: u16,
+        reason: &str,
+    ) -> io::Result<()> {
+        self.write_entry(&JournalEntry::Rejected {
+            job_id: job_id.to_owned(),
+            lease_id: lease_id.to_owned(),
+            status,
+            reason: reason.to_owned(),
+        })
+    }
+
     /// What is owed, oldest first. An unacknowledged outcome written more than 24 hours
     /// before `now` is no longer owed.
     pub fn pending(&self, now: SystemTime) -> Vec<Pending> {
@@ -165,7 +188,10 @@ impl Journal {
                                 }
                                 states.insert(key, EntryState::Unacknowledged { report, at });
                             }
-                            JournalEntry::Acknowledged { job_id, lease_id } => {
+                            JournalEntry::Acknowledged { job_id, lease_id }
+                            | JournalEntry::Rejected {
+                                job_id, lease_id, ..
+                            } => {
                                 let key = (job_id, lease_id);
                                 states.remove(&key);
                                 order.retain(|k| k != &key);

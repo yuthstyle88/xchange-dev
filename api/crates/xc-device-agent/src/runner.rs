@@ -1,11 +1,12 @@
 //! The loop: claim, send, record (§5.4c *Claim → send → record*, *Restart and offline*).
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 
 use crate::client::{AgentApi, ApiError, ClaimRequest, DrawerInfo, Outcome, Report};
+pub use crate::clock::{Clock, FakeClock, ManualClock, SystemClock};
 use crate::journal::{Journal, Pending};
 use crate::transport::DrawerTransport;
 
@@ -47,16 +48,17 @@ pub enum Step {
     Wait(Duration),
 }
 
-pub struct AgentRunner<A, T> {
+pub struct AgentRunner<A, T, C = SystemClock> {
     pub api: A,
     pub transport: T,
     pub journal: Journal,
     pub config: AgentConfig,
     /// Consecutive failed calls, for [`backoff`].
     pub failures: u32,
+    pub clock: C,
 }
 
-impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
+impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T, SystemClock> {
     pub fn new(api: A, transport: T, journal: Journal, config: AgentConfig) -> Self {
         Self {
             api,
@@ -64,7 +66,37 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
             journal,
             config,
             failures: 0,
+            clock: SystemClock,
         }
+    }
+}
+
+impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
+    pub fn with_clock(
+        api: A,
+        transport: T,
+        journal: Journal,
+        config: AgentConfig,
+        clock: C,
+    ) -> Self {
+        Self {
+            api,
+            transport,
+            journal,
+            config,
+            failures: 0,
+            clock,
+        }
+    }
+
+    pub fn new_with_clock(
+        api: A,
+        transport: T,
+        journal: Journal,
+        config: AgentConfig,
+        clock: C,
+    ) -> Self {
+        Self::with_clock(api, transport, journal, config, clock)
     }
 
     /// The claim this runner sends.
@@ -100,8 +132,12 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
                     };
                     let _ = self.journal.outcome(&report, SystemTime::now());
                     match self.api.report(&report).await {
-                        Ok(()) | Err(ApiError::Rejected { .. }) => {
+                        Ok(()) => {
                             let _ = self.journal.acknowledged(&job_id, &lease_id);
+                        }
+                        Err(ApiError::Rejected { status, error }) => {
+                            eprintln!("report rejected ({status}): {error}");
+                            let _ = self.journal.rejected(&job_id, &lease_id, status, &error);
                         }
                         Err(ApiError::Unauthorized) => {
                             return Err(ApiError::Unauthorized);
@@ -113,8 +149,17 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
                 }
                 Pending::Unacknowledged(report) => {
                     match self.api.report(&report).await {
-                        Ok(()) | Err(ApiError::Rejected { .. }) => {
+                        Ok(()) => {
                             let _ = self.journal.acknowledged(&report.job_id, &report.lease_id);
+                        }
+                        Err(ApiError::Rejected { status, error }) => {
+                            eprintln!("report rejected ({status}): {error}");
+                            let _ = self.journal.rejected(
+                                &report.job_id,
+                                &report.lease_id,
+                                status,
+                                &error,
+                            );
                         }
                         Err(ApiError::Unauthorized) => {
                             return Err(ApiError::Unauthorized);
@@ -172,57 +217,67 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
         };
 
         // Note arrival on monotonic clock
-        let arrival = Instant::now();
+        let arrival = self.clock.now();
 
         // Decode kick bytes
-        let (outcome, reason, detail) = match base64::engine::general_purpose::STANDARD
-            .decode(&claimed.bytes)
-        {
-            Err(_) => (
-                Outcome::Failed,
-                "BAD_BYTES".to_owned(),
-                serde_json::json!({}),
-            ),
-            Ok(bytes) => {
-                // Write sending to journal before sending bytes out
-                let _ = self
-                    .journal
-                    .sending(&claimed.job_id, &claimed.lease_id, SystemTime::now());
-
-                // Check if send window has already passed
-                let elapsed = arrival.elapsed();
-                if elapsed >= Duration::from_millis(claimed.send_within_ms) {
-                    (
-                        Outcome::Expired,
-                        "SEND_WINDOW_PASSED".to_owned(),
-                        serde_json::json!({}),
-                    )
-                } else {
-                    // Send within 5s
-                    match tokio::time::timeout(Duration::from_secs(5), self.transport.send(&bytes))
-                        .await
+        let (outcome, reason, detail) =
+            match base64::engine::general_purpose::STANDARD.decode(&claimed.bytes) {
+                Err(_) => (
+                    Outcome::Failed,
+                    "BAD_BYTES".to_owned(),
+                    serde_json::json!({}),
+                ),
+                Ok(bytes) => {
+                    // Write sending to journal before sending bytes out
+                    if self
+                        .journal
+                        .sending(&claimed.job_id, &claimed.lease_id, SystemTime::now())
+                        .is_err()
                     {
-                        Ok(Ok(receipt)) => {
-                            let detail = match receipt.cups_job {
-                                Some(job) => serde_json::json!({ "cupsJob": job }),
-                                None => serde_json::json!({}),
-                            };
-                            (Outcome::DrawerOpened, String::new(), detail)
+                        (
+                            Outcome::Failed,
+                            "JOURNAL_WRITE_FAILED".to_owned(),
+                            serde_json::json!({}),
+                        )
+                    } else {
+                        // Check if send window has already passed
+                        let elapsed = self.clock.now().saturating_duration_since(arrival);
+                        if elapsed >= Duration::from_millis(claimed.send_within_ms) {
+                            (
+                                Outcome::Expired,
+                                "SEND_WINDOW_PASSED".to_owned(),
+                                serde_json::json!({}),
+                            )
+                        } else {
+                            // Send within 5s
+                            match tokio::time::timeout(
+                                Duration::from_secs(5),
+                                self.transport.send(&bytes),
+                            )
+                            .await
+                            {
+                                Ok(Ok(receipt)) => {
+                                    let detail = match receipt.cups_job {
+                                        Some(job) => serde_json::json!({ "cupsJob": job }),
+                                        None => serde_json::json!({}),
+                                    };
+                                    (Outcome::DrawerOpened, String::new(), detail)
+                                }
+                                Ok(Err(err)) => (
+                                    Outcome::Failed,
+                                    err.reason().to_owned(),
+                                    serde_json::json!({}),
+                                ),
+                                Err(_) => (
+                                    Outcome::Failed,
+                                    "SEND_FAILED".to_owned(),
+                                    serde_json::json!({}),
+                                ),
+                            }
                         }
-                        Ok(Err(err)) => (
-                            Outcome::Failed,
-                            err.reason().to_owned(),
-                            serde_json::json!({}),
-                        ),
-                        Err(_) => (
-                            Outcome::Failed,
-                            "SEND_FAILED".to_owned(),
-                            serde_json::json!({}),
-                        ),
                     }
                 }
-            }
-        };
+            };
 
         // Write outcome to journal
         let report = Report {
@@ -236,10 +291,16 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T> {
 
         // Report to server; acknowledge if taken or rejected
         match self.api.report(&report).await {
-            Ok(()) | Err(ApiError::Rejected { .. }) => {
+            Ok(()) => {
                 let _ = self
                     .journal
                     .acknowledged(&claimed.job_id, &claimed.lease_id);
+            }
+            Err(ApiError::Rejected { status, error }) => {
+                eprintln!("report rejected ({status}): {error}");
+                let _ = self
+                    .journal
+                    .rejected(&claimed.job_id, &claimed.lease_id, status, &error);
             }
             Err(_) => {
                 // Connection or RateLimited: stays owed!

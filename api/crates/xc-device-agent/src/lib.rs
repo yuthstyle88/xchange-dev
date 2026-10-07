@@ -4,6 +4,7 @@
 //! STUB written by the ticket author of row AG-5: the names and signatures below are the
 //! ticket's [required] ones; every body answers a wrong value until the implementer writes it.
 pub mod client;
+pub mod clock;
 pub mod config;
 pub mod cups_transport;
 pub mod journal;
