@@ -2,7 +2,8 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
-use xc_kernel::money::{Money, NumberError, Quote, QuoteError, Rate, Side};
+use xc_kernel::input;
+use xc_kernel::money::{Money, Quote, QuoteError, Rate, Side};
 
 use crate::domain::customer::value_objects::customer_details::CustomerDetails;
 use crate::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -50,55 +51,55 @@ impl TransactionForm {
         let customer = CustomerDetails::parse(&cmd.customer)?;
 
         // Step 2: Submission ID
-        let submission_id = validate_text(&cmd.submission_id, 60, true)?;
+        let submission_id = input::text(&cmd.submission_id, 60, true)?;
 
         // Step 3: Customer ID
-        let customer_id = validate_text(&cmd.customer_id, 40, true)?;
+        let customer_id = input::text(&cmd.customer_id, 40, true)?;
 
         // Step 4: Side / Type
-        let side_str = validate_text(&cmd.side, 4, true)?;
+        let side_str = input::text(&cmd.side, 4, true)?;
 
         // Step 5: Currency
-        let currency_str = validate_text(&cmd.currency, 3, true)?;
+        let currency_str = input::text(&cmd.currency, 3, true)?;
 
         // Step 6: Amount
-        let amount = Money::parse(&cmd.amount).map_err(map_number_err)?;
+        let amount = Money::parse(&cmd.amount).map_err(input::number_error)?;
         if amount.is_zero() {
             return Err(AppError::Domain(BAD_NUMBER.to_owned()));
         }
 
         // Step 7: Rate
-        let rate = Rate::parse(&cmd.rate).map_err(map_number_err)?;
+        let rate = Rate::parse(&cmd.rate).map_err(input::number_error)?;
 
         // Step 8: Fee
-        let fee = Money::parse(&cmd.fee).map_err(map_number_err)?;
+        let fee = Money::parse(&cmd.fee).map_err(input::number_error)?;
 
         // Step 9: Bank Fee
-        let bank_fee = Money::parse(&cmd.bank_fee).map_err(map_number_err)?;
+        let bank_fee = Money::parse(&cmd.bank_fee).map_err(input::number_error)?;
 
         // Step 10: Method
-        let method_str = validate_text(&cmd.method, 30, true)?;
+        let method_str = input::text(&cmd.method, 30, true)?;
 
         // Step 11: Payment Ref
-        let payment_ref = validate_text(&cmd.payment_ref, 80, false)?;
+        let payment_ref = input::text(&cmd.payment_ref, 80, false)?;
 
         // Step 12: Account
-        let account = validate_text(&cmd.account, 100, true)?;
+        let account = input::text(&cmd.account, 100, true)?;
 
         // Step 13: Staff
-        let staff = validate_text(&cmd.staff, 40, true)?;
+        let staff = input::text(&cmd.staff, 40, true)?;
 
         // Step 14: Booking
-        let booking = validate_text(&cmd.booking, 60, true)?;
+        let booking = input::text(&cmd.booking, 60, true)?;
 
         // Step 15: Notes
-        let notes = validate_text(&cmd.notes, 1000, false)?;
+        let notes = input::text(&cmd.notes, 1000, false)?;
 
         // Step 16: Value Date
-        let value_date = parse_value_date(&cmd.value_date)?;
+        let value_date = input::calendar_date(input::text(&cmd.value_date, 10, true)?)?;
 
         // Step 17: Paid At
-        let paid_at_str = validate_text(&cmd.paid_at, 30, true)?;
+        let paid_at_str = input::text(&cmd.paid_at, 30, true)?;
 
         // Step 18: Incomplete checks (submission_id, side, currency, method, paid_at, confirmations)
         if submission_id.len() < 16
@@ -174,7 +175,7 @@ impl TransactionForm {
         // Step 24: Reference rate
         let reference_rate = match cmd.reference_rate.as_deref() {
             None | Some("") => None,
-            Some(s) => Some(Rate::parse(s).map_err(map_number_err)?),
+            Some(s) => Some(Rate::parse(s).map_err(input::number_error)?),
         };
 
         Ok(Self {
@@ -201,44 +202,4 @@ impl TransactionForm {
             quote,
         })
     }
-}
-
-fn validate_text(raw: &str, max_utf16: usize, required: bool) -> AppResult<&str> {
-    let trimmed = raw.trim();
-    let count = trimmed.encode_utf16().count();
-    if (required && count == 0) || count > max_utf16 {
-        return Err(AppError::Domain(BAD_TEXT.to_owned()));
-    }
-    Ok(trimmed)
-}
-
-fn map_number_err(err: NumberError) -> AppError {
-    match err {
-        NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_owned()),
-        NumberError::Invalid => AppError::Domain(BAD_NUMBER.to_owned()),
-    }
-}
-
-fn parse_value_date(raw: &str) -> AppResult<NaiveDate> {
-    let trimmed = validate_text(raw, 10, true)?;
-    let bytes = trimmed.as_bytes();
-    if bytes.len() != 10
-        || !bytes[0..4].iter().all(u8::is_ascii_digit)
-        || bytes[4] != b'-'
-        || !bytes[5..7].iter().all(u8::is_ascii_digit)
-        || bytes[7] != b'-'
-        || !bytes[8..10].iter().all(u8::is_ascii_digit)
-    {
-        return Err(AppError::Domain(BAD_DATE_FORMAT.to_owned()));
-    }
-
-    let date = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
-        .map_err(|_| AppError::Domain(BAD_DATE.to_owned()))?;
-
-    let floor = NaiveDate::from_ymd_opt(1920, 4, 2).expect("valid date");
-    if date < floor {
-        return Err(AppError::Domain(BAD_DATE.to_owned()));
-    }
-
-    Ok(date)
 }
