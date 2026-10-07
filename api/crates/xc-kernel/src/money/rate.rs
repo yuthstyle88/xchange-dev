@@ -18,7 +18,8 @@ impl Rate {
         Ok(Rate(val))
     }
 
-    pub(crate) fn value(self) -> Decimal {
+    /// The rate at exactly four decimal places, equal to and printing as [`fmt::Display`].
+    pub fn value(self) -> Decimal {
         self.0
     }
 }

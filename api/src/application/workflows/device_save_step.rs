@@ -21,9 +21,9 @@ impl DeviceSaveStep {
     }
 }
 
-/// The saved exchange as the device log sees it. `Money::value` and `Rate::value`
-/// are `pub(crate)`, so the amount returns from its hundredths and the rate from
-/// its `Display` text — both exact, never a float.
+/// The saved exchange as the device log sees it. `Money::value` is still
+/// `pub(crate)`, so the amount returns from its hundredths; `Rate::value()`
+/// provides the rate directly — both exact, never a float.
 fn saved_exchange(saved: &Transaction) -> SavedExchange {
     SavedExchange {
         cash: saved.method.is_cash(),
@@ -31,8 +31,7 @@ fn saved_exchange(saved: &Transaction) -> SavedExchange {
         document_ref: saved.document_ref.clone(),
         currency: saved.currency.clone(),
         amount: Decimal::new(saved.amount.minor(), 2),
-        rate: Decimal::from_str_exact(&saved.rate.to_string())
-            .expect("a rate's Display text is an exact decimal"),
+        rate: saved.rate.value(),
         passport_key: Some(saved.passport_key.clone()),
         slip_key: saved.slip_key.clone(),
     }

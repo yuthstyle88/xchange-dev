@@ -11,7 +11,7 @@ use crate::domain::rate::entities::rate_change::RateChange;
 use crate::domain::rate::repositories::rate_repository::{
     CurrentRateRow, NewRate, RateRepository, SavedRateRecord,
 };
-use crate::domain::validation::{decimal_to_rate, rate_to_decimal};
+use crate::domain::validation::decimal_to_rate;
 
 type SavedRateDbRow = (String, Decimal, Decimal, String, Option<Decimal>);
 
@@ -270,13 +270,9 @@ impl RateRepository for PgRateRepository {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         rate: NewRate<'_>,
     ) -> AppResult<()> {
-        let buy_dec = rate_to_decimal(&rate.buy)?;
-        let sell_dec = rate_to_decimal(&rate.sell)?;
-        let partner_cost_dec = rate
-            .partner_cost
-            .as_ref()
-            .map(rate_to_decimal)
-            .transpose()?;
+        let buy_dec = rate.buy.value();
+        let sell_dec = rate.sell.value();
+        let partner_cost_dec = rate.partner_cost.as_ref().map(|r| r.value());
 
         sqlx::query(
             "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, reference, updated_at, updated_by, request_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",

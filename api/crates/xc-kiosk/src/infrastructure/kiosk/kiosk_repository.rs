@@ -1,7 +1,5 @@
 //! Kiosk repository postgres implementation.
 
-use std::str::FromStr;
-
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
@@ -103,10 +101,6 @@ fn money_to(money: Money) -> Decimal {
 
 fn rate_from(value: Decimal) -> AppResult<Rate> {
     Rate::parse(&value.normalize().to_string()).map_err(|_| unreadable("rate", &value))
-}
-
-fn rate_to(rate: Rate) -> AppResult<Decimal> {
-    Decimal::from_str(&rate.to_string()).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 fn time_to(time: KioskTime) -> AppResult<DateTime<Utc>> {
@@ -226,7 +220,7 @@ impl KioskRepository for PgKioskRepository {
         .bind(request.staff.as_deref())
         .bind(side_text(request.quote.side))
         .bind(request.quote.currency.as_str())
-        .bind(rate_to(request.quote.rate)?)
+        .bind(request.quote.rate.value())
         .bind(money_to(request.quote.foreign))
         .bind(money_to(request.quote.thb))
         .bind(money_to(request.quote.input_amount))

@@ -1,7 +1,5 @@
 //! Domain validation and error constants for xc-rate.
 
-use std::str::FromStr;
-
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use pos_error::AppError;
 use rust_decimal::Decimal;
@@ -57,8 +55,4 @@ pub fn parse_rate(s: &str) -> Result<Rate, AppError> {
 
 pub fn decimal_to_rate(d: &Decimal) -> Result<Rate, AppError> {
     Rate::parse(&d.normalize().to_string()).map_err(|e| AppError::Internal(e.to_string()))
-}
-
-pub fn rate_to_decimal(r: &Rate) -> Result<Decimal, AppError> {
-    Decimal::from_str(&r.to_string()).map_err(|e| AppError::Internal(e.to_string()))
 }

@@ -1,4 +1,4 @@
-use xc_kernel::money::{Money, Quote, Rate, Side};
+use xc_kernel::money::{Money, Quote, Side};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
@@ -17,18 +17,6 @@ use crate::domain::kiosk::value_objects::request_identity::RequestIdentity;
 use crate::domain::kiosk::value_objects::save_attempt::SaveAttempt;
 use crate::domain::kiosk::value_objects::transaction_link::TransactionLink;
 use crate::domain::kiosk::value_objects::transition::Transition;
-
-fn rate_ten_thousandths(rate: Rate) -> Result<i128, KioskError> {
-    let s = rate.to_string();
-    let digits = s.replace('.', "");
-    let r = digits
-        .parse::<i128>()
-        .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-    if r <= 0 {
-        return Err(KioskError::AmountOrCurrencyInvalid);
-    }
-    Ok(r)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KioskMachine;
@@ -99,7 +87,7 @@ impl KioskMachine {
             }
             Side::Sell => {
                 let a = amount.minor_i128();
-                let r = rate_ten_thousandths(rate)?;
+                let r = rate.value().mantissa();
                 let foreign_hundredths = a * 10_000 / r;
                 // 5. foreign is zero -> AmountTooSmall.
                 if foreign_hundredths == 0 {
