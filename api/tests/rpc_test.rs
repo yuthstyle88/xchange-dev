@@ -18,8 +18,8 @@
 //! difference and which it left out, so a step cannot be skipped silently.
 //!
 //! Since T11a-0 the names of part two are counted per family
-//! (`rpc_common::Family`, one `rpc_common/gap_*.rs` each): the tallies below and
-//! the gap test are computed from the three `WIRED` constants. With none wired
+//! (`rpc_common::Family`, one `rpc_common/gap_*.rs` each): the tallies below
+//! are computed from the three `WIRED` constants. With none wired
 //! every number, name and answer is what it was before. (Those edits are the
 //! lane controller's, made on ticket T11a-0.)
 //!
@@ -1067,71 +1067,10 @@ async fn the_ops_names_policy_refuses_are_refused_as_v2_refused_them() {
     replay.finish().await;
 }
 
-// ╔═══════════════════════════════════════════════════════════════════════════╗
-// ║ GAP PINNED ON PURPOSE — T11a part two closes it one family at a time.    ║
-// ║                                                                           ║
-// ║ `saveTransaction`, `documents` and the `ops*` names are not dispatched   ║
-// ║ by part one. Where `Policy` lets a caller through, the routes answer     ║
-// ║ what v2 answers for a name it does not know. This test holds that for    ║
-// ║ every family whose `rpc_common/gap_*.rs` says it is not wired, so the    ║
-// ║ gap is visible and cannot change by accident; it is NOT what v2 answers  ║
-// ║ for these names. The last ticket of part two deletes it.                 ║
-// ╚═══════════════════════════════════════════════════════════════════════════╝
-#[actix_web::test]
-async fn gap_part_two_names_are_answered_as_unknown_names() {
-    let desk = Desk::open().await;
-    let app = rpc_app!(desk);
-    let people = one_of_each_role();
-    desk.employ(&people).await;
-    let cookies = sign_in(&app, ORIGIN, &people).await;
-
-    let mut let_through = 0;
-    let mut expected = 0;
-    for (family, names, pairs) in GAP_NAMES {
-        if family.wired() {
-            continue;
-        }
-        expected += pairs;
-        for action in names {
-            for person in &people {
-                let actor = actor_of(person);
-                for (path, entry) in [(RPC, EntryPath::Rpc), (STAFF_RPC, EntryPath::StaffRpc)] {
-                    let answer = ask(&app, &cookies, path, action, &person.key).await;
-                    let label = format!("{action} on {path} as {}", person.key);
-                    match Policy::allow(Some(&actor), entry, &Action::new(*action)) {
-                        Err(refusal) => {
-                            answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
-                        }
-                        Ok(()) => {
-                            let sentence = match (path, person.is_owner()) {
-                                (RPC, true) => INVALID_REQUEST,
-                                (RPC, false) => ROLE_NOT_ALLOWED_RPC,
-                                _ => ROLE_NOT_ALLOWED_STAFF,
-                            };
-                            answer.assert_refused(400, sentence, &label);
-                            let_through += 1;
-                        }
-                    }
-                }
-            }
-        }
-        assert_eq!(let_through, expected, "{family:?}: callers let through");
-    }
-    // saveTransaction: the owner and FRONT on /api/rpc, FRONT on the staff
-    // route (3); documents: seven roles on the staff route (7); three `ops*`
-    // names: nine roles on the staff route each (27)
-    assert_eq!(let_through, expected);
-    if NO_FAMILY_WIRED {
-        assert_eq!(let_through, 37);
-    }
-    desk.finish().await;
-}
-
 /// A family is marked `WIRED` exactly when its file under
 /// `api/src/application/compat/actions/` answers its names — asked of the
 /// families the server registers (`registered_actions`), on either route. So a
-/// family cannot be marked wired while its names still go through the gap
-/// (which would take them out of the gap test and hold nothing instead), nor
+/// family cannot be marked wired while its names still go through the gap, nor
 /// start answering while the tallies still count it as the gap.
 #[actix_web::test]
 async fn a_family_is_marked_wired_exactly_when_its_file_answers_its_names() {
