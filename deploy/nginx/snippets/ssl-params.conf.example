@@ -1,0 +1,7 @@
+# TLS parameters for origin TLS (TLS-ORIGIN).
+# TLS 1.2 and 1.3 only; session tickets disabled.
+
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+ssl_session_tickets off;
+ssl_session_cache shared:SSL:10m;

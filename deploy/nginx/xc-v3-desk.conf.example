@@ -7,10 +7,10 @@
 # compares Origin with Host). The customer host is the other file,
 # xc-v3-customer.conf.example, and lets only the kiosk through.
 #
-# Replace before use: the server_name values and the port
-# (APP_APPLICATION__PORT). As written it fits a host reached through Cloudflare
-# (TLS ends there, nginx listens on port 80); a host that terminates TLS itself
-# changes the listen lines and X-Forwarded-Proto (see below).
+# Replace before use: the server_name values, certificate paths, and the port
+# (APP_APPLICATION__PORT). The server terminates TLS on this nginx (origin TLS);
+# plain HTTP on port 80 is redirected to HTTPS per location, except for the ACME
+# challenge path which answers on port 80 for certbot webroot renewals.
 #
 # The proxy_set_header lines are at server level on purpose: a location that
 # sets any proxy_set_header of its own drops ALL of these (nginx inherits them
@@ -19,7 +19,18 @@
 server {
     listen 80;
     listen [::]:80;
+    # nginx on the live host takes "listen 443 ssl http2;". nginx >= 1.25.1 prefers "listen 443 ssl;" + "http2 on;".
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name xc-desk.example.com xc-admin.example.com;
+
+    include snippets/acme-challenge.conf;
+    include snippets/ssl-params.conf;
+
+    ssl_certificate /etc/letsencrypt/live/xc-desk.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/xc-desk.example.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     # Uploads are accepted up to 15 MB by the server
     # (api/src/infrastructure/files/file_service.rs MAX_UPLOAD_BYTES), sent as
@@ -50,13 +61,8 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
     # The server uses this to build its origin (https://<host>) and redirects.
-    # TLS ends at Cloudflare and this block listens on plain port 80, so the
-    # value is fixed: with $scheme it would be "http", every POST would be
-    # refused as cross-origin and redirects would go to http://.
-    proxy_set_header X-Forwarded-Proto https;
-    # Only for a host where TLS ends on THIS nginx (listen 443 ssl), instead of
-    # the line above:
-    #     proxy_set_header X-Forwarded-Proto $scheme;
+    # On port 443 it is "https"; on port 80 plain HTTP is redirected before proxying.
+    proxy_set_header X-Forwarded-Proto $scheme;
 
     # --- Behind Cloudflare (required: cloudflare-realip.conf) ---------------
     # Behind Cloudflare, $remote_addr is a Cloudflare edge address unless nginx
@@ -68,13 +74,16 @@ server {
     # That sets the trusted Cloudflare ranges and real_ip_header CF-Connecting-IP at
     # http level — do not add real_ip_header inside this server block.
     #
-    # Close this host's port 80 to everything but Cloudflare's ranges (firewall).
+    # Close this host's ports 80 and 443 to everything but Cloudflare's ranges (firewall).
     # With realip active, $remote_addr carries the real visitor, X-Real-IP forwards
     # it to the server, and CF-Connecting-IP stays cleared.
     # -----------------------------------------------------------------------
 
     # API answers are per user and must never be stored or replayed.
     location /api/ {
+        if ($scheme = http) {
+            return 301 https://$host$request_uri;
+        }
         proxy_cache off;
         proxy_no_cache 1;
         proxy_cache_bypass 1;
@@ -84,6 +93,9 @@ server {
     # Pages, static files, uploaded files, /healthz and /health/ready. The
     # server sets Cache-Control itself (pages: no-store).
     location / {
+        if ($scheme = http) {
+            return 301 https://$host$request_uri;
+        }
         proxy_cache off;
         proxy_pass http://127.0.0.1:8094;
     }

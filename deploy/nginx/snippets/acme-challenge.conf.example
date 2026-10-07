@@ -1,0 +1,8 @@
+# ACME HTTP-01 challenge snippet for Let's Encrypt / certbot webroot.
+# Applied to every vhost so certbot can renew certificates on port 80.
+
+location ^~ /.well-known/acme-challenge/ {
+    root /var/www/letsencrypt;
+    auth_basic off;
+    default_type text/plain;
+}

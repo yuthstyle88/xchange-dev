@@ -70,8 +70,13 @@ from the env file, so a later run without the same overrides does not move them.
    starts the unit, and ends with the smoke check. `APP_ENVIRONMENT=production`
    makes the server report channel `release`; anything else reports `staging`.
 4. **First owner account** — section 2 below.
-5. **nginx** — hand `nginx/xc-v3-desk.conf.example` to the host's owner. Until
-   nginx points at the new port nobody outside the host reaches the server.
+5. **nginx and origin TLS** — hand `deploy/nginx/xc-v3-desk.conf.example` and the
+   snippet examples (`deploy/nginx/snippets/`) to the host's owner. Nginx listens
+   on both port 80 and port 443 with origin TLS (Let's Encrypt certificates issued
+   via certbot webroot). Plain HTTP on port 80 redirects to HTTPS inside application
+   locations, leaving `/.well-known/acme-challenge/` answering on port 80 for ACME
+   renewals (section 6 below). Until nginx points at the new port nobody outside the
+   host reaches the server.
 6. **Smoke check through nginx**, from anywhere:
    ```bash
    deploy/server/smoke.sh https://<desk host> <build sha>
@@ -335,11 +340,36 @@ sudo cp server/journald-xc-v3.conf /etc/systemd/journald.conf.d/xc-v3.conf
 sudo systemctl restart systemd-journald
 ```
 
-## 6. nginx
+## 6. nginx and origin TLS
 
-The examples in `nginx/` are examples; the host's owner applies them. What the
-server depends on, whatever the file looks like in the end:
+The examples in `deploy/nginx/` and `deploy/nginx/snippets/` are examples; the
+host's owner applies them. What the server depends on:
 
+- **Origin TLS (443 + 80)**: Each host listens on both port 80 and port 443
+  (`listen 80; listen [::]:80; listen 443 ssl http2; listen [::]:443 ssl http2;`).
+  Origin certificates are issued via Let's Encrypt using certbot with the webroot
+  authenticator (`/var/www/letsencrypt`).
+- **Snippets**: Shared configuration snippets are placed in `/etc/nginx/snippets/`:
+  - `acme-challenge.conf` (`deploy/nginx/snippets/acme-challenge.conf.example`):
+    serves `location ^~ /.well-known/acme-challenge/` from webroot `/var/www/letsencrypt`
+    with `auth_basic off;` and `default_type text/plain;`.
+  - `ssl-params.conf` (`deploy/nginx/snippets/ssl-params.conf.example`):
+    enforces `ssl_protocols TLSv1.2 TLSv1.3;`, disables `ssl_session_tickets`, and sets
+    shared session cache and cipher preferences.
+- **Port 80 redirect inside locations**: Port 80 never serves application traffic
+  and always serves ACME HTTP-01 challenges. Because an `if` / `return` directive at
+  server level runs in the server rewrite phase before location selection and would
+  redirect ACME challenge requests, the HTTPS redirect is written **inside the
+  locations**, never at server level:
+  `if ($scheme = http) { return 301 https://$host$request_uri; }` as the first line
+  of `location /` and of every other location serving or proxying application traffic
+  (desk: `location /api/`; customer: `location = /api/kiosk` and the cache location).
+- **HSTS**: `add_header Strict-Transport-Security "max-age=31536000" always;` is set
+  at server level (without `includeSubDomains` or `preload`). Any location that
+  defines its own `add_header` (such as the customer static cache location) repeats
+  this directive, as nginx does not inherit parent `add_header` into locations with their
+  own header directives.
+- `proxy_set_header X-Forwarded-Proto $scheme;`: Passes `https` on TLS connections.
 - `X-Real-IP` set from the connection (`$remote_addr`), overwriting the client's
   value. The server reads only `X-Real-IP` at every door (api/src/presentation/http/client_address.rs):
   all per-address limits (owner sign-in 30/addr, staff sign-in 30/addr, kiosk quotes
@@ -356,11 +386,8 @@ server depends on, whatever the file looks like in the end:
   updates them.
 - A host that terminates TLS itself (no Cloudflare) does not use
   `cloudflare-realip.conf`: `$remote_addr` is already the visitor.
-- Firewall: the host's port 80 should accept traffic from Cloudflare's ranges
-  only. If port 80 is open to direct connections, a direct caller connects directly
-  to nginx, so its own address becomes `$remote_addr` and is counted under its own
-  per-address limit (there is no way around the rate limit), but the origin server's
-  IP is exposed to direct access.
+- Firewall: the host's ports 80 and 443 should accept traffic from Cloudflare's
+  ranges only.
 - `Host` passed through and `X-Forwarded-Proto` telling the truth about what the
   browser used (`https` when TLS ends at Cloudflare) — a POST is refused unless
   `Origin` equals `<proto>://<host>`.
@@ -368,12 +395,52 @@ server depends on, whatever the file looks like in the end:
 - The server's port reachable from nginx only (it listens on `127.0.0.1`).
 - Customer host: only the kiosk files and `POST /api/kiosk`.
 
-The examples are written for a host reached through Cloudflare (nginx on port
-80, `X-Forwarded-Proto https` fixed); the `$scheme` variant for a host that
-terminates TLS itself is in the file as a comment. `nginx -t` passes on both
-site examples together with `cloudflare-realip.conf` in a throw-away
-`nginx:1.27-alpine` container; that says the syntax is right, not that the file
-fits a given host — its owner runs `nginx -t` there before any reload.
+### Certbot Webroot Setup Order
+
+On a fresh host, certificates and origin TLS are installed in this order:
+
+1. **Snippets and the port-80 block**:
+   Create webroot directory `/var/www/letsencrypt`:
+   ```bash
+   sudo mkdir -p /var/www/letsencrypt
+   ```
+   Install snippets into `/etc/nginx/snippets/`:
+   ```bash
+   sudo mkdir -p /etc/nginx/snippets
+   sudo cp deploy/nginx/snippets/acme-challenge.conf.example /etc/nginx/snippets/acme-challenge.conf
+   sudo cp deploy/nginx/snippets/ssl-params.conf.example /etc/nginx/snippets/ssl-params.conf
+   ```
+   Configure the vhost with listeners for port 80 only, including `snippets/acme-challenge.conf;`
+   and `location /`. Reload nginx (`sudo nginx -t && sudo systemctl reload nginx`).
+2. **Issue certificate**:
+   Run certbot with the webroot authenticator and deploy hook:
+   ```bash
+   sudo certbot certonly --webroot -w /var/www/letsencrypt -d <name> --deploy-hook "systemctl reload nginx"
+   ```
+3. **Dry-run verification**:
+   Verify automated renewal works:
+   ```bash
+   sudo certbot renew --dry-run
+   ```
+4. **Enable origin TLS**:
+   Update the server block to add `listen 443 ssl http2;`, `listen [::]:443 ssl http2;`,
+   `include snippets/ssl-params.conf;`, the certificate paths (`ssl_certificate /etc/letsencrypt/live/<name>/fullchain.pem;`
+   and `ssl_certificate_key /etc/letsencrypt/live/<name>/privkey.pem;`), server-level HSTS, and the per-location
+   HTTPS redirects (`if ($scheme = http) { return 301 https://$host$request_uri; }`).
+   Test and reload:
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+### Owner Checklist (Design §7c)
+
+Order matters:
+
+1. *(done on `do-sgp1`, 2026-10-07)* **Certificates and origin TLS**: Certificates issued via certbot webroot, `listen 443 ssl` on every vhost, and the two snippets included.
+2. **Cloudflare SSL/TLS mode**: In Cloudflare dashboard → SSL/TLS, set encryption mode to **Full (strict)**. Note that the dashboard SSL/TLS encryption mode is zone-wide: switching to Full (strict) zone-wide is safe only because every proxied vhost on this host answers on 443 with a valid origin certificate; if another name in the shared zone lives elsewhere without a valid certificate, use a per-hostname Configuration Rule to enforce Full (strict) for the xc hostnames alone. Verify every xc name through Cloudflare: `curl -sI https://<name>/healthz` (xc-v3) or `/` answers 200 with no 525/526 errors.
+3. **Lock origin to Cloudflare**: Lock down direct origin access using Authenticated Origin Pulls (AOP: Cloudflare presents a client certificate; nginx `ssl_client_certificate <Cloudflare origin-pull CA>;` + `ssl_verify_client on;` on 443) together with a host firewall admitting ports 80 and 443 from Cloudflare's published IP ranges only (`https://www.cloudflare.com/ips-v4` and `/ips-v6`). Use AOP together with the Cloudflare IP allowlist (not either alone), because the zone-level Authenticated Origin Pulls certificate is shared by every Cloudflare customer, so AOP alone admits requests from any Cloudflare account. Every xc hostname must remain proxied (orange cloud in Cloudflare DNS; never DNS-only): a DNS-only name would send Let's Encrypt renewal checks directly to the origin, which the allowlist will refuse — and switching a name to DNS-only later silently breaks certbot renewal (90 days on). After applying the lock, confirm `sudo certbot renew --dry-run` succeeds for every name.
+4. **Port 80 redirect-only**: Verify the TLS-ORIGIN nginx files with the per-location redirect `if ($scheme = http) { return 301 https://$host$request_uri; }` inside `location /` and application locations (never at server level). Run `sudo nginx -t && sudo systemctl reload nginx`. On the origin host, verify that `curl -s -o /dev/null -w '%{http_code}' -H 'Host: <name>' http://127.0.0.1/.well-known/acme-challenge/<file>` answers `200`, while through Cloudflare `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://<name>/` answers `301 https://<name>/`. Confirm `sudo certbot renew --dry-run` still succeeds.
+5. **HSTS and Edge Certificates**: Verify `curl -sI https://<name>/ | grep -i strict-transport-security` returns `max-age=31536000`. In Cloudflare dashboard (SSL/TLS → Edge Certificates), toggle **Always Use HTTPS** to ON and set **Minimum TLS Version** to 1.2.
 
 ---
 
@@ -381,7 +448,7 @@ fits a given host — its owner runs `nginx -t` there before any reload.
 
 This guide documents deploying the Flutter web kiosk on the customer-facing host (`xc-customer.spacing.cloud`) as specified in `docs/design/xchange-v3.md` §8 (Phase 1).
 
-TLS terminates upstream at Cloudflare, which connects to the customer host over plain HTTP on port 80. Nginx serves the Flutter web SPA assets locally and proxies only `POST /api/kiosk` to the backend server listening on `127.0.0.1:8093`.
+Cloudflare connects to the customer host over HTTPS (origin TLS on port 443 with Let's Encrypt certificates), with port 80 redirecting all non-ACME traffic to HTTPS. Nginx serves the Flutter web SPA assets locally and proxies only `POST /api/kiosk` to the backend server listening on `127.0.0.1:8093`.
 
 ---
 
@@ -433,7 +500,13 @@ The output bundle is generated in `app/build/web/`.
    echo "Backup created at: $BACKUP"
    ```
 
-3. **Deploy Nginx Configuration**:
+3. **Deploy Nginx Configuration and Snippets**:
+   Ensure snippets exist in `/etc/nginx/snippets/`:
+   ```bash
+   sudo mkdir -p /etc/nginx/snippets
+   sudo cp deploy/nginx/snippets/acme-challenge.conf.example /etc/nginx/snippets/acme-challenge.conf
+   sudo cp deploy/nginx/snippets/ssl-params.conf.example /etc/nginx/snippets/ssl-params.conf
+   ```
    Replace the identified live configuration file with the new configuration, ensuring there is never a second `server` block for the same name:
    ```bash
    sudo cp deploy/nginx/xc-customer.conf "$TARGET_CONF"
