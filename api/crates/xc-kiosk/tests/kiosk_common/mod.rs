@@ -1,6 +1,7 @@
 //! Shared by the kiosk tests: the v2 fixture, the conversions it needs, and the one
 //! function that plays a recorded step against the machine.
-//! Provided with ticket T12a — do not edit.
+//! Provided with ticket T12a — do not edit. (POL's author removed `Access`: the role table
+//! moved to `Policy`, and `v2_kiosk_cases.json` no longer carries `access`.)
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
@@ -155,13 +156,6 @@ pub struct Story {
 }
 
 #[derive(Deserialize)]
-pub struct Access {
-    pub action: String,
-    pub actor: String,
-    pub error: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct Sweep {
     pub request: RequestJson,
     pub now: i64,
@@ -178,7 +172,6 @@ pub struct Receipt {
 #[derive(Deserialize)]
 pub struct Fixture {
     pub people: BTreeMap<String, Option<Person>>,
-    pub access: Vec<Access>,
     pub quotes: Vec<Step>,
     pub states: Vec<MatrixState>,
     pub confirms: Vec<Step>,

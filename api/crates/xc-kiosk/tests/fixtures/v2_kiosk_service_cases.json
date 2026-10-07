@@ -294,7 +294,7 @@
  },
  "counts": {
   "scenarios": 11,
-  "steps": 236
+  "steps": 226
  },
  "scenarios": [
   {
@@ -4013,210 +4013,6 @@
     },
     {
      "at": 8000,
-     "who": "RT1",
-     "op": "list",
-     "branch": "MAIN",
-     "error": "Staff access required.",
-     "events": [],
-     "rows": [
-      {
-       "branch": "B2",
-       "id": "b059c5e3-7e57-4000-8000-000000000005",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ac55c1df-7e57-4000-8000-000000000001",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ad56c2e0-7e57-4000-8000-000000000002",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ae57c3e1-7e57-4000-8000-000000000003",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "af58c4e2-7e57-4000-8000-000000000004",
-       "status": "QUOTED",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      }
-     ],
-     "switches": []
-    },
-    {
-     "at": 8000,
-     "who": "FIN1",
-     "op": "list",
-     "branch": "MAIN",
-     "error": "Staff access required.",
-     "events": [],
-     "rows": [
-      {
-       "branch": "B2",
-       "id": "b059c5e3-7e57-4000-8000-000000000005",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ac55c1df-7e57-4000-8000-000000000001",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ad56c2e0-7e57-4000-8000-000000000002",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ae57c3e1-7e57-4000-8000-000000000003",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "af58c4e2-7e57-4000-8000-000000000004",
-       "status": "QUOTED",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      }
-     ],
-     "switches": []
-    },
-    {
-     "at": 8000,
-     "who": "customer",
-     "op": "list",
-     "branch": "MAIN",
-     "error": "Staff access required.",
-     "events": [],
-     "rows": [
-      {
-       "branch": "B2",
-       "id": "b059c5e3-7e57-4000-8000-000000000005",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ac55c1df-7e57-4000-8000-000000000001",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ad56c2e0-7e57-4000-8000-000000000002",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ae57c3e1-7e57-4000-8000-000000000003",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "af58c4e2-7e57-4000-8000-000000000004",
-       "status": "QUOTED",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      }
-     ],
-     "switches": []
-    },
-    {
-     "at": 8000,
-     "who": "customer",
-     "op": "notifications",
-     "branch": "MAIN",
-     "error": "Staff access required.",
-     "events": [],
-     "rows": [
-      {
-       "branch": "B2",
-       "id": "b059c5e3-7e57-4000-8000-000000000005",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ac55c1df-7e57-4000-8000-000000000001",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ad56c2e0-7e57-4000-8000-000000000002",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "ae57c3e1-7e57-4000-8000-000000000003",
-       "status": "WAITING",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      },
-      {
-       "branch": "MAIN",
-       "id": "af58c4e2-7e57-4000-8000-000000000004",
-       "status": "QUOTED",
-       "staff": null,
-       "documentRef": null,
-       "submissionId": null
-      }
-     ],
-     "switches": []
-    },
-    {
-     "at": 8000,
      "who": "FIN1",
      "op": "notifications",
      "branch": "MAIN",
@@ -5238,29 +5034,6 @@
     },
     {
      "at": 9000,
-     "who": "RT1",
-     "op": "publishReceipt",
-     "branch": "MAIN",
-     "id": "ac55c1df-7e57-4000-8000-000000000001",
-     "image": {
-      "png": 64
-     },
-     "error": "Staff access required.",
-     "events": [],
-     "rows": [
-      {
-       "branch": "MAIN",
-       "id": "ac55c1df-7e57-4000-8000-000000000001",
-       "status": "ID_CHECKED",
-       "staff": "front1",
-       "documentRef": null,
-       "submissionId": null
-      }
-     ],
-     "switches": []
-    },
-    {
-     "at": 9000,
      "who": "customer",
      "op": "publishReceipt",
      "branch": "MAIN",
@@ -6138,36 +5911,6 @@
     },
     {
      "at": 0,
-     "who": "F1",
-     "op": "manage",
-     "branch": "MAIN",
-     "error": "Owner or Rates access required.",
-     "events": [],
-     "rows": [],
-     "switches": []
-    },
-    {
-     "at": 0,
-     "who": "MGR1",
-     "op": "manage",
-     "branch": "MAIN",
-     "error": "Owner or Rates access required.",
-     "events": [],
-     "rows": [],
-     "switches": []
-    },
-    {
-     "at": 0,
-     "who": "customer",
-     "op": "manage",
-     "branch": "MAIN",
-     "error": "Owner or Rates access required.",
-     "events": [],
-     "rows": [],
-     "switches": []
-    },
-    {
-     "at": 0,
      "who": "customer",
      "op": "quote",
      "branch": "MAIN",
@@ -6192,36 +5935,6 @@
      "note": "offered, no rate",
      "newId": "ac55c1df-7e57-4000-8000-000000000001",
      "error": "Please enter a valid amount and currency.",
-     "events": [],
-     "rows": [],
-     "switches": []
-    },
-    {
-     "at": 1000,
-     "who": "F1",
-     "op": "configure",
-     "branch": "MAIN",
-     "code": "CHF",
-     "enabled": true,
-     "buy": "36.4",
-     "sell": "37.1",
-     "error": "Owner or Rates access required.",
-     "rateSaves": [],
-     "events": [],
-     "rows": [],
-     "switches": []
-    },
-    {
-     "at": 1000,
-     "who": "customer",
-     "op": "configure",
-     "branch": "MAIN",
-     "code": "CHF",
-     "enabled": true,
-     "buy": "36.4",
-     "sell": "37.1",
-     "error": "Owner or Rates access required.",
-     "rateSaves": [],
      "events": [],
      "rows": [],
      "switches": []

@@ -1,5 +1,6 @@
 //! Shared by the policy tests: the v2 fixture and the few conversions it needs.
-//! Provided with ticket T4a — do not edit.
+//! Provided with ticket T4a — do not edit. (POL's author added the two entry paths of the
+//! 10-06 bundle, `PaymentMethods` and `DrawerPassport`, and their two sentences.)
 #![allow(dead_code, unused_imports)]
 
 use serde::Deserialize;
@@ -80,7 +81,7 @@ pub fn fixture() -> Fixture {
 
 // ── names ────────────────────────────────────────────────────────────────────
 
-/// The fixture's name for a path. Exhaustive on purpose: a thirteenth path does not compile.
+/// The fixture's name for a path. Exhaustive on purpose: a fifteenth path does not compile.
 pub fn path_name(path: EntryPath) -> &'static str {
     match path {
         EntryPath::Rpc => "Rpc",
@@ -95,10 +96,12 @@ pub fn path_name(path: EntryPath) -> &'static str {
         EntryPath::OwnerRoute => "OwnerRoute",
         EntryPath::UserRoute => "UserRoute",
         EntryPath::Custody => "Custody",
+        EntryPath::PaymentMethods => "PaymentMethods",
+        EntryPath::DrawerPassport => "DrawerPassport",
     }
 }
 
-pub const PATHS: [EntryPath; 12] = [
+pub const PATHS: [EntryPath; 14] = [
     EntryPath::Rpc,
     EntryPath::StaffRpc,
     EntryPath::Upload,
@@ -111,6 +114,8 @@ pub const PATHS: [EntryPath; 12] = [
     EntryPath::OwnerRoute,
     EntryPath::UserRoute,
     EntryPath::Custody,
+    EntryPath::PaymentMethods,
+    EntryPath::DrawerPassport,
 ];
 
 pub fn path(name: &str) -> EntryPath {
@@ -209,3 +214,7 @@ pub const SIGN_NOT_ALLOWED: &str = "ไม่มีสิทธิ์ลงช�
 pub const BACKEND_USES_COMMIT: &str = "Backend ใช้ปุ่มตรวจและบันทึกงาน";
 pub const EMPLOYEE_ACCOUNT: &str = "ต้องใช้บัญชีพนักงาน";
 pub const CLOCK_IN_FIRST: &str = "ลงเวลาเข้าก่อนทำรายการ";
+/// `/api/payment-methods`, `save` by anyone but the owner (payment-settings.mjs:48, 10-06 bundle).
+pub const PAYMENT_OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้";
+/// `/api/drawer-passport`, a role outside the desk (passport-drawer.mjs:15, 10-06 bundle).
+pub const DRAWER_ROLE_NOT_ALLOWED: &str = "บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก";

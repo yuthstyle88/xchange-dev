@@ -15,4 +15,6 @@ pub enum EntryPath {
     OwnerRoute,
     UserRoute,
     Custody,
+    PaymentMethods,
+    DrawerPassport,
 }

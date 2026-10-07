@@ -1,8 +1,8 @@
 //! Kiosk service.
 //!
 //! Every method names the branch it works on and checks that the branch exists
-//! before anything else it reads. Who may call what is `KioskMachine::authorize`,
-//! asked first of all. A refusal is `AppError::Domain(<the sentence>)`. Every
+//! before anything else it reads. Who may call what is `Policy`, asked by the
+//! route. A refusal is `AppError::Domain(<the sentence>)`. Every
 //! write runs inside `BranchTx::run` of that branch; `check_save_in` and
 //! `complete_in` run inside the transaction of the save that calls them.
 
@@ -29,7 +29,6 @@ use crate::domain::kiosk::value_objects::counter_facts::CounterFacts;
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use crate::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 use crate::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
-use crate::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
@@ -60,10 +59,6 @@ fn refuse(sentence: impl Display) -> AppError {
 
 fn no_such_branch() -> AppError {
     refuse(KioskServiceError::NoSuchBranch)
-}
-
-fn allow(action: KioskAction, actor: &KioskActor) -> AppResult<()> {
-    KioskMachine::authorize(action, actor).map_err(refuse)
 }
 
 /// The instant as the kiosk keeps it: whole milliseconds.
@@ -283,9 +278,8 @@ impl KioskService {
     pub async fn notifications(
         &self,
         branch: &BranchId,
-        actor: &KioskActor,
+        _actor: &KioskActor,
     ) -> AppResult<Notifications> {
-        allow(KioskAction::Notifications, actor)?;
         let branch_name = self.branch_name(branch).await?;
         let (count, latest) = self.repo.waiting(branch).await?;
         Ok(Notifications {
@@ -299,10 +293,9 @@ impl KioskService {
     pub async fn list(
         &self,
         branch: &BranchId,
-        actor: &KioskActor,
+        _actor: &KioskActor,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<IdentifiedRequest>> {
-        allow(KioskAction::List, actor)?;
         self.branch_name(branch).await?;
         let now = time(now);
         self.repo
@@ -324,7 +317,6 @@ impl KioskService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        allow(KioskAction::Accept, actor)?;
         self.desk_step(branch, actor, id, KioskCommand::Accept, now)
             .await
             .map(|_| ())
@@ -339,7 +331,6 @@ impl KioskService {
         confirmed: bool,
         now: DateTime<Utc>,
     ) -> AppResult<RequestIdentity> {
-        allow(KioskAction::IdentityChecked, actor)?;
         self.desk_step(
             branch,
             actor,
@@ -393,7 +384,6 @@ impl KioskService {
         actor: &KioskActor,
         id: &str,
     ) -> AppResult<KioskRequest> {
-        allow(KioskAction::Get, actor)?;
         self.branch_name(branch).await?;
         let stored = self.repo.find(branch, id).await?;
         KioskMachine::check_get(stored.as_ref(), actor).map_err(refuse)?;
@@ -410,7 +400,6 @@ impl KioskService {
         image: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        allow(KioskAction::PublishReceipt, actor)?;
         self.branch_name(branch).await?;
         let now = time(now);
         let image = ReceiptImage::parse(image);
@@ -437,9 +426,8 @@ impl KioskService {
     pub async fn manage(
         &self,
         branch: &BranchId,
-        actor: &KioskActor,
+        _actor: &KioskActor,
     ) -> AppResult<Vec<CurrencySwitch>> {
-        allow(KioskAction::Manage, actor)?;
         self.branch_name(branch).await?;
         Ok(KioskCurrencies::new(&self.repo.switches(branch).await?).all())
     }
@@ -452,7 +440,6 @@ impl KioskService {
         cmd: ConfigureCurrency,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        allow(KioskAction::Configure, actor)?;
         self.branch_name(branch).await?;
         let code = CurrencyCode::parse(&cmd.code)
             .ok()

@@ -35,593 +35,6 @@
    "role": "MONITOR"
   }
  },
- "access": [
-  {
-   "action": "rates",
-   "actor": "customer",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "rates",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "customer",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "quote",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "customer",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "confirm",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "customer",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "status",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "customer",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "customerReceipt",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "notifications",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "FIN1",
-   "error": null
-  },
-  {
-   "action": "notifications",
-   "actor": "MON1",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "list",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "list",
-   "actor": "RT1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "list",
-   "actor": "FIN1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "list",
-   "actor": "MON1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "accept",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "accept",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "accept",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "accept",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "accept",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "accept",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "accept",
-   "actor": "RT1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "accept",
-   "actor": "FIN1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "accept",
-   "actor": "MON1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "get",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "get",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "get",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "get",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "get",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "get",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "get",
-   "actor": "RT1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "get",
-   "actor": "FIN1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "get",
-   "actor": "MON1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "identityChecked",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "identityChecked",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "identityChecked",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "identityChecked",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "identityChecked",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "identityChecked",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "identityChecked",
-   "actor": "RT1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "identityChecked",
-   "actor": "FIN1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "identityChecked",
-   "actor": "MON1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "customer",
-   "error": "Staff access required."
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "F1",
-   "error": null
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "F2",
-   "error": null
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "BE1",
-   "error": null
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "MGR1",
-   "error": null
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "RT1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "FIN1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "publishReceipt",
-   "actor": "MON1",
-   "error": "Staff access required."
-  },
-  {
-   "action": "manage",
-   "actor": "customer",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "manage",
-   "actor": "F1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "F2",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "BE1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "MGR1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "manage",
-   "actor": "FIN1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "manage",
-   "actor": "MON1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "customer",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "owner",
-   "error": null
-  },
-  {
-   "action": "configure",
-   "actor": "F1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "F2",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "BE1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "MGR1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "RT1",
-   "error": null
-  },
-  {
-   "action": "configure",
-   "actor": "FIN1",
-   "error": "Owner or Rates access required."
-  },
-  {
-   "action": "configure",
-   "actor": "MON1",
-   "error": "Owner or Rates access required."
-  }
- ],
  "quotes": [
   {
    "actor": "customer",
@@ -9010,21 +8423,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -9059,24 +8457,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -9115,24 +8495,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -9161,21 +8523,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -9208,21 +8555,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -9251,21 +8583,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -9632,21 +8949,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -9681,24 +8983,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -9737,24 +9021,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -9783,21 +9049,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -9830,21 +9081,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -9873,21 +9109,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -10559,21 +9780,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -10608,24 +9814,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -10664,24 +9852,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -10710,21 +9880,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -10757,21 +9912,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -10800,21 +9940,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -11261,21 +10386,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -11310,24 +10420,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -11366,24 +10458,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -11412,21 +10486,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -11459,21 +10518,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -11502,21 +10546,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -11963,21 +10992,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -12012,24 +11026,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -12068,24 +11064,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -12114,21 +11092,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -12161,21 +11124,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -12204,21 +11152,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -12836,21 +11769,6 @@
      "eventActor": "manager1"
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -12885,24 +11803,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -12941,24 +11841,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -12987,21 +11869,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -13034,21 +11901,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -13077,21 +11929,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -13709,21 +12546,6 @@
      "eventActor": "manager1"
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -13758,24 +12580,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -13814,24 +12618,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -13860,21 +12646,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -13907,21 +12678,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -13950,21 +12706,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -14492,21 +13233,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -14568,24 +13294,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": false,
@@ -14622,24 +13330,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -14668,21 +13358,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -14717,21 +13392,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -14760,21 +13420,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -15302,21 +13947,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -15362,24 +13992,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": false,
@@ -15416,24 +14028,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -15462,21 +14056,6 @@
      "actor": "MGR1",
      "action": "identityChecked",
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -15511,21 +14090,6 @@
      "error": "Accept this request using your own account first."
     },
     {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "publishReceipt",
      "error": "Staff access required."
@@ -15556,21 +14120,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -16247,21 +14796,6 @@
      "error": "This request is already assigned or unavailable."
     },
     {
-     "actor": "RT1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "accept",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "confirmed": true,
@@ -16296,24 +14830,6 @@
      "action": "identityChecked",
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": true,
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -16352,24 +14868,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "confirmed": false,
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "identityChecked",
      "error": "Staff access required."
@@ -16400,21 +14898,6 @@
      "error": "The assigned employee must confirm the passport check."
     },
     {
-     "actor": "RT1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "identityChecked",
-     "error": "Staff access required."
-    },
-    {
      "actor": "customer",
      "action": "get",
      "error": "Staff access required."
@@ -16443,21 +14926,6 @@
      "actor": "MGR1",
      "action": "get",
      "error": "Accept this request using your own account first."
-    },
-    {
-     "actor": "RT1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "get",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "get",
-     "error": "Staff access required."
     },
     {
      "actor": "customer",
@@ -16490,21 +14958,6 @@
      "actor": "MGR1",
      "action": "publishReceipt",
      "error": "Assigned staff required."
-    },
-    {
-     "actor": "RT1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "FIN1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
-    },
-    {
-     "actor": "MON1",
-     "action": "publishReceipt",
-     "error": "Staff access required."
     },
     {
      "actor": "owner",
@@ -18252,28 +16705,6 @@
      },
      "confirmed": true,
      "error": "The assigned employee must confirm the passport check."
-    },
-    {
-     "actor": "FIN1",
-     "action": "accept",
-     "now": 1791262810000,
-     "before": {
-      "id": "ac55c1df-7e57-4000-8000-000000000001",
-      "status": "WAITING",
-      "created": 1791262800000,
-      "staff": null,
-      "quote": {
-       "type": "BUY",
-       "currency": "USD",
-       "rate": "32.1000",
-       "foreign": "250.50",
-       "thb": "8041.05",
-       "inputAmount": "250.50",
-       "paymentMethod": "Cash"
-      },
-      "transaction": null
-     },
-     "error": "Staff access required."
     },
     {
      "actor": "F1",

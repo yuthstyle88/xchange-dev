@@ -8,6 +8,15 @@
 //!
 //! v2 decides in more than one place and the places do not agree. Nothing here
 //! flattens them: a question is always asked *on a path*.
+//!
+//! Edited by the author of ticket POL (design `docs/design/xchange-v3.md` §5.5.7): the fixture
+//! is re-recorded from the 10-06 bundle (`XC-Desk-v2-Passport-Drawer-20261006.zip`, sha256
+//! `6514b4c8…4375f570`) by the same script, which now also asks the two routes that bundle adds
+//! (`/api/payment-methods`, `/api/drawer-passport`). Against the 10-05 recording the only
+//! answers that changed are six: `list` on the kiosk is let through for RATES, MONITOR, FINANCE,
+//! SYSTEM, DOCUMENTS, DOCUMENT_REVIEW (`server.mjs:8026` of the 10-06 bundle). The counts below,
+//! the number of sentences and `the_kiosk_queue_is_for_front_backend_manager_and_the_owner`
+//! follow that recording; nothing else here changed.
 
 mod policy_common;
 
@@ -42,21 +51,21 @@ fn allowed_roles(on: EntryPath, name: &str) -> Vec<&'static str> {
 #[test]
 fn the_fixture_is_whole() {
     let f = fixture();
-    assert_eq!(f.cases.len(), 1370);
+    assert_eq!(f.cases.len(), 1425);
     assert_eq!(f.cases.len(), f.counts.cases);
-    assert_eq!(f.cases.iter().filter(|c| c.allowed).count(), 443);
-    assert_eq!(f.counts.allowed, 443);
-    assert_eq!(f.counts.refused, 927);
+    assert_eq!(f.cases.iter().filter(|c| c.allowed).count(), 464);
+    assert_eq!(f.counts.allowed, 464);
+    assert_eq!(f.counts.refused, 961);
     assert_eq!(
         f.cases.iter().filter(|c| c.redirect.is_some()).count(),
         f.counts.redirects
     );
     assert_eq!(f.counts.redirects, 15);
-    assert_eq!(f.branch_cases.len(), 225);
+    assert_eq!(f.branch_cases.len(), 285);
     assert_eq!(f.branch_cases.len(), f.counts.branch_cases);
-    assert_eq!(f.refusals.len(), 20);
+    assert_eq!(f.refusals.len(), 22);
     assert_eq!(f.refusals.len(), f.counts.distinct_refusals);
-    assert_eq!((f.counts.paths, f.counts.actors), (12, 11));
+    assert_eq!((f.counts.paths, f.counts.actors), (14, 11));
     assert_eq!(f.counts.disagreements, 137);
 
     // every path, and on every path somebody allowed and somebody refused
@@ -116,7 +125,7 @@ fn every_answer_v2_gave_is_given_again() {
 }
 
 #[test]
-fn the_sentences_said_are_exactly_v2s_twenty() {
+fn the_sentences_said_are_exactly_v2s_twenty_two() {
     let f = fixture();
     let want: BTreeSet<(String, u16)> = f
         .refusals
@@ -131,7 +140,7 @@ fn the_sentences_said_are_exactly_v2s_twenty() {
         }
     }
     assert_eq!(got, want);
-    assert_eq!(want.len(), 20);
+    assert_eq!(want.len(), 22);
 }
 
 #[test]
@@ -153,7 +162,7 @@ fn every_call_runs_on_the_branch_v2_ran_it_on() {
         );
         seen += 1;
     }
-    assert_eq!(seen, 612, "rows of the fixture that show a branch");
+    assert_eq!(seen, 689, "rows of the fixture that show a branch");
 }
 
 #[test]
@@ -666,7 +675,7 @@ fn the_customer_kiosk_needs_nobody_signed_in() {
 
 #[test]
 fn the_kiosk_queue_is_for_front_backend_manager_and_the_owner() {
-    for name in ["list", "accept", "get", "identityChecked", "publishReceipt"] {
+    for name in ["accept", "get", "identityChecked", "publishReceipt"] {
         assert_eq!(
             allowed_roles(EntryPath::Kiosk, name),
             ["FRONT", "BACKEND", "MANAGER"]
@@ -677,12 +686,20 @@ fn the_kiosk_queue_is_for_front_backend_manager_and_the_owner() {
             (KIOSK_STAFF.to_owned(), 400)
         );
     }
-    // the waiting count is shown to anybody signed in
-    assert_eq!(allowed_roles(EntryPath::Kiosk, "notifications").len(), 9);
-    assert_eq!(
-        said(ask(None, EntryPath::Kiosk, "notifications")),
-        (KIOSK_STAFF.to_owned(), 400)
-    );
+    // the waiting count, and since the 10-06 bundle the queue itself, to anybody signed in
+    for name in ["notifications", "list"] {
+        assert_eq!(allowed_roles(EntryPath::Kiosk, name).len(), 9, "{name}");
+        assert_eq!(
+            ask(Some(&owner()), EntryPath::Kiosk, name),
+            Ok(()),
+            "{name}"
+        );
+        assert_eq!(
+            said(ask(None, EntryPath::Kiosk, name)),
+            (KIOSK_STAFF.to_owned(), 400),
+            "{name}"
+        );
+    }
     // which currencies the kiosk offers: the owner and Rates
     for name in ["manage", "configure"] {
         assert_eq!(allowed_roles(EntryPath::Kiosk, name), ["RATES"]);

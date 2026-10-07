@@ -732,7 +732,8 @@ pub enum Rule {
     Differs { status: u16, sentence: &'static str },
     /// Sent through HTTP and held to the recorded answer of another step (v3
     /// accepts what v2 refused): everything but `syncedAt`, which is this
-    /// step's own clock.
+    /// step's own clock. (An answer without `syncedAt` — a kiosk answer — is
+    /// held to the other step's whole; added for ticket POL.)
     AnswersAs(usize),
     /// A name of part two that `Policy` lets through: sent, and held to the
     /// unknown-name refusal part one answers. When v2 accepted it and it
@@ -900,7 +901,9 @@ impl<'f> Replay<'f> {
             Rule::AnswersAs(other) => {
                 assert_ne!(step.status, Some(200), "{label}: v2 accepted this one");
                 let mut expected = without_dropped_keys(self.fixture.step(other).json());
-                expected["syncedAt"] = json!(step.at);
+                if expected.get("syncedAt").is_some() {
+                    expected["syncedAt"] = json!(step.at);
+                }
                 assert_eq!(answer.status, 200, "{label}: {:.300}", answer.text);
                 let actual = answer.json();
                 self.ids.learn(&expected, &actual);

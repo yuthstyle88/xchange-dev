@@ -16,6 +16,10 @@
 //! a failure behind the route leaves.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips.
+//!
+//! Edited by the author of ticket POL (design `docs/design/xchange-v3.md` §5.5.7): the six
+//! `list` steps of `queue.json` that the 10-06 bundle answers differently from the recording
+//! are held to the decided answer (`changed_since_the_recording`).
 
 mod common;
 mod compat_common;
@@ -51,10 +55,25 @@ fn engine_sentences(fixture: &Fixture) -> Vec<usize> {
         .collect()
 }
 
+/// Steps of the recordings (made from the 10-05 bundle) that the 10-06 bundle answers
+/// otherwise, decided by ticket POL: `list` is let through for anybody signed in
+/// (`server.mjs:8026` of the 10-06 bundle; `Policy`, path `Kiosk`), so the six roles outside
+/// the desk (`queue.json` #67–#72: RT1, MO1, FI1, SY1, DO1, RV1) are shown the queue MG1 was
+/// shown the step before (#66). Row K-HTTP re-records these files from the 10-06 bundle.
+fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
+    match name {
+        "kiosk/queue.json" => (67..=72).map(|n| (n, Rule::AnswersAs(66))).collect(),
+        _ => Vec::new(),
+    }
+}
+
 async fn replayed(name: &str) -> (Fixture, usize) {
     let fixture = Fixture::load(name);
     let lines = {
         let mut replay = KioskReplay::start(&fixture).await;
+        for (n, rule) in changed_since_the_recording(name) {
+            replay = replay.rule(n, rule);
+        }
         for n in engine_sentences(&fixture) {
             replay = replay.rule(
                 n,

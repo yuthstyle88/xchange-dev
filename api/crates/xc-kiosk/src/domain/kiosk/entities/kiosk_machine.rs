@@ -4,12 +4,10 @@ use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::value_objects::counter_facts::CounterFacts;
-use crate::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_event_kind::KioskEventKind;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
-use crate::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::payment_method::PaymentMethod;
@@ -22,38 +20,6 @@ use crate::domain::kiosk::value_objects::transition::Transition;
 pub struct KioskMachine;
 
 impl KioskMachine {
-    pub fn authorize(action: KioskAction, actor: &KioskActor) -> Result<(), KioskError> {
-        match action {
-            KioskAction::Rates
-            | KioskAction::Quote
-            | KioskAction::Confirm
-            | KioskAction::Status
-            | KioskAction::CustomerReceipt => Ok(()),
-
-            KioskAction::Notifications => match actor {
-                KioskActor::Staff { .. } => Ok(()),
-                KioskActor::Customer => Err(KioskError::StaffRequired),
-            },
-
-            KioskAction::List
-            | KioskAction::Accept
-            | KioskAction::Get
-            | KioskAction::IdentityChecked
-            | KioskAction::PublishReceipt => match actor {
-                KioskActor::Staff { role, .. } if role.is_desk() => Ok(()),
-                _ => Err(KioskError::StaffRequired),
-            },
-
-            KioskAction::Manage | KioskAction::Configure => match actor {
-                KioskActor::Staff {
-                    role: KioskRole::Owner | KioskRole::Rates,
-                    ..
-                } => Ok(()),
-                _ => Err(KioskError::OwnerOrRatesRequired),
-            },
-        }
-    }
-
     pub fn quote(
         input: &QuoteInput,
         facts: &CounterFacts,
@@ -195,11 +161,9 @@ impl KioskMachine {
             }
 
             KioskCommand::Accept => {
-                // 1. authorize(Accept, actor) fails -> StaffRequired.
-                Self::authorize(KioskAction::Accept, actor)?;
                 let username = match actor {
                     KioskActor::Staff { username, .. } => username,
-                    _ => return Err(KioskError::StaffRequired),
+                    KioskActor::Customer => return Err(KioskError::StaffRequired),
                 };
 
                 // 2. request is None, or its status is not Waiting -> AlreadyAssignedOrUnavailable.
@@ -219,11 +183,9 @@ impl KioskMachine {
             }
 
             KioskCommand::IdentityChecked { confirmed } => {
-                // 1. authorize(IdentityChecked, actor) fails -> StaffRequired.
-                Self::authorize(KioskAction::IdentityChecked, actor)?;
                 let username = match actor {
                     KioskActor::Staff { username, .. } => username,
-                    _ => return Err(KioskError::StaffRequired),
+                    KioskActor::Customer => return Err(KioskError::StaffRequired),
                 };
 
                 // 2. confirmed is false -> PassportCheckUnconfirmed.
@@ -290,10 +252,9 @@ impl KioskMachine {
     }
 
     pub fn check_get(request: Option<&KioskRequest>, actor: &KioskActor) -> Result<(), KioskError> {
-        Self::authorize(KioskAction::Get, actor)?;
         let staff_name = match actor {
             KioskActor::Staff { username, .. } => username,
-            _ => return Err(KioskError::StaffRequired),
+            KioskActor::Customer => return Err(KioskError::StaffRequired),
         };
         if let Some(req) = request {
             if req.staff.as_deref() == Some(staff_name.as_str())
@@ -309,10 +270,9 @@ impl KioskMachine {
         request: Option<&KioskRequest>,
         actor: &KioskActor,
     ) -> Result<(), KioskError> {
-        Self::authorize(KioskAction::PublishReceipt, actor)?;
         let staff_name = match actor {
             KioskActor::Staff { username, .. } => username,
-            _ => return Err(KioskError::StaffRequired),
+            KioskActor::Customer => return Err(KioskError::StaffRequired),
         };
         if let Some(req) = request {
             if req.staff.as_deref() == Some(staff_name.as_str())

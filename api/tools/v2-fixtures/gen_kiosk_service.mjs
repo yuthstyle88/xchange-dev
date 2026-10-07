@@ -22,6 +22,14 @@
 //                  `adminSaveRate` stores the rate in that description, or refuses when told to
 //   logEvent     → collects the audit lines
 //
+// The role table is not written here any more (row POL, design `docs/design/xchange-v3.md` §5.5.7):
+// `Policy` is its one home and `gen_policy.mjs` records it (path `Kiosk`). The service no longer asks
+// who may call; the machine still refuses a caller without a name a step that needs a holder. So every
+// step is still played against v2 (the store moves as v2 moved it), and the output leaves out the steps
+// v2 refused with one of its two access sentences either to an employee outside the desk (not OWNER,
+// FRONT, BACKEND, MANAGER) or for `list`, `notifications`, `manage`, `configure`, whose only check of
+// the caller was the role table.
+//
 // The script stops, and writes nothing, when v2 says a sentence it was not expected to say, when a
 // refused call wrote something, or when a figure v2 computed is not the exact decimal.
 import fs from 'node:fs';
@@ -608,6 +616,11 @@ const limits = {
 };
 if (limits.listLimit !== 100) throw Error('fixture: v2 lists ' + limits.listLimit);
 
+const ACCESS = ['Staff access required.', 'Owner or Rates access required.'];
+const DESK = ['OWNER', 'FRONT', 'BACKEND', 'MANAGER'];
+const ROLE_ONLY = ['list', 'notifications', 'manage', 'configure'];
+const roleStep = (s) => ACCESS.includes(s.error) && (ROLE_ONLY.includes(s.op) || (PEOPLE[s.who] != null && !DESK.includes(PEOPLE[s.who].role)));
+for (const sc of scenarios) sc.steps = sc.steps.filter((s) => !roleStep(s));
 const count = scenarios.reduce((n, s) => n + s.steps.length, 0);
 process.stdout.write(JSON.stringify({
   source: 'xchange-online@3ffc5a5 — the kiosk module of the deployed server.mjs, run by api/tools/v2-fixtures/gen_kiosk_service.mjs',

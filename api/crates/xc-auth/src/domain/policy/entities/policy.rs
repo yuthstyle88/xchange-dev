@@ -32,6 +32,8 @@ impl Policy {
             EntryPath::Devices => Self::allow_devices(actor, action),
             EntryPath::Kiosk => Self::allow_kiosk(actor, action),
             EntryPath::Custody => Self::allow_custody(actor, action),
+            EntryPath::PaymentMethods => Self::allow_payment_methods(actor, action),
+            EntryPath::DrawerPassport => Self::allow_drawer_passport(actor),
         }
     }
 
@@ -296,8 +298,8 @@ impl Policy {
             return Ok(());
         }
 
-        // 3. notifications: any signed-in caller; nobody -> R15
-        if act == "notifications" {
+        // 3. notifications, list: any signed-in caller; nobody -> R15
+        if act == "notifications" || act == "list" {
             if actor.is_some() {
                 return Ok(());
             }
@@ -318,10 +320,47 @@ impl Policy {
             return Err(PolicyError::KioskStaff);
         }
 
-        // 5. then identityChecked, publishReceipt, get, list, accept -> allowed; else -> R16
+        // 5. then identityChecked, publishReceipt, get, accept -> allowed; else -> R16
         match act {
-            "identityChecked" | "publishReceipt" | "get" | "list" | "accept" => Ok(()),
+            "identityChecked" | "publishReceipt" | "get" | "accept" => Ok(()),
             _ => Err(PolicyError::KioskUnknown),
+        }
+    }
+
+    // ── PaymentMethods ────────────────────────────────────────────────────────
+
+    fn allow_payment_methods(actor: Option<&Actor>, action: &Action) -> Result<(), PolicyError> {
+        let Some(actor) = actor else {
+            return Err(PolicyError::SignIn);
+        };
+        let act = action.as_str();
+        match act {
+            "list" => Ok(()),
+            "save" => {
+                if actor.kind() == ActorKind::Owner {
+                    Ok(())
+                } else {
+                    Err(PolicyError::PaymentOwnerOnly)
+                }
+            }
+            _ => Err(PolicyError::InvalidRequest),
+        }
+    }
+
+    // ── DrawerPassport ────────────────────────────────────────────────────────
+
+    fn allow_drawer_passport(actor: Option<&Actor>) -> Result<(), PolicyError> {
+        let Some(actor) = actor else {
+            return Err(PolicyError::SignIn);
+        };
+        let privileged = actor.kind() == ActorKind::Owner
+            || actor.role() == Role::Front
+            || actor.role() == Role::Backend
+            || actor.role() == Role::Manager;
+        if privileged {
+            Ok(())
+        } else {
+            Err(PolicyError::DrawerRoleNotAllowed)
         }
     }
 

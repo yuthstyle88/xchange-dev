@@ -84,6 +84,14 @@ pub enum PolicyError {
     /// R20: ลงเวลาเข้าก่อนทำรายการ
     #[error("ลงเวลาเข้าก่อนทำรายการ")]
     ClockInFirst,
+
+    /// เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้
+    #[error("เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้")]
+    PaymentOwnerOnly,
+
+    /// บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก
+    #[error("บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก")]
+    DrawerRoleNotAllowed,
 }
 
 impl PolicyError {
@@ -91,7 +99,7 @@ impl PolicyError {
     pub fn status(&self) -> u16 {
         match self {
             Self::SignIn | Self::EmployeeAuthRequired => 401,
-            Self::OwnerOnly => 403,
+            Self::OwnerOnly | Self::PaymentOwnerOnly => 403,
             Self::NotFound => 404,
             Self::InvalidRequest
             | Self::RoleNotAllowed
@@ -108,7 +116,8 @@ impl PolicyError {
             | Self::SignNotAllowed
             | Self::BackendUsesCommit
             | Self::EmployeeAccount
-            | Self::ClockInFirst => 400,
+            | Self::ClockInFirst
+            | Self::DrawerRoleNotAllowed => 400,
         }
     }
 }

@@ -14,6 +14,12 @@
 //! (everything a write does happens in one transaction, under the branch lock).
 //!
 //! These tests need PostgreSQL: see `kiosk_service_common/mod.rs`.
+//!
+//! Edited by the author of ticket POL (design `docs/design/xchange-v3.md` §5.5.7): the service
+//! no longer asks who may call — `Policy` is the one home of the kiosk's role table and the
+//! route asks it — so the role steps left the fixture (`gen_kiosk_service.mjs` says which) and
+//! the role refusals left `a_branch_that_does_not_exist_is_refused_whatever_is_asked`.
+//! They are pinned in `crates/xc-auth/tests/policy_kiosk_test.rs` and `api/tests/kiosk_policy_route_test.rs`.
 
 mod kiosk_service_common;
 
@@ -116,7 +122,8 @@ fn every_story_of_the_fixture_is_played_above() {
             "the save must match the queue",
         ]
     );
-    assert_eq!(fixture()["counts"]["steps"], 236);
+    // 236 before POL: ten steps were the role table (see the module comment)
+    assert_eq!(fixture()["counts"]["steps"], 226);
     assert_eq!(fixture()["t0"], T0);
 }
 
@@ -238,8 +245,8 @@ async fn the_queue_shows_the_newest_hundred_and_the_bell_counts_them_all() {
 // ── the branch ──────────────────────────────────────────────────────────────
 
 /// v3's rule, which v2 does not have: a call on a branch that does not exist is
-/// refused with the shop's sentence for it, whatever the action — after the
-/// question of who may call it, and before anything is read or written.
+/// refused with the shop's sentence for it, whatever the action — before anything
+/// is read or written. (Who may call is asked before, by the route, of `Policy`.)
 #[tokio::test(flavor = "multi_thread")]
 async fn a_branch_that_does_not_exist_is_refused_whatever_is_asked() {
     let db = TestDb::start().await;
@@ -313,33 +320,6 @@ async fn a_branch_that_does_not_exist_is_refused_whatever_is_asked() {
     assert!(
         ports.rate_saves().is_empty(),
         "no rate is saved for a branch that does not exist"
-    );
-
-    // who may call is answered first, as v2 answers it for any branch name
-    let customer = KioskActor::Customer;
-    assert_eq!(
-        refusal(service.list(&nope, &customer, at(7000)).await),
-        "Staff access required."
-    );
-    assert_eq!(
-        refusal(service.notifications(&nope, &customer).await),
-        "Staff access required."
-    );
-    assert_eq!(
-        refusal(service.accept(&nope, &rates1(), "q1", at(7000)).await),
-        "Staff access required."
-    );
-    assert_eq!(
-        refusal(service.manage(&nope, &f1).await),
-        "Owner or Rates access required."
-    );
-    assert_eq!(
-        refusal(
-            service
-                .configure(&nope, &f1, configure_of("XXX", true, "0", "0"), at(7000))
-                .await
-        ),
-        "Owner or Rates access required."
     );
 
     assert_eq!(
@@ -1078,5 +1058,34 @@ async fn a_computed_figure_far_above_the_entry_cap_is_stored_whole() {
         .await
         .expect("list");
     assert_eq!(listed[0].request.quote, made.request.quote);
+    db.finish().await;
+}
+
+// ── who may call: the route's, through Policy (ticket POL) ──────────────────
+
+/// The service no longer asks who may call (design §5.5.7): the route asks `Policy`, the
+/// kiosk's one role table, before it calls the service. So the service answers an employee
+/// the desk does not have as it answers anybody it is handed — the route never hands one over
+/// (`api/tests/kiosk_policy_route_test.rs`).
+#[tokio::test(flavor = "multi_thread")]
+async fn the_service_does_not_ask_who_may_call() {
+    let db = TestDb::start().await;
+    let ports = FakePorts::standard();
+    let service = db.service(ports.clone());
+    bring(&service, MAIN, "q1", "waiting").await;
+    let main = branch(MAIN);
+
+    let listed = service
+        .list(&main, &rates1(), at(7000))
+        .await
+        .expect("the queue, to an employee of Rates");
+    assert_eq!(listed.len(), 1, "the one waiting request");
+
+    let currencies = service
+        .manage(&main, &front1())
+        .await
+        .expect("the currencies, to an employee of Front");
+    assert!(!currencies.is_empty(), "the kiosk's currencies");
+
     db.finish().await;
 }

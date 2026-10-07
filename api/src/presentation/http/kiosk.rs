@@ -12,6 +12,10 @@ use serde_json::{Value, json};
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::account::entities::owner::Owner;
 use xc_auth::domain::account::entities::session::SignedIn;
+use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
@@ -19,7 +23,6 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
-use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -33,7 +36,7 @@ use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, STAFF_COOKIE, accounts, cookie, refuse, same_origin,
+    OWNER_COOKIE, OWNER_ID, STAFF_COOKIE, accounts, cookie, refuse, same_origin, staff_actor,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
@@ -76,13 +79,6 @@ enum Caller {
     Customer,
     Owner(Owner),
     Employee(Employee),
-}
-
-fn unknown_action_error(actor: &KioskActor) -> &'static str {
-    match actor {
-        KioskActor::Staff { role, .. } if role.is_desk() => "Unknown kiosk action.",
-        _ => "Staff access required.",
-    }
 }
 
 fn kiosk_server_error() -> HttpResponse {
@@ -178,6 +174,12 @@ async fn handle_kiosk(
         }
     };
 
+    let policy_actor = match &who {
+        Some(SignedIn::Owner(_)) => Some(Actor::owner(OWNER_ID)),
+        Some(SignedIn::Employee(emp)) if !emp.must_change => staff_actor(emp),
+        _ => None,
+    };
+
     let (kiosk_actor, caller) = match who {
         Some(SignedIn::Owner(owner)) => (
             KioskActor::Staff {
@@ -209,13 +211,16 @@ async fn handle_kiosk(
         None => (KioskActor::Customer, Caller::Customer),
     };
 
-    let Some(obj) = body_val.as_object() else {
-        return refuse(400, unknown_action_error(&kiosk_actor));
-    };
+    let action_str = body_val
+        .as_object()
+        .and_then(|obj| obj.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
 
-    let Some(action_str) = obj.get("action").and_then(Value::as_str) else {
-        return refuse(400, unknown_action_error(&kiosk_actor));
-    };
+    let policy_action = Action::new(action_str);
+    if let Err(err) = Policy::allow(policy_actor.as_ref(), EntryPath::Kiosk, &policy_action) {
+        return refuse(err.status(), &err.to_string());
+    }
 
     let action = match action_str {
         "rates" => KioskAction::Rates,
@@ -231,18 +236,17 @@ async fn handle_kiosk(
         "publishReceipt" => KioskAction::PublishReceipt,
         "manage" => KioskAction::Manage,
         "configure" => KioskAction::Configure,
-        _ => return refuse(400, unknown_action_error(&kiosk_actor)),
+        _ => return kiosk_server_error(),
     };
 
-    if let Err(err) = KioskMachine::authorize(action, &kiosk_actor) {
-        return refuse(400, &err.to_string());
-    }
-
     let empty_payload = json!({});
-    let payload = match obj.get("payload") {
+    let payload = match body_val.as_object() {
+        Some(obj) => match obj.get("payload") {
+            None => &empty_payload,
+            Some(Value::Object(_)) => obj.get("payload").unwrap(),
+            Some(_) => return refuse(400, "Invalid request."),
+        },
         None => &empty_payload,
-        Some(Value::Object(_)) => obj.get("payload").unwrap(),
-        Some(_) => return refuse(400, "Invalid request."),
     };
 
     let branch = match &caller {

@@ -7,6 +7,13 @@
 //! The first part reads as the rules. The second part holds the machine to every answer
 //! the v2 server gave (`fixtures/v2_kiosk_cases.json`, written by
 //! `api/tools/v2-fixtures/gen_kiosk.mjs`).
+//!
+//! Edited by the author of ticket POL (design `docs/design/xchange-v3.md` §5.5.7): who may
+//! call which kiosk action is `Policy`'s alone, so the role cases moved out of this file
+//! (`who_may_call_which_action`, `who_may_call_which_action_is_as_in_v2`, and the steps an
+//! employee outside the desk was refused) to `crates/xc-auth/tests/policy_kiosk_test.rs` and
+//! the path `Kiosk` of `v2_policy_cases.json`. What the machine still decides about the caller
+//! stays here: a step that needs a holder refuses a caller with no name.
 
 mod kiosk_common;
 
@@ -661,75 +668,6 @@ fn a_request_that_does_not_exist_is_answered_per_action() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn who_may_call_which_action() {
-    use KioskAction as A;
-    let open_to_all = [
-        A::Rates,
-        A::Quote,
-        A::Confirm,
-        A::Status,
-        A::CustomerReceipt,
-    ];
-    let desk = [
-        A::List,
-        A::Accept,
-        A::Get,
-        A::IdentityChecked,
-        A::PublishReceipt,
-    ];
-    let everyone: Vec<KioskActor> = std::iter::once(customer())
-        .chain(ALL_ROLES.into_iter().map(|r| staff("someone", r)))
-        .collect();
-
-    for who in &everyone {
-        for a in open_to_all {
-            assert_eq!(KioskMachine::authorize(a, who), Ok(()), "{a:?} {who:?}");
-        }
-        let role = match who {
-            KioskActor::Customer => None,
-            KioskActor::Staff { role, .. } => Some(*role),
-        };
-        // any signed-in person is told how many customers wait
-        assert_eq!(
-            KioskMachine::authorize(A::Notifications, who),
-            if role.is_some() {
-                Ok(())
-            } else {
-                Err(E::StaffRequired)
-            },
-            "{who:?}"
-        );
-        let at_the_desk = matches!(
-            role,
-            Some(KioskRole::Owner | KioskRole::Front | KioskRole::Backend | KioskRole::Manager)
-        );
-        for a in desk {
-            assert_eq!(
-                KioskMachine::authorize(a, who),
-                if at_the_desk {
-                    Ok(())
-                } else {
-                    Err(E::StaffRequired)
-                },
-                "{a:?} {who:?}"
-            );
-        }
-        let sets_rates = matches!(role, Some(KioskRole::Owner | KioskRole::Rates));
-        for a in [A::Manage, A::Configure] {
-            assert_eq!(
-                KioskMachine::authorize(a, who),
-                if sets_rates {
-                    Ok(())
-                } else {
-                    Err(E::OwnerOrRatesRequired)
-                },
-                "{a:?} {who:?}"
-            );
-        }
-    }
-}
-
-#[test]
 fn the_first_of_the_desk_staff_to_accept_holds_the_request() {
     let w = waiting();
     for role in [
@@ -757,17 +695,11 @@ fn the_first_of_the_desk_staff_to_accept_holds_the_request() {
         );
         assert_eq!(t.event, Some(KioskEventKind::Accepted));
     }
-    for who in [
-        customer(),
-        staff("rates1", KioskRole::Rates),
-        staff("finance1", KioskRole::Other),
-    ] {
-        assert_eq!(
-            refusal(step(&w, Cmd::Accept, &who, &no_facts(), T0 + MIN)),
-            E::StaffRequired,
-            "{who:?}"
-        );
-    }
+    // nobody signed in cannot hold a request (roles are Policy's: policy_kiosk_test.rs)
+    assert_eq!(
+        refusal(step(&w, Cmd::Accept, &customer(), &no_facts(), T0 + MIN)),
+        E::StaffRequired
+    );
     // only a waiting request can be accepted — not a quote, and not one already held, even by its holder
     for held in [quoted(), accepted(), id_checked(), completed()] {
         for who in [front1(), front2()] {
@@ -819,21 +751,10 @@ fn only_the_one_who_accepted_confirms_the_passport_check_and_must_say_so() {
             "{other:?} on a checked request"
         );
     }
-    // the role is asked first, then the tick, then the request
+    // a caller with no name is refused first, then the tick, then the request
     assert_eq!(
         refusal(step(&a, checked(false), &customer(), &no_facts(), now)),
         E::StaffRequired
-    );
-    assert_eq!(
-        refusal(step(
-            &a,
-            checked(true),
-            &staff("front1", KioskRole::Other),
-            &no_facts(),
-            now
-        )),
-        E::StaffRequired,
-        "the holder's name under a role the desk does not have"
     );
     for held in [quoted(), waiting(), completed()] {
         assert_eq!(
@@ -881,16 +802,14 @@ fn the_desk_opens_a_request_only_for_the_one_who_holds_it() {
                 Err(E::AssignedStaffRequired)
             );
         }
-        for outsider in [customer(), staff("front1", KioskRole::Rates)] {
-            assert_eq!(
-                KioskMachine::check_get(Some(&held), &outsider),
-                Err(E::StaffRequired)
-            );
-            assert_eq!(
-                KioskMachine::check_publish(Some(&held), &outsider),
-                Err(E::StaffRequired)
-            );
-        }
+        assert_eq!(
+            KioskMachine::check_get(Some(&held), &customer()),
+            Err(E::StaffRequired)
+        );
+        assert_eq!(
+            KioskMachine::check_publish(Some(&held), &customer()),
+            Err(E::StaffRequired)
+        );
     }
 }
 
@@ -1421,21 +1340,6 @@ fn every_save_v2_judged_is_judged_the_same() {
 }
 
 #[test]
-fn who_may_call_which_action_is_as_in_v2() {
-    let fx = fixture();
-    for a in &fx.access {
-        let got = KioskMachine::authorize(action(&a.action), &actor(&fx, &a.actor));
-        assert_eq!(
-            got.err().map(|e| e.to_string()),
-            a.error,
-            "{} by {}",
-            a.action,
-            a.actor
-        );
-    }
-}
-
-#[test]
 fn quotes_are_swept_and_receipts_run_out_when_v2s_did() {
     let fx = fixture();
     for s in &fx.sweep {
@@ -1465,7 +1369,6 @@ fn the_fixture_holds_the_cases_it_was_generated_with() {
     assert_eq!(
         (
             fx.people.len(),
-            fx.access.len(),
             fx.quotes.len(),
             fx.states.len(),
             matrix,
@@ -1476,7 +1379,7 @@ fn the_fixture_holds_the_cases_it_was_generated_with() {
             fx.sweep.len(),
             fx.receipt.len(),
         ),
-        (9, 117, 219, 10, 872, 12, 22, 7, 68, 9, 6)
+        (9, 219, 10, 692, 12, 22, 7, 67, 9, 6)
     );
     assert_eq!(
         fx.quotes.iter().filter(|q| q.error.is_some()).count(),
@@ -1504,9 +1407,90 @@ fn the_fixture_holds_the_cases_it_was_generated_with() {
         .chain(&fx.saves)
         .chain(fx.stories.iter().flat_map(|s| &s.steps))
         .filter_map(|s| s.error.as_deref())
-        .chain(fx.access.iter().filter_map(|a| a.error.as_deref()))
         .collect();
     said.sort_unstable();
     said.dedup();
-    assert_eq!(said.len(), 21);
+    // 21 before POL: "Owner or Rates access required." was said only in the role table
+    assert_eq!(said.len(), 20);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Roles are Policy's (ticket POL, design §5.5.7)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Who may call which action is asked once, by the route, of `Policy`
+/// (`crates/xc-auth/tests/policy_kiosk_test.rs`). The machine asks only for the caller's name:
+/// a holder is a name, so whoever the route let through holds, checks, opens and publishes by
+/// that name, whatever their role.
+#[test]
+fn the_machine_asks_for_the_callers_name_not_their_role() {
+    let w = waiting();
+    for role in ALL_ROLES {
+        let who = staff("somebody", role);
+        let t = step(&w, Cmd::Accept, &who, &no_facts(), T0 + MIN)
+            .unwrap_or_else(|e| panic!("accept as {role:?}: {e:?}"));
+        assert_eq!(
+            (t.request.status, t.request.staff.as_deref(), t.event),
+            (
+                S::Accepted,
+                Some("somebody"),
+                Some(KioskEventKind::Accepted)
+            ),
+            "accept as {role:?}"
+        );
+        assert_eq!(
+            KioskMachine::check_get(Some(&t.request), &who),
+            Ok(()),
+            "get as {role:?}"
+        );
+        let c = step(&t.request, checked(true), &who, &no_facts(), T0 + 2 * MIN)
+            .unwrap_or_else(|e| panic!("passport check as {role:?}: {e:?}"));
+        assert_eq!(
+            (c.request.status, c.event),
+            (S::IdChecked, Some(KioskEventKind::IdChecked)),
+            "passport check as {role:?}"
+        );
+        assert_eq!(
+            KioskMachine::check_publish(Some(&c.request), &who),
+            Ok(()),
+            "publish as {role:?}"
+        );
+    }
+}
+
+/// What stays the machine's about the caller: a step that needs a holder refuses a caller
+/// with no name, whatever the request is, before anything else.
+#[test]
+fn a_caller_without_a_name_is_refused_every_step_that_needs_a_holder() {
+    let now = T0 + 2 * MIN;
+    for held in [
+        None,
+        Some(quoted()),
+        Some(waiting()),
+        Some(accepted()),
+        Some(id_checked()),
+        Some(completed()),
+    ] {
+        let label = held.as_ref().map(|r| r.status);
+        let next =
+            |cmd: Cmd| KioskMachine::next(held.as_ref(), &cmd, &customer(), &no_facts(), at(now));
+        assert_eq!(refusal(next(Cmd::Accept)), E::StaffRequired, "{label:?}");
+        for tick in [true, false] {
+            assert_eq!(
+                refusal(next(checked(tick))),
+                E::StaffRequired,
+                "{label:?} {tick}"
+            );
+        }
+        assert_eq!(
+            KioskMachine::check_get(held.as_ref(), &customer()),
+            Err(E::StaffRequired),
+            "{label:?}"
+        );
+        assert_eq!(
+            KioskMachine::check_publish(held.as_ref(), &customer()),
+            Err(E::StaffRequired),
+            "{label:?}"
+        );
+    }
 }

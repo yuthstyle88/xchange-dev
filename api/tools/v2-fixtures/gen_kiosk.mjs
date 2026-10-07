@@ -17,6 +17,15 @@
 //   execute      → answers `adminSnapshot` with the branch this script describes
 //   logEvent     → collects the audit lines
 // Nothing inside the module is replaced.
+//
+// The role table is not written here any more (row POL, design `docs/design/xchange-v3.md` §5.5.7): who
+// may call which kiosk action is recorded once, by `gen_policy.mjs`, as the path `Kiosk` of
+// `crates/xc-auth/tests/fixtures/v2_policy_cases.json`, and `Policy` is its one home. Everything below is
+// still played against v2 and checked, so a sentence v2 did not say still stops the script; only the
+// output leaves out (a) the `access` list and (b) every case where v2 refused an employee of a role
+// outside the desk (not OWNER, FRONT, BACKEND, MANAGER) with one of its two access sentences. The
+// refusals of a caller nobody signed in as stay: a step that needs a holder still refuses a caller
+// without a name (`KioskActor::Customer`), and that check is the machine's.
 import fs from 'node:fs';
 
 const src = fs.readFileSync(new URL('./kiosk.mjs', import.meta.url), 'utf8');
@@ -576,12 +585,18 @@ const saves = await saveCases();
 const told = await stories();
 const { sweep, receipt } = await windows();
 
+// (b) above: the cases that are the role table, not the machine
+const DESK = ['OWNER', 'FRONT', 'BACKEND', 'MANAGER'];
+const roleCase = (c) => ACCESS.includes(c.error) && PEOPLE[c.actor] != null && !DESK.includes(PEOPLE[c.actor].role);
+for (const s of states) s.cases = s.cases.filter((c) => !roleCase(c));
+for (const s of told) s.steps = s.steps.filter((c) => !roleCase(c));
+
 const all = [...quotes, ...states.flatMap((s) => s.cases), ...confirms, ...saves, ...told.flatMap((s) => s.steps)];
 const never = SENTENCES.filter((s) => !seen.has(s));
 if (never.length) throw Error('v2 never answered: ' + never.join(' | '));
 const differs = quotes.filter((q) => q.v2DiffersFromExact).length, onPurpose = all.filter((r) => r.v2DiffersOnPurpose).length;
-console.error(`access=${access.length} quotes=${quotes.length} (refused=${quotes.filter((q) => q.error).length}, v2_differs_from_exact=${differs}) states=${states.length} matrix_cases=${states.reduce((n, s) => n + s.cases.length, 0)} confirms=${confirms.length} saves=${saves.length} stories=${told.length} story_steps=${told.reduce((n, s) => n + s.steps.length, 0)} sweep=${sweep.length} receipt=${receipt.length} v2_differs_on_purpose=${onPurpose} sentences=${seen.size}/${SENTENCES.length} sql_statements=${statements.size}`);
+console.error(`access=${access.length} (played, not written) quotes=${quotes.length} (refused=${quotes.filter((q) => q.error).length}, v2_differs_from_exact=${differs}) states=${states.length} matrix_cases=${states.reduce((n, s) => n + s.cases.length, 0)} confirms=${confirms.length} saves=${saves.length} stories=${told.length} story_steps=${told.reduce((n, s) => n + s.steps.length, 0)} sweep=${sweep.length} receipt=${receipt.length} v2_differs_on_purpose=${onPurpose} sentences=${seen.size}/${SENTENCES.length} sql_statements=${statements.size}`);
 console.log(JSON.stringify({
   source: 'v2 kiosk module (server.mjs:7894-8076 of the deployed bundle, xchange-online@3ffc5a5), evaluated unchanged with a set clock, counted ids and an in-memory store in place of PostgreSQL; driven by gen_kiosk.mjs',
-  people, access, quotes, states, confirms, saves, stories: told, sweep, receipt,
+  people, quotes, states, confirms, saves, stories: told, sweep, receipt,
 }, null, 1));
