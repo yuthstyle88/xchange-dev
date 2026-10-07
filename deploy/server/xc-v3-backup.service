@@ -1,0 +1,13 @@
+[Unit]
+Description=XCHANGE v3 server backup (database dump and uploads)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/xc-v3/env
+ExecStart=/opt/xc-v3/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/backups/xc-v3

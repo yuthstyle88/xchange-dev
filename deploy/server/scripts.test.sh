@@ -20,6 +20,31 @@
 #        service user cannot enter, and return 0 either way
 #   T6   ensure_dir on an existing directory of another mode still refuses
 #        and changes nothing (today's behaviour, kept)
+#
+# Cases B1-B9 are the backups of #121 (docs/design/xchange-v3.md §7b, row
+# BK), run against backup.sh / restore.sh with pg_dump, pg_restore, tar,
+# rsync, createdb and date stubbed:
+#   B1/B1b/B1c  one run makes one set: db-<stamp>.dump and uploads-<stamp>.tar.gz
+#        in <stamp>/ (0700, in a 0700 backup directory it creates), pg_dump -Fc,
+#        no password on its command line, the set's path as the last line of
+#        stdout; a stamp that already exists is refused and the set is left
+#        alone; a backup directory of another mode is refused and not changed
+#   B2/B2b  the 8th run removes the oldest set, leaving 7, and nothing else;
+#        an XC_BACKUP_KEEP that is not an integer >= 1 is refused
+#   B3/B3b  a failing pg_dump or tar leaves no partial set, prunes nothing,
+#        exits non-zero
+#   B4   an empty XC_BACKUP_OFFHOST: one "skipped" line, no rsync, exit 0
+#   B5   a failing rsync exits non-zero and keeps the local set
+#   B6   rsync copies the directory's contents with an include of the set
+#        directories and --exclude='*' (never the working directory or the
+#        lock), and passes --delete only once the local directory holds 7 sets
+#   B7/B7b/B7c/B7d  restore.sh refuses the live database and the live uploads
+#        directory, restores into a scratch database (createdb and pg_restore
+#        as postgres through runuser, the dump on pg_restore's stdin) and
+#        directory, and drops what it created
+#        when pg_restore fails
+#   B8   the timer is daily and Persistent=true; the service is a oneshot
+#   B9   env.example names every XC_BACKUP_* setting
 # Nothing here touches a host: all paths live under a /var/tmp scratch root
 # (not /tmp or /home: check_own_path refuses those).
 set -euo pipefail
@@ -106,6 +131,8 @@ STUB
 
 write_stub psql <<'STUB'
 #!/usr/bin/env bash
+# B7: a refused restore must not have sent a CREATE through psql either
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/psql.log"
 exit 0
 STUB
 
@@ -374,5 +401,558 @@ ck "ensure_dir refused" test "$RC" -ne 0
 ckeq "directory left unchanged" "755" "$(stat -c '%a' "$t6")"
 report T6 "ensure_dir still refuses an existing directory of another mode"
 
+# ==== backups (#121, design §7b, row BK) ====================================
+# ---- stubs of the backup tools ---------------------------------------------
+# Each logs its command line to $XC_TEST_LOG/<name>.log. pg_dump and tar
+# (creating) write a small file where they were told to (-f/--file, or a
+# short-option cluster ending in f, e.g. -czf), or to standard output; with
+# XC_STUB_PG_DUMP_FAIL=1 / XC_STUB_TAR_FAIL=1 they write that partial file
+# and then fail. rsync exits with $XC_STUB_RSYNC_RC (default 0) and logs
+# RSYNC_RSH too, so an ssh command given either way is seen; it also writes
+# the arguments of its last call one per line to rsync.args. pg_restore
+# copies what it got on stdin to pg_restore.stdin (restore.sh runs with
+# stdin from /dev/null, so a dump named as a path leaves it empty) and
+# fails with XC_STUB_PG_RESTORE_FAIL=1. runuser logs its command line and
+# runs what follows "--" as the caller (no user switch).
+write_stub pg_dump <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/pg_dump.log"
+out="" take=0
+for a in "$@"; do
+  if [ "$take" = 1 ]; then
+    out="$a"
+    take=0
+    continue
+  fi
+  case "$a" in
+    --file=*) out="${a#--file=}" ;;
+    -f | --file) take=1 ;;
+  esac
+done
+if [ -n "$out" ] && [ "$out" != - ]; then
+  printf 'PGDMP stub dump\n' >"$out"
+else
+  printf 'PGDMP stub dump\n'
+fi
+[ "${XC_STUB_PG_DUMP_FAIL:-0}" = 1 ] && exit 1
+exit 0
+STUB
+
+write_stub tar <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/tar.log"
+out="" take=0 create=0
+for a in "$@"; do
+  if [ "$take" = 1 ]; then
+    out="$a"
+    take=0
+    continue
+  fi
+  case "$a" in
+    --create) create=1 ;;
+    --file=*) out="${a#--file=}" ;;
+    -f | --file) take=1 ;;
+    --*) ;;
+    -*)
+      case "$a" in -*c*) create=1 ;; esac
+      case "$a" in -*f) take=1 ;; esac
+      ;;
+  esac
+done
+if [ "$create" = 1 ]; then
+  if [ -n "$out" ] && [ "$out" != - ]; then
+    printf 'tar stub archive\n' >"$out"
+  else
+    printf 'tar stub archive\n'
+  fi
+  [ "${XC_STUB_TAR_FAIL:-0}" = 1 ] && exit 2
+fi
+exit 0
+STUB
+
+write_stub rsync <<'STUB'
+#!/usr/bin/env bash
+printf '%s RSYNC_RSH=%s\n' "$*" "${RSYNC_RSH:-}" >>"${XC_TEST_LOG:?}/rsync.log"
+printf '%s\n' "$@" >"${XC_TEST_LOG:?}/rsync.args"
+exit "${XC_STUB_RSYNC_RC:-0}"
+STUB
+
+write_stub pg_restore <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/pg_restore.log"
+cat >"${XC_TEST_LOG:?}/pg_restore.stdin"
+[ "${XC_STUB_PG_RESTORE_FAIL:-0}" = 1 ] && exit 1
+exit 0
+STUB
+
+write_stub runuser <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/runuser.log"
+while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+[ "$#" -gt 0 ] && shift
+exec "$@"
+STUB
+
+for s in createdb dropdb; do
+  write_stub "$s" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${XC_TEST_LOG:?}/$(basename "$0").log"
+exit 0
+STUB
+done
+
+# date: "date -u +%Y%m%dT%H%M%SZ" (design §7b) answers the next line of
+# $XC_TEST_STAMPS; any other use goes to the real date.
+write_stub date <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    +*%Y%m%dT%H%M%S*)
+      f="${XC_TEST_STAMPS:?}"
+      s="$(head -n 1 "$f")"
+      tail -n +2 "$f" >"$f.next"
+      mv "$f.next" "$f"
+      [ -n "$s" ] || {
+        echo "date stub: no stamp left" >&2
+        exit 1
+      }
+      echo "$s"
+      exit 0
+      ;;
+  esac
+done
+exec /bin/date "$@"
+STUB
+
+# ---- helpers ----------------------------------------------------------------
+BK_DB=xc_bk_db
+BK_ROLE=xc_bk_role
+BK_SECRET=pBackupStubSecret42
+
+# bk_case <dir> <stamp...> — a case directory: log/, an uploads directory
+# var/up-files with one file in it, and the stamps the date stub hands out.
+bk_case() {
+  local c="$1"
+  shift
+  mkdir -p "$c/log" "$c/var/up-files"
+  printf 'an uploaded file\n' >"$c/var/up-files/f1"
+  printf '%s\n' "$@" >"$c/stamps"
+}
+
+# run_backup <case dir> [NAME=value...] — backup.sh with the stubs and the
+# server's settings in its environment (as EnvironmentFile= gives them);
+# OUT and RC hold its output (both streams) and exit status; <case>/stdout
+# holds its standard output alone.
+run_backup() {
+  local c="$1"
+  shift
+  set +e
+  OUT="$({ env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_TEST_STAMPS="$c/stamps" \
+    XC_BACKUP_DIR="$c/backups" XC_BACKUP_KEEP=7 XC_BACKUP_OFFHOST= \
+    XC_BACKUP_SSH_KEY="$c/offhost.key" \
+    APP_DATABASE__HOST=127.0.0.1 APP_DATABASE__PORT=5432 \
+    APP_DATABASE__USERNAME="$BK_ROLE" APP_DATABASE__PASSWORD="$BK_SECRET" \
+    APP_DATABASE__DATABASE_NAME="$BK_DB" APP_FILES__DIR="$c/var/up-files" \
+    "$@" bash "$HERE/backup.sh" 2>&3 | tee "$c/stdout"; } 3>&1)"
+  RC=$?
+  set -e
+}
+
+# run_restore <case dir> <args...> — restore.sh with the stubs and an env
+# file naming the live database and uploads directory.
+run_restore() {
+  local c="$1"
+  shift
+  printf '%s\n' \
+    "APP_DATABASE__USERNAME=$BK_ROLE" \
+    "APP_DATABASE__PASSWORD=$BK_SECRET" \
+    "APP_DATABASE__DATABASE_NAME=$BK_DB" \
+    "APP_FILES__DIR=$c/var/up-files" >"$c/env"
+  set +e
+  OUT="$(env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_ENV_FILE="$c/env" \
+    bash "$HERE/restore.sh" "$@" </dev/null 2>&1)"
+  RC=$?
+  set -e
+}
+
+# sets_in <dir> — the set directories (<stamp>/) in name order, space-separated
+sets_in() {
+  local d n
+  for d in "$1"/*; do
+    n="${d##*/}"
+    [ -d "$d" ] && [[ "$n" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] && printf '%s ' "$n"
+  done
+  return 0
+}
+
+# entries_of <dir> — every entry but the lock file, space-separated
+entries_of() { (ls -A1 "$1" 2>/dev/null || true) | (grep -vx '.lock' || true) | tr '\n' ' '; }
+
+# make_set <backups dir> <stamp> — a finished set, as backup.sh leaves one
+make_set() {
+  mkdir -p "$1/$2"
+  printf 'old dump\n' >"$1/$2/db-$2.dump"
+  printf 'old archive\n' >"$1/$2/uploads-$2.tar.gz"
+}
+
+# last_line <file> — its last line, or "missing"
+last_line() { tail -n 1 "$1" 2>/dev/null || echo missing; }
+
+# mode_of <path> — octal mode, or "missing"
+mode_of() { stat -c '%a' "$1" 2>/dev/null || echo missing; }
+
+# absent <pattern> <file> — the file is missing or has no line matching
+absent() { ! grep -Eqs -- "$1" "$2" 2>/dev/null; }
+
+# ---- B1: one run makes one set ---------------------------------------------
+b1="$ROOT/b1"
+bk_case "$b1" 20261007T010203Z
+run_backup "$b1"
+printf '%s\n' "$OUT" >"$LOGS/b1.out"
+s=20261007T010203Z
+ck "backup.sh exited 0" test "$RC" -eq 0
+ckeq "exactly one set" "$s " "$(sets_in "$b1/backups")"
+ckeq "the set holds the dump and the archive, same stamp" \
+  "db-$s.dump uploads-$s.tar.gz " "$(entries_of "$b1/backups/$s")"
+ck "the dump is not empty" test -s "$b1/backups/$s/db-$s.dump"
+ck "the archive is not empty" test -s "$b1/backups/$s/uploads-$s.tar.gz"
+ck "pg_dump asked for the custom format" \
+  grep -Eqs -- '(^| )(-Fc|-F c|--format=c|--format=custom)( |$)' "$b1/log/pg_dump.log"
+ck "pg_dump named the database" grep -qs -- "$BK_DB" "$b1/log/pg_dump.log"
+ck "the password is not on pg_dump's command line" absent "$BK_SECRET" "$b1/log/pg_dump.log"
+ck "tar archived the uploads directory" grep -qs -- "up-files" "$b1/log/tar.log"
+ckeq "nothing but the set is left in the backup directory" "$s " "$(entries_of "$b1/backups")"
+ckeq "the last line of stdout is the set's path" "$b1/backups/$s" "$(last_line "$b1/stdout")"
+ckeq "the backup directory it created is 0700" "700" "$(mode_of "$b1/backups")"
+ckeq "the set directory is 0700" "700" "$(mode_of "$b1/backups/$s")"
+report B1 "one run makes one set: dump and uploads archive under one UTC stamp"
+
+# ---- B1b: a stamp that already exists is refused ---------------------------
+b1b="$ROOT/b1b"
+bk_case "$b1b" 20261007T020000Z 20261007T020000Z
+run_backup "$b1b"
+B1B_FIRST_RC=$RC
+s=20261007T020000Z
+cp "$b1b/backups/$s/db-$s.dump" "$b1b/first.dump" 2>/dev/null || true
+run_backup "$b1b"
+printf '%s\n' "$OUT" >"$LOGS/b1b.out"
+ck "the first run exited 0" test "$B1B_FIRST_RC" -eq 0
+ck "the second run exited non-zero" test "$RC" -ne 0
+ck "the refusal names the stamp" grep -qs -- "$s" "$LOGS/b1b.out"
+ckeq "still one set" "$s " "$(sets_in "$b1b/backups")"
+ck "the first set's dump is unchanged" cmp -s "$b1b/first.dump" "$b1b/backups/$s/db-$s.dump"
+report B1b "a set whose stamp already exists is refused, not overwritten"
+
+# ---- B1c: a backup directory of another mode is refused, not changed --------
+b1c="$ROOT/b1c"
+bk_case "$b1c" 20261007T021500Z
+mkdir -m 755 "$b1c/backups"
+chmod 755 "$b1c/backups"
+run_backup "$b1c"
+printf '%s\n' "$OUT" >"$LOGS/b1c.out"
+ck "backup.sh exited non-zero" test "$RC" -ne 0
+ck "the refusal names the directory" grep -qs -- "$b1c/backups" "$LOGS/b1c.out"
+ckeq "the directory's mode is unchanged" "755" "$(mode_of "$b1c/backups")"
+ckeq "nothing was written in it" "" "$(entries_of "$b1c/backups")"
+ck "pg_dump never ran" test ! -s "$b1c/log/pg_dump.log"
+report B1c "an XC_BACKUP_DIR that is not 0700 is refused and left as it is"
+
+# ---- B2: the 8th run removes the oldest set, leaving 7 ---------------------
+b2="$ROOT/b2"
+bk_case "$b2" 20261001T000001Z 20261001T000002Z 20261001T000003Z 20261001T000004Z \
+  20261001T000005Z 20261001T000006Z 20261001T000007Z 20261001T000008Z
+mkdir -m 700 "$b2/backups"
+printf 'kept by hand\n' >"$b2/backups/notes.txt"
+mkdir "$b2/backups/manual-copy"
+B2_RCS=""
+for i in 1 2 3 4 5 6 7; do
+  run_backup "$b2"
+  B2_RCS="$B2_RCS$RC "
+done
+B2_AFTER7="$(sets_in "$b2/backups")"
+run_backup "$b2"
+B2_RCS="$B2_RCS$RC "
+printf '%s\n' "$OUT" >"$LOGS/b2.out"
+ckeq "all eight runs exited 0" "0 0 0 0 0 0 0 0 " "$B2_RCS"
+ckeq "after 7 runs the 7 sets are all there" \
+  "20261001T000001Z 20261001T000002Z 20261001T000003Z 20261001T000004Z 20261001T000005Z 20261001T000006Z 20261001T000007Z " \
+  "$B2_AFTER7"
+ckeq "after the 8th the oldest is gone, 7 remain" \
+  "20261001T000002Z 20261001T000003Z 20261001T000004Z 20261001T000005Z 20261001T000006Z 20261001T000007Z 20261001T000008Z " \
+  "$(sets_in "$b2/backups")"
+ck "a file that is not a set is kept" test -f "$b2/backups/notes.txt"
+ck "a directory that is not a set is kept" test -d "$b2/backups/manual-copy"
+report B2 "the 8th run deletes the oldest set and nothing else"
+
+# ---- B2b: XC_BACKUP_KEEP must be an integer of at least 1 ------------------
+b2b="$ROOT/b2b"
+bk_case "$b2b" 20261007T030000Z 20261007T030001Z
+mkdir -m 700 "$b2b/backups"
+make_set "$b2b/backups" 20260901T000001Z
+run_backup "$b2b" XC_BACKUP_KEEP=0
+B2B_RC0=$RC
+printf '%s\n' "$OUT" >"$LOGS/b2b.out"
+run_backup "$b2b" XC_BACKUP_KEEP=seven
+B2B_RCX=$RC
+printf '%s\n' "$OUT" >>"$LOGS/b2b.out"
+ck "KEEP=0 exited non-zero" test "$B2B_RC0" -ne 0
+ck "KEEP=seven exited non-zero" test "$B2B_RCX" -ne 0
+ck "the refusal names XC_BACKUP_KEEP" grep -qs "XC_BACKUP_KEEP" "$LOGS/b2b.out"
+ckeq "no set made, the old one kept" "20260901T000001Z " "$(sets_in "$b2b/backups")"
+ck "pg_dump never ran" test ! -s "$b2b/log/pg_dump.log"
+report B2b "an XC_BACKUP_KEEP that is not an integer >= 1 is refused before anything"
+
+# ---- B3: a failing pg_dump leaves no partial set ---------------------------
+b3="$ROOT/b3"
+bk_case "$b3" 20261007T040000Z
+mkdir -m 700 "$b3/backups"
+for i in 1 2 3 4 5 6 7; do make_set "$b3/backups" "20260901T00000${i}Z"; done
+B3_BEFORE="$(entries_of "$b3/backups")"
+run_backup "$b3" XC_STUB_PG_DUMP_FAIL=1
+printf '%s\n' "$OUT" >"$LOGS/b3.out"
+ck "backup.sh exited non-zero" test "$RC" -ne 0
+ck "pg_dump was run" test -s "$b3/log/pg_dump.log"
+ckeq "the directory is as before: no partial set, nothing pruned" "$B3_BEFORE" "$(entries_of "$b3/backups")"
+report B3 "a failing pg_dump leaves no partial set, prunes nothing, exits non-zero"
+
+# ---- B3b: a failing tar leaves no partial set either ------------------------
+b3b="$ROOT/b3b"
+bk_case "$b3b" 20261007T050000Z
+mkdir -m 700 "$b3b/backups"
+for i in 1 2 3 4 5 6 7; do make_set "$b3b/backups" "20260901T00000${i}Z"; done
+B3B_BEFORE="$(entries_of "$b3b/backups")"
+run_backup "$b3b" XC_STUB_TAR_FAIL=1
+printf '%s\n' "$OUT" >"$LOGS/b3b.out"
+ck "backup.sh exited non-zero" test "$RC" -ne 0
+ck "tar was run" test -s "$b3b/log/tar.log"
+ckeq "the directory is as before: the dump went with the failed archive" "$B3B_BEFORE" "$(entries_of "$b3b/backups")"
+report B3b "a failing uploads archive removes the dump too and exits non-zero"
+
+# ---- B4: an empty off-host setting skips the copy --------------------------
+b4="$ROOT/b4"
+bk_case "$b4" 20261007T060000Z
+run_backup "$b4" XC_BACKUP_OFFHOST=
+printf '%s\n' "$OUT" >"$LOGS/b4.out"
+ck "backup.sh exited 0" test "$RC" -eq 0
+ckeq "one 'off-host copy skipped' line" "1" "$(grep -c "off-host copy skipped" "$LOGS/b4.out" || true)"
+ck "rsync never ran" test ! -s "$b4/log/rsync.log"
+ckeq "the set was made" "20261007T060000Z " "$(sets_in "$b4/backups")"
+ckeq "the set's path is still the last line of stdout" "$b4/backups/20261007T060000Z" "$(last_line "$b4/stdout")"
+report B4 "an empty XC_BACKUP_OFFHOST skips the copy with one line and exits 0"
+
+# ---- B5: a failing rsync exits non-zero and keeps the local set ------------
+b5="$ROOT/b5"
+bk_case "$b5" 20261007T070000Z
+s=20261007T070000Z
+run_backup "$b5" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups XC_STUB_RSYNC_RC=23
+printf '%s\n' "$OUT" >"$LOGS/b5.out"
+ck "backup.sh exited non-zero" test "$RC" -ne 0
+ck "rsync was run toward the target" grep -qs "xcbackup@offhost.invalid:/data/xc-v3-backups" "$b5/log/rsync.log"
+ckeq "the local set is kept, both pieces" "db-$s.dump uploads-$s.tar.gz " "$(entries_of "$b5/backups/$s")"
+report B5 "a failing off-host copy exits non-zero and keeps the local set"
+
+# ---- B6: --delete only once the local directory holds 7 sets ---------------
+b6="$ROOT/b6"
+bk_case "$b6" 20261007T080000Z
+run_backup "$b6" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups
+B6_RC1=$RC
+printf '%s\n' "$OUT" >"$LOGS/b6.out"
+b6f="$ROOT/b6full"
+bk_case "$b6f" 20261007T080000Z
+mkdir -m 700 "$b6f/backups"
+for i in 1 2 3 4 5 6; do make_set "$b6f/backups" "20260901T00000${i}Z"; done
+run_backup "$b6f" XC_BACKUP_OFFHOST=xcbackup@offhost.invalid:/data/xc-v3-backups
+B6_RC7=$RC
+printf '%s\n' "$OUT" >>"$LOGS/b6.out"
+# include_globs <args file> — the patterns given to --include, one per line
+include_globs() {
+  local take=0 a
+  while IFS= read -r a; do
+    if [ "$take" = 1 ]; then
+      printf '%s\n' "$a"
+      take=0
+      continue
+    fi
+    case "$a" in
+      --include=*) printf '%s\n' "${a#--include=}" ;;
+      --include) take=1 ;;
+    esac
+  done <"$1"
+}
+# include_takes <args file> <name> — whether a top-level directory <name> is
+# sent: some include pattern "/<glob>/***" matches it (bash globbing of the
+# [0-9]/*/? forms is the same as rsync's for these patterns)
+include_takes() {
+  local g
+  while IFS= read -r g; do
+    case "$g" in
+      /*/\*\*\*)
+        g="${g#/}"
+        g="${g%/\*\*\*}"
+        # shellcheck disable=SC2053  # $g is a pattern on purpose
+        [[ "$2" == $g ]] && return 0
+        ;;
+    esac
+  done < <(include_globs "$1" 2>/dev/null || true)
+  return 1
+}
+# excludes_all <args file> — --exclude='*' given as one argument or as two
+excludes_all() {
+  local prev="" a
+  [ -f "$1" ] || return 1
+  while IFS= read -r a; do
+    [ "$a" = "--exclude=*" ] && return 0
+    [ "$prev" = "--exclude" ] && [ "$a" = "*" ] && return 0
+    prev="$a"
+  done <"$1"
+  return 1
+}
+# not <command...> — succeeds when the command fails
+not() { ! "$@"; }
+B6_ARGS="$b6/log/rsync.args"
+B6_OFF=xcbackup@offhost.invalid:/data/xc-v3-backups
+ck "the run with one set exited 0" test "$B6_RC1" -eq 0
+ckeq "one rsync with one local set" "1" "$( (cat "$b6/log/rsync.log" 2>/dev/null || true) | wc -l | tr -d ' ')"
+ck "no --delete with one local set" absent '^--delete$' "$B6_ARGS"
+ck "the ssh key is used" grep -qs -- "$b6/offhost.key" "$b6/log/rsync.log"
+ck "ssh never prompts (BatchMode=yes)" grep -qs "BatchMode=yes" "$b6/log/rsync.log"
+ckeq "the source is the backup directory's contents" "$b6/backups/" "$(tail -n 2 "$B6_ARGS" 2>/dev/null | head -n 1)"
+ckeq "the target is the off-host directory" "$B6_OFF/" "$(last_line "$B6_ARGS")"
+ck "everything not included is excluded (--exclude='*')" excludes_all "$B6_ARGS"
+ck "excluded names on the target are never deleted" absent '^--delete-excluded$' "$B6_ARGS"
+ck "a set directory is included" include_takes "$B6_ARGS" 20261007T080000Z
+ck "the working directory is not" not include_takes "$B6_ARGS" .work-20261007T080000Z
+ck "the lock is not" not include_takes "$B6_ARGS" .lock
+ck "a stamp with a suffix is not" not include_takes "$B6_ARGS" 20261007T080000Z.old
+ck "another name is not" not include_takes "$B6_ARGS" notes.txt
+ck "the run reaching 7 sets exited 0" test "$B6_RC7" -eq 0
+ck "--delete once 7 sets are local" grep -qsx -- '--delete' "$b6f/log/rsync.args"
+ckeq "with 7 sets the source is still the directory's contents" "$b6f/backups/" "$(tail -n 2 "$b6f/log/rsync.args" 2>/dev/null | head -n 1)"
+ck "with 7 sets a set directory is included" include_takes "$b6f/log/rsync.args" 20260901T000001Z
+report B6 "the off-host copy sends the set directories only, with --delete once 7 are local"
+
+# ---- B7: restore.sh refuses the live database ------------------------------
+b7="$ROOT/b7"
+bk_case "$b7"
+make_set "$b7/backups" 20261007T090000Z
+run_restore "$b7" "$b7/backups/20261007T090000Z" "$BK_DB" "$b7/scratch-files"
+B7_RC_LIVE=$RC
+printf '%s\n' "$OUT" >"$LOGS/b7.out"
+run_restore "$b7" "$b7/backups/20261007T090000Z" "XC_BK_DB" "$b7/scratch-files"
+B7_RC_UPPER=$RC
+printf '%s\n' "$OUT" >>"$LOGS/b7.out"
+ck "the live name exited non-zero" test "$B7_RC_LIVE" -ne 0
+ck "its spelling in capitals exited non-zero" test "$B7_RC_UPPER" -ne 0
+ck "the refusal names the live database" grep -qs -- "$BK_DB" "$LOGS/b7.out"
+ck "no database was created" test ! -s "$b7/log/createdb.log"
+ck "no CREATE went through psql" absent '[Cc][Rr][Ee][Aa][Tt][Ee]' "$b7/log/psql.log"
+ck "pg_restore never ran" test ! -s "$b7/log/pg_restore.log"
+ck "nothing was extracted" test ! -s "$b7/log/tar.log"
+ck "the scratch directory was not created" test ! -e "$b7/scratch-files"
+report B7 "restore.sh refuses the live database name"
+
+# ---- B7b: restore.sh never writes the live uploads directory ---------------
+b7b="$ROOT/b7b"
+bk_case "$b7b"
+make_set "$b7b/backups" 20261007T100000Z
+run_restore "$b7b" "$b7b/backups/20261007T100000Z" xc_bk_rehearsal "$b7b/var/up-files"
+B7B_RC_SAME=$RC
+printf '%s\n' "$OUT" >"$LOGS/b7b.out"
+run_restore "$b7b" "$b7b/backups/20261007T100000Z" xc_bk_rehearsal "$b7b/var/up-files/rehearsal"
+B7B_RC_INSIDE=$RC
+printf '%s\n' "$OUT" >>"$LOGS/b7b.out"
+ck "the live uploads directory exited non-zero" test "$B7B_RC_SAME" -ne 0
+ck "a directory inside it exited non-zero" test "$B7B_RC_INSIDE" -ne 0
+ck "the refusal names the live uploads directory" grep -qs -- "$b7b/var/up-files" "$LOGS/b7b.out"
+ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7b/var/up-files")"
+ck "pg_restore never ran" test ! -s "$b7b/log/pg_restore.log"
+ck "nothing was extracted" test ! -s "$b7b/log/tar.log"
+report B7b "restore.sh refuses the live uploads directory and anything inside it"
+
+# ---- B7c: a rehearsal restores into the scratch database and directory -----
+b7c="$ROOT/b7c"
+bk_case "$b7c"
+s=20261007T110000Z
+make_set "$b7c/backups" "$s"
+run_restore "$b7c" "$b7c/backups/$s" xc_bk_rehearsal "$b7c/scratch-files"
+printf '%s\n' "$OUT" >"$LOGS/b7c.out"
+ck "restore.sh exited 0" test "$RC" -eq 0
+ck "pg_restore wrote into the scratch database" grep -qs "xc_bk_rehearsal" "$b7c/log/pg_restore.log"
+ckeq "pg_restore read the set's dump on stdin" "old dump" "$(cat "$b7c/log/pg_restore.stdin" 2>/dev/null || echo missing)"
+ck "the dump is not named to pg_restore as a path (postgres cannot open it)" absent "db-$s.dump" "$b7c/log/pg_restore.log"
+ck "pg_restore never named the live database" absent "(^|[ =])$BK_DB( |$)" "$b7c/log/pg_restore.log"
+ck "tar extracted the set's archive" grep -qs -- "uploads-$s.tar.gz" "$b7c/log/tar.log"
+ck "tar extracted into the scratch directory" grep -qs -- "$b7c/scratch-files" "$b7c/log/tar.log"
+ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7c/var/up-files")"
+ck "createdb ran as postgres through runuser" grep -Eqs -- '^-u postgres -- createdb( .*)? xc_bk_rehearsal( |$)' "$b7c/log/runuser.log"
+ck "pg_restore ran as postgres through runuser" grep -Eqs -- '^-u postgres -- pg_restore( |$).*xc_bk_rehearsal' "$b7c/log/runuser.log"
+ck "nothing was dropped" test ! -s "$b7c/log/dropdb.log"
+report B7c "a rehearsal restores into the scratch database and directory"
+
+# ---- B7d: a failed pg_restore drops what the rehearsal created ------------
+b7d="$ROOT/b7d"
+bk_case "$b7d"
+s=20261007T120000Z
+make_set "$b7d/backups" "$s"
+XC_STUB_PG_RESTORE_FAIL=1
+export XC_STUB_PG_RESTORE_FAIL
+run_restore "$b7d" "$b7d/backups/$s" xc_bk_rehearsal "$b7d/scratch-files"
+unset XC_STUB_PG_RESTORE_FAIL
+printf '%s\n' "$OUT" >"$LOGS/b7d.out"
+ck "restore.sh exited non-zero" test "$RC" -ne 0
+ck "pg_restore was run" test -s "$b7d/log/pg_restore.log"
+ck "the scratch database was dropped as postgres" grep -Eqs -- '^-u postgres -- dropdb( .*)? xc_bk_rehearsal( |$)' "$b7d/log/runuser.log"
+ck "the live database was never dropped" absent "(^| )$BK_DB( |$)" "$b7d/log/dropdb.log"
+ck "the scratch directory was removed" test ! -e "$b7d/scratch-files"
+ckeq "the live uploads directory is unchanged" "f1 " "$(entries_of "$b7d/var/up-files")"
+report B7d "a failed pg_restore drops the scratch database and directory it made"
+
+# ---- B8: the units -----------------------------------------------------------
+timer="$HERE/xc-v3-backup.timer"
+service="$HERE/xc-v3-backup.service"
+ck "the timer runs daily" grep -qsx 'OnCalendar=daily' "$timer"
+ck "the timer is Persistent=true" grep -qsx 'Persistent=true' "$timer"
+ck "the timer is wanted by timers.target" grep -qsx 'WantedBy=timers.target' "$timer"
+ck "the service is a oneshot" grep -qsx 'Type=oneshot' "$service"
+ck "the service runs backup.sh" grep -Eqs '^ExecStart=.*/backup\.sh$' "$service"
+ck "the service reads the server's env file" grep -qsx 'EnvironmentFile=/etc/xc-v3/env' "$service"
+report B8 "the backup timer is daily with Persistent=true; the service is a oneshot"
+
+# ---- B9: env.example names every backup setting ------------------------------
+for v in XC_BACKUP_DIR XC_BACKUP_KEEP XC_BACKUP_OFFHOST XC_BACKUP_SSH_KEY; do
+  ck "env.example names $v" grep -Eqs "^#?$v=" "$HERE/env.example"
+done
+report B9 "env.example names every XC_BACKUP_* setting"
+
+# ---- B10: restore.sh refuses the live database name written in capitals ------
+b10="$ROOT/b10"
+bk_case "$b10"
+make_set "$b10/backups" 20261007T130000Z
+run_restore "$b10" "$b10/backups/20261007T130000Z" "XC_BK_DB" "$b10/scratch-files"
+B10_RC_UPPER=$RC
+printf '%s\n' "$OUT" >"$LOGS/b10.out"
+printf '%s\n' \
+  "APP_DATABASE__USERNAME=$BK_ROLE" \
+  "APP_DATABASE__PASSWORD=$BK_SECRET" \
+  "APP_DATABASE__DATABASE_NAME=XC_BK_DB" \
+  "APP_FILES__DIR=$b10/var/up-files" >"$b10/env-upper"
+set +e
+OUT_ENV_UPPER="$(env PATH="$BIN_STUBS:$PATH" XC_TEST_LOG="$b10/log" XC_ENV_FILE="$b10/env-upper" \
+  bash "$HERE/restore.sh" "$b10/backups/20261007T130000Z" "$BK_DB" "$b10/scratch-files" </dev/null 2>&1)"
+B10_RC_ENV_UPPER=$?
+set -e
+printf '%s\n' "$OUT_ENV_UPPER" >>"$LOGS/b10.out"
+ck "scratch db in capitals exited non-zero" test "$B10_RC_UPPER" -ne 0
+ck "live db in env in capitals exited non-zero" test "$B10_RC_ENV_UPPER" -ne 0
+ck "the refusal names the live database" grep -qs -- "$BK_DB" "$LOGS/b10.out"
+ck "the refusal matches live database" grep -qs -- "matches live database" "$LOGS/b10.out"
+ck "no database was created" test ! -s "$b10/log/createdb.log"
+ck "no CREATE went through psql" absent '[Cc][Rr][Ee][Aa][Tt][Ee]' "$b10/log/psql.log"
+ck "pg_restore never ran" test ! -s "$b10/log/pg_restore.log"
+ck "nothing was extracted" test ! -s "$b10/log/tar.log"
+ck "the scratch directory was not created" test ! -e "$b10/scratch-files"
+report B10 "restore.sh refuses the live database name written in capitals"
+
 echo "# $PASS passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]
+

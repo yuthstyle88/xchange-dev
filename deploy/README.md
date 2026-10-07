@@ -13,11 +13,17 @@ and lane names say which settings file is read, not that a real shop is using it
 | `server/common.sh` | the variables (port, paths, database/role name, v2 bundle directory) and helpers of the two scripts below |
 | `server/install.sh` | first install on a host; safe to run again — a re-run keeps what it replaces as `xchange.prev`/`configuration.prev`, like `update.sh` |
 | `server/update.sh` | replace binary and configuration, keep the previous ones, print the way back |
+| `server/backup.sh` | creates one backup set (database dump + uploads archive), prunes to newest 7, optional off-host copy |
+| `server/restore.sh` | rehearses a restore into a scratch database and scratch uploads directory, refusing live ones |
+| `server/xc-v3-backup.service` | oneshot systemd unit running backup.sh under hardening |
+| `server/xc-v3-backup.timer` | daily systemd timer running xc-v3-backup.service with Persistent=true |
+| `server/journald-xc-v3.conf` | example drop-in for systemd-journald log retention |
 | `server/smoke.sh` | checks a running server through a base URL; exit status says pass/fail |
 | `server/build.md` | how the binary is built, checked against the target, and copied |
 | `nginx/xc-v3-desk.conf.example` | example: desk/admin host proxied to the v3 server |
 | `nginx/xc-v3-customer.conf.example` | example: customer host once the kiosk API is served by v3 |
 | `nginx/xc-customer.conf` | customer host of phase 1 (Flutter web build + v2 kiosk API) — see the guide at the end of this file |
+
 
 ---
 
@@ -152,15 +158,113 @@ from sqlx's documented default and was not exercised here.
 Rolling the whole cutover back (v3 → v2) is a different thing: the nginx
 upstream is pointed back at v2 by the host's owner; v3's database is kept.
 
-## 5. Backups — not written yet
+## 5. Backups and log retention
 
-- **Not written yet: database dump** (`xc_v3`; how often, where it is kept, how a
-  restore is rehearsed).
-- **Not written yet: uploads directory** (`/var/lib/xc-v3/uploads`; must be
-  backed up together with the database — rows point at files by name).
-- Not written yet: log retention (the service logs to the journal).
+Every backup run creates one **set** under `$XC_BACKUP_DIR` (default `/var/backups/xc-v3`), named by a UTC timestamp `<stamp>/` (format `YYYYMMDDTHHMMSSZ`), containing:
+- `db-<stamp>.dump` — PostgreSQL custom-format archive (`pg_dump -Fc`) of `APP_DATABASE__DATABASE_NAME`.
+- `uploads-<stamp>.tar.gz` — gzip-compressed archive (`tar -czf`) of `APP_FILES__DIR`.
 
-Until these exist, an update that applies a migration has no tested way back.
+Both the backup directory and each set directory are mode `0700` owned by `root:root`. The set is created in a temporary working directory `.work-<stamp>` and renamed to `<stamp>` only when both pieces exit 0. After each successful run, local sets are pruned so only the newest `XC_BACKUP_KEEP` sets (default 7) remain. If configured, `XC_BACKUP_OFFHOST` mirrors the local sets to a remote host via `rsync`.
+
+### Installing the backup units
+
+1. Copy the scripts and units to the host:
+   ```bash
+   sudo install -m 0755 server/backup.sh /opt/xc-v3/backup.sh
+   sudo install -m 0755 server/restore.sh /opt/xc-v3/restore.sh
+   sudo install -m 0644 server/xc-v3-backup.service /etc/systemd/system/xc-v3-backup.service
+   sudo install -m 0644 server/xc-v3-backup.timer /etc/systemd/system/xc-v3-backup.timer
+   sudo systemctl daemon-reload
+   ```
+
+2. **Create the backup directory before enabling the timer** (the unit's `ReadWritePaths=` requires it to exist beforehand):
+   ```bash
+   sudo install -d -m 0700 -o root -g root /var/backups/xc-v3
+   ```
+   If `/etc/xc-v3/env` overrides `XC_BACKUP_DIR`, use that path instead (and update `ReadWritePaths=` in `xc-v3-backup.service`).
+
+3. If off-host backups are used, generate an SSH key, configure the remote target, and record the remote host key before enabling the timer:
+   ```bash
+   # Generate dedicated SSH key (root-owned, mode 0600)
+   sudo ssh-keygen -t ed25519 -N "" -f /etc/xc-v3/backup-offhost.key
+   sudo chmod 0600 /etc/xc-v3/backup-offhost.key
+
+   # On the off-host backup server:
+   # Authorize /etc/xc-v3/backup-offhost.key.pub in ~<offhost-user>/.ssh/authorized_keys
+   # for a dedicated user constrained so it can write only the /data target directory.
+
+   # In /etc/xc-v3/env:
+   # Set XC_BACKUP_OFFHOST=<offhost-user>@<offhost-host>:/data/<path>
+
+   # Scan and record the off-host machine's host key into root's known_hosts:
+   sudo ssh-keyscan -t ed25519 <offhost-host> | sudo tee -a /root/.ssh/known_hosts
+
+   # Verify the SSH connection succeeds non-interactively:
+   sudo ssh -i /etc/xc-v3/backup-offhost.key -o BatchMode=yes <offhost-user>@<offhost-host> true
+   ```
+   > [!NOTE]
+   > Why this step is required: `xc-v3-backup.service` runs `backup.sh` non-interactively (`BatchMode=yes`) under systemd hardening with `ProtectHome=read-only`. If the off-host host key is not already present in `/root/.ssh/known_hosts`, SSH cannot prompt the operator and cannot write the key to `/root/.ssh/known_hosts` at runtime, causing every daily off-host backup run to fail with `Host key verification failed`.
+
+4. Enable and start the timer:
+   ```bash
+   sudo systemctl enable --now xc-v3-backup.timer
+   ```
+
+5. To run a backup by hand at any time:
+   ```bash
+   sudo systemctl start xc-v3-backup.service
+   ```
+   Check the output in the journal: `journalctl -u xc-v3-backup.service`. The last line of stdout is the path to the completed set.
+
+### Rehearsing a restore
+
+To verify a backup set without touching live data, run `restore.sh`:
+```bash
+sudo /opt/xc-v3/restore.sh /var/backups/xc-v3/<stamp> <scratch-database> <scratch-uploads-dir>
+```
+`restore.sh` strictly refuses the live database name (or case variations) and refuses the live uploads directory or paths inside it. It creates the scratch database as `postgres`, restores the dump via stdin, extracts uploads, and prints cleanup instructions. On failure, it drops the scratch database and cleans up the scratch directory automatically.
+
+To remove scratch rehearsal resources:
+```bash
+sudo runuser -u postgres -- dropdb <scratch-database>
+sudo rm -rf <scratch-uploads-dir>
+```
+
+### Real restore (disaster recovery)
+
+A real restore replaces live data and must be performed with the service stopped:
+1. Stop the server:
+   ```bash
+   sudo systemctl stop xc-v3.service
+   ```
+2. Restore database:
+   ```bash
+   sudo runuser -u postgres -- dropdb xc_v3
+   sudo runuser -u postgres -- createdb xc_v3
+   sudo runuser -u postgres -- pg_restore --no-owner -d xc_v3 < /var/backups/xc-v3/<stamp>/db-<stamp>.dump
+   ```
+3. Restore uploads:
+   ```bash
+   # Clear existing uploads without relying on caller shell glob expansion:
+   sudo find /var/lib/xc-v3/uploads -mindepth 1 -delete
+   sudo tar -xzf /var/backups/xc-v3/<stamp>/uploads-<stamp>.tar.gz -C /var/lib/xc-v3/uploads
+   sudo chown -R xc-v3:xc-v3 /var/lib/xc-v3/uploads
+   ```
+   > [!NOTE]
+   > Why `find ... -delete`: A plain `sudo rm -rf /var/lib/xc-v3/uploads/*` expands the `*` glob in the operator's shell before `sudo` executes. Because `/var/lib/xc-v3/uploads` is mode `0700` owned by `xc-v3:xc-v3`, an unprivileged operator's shell cannot list the directory, leaving the `*` pattern unexpanded so `rm` removes nothing. Using `sudo find ... -mindepth 1 -delete` ensures existing files are removed before the archive is extracted.
+4. Restart the server:
+   ```bash
+   sudo systemctl start xc-v3.service
+   ```
+
+### Log retention
+
+The server logs to `systemd-journald`. To bound journal log retention host-wide:
+```bash
+sudo install -d -m 0755 /etc/systemd/journald.conf.d
+sudo cp server/journald-xc-v3.conf /etc/systemd/journald.conf.d/xc-v3.conf
+sudo systemctl restart systemd-journald
+```
 
 ## 6. nginx
 
