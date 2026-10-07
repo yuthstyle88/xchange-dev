@@ -3,6 +3,13 @@
 //! Wraps `pos_infra::Transactor` to take `SELECT … FOR UPDATE` on that
 //! branch's `branch_versions` row first, increments the version inside the
 //! transaction, and commits.
+//!
+//! The version's contract (#231): it rises by 1 with every committed run —
+//! and with every `lock_also` inside one — whether or not the closure wrote,
+//! so it never misses a change. It may rise when nothing changed (a repeated
+//! request that answers `Ok` without writing still counts), so a reader
+//! treats an equal version as "unchanged" and a higher one as "may have
+//! changed" — it must not conclude that something changed.
 
 use futures::future::BoxFuture;
 use pos_error::AppResult;
@@ -37,6 +44,12 @@ impl BranchTx {
     /// The transaction ensures the branch's row in `branch_versions` is created
     /// if absent, locks it `FOR UPDATE`, runs `f`, increments the version by 1,
     /// and commits.
+    ///
+    /// The version rises on every committed run, whether or not `f` wrote: a
+    /// run that writes nothing (a repeated request answered `Ok`) still counts,
+    /// so the version never misses a change but may rise when nothing changed.
+    /// A reader treats an equal version as "unchanged" and a higher one as
+    /// "may have changed".
     ///
     /// If `f` returns an error, the transaction is rolled back and the original
     /// error is returned.
@@ -97,6 +110,11 @@ impl BranchTx {
     /// not call this for `MAIN`. With one order there is no cycle to wait in.
     /// Calling it for the branch `run` already locked would count that
     /// version twice: the caller leaves that case out.
+    ///
+    /// The increment happens whether or not the calling transaction ends up
+    /// writing — the caller takes it before it knows — so this branch's
+    /// version never misses a change either, and may rise when nothing
+    /// changed; a reader reads it the same way ("may have changed").
     pub async fn lock_also(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
@@ -125,6 +143,10 @@ impl BranchTx {
     ///
     /// Returns `0` if the branch has never been written. Creates no row
     /// and does not wait behind running transactions.
+    ///
+    /// The reading side of the contract: an equal version means "unchanged",
+    /// a higher one only "may have changed" — the version may rise with a
+    /// request that wrote nothing (see the module comment).
     pub async fn version(&self, branch: &BranchId) -> AppResult<i64> {
         let version: Option<i64> =
             sqlx::query_scalar("SELECT version FROM branch_versions WHERE branch_id = $1")
