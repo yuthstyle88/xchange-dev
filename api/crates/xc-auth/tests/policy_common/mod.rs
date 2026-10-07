@@ -98,6 +98,7 @@ pub fn path_name(path: EntryPath) -> &'static str {
         EntryPath::Custody => "Custody",
         EntryPath::PaymentMethods => "PaymentMethods",
         EntryPath::DrawerPassport => "DrawerPassport",
+        EntryPath::DeviceSetup => "DeviceSetup",
     }
 }
 

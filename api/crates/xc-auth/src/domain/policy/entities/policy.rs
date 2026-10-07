@@ -34,6 +34,7 @@ impl Policy {
             EntryPath::Custody => Self::allow_custody(actor, action),
             EntryPath::PaymentMethods => Self::allow_payment_methods(actor, action),
             EntryPath::DrawerPassport => Self::allow_drawer_passport(actor),
+            EntryPath::DeviceSetup => Self::allow_owner_route(actor),
         }
     }
 

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>จัดการเครื่องคุมลิ้นชัก — XCHANGE</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --code-bg: #090d16;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s ease;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .btn-secondary { background: #475569; color: white; }
+    .btn-secondary:hover { background: #334155; }
+    .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .form-inline {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .form-control {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.875rem;
+      min-width: 200px;
+    }
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 16px;
+    }
+    .modal.active { display: flex; }
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      max-width: 580px;
+      width: 100%;
+    }
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid #1e3a8a;
+      border-radius: 6px;
+      padding: 16px;
+      text-align: center;
+      margin: 16px 0;
+    }
+    .code-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 2rem;
+      letter-spacing: 4px;
+      color: #60a5fa;
+      font-weight: 700;
+    }
+    .install-command {
+      background: #020617;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+    }
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.5px;
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-online { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-offline { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .badge-pending { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .badge-revoked { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .actions-cell {
+      display: flex;
+      gap: 8px;
+    }
+    .text-muted { color: var(--text-muted); }
+    .empty-msg {
+      text-align: center;
+      padding: 32px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>จัดการเครื่องคุมลิ้นชัก (Device Agents)</h1>
+        <p class="text-muted" style="font-size: 0.875rem; margin-top: 4px;">เพิ่ม เชื่อมต่อใหม่ และยกเลิกเครื่องคุมลิ้นชักเก็บเงินแต่ละสาขา</p>
+      </div>
+      <button class="btn btn-secondary" onclick="loadAgents()">รีเฟรชข้อมูล</button>
+    </header>
+
+    <div class="card">
+      <div class="card-title">เพิ่มเครื่องใหม่ (Add Agent)</div>
+      <form class="form-inline" onsubmit="handleAddAgent(event)">
+        <input type="text" id="addBranchId" class="form-control" placeholder="รหัสสาขา (เช่น MAIN, B9)" required />
+        <input type="text" id="addName" class="form-control" placeholder="ชื่อเครื่อง (เช่น Mac เคาน์เตอร์ 1)" required />
+        <button type="submit" class="btn btn-primary">สร้างรหัสเชื่อมต่อ</button>
+      </form>
+    </div>
+
+    <div class="card" style="padding: 0; overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>สาขา</th>
+            <th>ชื่อเครื่อง</th>
+            <th>สถานะ</th>
+            <th>พบสัญญาณล่าสุด</th>
+            <th>เวอร์ชัน / บิลด์</th>
+            <th>เครื่อง / OS</th>
+            <th>เป้าหมายลิ้นชัก</th>
+            <th>การดำเนินการ</th>
+          </tr>
+        </thead>
+        <tbody id="agentsTableBody">
+          <tr><td colspan="8" class="empty-msg">กำลังโหลดข้อมูล...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="codeModal" class="modal">
+    <div class="modal-content">
+      <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;">รหัสสำหรับเชื่อมต่อเครื่อง (Pairing Code)</h2>
+      <p class="text-muted" style="font-size: 0.875rem;">
+        รหัสนี้จะแสดงเพียงครั้งเดียว และหมดอายุภายใน 10 นาที (<span id="modalExpiry"></span>)
+      </p>
+
+      <div class="code-box">
+        <div id="modalCode" class="code-display"></div>
+      </div>
+
+      <p style="font-size: 0.875rem; font-weight: 500; margin-top: 12px;">คำสั่งติดตั้งบนเครื่องตัวแทน:</p>
+      <div id="modalCommand" class="install-command"></div>
+
+      <div style="margin-top: 20px; text-align: right;">
+        <button class="btn btn-primary" onclick="closeModal()">รับทราบและปิด</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ENDPOINT = '/api/device-setup';
+
+    async function apiCall(action, payload = {}) {
+      const res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Xchange-Request': '1'
+        },
+        body: JSON.stringify({ action, payload })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'เกิดข้อผิดพลาดในการประมวลผลคำขอ');
+      }
+      return data;
+    }
+
+    function stateBadge(state) {
+      switch (state) {
+        case 'ONLINE': return '<span class="badge badge-online">ONLINE</span>';
+        case 'OFFLINE': return '<span class="badge badge-offline">OFFLINE</span>';
+        case 'PENDING': return '<span class="badge badge-pending">PENDING</span>';
+        case 'REVOKED': return '<span class="badge badge-revoked">REVOKED</span>';
+        default: return state;
+      }
+    }
+
+    function formatTime(iso) {
+      if (!iso) return '-';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString('th-TH') + ' ' + d.toLocaleDateString('th-TH');
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    async function loadAgents() {
+      const tbody = document.getElementById('agentsTableBody');
+      try {
+        const res = await apiCall('list');
+        const agents = res.agents || [];
+        if (agents.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">ยังไม่มีเครื่องคุมลิ้นชักในระบบ</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = agents.map(agent => {
+          const isRevoked = agent.state === 'REVOKED';
+          const drawer = (agent.drawerTransport || agent.drawerTarget)
+            ? `${agent.drawerTransport || ''} ${agent.drawerTarget || ''}`.trim()
+            : '-';
+          const ver = (agent.version || agent.build)
+            ? `${agent.version || '-'} (${agent.build || '-'})`
+            : '-';
+          const hostInfo = (agent.host || agent.os)
+            ? `${agent.host || '-'} [${agent.os || '-'}]`
+            : '-';
+
+          return `
+            <tr>
+              <td><strong>${escapeHtml(agent.branchId)}</strong></td>
+              <td>${escapeHtml(agent.name)}</td>
+              <td>${stateBadge(agent.state)}</td>
+              <td>${formatTime(agent.lastSeenAt)}</td>
+              <td>${escapeHtml(ver)}</td>
+              <td>${escapeHtml(hostInfo)}</td>
+              <td>${escapeHtml(drawer)}</td>
+              <td>
+                <div class="actions-cell">
+                  ${!isRevoked ? `
+                    <button class="btn btn-secondary btn-sm" onclick="handleNewCode('${agent.agentId}')">ขอรหัสใหม่</button>
+                    <button class="btn btn-danger btn-sm" onclick="handleRevoke('${agent.agentId}')">ยกเลิก</button>
+                  ` : '<span class="text-muted" style="font-size: 0.8rem;">ยกเลิกแล้ว</span>'}
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-msg" style="color: var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    async function handleAddAgent(e) {
+      e.preventDefault();
+      const branchId = document.getElementById('addBranchId').value.trim();
+      const name = document.getElementById('addName').value.trim();
+      if (!branchId || !name) return;
+
+      try {
+        const res = await apiCall('add', { branchId, name });
+        showCodeModal(res.code, res.codeExpiresAt);
+        document.getElementById('addName').value = '';
+        loadAgents();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function handleNewCode(agentId) {
+      if (!confirm('ต้องการออกรหัสเชื่อมต่อใหม่สำหรับเครื่องนี้หรือไม่?')) return;
+      try {
+        const res = await apiCall('newCode', { agentId });
+        showCodeModal(res.code, res.codeExpiresAt);
+        loadAgents();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function handleRevoke(agentId) {
+      if (!confirm('ยืนยันที่จะยกเลิกเครื่องคุมลิ้นชักนี้? คำขอเปิดลิ้นชักที่ค้างอยู่จะถูกยกเลิก')) return;
+      try {
+        await apiCall('revoke', { agentId });
+        loadAgents();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function showCodeModal(code, expiresAt) {
+      document.getElementById('modalCode').innerText = code;
+      document.getElementById('modalExpiry').innerText = formatTime(expiresAt);
+      const serverOrigin = window.location.origin;
+      const cmd = `xc-device-agent install --server ${serverOrigin} --code ${code} --cups-queue <queue>`;
+      document.getElementById('modalCommand').innerText = cmd;
+      document.getElementById('codeModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('codeModal').classList.remove('active');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    window.addEventListener('DOMContentLoaded', loadAgents);
+  </script>
+</body>
+</html>

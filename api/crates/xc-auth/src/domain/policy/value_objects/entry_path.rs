@@ -17,4 +17,5 @@ pub enum EntryPath {
     Custody,
     PaymentMethods,
     DrawerPassport,
+    DeviceSetup,
 }
