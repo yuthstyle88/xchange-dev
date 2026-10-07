@@ -619,12 +619,13 @@ async fn account_actions_are_audited_under_the_actor_owner() {
 }
 
 #[actix_web::test]
-async fn without_a_custody_port_nobody_holds_cash_and_custody_actions_are_bad_requests() {
+async fn the_route_table_registers_a_real_custody_port() {
     let desk = Desk::start().await;
-    // what would hold him back if anyone asked
+    // the route table alone: no fake, so the port `bootstrap::configure` registers answers
     let app = desk_app_without_custody!(desk);
     let owner = owner_signs_in(&app).await;
     let (id, _) = working_employee(&app, &desk, &owner, "somchai", "FRONT", "MAIN").await;
+    // the fake is not in this app: what it says holds nobody back
     desk.custody
         .operations
         .lock()
@@ -641,14 +642,15 @@ async fn without_a_custody_port_nobody_holds_cash_and_custody_actions_are_bad_re
             .owner(&owner),
         )
     };
+    // no company and no site, custody off: v2's answer is `rpc/ops_actions.json` #11
     let answer = custody_action("entity").await;
     assert_eq!(
         (answer.status, answer.error().as_str()),
-        (400, BAD_REQUEST),
+        (400, "ยืนยันกิจการและการแยกบัญชีให้ครบ"),
         "entity"
     );
     assert_eq!(answer.cache_control.as_deref(), Some("no-store"));
-    // `enable` checks the six roles itself before custody would be asked
+    // `enable` checks the six roles itself before custody is asked (`rpc/ops_actions.json` #14)
     let answer = custody_action("enable").await;
     assert_eq!(
         answer.error(),
@@ -665,13 +667,15 @@ async fn without_a_custody_port_nobody_holds_cash_and_custody_actions_are_bad_re
         )
         .await;
     }
+    // six roles, no entity yet: v2's answer is `rpc/ops_actions.json` #9
     let answer = custody_action("enable").await;
     assert_eq!(
         (answer.status, answer.error().as_str()),
-        (400, BAD_REQUEST),
+        (400, "ยืนยันสาขาและกิจการก่อนเปิดใช้"),
         "enable"
     );
     assert_eq!(answer.cache_control.as_deref(), Some("no-store"));
+    // custody of MAIN is empty: nobody holds cash, nothing is pending
     let answer = send(
         &app,
         Call::post(
@@ -681,7 +685,11 @@ async fn without_a_custody_port_nobody_holds_cash_and_custody_actions_are_bad_re
         .owner(&owner),
     )
     .await;
-    assert_eq!(answer.status, 200, "no port, no hold: {}", answer.text);
+    assert_eq!(
+        answer.status, 200,
+        "empty custody, no hold: {}",
+        answer.text
+    );
     assert_eq!(answer.json(), json!({ "saved": true }));
     assert!(desk.custody.calls.lock().unwrap().is_empty());
     drop(app);
@@ -835,9 +843,10 @@ async fn a_port_failure_that_is_not_a_refusal_is_a_500() {
     let port: Arc<dyn http::employees::EmployeeCustody> = Arc::new(Broken);
     let app = TestApp::new(
         test::init_service(
+            // after `.configure`: the route table registers the real port, and the later one wins
             App::new()
-                .app_data(web::Data::from(port))
-                .configure(move |cfg| bootstrap::configure(cfg, state)),
+                .configure(move |cfg| bootstrap::configure(cfg, state))
+                .app_data(web::Data::from(port)),
         )
         .await,
         |t| t.to_request(),

@@ -241,9 +241,10 @@ macro_rules! desk_app {
         let state = $desk.state();
         $crate::auth_http_common::TestApp::new(
             actix_web::test::init_service(
+                // after `.configure`: the route table registers the real port, and the later one wins
                 actix_web::App::new()
-                    .app_data(actix_web::web::Data::from(custody))
-                    .configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
+                    .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
+                    .app_data(actix_web::web::Data::from(custody)),
             )
             .await,
             |t| t.to_request(),

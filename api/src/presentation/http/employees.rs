@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -19,6 +20,7 @@ use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
 use crate::bootstrap::AppState;
+use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
     BAD_REQUEST, OWNER_COOKIE, OWNER_ID, STAFF_COOKIE, accounts, actor_of, answer, cookie, failure,
     payload_of, read, refuse, same_origin, server_error, signed_in,
@@ -31,7 +33,8 @@ const SIX_ROLES: &str =
     "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน";
 
 /// What the employee screen needs from custody. Looked up as `web::Data<dyn EmployeeCustody>`;
-/// until one is registered nobody holds cash and the two custody actions are bad requests.
+/// `configure` registers `PgEmployeeCustody`. In an app without one nobody holds cash and the
+/// two custody actions are bad requests.
 pub trait EmployeeCustody: Send + Sync {
     fn holds_cash_or_pending<'a>(
         &'a self,
@@ -52,6 +55,10 @@ pub trait EmployeeCustody: Send + Sync {
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branches = BranchService::new(BranchTx::new(Transactor::new(state.db.clone())));
+    // For the whole app, not for this resource alone: a test that registers its own port
+    // after `.configure(...)` replaces this one.
+    let custody: Arc<dyn EmployeeCustody> = Arc::new(PgEmployeeCustody::new(state.db.clone()));
+    cfg.app_data(web::Data::from(custody));
     cfg.service(
         web::resource("/api/employees")
             .app_data(web::PayloadConfig::new(1 << 20))
