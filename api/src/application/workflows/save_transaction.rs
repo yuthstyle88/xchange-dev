@@ -25,6 +25,7 @@ use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
+use crate::application::workflows::save_step::{SaveActor, SaveContext, SaveExtras, SaveStep};
 use crate::infrastructure::files::file_service::{Attachment, FileService};
 
 pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
@@ -50,6 +51,7 @@ pub struct SaveTransactionWorkflow {
     files: FileService,
     branches: BranchService,
     transactions: TransactionService,
+    steps: Vec<Arc<dyn SaveStep>>,
 }
 
 fn refuse<T>(sentence: &str) -> AppResult<T> {
@@ -128,6 +130,7 @@ impl SaveTransactionWorkflow {
             shifts,
             files,
             transactions,
+            steps: Vec::new(),
         }
     }
 
@@ -153,12 +156,55 @@ impl SaveTransactionWorkflow {
         Ok(found)
     }
 
+    /// The steps the other contexts add around a save, in the order they run.
+    /// They take part in `save_as` only.
+    pub fn with_steps(mut self, steps: Vec<Arc<dyn SaveStep>>) -> Self {
+        self.steps = steps;
+        self
+    }
+
+    /// The save itself, with no step of another context around it and the
+    /// form's `staff` as it was sent. Callers that act for a signed-in person
+    /// use `save_as`.
     pub async fn save(
         &self,
         branch: &BranchId,
         cmd: SaveTransaction,
         actor_id: &str,
         now: DateTime<Utc>,
+    ) -> AppResult<SavedTransaction> {
+        self.run(branch, cmd, actor_id, now, None).await
+    }
+
+    /// The save as a signed-in person makes it: the form's `staff` becomes the
+    /// saver's username whatever was sent, and every registered step runs
+    /// before and after the save inside its transaction.
+    pub async fn save_as(
+        &self,
+        branch: &BranchId,
+        mut cmd: SaveTransaction,
+        extras: &SaveExtras,
+        actor: &SaveActor,
+        now: DateTime<Utc>,
+    ) -> AppResult<SavedTransaction> {
+        cmd.staff = actor.username.clone();
+        self.run(
+            branch,
+            cmd,
+            &actor.id,
+            now,
+            Some((extras.clone(), actor.clone())),
+        )
+        .await
+    }
+
+    async fn run(
+        &self,
+        branch: &BranchId,
+        cmd: SaveTransaction,
+        actor_id: &str,
+        now: DateTime<Utc>,
+        stepped: Option<(SaveExtras, SaveActor)>,
     ) -> AppResult<SavedTransaction> {
         let b = branch.as_str();
         if b.is_empty()
@@ -195,17 +241,43 @@ impl SaveTransactionWorkflow {
             .run(&lock, move |tx| {
                 Box::pin(async move {
                     let mode = form.customer.mode;
-                    CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
-                        .await?;
-                    if let Some((saved, hash)) = this
+                    let prior = this
                         .transactions
                         .find_submission_in(tx, &branch, mode, &form.submission_id)
-                        .await?
-                    {
-                        if hash != payload_hash {
+                        .await?;
+                    if let Some((extras, actor)) = &stepped {
+                        let ctx = SaveContext {
+                            branch: &branch,
+                            form: &form,
+                            extras,
+                            actor,
+                            now,
+                            prior: prior.as_ref().map(|(saved, _)| saved),
+                        };
+                        for step in &this.steps {
+                            step.before_in(tx, &ctx).await?;
+                        }
+                    }
+                    CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
+                        .await?;
+                    if let Some((saved, hash)) = &prior {
+                        if *hash != payload_hash {
                             return refuse(CHANGED);
                         }
-                        return Ok(answer(&saved));
+                        if let Some((extras, actor)) = &stepped {
+                            let ctx = SaveContext {
+                                branch: &branch,
+                                form: &form,
+                                extras,
+                                actor,
+                                now,
+                                prior: Some(saved),
+                            };
+                            for step in &this.steps {
+                                step.after_in(tx, &ctx, saved).await?;
+                            }
+                        }
+                        return Ok(answer(saved));
                     }
 
                     let mut shift_id = None;
@@ -292,6 +364,19 @@ impl SaveTransactionWorkflow {
                         &document_ref,
                     )
                     .await?;
+                    if let Some((extras, actor)) = &stepped {
+                        let ctx = SaveContext {
+                            branch: &branch,
+                            form: &form,
+                            extras,
+                            actor,
+                            now,
+                            prior: None,
+                        };
+                        for step in &this.steps {
+                            step.after_in(tx, &ctx, &saved).await?;
+                        }
+                    }
                     Ok(answer(&saved))
                 })
             })
