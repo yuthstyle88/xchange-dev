@@ -2,6 +2,7 @@
 
 use chrono::NaiveDate;
 use pos_error::{AppError, AppResult};
+use xc_kernel::input::{InputError, calendar_date, text};
 
 use crate::domain::customer::commands::reserve_customer::ReserveCustomer;
 use crate::domain::customer::value_objects::mode::Mode;
@@ -46,44 +47,16 @@ impl CustomerDetails {
 }
 
 fn parse_text(raw: &str, max_utf16: usize, required: bool) -> AppResult<&str> {
-    let trimmed = raw.trim();
-    let count = trimmed.encode_utf16().count();
-    if (required && count == 0) || count > max_utf16 {
-        return Err(AppError::Domain(BAD_TEXT.to_owned()));
-    }
-    Ok(trimmed)
+    Ok(text(raw, max_utf16, required)?)
 }
 
 fn parse_date(raw: &str) -> AppResult<Option<NaiveDate>> {
     let trimmed = raw.trim();
-    let count = trimmed.encode_utf16().count();
-    if count > 10 {
-        return Err(AppError::Domain(BAD_TEXT.to_owned()));
+    if trimmed.encode_utf16().count() > 10 {
+        return Err(InputError::Text.into());
     }
-    if count == 0 {
+    if trimmed.is_empty() {
         return Ok(None);
     }
-
-    // Format must be exactly dddd-dd-dd (ASCII digits and two '-')
-    let bytes = trimmed.as_bytes();
-    if bytes.len() != 10
-        || !bytes[0..4].iter().all(u8::is_ascii_digit)
-        || bytes[4] != b'-'
-        || !bytes[5..7].iter().all(u8::is_ascii_digit)
-        || bytes[7] != b'-'
-        || !bytes[8..10].iter().all(u8::is_ascii_digit)
-    {
-        return Err(AppError::Domain(BAD_DATE_FORMAT.to_owned()));
-    }
-
-    let date = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
-        .map_err(|_| AppError::Domain(BAD_DATE.to_owned()))?;
-
-    // Must not be earlier than 1920-04-02
-    let floor = NaiveDate::from_ymd_opt(1920, 4, 2).expect("valid date");
-    if date < floor {
-        return Err(AppError::Domain(BAD_DATE.to_owned()));
-    }
-
-    Ok(Some(date))
+    Ok(Some(calendar_date(trimmed)?))
 }
