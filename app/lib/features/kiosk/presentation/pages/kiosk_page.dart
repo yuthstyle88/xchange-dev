@@ -61,29 +61,27 @@ class KioskPage extends ConsumerWidget {
                                     letterSpacing: 1,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  l.text('title'),
-                                  style: const TextStyle(
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.1,
+                                // #325: the title and subtitle ask the
+                                // customer to choose; only step 1 does.
+                                if (s.screen == KioskScreen.select) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    l.text('title'),
+                                    style: const TextStyle(
+                                      fontSize: 40,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.1,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  l.text('subtitle'),
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    color: KioskColors.muted,
+                                  Text(
+                                    l.text('subtitle'),
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      color: KioskColors.muted,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 20),
-                                switch (s.screen) {
-                                  KioskScreen.select => const SelectPage(),
-                                  KioskScreen.quote => const QuotePage(),
-                                  KioskScreen.waiting => const WaitingPage(),
-                                  KioskScreen.receipt => const ReceiptPage(),
-                                },
+                                ],
+                                // #326: above the step, so it is seen without scrolling.
                                 if (s.error.isNotEmpty) ...[
                                   const SizedBox(height: 16),
                                   Semantics(
@@ -99,6 +97,13 @@ class KioskPage extends ConsumerWidget {
                                     ),
                                   ),
                                 ],
+                                const SizedBox(height: 20),
+                                switch (s.screen) {
+                                  KioskScreen.select => const SelectPage(),
+                                  KioskScreen.quote => const QuotePage(),
+                                  KioskScreen.waiting => const WaitingPage(),
+                                  KioskScreen.receipt => const ReceiptPage(),
+                                },
                                 const SizedBox(height: 28),
                                 Text(
                                   l.text('footer'),
