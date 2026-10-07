@@ -362,9 +362,10 @@ fn read_page_file(web_dir: &Path, file_name: &str) -> Option<String> {
 fn add_version_line(mut content: String, build: &BuildInfo, channel: &str) -> String {
     let short: String = build.build.chars().take(7).collect();
     let line = format!(
-        "<div id=\"xc-version\" style=\"position:fixed;right:8px;bottom:4px;\
-         font:11px/1.4 system-ui,sans-serif;color:#999;pointer-events:none;\
-         z-index:2147483647\">v{} · {} · {}</div>",
+        "<div id=\"xc-version\" style=\"position:fixed;right:8px;bottom:8px;\
+         font:13px/1.4 system-ui,sans-serif;color:#333;\
+         background:rgba(255,255,255,.85);padding:2px 8px;border-radius:4px;\
+         pointer-events:none;z-index:2147483647\">v{} · {} · {}</div>",
         escape_html(&build.version),
         escape_html(&short),
         escape_html(channel),
