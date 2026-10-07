@@ -14,6 +14,7 @@ use sqlx::PgPool;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, Side};
+use xc_kernel::payment::PaymentRules;
 use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
@@ -21,9 +22,12 @@ use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterV
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 
+use crate::application::settings::payment_settings::PaymentSettingsService;
 use crate::infrastructure::devices::device_repository::{DeviceRepository, NewEvent};
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 
 /// Type alias for box future without external crate dependency.
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -123,14 +127,22 @@ pub struct PgKioskPorts {
     pool: PgPool,
     audit: Arc<dyn KioskAuditLog>,
     source: Arc<dyn RateSource>,
+    /// The branch's payment rules (PM-API), built from the same pool.
+    payment: PaymentSettingsService,
 }
 
 impl PgKioskPorts {
     pub fn new(pool: PgPool, audit: Arc<dyn KioskAuditLog>, source: Arc<dyn RateSource>) -> Self {
+        let payment = PaymentSettingsService::new(
+            BranchTx::new(Transactor::new(pool.clone())),
+            BranchSettingStore::new(pool.clone()),
+            PgBranchRepository::new(pool.clone()),
+        );
         Self {
             pool,
             audit,
             source,
+            payment,
         }
     }
 }
@@ -342,5 +354,17 @@ impl KioskPorts for PgKioskPorts {
             };
             self.audit.record_in(tx, branch, &resolved, at).await
         })
+    }
+
+    fn payment_rules<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<PaymentRules>> {
+        Box::pin(self.payment.rules(branch))
+    }
+
+    fn payment_rules_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<PaymentRules>> {
+        Box::pin(self.payment.rules_in(tx, branch))
     }
 }

@@ -8,6 +8,7 @@ use xc_kernel::ids::BranchId;
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::new_quote::NewQuote;
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
+use crate::domain::kiosk::entities::payment_gate::PaymentGate;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
 use crate::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
@@ -33,11 +34,13 @@ impl KioskService {
             .await?
             .ok_or_else(no_such_branch)?;
         let currencies = KioskCurrencies::new(&self.repo.switches(branch).await?);
+        let payment = self.ports.payment_rules(branch).await?;
         Ok(PublicRates {
             branch_id: branch.clone(),
             rates: view.offered(&currencies),
             branch_name: view.branch_name,
             open: view.open,
+            payment,
         })
     }
 
@@ -65,6 +68,9 @@ impl KioskService {
                     };
                     let request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
                         .map_err(refuse)?;
+                    // v2's last quote check: the method must be on for the direction.
+                    let rules = ports.payment_rules_in(tx, &b).await?;
+                    PaymentGate::quote(&request, &rules).map_err(refuse)?;
 
                     for old in repo.quoted_in(tx, &b).await? {
                         if KioskMachine::is_purgeable(&old, now) {
@@ -116,14 +122,16 @@ impl KioskService {
                         }
                         None => NO_COUNTER,
                     };
-                    let moved = KioskMachine::next(
+                    let machine = KioskMachine::next(
                         stored.as_ref(),
                         &KioskCommand::Confirm,
                         &KioskActor::Customer,
                         &facts,
                         now,
-                    )
-                    .map_err(refuse)?;
+                    );
+                    let rules = ports.payment_rules_in(tx, &b).await?;
+                    let moved =
+                        PaymentGate::confirm(machine, stored.as_ref(), &rules).map_err(refuse)?;
                     if let Some(event) = moved.event {
                         repo.update_in(tx, &b, &moved.request).await?;
                         let line = line_for(event, &moved.request, CUSTOMER_KIOSK);
