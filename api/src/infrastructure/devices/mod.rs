@@ -4,6 +4,7 @@ pub mod device_event;
 pub mod device_job;
 pub mod device_repository;
 pub mod device_service;
+pub mod drawer_job;
 pub mod escpos_driver;
 pub mod job_ids;
 pub mod pg_device_repository;

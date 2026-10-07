@@ -35,6 +35,10 @@ pub enum JobStatus {
     SimulatedPrinted,
     CommandSimulated,
     DrawerOpened,
+    /// Handed to a counter drawer agent under a lease (§5.4c).
+    Leased,
+    /// A drawer job no agent took in time (§5.4c).
+    Expired,
 }
 
 impl JobStatus {
@@ -46,6 +50,8 @@ impl JobStatus {
             "SIMULATED_PRINTED" => Some(Self::SimulatedPrinted),
             "COMMAND_SIMULATED" => Some(Self::CommandSimulated),
             "DRAWER_OPENED" => Some(Self::DrawerOpened),
+            "LEASED" => Some(Self::Leased),
+            "EXPIRED" => Some(Self::Expired),
             _ => None,
         }
     }
@@ -57,6 +63,8 @@ impl JobStatus {
             Self::SimulatedPrinted => "SIMULATED_PRINTED",
             Self::CommandSimulated => "COMMAND_SIMULATED",
             Self::DrawerOpened => "DRAWER_OPENED",
+            Self::Leased => "LEASED",
+            Self::Expired => "EXPIRED",
         }
     }
 }

@@ -3,6 +3,8 @@ pub mod auth;
 pub mod bookings;
 pub mod client_address;
 pub mod customers;
+pub mod device_agent;
+pub mod device_setup;
 pub mod devices;
 pub mod documents;
 pub mod employees;
@@ -22,6 +24,8 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     auth::configure(cfg, state);
     bookings::configure(cfg, state);
     customers::configure(cfg, state);
+    device_agent::configure(cfg, state);
+    device_setup::configure(cfg, state);
     devices::configure(cfg, state);
     documents::configure(cfg, state);
     employees::configure(cfg, state);
