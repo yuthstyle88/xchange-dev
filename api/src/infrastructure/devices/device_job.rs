@@ -34,6 +34,7 @@ pub enum JobStatus {
     Failed,
     SimulatedPrinted,
     CommandSimulated,
+    DrawerOpened,
 }
 
 impl JobStatus {
@@ -44,6 +45,7 @@ impl JobStatus {
             "FAILED" => Some(Self::Failed),
             "SIMULATED_PRINTED" => Some(Self::SimulatedPrinted),
             "COMMAND_SIMULATED" => Some(Self::CommandSimulated),
+            "DRAWER_OPENED" => Some(Self::DrawerOpened),
             _ => None,
         }
     }
@@ -54,6 +56,7 @@ impl JobStatus {
             Self::Failed => "FAILED",
             Self::SimulatedPrinted => "SIMULATED_PRINTED",
             Self::CommandSimulated => "COMMAND_SIMULATED",
+            Self::DrawerOpened => "DRAWER_OPENED",
         }
     }
 }

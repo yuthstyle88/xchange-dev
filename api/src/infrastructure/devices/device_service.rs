@@ -10,6 +10,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
@@ -20,6 +22,9 @@ use super::device_job::{DeviceJob, JobKind, JobStatus};
 use super::device_repository::{DeviceRepository, NewEvent, NewJob, PRINTER_ONLINE};
 use super::job_ids::JobIds;
 use super::pg_device_repository::PgDeviceRepository;
+use super::printer_settings::{
+    PRINTER_HOST, PRINTER_KIND, PRINTER_PORT, PrinterKind, PrinterSettings,
+};
 use super::saved_exchanges::{ExchangeState, SavedExchanges};
 use super::simulated_driver::{DeviceDriver, SimulatedDriver};
 
@@ -36,6 +41,7 @@ pub const RETRY_ONLY_FAILED: &str = "ลองใหม่ได้เฉพา�
 pub const NOT_HERE: &str = "ไม่พบรายการในสาขานี้";
 pub const BAD_STATE: &str = "สถานะไม่ถูกต้อง";
 pub const COUNT_FIRST: &str = "ยืนยันการนับเงินก่อนบันทึกรายการเงินสด";
+pub const BAD_PRINTER: &str = "ตั้งค่าเครื่องพิมพ์ไม่ถูกต้อง";
 
 /// How many jobs and lines the overview carries.
 pub const OVERVIEW_JOBS: i64 = 100;
@@ -269,9 +275,8 @@ impl DeviceService {
                     if job.status != JobStatus::Queued {
                         return Ok(job);
                     }
-                    let online =
-                        repo.setting_in(tx, &b, PRINTER_ONLINE).await?.as_deref() != Some("0");
-                    let status = driver.run(job.kind, online);
+                    let printer = PrinterSettings::read_in(tx, &repo, &b).await?;
+                    let status = driver.run(job.kind, &printer).await;
                     repo.set_job_status(tx, &b, &job.id, status, now).await?;
                     let detail = json!({
                         "job": job.id, "physicalAction": false, "physicalOpenConfirmed": false,
@@ -363,6 +368,50 @@ impl DeviceService {
                         at: now,
                     };
                     repo.insert_event(tx, &b, &line).await?;
+                    Ok(())
+                })
+            })
+            .await
+    }
+
+    /// Sets how the branch's printer is reached. Owner only.
+    pub async fn set_printer(
+        &self,
+        branch: &BranchId,
+        kind: PrinterKind,
+        actor: &Actor,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        self.require_branch(branch).await?;
+        if actor.kind() != ActorKind::Owner {
+            return refuse("เฉพาะเจ้าของระบบเท่านั้น");
+        }
+        match &kind {
+            PrinterKind::Network(host, port) => {
+                if host.trim().is_empty() || *port == 0 {
+                    return refuse(BAD_PRINTER);
+                }
+            }
+            PrinterKind::Simulated => {}
+        }
+        let now = cut_to_millis(now)?;
+        let _ = now;
+        let repo = self.repo.clone();
+        let b = branch.clone();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    match kind {
+                        PrinterKind::Simulated => {
+                            repo.put_setting(tx, &b, PRINTER_KIND, "SIMULATED").await?;
+                        }
+                        PrinterKind::Network(host, port) => {
+                            repo.put_setting(tx, &b, PRINTER_KIND, "NETWORK").await?;
+                            repo.put_setting(tx, &b, PRINTER_HOST, &host).await?;
+                            let port_str = port.to_string();
+                            repo.put_setting(tx, &b, PRINTER_PORT, &port_str).await?;
+                        }
+                    }
                     Ok(())
                 })
             })

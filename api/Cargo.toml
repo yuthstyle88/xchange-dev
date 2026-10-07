@@ -4,6 +4,7 @@ members = ["crates/*"]
 [workspace.dependencies]
 pos-error = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-infra = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
+pos-printer = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 rust_decimal = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,6 +29,7 @@ publish = false
 [dependencies]
 pos-error = { workspace = true }
 pos-infra = { workspace = true, features = ["config", "telemetry"] }
+pos-printer = { workspace = true }
 xc-kernel = { workspace = true }
 xc-exchange = { workspace = true }
 xc-shift = { workspace = true }
@@ -43,6 +45,7 @@ sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 actix-web = "4"
 anyhow = "1"
+async-trait = "0.1"
 config = { version = "0.15", default-features = false, features = ["yaml"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros", "chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }

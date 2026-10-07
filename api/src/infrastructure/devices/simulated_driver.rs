@@ -1,27 +1,32 @@
 //! Simulated device driver.
 
+use async_trait::async_trait;
+
 use super::device_job::{JobKind, JobStatus};
+use super::printer_settings::PrinterSettings;
 
 /// What carries a queued job out.
+#[async_trait]
 pub trait DeviceDriver: Send + Sync {
     /// The word the log and the screen show for this driver.
     fn mode(&self) -> &'static str;
 
-    /// Carries the job out and says where it stands afterwards.
-    fn run(&self, kind: JobKind, printer_online: bool) -> JobStatus;
+    /// Carries the job out on the branch's printer and says where it stands afterwards.
+    async fn run(&self, kind: JobKind, printer: &PrinterSettings) -> JobStatus;
 }
 
 /// Touches no hardware: it only says what a device would have done.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SimulatedDriver;
 
+#[async_trait]
 impl DeviceDriver for SimulatedDriver {
     fn mode(&self) -> &'static str {
         "SIMULATION"
     }
 
-    fn run(&self, kind: JobKind, printer_online: bool) -> JobStatus {
-        if !printer_online {
+    async fn run(&self, kind: JobKind, printer: &PrinterSettings) -> JobStatus {
+        if !printer.online {
             return JobStatus::Failed;
         }
         match kind {
