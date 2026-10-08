@@ -19,6 +19,7 @@ use crate::infrastructure::devices::device_commands::QueueJob;
 use crate::infrastructure::devices::device_service::{BAD_PRINTER, DeviceService};
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
+use crate::infrastructure::devices::printer_models::PrinterModels;
 use crate::infrastructure::devices::printer_settings::{DEFAULT_PORT, PrinterKind};
 use crate::presentation::dto::device::{job_json, overview_json};
 use crate::presentation::extractors::actor::{
@@ -40,11 +41,16 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         Arc::new(PgTransactionRepository::new(state.db.clone())),
         branch_tx.clone(),
     );
+    let printer_models = Arc::new(
+        PrinterModels::new(state.settings.devices.printer_models.clone())
+            .unwrap_or_else(|_| PrinterModels::built_in()),
+    );
     let devices = DeviceService::new(
         branch_tx,
         Arc::new(PgSavedExchanges::new(transactions)),
         Arc::new(UuidJobIds),
-    );
+    )
+    .with_printer_models(printer_models);
     cfg.service(
         web::resource("/api/devices")
             .app_data(web::PayloadConfig::new(1 << 20))

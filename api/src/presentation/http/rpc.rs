@@ -57,6 +57,7 @@ use crate::infrastructure::devices::device_service::DeviceService;
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
+use crate::infrastructure::devices::printer_models::PrinterModels;
 use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::extractors::actor::{
@@ -297,11 +298,16 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
         )),
     );
     let transactions = transaction_service(pool, &branch_tx);
+    let printer_models = Arc::new(
+        PrinterModels::new(state.settings.devices.printer_models.clone())
+            .unwrap_or_else(|_| PrinterModels::built_in()),
+    );
     let devices = DeviceService::new(
         branch_tx,
         Arc::new(PgSavedExchanges::new(transactions)),
         Arc::new(UuidJobIds),
-    );
+    )
+    .with_printer_models(printer_models);
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(CustodyAction::new(custody.clone())),
