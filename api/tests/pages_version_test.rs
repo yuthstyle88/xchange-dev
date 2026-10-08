@@ -27,6 +27,7 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState, BuildInfo};
 use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::screens::ScreenTable;
 
 const WHO: &str = "x-test-sessions";
 const HOST: &str = "xc.test";
@@ -185,9 +186,18 @@ macro_rules! expected {
 async fn plain_page_shows_the_build_and_it_matches_health_ready() {
     let app = app!(&fixtures().join("web"), None);
     let want = expected!(&app);
+    let held = ScreenTable::compiled().holds("/login");
     let (status, body) = get!(&app, "/login", "none");
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(version_text(&body, "/login"), want);
+    if held {
+        // Skip held path /login: a v3 screen carries no v2 version line (design §3.2, §3.3).
+        assert!(
+            !body.contains(MARK),
+            "/login: a v3 screen carries no v2 version line"
+        );
+    } else {
+        assert_eq!(version_text(&body, "/login"), want);
+    }
 }
 
 #[actix_web::test]
@@ -225,14 +235,24 @@ async fn the_values_are_escaped() {
         built_at: "2001-02-03T04:05:06Z".to_string(),
     };
     let app = app!(&fixtures().join("web"), Some(build));
+    let held = ScreenTable::compiled().holds("/login");
     let (_, body) = get!(&app, "/login", "none");
-    let text = version_text(&body, "/login with an odd build");
-    assert!(!text.contains('<'), "raw HTML in the version line: {text}");
-    assert!(text.contains("&lt;b&gt;x&lt;"), "escaped build: {text}");
+    if held {
+        // Skip held path /login: a v3 screen carries no v2 version line (design §3.2, §3.3).
+        assert!(
+            !body.contains(MARK),
+            "/login: a v3 screen carries no v2 version line"
+        );
+    } else {
+        let text = version_text(&body, "/login with an odd build");
+        assert!(!text.contains('<'), "raw HTML in the version line: {text}");
+        assert!(text.contains("&lt;b&gt;x&lt;"), "escaped build: {text}");
+    }
 }
 
 #[actix_web::test]
 async fn a_page_without_a_body_end_gets_the_line_at_the_end_once() {
+    let held = ScreenTable::compiled().holds("/login");
     let dir = std::env::temp_dir().join(format!("xc-version-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("login.html"), "<html><head></head><p>no end tags").unwrap();
@@ -240,8 +260,16 @@ async fn a_page_without_a_body_end_gets_the_line_at_the_end_once() {
     let (status, body) = get!(&app, "/login", "none");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.matches(MARK).count(), 1, "{body}");
-    assert!(body.trim_end().ends_with("</div>"), "{body}");
+    if held {
+        // Skip held path /login: a v3 screen carries no v2 version line (design §3.2, §3.3).
+        assert!(
+            !body.contains(MARK),
+            "/login: a v3 screen carries no v2 version line"
+        );
+    } else {
+        assert_eq!(body.matches(MARK).count(), 1, "{body}");
+        assert!(body.trim_end().ends_with("</div>"), "{body}");
+    }
 }
 
 #[actix_web::test]
@@ -259,12 +287,21 @@ async fn a_release_server_says_release_on_every_page() {
         "expected! must end with ` · release`: {want}"
     );
 
+    let held = ScreenTable::compiled().holds("/login");
     let (status, body) = get!(&app, "/login", "none");
     assert_eq!(status, StatusCode::OK);
-    let got = version_text(&body, "/login");
-    assert_eq!(got, want);
-    assert!(
-        got.ends_with(" · release"),
-        "version line must end with ` · release`: {got}"
-    );
+    if held {
+        // Skip held path /login: a v3 screen carries no v2 version line (design §3.2, §3.3).
+        assert!(
+            !body.contains(MARK),
+            "/login: a v3 screen carries no v2 version line"
+        );
+    } else {
+        let got = version_text(&body, "/login");
+        assert_eq!(got, want);
+        assert!(
+            got.ends_with(" · release"),
+            "version line must end with ` · release`: {got}"
+        );
+    }
 }

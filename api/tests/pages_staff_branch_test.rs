@@ -27,6 +27,8 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap;
 use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::ui::UiAssets;
 
 /// The three branch pages of §8.1.
 const BRANCH_PAGES: [&str; 3] = ["/", "/desk", "/receipt-sample"];
@@ -139,10 +141,33 @@ async fn a_staff_members_own_branch_that_is_not_a_branch_name_is_refused() {
 async fn a_staff_members_own_branch_of_one_to_seventy_name_characters_is_told() {
     let seventy = "a".repeat(70);
     for page in BRANCH_PAGES {
+        let held = ScreenTable::compiled().holds(page);
         for branch in ["X", "XC-B01", "xc-b01-2", seventy.as_str()] {
             let uri = format!("{page}?branch=XC-B02");
             let what = format!("GET {uri} as FRONT staff of {branch:?}");
-            is_told(&get(false, branch, &uri).await, branch, &what);
+            let answer = get(false, branch, &uri).await;
+            if held {
+                assert_eq!(answer.0, StatusCode::OK, "{what}: status");
+                assert!(
+                    !answer.2.contains("window.XC_BRANCH"),
+                    "{what}: a v3 screen carries no window.XC_BRANCH"
+                );
+                let decl = ScreenTable::compiled()
+                    .entries()
+                    .iter()
+                    .find(|d| d.path == page)
+                    .unwrap()
+                    .clone();
+                let entry = UiAssets::get(&decl.entry)
+                    .unwrap_or_else(|| panic!("{what}: entry {} missing in UiAssets", decl.entry));
+                assert_eq!(
+                    answer.2.as_bytes(),
+                    entry.data.as_ref(),
+                    "{what}: body is v3 screen entry"
+                );
+            } else {
+                is_told(&answer, branch, &what);
+            }
         }
     }
 }
@@ -152,10 +177,55 @@ async fn with_an_owner_session_the_staff_members_branch_is_not_judged() {
     // §8.3 item 1: the staff branch is used only when the visitor is not the
     // owner, so a malformed one beside an owner session changes nothing.
     for page in BRANCH_PAGES {
+        let held = ScreenTable::compiled().holds(page);
         let what = format!("GET {page} as owner and FRONT staff of \"XC_B01\"");
-        is_told(&get(true, "XC_B01", page).await, "MAIN", &what);
+        let answer = get(true, "XC_B01", page).await;
+        if held {
+            assert_eq!(answer.0, StatusCode::OK, "{what}: status");
+            assert!(
+                !answer.2.contains("window.XC_BRANCH"),
+                "{what}: a v3 screen carries no window.XC_BRANCH"
+            );
+            let decl = ScreenTable::compiled()
+                .entries()
+                .iter()
+                .find(|d| d.path == page)
+                .unwrap()
+                .clone();
+            let entry = UiAssets::get(&decl.entry)
+                .unwrap_or_else(|| panic!("{what}: entry {} missing in UiAssets", decl.entry));
+            assert_eq!(
+                answer.2.as_bytes(),
+                entry.data.as_ref(),
+                "{what}: body is v3 screen entry"
+            );
+        } else {
+            is_told(&answer, "MAIN", &what);
+        }
         let uri = format!("{page}?branch=XC-B02");
         let what = format!("GET {uri} as owner and FRONT staff of \"XC_B01\"");
-        is_told(&get(true, "XC_B01", &uri).await, "XC-B02", &what);
+        let answer = get(true, "XC_B01", &uri).await;
+        if held {
+            assert_eq!(answer.0, StatusCode::OK, "{what}: status");
+            assert!(
+                !answer.2.contains("window.XC_BRANCH"),
+                "{what}: a v3 screen carries no window.XC_BRANCH"
+            );
+            let decl = ScreenTable::compiled()
+                .entries()
+                .iter()
+                .find(|d| d.path == page)
+                .unwrap()
+                .clone();
+            let entry = UiAssets::get(&decl.entry)
+                .unwrap_or_else(|| panic!("{what}: entry {} missing in UiAssets", decl.entry));
+            assert_eq!(
+                answer.2.as_bytes(),
+                entry.data.as_ref(),
+                "{what}: body is v3 screen entry"
+            );
+        } else {
+            is_told(&answer, "XC-B02", &what);
+        }
     }
 }
