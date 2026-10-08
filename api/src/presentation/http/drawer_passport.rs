@@ -89,10 +89,10 @@ async fn handle_drawer_passport(
         Err(_) => return refuse(500, "เซิร์ฟเวอร์ขัดข้อง"),
     };
 
-    if let SignedIn::Employee(ref emp) = signed_in {
-        if emp.must_change {
-            return refuse_401("กรุณาเข้าสู่ระบบ");
-        }
+    if let SignedIn::Employee(ref emp) = signed_in
+        && emp.must_change
+    {
+        return refuse_401("กรุณาเข้าสู่ระบบ");
     }
 
     let actor = actor_of(&signed_in);

@@ -334,7 +334,7 @@ async fn uploads_at_once_are_all_kept() {
         bytes
     };
     let upload = |n: u8| {
-        let (path, who) = if n % 2 == 0 {
+        let (path, who) = if n.is_multiple_of(2) {
             ("/api/upload", "owner")
         } else {
             ("/api/staff/upload", "front")

@@ -33,22 +33,21 @@ fn get_build() -> String {
     if let Ok(output) = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !sha.is_empty() {
-                let is_dirty = std::process::Command::new("git")
-                    .args(["status", "--porcelain"])
-                    .output()
-                    .map(|o| {
-                        o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty()
-                    })
-                    .unwrap_or(false);
-                if is_dirty {
-                    return format!("{sha}-dirty");
-                }
-                return sha;
+        let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !sha.is_empty() {
+            let is_dirty = std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .output()
+                .map(|o| {
+                    o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty()
+                })
+                .unwrap_or(false);
+            if is_dirty {
+                return format!("{sha}-dirty");
             }
+            return sha;
         }
     }
     "unknown".to_string()

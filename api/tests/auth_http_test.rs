@@ -883,7 +883,7 @@ async fn creates_of_one_username_at_once_make_one_employee() {
         send(
             &app,
             Call::post("/api/employees", json!({ "action": "create", "payload": {
-                "username": if n % 2 == 0 { "somchai" } else { " SOMCHAI " }, "name": format!("คนที่ {n}"),
+                "username": if n.is_multiple_of(2) { "somchai" } else { " SOMCHAI " }, "name": format!("คนที่ {n}"),
                 "role": "FRONT", "branchId": "MAIN", "password": "first-password-1" } }))
             .owner(&owner),
         )

@@ -83,38 +83,38 @@ impl AgentService {
         let now = now_fn();
 
         // 1. Branch mismatch check
-        if let Some(named_branch) = params.branch_id {
-            if named_branch != agent.branch_id {
-                let branch = BranchId::new(&agent.branch_id);
-                let agent_id = agent.id.clone();
-                let named_branch = named_branch.to_string();
-                let device_repo = Arc::clone(&self.device_repo);
-                let b = branch.clone();
-                self.branch_tx
-                    .run(&b, move |tx| {
-                        let branch = branch.clone();
-                        let device_repo = Arc::clone(&device_repo);
-                        let actor = format!("agent:{agent_id}");
-                        let detail = serde_json::json!({
-                            "namedBranch": named_branch,
-                        });
-                        Box::pin(async move {
-                            let event = NewEvent {
-                                dedupe: None,
-                                actor: &actor,
-                                kind: "AGENT_BRANCH_MISMATCH",
-                                reference: "",
-                                detail: &detail,
-                                amounts: &[],
-                                at: now,
-                            };
-                            device_repo.insert_event(tx, &branch, &event).await?;
-                            Ok(())
-                        })
+        if let Some(named_branch) = params.branch_id
+            && named_branch != agent.branch_id
+        {
+            let branch = BranchId::new(&agent.branch_id);
+            let agent_id = agent.id.clone();
+            let named_branch = named_branch.to_string();
+            let device_repo = Arc::clone(&self.device_repo);
+            let b = branch.clone();
+            self.branch_tx
+                .run(&b, move |tx| {
+                    let branch = branch.clone();
+                    let device_repo = Arc::clone(&device_repo);
+                    let actor = format!("agent:{agent_id}");
+                    let detail = serde_json::json!({
+                        "namedBranch": named_branch,
+                    });
+                    Box::pin(async move {
+                        let event = NewEvent {
+                            dedupe: None,
+                            actor: &actor,
+                            kind: "AGENT_BRANCH_MISMATCH",
+                            reference: "",
+                            detail: &detail,
+                            amounts: &[],
+                            at: now,
+                        };
+                        device_repo.insert_event(tx, &branch, &event).await?;
+                        Ok(())
                     })
-                    .await?;
-                return Ok(ClaimOutcome::BranchMismatch);
-            }
+                })
+                .await?;
+            return Ok(ClaimOutcome::BranchMismatch);
         }
 
         // 2. Touch and rate limit
