@@ -113,17 +113,18 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
     }
   });
 
+  const isEnded = () => store().error()?.kind === 'ended';
+
   createEffect(() => {
     const s = store().state();
     const u = props.session.me();
     const b = queueBranch();
     const on = soundOn();
+    if (isEnded() || props.session.ended?.()) return;
     if (on && u && s && s.count > 0 && s.latest) {
       void announce(s, u.id, b);
     }
   });
-
-  const isEnded = () => store().error()?.kind === 'ended';
 
   const canClaim = () => {
     const r = props.session.me()?.role;
