@@ -4,7 +4,7 @@
 // Written before the implementation. Do not edit, delete or weaken.
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
-import { MoneyText } from './MoneyText';
+import { formatMoney, MoneyText } from './MoneyText';
 
 let dispose: (() => void) | undefined;
 
@@ -49,3 +49,22 @@ describe('MoneyText', () => {
     }
   });
 });
+
+describe('formatMoney', () => {
+  it('formats decimal strings with comma grouping and preserves decimals and sign', () => {
+    expect(formatMoney('1234567.89')).toBe('1,234,567.89');
+    expect(formatMoney('-1234567.89')).toBe('-1,234,567.89');
+    expect(formatMoney('1000')).toBe('1,000');
+    expect(formatMoney('-1000')).toBe('-1,000');
+    expect(formatMoney('0')).toBe('0');
+    expect(formatMoney('0.10')).toBe('0.10');
+    expect(formatMoney('90071992547409931.05')).toBe('90,071,992,547,409,931.05');
+  });
+
+  it('returns non-decimal strings untouched', () => {
+    expect(formatMoney('abc')).toBe('abc');
+    expect(formatMoney('1e3')).toBe('1e3');
+    expect(formatMoney('')).toBe('');
+  });
+});
+

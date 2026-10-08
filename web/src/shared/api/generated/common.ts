@@ -11,6 +11,16 @@ export type Me = { kind: string, id: string, role: string, branch: string, name:
 export type Money = string;
 
 /**
+ * Empty filter for views without one.
+ */
+export type NoFilter = Record<symbol, never>;
+
+/**
+ * Period filter with inclusive YYYY-MM-DD bounds.
+ */
+export type Period = { from: string, to: string, };
+
+/**
  * Decimal rate string (W7).
  */
 export type Rate = string;

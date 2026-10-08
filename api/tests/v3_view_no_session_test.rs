@@ -18,6 +18,7 @@ use ts_rs::TS;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xchange::presentation::dto::v3::common::NoFilter;
 use xchange::presentation::http::v3::view::{BranchView, PagedView, RowId, ViewEndpoint};
 use xchange::presentation::pages::{SessionReader, Sessions};
 
@@ -32,9 +33,15 @@ struct KioskRatesView;
 impl BranchView for KioskRatesView {
     const NAME: &'static str = "test-kiosk-rates";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Kiosk, "rates");
+    type Filter = NoFilter;
     type Data = EchoData;
 
-    async fn load(&self, _branch: &BranchId, _who: &Actor) -> AppResult<EchoData> {
+    async fn load(
+        &self,
+        _branch: &BranchId,
+        _who: &Actor,
+        _filter: &NoFilter,
+    ) -> AppResult<EchoData> {
         Ok(EchoData {
             field: "kiosk-rates".to_string(),
         })
@@ -46,12 +53,14 @@ struct KioskRatesPagedView;
 impl PagedView for KioskRatesPagedView {
     const NAME: &'static str = "test-kiosk-rates-paged";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Kiosk, "rates");
+    type Filter = NoFilter;
     type Row = EchoData;
 
     async fn page(
         &self,
         _branch: &BranchId,
         _who: &Actor,
+        _filter: &NoFilter,
         _before: Option<RowId>,
         _limit: u16,
     ) -> AppResult<Vec<EchoData>> {

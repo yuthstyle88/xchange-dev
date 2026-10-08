@@ -17,7 +17,7 @@ use xc_auth::domain::account::repositories::account_repository::AccountRepositor
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::common::Me;
+use crate::presentation::dto::v3::common::{Me, NoFilter};
 use crate::presentation::dto::v3::me::MeView;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -30,11 +30,13 @@ impl BranchView for MeBranchView {
     const NAME: &'static str = "me";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
     type Data = MeView;
+    type Filter = NoFilter;
 
     fn load(
         &self,
         branch: &BranchId,
         who: &Actor,
+        _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let branch = branch.clone();
         let who = who.clone();

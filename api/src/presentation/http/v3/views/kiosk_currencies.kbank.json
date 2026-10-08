@@ -1,0 +1,208 @@
+{
+  "source": "https://www.kasikornbank.com/en/rate/Pages/Foreign-Exchange.aspx",
+  "publishedAt": "2026-10-02T22:16:01+07:00",
+  "round": 10,
+  "mode": "verified-browser-snapshot",
+  "automatic": false,
+  "unit": "THB per 1 foreign currency",
+  "rates": [
+    {
+      "code": "USD",
+      "label": "USD 1",
+      "buy": 32.37919,
+      "sell": 33.81656
+    },
+    {
+      "code": "USD",
+      "label": "USD 5-20",
+      "buy": 32.58661,
+      "sell": 33.81656
+    },
+    {
+      "code": "USD",
+      "label": "USD 50-100",
+      "buy": 33.10516,
+      "sell": 33.85113
+    },
+    {
+      "code": "AED",
+      "label": "AED",
+      "buy": 7.68679,
+      "sell": 9.58451
+    },
+    {
+      "code": "AUD",
+      "label": "AUD",
+      "buy": 22.55047,
+      "sell": 23.91753
+    },
+    {
+      "code": "BHD",
+      "label": "BHD",
+      "buy": 72.30495,
+      "sell": 92.44971
+    },
+    {
+      "code": "BND",
+      "label": "BND",
+      "buy": 25.11749,
+      "sell": 26.36646
+    },
+    {
+      "code": "CAD",
+      "label": "CAD",
+      "buy": 22.8087,
+      "sell": 23.91709
+    },
+    {
+      "code": "CHF",
+      "label": "CHF",
+      "buy": 39.62778,
+      "sell": 40.88638
+    },
+    {
+      "code": "CNY",
+      "label": "CNY",
+      "buy": 4.66643,
+      "sell": 5.16131
+    },
+    {
+      "code": "DKK",
+      "label": "DKK",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "EUR",
+      "label": "EUR",
+      "buy": 37.10584,
+      "sell": 38.26794
+    },
+    {
+      "code": "GBP",
+      "label": "GBP",
+      "buy": 43.46689,
+      "sell": 45.04084
+    },
+    {
+      "code": "HKD",
+      "label": "HKD",
+      "buy": 4.15708,
+      "sell": 4.35787
+    },
+    {
+      "code": "IDR",
+      "label": "IDR",
+      "buy": 0.00151,
+      "sell": 0.00212
+    },
+    {
+      "code": "INR",
+      "label": "INR",
+      "buy": 0.20966,
+      "sell": 0.34825
+    },
+    {
+      "code": "JPY",
+      "label": "JPY",
+      "buy": 0.20715,
+      "sell": 0.21844
+    },
+    {
+      "code": "KHR",
+      "label": "KHR",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "KRW",
+      "label": "KRW",
+      "buy": 0.02152,
+      "sell": 0.02564
+    },
+    {
+      "code": "LAK",
+      "label": "LAK",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "MMK",
+      "label": "MMK",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "MYR",
+      "label": "MYR",
+      "buy": 7.55233,
+      "sell": 8.37644
+    },
+    {
+      "code": "NOK",
+      "label": "NOK",
+      "buy": null,
+      "sell": 3.56995
+    },
+    {
+      "code": "NZD",
+      "label": "NZD",
+      "buy": 18.28477,
+      "sell": 19.45851
+    },
+    {
+      "code": "PHP",
+      "label": "PHP",
+      "buy": 0.39052,
+      "sell": 0.56243
+    },
+    {
+      "code": "QAR",
+      "label": "QAR",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "RUB",
+      "label": "RUB",
+      "buy": null,
+      "sell": null
+    },
+    {
+      "code": "SAR",
+      "label": "SAR",
+      "buy": 7.33308,
+      "sell": 9.37614
+    },
+    {
+      "code": "SEK",
+      "label": "SEK",
+      "buy": null,
+      "sell": 3.41578
+    },
+    {
+      "code": "SGD",
+      "label": "SGD",
+      "buy": 25.71453,
+      "sell": 26.68986
+    },
+    {
+      "code": "TWD",
+      "label": "TWD",
+      "buy": 0.90398,
+      "sell": 1.12752
+    },
+    {
+      "code": "VND",
+      "label": "VND",
+      "buy": 0.00092,
+      "sell": 0.00146
+    },
+    {
+      "code": "ZAR",
+      "label": "ZAR",
+      "buy": 1.51837,
+      "sell": 2.18932
+    }
+  ]
+}

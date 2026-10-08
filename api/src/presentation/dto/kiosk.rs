@@ -43,6 +43,10 @@ static CURRENCIES: LazyLock<Vec<CurrencyTableEntry>> = LazyLock::new(|| {
     serde_json::from_value(currencies).expect("currencies array")
 });
 
+pub fn currency_table() -> &'static [CurrencyTableEntry] {
+    &CURRENCIES
+}
+
 static CURRENCY_MAP: LazyLock<HashMap<String, CurrencyTableEntry>> = LazyLock::new(|| {
     CURRENCIES
         .iter()

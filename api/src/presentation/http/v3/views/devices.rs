@@ -17,7 +17,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::devices::printer_models::{DrawerSettings, PrinterModels};
 use crate::infrastructure::devices::printer_settings::{PrinterKind, PrinterSettings};
-use crate::presentation::dto::v3::common::Money;
+use crate::presentation::dto::v3::common::{Money, NoFilter};
 use crate::presentation::dto::v3::devices::{DeviceBranch, DevicesOverview};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -42,11 +42,13 @@ impl BranchView for DevicesBranchView {
     const NAME: &'static str = "devices";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Devices, "snapshot");
     type Data = DevicesOverview;
+    type Filter = NoFilter;
 
     fn load(
         &self,
         branch: &BranchId,
         _who: &Actor,
+        _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let repo = self.repo.clone();

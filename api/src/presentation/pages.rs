@@ -394,10 +394,10 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
         return plain_404();
     }
 
-    if let Some(table) = req.app_data::<web::Data<crate::presentation::screens::ScreenTable>>() {
-        if table.holds(req.path()) {
-            return table.serve(&req).await;
-        }
+    if let Some(table) = req.app_data::<web::Data<crate::presentation::screens::ScreenTable>>()
+        && table.holds(req.path())
+    {
+        return table.serve(&req).await;
     }
 
     let Some(spec) = PAGE_SPECS.iter().find(|s| s.path == req.path()) else {

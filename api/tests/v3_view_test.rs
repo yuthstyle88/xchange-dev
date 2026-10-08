@@ -49,6 +49,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
+use xchange::presentation::dto::v3::common::NoFilter;
 use xchange::presentation::http::v3::view::{BranchView, PagedView, RowId, ViewEndpoint};
 use xchange::presentation::pages::{SessionReader, Sessions};
 
@@ -242,9 +243,10 @@ struct Counting {
 impl BranchView for Counting {
     const NAME: &'static str = "test-count";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
+    type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor) -> AppResult<Echo> {
+    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
@@ -258,9 +260,10 @@ struct SaveRate;
 impl BranchView for SaveRate {
     const NAME: &'static str = "test-save-rate";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSaveRate");
+    type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor) -> AppResult<Echo> {
+    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
         Ok(Echo {
             branch: branch.as_str().to_owned(),
             who: who.id().to_owned(),
@@ -273,9 +276,10 @@ struct DeskConfig;
 impl BranchView for DeskConfig {
     const NAME: &'static str = "test-desk-config";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::StaffRpc, "adminDeskConfig");
+    type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor) -> AppResult<Echo> {
+    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
         Ok(Echo {
             branch: branch.as_str().to_owned(),
             who: who.id().to_owned(),
@@ -297,12 +301,14 @@ struct Paging {
 impl PagedView for Paging {
     const NAME: &'static str = "test-paged";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
+    type Filter = NoFilter;
     type Row = Row;
 
     async fn page(
         &self,
         _branch: &BranchId,
         _who: &Actor,
+        _filter: &NoFilter,
         before: Option<RowId>,
         limit: u16,
     ) -> AppResult<Vec<Row>> {

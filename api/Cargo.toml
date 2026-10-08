@@ -20,7 +20,7 @@ xc-auth = { path = "crates/xc-auth" }
 name = "xchange"
 version = "1.0.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["108Heros Engineering"]
 description = "XCHANGE server"
 license = "Proprietary"
@@ -63,3 +63,5 @@ path = "src/lib.rs"
 [[bin]]
 name = "xchange"
 path = "src/main.rs"
+
+
