@@ -49,7 +49,7 @@ The second root cause is the contract the screens poll. `adminSnapshot` answers 
 | W7 | A screen never does money arithmetic. New endpoints carry money as a **decimal string** (the fleet's wire rule). Totals, quotes and differences are computed by the server; the screen formats and shows them. | [required] |
 | W8 | Roles do not change in the rewrite. A view gets the role row of the v2 action it replaces, **on the entry path the replaced screen used** (§4.4). | [required] |
 | W9 | **A screen is ported from v2's source**, `xchange-v2-source@4d0bdbb`, not rebuilt from the minified bundle. Its ticket names the source file and the lines it ports. **The source is the behaviour contract.** The 10-06 bundle is only a fallback for anything the source lacks. The owner's decisions override both: brokers/referrals are not ported, because Broker-Platform owns them | [required] (lane controller 2026-10-08: *"Make the source @4d0bdbb the behaviour contract, with the 10-06 bundle only as a fallback for anything the source lacks, and owner decisions overriding both"*) |
-| W10 | **Every v3 screen speaks Thai and English** (#427). (1) One shared module, `web/src/shared/i18n/`: `index.ts` holds a `lang: Accessor<'th' \| 'en'>` signal, `setLang(l)` and `t(key, params?)` with named `{name}` placeholders; `th.ts` is the source table, `as const`; `en.ts` is typed `Record<keyof typeof th, string>`, so a missing key is a **compile** error and there is no runtime fallback. Keys are dotted (`field.password.show`). **The shared tables hold only shared-component and refusal keys** (`field.*`, `form.*`, `shell.*`, `error.*`). **Each screen folder owns its own table**, `web/src/screens/<path>/i18n.ts`, which exports `th` (`as const`) and `en: Record<keyof typeof th, string>`. Its keys are local. The core namespaces them by the folder path under `screens/`, with `/` turned into `.`: `screens/login/i18n.ts` → `login.<key>`, `screens/admin/payments/i18n.ts` → `admin.payments.<key>`. The core collects the tables with the **recursive** glob `import.meta.glob('/src/screens/**/i18n.ts', { eager: true })`, so it reaches the admin menus one folder deeper. Each folder owns its own file, like `menus.ts` (§3.3), but the glob is recursive, whereas §3.3 globs `./*/menu.ts` from inside `screens/admin/`. The core checks that each table's `th` and `en` have the same keys and placeholders, that every folder segment matches `[a-z][a-z0-9-]*`, that the first segment is not a shared prefix, and that no namespaced key comes from two tables (e.g. `admin`'s `payments.title` against `admin/payments`'s `title`). Any failure throws. **Adding a screen edits no shared i18n file**, so screen tickets do not queue behind one table. A screen reads its own keys through **`screenT(screen, table)`**, which the core exports: it calls `const t = screenT('login', loginI18n)` once in its folder (a nested folder passes its dotted namespace, `screenT('admin.payments', paymentsI18n)`) and gets `t(key: keyof typeof loginI18n.th, params?)`. An unknown key is a compile error. It resolves `login.<key>` through the same language signal, so it follows `setLang`. The shared `t` is for shared keys only. (2) **Thai is the default.** The choice is kept per browser in `localStorage` under `xc.lang`; every read and write is in `try`/`catch` and falls back to `th`. `document.documentElement.lang` follows the choice. Nothing is detected from `navigator`: v2's staff app was Thai-only, so Thai stays the default. (3) A small TH/EN switch, `LangSwitch.tsx` in the same folder, is rendered by `AppShell`, so every screen has it, login included. (4) A server refusal is shown as `t('error.' + code)` when that key exists, otherwise as the server's own message. The server stays Thai for now. The `th` table carries each existing `V3Error` code's Thai sentence byte for byte, `invalidRequest` and the 401 `signIn` sentence included, so a Thai screen shows what it showed before (W6). **`th` is Thai throughout:** the five refusals the server sends in English (`employeeAuthRequired`, `notFound` and the three kiosk ones) are translated in `th`, and `en` keeps their English. (5) `Intl` follows `lang` for dates (`th-TH` / `en-GB`). `MoneyText` keeps its digits and does no arithmetic (W7); only its labels go through `t()`. (6) The shared components already on `main` (`TextField`, `PasswordField` and its `aria-label`s, `form.ts`'s refusals, `AppShell`) move to `t()` now, while it is cheap. Their tests that assert a Thai literal the component owns may assert through the table instead (`th['field.password.show']`); that is the only edit allowed to those tests. (7) **Every V1/V2/V3 screen ticket** puts all user-visible text, `aria-label`s included, through `t()`, writes its keys in its own `i18n.ts`, and is blocked by #427. W6 still holds: a screen's `th` table is where v2's Thai lives, verbatim. | **decided** (owner 2026-10-08, *"รองรับ 2 ภาษา ไทย/eng"* and *"aria-label … อย่าลืมนะมันต้องmulti lang นะ"*; points 1–7 by the lane controller claude/7ca80c, 2026-10-08) |
+| W10 | **Every v3 screen speaks Thai and English** (#427). (1) One shared module, `web/src/shared/i18n/`: `index.ts` holds a `lang: Accessor<'th' \| 'en'>` signal, `setLang(l)` and `t(key, params?)` with named `{name}` placeholders; `th.ts` is the source table, `as const`; `en.ts` is typed `Record<keyof typeof th, string>`, so a missing key is a **compile** error and there is no runtime fallback. Keys are dotted (`field.password.show`). **The shared tables hold only shared-component and refusal keys** (`field.*`, `form.*`, `shell.*`, `error.*`, and `queue.*` for the shared queue panel and card, §12.18.7). **Each screen folder owns its own table**, `web/src/screens/<path>/i18n.ts`, which exports `th` (`as const`) and `en: Record<keyof typeof th, string>`. Its keys are local. The core namespaces them by the folder path under `screens/`, with `/` turned into `.`: `screens/login/i18n.ts` → `login.<key>`, `screens/admin/payments/i18n.ts` → `admin.payments.<key>`. The core collects the tables with the **recursive** glob `import.meta.glob('/src/screens/**/i18n.ts', { eager: true })`, so it reaches the admin menus one folder deeper. Each folder owns its own file, like `menus.ts` (§3.3), but the glob is recursive, whereas §3.3 globs `./*/menu.ts` from inside `screens/admin/`. The core checks that each table's `th` and `en` have the same keys and placeholders, that every folder segment matches `[a-z][a-z0-9-]*`, that the first segment is not a shared prefix, and that no namespaced key comes from two tables (e.g. `admin`'s `payments.title` against `admin/payments`'s `title`). Any failure throws. **Adding a screen edits no shared i18n file**, so screen tickets do not queue behind one table. A screen reads its own keys through **`screenT(screen, table)`**, which the core exports: it calls `const t = screenT('login', loginI18n)` once in its folder (a nested folder passes its dotted namespace, `screenT('admin.payments', paymentsI18n)`) and gets `t(key: keyof typeof loginI18n.th, params?)`. An unknown key is a compile error. It resolves `login.<key>` through the same language signal, so it follows `setLang`. The shared `t` is for shared keys only. (2) **Thai is the default.** The choice is kept per browser in `localStorage` under `xc.lang`; every read and write is in `try`/`catch` and falls back to `th`. `document.documentElement.lang` follows the choice. Nothing is detected from `navigator`: v2's staff app was Thai-only, so Thai stays the default. (3) A small TH/EN switch, `LangSwitch.tsx` in the same folder, is rendered by `AppShell`, so every screen has it, login included. (4) A server refusal is shown as `t('error.' + code)` when that key exists, otherwise as the server's own message. The server stays Thai for now. The `th` table carries each existing `V3Error` code's Thai sentence byte for byte, `invalidRequest` and the 401 `signIn` sentence included, so a Thai screen shows what it showed before (W6). **`th` is Thai throughout:** the five refusals the server sends in English (`employeeAuthRequired`, `notFound` and the three kiosk ones) are translated in `th`, and `en` keeps their English. (5) `Intl` follows `lang` for dates (`th-TH` / `en-GB`). `MoneyText` keeps its digits and does no arithmetic (W7); only its labels go through `t()`. (6) The shared components already on `main` (`TextField`, `PasswordField` and its `aria-label`s, `form.ts`'s refusals, `AppShell`) move to `t()` now, while it is cheap. Their tests that assert a Thai literal the component owns may assert through the table instead (`th['field.password.show']`); that is the only edit allowed to those tests. (7) **Every V1/V2/V3 screen ticket** puts all user-visible text, `aria-label`s included, through `t()`, writes its keys in its own `i18n.ts`, and is blocked by #427. W6 still holds: a screen's `th` table is where v2's Thai lives, verbatim. | **decided** (owner 2026-10-08, *"รองรับ 2 ภาษา ไทย/eng"* and *"aria-label … อย่าลืมนะมันต้องmulti lang นะ"*; points 1–7 by the lane controller claude/7ca80c, 2026-10-08) |
 
 ## 3. The web side
 
@@ -278,6 +278,7 @@ classDiagram
 | its DTOs | `api/src/presentation/dto/v3/<view>.rs` | its own ticket | the generated TS (§5.2) |
 | `UiAssets` | `api/src/presentation/ui.rs` | V0-A | `ScreenTable` |
 | `ScreenTable` | `api/src/presentation/screens.rs` | V0-A | `include!`s `OUT_DIR/v3_screens.rs`, generated from `web/dist` (§3.3). No ticket edits this file |
+| `KioskQueueView`, `KioskNotificationsView` and their DTOs | `http/v3/views/kiosk_queue.rs`, `kiosk_notifications.rs`; `dto/v3/kiosk_queue.rs`, `kiosk_notifications.rs` | V1-kiosk-queue-views (§12.18.2, diagram §12.18.10) | the queue store and the queue panel |
 
 [required] **No file is edited by more than one screen or view ticket.** A view is one file in `http/v3/views/` and
 one in `dto/v3/`. A screen is its folder and its HTML entry. Its generated types are one file per view in
@@ -387,6 +388,8 @@ classDiagram
 | a screen's `th` / `en` tables | `web/src/screens/<path>/i18n.ts`, namespace = `<path>` with `/` as `.` | the ticket that owns that folder. A V1 screen owns `screens/<screen>/i18n.ts`; **each V2-<menu> owns `screens/admin/<menu>/i18n.ts`**; V2-shell owns `screens/admin/i18n.ts`, for the admin shell's own texts only. Components call `screenT('<namespace>', table)` once in their folder, never the shared `t` for screen text |
 | `LangSwitch` | `web/src/shared/i18n/LangSwitch.tsx` | V1-i18n (#427) |
 | a screen | `web/src/screens/<screen>/**` + `web/pages/<screen>.html` | its own ticket |
+| `QueueStore` and the queue branch; `QueuePanel`; the `queue.*` keys | `web/src/shared/queue/queue-store.ts`, `web/src/shared/queue/wire.ts`; `web/src/shared/ui/QueuePanel.tsx`; `web/src/shared/i18n/th.ts`, `en.ts` | V1-kiosk-queue-panel (§12.18.3, §12.18.4, §12.18.7, diagram §12.18.10) |
+| `QueueCard`, `QueueSound`, `QueueSoundControls`; the card's render line in `AccountBar` | `web/src/shared/ui/QueueCard.tsx`, `web/src/shared/queue/queue-sound.ts`, `web/src/shared/ui/QueueSoundControls.tsx`; `web/src/shared/ui/AccountBar.tsx` | V1-queue-card (§12.18.6, §12.18.8) |
 
 `Lang` is `'th' | 'en'`, `Locale` is `'th-TH' | 'en-GB'`, `Params` is `Record<string, string | number>`.
 
@@ -468,7 +471,7 @@ Measured at `b2348fe` (`pages.rs` `PAGE_SPECS`) and in the 10-06 bundle. "Wave" 
 | 1 | `/staff-guide`, `/staff-guide.html` | `staff-guide.html` (4,980 B) | signed in | none (static text) |
 | 1 | `/receipt-sample` | embedded | signed in | none |
 | 1 | `/kiosk-currencies.html` | `kiosk-currencies.html` (4,302 B) | OWNER, RATES (§5.3 `/api/kiosk` row) | `/api/kiosk` `manage`, `configure` |
-| 1 | `/kiosk-queue.html` | `kiosk-queue.html` (3,661 B) + `queue-panel.js` (10-06) | signed in | `/api/kiosk` `list`, `accept`, … (§5.5.3; **waits for Q1, PR 373, and K-HTTP `canAccept`, #329**) |
+| 1 | `/kiosk-queue.html` | `kiosk-queue.html` (3,661 B) + `queue-panel.js` (10-06) | signed in | `/api/kiosk` `list`, `accept`, … (§5.5.3). v3 answers them since Q1 (PR 373, merged 2026-10-07) and K-HTTP (#329, closed 2026-10-08); the v3 screen reads the views `kiosk_queue` and `kiosk_notifications` and keeps `accept` (§12.18) |
 | 1 | `/devices` | `devices.html` + `devices.js` | signed in | `/api/devices`, `/api/device-setup` |
 | 2 | `/` menu ภาพรวมหน้าร้าน (`overview`) | `admin.html` (embedded) | owner, staff by role | `adminSnapshot` |
 | 2 | `/` menu พนักงาน / ขั้นตอนกะ (`employees`) | `employees.js`, `employee-summary*.js` | per `EntryPath::OwnerRoute` (`policy.rs:30`) | `/api/employees` |
@@ -513,7 +516,10 @@ run in parallel: each owns only its own files (§5.1).
 | **V0-A** web skeleton | `web/` with Vite multi-page, strict TS, vitest, `ApiClient`, `ViewPoller`, `useForm`, `TextField`, `PasswordField`, `MoneyText`, `AppShell`; `UiAssets`, `ScreenTable` and its `build.rs` generation (no screen yet, so no path switched), `build.rs` empty-`dist` rule, `page_handler` skipping a path `ScreenTable` holds, `/health/ready` `ui`; CI job `web` (typecheck, test, build) and the `api` job builds `web` before the release check; `deploy/server/build.md` | `web/` (new, whole subtree), `api/src/presentation/ui.rs`, `api/src/presentation/screens.rs`, `api/src/presentation/mod.rs`, `api/src/presentation/pages.rs`, `api/build.rs`, `api/build_support/screens.rs` (new), `api/src/presentation/http/health.rs`, `.github/workflows/web.yml` (new), `.github/workflows/api.yml`, `api/Cargo.toml` and `api/Cargo.lock` (adds **both** `rust-embed` and `ts-rs`, so V0-B touches neither), `deploy/server/build.md`, `deploy/server/smoke.sh` | this doc. It also shares `pages.rs` with PR 360 (DK-1) and `api.yml` with PR 382 (#378) — if either is still open, V0-A waits for it |
 | **V0-B** view core | `BranchView`, `PagedView`, `ViewEndpoint`, `ViewAnswer`, `ViewQuery`, `V3Error`, `BranchVersions`, `configure_v3` and its `build.rs` generation, the `ts-rs` export and its drift check, and one view as the worked example: `GET /api/v3/views/me` (who is signed in, role, branch), with `SessionStore` on the web side | `api/src/presentation/http/v3/` (new), `api/src/presentation/dto/v3/` (new), `api/src/presentation/http/mod.rs`, `api/crates/xc-kernel/src/branch_versions.rs`, `api/crates/xc-kernel/src/lib.rs`, `api/build.rs` (adds the views generation after V0-A's), `api/build_support/views.rs` (new), `web/src/shared/api/generated/common.ts`, `web/src/shared/api/generated/me.ts`, `web/src/shared/session/session.ts` (inside V0-A's `web/`, so V0-B waits for it) | V0-A |
 | **V1-i18n** (#427) | the shared th/en module, the TH/EN switch in `AppShell`, and the retrofit of `TextField`, `PasswordField`, `form.ts` and `AppShell` (W10) | `web/src/shared/i18n/` (new, whole subtree), `web/src/shared/ui/AppShell.tsx`, `TextField.tsx`, `PasswordField.tsx`, `form.ts`, and the four existing tests that assert a Thai literal the component owns | this doc's W10, and V0-B (#393, PR 418) for the `serverError` code it carries |
-| V1-login … V1-devices | one per Wave 1 row of §6 | `web/src/screens/<screen>/`, `web/pages/<screen>.html`, its files `http/v3/views/<view>.rs`, `dto/v3/<view>.rs`, `web/src/shared/api/generated/<view>.ts`, its text table `web/src/screens/<screen>/i18n.ts` (namespace `<screen>.*`, W10 point 1), and its tests | V0-A, V0-B, V1-i18n (#427). V1-kiosk-queue also waits for PR 373 and #329 |
+| V1-login … V1-devices | one per Wave 1 row of §6 | `web/src/screens/<screen>/`, `web/pages/<screen>.html`, its files `http/v3/views/<view>.rs`, `dto/v3/<view>.rs`, `web/src/shared/api/generated/<view>.ts`, its text table `web/src/screens/<screen>/i18n.ts` (namespace `<screen>.*`, W10 point 1), and its tests | V0-A, V0-B, V1-i18n (#427). V1-kiosk-queue is the three tickets below |
+| V1-kiosk-queue-views (#485) | the views `kiosk_queue` (paged, filter `state`) and `kiosk_notifications` (§12.18.2) | the files of §12.18.10's server rows | V0-C (#475) |
+| V1-kiosk-queue-panel (#486) | the queue store, `QueuePanel`, the page `/kiosk-queue.html`, every `queue.*` key (§12.18.3–§12.18.5, §12.18.7) | the files of §12.18.10's panel rows | V0-C (#475); merges after V1-kiosk-queue-views (§12.18.11) |
+| V1-queue-card (#487) | the account bar's queue card, its sound and its session lock (§12.18.6, §12.18.8) | the files of §12.18.10's card rows | V1-kiosk-queue-panel (#486) |
 | **V0-C** (#475) filtered views (§12.1) | `ViewFilter`, `type Filter` and the `filter` argument on `BranchView` / `PagedView`, `NoFilter`, `Period`, `BranchView::VERSIONED`, `BranchView::own_version`, the filter parsing in `ViewEndpoint`, `ApiClient`'s `filter` param; `type Filter = NoFilter` on every existing view | `api/src/presentation/http/v3/view.rs`, `api/src/presentation/dto/v3/common.rs`, `web/src/shared/api/generated/common.ts`, every view file on `main` and the test views that implement the traits (§12.1), `web/src/shared/api/client.ts`, its new tests | this doc's §12 |
 | V2-shell (#460) | the v3 admin page at `/ui/admin/`: entry `web/pages/admin.html`, `web/src/screens/admin/menus.ts` and its test, the admin layout, the `admin_branches` view (§12.3, §12.4) | `web/pages/admin.html`, the root files of `web/src/screens/admin/` (`menus.ts`, `menus.test.ts`, `AdminShell.tsx`, `main.tsx`, `admin.css`, `i18n.ts` — the shell's own texts only, namespace `admin.*`; a menu's text never goes here, W10), `admin_branches`' view, DTO, generated TS and test | V0-C (the view's trait shape); merges after V1-login and V2-parts |
 | **V2-parts** (#476, §12.2) | the admin parts several menus share, `TransactionRow`, and the views `transaction_documents`, `admin_request_status`, `admin_shift_state` | `web/src/screens/admin/parts/` (whole subtree), `api/src/presentation/dto/v3/transaction_row.rs` and `web/src/shared/api/generated/transaction_row.ts` (`TransactionRow`), the three views' files, `api/src/application/compat/abandon_request.rs` (`is_applied` visibility), `api/tests/v3_types_test.rs` (one allowed file name) | V0-C |
@@ -587,12 +593,13 @@ until the first install (owner 2026-10-06). That does not remove the four items.
 
 | Item | Blocks | Who |
 |---|---|---|
-| The kiosk queue screen's data (`canAccept`) is not sent by v3 yet | V1-kiosk-queue | K-HTTP #329, Q1 PR 373 |
 | Bookings are not ported yet (D5: "พอร์ตมา v3"). #377 also asks who creates bookings and whether v2's bookings data moves | V2-bookings | owner, then the lane controller |
 | The shift valuation and profit calculators (§12.15 item 3) | V2-cash (those panels only) | lane controller |
-| The kiosk queue panel's file and owner (§12.12) | V2-queue (#471), so V2-switch | a V1-kiosk-queue design row |
 | Payment settings route | V2-payments | PR 372 |
 | `Rpc` vs `StaffRpc` disagreement (design §11) | nothing: W8 keeps each screen on its own path's row | owner, when wanted |
+| `SessionStore` cannot end a session without signing out, nor see an account switch through the branch cursor (§12.18.9) | the page-wide form lock and the 5 s switch warning of the queue card (known differences until then) | a V0-B follow-up, lane controller |
+
+Answered since this table was written: v3 sends `canAccept` (K-HTTP #329, Q1 PR 373), and the queue panel's file and owner are §12.18.
 
 ## 12. V2 admin decisions (2026-10-08)
 
@@ -603,7 +610,7 @@ The thirteen V2 tickets (#460 V2-shell, #461–#470 one per menu, #471 the queue
 items: O1–O7 on V2-shell, which every menu inherits, and items of their own (`O-ov1`, `O-em1`, `O-bk1`…`O-bk3`, `O-tx1`,
 `O-sl1`, `O-sl2`, `O-cu1`, `O-cu2`, `O-ca1`, `O-ca2`, `O-ra1`, `O-ra2`, `O-re1`, `O-qu1`, `O-qu2`, and #472's two). This
 section records the answers and the files they give. Two answers add tickets: **V0-C** (#475, filtered views, §12.1)
-and **V2-parts** (#476, the admin parts several menus share, §12.2). §12.15 lists what was left to the controller and what is still open; §12.16 and §12.17 record two of its answers.
+and **V2-parts** (#476, the admin parts several menus share, §12.2). §12.15 lists what was left to the controller and what is still open; §12.16 and §12.17 record two of its answers; §12.18 designs V1-kiosk-queue, which answers §12.12.
 
 Line references into the v2 source: `admin-html:N` is line N of the decoded admin page (the one-line JSON string
 `src/online/lib/admin-html.ts`, decoded by the command in #460 §2, 175 lines); `admin-workspace.js`, `admin-queue.js`,
@@ -835,7 +842,8 @@ changed*: a `ViewPoller` on the view's `since` cursor, with the interval written
 while `rates` is shown and the tab is visible (`rates-reference.js:12`), which is served behaviour, so V2-rates (#468)
 ports that timer — on a version cursor, so an unchanged poll costs O(1) and carries no rows (§12.16). It is the only
 admin timer; the menus' views stay unpolled. The other timer of the served page, the queue state every 5 s
-(`account-bar.js:46`, `queue-panel.js:36`), belongs to the parked queue bar (§12.12).
+(`account-bar.js:46`, `queue-panel.js:36`), belongs to the queue store (§12.18.3), which the account bar's card, the
+queue page and #471's bar share.
 
 ### 12.7 Employees — one plain read of the whole list (O-em1)
 
@@ -896,12 +904,13 @@ columns to show, `onEdit?`), with its text keys in the shared `th.ts` / `en.ts` 
 V2-rates (#468) imports it instead of writing its own; #399's scope then gains those three files. V2-rates merges after
 #399, so it can see whether the file exists.
 
-### 12.12 The queue bar is parked (O-qu1, O-qu2)
+### 12.12 The queue bar (O-qu1, O-qu2)
 
-The admin queue bar (`admin-queue.js:6-24`) mounts the panel `queue-panel.js` also uses on `/kiosk-queue.html`. That
-page's screen, V1-kiosk-queue (§6, §8), has no ticket and no design row yet, and the panel's file and owner depend on
-it. [required] **#471 waits for a V1-kiosk-queue design row** that names the panel's file and owner; nothing about the
-panel or the bar's mount point is decided here.
+The admin queue bar (`admin-queue.js:6-24`) mounts the panel `queue-panel.js` also uses on `/kiosk-queue.html`. The
+panel, the shared queue state and the account bar's queue card are V1-kiosk-queue's (§12.18): the panel is
+`web/src/shared/ui/QueuePanel.tsx`, the state `web/src/shared/queue/queue-store.ts`. [required] #471 owns only
+`web/src/screens/admin/queue/`: it reads the queue store, renders `QueuePanel` in its dialog, docks the card and renders
+the sound controls (§12.18.8), and starts after V1-kiosk-queue-panel and V1-queue-card (§12.18.11).
 
 ### 12.13 The switch (#472)
 
@@ -1008,3 +1017,303 @@ form is a **v3 addition**, not a port; W6 (Thai verbatim) applies to its words o
   `เบอร์ติดต่อไม่ถูกต้อง` for a phone that fails the rule, `จำนวนเงินหรือเรทไม่ถูกต้อง` for an empty or zero amount), so the
   screen never shows a sentence the server would not.
 - **After success** (`{saved: true, booking}`): the dialog closes and the list re-reads (`refreshTick`, §12.6).
+
+### 12.18 V1-kiosk-queue — the queue page, the shared panel, the queue store and the queue card
+
+> decided-by: claude/7ca80c (lane controller) · 2026-10-08 · measured on `main` at `fcc0cbf` and in
+> `xchange-v2-source@4d0bdbb` · answers §11's two V1-kiosk-queue rows and §12.12
+
+Line references: `queue-panel.js`, `account-bar.js`, `admin-queue.js` and `kiosk-queue.html` are in
+`src/devices-public/` of the v2 source; `server.mjs` is `src/server.mjs`.
+
+**Root cause.** In v2 the queue is one feature split over three scripts that talk through DOM events: the account bar
+polls `notifications` every 5 s and broadcasts the answer (`account-bar.js:44` `xc:queue-state`, `:42` and `:45`
+`xc:queue-error`, `:31` `xc:queue-ready`) and polls again on `xc:queue-refresh` (`:46`); the panel fires
+`xc:queue-refresh` after a claim (`queue-panel.js:23`); the admin bar listens to all of it (`admin-queue.js:12-21`).
+v3 has no global script bus, and none of the three has a v3 owner: §12.12 parked the panel, and #402 sent the
+account bar's queue card to V1-kiosk-queue (its rows A9 and V3), so `AccountBar.tsx` (rendered by `AppShell.tsx:50`)
+shows no queue card on any v3 screen today. This section gives the three pieces one owner each and replaces the
+events with one shared store.
+
+#### 12.18.1 Decisions
+
+| # | Decision | Status |
+|---|---|---|
+| KQ1 | **One shared panel**, `QueuePanel` in `web/src/shared/ui/QueuePanel.tsx`, owned by V1-kiosk-queue. Props `{ branch: string; shown: boolean; onClaimed?: (id: string) => void }` [proposed]. The page `/kiosk-queue.html` and #471's admin dialog both render it (v2: one `XCQueuePanel.mount`, `queue-panel.js:6`, used by `kiosk-queue.html:1` and `admin-queue.js:8`). Refresh is the queue store's `refresh()`, not a handle the panel returns | decided |
+| KQ2 | **One shared queue state** replaces v2's DOM events: `web/src/shared/queue/queue-store.ts`, one store per branch, created lazily like `sharedSession()` (`web/src/shared/session/session.ts:40`). The page, the card and #471's bar read it; #471 reads it and does not own it | decided |
+| KQ3 | **The queue card** `QueueCard` in `web/src/shared/ui/QueueCard.tsx`, owned by V1-kiosk-queue and rendered by `AccountBar.tsx`, so it is on every v3 screen that shows the account bar, as v2's card was on every page with `BAR` (`server.mjs:97`, `:106-108`, `:128-130`). `AccountBar.tsx` belongs to closed #402 and no open ticket holds it | decided |
+| KQ4 | **Two views**, both on the `Kiosk` entry path (W8): `kiosk_queue`, a `PagedView` with a filter, and `kiosk_notifications`, a versioned `BranchView`. Money as decimal strings (W7). Claiming stays `POST /api/kiosk {action: 'accept'}` with §5.5.3's refusals | decided |
+| KQ5 | **The page** `/kiosk-queue.html` as v2's (`kiosk-queue.html:1`), through `AppShell` like the other V1 screens, gate `signed-in` (`pages.rs:115-121`: `PageKind::Plain`, `who_signed_in: true`) | decided |
+| KQ6 | **Admin-side uses** (the bar under the branch picker, the dialog, the toast, the link interception, the sidebar link `คิวลูกค้า`) stay with #471 and V2-shell (#460) — not here. §12.18.8 lists the seams #471 uses | decided |
+| KQ7 | **Texts**: the panel's and the card's strings are shared-component keys under a new shared prefix **`queue.*`** (W10 point 1 amended). The page's own strings are its folder's table `web/src/screens/kiosk-queue/i18n.ts` (`kiosk-queue.*`) | decided |
+
+#### 12.18.2 Server: the two views (KQ4)
+
+[required] Both views are new files only (§5.1): `api/src/presentation/http/v3/views/<view>.rs` and
+`api/src/presentation/dto/v3/<view>.rs`, exported to `web/src/shared/api/generated/<view>.ts`. Registration and the
+DTO module list are generated (§5.1). Neither view adds a role row: `INHERITS` is the v2 action the screen called.
+
+| | `kiosk_notifications` | `kiosk_queue` |
+|---|---|---|
+| Kind | `BranchView`, `VERSIONED = true` (the default) | `PagedView` |
+| `INHERITS` | `(EntryPath::Kiosk, "notifications")` | `(EntryPath::Kiosk, "list")` |
+| Who | anyone signed in (`policy.rs:303-309`); nobody → `400 kioskStaff` (`api/crates/xc-auth/src/domain/policy/value_objects/policy_error.rs:114`) | the same |
+| Filter | `NoFilter` | `KioskQueueFilter { state }` [name proposed], wire key `state` [required] = `waiting` \| `working` \| `completed` (the panel's three tabs, `queue-panel.js:9`); absent = `waiting`, the panel's first tab (`:7`) — **a v3 change**: v2's `list` defaults to `all`
+(`src/queue-work.mjs:16-17` `groups[p.filter||'all']`), but no caller relies on it, because the only one, `queue-panel.js:33`,
+always sends a filter, and v3 offers no `all`; any other value → `400 invalidRequest`, `field: "state"` (§12.1 parsing). v2's `all` is not offered: no v3 screen asks for it |
+| Data | `KioskNotifications` [name proposed]: `serverNow` (ISO), `branchId`, `branchName`, `count`, `latest` (`string \| null`), `workingCount`, `working` (≤ 10 `{id, queue, staff, startedAt, status}`), `employee` `{id, role}` | rows `KioskQueueRow` [name proposed]: `id`, `queue`, `orderNo`, `transactionNo` (`string \| null`), `status`, `type` (`BUY` \| `SELL`), `currency`, `foreign` (Money), `thb` (Money), `staff` (username, `''` when none), `startedAt`, `completedAt` (ISO or `null`), `durationSeconds` (`number \| null`), `canAccept`, `canContinue` |
+| Same answer as | `notifications_json` (`api/src/presentation/dto/kiosk.rs:196-237`) minus the order of keys; `employee` is **the identity the `me` view answers** (`views/me.rs`: `who.id()`, `who.role().as_str()`), not `EmployeeInfo`'s `"owner"` id (`http/kiosk.rs`, `Notifications` arm), so the card compares like with like | one row of `list_json` (`dto/kiosk.rs:246-319`), the fields the panel reads (`queue-panel.js:17-25`) and no others (W2) |
+| Order, paging | — | `created_at DESC, id DESC`, as `queue_page` (`api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs:370-415`); keyset: `before` = a row's `id`, the next page starts strictly after that row in this order; QUOTED never listed; filter **in SQL** (§12.1). The panel asks `limit=51` and shows 50, so "next" is known exactly, as v2's 51-read (`kiosk_repository.rs:383`, `desk.rs:46-75`) |
+| Bounded by | one branch's waiting count, its latest id and ≤ 10 working rows | `limit` ≤ 100 (§4.2) |
+
+- [required] **W7.** `foreign` and `thb` are decimal strings. v3's compat `list` sends them as JSON numbers
+  (`dto/kiosk.rs:279-280`, `money_json`, `api/src/application/compat/v2_json.rs:232`); the view does not reuse that
+  mapping. The panel shows them with `MoneyText` and does no arithmetic.
+- [required] **`serverNow` lives in the DTO, not the envelope**, and only in `KioskNotifications`. The client keeps the
+  offset `serverNow − Date.now()` from the last `changed: true` answer and ticks locally; a `changed: false` answer
+  carries nothing new and leaves the offset as it is. `kiosk_queue` rows carry no clock: the panel's running timers use
+  the store's clock (§12.18.3), which runs whenever the panel is mounted.
+- [required] **Every writer of `kiosk_requests` is under the branch's `BranchTx`** (§4.2), so the branch version is the
+  queue's cursor. The five writers measured at `fcc0cbf`, each proved by the views ticket with one write then `since` →
+  `changed: true`: the customer's `quote` and `confirm` (`api/crates/xc-kiosk/src/application/kiosk/customer.rs:49`,
+  `:97`), the desk's `accept` and `identity_checked` (`desk.rs:78`, `:153`), and the save's `complete_in`
+  (`save_hooks.rs:34`, called from `api/src/application/workflows/kiosk_save_step.rs:108`). `publish_receipt`
+  (`desk.rs:222`) runs under `BranchTx` too, but writes only `kiosk_receipts` (`put_receipt_in`,
+  `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs:570-588`), not `kiosk_requests`. Nothing in a
+  queue row depends on the clock: the only time-driven status, QUOTED → EXPIRED (`kiosk_machine.rs:249-254`), is a
+  status the queue never lists.
+- [proposed] The keyset read is a new `KioskRepository::queue_before(branch, state, before, limit)` beside
+  `queue_page` (domain trait `api/crates/xc-kiosk/src/domain/kiosk/repositories/kiosk_repository.rs`, its one
+  implementation, and `KioskService::queue_before` in `desk.rs`); usernames come from the helper `usernames` /
+  `username_or_id` of `api/src/presentation/http/kiosk.rs:102`, `:132`, made `pub(crate)` (visibility only).
+  The compat route `POST /api/kiosk` `list` is unchanged until V4.
+
+#### 12.18.3 The queue store (KQ2)
+
+[proposed] names, [required] behaviour:
+
+```ts
+export interface QueueStore {
+  state: Accessor<KioskNotifications | undefined>;   // the last data answer
+  error: Accessor<QueueError | undefined>;           // { kind: 'offline' } | { kind: 'ended'; reason: 'expired' | 'switched' }
+  lastUpdated: Accessor<number | undefined>;         // server-clock ms of the last successful answer, changed or not
+  version: Accessor<number | undefined>;             // the branch version of the last answer
+  now(): number;                                     // Date.now() + the offset from the last changed answer's serverNow
+  refresh(): Promise<void>;
+}
+export function queueStore(branch: string, deps?: QueueStoreDeps): QueueStore;  // one per branch, lazy
+export function useQueueStore(branch: Accessor<string>): Accessor<QueueStore>;  // retains while the caller is mounted
+export const queueBranch: Accessor<string>;                                    // the branch the card follows
+export function setQueueBranch(branch: string): void;
+```
+
+| # | Rule | v2 |
+|---|---|---|
+| S1 | Polls `kiosk_notifications` every **5 s** while at least one component retains it, sending the last `version` as `since`; an unchanged poll is O(1) (§4.2) | `account-bar.js:46` |
+| S2 | **Keeps polling while the tab is hidden** — the chime is for a tab in the background. So it does **not** use `ViewPoller`, which stops while hidden (`view-poller.ts:52-56`, `:91`); it runs its own timer over `ApiClient.view` | `account-bar.js:46` (a plain `setInterval`) |
+| S3 | Also polls at once on `window` `focus`, on `visibilitychange` to visible, 100 ms after any `change` event on the document, and on `refresh()` | `:46` |
+| S4 | One request in flight per store; a tick while one runs is skipped | `:43` `busy` |
+| S5 | An error other than S6/S7 sets `error = {kind: 'offline'}` and the 5 s timer keeps trying; the next success clears it | `:45` |
+| S6 | A `401`, or a refusal with code `kioskStaff` (nobody signed in, `policy.rs:303-309`), sets `error = {kind: 'ended', reason: 'expired'}` and **stops** the store | `:44` (`401` or `/Staff access/`) |
+| S7 | A data answer whose `employee` `{id, role}` differs from `SessionStore.me()`'s `{id, role}` sets `error = {kind: 'ended', reason: 'switched'}` and **stops** the store. When `SessionStore.me()`'s `id` or `role` changes, the store drops its `since`, so the next poll carries `employee` | `:44` |
+| S8 | `queueBranch()` follows v2's order: (1) the branch set with `setQueueBranch` — v2's global `selectedBranch`, i.e. the admin picker, set on v3 by whoever owns it (#471 / V2-shell), and by the page from its `?branch=`; else (2) `?branch=` of the location; else (3) `me().branch`; else (4) `MAIN`. `me().branch` is v3's replacement for v2's `window.XC_BRANCH`: the same source, the signed-in user's branch as the server resolved it (v3 still injects it into v2 pages, `api/src/presentation/pages.rs:423-429`, `:481-486`), and a v3 screen has no such global (§3.3) | `:5` `currentBranch()` |
+
+Reads of `SessionStore` (`web/src/shared/session/session.ts:6-10`): **`me` only** — `me().id` and `me().role` for S7
+and the card's role gate and sound key, `me().branch` for S8. The store never calls `signOut()`: it posts
+`/api/auth logout` and clears `me` (`session.ts:27-31`), which would remove the whole account bar, the card and its
+lock message with it. See §12.18.9 for what `SessionStore` lacks.
+
+#### 12.18.4 The panel (KQ1)
+
+[required] Ported from `queue-panel.js`, Thai verbatim through `queue.*` (KQ7):
+
+| # | Behaviour | v2 |
+|---|---|---|
+| P1 | Tabs `รอรับเรื่อง` / `กำลังทำรายการ` / `เสร็จสิ้น` (`aria-pressed` on the active one) and `โหลดล่าสุด`; a tab resets to page 1 | `:9-10`, `:32` |
+| P2 | `role="status"` message: `กำลังโหลดคิว…` while a forced read runs; after a read `อัปเดต <time> · เวลานับตั้งแต่รับเรื่องจนบันทึกสำเร็จ`, the time being the store's `lastUpdated` | `:8`, `:32-33` |
+| P3 | Empty list: `ไม่มีรายการในหมวดนี้` | `:15` |
+| P4 | A card per row: `queue` as heading, the state word (`WAITING` → `รอรับเรื่อง`, `COMPLETED` → `เสร็จสิ้น`, else `กำลังทำรายการ`) | `:17` |
+| P5 | `ร้านรับซื้อ` / `ร้านขาย` `· <foreign> <currency> → <thb> THB`, both amounts through `MoneyText` (W7) | `:18` |
+| P6 | `ออเดอร์ <orderNo> · Transaction <transactionNo>`, `ยังไม่บันทึก` when none | `:19` |
+| P7 | `ผู้รับผิดชอบ` (`ยังไม่มีผู้รับเรื่อง`), `เริ่มทำรายการ` (time or `ยังไม่มีข้อมูล`), `เสร็จสิ้น` (time; `ไม่มีเวลาย้อนหลัง` for a COMPLETED row without one; else `—`) | `:4`, `:20` |
+| P8 | `ระยะเวลาดำเนินการ`: `durationSeconds` as `<h> ชม. <m> นาที <s> วินาที`; a started row without it ticks every 1 s from `startedAt` on the store's clock, suffixed `(กำลังดำเนินการ)`; otherwise `ยังไม่มีข้อมูล` | `:5`, `:13`, `:21`, `:36` |
+| P9 | `รับเรื่องนี้` when `canAccept`: one claim at a time, posts `/api/kiosk` `{action: 'accept', payload: {id, branchId}}` through `ApiClient.post`; on success, if the branch did not change, switches to `กำลังทำรายการ` page 1, then calls the store's `refresh()` and `onClaimed?.(id)`; on a refusal shows the server's sentence (§5.5.3), re-reads, and keeps the sentence | `:23` |
+| P10 | `ทำรายการต่อ →` when `canContinue`, a link to `/desk?branch=<branch>&kiosk=<id>`; otherwise, for ACCEPTED / ID_CHECKED, `<staff> กำลังทำรายการนี้` | `:24-25` |
+| P11 | Pager `← ก่อนหน้า` / `หน้า <n>` / `ถัดไป →`; back disabled on page 1, next disabled when the 51st row is absent | `:11`, `:28` |
+| P12 | A failed read: `โหลดคิวไม่ได้: <message>`, every button in the list disabled and every link's `href` removed | `:34` |
+| P13 | Reads: when it becomes `shown`, on a tab / page / branch change, on `โหลดล่าสุด`, and **whenever the store's `version` moves** while shown — so the panel has no timer of its own and an unchanged branch costs nothing beyond the store's O(1) poll. The first page is read with `since`; a later page with `before` and no `since` (§4.2). A branch change resets to page 1 and clears the list | `:30-31`, `:36` |
+| P14 | Times are shown with `toLocaleString(locale(), {timeZone: 'Asia/Bangkok'})` (W10 point 5; v2 is `th-TH` only) | `:4` |
+
+Known differences: v2 re-read the open page every 5 s and redrew only when the JSON changed (`:33`); v3 re-reads only
+when the branch version moved (P13), which is the same set of changes. v2 paged by number with offsets
+(`kiosk_repository.rs:376`); v3 pages by keyset, so a row arriving while page 3 is open no longer shifts page 3 by one.
+
+#### 12.18.5 The page (KQ5)
+
+[required] `web/pages/kiosk-queue.html` (`xc-path` `/kiosk-queue.html`, `xc-gate` `signed-in`) and
+`web/src/screens/kiosk-queue/`: `AppShell` titled `XC · คิวลูกค้าและเวลาทำรายการ`, a link `← แอดมินหน้าร้าน` to `/`,
+the heading `คิวลูกค้าและเวลาทำรายการ`, the line `รับเรื่องด้วยบัญชีของตนเอง เวลาเริ่มนับเมื่อรับเรื่อง และสิ้นสุดเมื่อบันทึกรายการสำเร็จ`,
+and `<QueuePanel branch=… shown />` with the branch `?branch=`, else `MAIN` (`kiosk-queue.html:1`). The page calls
+`setQueueBranch` with that branch. These four strings are the page's own table, `kiosk-queue.*`.
+
+#### 12.18.6 The card (KQ3)
+
+[required] Ported from `account-bar.js:18-46`; only the card, not the bar (A1–A8, A10–A11 are #402's):
+
+| # | Behaviour | v2 |
+|---|---|---|
+| C1 | `<aside>` labelled `แจ้งเตือนคิวลูกค้า`: badge (`—` at first), title `XC · คิวหน้าร้าน` then `XC · <branchName>`, `role="status"` `aria-live="polite"` line `กำลังตรวจคิว…`, a fold button `−` / `+` (`aria-label` `ย่อการแจ้งเตือน`, `aria-expanded`) | `:18-23` |
+| C2 | Folded at first on a phone (`max-width: 700px`); folded hides the link, the sound buttons and the hint | `:16`, `:24-25` |
+| C3 | Link `เปิดคิว / รับเรื่อง →` to `/kiosk-queue.html?branch=<branch>` in a new tab, shown only to `me().role` ∈ `OWNER`, `FRONT`, `BACKEND`, `MANAGER` (the claiming roles, `policy.rs:311-327`) | `:26`, `:43` |
+| C4 | On each answer: badge = `count`; class `waiting` when `count > 0`; line `มีคิวลูกค้ารอ <count> รายการ · <branchName>` or `ไม่มีคิวลูกค้ารอ · <branchName>`; when the line changes and `count > 0`, the card unfolds. On a branch change the line is `กำลังตรวจคิวของสาขา…` until the first answer | `:43-44` |
+| C5 | `error.kind === 'offline'`: badge `!`, class `waiting` off, line `เชื่อมต่อไม่ได้ · กำลังลองใหม่` | `:45` |
+| C6 | `error.kind === 'ended'`: line `เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่` (`expired`) or `บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ` (`switched`); the link is shown to everyone, to `/login`, text `เข้าสู่ระบบอีกครั้ง →`; polling has stopped (S6, S7) | `:42`, `:44` |
+| C7 | Sound buttons `เปิดเสียงแจ้งเตือน` (`aria-pressed`) and `ทดสอบเสียง`, hint `กดเปิดเสียงครั้งแรกเพื่อให้เบราว์เซอร์อนุญาต`; turning sound on resumes an `AudioContext` and chimes; the hint and button texts of `:35-36` for on, off and each failure | `:28-30`, `:33`, `:35-36` |
+| C8 | The chime: 660 Hz then 880 Hz, 0.19 s apart, gain 0 → 0.12 in 20 ms then down to 0.001 at 0.3 s, each stopped at 0.31 s | `:34` |
+| C9 | **One chime per new request across tabs**: when sound is on, `count > 0` and `latest` is set, under `navigator.locks.request('xc.queue.sound.<branch>')` (when present) chime only if `localStorage['xc.queue.sound.<me().id>.<branch>'] !== latest`, then store `latest`; when `localStorage` throws, a per-page variable does the same | `:37-38` |
+
+[required] The card mounts on every screen where `AccountBar` shows a signed-in user, and runs C4–C9 even when it is
+docked (§12.18.8), so the chime does not depend on which page is open. The style follows `account-bar.js:16`
+[proposed], not test-locked.
+
+Known differences: v2's lock also disabled every `form button, form input, form select` on the page (`:42`). A card
+cannot reach another screen's forms, so that waits for `SessionStore` (§12.18.9). The account bar's branch line stays
+the branch id (#402 row V7); the card's title carries the branch name.
+
+#### 12.18.7 Texts (KQ7)
+
+W10 point 1's allowed shared prefixes become `field.*`, `form.*`, `shell.*`, `error.*`, **`queue.*`**. The list is
+enforced in two places, both of which change in the panel ticket: `SHARED_PREFIXES` in
+`web/src/shared/i18n/index.ts:10` (a screen folder may not be named like a shared prefix, `:111-112`) and the test's
+copy in `web/src/shared/i18n/i18n.test.ts:70` (checked at `:269`). The static gate
+`web/src/shared/i18n/namespace.test.ts` checks `screenT` calls under `screens/` and does not change.
+
+[required] The panel ticket adds **every** `queue.*` key, the card's included, to `web/src/shared/i18n/th.ts` and
+`en.ts` — the Thai of P1–P12 and C1–C9 verbatim, and `เชื่อมต่อคิวไม่ได้ · กำลังลองใหม่` (`account-bar.js:45`, the
+store-error sentence #471's bar shows) — so the card ticket edits no i18n file. Key names are [proposed]; values with a
+number or a name use `{placeholders}`.
+
+#### 12.18.8 What #471 uses
+
+#471 (V2-queue) builds the admin bar, dialog and toast in `web/src/screens/admin/queue/`, and uses, without editing:
+
+- `useQueueStore` / `queueStore` for the counts, `working`, `branchName`, `latest`, `error` (v2's `xc:queue-state` and
+  `xc:queue-error`, `admin-queue.js:13-21`), and `setQueueBranch` on a picker change (`admin-queue.js:22`);
+- `QueuePanel` inside its dialog (`admin-queue.js:8`), with `onClaimed` where it needs it;
+- `dockQueueCard(): () => void` [proposed] exported by `QueueCard.tsx`: while docked the card renders nothing but keeps
+  C4–C9 running (v2 hid the card on the admin page, `admin-queue.js:12`); the returned function undocks;
+- `QueueSoundControls` [proposed], `web/src/shared/ui/QueueSoundControls.tsx`: the sound buttons and hint of C7, which
+  #471 renders in its bar (`admin-queue.js:12` moved v2's controls there). The card renders the same component.
+
+#### 12.18.9 `SessionStore` — what it lacks (a V0-B follow-up, not this work)
+
+`SessionStore` is `{me, signOut, dispose}` (`session.ts:6-10`). The card needs two things it does not have:
+
+1. **Ending a session without signing out.** On `expired` / `switched` the card stops its own store (S6, S7), but
+   nothing tells the other screens: `signOut()` posts a logout and removes the account bar. The follow-up adds
+   `ended: Accessor<'expired' | 'switched' | undefined>` and `end(reason)` [proposed] that stop the `me` poller, post
+   nothing and keep `me()`, so a screen can lock its forms as v2 did (`account-bar.js:42`).
+2. **Seeing an account switch.** The `me` view is a versioned `BranchView` (`views/me.rs`) polled with the branch
+   cursor (`session.ts:14-17`, `view-poller.ts:96-98`). When another window signs in as someone else, the next `me`
+   poll sends the same `since` and gets `changed: false`, so `me()` keeps the old account until the branch is written.
+   The same holds for `kiosk_notifications`, so S7 catches a switch only on the next write to the branch. v2 caught it
+   within 5 s (`account-bar.js:44`). The server still checks every write against the real session, so this is about
+   the warning, not about access. The follow-up makes `me` answer the caller's identity on every poll.
+
+Until the follow-up lands, KQ3 ships with S6, S7 and C6 as above, and these two gaps are known differences.
+
+Known difference, not a `SessionStore` gap: a queue row's `staff` and a `working` entry's `staff` are usernames looked up
+from the employee accounts when the view loads. Renaming an employee writes no `kiosk_requests` row and does not move
+the branch version (§12.7), so an open panel or card shows the old username until the branch's next write. v2 re-read
+the list every 5 s (`queue-panel.js:36`) and showed the new name on the next poll.
+
+#### 12.18.10 Class diagram additions
+
+Server (adds to §5.1):
+
+```mermaid
+classDiagram
+  class KioskQueueView { <<views/kiosk_queue.rs>> +NAME = kiosk_queue +INHERITS = Kiosk, list +type Filter = KioskQueueFilter +type Row = KioskQueueRow }
+  class KioskNotificationsView { <<views/kiosk_notifications.rs>> +NAME = kiosk_notifications +INHERITS = Kiosk, notifications +type Filter = NoFilter +type Data = KioskNotifications }
+  class KioskQueueFilter { <<dto/v3/kiosk_queue.rs>> +state: waiting or working or completed }
+  class KioskQueueRow { <<dto/v3/kiosk_queue.rs>> +id +queue +orderNo +transactionNo +status +type +currency +foreign: Money +thb: Money +staff +startedAt +completedAt +durationSeconds +canAccept +canContinue }
+  class KioskNotifications { <<dto/v3/kiosk_notifications.rs>> +serverNow +branchId +branchName +count +latest +workingCount +working +employee }
+  class KioskService { <<xc-kiosk desk.rs>> +notifications(branch, actor) +queue_before(branch, state, before, limit) }
+  KioskQueueView ..|> PagedView
+  KioskNotificationsView ..|> BranchView
+  KioskQueueFilter ..|> ViewFilter
+  KioskQueueView --> KioskQueueFilter
+  KioskQueueView --> KioskQueueRow
+  KioskNotificationsView --> KioskNotifications
+  KioskQueueView --> KioskService : queue_before
+  KioskNotificationsView --> KioskService : notifications
+```
+
+Web (adds to §5.2):
+
+```mermaid
+classDiagram
+  class QueueStore {
+    <<shared/queue/queue-store.ts>>
+    +state: Accessor~KioskNotifications~
+    +error: Accessor~QueueError~
+    +lastUpdated: Accessor~number~
+    +version: Accessor~number~
+    +now() number
+    +refresh() Promise
+  }
+  class QueueBranch { <<queue-store.ts>> +queueBranch: Accessor~string~ +setQueueBranch(b) }
+  class QueuePanel { <<shared/ui/QueuePanel.tsx>> +branch: string +shown: boolean +onClaimed(id) }
+  class KioskQueueScreen { <<screens/kiosk-queue/>> }
+  class QueueCard { <<shared/ui/QueueCard.tsx>> +session: SessionStore +dockQueueCard() undock }
+  class QueueSound { <<shared/queue/queue-sound.ts>> +soundOn +enable() +test() +chime() +announce(state, user, branch) }
+  class QueueSoundControls { <<shared/ui/QueueSoundControls.tsx>> }
+  class AccountBar
+  class AdminQueueBar { <<screens/admin/queue/ — #471>> }
+  QueueStore --> ApiClient : view kiosk_notifications, since
+  QueueStore --> SessionStore : reads me
+  QueuePanel --> QueueStore : version, now, lastUpdated, refresh
+  QueuePanel --> ApiClient : view and page kiosk_queue, post /api/kiosk accept
+  QueuePanel --> MoneyText
+  KioskQueueScreen --> AppShell
+  KioskQueueScreen --> QueuePanel
+  KioskQueueScreen --> QueueBranch : setQueueBranch
+  AccountBar --> QueueCard : renders
+  QueueCard --> QueueStore
+  QueueCard --> QueueSound
+  QueueCard --> QueueSoundControls
+  QueueSoundControls --> QueueSound
+  AdminQueueBar --> QueueStore
+  AdminQueueBar --> QueuePanel
+  AdminQueueBar --> QueueSoundControls
+  AdminQueueBar --> QueueCard : dockQueueCard
+```
+
+| Class / module | File | Ticket | Used by |
+|---|---|---|---|
+| `KioskQueueView`, `KioskNotificationsView` | `api/src/presentation/http/v3/views/kiosk_queue.rs`, `views/kiosk_notifications.rs` | V1-kiosk-queue-views (#485) | — (generated registration) |
+| `KioskQueueFilter`, `KioskQueueRow`; `KioskNotifications` | `api/src/presentation/dto/v3/kiosk_queue.rs`; `dto/v3/kiosk_notifications.rs` → `web/src/shared/api/generated/kiosk_queue.ts`, `kiosk_notifications.ts` | V1-kiosk-queue-views (#485) | `QueuePanel`, `QueueStore` |
+| `KioskService::queue_before`, `KioskRepository::queue_before` | `api/crates/xc-kiosk/src/application/kiosk/desk.rs`, `.../domain/kiosk/repositories/kiosk_repository.rs`, `.../infrastructure/kiosk/kiosk_repository.rs` | V1-kiosk-queue-views (#485) | `KioskQueueView` |
+| `usernames`, `username_or_id` (visibility only) | `api/src/presentation/http/kiosk.rs` | V1-kiosk-queue-views (#485) | both views |
+| `QueueStore`, `queueStore`, `useQueueStore`, `queueBranch`, `setQueueBranch`, `QueueError` | `web/src/shared/queue/queue-store.ts` | V1-kiosk-queue-panel (#486) | `QueuePanel`, `QueueCard`, the page, #471 |
+| the views' types until the generated files exist | `web/src/shared/queue/wire.ts` (§12.18.11) | V1-kiosk-queue-panel (#486) | `queue-store.ts`, `QueuePanel` |
+| `QueuePanel` | `web/src/shared/ui/QueuePanel.tsx` | V1-kiosk-queue-panel (#486) | the page, #471 |
+| the page | `web/pages/kiosk-queue.html`, `web/src/screens/kiosk-queue/**` (its `i18n.ts`: `kiosk-queue.*`) | V1-kiosk-queue-panel (#486) | — |
+| every `queue.*` key; `SHARED_PREFIXES` | `web/src/shared/i18n/th.ts`, `en.ts`, `index.ts` (the one constant) | V1-kiosk-queue-panel (#486) | panel, card, #471 |
+| `QueueCard`, `dockQueueCard` | `web/src/shared/ui/QueueCard.tsx` | V1-queue-card (#487) | `AccountBar`, #471 |
+| `QueueSound` | `web/src/shared/queue/queue-sound.ts` | V1-queue-card (#487) | `QueueCard`, `QueueSoundControls` |
+| `QueueSoundControls` | `web/src/shared/ui/QueueSoundControls.tsx` | V1-queue-card (#487) | `QueueCard`, #471 |
+| the render line | `web/src/shared/ui/AccountBar.tsx` | V1-queue-card (#487) | — |
+
+No file is in two tickets. #471 owns only `web/src/screens/admin/queue/` and edits none of the files above.
+
+#### 12.18.11 Tickets and order
+
+| Ticket | Owns | Start dependency | Merge order (not a start dependency) |
+|---|---|---|---|
+| V1-kiosk-queue-views (#485) | the server rows of the table above, their generated TS, `api/tests/v3_kiosk_queue_views_test.rs` | **#475** (V0-C: `ViewFilter`, `type Filter`) | — |
+| V1-kiosk-queue-panel (#486) | the store, `wire.ts`, the panel, the page, the `queue.*` keys, `SHARED_PREFIXES` | **#475** (`ApiClient`'s `filter` parameter) | after V1-kiosk-queue-views. Until then `wire.ts` declares `KioskQueueRow`, `KioskQueueFilter` and `KioskNotifications` by hand, exactly as §12.18.2, with a comment that it will become re-exports; on the rebase over the views ticket it becomes `export type { … } from '../api/generated/…'`, and a mismatch fails `typecheck` |
+| V1-queue-card (#487) | `QueueCard`, `QueueSound`, `QueueSoundControls`, the `AccountBar` render line | **V1-kiosk-queue-panel** (it reads `queue-store.ts` and the `queue.*` keys, which only that ticket writes) | — |
+| #471 V2-queue | `web/src/screens/admin/queue/` | #460 (V2-shell), V1-kiosk-queue-panel, V1-queue-card | — |
+
+The up-front tests of each ticket are written by the controller on that ticket's branch before dispatch (🧪 rule).
