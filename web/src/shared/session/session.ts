@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from 'solid-js';
-import type { ApiClient } from '../api/client';
+import { ApiClient } from '../api/client';
 import type { Me } from '../api/generated/common';
 import { ViewPoller } from '../live/view-poller';
 
@@ -33,4 +33,13 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Sessi
       poller.stop();
     },
   };
+}
+
+let shared: SessionStore | undefined;
+
+export function sharedSession(): SessionStore {
+  if (!shared) {
+    shared = createSessionStore(new ApiClient());
+  }
+  return shared;
 }

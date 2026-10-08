@@ -57,6 +57,8 @@ pub struct Me {
     pub id: String,
     pub role: String,
     pub branch: String,
+    pub name: Option<String>,
+    pub username: Option<String>,
 }
 
 /// Exports shared v3 types to `common.ts` in `dir`.

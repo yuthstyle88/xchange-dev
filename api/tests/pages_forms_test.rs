@@ -36,6 +36,7 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::screens::ScreenTable;
 
 const WHO: &str = "x-test-sessions";
 const HOST: &str = "xc.test";
@@ -221,21 +222,37 @@ async fn every_page_carries_the_helper_once_right_before_the_version_line() {
                 .is_some_and(|c| c.starts_with("text/html")),
             "{what}: an HTML page"
         );
-        has_the_helper_once(&answer.text(), &what);
+        if ScreenTable::compiled().holds(path) {
+            assert!(
+                !answer.text().contains(HELPER),
+                "{what}: a v3 screen carries no form helper tag"
+            );
+        } else {
+            has_the_helper_once(&answer.text(), &what);
+        }
     }
     // a staff member on a branch page, and the owner naming a branch
     for (uri, who) in [
         ("/", "staff:MANAGER:XC-B01"),
         ("/desk?branch=XC-B01", "owner"),
     ] {
+        let path = uri.split('?').next().unwrap();
         let answer = get!(&app, uri, who);
         assert_eq!(answer.status, StatusCode::OK, "GET {uri} as {who}");
-        has_the_helper_once(&answer.text(), &format!("GET {uri} as {who}"));
+        if ScreenTable::compiled().holds(path) {
+            assert!(
+                !answer.text().contains(HELPER),
+                "GET {uri} as {who}: a v3 screen carries no form helper tag"
+            );
+        } else {
+            has_the_helper_once(&answer.text(), &format!("GET {uri} as {who}"));
+        }
     }
 }
 
 #[actix_web::test]
 async fn a_page_without_a_body_end_gets_the_helper_once() {
+    let held = ScreenTable::compiled().holds("/login");
     let dir = std::env::temp_dir().join(format!("xc-forms-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("login.html"), "<html><head></head><p>no end tags").unwrap();
@@ -244,8 +261,15 @@ async fn a_page_without_a_body_end_gets_the_helper_once() {
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(answer.status, StatusCode::OK);
     let body = answer.text();
-    has_the_helper_once(&body, "a page with no </body>");
-    assert!(body.trim_end().ends_with("</div>"), "{body}");
+    if held {
+        assert!(
+            !body.contains(HELPER),
+            "a v3 screen carries no form helper tag"
+        );
+    } else {
+        has_the_helper_once(&body, "a page with no </body>");
+        assert!(body.trim_end().ends_with("</div>"), "{body}");
+    }
 }
 
 #[actix_web::test]

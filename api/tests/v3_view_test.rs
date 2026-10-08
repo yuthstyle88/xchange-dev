@@ -774,7 +774,7 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
     is_changed(&owner, 0, "me as the owner");
     assert_eq!(
         owner.body["data"],
-        serde_json::json!({ "kind": "owner", "id": "owner-1", "role": "OWNER", "branch": "MAIN" })
+        serde_json::json!({ "kind": "owner", "id": "owner-1", "role": "OWNER", "branch": "MAIN", "name": null, "username": null })
     );
 
     let named = get(&db, &views, "owner", "/api/v3/views/me?branch=XC-B02").await;
@@ -790,7 +790,7 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
     is_changed(&staff, 0, "me as RATES staff");
     assert_eq!(
         staff.body["data"],
-        serde_json::json!({ "kind": "staff", "id": "employee-7", "role": "RATES", "branch": "XC-B01" })
+        serde_json::json!({ "kind": "staff", "id": "employee-7", "role": "RATES", "branch": "XC-B01", "name": null, "username": null })
     );
 
     let nobody = get(&db, &views, "", "/api/v3/views/me").await;

@@ -4,6 +4,8 @@ export const en: Record<Key, string> = {
   'field.password.show': 'Show password',
   'field.password.hide': 'Hide password',
   'shell.langSwitch': 'Switch language to {language}',
+  'shell.account.branch': 'Branch {branch}',
+  'shell.account.signOut': 'Sign out',
   'error.signIn': 'Please sign in',
   'error.ownerOnly': 'Owner access required',
   'error.invalidRequest': 'Invalid request',

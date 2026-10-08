@@ -37,6 +37,8 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{self, SessionReader, Sessions};
+use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::ui::UiAssets;
 
 // ------------------------------------------------------------------ helpers
 
@@ -354,16 +356,45 @@ async fn every_page_answers_as_v2_does() {
             match status {
                 200 => {
                     seen[0] += 1;
-                    headers_are(&answer, &case["headers"], &what);
-                    // #293: every page (every 200 recorded here is an HTML page,
-                    // `/kiosk-queue.html` included) carries one version line v2
-                    // did not have.
-                    let is_page = answer
-                        .header("content-type")
-                        .is_some_and(|c| c.starts_with("text/html"));
-                    let body = String::from_utf8_lossy(&answer.body);
-                    let body = without_version_line(&body, is_page, &what);
-                    assert_eq!(body, case["body"].as_str().unwrap(), "{what}: body");
+                    if ScreenTable::compiled().holds(path) {
+                        assert_eq!(
+                            answer.header("cache-control"),
+                            Some("no-cache"),
+                            "{what}: cache-control"
+                        );
+                        assert!(
+                            answer
+                                .header("content-type")
+                                .is_some_and(|c| c.starts_with("text/html")),
+                            "{what}: content-type"
+                        );
+                        assert_eq!(
+                            answer.header("x-content-type-options"),
+                            Some("nosniff"),
+                            "{what}: nosniff"
+                        );
+                        let decl = ScreenTable::compiled()
+                            .entries()
+                            .iter()
+                            .find(|d| d.path == path)
+                            .unwrap()
+                            .clone();
+                        let entry = UiAssets::get(&decl.entry).unwrap_or_else(|| {
+                            panic!("{what}: entry {} missing in UiAssets", decl.entry)
+                        });
+                        assert_eq!(answer.body, entry.data.as_ref(), "{what}: body");
+                    } else {
+                        headers_are(&answer, &case["headers"], &what);
+                        // #293: every page (every 200 recorded here is an HTML page,
+                        // `/kiosk-queue.html` included) carries one version line v2
+                        // did not have.
+                        let is_page = answer
+                            .header("content-type")
+                            .is_some_and(|c| c.starts_with("text/html"));
+                        let body = String::from_utf8_lossy(&answer.body);
+                        let body = without_version_line(&body, is_page, &what);
+                        assert_eq!(body, case["body"].as_str().unwrap(), "{what}: body");
+                    }
                 }
                 400 => {
                     seen[1] += 1;
@@ -570,12 +601,20 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
         if ["/", "/desk", "/staff/desk"].contains(&path) {
             continue;
         }
-        ask(&app, get(path, "owner").to_request())
-            .await
-            .is_the_plain_404(&format!("GET {path} as the owner"));
+        let held = ScreenTable::compiled().holds(path);
+        let answer = ask(&app, get(path, "owner").to_request()).await;
+        if held {
+            assert_eq!(answer.status, StatusCode::OK, "GET {path} as the owner");
+            assert_eq!(answer.header("cache-control"), Some("no-cache"));
+        } else {
+            answer.is_the_plain_404(&format!("GET {path} as the owner"));
+        }
         let answer = ask(&app, get(path, "none").to_request()).await;
         if signed_in {
             assert_eq!(answer.status.as_u16(), 303, "GET {path} as nobody");
+        } else if held {
+            assert_eq!(answer.status, StatusCode::OK, "GET {path} as nobody");
+            assert_eq!(answer.header("cache-control"), Some("no-cache"));
         } else {
             answer.is_the_plain_404(&format!("GET {path} as nobody"));
         }
@@ -588,12 +627,29 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
         if path == "/staff/desk" {
             continue;
         }
-        ask(&app, get(path, "owner").to_request())
-            .await
-            .is_the_plain_404(&format!("no directory: GET {path} as the owner"));
+        let held = ScreenTable::compiled().holds(path);
+        let answer = ask(&app, get(path, "owner").to_request()).await;
+        if held {
+            assert_eq!(
+                answer.status,
+                StatusCode::OK,
+                "no directory: GET {path} as the owner"
+            );
+            assert_eq!(answer.header("cache-control"), Some("no-cache"));
+        } else {
+            answer.is_the_plain_404(&format!("no directory: GET {path} as the owner"));
+        }
         if signed_in {
             let answer = ask(&app, get(path, "none").to_request()).await;
             assert_eq!(answer.status.as_u16(), 303, "no directory: GET {path}");
+        } else if held {
+            let answer = ask(&app, get(path, "none").to_request()).await;
+            assert_eq!(
+                answer.status,
+                StatusCode::OK,
+                "no directory: GET {path} as nobody"
+            );
+            assert_eq!(answer.header("cache-control"), Some("no-cache"));
         }
     }
     ask(&app, get("/staff/desk", "staff:FRONT:XC-B01").to_request())
@@ -611,10 +667,17 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     // the directory is written at deploy time, possibly while the server runs
     let scratch = Scratch::new("live");
     let app = app!(&scratch.0);
+    let login_held = ScreenTable::compiled().holds("/login");
 
-    ask(&app, get("/login", "none").to_request())
-        .await
-        .is_the_plain_404("before the page exists");
+    if login_held {
+        let answer = ask(&app, get("/login", "none").to_request()).await;
+        assert_eq!(answer.status, StatusCode::OK);
+        assert_eq!(answer.header("cache-control"), Some("no-cache"));
+    } else {
+        ask(&app, get("/login", "none").to_request())
+            .await
+            .is_the_plain_404("before the page exists");
+    }
     ask(&app, get("/late.js", "none").to_request())
         .await
         .is_the_plain_404("before the file exists");
@@ -622,11 +685,17 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     scratch.write("login.html", "<html><body>first</body></html>");
     scratch.write("admin.html", "<html><head></head><body>first</body></html>");
     scratch.write("late.js", "first();");
-    let answer = ask(&app, get("/login", "none").to_request()).await;
-    assert_eq!(
-        without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
-        "<html><body>first</body></html>"
-    );
+    if login_held {
+        let answer = ask(&app, get("/login", "none").to_request()).await;
+        assert_eq!(answer.status, StatusCode::OK);
+        assert_eq!(answer.header("cache-control"), Some("no-cache"));
+    } else {
+        let answer = ask(&app, get("/login", "none").to_request()).await;
+        assert_eq!(
+            without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
+            "<html><body>first</body></html>"
+        );
+    }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "first();");
     let answer = ask(&app, get("/", "owner").to_request()).await;
@@ -638,11 +707,17 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
         "<html><head></head><body>second</body></html>",
     );
     scratch.write("late.js", "second();");
-    let answer = ask(&app, get("/login", "none").to_request()).await;
-    assert_eq!(
-        without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
-        "<html><body>second</body></html>"
-    );
+    if login_held {
+        let answer = ask(&app, get("/login", "none").to_request()).await;
+        assert_eq!(answer.status, StatusCode::OK);
+        assert_eq!(answer.header("cache-control"), Some("no-cache"));
+    } else {
+        let answer = ask(&app, get("/login", "none").to_request()).await;
+        assert_eq!(
+            without_version_line(&String::from_utf8_lossy(&answer.body), true, "/login"),
+            "<html><body>second</body></html>"
+        );
+    }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "second();");
     let answer = ask(&app, get("/", "owner").to_request()).await;
@@ -655,7 +730,16 @@ async fn a_relative_web_directory_is_taken_from_where_the_server_runs() {
     let app = app!(Path::new("tests/fixtures/pages/web"));
     let answer = ask(&app, get("/login", "none").to_request()).await;
     assert_eq!(answer.status, StatusCode::OK);
-    assert!(String::from_utf8_lossy(&answer.body).contains("login (fixture)"));
+    if ScreenTable::compiled().holds("/login") {
+        assert_eq!(answer.header("cache-control"), Some("no-cache"));
+        assert!(
+            answer
+                .header("content-type")
+                .is_some_and(|c| c.starts_with("text/html"))
+        );
+    } else {
+        assert!(String::from_utf8_lossy(&answer.body).contains("login (fixture)"));
+    }
     let answer = ask(&app, get("/fonts/OFL.txt", "none").to_request()).await;
     assert_eq!(answer.status, StatusCode::OK);
     assert_eq!(String::from_utf8_lossy(&answer.body), "OFL fixture\n");

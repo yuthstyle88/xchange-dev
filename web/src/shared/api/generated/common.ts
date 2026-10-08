@@ -3,7 +3,7 @@
 /**
  * Current user / actor information.
  */
-export type Me = { kind: string, id: string, role: string, branch: string, };
+export type Me = { kind: string, id: string, role: string, branch: string, name: string | null, username: string | null, };
 
 /**
  * Decimal money string (W7).

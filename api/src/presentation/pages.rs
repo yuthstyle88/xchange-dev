@@ -884,7 +884,15 @@ mod tests {
     }
 
     #[test]
-    fn server_error_answers_500_with_thai_message_and_json_content_type() {
+    fn an_amount_with_even_digit_before_midpoint_rounds_half_away_from_zero() {
+        let even_midpoint = Decimal::from_str("1234.5665").unwrap();
+        assert_eq!(to_locale_string(even_midpoint), "1,234.567");
+        let neg_even_midpoint = Decimal::from_str("-1234.5665").unwrap();
+        assert_eq!(to_locale_string(neg_even_midpoint), "-1,234.567");
+    }
+
+    #[actix_web::test]
+    async fn server_error_answers_500_with_thai_message_and_json_content_type() {
         let resp = server_error();
         assert_eq!(
             resp.status(),
@@ -894,5 +902,7 @@ mod tests {
             resp.headers().get("content-type").unwrap(),
             "application/json; charset=utf-8"
         );
+        let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
+        assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
     }
 }

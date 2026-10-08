@@ -2,6 +2,8 @@ export const th = {
   'field.password.show': 'แสดงรหัสผ่าน',
   'field.password.hide': 'ซ่อนรหัสผ่าน',
   'shell.langSwitch': 'เปลี่ยนภาษาเป็น {language}',
+  'shell.account.branch': 'สาขา {branch}',
+  'shell.account.signOut': 'ออกจากระบบ',
   'error.signIn': 'กรุณาเข้าสู่ระบบ',
   'error.ownerOnly': 'เฉพาะเจ้าของระบบเท่านั้น',
   'error.invalidRequest': 'คำขอไม่ถูกต้อง',

@@ -280,9 +280,10 @@ async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
     shop.finish().await;
 }
 
-/// Decision D5 (members) is open: nobody is a member, whoever the customers are.
+/// Membership comes from the branch's `members` rows (D5 is decided): nobody
+/// is a member without a member row, whoever the customers are.
 #[tokio::test]
-async fn nobody_is_a_member_until_the_members_decision() {
+async fn nobody_is_a_member_without_a_member_row() {
     let shop = Shop::start().await;
     shop.reserve(MAIN, person()).await;
     let members = sources(&shop)
