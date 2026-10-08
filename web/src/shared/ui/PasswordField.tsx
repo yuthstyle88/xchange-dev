@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { t } from '../i18n';
 import type { FieldBinding } from './form';
 
 export function PasswordField(props: {
@@ -59,10 +60,10 @@ export function PasswordField(props: {
         <button
           type="button"
           onClick={toggle}
-          aria-label={visible() ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+          aria-label={visible() ? t('field.password.hide') : t('field.password.show')}
           aria-pressed={visible() ? 'true' : 'false'}
         >
-          {visible() ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+          {visible() ? t('field.password.hide') : t('field.password.show')}
         </button>
       </div>
       {props.field.invalid() && props.field.error() && (
