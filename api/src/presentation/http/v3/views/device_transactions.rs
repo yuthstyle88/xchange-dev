@@ -13,7 +13,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::common::Money;
+use crate::presentation::dto::v3::common::{Money, NoFilter};
 use crate::presentation::dto::v3::device_transactions::DeviceTransactionRow;
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
@@ -39,11 +39,13 @@ impl PagedView for DeviceTransactionsPagedView {
     const NAME: &'static str = "device_transactions";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Devices, "snapshot");
     type Row = DeviceTransactionRow;
+    type Filter = NoFilter;
 
     fn page(
         &self,
         branch: &BranchId,
         _who: &Actor,
+        _filter: &Self::Filter,
         before: Option<RowId>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {

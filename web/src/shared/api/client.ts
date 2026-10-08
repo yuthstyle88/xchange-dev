@@ -4,16 +4,18 @@ export interface ViewAnswer<T> {
   data?: T;
 }
 
-export interface ViewParams {
+export interface ViewParams<F = unknown> {
   branch?: string;
   since?: number;
   limit?: number;
+  filter?: F;
 }
 
-export interface PageParams {
+export interface PageParams<F = unknown> {
   branch?: string;
   before?: string;
   limit?: number;
+  filter?: F;
 }
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -68,11 +70,17 @@ export class ApiClient {
     });
   }
 
-  async view<T>(name: string, q: ViewParams = {}): Promise<ViewAnswer<T>> {
+  async view<T, F = unknown>(name: string, q: ViewParams<F> = {}): Promise<ViewAnswer<T>> {
     const params = new URLSearchParams();
     if (q.branch !== undefined) params.set('branch', q.branch);
     if (q.since !== undefined) params.set('since', String(q.since));
     if (q.limit !== undefined) params.set('limit', String(q.limit));
+    if (q.filter && typeof q.filter === 'object') {
+      for (const [k, v] of Object.entries(q.filter)) {
+        if (v === undefined || v === null || v === '') continue;
+        params.set(k, String(v));
+      }
+    }
 
     const qs = params.toString();
     const url = `/api/v3/views/${name}${qs ? `?${qs}` : ''}`;
@@ -96,11 +104,17 @@ export class ApiClient {
     return answer;
   }
 
-  async page<R>(name: string, q: PageParams = {}): Promise<R[]> {
+  async page<R, F = unknown>(name: string, q: PageParams<F> = {}): Promise<R[]> {
     const params = new URLSearchParams();
     if (q.branch !== undefined) params.set('branch', q.branch);
     if (q.before !== undefined) params.set('before', q.before);
     if (q.limit !== undefined) params.set('limit', String(q.limit));
+    if (q.filter && typeof q.filter === 'object') {
+      for (const [k, v] of Object.entries(q.filter)) {
+        if (v === undefined || v === null || v === '') continue;
+        params.set(k, String(v));
+      }
+    }
 
     const qs = params.toString();
     const url = `/api/v3/views/${name}${qs ? `?${qs}` : ''}`;

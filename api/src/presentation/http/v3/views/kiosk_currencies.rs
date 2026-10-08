@@ -30,7 +30,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
-use crate::presentation::dto::v3::common::Rate;
+use crate::presentation::dto::v3::common::{NoFilter, Rate};
 use crate::presentation::dto::v3::kiosk_currencies::{
     KbankComparison, KbankReference, KioskCountry, KioskCurrencies, KioskCurrency,
 };
@@ -99,12 +99,14 @@ impl KioskCurrenciesView {
 impl BranchView for KioskCurrenciesView {
     const NAME: &'static str = "kiosk_currencies";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Kiosk, "manage");
+    type Filter = NoFilter;
     type Data = KioskCurrencies;
 
     fn load(
         &self,
         branch: &BranchId,
         _who: &Actor,
+        _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let kiosk_service = self.kiosk_service.clone();
         let rate_service = self.rate_service.clone();
