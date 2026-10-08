@@ -1,0 +1,9 @@
+@media print {
+  .screen-heading,
+  .print-button,
+  .print-tip,
+  header:not(.brand),
+  footer:not(.stub) {
+    display: none;
+  }
+}
