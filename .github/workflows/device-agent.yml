@@ -1,0 +1,261 @@
+name: device-agent
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['release/**']
+  pull_request:
+    paths: ['.github/workflows/device-agent.yml']
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('device-agent-pr-{0}', github.event.pull_request.number) || format('device-agent-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
+  GIT_CONFIG_VALUE_0: https://github.com/
+
+jobs:
+  macos:
+    name: macos
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up toolchain and targets
+        run: |
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build macOS universal binary
+        id: build
+        working-directory: api
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="xc-device-agent") | .version')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Building xc-device-agent version $VERSION commit ${{ github.sha }} at $BUILT_AT"
+
+          XC_AGENT_BUILD_SHA="${{ github.sha }}" XC_AGENT_BUILT_AT="$BUILT_AT" \
+            cargo build --release -p xc-device-agent --target aarch64-apple-darwin --locked
+
+          XC_AGENT_BUILD_SHA="${{ github.sha }}" XC_AGENT_BUILT_AT="$BUILT_AT" \
+            cargo build --release -p xc-device-agent --target x86_64-apple-darwin --locked
+
+          mkdir -p dist artifact
+          lipo -create -output dist/xc-device-agent \
+            target/aarch64-apple-darwin/release/xc-device-agent \
+            target/x86_64-apple-darwin/release/xc-device-agent
+          chmod +x dist/xc-device-agent
+
+          ARCHS=$(lipo -archs dist/xc-device-agent)
+          echo "Architectures: $ARCHS"
+          echo "$ARCHS" | grep -q "x86_64" || { echo "Missing x86_64 architecture"; exit 1; }
+          echo "$ARCHS" | grep -q "arm64" || { echo "Missing arm64 architecture"; exit 1; }
+
+          VERSION_OUTPUT=$(dist/xc-device-agent --version)
+          echo "$VERSION_OUTPUT"
+          echo "$VERSION_OUTPUT" | grep -q "version: $VERSION" || { echo "Bad version output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "build: ${{ github.sha }}" || { echo "Bad build sha output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "builtAt:" || { echo "Missing builtAt output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "channel: stable" || { echo "Bad channel output"; exit 1; }
+
+          TARGET_NAME="universal-apple-darwin"
+          ARCHIVE_NAME="xc-device-agent-${VERSION}-${SHORT_SHA}-${TARGET_NAME}.tar.gz"
+          (cd dist && tar -czf "../artifact/$ARCHIVE_NAME" xc-device-agent)
+
+          (cd artifact && shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256")
+          (cd artifact && shasum -a 256 -c "${ARCHIVE_NAME}.sha256")
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-device-agent-${{ steps.build.outputs.version }}-${{ steps.build.outputs.short_sha }}-universal-apple-darwin
+          path: |
+            api/artifact/*.tar.gz
+            api/artifact/*.sha256
+          if-no-files-found: error
+
+  linux:
+    name: linux
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up toolchain
+        run: |
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Build Linux x86_64 musl binary
+        id: build
+        working-directory: api
+        env:
+          CC_x86_64_unknown_linux_musl: gcc
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="xc-device-agent") | .version')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Building xc-device-agent version $VERSION commit ${{ github.sha }} at $BUILT_AT (musl)"
+
+          XC_AGENT_BUILD_SHA="${{ github.sha }}" XC_AGENT_BUILT_AT="$BUILT_AT" \
+            cargo build --release -p xc-device-agent --target x86_64-unknown-linux-musl --locked
+
+          BIN="target/x86_64-unknown-linux-musl/release/xc-device-agent"
+
+          VERSION_OUTPUT=$("$BIN" --version)
+          echo "$VERSION_OUTPUT"
+          echo "$VERSION_OUTPUT" | grep -q "version: $VERSION" || { echo "Bad version output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "build: ${{ github.sha }}" || { echo "Bad build sha output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "builtAt:" || { echo "Missing builtAt output"; exit 1; }
+          echo "$VERSION_OUTPUT" | grep -q "channel: stable" || { echo "Bad channel output"; exit 1; }
+
+          # Verify binary is statically linked
+          FILE_OUTPUT=$(file "$BIN")
+          echo "file: $FILE_OUTPUT"
+          if ! echo "$FILE_OUTPUT" | grep -qE "statically linked|static-pie"; then
+            echo "::error::Binary is not statically linked (file output: $FILE_OUTPUT)"
+            exit 1
+          fi
+
+          LDD_OUTPUT=$(ldd "$BIN" 2>&1 || true)
+          echo "ldd: $LDD_OUTPUT"
+          if ! echo "$LDD_OUTPUT" | grep -qiE "not a dynamic executable|statically linked"; then
+            echo "::error::Binary is dynamically linked, expected 'not a dynamic executable' (ldd output: $LDD_OUTPUT)"
+            exit 1
+          fi
+
+          mkdir -p dist artifact
+          cp "$BIN" dist/
+          TARGET_NAME="x86_64-unknown-linux-musl"
+          ARCHIVE_NAME="xc-device-agent-${VERSION}-${SHORT_SHA}-${TARGET_NAME}.tar.gz"
+          (cd dist && tar -czf "../artifact/$ARCHIVE_NAME" xc-device-agent)
+
+          (cd artifact && shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256")
+          (cd artifact && shasum -a 256 -c "${ARCHIVE_NAME}.sha256")
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-device-agent-${{ steps.build.outputs.version }}-${{ steps.build.outputs.short_sha }}-x86_64-unknown-linux-musl
+          path: |
+            api/artifact/*.tar.gz
+            api/artifact/*.sha256
+          if-no-files-found: error
+
+  e2e:
+    name: e2e
+    needs: linux
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: xchange_test
+        ports:
+          - 5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data
+          --health-cmd "psql -h 127.0.0.1 -U postgres -d xchange_test -tAc 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up toolchain
+        run: |
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-x86_64-unknown-linux-musl'
+          path: artifact-download
+
+      - name: Extract agent binary
+        run: |
+          mkdir -p bin
+          TARBALL=$(find artifact-download -name "*.tar.gz" | head -n 1)
+          if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+            echo "ERROR: Could not find downloaded Linux tarball in artifact-download"
+            ls -laR artifact-download || true
+            exit 1
+          fi
+          echo "Extracting $TARBALL..."
+          tar -xzf "$TARBALL" -C bin
+          chmod +x bin/xc-device-agent
+          bin/xc-device-agent --version
+
+      - name: Ensure PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "psql not found on host; creating wrapper via postgres:16-alpine container..."
+            mkdir -p bin
+            printf '#!/bin/sh\nexec docker run --rm --net=host --label fleet.worker=gemini/studio-1 -i -e PGHOST -e PGPORT -e PGUSER -e PGDATABASE postgres:16-alpine psql "$@"\n' > bin/psql
+            chmod +x bin/psql
+            echo "$PWD/bin" >> "$GITHUB_PATH"
+          fi
+          psql --version || true
+
+      - name: Run e2e test
+        env:
+          AGENT_BIN: ${{ github.workspace }}/bin/xc-device-agent
+          TMPDIR: ${{ github.workspace }}/tmp
+          PGHOST: 127.0.0.1
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+          PGUSER: postgres
+          PGDATABASE: xchange_test
+        run: |
+          mkdir -p tmp
+          bash deploy/agent/e2e.sh
