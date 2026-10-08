@@ -1,0 +1,1114 @@
+//! Ticket #476 (V2-parts, `docs/design/xchange-v3-web.md` §5.1, §12.1, §12.2): the three bounded
+//! views the shared admin parts read, and the shared exchange row. Written before the
+//! implementation by the lane controller. Do not edit, delete or weaken; add tests in a file of
+//! your own.
+//!
+//! - `GET /api/v3/views/transaction_documents?ref=` — a `BranchView` inheriting
+//!   `(EntryPath::UserRoute, "documents")` (the row `/documents` checks): `{ref, files}`, the
+//!   files `owners_page` lists for that exchange under `ใบเสร็จ —` / `ภาพรายละเอียดใบเสร็จ —`, each
+//!   `{kind: "receipt" | "receiptImage", path, download}`; never the passport nor the payment
+//!   proof. `ref` absent or empty → `400 invalidRequest`, `field: "ref"` (ticket §7).
+//! - `GET /api/v3/views/admin_request_status?requestId=` — a `BranchView` inheriting
+//!   `(EntryPath::Rpc, "adminSnapshot")`, `VERSIONED = false`: `{applied}`, the answer of the check
+//!   `adminAbandonRequest` makes (`abandon_request.rs` `is_applied`), read-only; a request id not of
+//!   the shape `read_request_id` accepts → `400`, `field: "requestId"`.
+//! - `GET /api/v3/views/admin_shift_state` — a `BranchView` inheriting `(EntryPath::Rpc,
+//!   "adminSnapshot")`, `NoFilter`: `{shiftOpen, deskUrl}`, `deskUrl` as the snapshot answers it.
+//! - §4.2: every writer of what `transaction_documents` and `admin_shift_state` read goes through
+//!   `BranchTx` — one write per writer, then the same `since` answers `changed: true`. The writers
+//!   measured here: the exchange save (`SaveTransactionWorkflow`, which also writes the receipt
+//!   file row inside its transaction, `file_service.rs` `store_receipt_in`), shift open and shift
+//!   close (`/api/rpc`). The plain upload (`file_service.rs` `upload`) writes a file row that no
+//!   exchange names yet, so it changes nothing these views answer and is not one of them.
+//! - `TransactionRow` (`dto/v3/transaction_row.rs` → `generated/transaction_row.ts`): the
+//!   ticket's 25 fields, money and rates decimal strings, `null` where v2 shows `—` / nothing. Read
+//!   from the committed generated file, so this target compiles before the type exists; the drift
+//!   test of `v3_types_test.rs` keeps that file equal to what the Rust type generates.
+//!
+//! Everything goes through the server's whole route table (`bootstrap::configure`) with real
+//! sessions made at the real sign-in doors (`rpc_common`); writes are real `/api/rpc` actions,
+//! exchanges are saved through the real `SaveTransactionWorkflow` behind the routes (as
+//! `v3_devices_view_test.rs` does). The test's clock is advanced before every write.
+//!
+//! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`) for the view tests; nothing skips.
+
+mod common;
+mod compat_common;
+mod rpc_common;
+mod snapshot_common;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use actix_web::http::Method;
+use chrono::{DateTime, Duration, Utc};
+use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
+use serde_json::{Value, json};
+use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::role::Role;
+use xc_exchange::application::customer::service::CustomerService;
+use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
+use xc_kernel::branch_versions::BranchVersions;
+use xc_kernel::ids::BranchId;
+use xchange::presentation::http::v3::VIEWS;
+
+const ORIGIN: &str = "http://desk.test";
+const RPC: &str = "/api/rpc";
+
+const MAIN: &str = "MAIN";
+const B9: &str = "B9";
+const B9_NAME: &str = "Nine";
+
+const DOCUMENTS: &str = "transaction_documents";
+const REQUEST_STATUS: &str = "admin_request_status";
+const SHIFT_STATE: &str = "admin_shift_state";
+
+const JPEG: &[u8] = &[
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 9,
+];
+const PDF: &[u8] = b"%PDF-1.7 a slip\n";
+
+/// `TransactionRow`'s fields (ticket §7, design §12.2).
+const ROW_FIELDS: [&str; 25] = [
+    "id",
+    "date",
+    "created",
+    "type",
+    "currency",
+    "amount",
+    "rate",
+    "principal",
+    "fee",
+    "bankFee",
+    "settlement",
+    "method",
+    "customer",
+    "customerId",
+    "staff",
+    "status",
+    "notes",
+    "cancelReason",
+    "shiftId",
+    "referenceRate",
+    "referenceValue",
+    "referenceSpread",
+    "referencePercent",
+    "paymentRef",
+    "slipUrl",
+];
+/// The fields v2 shows as `—` or not at all when the exchange has none: `null` on the wire.
+const ROW_NULLABLE: [&str; 9] = [
+    "notes",
+    "cancelReason",
+    "shiftId",
+    "referenceRate",
+    "referenceValue",
+    "referenceSpread",
+    "referencePercent",
+    "paymentRef",
+    "slipUrl",
+];
+
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+fn next() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A request id in v2's shape, different on every call.
+fn request_id() -> String {
+    format!("00000000-0000-4000-8000-{:012x}", next())
+}
+
+fn keys(value: &Value) -> BTreeSet<String> {
+    value
+        .as_object()
+        .unwrap_or_else(|| panic!("an object: {value}"))
+        .keys()
+        .cloned()
+        .collect()
+}
+
+fn set_of(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// A GET as the screen sends it: no body, no marker header.
+fn get(path: &str) -> Call {
+    let mut call = Call::post(ORIGIN, path, Vec::<u8>::new())
+        .without("x-xchange-request")
+        .without("content-type")
+        .without("origin");
+    call.method = Method::GET;
+    call
+}
+
+fn view_path(view: &str, query: &str) -> String {
+    if query.is_empty() {
+        format!("/api/v3/views/{view}")
+    } else {
+        format!("/api/v3/views/{view}?{query}")
+    }
+}
+
+/// What a save left behind.
+struct Saved {
+    document_ref: String,
+    passport: String,
+    slip: Option<String>,
+    receipt: String,
+}
+
+// ── the shop ─────────────────────────────────────────────────────────────────
+
+struct Room {
+    desk: Desk,
+    app: App,
+    cookies: Cookies,
+    t0: DateTime<Utc>,
+}
+
+impl Room {
+    /// `MAIN` (from the migration) and `B9`; the owner and one employee of every staff role in
+    /// `MAIN`, all signed in; the USD counter rate 32.1 / 33 in both branches.
+    async fn open() -> Room {
+        let desk = Desk::open().await;
+        desk.db.seed_branch(B9, B9_NAME).await;
+        let app = rpc_app!(desk);
+        let people = one_of_each_role();
+        desk.employ(&people).await;
+        let cookies = sign_in(&app, ORIGIN, &people).await;
+        let t0 = snapshot_common::time("2026-10-06T05:00:00.000Z");
+        desk.clock.set(t0);
+        let room = Room {
+            desk,
+            app,
+            cookies,
+            t0,
+        };
+        for branch in [MAIN, B9] {
+            room.set_rate(branch, "USD", "32.1", "33").await;
+        }
+        room
+    }
+
+    fn tick(&self) -> DateTime<Utc> {
+        let t = self.t0 + Duration::seconds(next() as i64);
+        self.desk.clock.set(t);
+        t
+    }
+
+    fn cookie(&self, who: &str) -> String {
+        match who.split_once('+') {
+            Some((a, b)) => format!("{}; {}", self.cookies[a], self.cookies[b]),
+            None => self.cookies[who].clone(),
+        }
+    }
+
+    /// `GET path` as `who` (`""` = nobody; `OWNER+FRONT` = both cookies in one browser).
+    async fn get(&self, who: &str, path: &str) -> Answer {
+        let call = get(path);
+        let call = if who.is_empty() {
+            call
+        } else {
+            call.cookie(&self.cookie(who))
+        };
+        self.app.send(call).await
+    }
+
+    /// A view as `who`, which must be answered 200 with JSON, never cached.
+    async fn view(&self, who: &str, view: &str, query: &str) -> Value {
+        let path = view_path(view, query);
+        let answer = self.get(who, &path).await;
+        assert_eq!(
+            answer.status, 200,
+            "GET {path} as {who:?}: {:.400}",
+            answer.text
+        );
+        assert_eq!(
+            answer.header("cache-control"),
+            Some("no-store"),
+            "GET {path}: never cached"
+        );
+        answer.json()
+    }
+
+    /// `data` of a view whose answer must be `changed: true`.
+    async fn data(&self, who: &str, view: &str, query: &str) -> Value {
+        let body = self.view(who, view, query).await;
+        assert_eq!(
+            body["changed"],
+            json!(true),
+            "GET {}: {body}",
+            view_path(view, query)
+        );
+        body.get("data")
+            .cloned()
+            .unwrap_or_else(|| panic!("GET {}: data in {body}", view_path(view, query)))
+    }
+
+    async fn post(&self, who: &str, action: &str, payload: Value) -> Answer {
+        self.tick();
+        let call = Call::action(ORIGIN, RPC, action, payload).cookie(&self.cookie(who));
+        self.app.send(call).await
+    }
+
+    async fn ok(&self, who: &str, action: &str, payload: Value) -> Value {
+        let answer = self.post(who, action, payload.clone()).await;
+        assert_eq!(
+            answer.status, 200,
+            "{action} as {who} with {payload}: {:.400}",
+            answer.text
+        );
+        answer.json()
+    }
+
+    async fn version(&self, branch: &str) -> i64 {
+        BranchVersions::new(self.desk.db.pool.clone())
+            .current(&BranchId::new(branch))
+            .await
+            .expect("read the branch version")
+    }
+
+    async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
+        sqlx::query(
+            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
+             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
+        )
+        .bind(branch)
+        .bind(code)
+        .bind(buy)
+        .bind(sell)
+        .bind(request_id())
+        .execute(&self.desk.db.pool)
+        .await
+        .expect("insert a counter rate");
+    }
+
+    /// The owner opens a shift in `branch` through `/api/rpc`; the request id it used.
+    async fn open_shift(&self, branch: &str) -> String {
+        let id = request_id();
+        self.ok(
+            "OWNER",
+            "adminOpenShift",
+            json!({ "branchId": branch, "requestId": id, "opening": { "THB": 100000, "USD": 1000 } }),
+        )
+        .await;
+        id
+    }
+
+    async fn open_shift_id(&self, branch: &str) -> String {
+        sqlx::query_scalar("SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN'")
+            .bind(branch)
+            .fetch_one(&self.desk.db.pool)
+            .await
+            .expect("an open shift")
+    }
+
+    async fn expected_of_open_shift(&self, branch: &str) -> Value {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT b.code::text, b.expected::text FROM shift_balances b \
+             JOIN shifts s ON s.id = b.shift_id WHERE s.branch_id = $1 AND s.status = 'OPEN'",
+        )
+        .bind(branch)
+        .fetch_all(&self.desk.db.pool)
+        .await
+        .expect("read the open shift's balances");
+        Value::Object(
+            rows.into_iter()
+                .map(|(c, e)| (c.trim().to_owned(), Value::String(e)))
+                .collect(),
+        )
+    }
+
+    /// The owner closes the open shift of `branch`, counting what is expected; the request id.
+    async fn close_shift(&self, branch: &str) -> String {
+        let shift = self.open_shift_id(branch).await;
+        let expected = self.expected_of_open_shift(branch).await;
+        let id = request_id();
+        self.ok(
+            "OWNER",
+            "adminCloseShift",
+            json!({ "branchId": branch, "requestId": id, "shiftId": shift,
+                    "expected": expected, "counted": expected, "note": "นับเงินปิดกะ" }),
+        )
+        .await;
+        id
+    }
+
+    /// The owner moves stock into the open shift of `branch`; the request id.
+    async fn move_stock(&self, branch: &str) -> String {
+        let shift = self.open_shift_id(branch).await;
+        let id = request_id();
+        self.ok(
+            "OWNER",
+            "adminMoveStock",
+            json!({ "branchId": branch, "requestId": id, "shiftId": shift,
+                    "currency": "USD", "direction": "IN", "amount": 10, "reason": "from the safe" }),
+        )
+        .await;
+        id
+    }
+
+    /// One LIVE purchase of 100 USD saved through the real workflow behind the routes (the
+    /// branch needs an open shift); with a payment slip when `slip`.
+    async fn save(&self, branch: &str, slip: bool) -> Saved {
+        let t = self.tick();
+        let here = BranchId::new(branch);
+        let person = ReserveCustomer {
+            name: "Somchai Jaidee".to_owned(),
+            passport_no: "AA1234567".to_owned(),
+            nationality: "THA".to_owned(),
+            birth_date: String::new(),
+            passport_expiry: String::new(),
+            mode: "LIVE".to_owned(),
+        };
+        let customer = CustomerService::new(self.desk.db.branch_tx())
+            .reserve(&here, person.clone(), t)
+            .await
+            .expect("reserve the customer")
+            .customer_id;
+        let passport = self
+            .desk
+            .files
+            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .await
+            .expect("upload a passport");
+        let slip_key = if slip {
+            Some(
+                self.desk
+                    .files
+                    .upload(&here, "owner", "application/pdf", PDF, t)
+                    .await
+                    .expect("upload a slip"),
+            )
+        } else {
+            None
+        };
+        let cmd = SaveTransaction {
+            customer: person,
+            submission_id: format!("submission-{branch}-{:012}", next()),
+            customer_id: customer,
+            side: "BUY".to_owned(),
+            currency: "USD".to_owned(),
+            amount: "100".to_owned(),
+            rate: "32.1".to_owned(),
+            fee: "0".to_owned(),
+            bank_fee: "0".to_owned(),
+            method: if slip { "Bank Transfer" } else { "Cash" }.to_owned(),
+            payment_ref: if slip { "TRX-1" } else { "" }.to_owned(),
+            account: "Cash drawer 1".to_owned(),
+            staff: "EMP-001".to_owned(),
+            booking: "WALK-IN".to_owned(),
+            notes: String::new(),
+            value_date: "2026-10-06".to_owned(),
+            paid_at: "2026-10-06T05:30:00.000Z".to_owned(),
+            payment_confirmed: true,
+            identity_confirmed: true,
+            passport: Some(passport.clone()),
+            slip: slip_key.clone(),
+            reference_rate: None,
+        };
+        let saved = self
+            .desk
+            .workflow
+            .save(&here, cmd, "owner", t)
+            .await
+            .unwrap_or_else(|e| panic!("save an exchange in {branch}: {e:?}"));
+        let receipt = saved
+            .receipt_url
+            .strip_prefix("/files/")
+            .unwrap_or_else(|| panic!("a receipt url: {}", saved.receipt_url))
+            .to_owned();
+        Saved {
+            document_ref: saved.document_ref,
+            passport,
+            slip: slip_key,
+            receipt,
+        }
+    }
+
+    async fn finish(self) {
+        self.desk.finish().await;
+    }
+}
+
+/// The actor `Policy` sees for each caller key of [`Room`] on a path that is not `StaffRpc`.
+fn callers() -> Vec<(String, Option<Actor>)> {
+    let mut callers: Vec<(String, Option<Actor>)> = vec![
+        (String::new(), None),
+        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+    ];
+    for role in Role::STAFF {
+        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
+        callers.push((role.as_str().to_string(), staff));
+        // the owner and an employee in one browser: a view not on StaffRpc answers the owner
+        callers.push((
+            format!("OWNER+{}", role.as_str()),
+            Some(Actor::owner("owner")),
+        ));
+    }
+    callers
+}
+
+/// Every caller kind gets what `Policy::allow(actor, path, action)` gives: 200 with data when it
+/// allows, its refusal otherwise.
+async fn answers_exactly_whom_the_row_allows(
+    room: &Room,
+    view: &str,
+    query: &str,
+    path: EntryPath,
+    action: &str,
+) -> (usize, usize) {
+    let mut allowed = 0;
+    let mut refused = 0;
+    for (who, actor) in callers() {
+        let policy = Policy::allow(actor.as_ref(), path, &Action::new(action));
+        let answer = room.get(&who, &view_path(view, query)).await;
+        let what = format!("{view} as {who:?}");
+        match &policy {
+            Ok(()) => {
+                allowed += 1;
+                assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
+                let body = answer.json();
+                assert_eq!(body["changed"], json!(true), "{what}: {body}");
+                assert!(body.get("data").is_some(), "{what}: data in {body}");
+            }
+            Err(e) => {
+                refused += 1;
+                assert_eq!(answer.status, e.status(), "{what}: {:.300}", answer.text);
+                let body = answer.json();
+                assert_eq!(body["error"]["message"], json!(e.to_string()), "{what}");
+                assert!(body.get("data").is_none(), "{what}: no data");
+            }
+        }
+    }
+    (allowed, refused)
+}
+
+fn assert_refused_naming(answer: &Answer, field: &str, what: &str) {
+    assert_eq!(answer.status, 400, "{what}: {:.300}", answer.text);
+    let body = answer.json();
+    assert_eq!(
+        body["error"]["code"],
+        json!("invalidRequest"),
+        "{what}: {body}"
+    );
+    assert_eq!(body["error"]["field"], json!(field), "{what}: {body}");
+    assert!(body.get("data").is_none(), "{what}: no data in {body}");
+}
+
+// ── transaction_documents ────────────────────────────────────────────────────
+
+#[actix_web::test]
+async fn transaction_documents_answers_exactly_whom_the_documents_route_allows() {
+    let room = Room::open().await;
+    room.open_shift(MAIN).await;
+    let saved = room.save(MAIN, false).await;
+    let (allowed, refused) = answers_exactly_whom_the_row_allows(
+        &room,
+        DOCUMENTS,
+        &format!("ref={}", saved.document_ref),
+        EntryPath::UserRoute,
+        "documents",
+    )
+    .await;
+    assert_eq!(
+        allowed, 19,
+        "the owner, the nine roles, the owner beside each"
+    );
+    assert_eq!(refused, 1, "nobody signed in");
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn transaction_documents_lists_the_exchanges_receipt_and_nothing_else() {
+    let room = Room::open().await;
+    room.open_shift(MAIN).await;
+    let saved = room.save(MAIN, true).await;
+    let data = room
+        .data(
+            "OWNER",
+            DOCUMENTS,
+            &format!("branch=MAIN&ref={}", saved.document_ref),
+        )
+        .await;
+    assert_eq!(keys(&data), set_of(&["ref", "files"]), "{data}");
+    assert_eq!(data["ref"], json!(saved.document_ref), "{data}");
+    let files = data["files"].as_array().expect("files is a list");
+    assert_eq!(
+        files.len(),
+        1,
+        "one receipt, as owners_page lists it: {data}"
+    );
+    assert_eq!(
+        keys(&files[0]),
+        set_of(&["kind", "path", "download"]),
+        "{data}"
+    );
+    assert_eq!(files[0]["kind"], json!("receipt"), "{data}");
+    assert_eq!(
+        files[0]["path"],
+        json!(format!("/files/{}", saved.receipt)),
+        "{data}"
+    );
+    assert_eq!(
+        files[0]["download"],
+        json!(format!("{}_RECEIPT_FULL.html", saved.document_ref)),
+        "the download name owners_page gives the receipt: {data}"
+    );
+    let text = data.to_string();
+    assert!(
+        !text.contains(&saved.passport),
+        "the passport is not a receipt: {data}"
+    );
+    let slip = saved.slip.as_deref().expect("saved with a slip");
+    assert!(
+        !text.contains(slip),
+        "the payment proof is not a receipt: {data}"
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn transaction_documents_refuses_a_missing_or_empty_ref_naming_ref() {
+    let room = Room::open().await;
+    let v = room.version(MAIN).await;
+    for query in [
+        "branch=MAIN".to_string(),
+        "branch=MAIN&ref=".to_string(),
+        format!("branch=MAIN&ref=&since={v}"),
+        format!("since={v}"),
+    ] {
+        let answer = room.get("OWNER", &view_path(DOCUMENTS, &query)).await;
+        assert_refused_naming(&answer, "ref", &query);
+    }
+    let answer = room.get("FRONT", &view_path(DOCUMENTS, "")).await;
+    assert_refused_naming(&answer, "ref", "FRONT, no query");
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn transaction_documents_answers_staff_from_their_own_branch() {
+    let room = Room::open().await;
+    room.open_shift(MAIN).await;
+    room.open_shift(B9).await;
+    let main = room.save(MAIN, false).await;
+    let nine = room.save(B9, false).await;
+
+    // FRONT works in MAIN: naming B9 changes nothing
+    let data = room
+        .data(
+            "FRONT",
+            DOCUMENTS,
+            &format!("branch=B9&ref={}", main.document_ref),
+        )
+        .await;
+    assert_eq!(
+        data["files"][0]["path"],
+        json!(format!("/files/{}", main.receipt)),
+        "FRONT is answered from MAIN: {data}"
+    );
+
+    // the owner reads the branch named
+    let data = room
+        .data(
+            "OWNER",
+            DOCUMENTS,
+            &format!("branch=B9&ref={}", nine.document_ref),
+        )
+        .await;
+    assert_eq!(
+        data["files"][0]["path"],
+        json!(format!("/files/{}", nine.receipt)),
+        "the owner naming B9: {data}"
+    );
+
+    // B9's exchange is not MAIN's: asked in MAIN, B9's receipt is never answered
+    for (who, query) in [
+        ("OWNER", format!("branch=MAIN&ref={}", nine.document_ref)),
+        ("FRONT", format!("branch=B9&ref={}", nine.document_ref)),
+    ] {
+        let answer = room.get(who, &view_path(DOCUMENTS, &query)).await;
+        assert!(
+            !answer.text.contains(&nine.receipt),
+            "{who} {query}: another branch's receipt: {:.300}",
+            answer.text
+        );
+    }
+    room.finish().await;
+}
+
+/// §4.2: the exchange save (with its receipt row, inside the save's `BranchTx`) moves the version
+/// the view answers; an equal `since` is unchanged before it.
+#[actix_web::test]
+async fn an_exchange_save_moves_the_version_transaction_documents_answers() {
+    let room = Room::open().await;
+    room.open_shift(MAIN).await;
+    let first = room.save(MAIN, false).await;
+    let v = room.version(MAIN).await;
+    let body = room
+        .view(
+            "OWNER",
+            DOCUMENTS,
+            &format!("branch=MAIN&ref={}&since={v}", first.document_ref),
+        )
+        .await;
+    assert_eq!(
+        body,
+        json!({ "version": v, "changed": false }),
+        "an equal since: exactly the version and changed: false"
+    );
+
+    let second = room.save(MAIN, false).await;
+    let now = room.version(MAIN).await;
+    assert!(now > v, "the save moved MAIN's version ({v} → {now})");
+    let body = room
+        .view(
+            "OWNER",
+            DOCUMENTS,
+            &format!("branch=MAIN&ref={}&since={v}", second.document_ref),
+        )
+        .await;
+    assert_eq!(body["version"], json!(now), "{body}");
+    assert_eq!(body["changed"], json!(true), "{body}");
+    assert_eq!(
+        body["data"]["files"][0]["path"],
+        json!(format!("/files/{}", second.receipt)),
+        "{body}"
+    );
+    room.finish().await;
+}
+
+// ── admin_request_status ─────────────────────────────────────────────────────
+
+#[actix_web::test]
+async fn admin_request_status_answers_exactly_whom_the_snapshot_row_allows() {
+    let room = Room::open().await;
+    let (allowed, refused) = answers_exactly_whom_the_row_allows(
+        &room,
+        REQUEST_STATUS,
+        &format!("requestId={}", request_id()),
+        EntryPath::Rpc,
+        "adminSnapshot",
+    )
+    .await;
+    assert_eq!(allowed, 19);
+    assert_eq!(refused, 1);
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn admin_request_status_refuses_a_request_id_of_the_wrong_shape_naming_it() {
+    let room = Room::open().await;
+    let v = room.version(MAIN).await;
+    let too_long = "a".repeat(61);
+    for query in [
+        "branch=MAIN".to_string(),
+        "branch=MAIN&requestId=".to_string(),
+        "branch=MAIN&requestId=short-id-15chr".to_string(),
+        format!("branch=MAIN&requestId={too_long}"),
+        "branch=MAIN&requestId=has_an_underscore-0001".to_string(),
+        "branch=MAIN&requestId=has%20a%20space-00000001".to_string(),
+        format!("branch=MAIN&since={v}"),
+    ] {
+        let answer = room.get("OWNER", &view_path(REQUEST_STATUS, &query)).await;
+        assert_refused_naming(&answer, "requestId", &query);
+    }
+    // the shortest and the longest shape read_request_id accepts
+    for id in ["abcdefgh-1234567".to_string(), "b".repeat(60)] {
+        let data = room
+            .data(
+                "OWNER",
+                REQUEST_STATUS,
+                &format!("branch=MAIN&requestId={id}"),
+            )
+            .await;
+        assert_eq!(data, json!({ "applied": false }), "{id}");
+    }
+    room.finish().await;
+}
+
+/// `applied` is the check `adminAbandonRequest` makes: a rate, an opened shift, a stock movement,
+/// a closed shift in the branch, or a branch anywhere, made with that request id.
+#[actix_web::test]
+async fn admin_request_status_is_applied_exactly_when_abandon_would_find_the_request() {
+    let room = Room::open().await;
+    let ask = |id: String| {
+        let room = &room;
+        async move {
+            room.data(
+                "OWNER",
+                REQUEST_STATUS,
+                &format!("branch=MAIN&requestId={id}"),
+            )
+            .await
+        }
+    };
+    assert_eq!(ask(request_id()).await, json!({ "applied": false }));
+
+    let rate = request_id();
+    room.ok(
+        "OWNER",
+        "adminSaveRate",
+        json!({ "branchId": MAIN, "requestId": rate, "code": "EUR", "buy": "38.2",
+                "sell": "39.1", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
+    )
+    .await;
+    assert_eq!(
+        ask(rate.clone()).await,
+        json!({ "applied": true }),
+        "a saved rate"
+    );
+
+    let opened = room.open_shift(MAIN).await;
+    assert_eq!(
+        ask(opened).await,
+        json!({ "applied": true }),
+        "an opened shift"
+    );
+    let moved = room.move_stock(MAIN).await;
+    assert_eq!(
+        ask(moved).await,
+        json!({ "applied": true }),
+        "a stock movement"
+    );
+    let closed = room.close_shift(MAIN).await;
+    assert_eq!(
+        ask(closed).await,
+        json!({ "applied": true }),
+        "a closed shift"
+    );
+
+    let branch = request_id();
+    room.ok(
+        "OWNER",
+        "adminCreateBranch",
+        json!({ "requestId": branch, "name": "Airport" }),
+    )
+    .await;
+    assert_eq!(
+        ask(branch).await,
+        json!({ "applied": true }),
+        "a branch made with it, asked from MAIN"
+    );
+
+    assert_eq!(ask(request_id()).await, json!({ "applied": false }));
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn admin_request_status_is_unversioned_and_writes_nothing() {
+    let room = Room::open().await;
+    let id = request_id();
+    let v = room.version(MAIN).await;
+    for _ in 0..2 {
+        let body = room
+            .view(
+                "OWNER",
+                REQUEST_STATUS,
+                &format!("branch=MAIN&requestId={id}&since={v}"),
+            )
+            .await;
+        assert_eq!(
+            body,
+            json!({ "version": v, "changed": true, "data": { "applied": false } }),
+            "VERSIONED = false: an equal since still answers"
+        );
+    }
+    assert_eq!(room.version(MAIN).await, v, "reading moved no version");
+    let abandoned: i64 = sqlx::query_scalar("SELECT count(*) FROM abandoned_requests")
+        .fetch_one(&room.desk.db.pool)
+        .await
+        .expect("count abandoned requests");
+    assert_eq!(abandoned, 0, "asking gives nothing up");
+
+    // the id asked about is still free to be used
+    room.ok(
+        "OWNER",
+        "adminSaveRate",
+        json!({ "branchId": MAIN, "requestId": id, "code": "EUR", "buy": "38.2",
+                "sell": "39.1", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
+    )
+    .await;
+    let data = room
+        .data(
+            "OWNER",
+            REQUEST_STATUS,
+            &format!("branch=MAIN&requestId={id}"),
+        )
+        .await;
+    assert_eq!(data, json!({ "applied": true }));
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn admin_request_status_answers_staff_for_their_own_branch() {
+    let room = Room::open().await;
+    let id = request_id();
+    room.ok(
+        "OWNER",
+        "adminSaveRate",
+        json!({ "branchId": B9, "requestId": id, "code": "EUR", "buy": "37.5",
+                "sell": "38.5", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
+    )
+    .await;
+    let q = |branch: &str| format!("branch={branch}&requestId={id}");
+    assert_eq!(
+        room.data("OWNER", REQUEST_STATUS, &q(B9)).await,
+        json!({ "applied": true }),
+        "the owner naming B9"
+    );
+    assert_eq!(
+        room.data("OWNER", REQUEST_STATUS, &q(MAIN)).await,
+        json!({ "applied": false }),
+        "a rate of B9 is not MAIN's"
+    );
+    assert_eq!(
+        room.data("FRONT", REQUEST_STATUS, &q(B9)).await,
+        json!({ "applied": false }),
+        "FRONT works in MAIN whatever it names"
+    );
+    room.finish().await;
+}
+
+// ── admin_shift_state ────────────────────────────────────────────────────────
+
+#[actix_web::test]
+async fn admin_shift_state_answers_exactly_whom_the_snapshot_row_allows() {
+    let room = Room::open().await;
+    let (allowed, refused) = answers_exactly_whom_the_row_allows(
+        &room,
+        SHIFT_STATE,
+        "",
+        EntryPath::Rpc,
+        "adminSnapshot",
+    )
+    .await;
+    assert_eq!(allowed, 19);
+    assert_eq!(refused, 1);
+    room.finish().await;
+}
+
+/// §4.2: shift open and shift close move the version the view answers.
+#[actix_web::test]
+async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
+    let room = Room::open().await;
+    let data = room.data("OWNER", SHIFT_STATE, "branch=MAIN").await;
+    assert_eq!(
+        data,
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" })
+    );
+
+    let v = room.version(MAIN).await;
+    let body = room
+        .view("OWNER", SHIFT_STATE, &format!("branch=MAIN&since={v}"))
+        .await;
+    assert_eq!(body, json!({ "version": v, "changed": false }));
+
+    room.open_shift(MAIN).await;
+    let opened = room.version(MAIN).await;
+    assert!(opened > v, "opening moved MAIN's version");
+    let body = room
+        .view("OWNER", SHIFT_STATE, &format!("branch=MAIN&since={v}"))
+        .await;
+    assert_eq!(
+        body,
+        json!({ "version": opened, "changed": true,
+                "data": { "shiftOpen": true, "deskUrl": "/desk?branch=MAIN" } }),
+        "after adminOpenShift"
+    );
+
+    room.close_shift(MAIN).await;
+    let closed = room.version(MAIN).await;
+    assert!(closed > opened, "closing moved MAIN's version");
+    let body = room
+        .view("OWNER", SHIFT_STATE, &format!("branch=MAIN&since={opened}"))
+        .await;
+    assert_eq!(
+        body,
+        json!({ "version": closed, "changed": true,
+                "data": { "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" } }),
+        "after adminCloseShift"
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn admin_shift_state_is_per_branch_and_staff_read_their_own() {
+    let room = Room::open().await;
+    room.open_shift(B9).await;
+    assert_eq!(
+        room.data("OWNER", SHIFT_STATE, "branch=B9").await,
+        json!({ "shiftOpen": true, "deskUrl": "/desk?branch=B9" })
+    );
+    assert_eq!(
+        room.data("OWNER", SHIFT_STATE, "branch=MAIN").await,
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" })
+    );
+    assert_eq!(
+        room.data("OWNER", SHIFT_STATE, "").await,
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
+        "no branch named: MAIN"
+    );
+    assert_eq!(
+        room.data("FRONT", SHIFT_STATE, "branch=B9").await,
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
+        "FRONT works in MAIN"
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn admin_shift_state_desk_url_is_the_snapshots() {
+    let room = Room::open().await;
+    for branch in [MAIN, B9] {
+        let snapshot = room
+            .ok("OWNER", "adminSnapshot", json!({ "branchId": branch }))
+            .await;
+        let data = room
+            .data("OWNER", SHIFT_STATE, &format!("branch={branch}"))
+            .await;
+        assert_eq!(
+            data["deskUrl"], snapshot["deskUrl"],
+            "{branch}: the snapshot's deskUrl"
+        );
+    }
+    room.finish().await;
+}
+
+// ── the generated types ──────────────────────────────────────────────────────
+
+fn exported(view: &str) -> BTreeMap<String, String> {
+    let entry = VIEWS
+        .iter()
+        .find(|v| v.name == view)
+        .unwrap_or_else(|| panic!("the view {view} is in the generated table"));
+    let dir: PathBuf =
+        std::env::temp_dir().join(format!("xc-476-{view}-{}-{}", std::process::id(), next()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    (entry.export_types)(&dir).unwrap_or_else(|e| panic!("export {view}: {e}"));
+    let mut files = BTreeMap::new();
+    for e in std::fs::read_dir(&dir).expect("read the scratch directory") {
+        let e = e.expect("an entry");
+        let name = e.file_name().to_string_lossy().into_owned();
+        files.insert(
+            name,
+            std::fs::read_to_string(e.path()).expect("read an exported file"),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    files
+}
+
+/// `field: type` of an object type in generated TypeScript, as written.
+fn has_field(ts: &str, field: &str, types: &[&str]) {
+    let found = types.iter().any(|ty| {
+        ts.contains(&format!("{field}: {ty},")) || ts.contains(&format!("{field}: {ty} "))
+    });
+    assert!(found, "`{field}: one of {types:?}` in:\n{ts}");
+}
+
+#[test]
+fn the_three_views_are_in_the_generated_table() {
+    let names: Vec<&str> = VIEWS.iter().map(|v| v.name).collect();
+    for view in [DOCUMENTS, REQUEST_STATUS, SHIFT_STATE] {
+        assert!(names.contains(&view), "{view} in {names:?}");
+    }
+}
+
+#[test]
+fn the_views_types_carry_the_tickets_fields() {
+    let documents = exported(DOCUMENTS);
+    let ts = documents
+        .get("transaction_documents.ts")
+        .unwrap_or_else(|| panic!("transaction_documents.ts in {:?}", documents.keys()));
+    has_field(ts, "ref", &["string"]);
+    has_field(ts, "path", &["string"]);
+    assert!(
+        ts.contains("\"receipt\" | \"receiptImage\""),
+        "kind is \"receipt\" | \"receiptImage\":\n{ts}"
+    );
+    assert!(
+        ts.contains("download?: string") || ts.contains("download: string | null"),
+        "download is an optional string:\n{ts}"
+    );
+
+    let status = exported(REQUEST_STATUS);
+    let ts = status
+        .get("admin_request_status.ts")
+        .unwrap_or_else(|| panic!("admin_request_status.ts in {:?}", status.keys()));
+    has_field(ts, "applied", &["boolean"]);
+    has_field(ts, "requestId", &["string"]);
+
+    let shift = exported(SHIFT_STATE);
+    let ts = shift
+        .get("admin_shift_state.ts")
+        .unwrap_or_else(|| panic!("admin_shift_state.ts in {:?}", shift.keys()));
+    has_field(ts, "shiftOpen", &["boolean"]);
+    has_field(ts, "deskUrl", &["string"]);
+    assert!(!ts.contains("bigint"), "{ts}");
+}
+
+/// `TransactionRow` as committed in `generated/transaction_row.ts` (kept equal to the Rust type by
+/// `v3_types_test.rs`): exactly the ticket's fields, every one a string (money and rates are
+/// decimal strings, W7), `| null` exactly on the fields v2 shows as `—` or not at all.
+#[test]
+fn transaction_row_has_the_tickets_fields_as_strings() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../web/src/shared/api/generated/transaction_row.ts");
+    let ts = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{} is committed: {e}", path.display()));
+    let start = ts
+        .find("export type TransactionRow = {")
+        .unwrap_or_else(|| panic!("export type TransactionRow in:\n{ts}"));
+    let body = &ts[start + "export type TransactionRow = {".len()..];
+    let body = &body[..body
+        .find("};")
+        .unwrap_or_else(|| panic!("the end of TransactionRow:\n{ts}"))];
+    let mut fields: BTreeMap<String, String> = BTreeMap::new();
+    for part in body.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (name, ty) = part
+            .split_once(':')
+            .unwrap_or_else(|| panic!("`name: type` in {part:?}"));
+        fields.insert(name.trim().to_owned(), ty.trim().to_owned());
+    }
+    let names: BTreeSet<String> = fields.keys().cloned().collect();
+    assert_eq!(names, set_of(&ROW_FIELDS), "TransactionRow's fields:\n{ts}");
+    for (name, ty) in &fields {
+        let nullable = ROW_NULLABLE.contains(&name.as_str());
+        let base = ty.strip_suffix(" | null").unwrap_or(ty);
+        assert!(
+            ["string", "Money", "Rate"].contains(&base),
+            "{name}: a string on the wire (W7), got `{ty}`"
+        );
+        assert_eq!(
+            ty.ends_with(" | null"),
+            nullable,
+            "{name}: `| null` exactly where v2 shows — or nothing, got `{ty}`"
+        );
+    }
+    for money in [
+        "amount",
+        "principal",
+        "fee",
+        "bankFee",
+        "settlement",
+        "rate",
+    ] {
+        assert!(
+            !fields[money].contains("number"),
+            "{money} is a decimal string"
+        );
+    }
+}

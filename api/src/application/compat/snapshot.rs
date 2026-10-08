@@ -320,7 +320,7 @@ fn transaction_json(tx: &SnapshotTransaction) -> V2Json {
 
 /// JavaScript's `encodeURIComponent`: everything but letters, digits and
 /// `- _ . ! ~ * ' ( )` becomes `%XX` of its UTF-8 bytes.
-fn uri_component(text: &str) -> String {
+pub(crate) fn uri_component(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
         let kept = byte.is_ascii_alphanumeric()
