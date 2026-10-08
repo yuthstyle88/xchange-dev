@@ -178,6 +178,11 @@ impl TestClock {
     pub fn set(&self, at: DateTime<Utc>) {
         *self.0.lock().expect("the clock's lock") = at;
     }
+
+    /// Moves the clock on by `by`, so what the routes make next is made at a later time.
+    pub fn advance(&self, by: chrono::Duration) {
+        *self.0.lock().expect("the clock's lock") += by;
+    }
 }
 
 impl RpcClock for TestClock {

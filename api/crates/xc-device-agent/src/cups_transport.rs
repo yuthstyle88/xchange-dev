@@ -11,6 +11,18 @@ use tokio::time::timeout;
 
 use crate::transport::{DrawerTransport, SendReceipt, TransportError};
 
+/// A CUPS raw queue transport.
+///
+/// Invariant: subprocess children (`lp`, `lpstat`) are spawned one at a time,
+/// awaited serially by the agent's single `run_loop`.
+///
+/// Why (#405): on macOS, `pipe()` and `fcntl(CLOEXEC)` are non-atomic and
+/// std does not set `POSIX_SPAWN_CLOEXEC_DEFAULT`, so concurrent spawns cause a
+/// child to inherit a sibling's stdin write pipe, stalling `lp` waiting for EOF.
+///
+/// If this ever changes (e.g. concurrent `lpstat` polling or multiple in-flight
+/// jobs), take one process-wide spawn lock in this file around spawn and the
+/// stdin write/close.
 pub struct CupsTransport {
     pub queue: String,
     pub lp: PathBuf,

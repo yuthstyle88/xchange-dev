@@ -1,5 +1,6 @@
 import { createSignal, type Accessor } from 'solid-js';
 import { ApiError } from '../api/client';
+import { errorText } from '../i18n';
 
 export interface FieldBinding {
   name: string;
@@ -16,16 +17,21 @@ export interface Form {
   formError(): string | undefined;
 }
 
+interface ErrorState {
+  code?: string;
+  message: string;
+}
+
 interface InternalField {
   binding: FieldBinding;
   element?: HTMLInputElement;
   isClientError: boolean;
   setInvalid: (v: boolean) => void;
-  setError: (v: string | undefined) => void;
+  setErrState: (v: ErrorState | undefined) => void;
 }
 
 export function useForm(): Form {
-  const [formErr, setFormErr] = createSignal<string | undefined>(undefined);
+  const [formErr, setFormErr] = createSignal<ErrorState | undefined>(undefined);
   const fields = new Map<string, InternalField>();
 
   function field(name: string): FieldBinding {
@@ -33,14 +39,19 @@ export function useForm(): Form {
     if (existing) return existing.binding;
 
     const [invalid, setInvalid] = createSignal(false);
-    const [error, setError] = createSignal<string | undefined>(undefined);
+    const [errState, setErrState] = createSignal<ErrorState | undefined>(undefined);
+    const error: Accessor<string | undefined> = () => {
+      const e = errState();
+      if (!e) return undefined;
+      return e.code ? errorText(e.code, e.message) : e.message;
+    };
     const errorId = `${name}-error`;
 
     const internal: InternalField = {
       element: undefined,
       isClientError: false,
       setInvalid,
-      setError,
+      setErrState,
       binding: {
         name,
         invalid,
@@ -55,7 +66,7 @@ export function useForm(): Form {
               if (internal.element.validity.valid) {
                 internal.isClientError = false;
                 internal.setInvalid(false);
-                internal.setError(undefined);
+                internal.setErrState(undefined);
                 internal.element.removeAttribute('aria-invalid');
                 internal.element.removeAttribute('aria-describedby');
               }
@@ -82,7 +93,7 @@ export function useForm(): Form {
       for (const f of fields.values()) {
         f.isClientError = false;
         f.setInvalid(false);
-        f.setError(undefined);
+        f.setErrState(undefined);
         if (f.element) {
           f.element.removeAttribute('aria-invalid');
         }
@@ -93,7 +104,7 @@ export function useForm(): Form {
         if (f.element && f.element.willValidate && !f.element.checkValidity()) {
           f.isClientError = true;
           f.setInvalid(true);
-          f.setError(f.element.validationMessage);
+          f.setErrState({ message: f.element.validationMessage });
           f.element.setAttribute('aria-invalid', 'true');
           if (!firstFailed) {
             firstFailed = f.element;
@@ -115,16 +126,16 @@ export function useForm(): Form {
             if (target) {
               target.isClientError = false;
               target.setInvalid(true);
-              target.setError(err.message);
+              target.setErrState({ code: err.code, message: err.message });
               if (target.element) {
                 target.element.setAttribute('aria-invalid', 'true');
                 target.element.focus();
               }
             } else {
-              setFormErr(err.message);
+              setFormErr({ code: err.code, message: err.message });
             }
           } else {
-            setFormErr(err.message);
+            setFormErr({ code: err.code, message: err.message });
           }
         } else {
           throw err;
@@ -138,7 +149,9 @@ export function useForm(): Form {
   }
 
   function formError(): string | undefined {
-    return formErr();
+    const e = formErr();
+    if (!e) return undefined;
+    return e.code ? errorText(e.code, e.message) : e.message;
   }
 
   return {
