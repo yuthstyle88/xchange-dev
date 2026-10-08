@@ -777,7 +777,12 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
     let views = Views::new();
 
     let owner = get(&db, &views, "owner", "/api/v3/views/me").await;
-    is_changed(&owner, 0, "me as the owner");
+    let owner_version = owner.body["version"].as_i64().unwrap_or(0);
+    assert_ne!(
+        owner_version, 0,
+        "me as the owner: its own version, not the branch's 0 (#492)"
+    );
+    is_changed(&owner, owner_version, "me as the owner");
     assert_eq!(
         owner.body["data"],
         serde_json::json!({ "kind": "owner", "id": "owner-1", "role": "OWNER", "branch": "MAIN", "name": null, "username": null })
@@ -793,7 +798,12 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
         "/api/v3/views/me?branch=XC-B02",
     )
     .await;
-    is_changed(&staff, 0, "me as RATES staff");
+    let staff_version = staff.body["version"].as_i64().unwrap_or(0);
+    assert_ne!(
+        staff_version, 0,
+        "me as RATES staff: its own version, not the branch's 0 (#492)"
+    );
+    is_changed(&staff, staff_version, "me as RATES staff");
     assert_eq!(
         staff.body["data"],
         serde_json::json!({ "kind": "staff", "id": "employee-7", "role": "RATES", "branch": "XC-B01", "name": null, "username": null })

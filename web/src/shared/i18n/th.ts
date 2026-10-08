@@ -4,6 +4,8 @@ export const th = {
   'shell.langSwitch': 'เปลี่ยนภาษาเป็น {language}',
   'shell.account.branch': 'สาขา {branch}',
   'shell.account.signOut': 'ออกจากระบบ',
+  'shell.session.expired': 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่',
+  'shell.session.switched': 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ',
   'error.signIn': 'กรุณาเข้าสู่ระบบ',
   'error.ownerOnly': 'เฉพาะเจ้าของระบบเท่านั้น',
   'error.invalidRequest': 'คำขอไม่ถูกต้อง',

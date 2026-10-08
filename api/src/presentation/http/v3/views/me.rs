@@ -26,11 +26,37 @@ struct MeBranchView {
     db: PgPool,
 }
 
+pub(crate) fn identity_version(who: &Actor) -> i64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET_BASIS;
+    for &byte in who.id().as_bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash ^= 0; // '\0'
+    hash = hash.wrapping_mul(FNV_PRIME);
+    for &byte in who.role().as_str().as_bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    (hash & 0x001f_ffff_ffff_ffff) as i64
+}
+
 impl BranchView for MeBranchView {
     const NAME: &'static str = "me";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
     type Data = MeView;
     type Filter = NoFilter;
+
+    fn own_version(
+        &self,
+        _branch: &BranchId,
+        who: &Actor,
+    ) -> impl Future<Output = AppResult<Option<i64>>> + Send {
+        let v = identity_version(who);
+        async move { Ok(Some(v)) }
+    }
 
     fn load(
         &self,
