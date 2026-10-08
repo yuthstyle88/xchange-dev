@@ -11,6 +11,7 @@ use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 
@@ -193,7 +194,7 @@ async fn authenticate_and_authorize(
         return Err(V3Error::from(e).error_response());
     }
 
-    Ok(actor.expect("actor present when policy allowed"))
+    actor.ok_or_else(|| V3Error::from(PolicyError::SignIn).error_response())
 }
 
 async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpResponse {
