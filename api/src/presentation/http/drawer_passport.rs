@@ -14,12 +14,11 @@ use xc_kernel::ids::BranchId;
 use crate::application::workflows::passport_drawer::{
     PassportDrawerRefusal, PassportDrawerWorkflow,
 };
-use crate::application::workflows::passport_drawer_device::PassportDrawerState;
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::passport_drawer_device::passport_drawer_device;
-use crate::presentation::dto::drawer_passport::PassportDrawerInput;
+use crate::presentation::dto::drawer_passport::{PassportDrawerAnswer, PassportDrawerInput};
 use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin,
+    OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, failure, same_origin,
 };
 use crate::presentation::http::rpc::RpcClock;
 use crate::presentation::pages;
@@ -48,16 +47,6 @@ fn refuse(status: u16, sentence: &str) -> HttpResponse {
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .content_type("application/json")
         .json(serde_json::json!({ "error": sentence }))
-}
-
-fn answer_state(state: PassportDrawerState) -> HttpResponse {
-    HttpResponse::Ok()
-        .insert_header((header::CACHE_CONTROL, "no-store"))
-        .content_type("application/json")
-        .body(format!(
-            r#"{{"state":"{}","physicalResultConfirmed":false}}"#,
-            state.as_str()
-        ))
 }
 
 fn body_text(body: Result<web::Bytes, actix_web::Error>) -> Result<String, HttpResponse> {
@@ -156,14 +145,20 @@ async fn handle_drawer_passport(
 
     // 7. Workflow
     let input = PassportDrawerInput::from_value(&body_val);
-    let username = match &signed_in {
-        SignedIn::Owner(o) => o.username.clone(),
-        SignedIn::Employee(e) => e.username.clone(),
-    };
+    let actor_ref = actor.as_ref().unwrap();
 
-    match workflow.enter(&branch, &input, &username, now).await {
-        Ok(state) => answer_state(state),
+    match workflow.enter(&branch, &input, actor_ref.id(), now).await {
+        Ok(reply) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .content_type("application/json")
+            .json(PassportDrawerAnswer::with_duplicate(
+                reply.state,
+                reply.duplicate,
+            )),
         Err(PassportDrawerRefusal::InvalidBranch) => refuse(400, "สาขาไม่ถูกต้อง"),
-        Err(other) => refuse(400, &other.to_string()),
+        Err(PassportDrawerRefusal::InvalidOrderId) => refuse(400, "รหัสออเดอร์ไม่ถูกต้อง"),
+        Err(PassportDrawerRefusal::KioskNotHeld) => refuse(400, "ต้องเป็นผู้รับเรื่องของคิวนี้ก่อนเปิดลิ้นชัก"),
+        Err(PassportDrawerRefusal::OrderHeldByOther) => refuse(400, "ออเดอร์นี้เป็นของพนักงานคนอื่น"),
+        Err(PassportDrawerRefusal::Database(err)) => failure(err),
     }
 }

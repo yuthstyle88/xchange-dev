@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::infrastructure::devices::printer_models::{PrinterModel, PrinterModels};
+use xc_kernel::ids::BranchId;
 
 pub use pos_infra::config::settings::{DatabaseSettings, TelemetrySettings};
 
@@ -64,12 +65,15 @@ impl Default for AuthSettings {
 pub struct DevicesSettings {
     #[serde(rename = "printerModels")]
     pub printer_models: Vec<PrinterModel>,
+    #[serde(default, rename = "passportDrawerBranches")]
+    pub passport_drawer_branches: Vec<String>,
 }
 
 impl Default for DevicesSettings {
     fn default() -> Self {
         Self {
             printer_models: PrinterModels::built_in_models(),
+            passport_drawer_branches: Vec::new(),
         }
     }
 }
@@ -148,6 +152,13 @@ impl Settings {
         }
         if let Err(e) = PrinterModels::new(settings.devices.printer_models.clone()) {
             return Err(config::ConfigError::Message(e));
+        }
+        for branch in &settings.devices.passport_drawer_branches {
+            if !BranchId::is_well_formed(branch) {
+                return Err(config::ConfigError::Message(format!(
+                    "devices.passportDrawerBranches contains invalid branch id `{branch}`"
+                )));
+            }
         }
         if !settings.database.require_ssl && !is_local_database_host(&settings.database.host) {
             return Err(config::ConfigError::Message(format!(

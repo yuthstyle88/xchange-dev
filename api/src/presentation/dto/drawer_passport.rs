@@ -32,11 +32,13 @@ impl PassportDrawerInput {
 }
 
 /// The response body of `POST /api/drawer-passport`:
-/// `{"state": <word>, "physicalResultConfirmed": false}`
+/// `{"state": <word>, "physicalResultConfirmed": false}`, plus `"duplicate": true` only for row 11.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PassportDrawerAnswer {
     pub state: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub duplicate: bool,
     pub physical_result_confirmed: bool,
 }
 
@@ -44,6 +46,15 @@ impl PassportDrawerAnswer {
     pub fn new(state: PassportDrawerState) -> Self {
         Self {
             state: state.as_str(),
+            duplicate: false,
+            physical_result_confirmed: false,
+        }
+    }
+
+    pub fn with_duplicate(state: PassportDrawerState, duplicate: bool) -> Self {
+        Self {
+            state: state.as_str(),
+            duplicate,
             physical_result_confirmed: false,
         }
     }
