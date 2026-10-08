@@ -46,8 +46,18 @@ async fn lock_branch(
 
 /// Waits until a backend in this database is waiting for a lock and blocked by `holder_pid`.
 /// Observes database state via `pg_locks`, `pg_stat_activity`, and `pg_blocking_pids` without sleep.
-async fn wait_until_waiting_for_branch_lock(pool: &PgPool, holder_pid: i32) {
+/// Fails fast if the spawned task exits early, surfacing the actual error (#415 diagnostic step).
+async fn wait_until_waiting_for_branch_lock<T: std::fmt::Debug>(
+    pool: &PgPool,
+    holder_pid: i32,
+    task: &mut tokio::task::JoinHandle<T>,
+) {
     loop {
+        if task.is_finished() {
+            let res = task.await;
+            panic!("command finished before waiting for branch lock: {res:?}");
+        }
+
         let is_waiting: bool = sqlx::query_scalar(
             "SELECT EXISTS(\
                 SELECT 1 FROM pg_locks l \
@@ -60,7 +70,7 @@ async fn wait_until_waiting_for_branch_lock(pool: &PgPool, holder_pid: i32) {
         .bind(holder_pid)
         .fetch_one(pool)
         .await
-        .unwrap_or(false);
+        .expect("query lock status in wait_until_waiting_for_branch_lock");
 
         if is_waiting {
             break;
@@ -181,12 +191,12 @@ async fn branch_create_waits_for_branch_lock_and_writes_nothing_while_held() {
         from_branch: branch("MAIN"),
     };
 
-    let task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
+    let mut task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
 
     within(
         MUST_FINISH,
         "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid),
+        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
     )
     .await;
     assert!(
@@ -243,12 +253,12 @@ async fn rate_save_waits_for_branch_lock_and_writes_nothing_while_held() {
         previous_updated: String::new(),
     };
 
-    let task = tokio::spawn(async move { rates.save_rate(&b_clone, cmd, ACTOR, at(0)).await });
+    let mut task = tokio::spawn(async move { rates.save_rate(&b_clone, cmd, ACTOR, at(0)).await });
 
     within(
         MUST_FINISH,
         "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid),
+        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
     )
     .await;
     assert!(
@@ -305,12 +315,12 @@ async fn branch_create_count_runs_inside_branch_lock() {
         from_branch: branch("MAIN"),
     };
 
-    let task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
+    let mut task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
 
     within(
         MUST_FINISH,
         "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid),
+        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
     )
     .await;
     assert!(
@@ -365,12 +375,12 @@ async fn branch_create_find_by_request_runs_inside_branch_lock() {
         from_branch: branch("MAIN"),
     };
 
-    let task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
+    let mut task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
 
     within(
         MUST_FINISH,
         "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid),
+        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
     )
     .await;
     assert!(
@@ -417,12 +427,12 @@ async fn branch_create_uncommitted_row_does_not_affect_command_after_rollback() 
         from_branch: branch("MAIN"),
     };
 
-    let task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
+    let mut task = tokio::spawn(async move { branches.create(cmd, ACTOR, at(0)).await });
 
     within(
         MUST_FINISH,
         "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid),
+        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
     )
     .await;
     assert!(
