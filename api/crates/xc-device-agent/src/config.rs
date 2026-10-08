@@ -122,6 +122,11 @@ fn get_user_uid_gid(username: &str) -> Option<(u32, u32)> {
     None
 }
 
+#[cfg(target_os = "linux")]
+pub fn service_user_exists(username: &str) -> bool {
+    get_user_uid_gid(username).is_some()
+}
+
 pub fn chown_to_service_user(path: &Path, username: &str) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -275,6 +280,13 @@ pub fn install_service(binary_path: &Path) -> io::Result<PathBuf> {
 
     #[cfg(target_os = "linux")]
     {
+        if !service_user_exists("xc-agent") {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "service user 'xc-agent' does not exist; create it with: useradd -r -s /usr/sbin/nologin xc-agent",
+            ));
+        }
+
         let service_path = linux_systemd_service_path();
         if let Some(parent) = service_path.parent() {
             let _ = std::fs::create_dir_all(parent);

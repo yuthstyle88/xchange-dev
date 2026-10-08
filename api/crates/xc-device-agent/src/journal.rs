@@ -54,6 +54,7 @@ enum EntryState {
 pub struct Journal {
     pub path: PathBuf,
     file: File,
+    fail_writes: bool,
 }
 
 impl Journal {
@@ -93,10 +94,22 @@ impl Journal {
         // Repair torn last line if any: find the last valid JSON entry offset
         repair_torn_last_line(&path, &mut file)?;
 
-        Ok(Journal { path, file })
+        Ok(Journal {
+            path,
+            file,
+            fail_writes: false,
+        })
+    }
+
+    /// For testing: simulate a failure when writing to the journal.
+    pub fn set_fail_writes(&mut self, fail: bool) {
+        self.fail_writes = fail;
     }
 
     fn write_entry(&mut self, entry: &JournalEntry) -> io::Result<()> {
+        if self.fail_writes {
+            return Err(io::Error::other("simulated journal write failure"));
+        }
         let mut line =
             serde_json::to_vec(entry).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         line.push(b'\n');
@@ -258,8 +271,10 @@ fn repair_torn_last_line(path: &Path, file: &mut File) -> io::Result<()> {
             current_offset += part_len;
             last_valid_offset = current_offset;
         } else {
-            // Found an invalid line. If this is at the end, truncate to last_valid_offset.
-            break;
+            // A torn line in the middle is skipped; continue scanning so
+            // valid later lines survive. If this torn line is at the end,
+            // last_valid_offset won't include it, and it will be truncated below.
+            current_offset += part_len;
         }
     }
 

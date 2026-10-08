@@ -3,6 +3,8 @@
 use std::time::Duration;
 
 use xc_device_agent::client::{AgentApi, DrawerInfo, HttpAgentApi, PairRequest};
+#[cfg(target_os = "linux")]
+use xc_device_agent::config::service_user_exists;
 use xc_device_agent::config::{
     BUILD, BUILT_AT, ConfigFile, VERSION, chown_to_service_user, current_host, current_os,
     default_config_dir, install_service, load_config, load_token, save_config, save_token,
@@ -162,6 +164,15 @@ async fn run_install(
     channel: String,
     no_service: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "linux")]
+    if !no_service && !service_user_exists("xc-agent") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "service user 'xc-agent' does not exist; create it with: useradd -r -s /usr/sbin/nologin xc-agent",
+        )
+        .into());
+    }
+
     let host = current_host();
     let os = current_os();
 
@@ -205,10 +216,8 @@ async fn run_install(
         println!("No service unit was installed (--no-service).");
     } else {
         let current_exe = std::env::current_exe()?;
-        match install_service(&current_exe) {
-            Ok(svc_path) => println!("Service installed at {}", svc_path.display()),
-            Err(e) => eprintln!("Note: Could not install background service: {e}"),
-        }
+        let svc_path = install_service(&current_exe)?;
+        println!("Service installed at {}", svc_path.display());
     }
 
     Ok(())
@@ -358,7 +367,7 @@ async fn main() {
             no_service,
         } => {
             if let Err(e) = run_install(server, code, drawer, channel, no_service).await {
-                eprintln!("Install failed: {e}");
+                eprintln!("{e}");
                 std::process::exit(1);
             }
         }
