@@ -12,6 +12,8 @@ On the build host, in a clean checkout of the commit to ship:
 git fetch origin
 git checkout --detach <sha>
 
+npm --prefix web ci && npm --prefix web run build
+
 cd api
 rustc --version                   # rustup follows api/rust-toolchain.toml (1.98.1)
 
@@ -25,6 +27,7 @@ test -z "$(git status --porcelain)" &&
 strings target/release/xchange | grep -c "$(git rev-parse HEAD)"    # 1 or more
 ```
 
+- **Web build before release:** A release build refuses a `web/dist` without `.vite/manifest.json`, and `/health/ready` reports `ui`.
 - **Why `BUILD_SHA` and `BUILT_AT` are set by hand:** `api/build.rs` re-runs only
   when one of these two variables or `migrations/` changes, so with a kept
   `target/` or a compiler cache a build that leaves them unset can hand out a

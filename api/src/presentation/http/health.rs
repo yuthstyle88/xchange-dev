@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 use crate::bootstrap::AppState;
 
@@ -17,6 +17,7 @@ struct ReadyResponse<'a> {
     build: &'a str,
     built_at: &'a str,
     channel: &'a str,
+    ui: &'static str,
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -31,7 +32,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     .route("/health/ready", web::get().to(ready_handler));
 }
 
-async fn ready_handler(state: web::Data<AppState>) -> HttpResponse {
+async fn ready_handler(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
     let database_ok = tokio::time::timeout(PROBE_TIMEOUT, state.database_probe.ping())
         .await
         .unwrap_or_default();
@@ -43,6 +44,11 @@ async fn ready_handler(state: web::Data<AppState>) -> HttpResponse {
         actix_web::http::StatusCode::SERVICE_UNAVAILABLE
     };
 
+    let ui = match req.app_data::<web::Data<crate::presentation::screens::ScreenTable>>() {
+        Some(table) if table.built() => "built",
+        _ => "missing",
+    };
+
     let body = ReadyResponse {
         status,
         database: database_ok,
@@ -50,6 +56,7 @@ async fn ready_handler(state: web::Data<AppState>) -> HttpResponse {
         build: &state.build.build,
         built_at: &state.build.built_at,
         channel: state.settings.channel.as_str(),
+        ui,
     };
 
     HttpResponse::build(http_status).json(body)

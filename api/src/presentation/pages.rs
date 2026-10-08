@@ -170,19 +170,22 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
         return plain_404();
     }
 
+    if let Some(table) = req.app_data::<web::Data<crate::presentation::screens::ScreenTable>>() {
+        if table.holds(req.path()) {
+            return table.serve(&req).await;
+        }
+    }
+
     let Some(spec) = PAGE_SPECS.iter().find(|s| s.path == req.path()) else {
         return plain_404();
     };
 
     if spec.kind == PageKind::DeskVariant {
-        let sessions = get_sessions(&req).await;
+        let sessions = sessions_of(&req).await;
         let staff = match &sessions.staff {
             Some(s) if s.role() == Role::Front => s,
             _ => {
-                let origin = redirect_origin(&req);
-                return HttpResponse::Found()
-                    .insert_header(("Location", format!("{origin}/staff")))
-                    .finish();
+                return to_staff(&req);
             }
         };
 
@@ -220,7 +223,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     }
 
     let sessions = if spec.who_signed_in || spec.kind == PageKind::Branch {
-        Some(get_sessions(&req).await)
+        Some(sessions_of(&req).await)
     } else {
         None
     };
@@ -228,48 +231,16 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     if spec.who_signed_in {
         let s = sessions.as_ref().unwrap();
         if s.owner.is_none() && s.staff.is_none() {
-            let origin = redirect_origin(&req);
-            return HttpResponse::SeeOther()
-                .insert_header(("Location", format!("{origin}/login")))
-                .finish();
+            return to_login(&req);
         }
     }
 
     let branch = if spec.kind == PageKind::Branch {
         let s = sessions.as_ref().unwrap();
-        let name = if s.owner.is_none() {
-            if let Some(staff) = &s.staff {
-                staff
-                    .branch_id()
-                    .map(|b| b.as_str())
-                    .unwrap_or("MAIN")
-                    .to_string()
-            } else {
-                match extract_branch_query(req.query_string()) {
-                    Some(name) => name,
-                    None => {
-                        return HttpResponse::BadRequest()
-                            .content_type("text/plain; charset=utf-8")
-                            .body("Invalid branch");
-                    }
-                }
-            }
-        } else {
-            match extract_branch_query(req.query_string()) {
-                Some(name) => name,
-                None => {
-                    return HttpResponse::BadRequest()
-                        .content_type("text/plain; charset=utf-8")
-                        .body("Invalid branch");
-                }
-            }
-        };
-        if !is_valid_branch(&name) {
-            return HttpResponse::BadRequest()
-                .content_type("text/plain; charset=utf-8")
-                .body("Invalid branch");
+        match page_branch(&req, s) {
+            Ok(name) => Some(name),
+            Err(resp) => return resp,
         }
-        Some(name)
     } else {
         None
     };
@@ -360,6 +331,60 @@ fn redirect_origin(req: &HttpRequest) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     format!("{scheme}://{host}")
+}
+
+pub(crate) fn page_branch(req: &HttpRequest, s: &Sessions) -> Result<String, HttpResponse> {
+    let name = if s.owner.is_none() {
+        if let Some(staff) = &s.staff {
+            staff
+                .branch_id()
+                .map(|b| b.as_str())
+                .unwrap_or("MAIN")
+                .to_string()
+        } else {
+            match extract_branch_query(req.query_string()) {
+                Some(name) => name,
+                None => {
+                    return Err(HttpResponse::BadRequest()
+                        .content_type("text/plain; charset=utf-8")
+                        .body("Invalid branch"));
+                }
+            }
+        }
+    } else {
+        match extract_branch_query(req.query_string()) {
+            Some(name) => name,
+            None => {
+                return Err(HttpResponse::BadRequest()
+                    .content_type("text/plain; charset=utf-8")
+                    .body("Invalid branch"));
+            }
+        }
+    };
+    if !is_valid_branch(&name) {
+        return Err(HttpResponse::BadRequest()
+            .content_type("text/plain; charset=utf-8")
+            .body("Invalid branch"));
+    }
+    Ok(name)
+}
+
+pub(crate) async fn sessions_of(req: &HttpRequest) -> Sessions {
+    get_sessions(req).await
+}
+
+pub(crate) fn to_login(req: &HttpRequest) -> HttpResponse {
+    let origin = redirect_origin(req);
+    HttpResponse::SeeOther()
+        .insert_header(("Location", format!("{origin}/login")))
+        .finish()
+}
+
+pub(crate) fn to_staff(req: &HttpRequest) -> HttpResponse {
+    let origin = redirect_origin(req);
+    HttpResponse::Found()
+        .insert_header(("Location", format!("{origin}/staff")))
+        .finish()
 }
 
 fn read_page_file(web_dir: &Path, file_name: &str) -> Option<String> {

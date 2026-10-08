@@ -64,6 +64,11 @@ fn get_built_at() -> String {
     format_rfc3339_utc(std::time::SystemTime::now())
 }
 
+#[path = "build_support/screens.rs"]
+mod screens;
+
+use std::path::Path;
+
 fn main() {
     println!("cargo:rerun-if-changed=nonexistent_file_to_force_rerun");
     println!("cargo:rerun-if-env-changed=BUILD_SHA");
@@ -75,4 +80,43 @@ fn main() {
 
     println!("cargo:rustc-env=XCHANGE_BUILD={build}");
     println!("cargo:rustc-env=XCHANGE_BUILT_AT={built_at}");
+
+    let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
+    screens::ensure_dist(&dist).expect("failed to ensure ../web/dist directory exists");
+
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    if let Err(m) = screens::check_dist(&profile, &dist) {
+        panic!(
+            "{m}. Run `npm --prefix web ci && npm --prefix web run build` before a release build."
+        );
+    }
+
+    let entries = screens::read_entries(&dist).expect("failed to read web/dist entries");
+    let entry_refs: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+    let table =
+        screens::screen_table(&entry_refs).expect("failed to parse screen table from web/dist");
+
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("v3_screens.rs");
+    let mut code = String::new();
+    code.push_str("pub(crate) const SCREENS: &[(&str, Gate, &str)] = &[\n");
+    for s in &table {
+        let gate_repr = match s.gate {
+            screens::Gate::Anyone => "Gate::Anyone",
+            screens::Gate::SignedIn => "Gate::SignedIn",
+            screens::Gate::Branch => "Gate::Branch",
+            screens::Gate::Front => "Gate::Front",
+        };
+        code.push_str(&format!(
+            "    ({:?}, {}, {:?}),\n",
+            s.path, gate_repr, s.entry
+        ));
+    }
+    code.push_str("];\n");
+    std::fs::write(&dest_path, code).expect("failed to write v3_screens.rs");
+
+    println!("cargo:rerun-if-changed=../web/dist");
 }

@@ -79,6 +79,12 @@ if grep -q '"database":true' "$BODY"; then ok "database: true"; else bad "databa
 for name in version build builtAt channel; do
   [ -n "$(field "$name")" ] || bad "/health/ready has no $name"
 done
+ui="$(field ui)"
+if [ "$ui" = "built" ]; then
+  ok "ui built"
+else
+  bad "ui is '$ui', want built (build web/ before cargo build --release)"
+fi
 if [ -n "$EXPECTED" ]; then
   case "$build" in
     "$EXPECTED"*) ok "build matches $EXPECTED" ;;

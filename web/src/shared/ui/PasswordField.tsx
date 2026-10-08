@@ -1,0 +1,71 @@
+import { createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import type { FieldBinding } from './form';
+
+export function PasswordField(props: {
+  field: FieldBinding;
+  label: string;
+  autocomplete?: string;
+}): JSX.Element {
+  const id = `field-${props.field.name}`;
+  const [visible, setVisible] = createSignal(false);
+  let inputEl: HTMLInputElement | undefined;
+  let wrapperEl: HTMLDivElement | undefined;
+
+  function toggle(e: MouseEvent) {
+    e.preventDefault();
+    const next = !visible();
+    setVisible(next);
+    if (inputEl) {
+      inputEl.type = next ? 'text' : 'password';
+    }
+  }
+
+  onMount(() => {
+    const form = inputEl?.form ?? wrapperEl?.closest('form');
+    if (!form) return;
+
+    const onSubmit = () => {
+      setVisible(false);
+      if (inputEl) {
+        inputEl.type = 'password';
+      }
+    };
+    form.addEventListener('submit', onSubmit);
+    onCleanup(() => {
+      form.removeEventListener('submit', onSubmit);
+    });
+  });
+
+  return (
+    <div>
+      <label for={id}>{props.label}</label>
+      <div ref={wrapperEl}>
+        <input
+          id={id}
+          name={props.field.name}
+          type="password"
+          autocomplete={props.autocomplete}
+          ref={(el) => {
+            inputEl = el;
+            props.field.ref(el);
+          }}
+          aria-invalid={props.field.invalid() ? 'true' : undefined}
+          aria-describedby={props.field.invalid() ? props.field.errorId : undefined}
+        />
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={visible() ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+          aria-pressed={visible() ? 'true' : 'false'}
+        >
+          {visible() ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+        </button>
+      </div>
+      {props.field.invalid() && props.field.error() && (
+        <span id={props.field.errorId} role="alert">
+          {props.field.error()}
+        </span>
+      )}
+    </div>
+  );
+}

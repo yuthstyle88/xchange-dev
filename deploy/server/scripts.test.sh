@@ -101,6 +101,10 @@
 #   U5d  (BK-ENC) a set without the .age uploads archive: no stop
 #   U5e  (BK-ENC) a set whose dump lacks the age header is refused even if the
 #        uploads archive has it (mutant E10)
+# Cases SM1/SM2 are smoke.sh reading the `ui` field /health/ready gained in
+# V0-A (docs/design/xchange-v3-web.md §3.2), with curl stubbed:
+#   SM1  ui "missing", or no ui field at all: exit 1, a FAIL line naming ui
+#   SM2  ui "built": exit 0, an ok line naming ui
 # Nothing here touches a host: all paths live under a /var/tmp scratch root
 # (not /tmp or /home: check_own_path refuses those).
 set -euo pipefail
@@ -1617,7 +1621,7 @@ for a in "$@"; do
 done
 body=""
 case "$url" in
-  */health/ready) body='{"version":"1.0.0","build":"0123456789ab","builtAt":"2026-10-07T00:00:00Z","channel":"staging","database":true}' ;;
+  */health/ready) body='{"version":"1.0.0","build":"0123456789ab","builtAt":"2026-10-07T00:00:00Z","channel":"staging","database":true,"ui":"built"}' ;;
 esac
 [ -n "$out" ] && printf '%s' "$body" >"$out"
 printf '200'
@@ -1825,6 +1829,56 @@ ck "nothing was replaced" u_untouched "$u5e"
 ck "the message says the dump is not age-encrypted" grep -qs 'backup dump is not age-encrypted' "$LOGS/u5e.out"
 ck "the message names the dump" grep -qsF -- "$u5e/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age" "$LOGS/u5e.out"
 report U5e "a set whose dump lacks the age header is refused even if the archive is encrypted"
+
+# ---- SM1/SM2: smoke.sh fails a server whose screens were not built (V0-A) ---
+# docs/design/xchange-v3-web.md §3.2: a server built without `web/dist` answers
+# every v3 screen 503 and /health/ready reports ui "missing"; smoke.sh refuses it.
+SM_STUBS="$ROOT/sm-stubs"
+mkdir -p "$SM_STUBS"
+cat >"$SM_STUBS/curl" <<'STUB'
+#!/usr/bin/env bash
+out="" take=0 url=""
+for a in "$@"; do
+  if [ "$take" = 1 ]; then
+    out="$a"
+    take=0
+    continue
+  fi
+  case "$a" in
+    -o) take=1 ;;
+    http://* | https://*) url="$a" ;;
+  esac
+done
+body=""
+case "$url" in
+  */health/ready) body='{"status":"ok","database":true,"version":"1.0.0","build":"0123456789ab","builtAt":"2026-10-07T00:00:00Z","channel":"staging"'"${XC_STUB_UI_FIELD}"'}' ;;
+esac
+[ -n "$out" ] && printf '%s' "$body" >"$out"
+printf '200'
+STUB
+chmod 755 "$SM_STUBS/curl"
+
+# sm_run <ui field text> — smoke.sh against the stub; OUT/RC.
+sm_run() {
+  set +e
+  OUT="$(PATH="$SM_STUBS:$PATH" XC_STUB_UI_FIELD="$1" bash "$HERE/smoke.sh" http://127.0.0.1:8094 2>&1)"
+  RC=$?
+  set -e
+}
+
+for sm in missing absent; do
+  if [ "$sm" = missing ]; then sm_run ',"ui":"missing"'; else sm_run ''; fi
+  printf '%s\n' "$OUT" >"$LOGS/sm1-$sm.out"
+  ck "smoke.sh exited 1" test "$RC" -eq 1
+  ck "a FAIL line names ui" grep -Eq '^FAIL .*ui' "$LOGS/sm1-$sm.out"
+  report "SM1-$sm" "smoke.sh fails a server whose /health/ready ui is $sm"
+done
+
+sm_run ',"ui":"built"'
+printf '%s\n' "$OUT" >"$LOGS/sm2.out"
+ck "smoke.sh exited 0" test "$RC" -eq 0
+ck "an ok line names ui" grep -Eq '^ok +ui' "$LOGS/sm2.out"
+report SM2 "smoke.sh passes a server whose /health/ready ui is built"
 
 echo "# $PASS passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]

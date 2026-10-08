@@ -76,8 +76,21 @@ impl AppState {
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: AppState) {
+    configure_with_screens(
+        cfg,
+        state,
+        crate::presentation::screens::ScreenTable::compiled(),
+    );
+}
+
+pub fn configure_with_screens(
+    cfg: &mut web::ServiceConfig,
+    state: AppState,
+    screens: crate::presentation::screens::ScreenTable,
+) {
     cfg.app_data(web::Data::new(state.clone()));
     crate::presentation::http::configure(cfg, &state);
+    screens.configure(cfg, &state);
     crate::presentation::pages::configure(cfg, &state);
     cfg.default_service(web::to(crate::presentation::pages::fallback));
 }
