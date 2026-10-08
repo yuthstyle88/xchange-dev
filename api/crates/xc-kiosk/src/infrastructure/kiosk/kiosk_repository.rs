@@ -414,6 +414,97 @@ impl KioskRepository for PgKioskRepository {
             .collect()
     }
 
+    async fn queue_before(
+        &self,
+        branch: &BranchId,
+        filter: QueueFilter,
+        before: Option<&str>,
+        limit: i64,
+    ) -> AppResult<Vec<(KioskRequest, WorkTimes)>> {
+        let rows = if let Some(before_id) = before {
+            let sql = match filter {
+                QueueFilter::All => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
+                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
+                     ORDER BY created_at DESC, id DESC LIMIT $3"
+                }
+                QueueFilter::Waiting => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
+                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
+                     ORDER BY created_at DESC, id DESC LIMIT $3"
+                }
+                QueueFilter::Working => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
+                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
+                     ORDER BY created_at DESC, id DESC LIMIT $3"
+                }
+                QueueFilter::Completed => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
+                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
+                     ORDER BY created_at DESC, id DESC LIMIT $3"
+                }
+            };
+            sqlx::query_as::<_, QueueRow>(sql)
+                .bind(branch.as_str())
+                .bind(before_id)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+        } else {
+            let sql = match filter {
+                QueueFilter::All => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
+                     ORDER BY created_at DESC, id DESC LIMIT $2"
+                }
+                QueueFilter::Waiting => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
+                     ORDER BY created_at DESC, id DESC LIMIT $2"
+                }
+                QueueFilter::Working => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
+                     ORDER BY created_at DESC, id DESC LIMIT $2"
+                }
+                QueueFilter::Completed => {
+                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+                     started_at, completed_at \
+                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
+                     ORDER BY created_at DESC, id DESC LIMIT $2"
+                }
+            };
+            sqlx::query_as::<_, QueueRow>(sql)
+                .bind(branch.as_str())
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+        };
+
+        rows.into_iter()
+            .map(QueueRow::into_request_and_times)
+            .collect()
+    }
+
     async fn working(
         &self,
         branch: &BranchId,

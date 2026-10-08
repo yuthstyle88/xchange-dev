@@ -74,6 +74,33 @@ impl KioskService {
         })
     }
 
+    /// `queue_before`: the queue of the branch, filtered and keyset paged by `before`, at most `limit` items.
+    pub async fn queue_before(
+        &self,
+        branch: &BranchId,
+        filter: QueueFilter,
+        before: Option<&str>,
+        limit: i64,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<QueueItem>> {
+        self.branch_name(branch).await?;
+        let now = time(now);
+        let rows = self
+            .repo
+            .queue_before(branch, filter, before, limit)
+            .await?;
+        let mut items = Vec::with_capacity(rows.len());
+        for (request, times) in rows {
+            let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
+            items.push(QueueItem {
+                request,
+                identity,
+                times,
+            });
+        }
+        Ok(items)
+    }
+
     /// `accept`: a desk employee takes a waiting request.
     pub async fn accept(
         &self,
