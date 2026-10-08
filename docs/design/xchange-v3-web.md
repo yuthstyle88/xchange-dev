@@ -156,6 +156,7 @@ anything. So **an equal version means nothing changed**, and a higher one means 
 | Read a view | `GET /api/v3/views/{view}?branch={id}&since={version}` | `200 {"version": n, "changed": false}` when `since` equals the branch's version. This is O(1): one indexed read of `branch_versions`, and the view is not loaded. Otherwise `200 {"version": n, "changed": true, "data": …}` |
 | Read without a cursor | the same, with no `since` | always `changed: true` with `data` |
 | Act | `POST /api/v3/{area}/{action}`, JSON body | `200 {"version": n, …result}` or a refusal (§4.3) |
+| Compute (writes nothing) | `POST /api/v3/compute/{name}`, JSON body | `200` with the action's answer, no `version`, or a refusal (§4.3); §12.20 |
 
 - [required] JSON is camelCase. Money and rates are **decimal strings** (`"1234.50"`), never JSON numbers (W7).
 - [required] POST keeps v2's request rules (design §5.3): `Origin` must equal the request's own origin, and
@@ -280,6 +281,7 @@ classDiagram
 | `UiAssets` | `api/src/presentation/ui.rs` | V0-A | `ScreenTable` |
 | `ScreenTable` | `api/src/presentation/screens.rs` | V0-A | `include!`s `OUT_DIR/v3_screens.rs`, generated from `web/dist` (§3.3). No ticket edits this file |
 | `KioskQueueView`, `KioskNotificationsView` and their DTOs | `http/v3/views/kiosk_queue.rs`, `kiosk_notifications.rs`; `dto/v3/kiosk_queue.rs`, `kiosk_notifications.rs` | V1-kiosk-queue-views (§12.18.2, diagram §12.18.10) | the queue store and the queue panel |
+| `ComputeAction`, `ComputeEndpoint`, the generated `ACTIONS` table; a compute action and its DTOs | `api/src/presentation/http/v3/action.rs`; `http/v3/actions/<name>.rs`, `dto/v3/<name>.rs` | V0-D; each action its own ticket (§12.20, diagram §12.20.8) | the cash menu's calculators |
 
 [required] **No file is edited by more than one screen or view ticket.** A view is one file in `http/v3/views/` and
 one in `dto/v3/`. A screen is its folder and its HTML entry. Its generated types are one file per view in
@@ -543,7 +545,8 @@ run in parallel: each owns only its own files (§5.1).
 | **V0-B-session-end** (#492, §12.19) | `SessionStore.ended` / `end`, the end on a view refusal (`endingFetch`, `sharedApi`), the switch check, the `me` view's own version and the caller-aware `own_version`, AppShell's notice and content lock, the two `shell.session.*` keys | the files of §12.19.8 | this section's design PR. Shares `th.ts` / `en.ts` with V1-kiosk-queue-panel (#486), added keys only on both sides (§12.19.8) |
 | V2-shell (#460) | the v3 admin page at `/ui/admin/`: entry `web/pages/admin.html`, `web/src/screens/admin/menus.ts` and its test, the admin layout, the `admin_branches` view (§12.3, §12.4) | `web/pages/admin.html`, the root files of `web/src/screens/admin/` (`menus.ts`, `menus.test.ts`, `AdminShell.tsx`, `main.tsx`, `admin.css`, `i18n.ts` — the shell's own texts only, namespace `admin.*`; a menu's text never goes here, W10), `admin_branches`' view, DTO, generated TS and test | V0-C (the view's trait shape); merges after V1-login and V2-parts |
 | **V2-parts** (#476, §12.2) | the admin parts several menus share, `TransactionRow`, and the views `transaction_documents`, `admin_request_status`, `admin_shift_state` | `web/src/screens/admin/parts/` (whole subtree), `api/src/presentation/dto/v3/transaction_row.rs` and `web/src/shared/api/generated/transaction_row.ts` (`TransactionRow`), the three views' files, `api/src/application/compat/abandon_request.rs` (`is_applied` visibility), `api/tests/v3_types_test.rs` (one allowed file name) | V0-C |
-| V2-<menu> | one per admin menu of §6 | `web/src/screens/admin/<menu>/**`, including its own text table `web/src/screens/admin/<menu>/i18n.ts` (namespace `admin.<menu>.*`, W10), and its view files, as above | V2-shell; V2-parts for a menu that uses a part; V0-C for a menu with a filtered view. V2-bookings waits for #413; V2-cash's calculators for §12.15 item 3 |
+| V2-<menu> | one per admin menu of §6 | `web/src/screens/admin/<menu>/**`, including its own text table `web/src/screens/admin/<menu>/i18n.ts` (namespace `admin.<menu>.*`, W10), and its view files, as above | V2-shell; V2-parts for a menu that uses a part; V0-C for a menu with a filtered view. V2-bookings waits for #413; V2-cash's calculators are their own tickets (§12.20.9) |
+| **V0-D** compute seam, V2-cash-valuation, V2-cash-profit, V2-cash-calculators (§12.20) | a `POST` that computes and writes nothing; the shift valuation and the profit summary on it; the two panels of the shift detail | the files of §12.20.9 | this doc's §12.20; V2-cash-calculators also #467 and the two action tickets |
 | V2-switch (#472) | moves the admin entry's `xc-path` from `/ui/admin/` to `/` once every served admin feature exists; `/ui/admin/` then answers 308 to `/` (§12.13) | `web/pages/admin.html`, `api/src/presentation/screens.rs` (the redirect only), its test | every V2-<menu>, V2-parts and the queue bar (#471) |
 | V3-desk, V3-staff-desk, V3-staff, V3-staff-report, V3-staff-documents | Wave 3 | as above | V2-switch |
 | V4 | retire v2's files (§7) | `api/src/presentation/pages.rs`, `api/static/`, `api/tests/js/`, `api/tests/pages_*`, `api/src/application/compat/`, `api/tools/`, `deploy/server/` | every V3 |
@@ -614,7 +617,7 @@ until the first install (owner 2026-10-06). That does not remove the four items.
 | Item | Blocks | Who |
 |---|---|---|
 | Bookings are not ported yet (D5: "พอร์ตมา v3"). #377 also asks who creates bookings and whether v2's bookings data moves | V2-bookings | owner, then the lane controller |
-| The shift valuation and profit calculators (§12.15 item 3) | V2-cash (those panels only) | lane controller |
+| The shift valuation and profit calculators (§12.15 item 3) | V2-cash (those panels only) | **designed in §12.20** (V0-D and three tickets) |
 | Payment settings route | V2-payments | PR 372 |
 | `Rpc` vs `StaffRpc` disagreement (design §11) | nothing: W8 keeps each screen on its own path's row | owner, when wanted |
 | `SessionStore` cannot end a session without signing out, nor see an account switch through the branch cursor (§12.18.9) | the page-wide form lock and the switch warning | **designed in §12.19** (V0-B-session-end) |
@@ -631,7 +634,7 @@ The thirteen V2 tickets (#460 V2-shell, #461–#470 one per menu, #471 the queue
 items: O1–O7 on V2-shell, which every menu inherits, and items of their own (`O-ov1`, `O-em1`, `O-bk1`…`O-bk3`, `O-tx1`,
 `O-sl1`, `O-sl2`, `O-cu1`, `O-cu2`, `O-ca1`, `O-ca2`, `O-ra1`, `O-ra2`, `O-re1`, `O-qu1`, `O-qu2`, and #472's two). This
 section records the answers and the files they give. Two answers add tickets: **V0-C** (#475, filtered views, §12.1)
-and **V2-parts** (#476, the admin parts several menus share, §12.2). §12.15 lists what was left to the controller and what is still open; §12.16 and §12.17 record two of its answers; §12.18 designs V1-kiosk-queue, which answers §12.12.
+and **V2-parts** (#476, the admin parts several menus share, §12.2). §12.15 lists what was left to the controller; §12.16, §12.17 and §12.20 record its answers; §12.18 designs V1-kiosk-queue, which answers §12.12.
 
 Line references into the v2 source: `admin-html:N` is line N of the decoded admin page (the one-line JSON string
 `src/online/lib/admin-html.ts`, decoded by the command in #460 §2, 175 lines); `admin-workspace.js`, `admin-queue.js`,
@@ -961,7 +964,7 @@ lands on the admin page. The redirect is the one route V2-switch adds to `Screen
 
 ### 12.15 Left to the controller
 
-Items 1 and 2 were answered on 2026-10-08 (§12.17, §12.16); item 3 is still open.
+Items 1 and 2 were answered on 2026-10-08 (§12.17, §12.16); item 3 on 2026-10-09 (§12.20).
 
 1. **Bookings' create form (O-bk1) — answered, §12.17.** The served page has no create form (`bookings.js:1-21`); v3's `create` is new
    (owner 2026-10-08, `xchange-v3.md:1734-1748`), and its payload is fixed by `xchange-v3.md` §5.6.3 (`requestId`, `name`,
@@ -970,12 +973,13 @@ Items 1 and 2 were answered on 2026-10-08 (§12.17, §12.16); item 3 is still op
 2. **The BOT reference timer — answered, §12.16.** `rates-reference.js:12` re-reads `/api/reference-rates` every 60 s while `rates` is
    shown and the tab is visible, and the panel says so (`rates-reference.js:7`, *ตรวจข้อมูลทุก 60 วินาที*). This is served
    behaviour (W9) and a poll (§12.6).
-3. **The two calculators in the shift detail — open.** The valuation panel (`shift-valuation.js:9-15`,
+3. **The two calculators in the shift detail — answered, §12.20** (a compute-only action seam, V0-D, then one
+   action each and the panels; issuecomment-6066362902 on #467). The valuation panel (`shift-valuation.js:9-15`,
    `shift-valuation-core.js:2-7`) and the profit panel (`profit-summary.js:7-13`, `profit-summary-core.js:2-8`) compute
-   only from figures the user types; they write nothing. W7 forbids that arithmetic in the screen, and no v3 endpoint
+   from figures the user types (the valuation also from the stored shift, §12.20.1 V2); they write nothing. W7 forbids that arithmetic in the screen, and no v3 endpoint
    computes from typed input: v3 has no compute-only action seam (`api/src/presentation/http/v3/mod.rs` registers views
    only). Porting them needs a server action that computes without writing (a core change); otherwise they are a known
-   difference. V2-cash (#467) cannot port them until this is answered.
+   difference. V2-cash (#467) ships without them; they are ported by the tickets of §12.20.9.
 
 ### 12.16 The BOT reference panel — the one admin poll (#468)
 
@@ -1518,3 +1522,437 @@ classDiagram
 
 The up-front tests are written by the controller on the ticket's branch before dispatch (🧪 rule). They include the
 amended asserts of §12.19.4.
+
+### 12.20 Compute-only actions — the seam, the shift valuation and the profit summary (panel A5)
+
+> decided-by: claude/7ca80c (lane controller) · 2026-10-09 · the direction is the controller's answer on #467
+> (issuecomment-6066362902); this section is its design · measured on `main` at `a9a5cfe` and in
+> `xchange-v2-source@4d0bdbb` · answers §12.15 item 3 · the PR's open questions answered by the controller on PR 507
+> (issuecomment-6066639842) and folded in below
+
+Line references: `shift-valuation.js`, `shift-valuation-core.js`, `profit-summary.js` and `profit-summary-core.js` are in
+`src/devices-public/` of the v2 source; `admin-html:N` is line N of the decoded admin page (§12).
+
+**Root cause.** The shift detail dialog of the cash menu carries two calculators that compute in the browser, with
+floats, from the stored shift and from figures the user types, and write nothing (`shift-valuation.js:1`, *"no ledger
+mutations"*; `profit-summary.js:13`, *"ไม่ได้บันทึกหรือถอนเงิน"*). W7 forbids that arithmetic in a screen, and v3 has no
+endpoint that computes without writing. The chain:
+
+1. `configure_v3` registers the generated view table and nothing else (`api/src/presentation/http/v3/mod.rs:16-22`).
+2. Every view is a `GET` that reads (`api/src/presentation/http/v3/view.rs:85-105`). A view takes its input from the
+   query (`view.rs:115-198`, `:250-322`), so typed rates and money figures would travel in URLs and logs, and a view has
+   no refusal of its own beyond its filter's `check` (`view.rs:29-35`).
+3. The one action path is `/api/rpc`, and every write there runs through `BranchTx::run`, which raises the branch
+   version on every run, *"whether or not the closure wrote"* (`api/crates/xc-kernel/src/branch_tx.rs:7-12`, `:56`).
+   A calculation sent as a write would move every view's cursor and make every open screen re-read for nothing.
+
+So the calculators need a third kind of endpoint: a `POST` that reads what it must, computes, answers, and moves nothing.
+That is a core change, so it is its own ticket (♻️: one seam, one small file per action).
+
+#### 12.20.1 What v2 does (the behaviour contract, W9)
+
+Both scripts wrap v2's `shiftDetail` (`admin-html:130`). The page loads `shift-valuation*.js` before `profit-summary*.js`
+(`admin-html:175`), so the dialog shows the shift table, then the valuation panel, then the profit panel. Both panels
+appear for every shift, open or closed, that the snapshot holds (`shift-valuation.js:5`, `profit-summary.js:4`).
+
+| # | v2 | Source |
+|---|---|---|
+| V1 | Valuation panel: heading `กำไรส่วนต่างจากการตีราคา (ประมาณการ)`, the explanation, the note on hand-typed BOT rates, and the link `เปิดอัตราแลกเปลี่ยน ธปท. ↗` to `https://www.bot.or.th/th/statistics/exchange-rate.html` (new tab, `noopener noreferrer`) | `shift-valuation.js:9` |
+| V2 | The currencies it asks about: every register currency whose current balance is non-zero, **or** whose opening is non-zero, **or** that has a movement in this shift. The current balance is `shift.expected`, or computed from the snapshot when absent | `:6-7`; `admin-html:98` (`balanceOf`) |
+| V3 | Form: `วันที่เรทที่ ธปท. เผยแพร่` (`type=date`, required), `ประเภทเรท` (`ซื้อเงินโอน` / `ซื้อตั๋วเงิน` / `ขาย`), the footnote on per-1-unit rates, one rate input per currency of V2 except THB, labelled `<c> → THB ต่อ 1 <c>` (`type=number min=0.000001 max=1000000 step=any required`, placeholder `กรอกเรทอ้างอิง ธปท.`), button `คำนวณส่วนต่าง`, and a result area with `aria-live="polite"` | `:9` |
+| V4 | Submit: `rates = {THB: 1}` plus each input's `Number(value)`, then `XCShiftValuation.calculate(shift.opening, balance, moves, rates)` | `:11-12` |
+| V5 | `calculate`: `value(n, c) = Math.round(n × r_c × 100) / 100`, `r_THB = 1`; refuses with `กรอกเรทให้ครบทุกสกุลที่มียอด` when `n` or `r_c` is not finite or `r_c ≤ 0`. `opening` and `current` sum `value` over the currencies whose balance is non-zero; `movements` sums `±value(amount, currency)` over **every** movement of the shift (IN `+`, OUT `−`), refusing a direction other than IN/OUT with `ทิศทางรับ–จ่ายไม่ถูกต้อง`; answers `opening`, `current`, `movements`, `difference = current − opening`, `adjusted = current − opening − movements`, each passed through `Math.round(x × 100) / 100` | `shift-valuation-core.js:2-7` |
+| V6 | Result: the line `เรทวันที่ <date> · <kind> · ผู้ใช้กรอกเอง` / `คำนวณเมื่อ <now, th-TH>`; a table `สกุล`, `~ตั้งต้น`, `~คงเหลือตามระบบ`, `~เรท THB` (the rate `toFixed(6)`), `~มูลค่าคงเหลือ THB` (`current × rate`) with one row per currency of V2, THB included; then `เงินคงเหลือรวมเป็นบาท`, `เงินตั้งต้นรวมเป็นบาท (เรทเดียวกัน)`, `ส่วนต่างก่อนปรับรับ–จ่ายอื่น`, `รับ–จ่ายเงินอื่นสุทธิ (รับเข้า − จ่ายออก)`, `ส่วนต่างหลังตัดผลรับ–จ่ายอื่น` (bold), each `<money> THB`, and the closing note `ค่าบวก = มูลค่าเพิ่ม / …` | `shift-valuation.js:13-14` |
+| V7 | A refusal replaces the result area's text with the sentence. The result is not cleared when an input changes | `:15` |
+| P1 | Profit panel: heading `กำไรและยอดถอนได้`, the note `แบบคำนวณทดลอง…`, three cards `กำไรที่เกิดขึ้นแล้ว` / `ส่วนต่างตีราคา` / `ยอดถอนได้` with their notes, each showing `รอข้อมูล` until a result | `profit-summary.js:7`, `:12` |
+| P2 | `<details>` `ข้อมูลที่ใช้คำนวณ` with eight inputs in this order: `realized`, `foreignValue`, `foreignCost`, `netAssets`, `capital`, `reserve`, `cash`, `cashMinimum`, each with its label and its hint as both placeholder and `<small>`; `type=number step=0.01 required`, and `min=0` on all but `realized` and `netAssets`; the paragraph `มูลค่าขายสุทธิให้ใช้เรท…`; a required checkbox `ตรวจข้อมูล ต้นทุน และยอดที่ถอนก่อนหน้านี้แล้ว`; button `คำนวณกำไรและยอดถอนได้`; a `role="alert"` line; the footnote `ส่วนต่างตีราคา = …` | `:7-10` |
+| P3 | Any input: the cards go back to `รอข้อมูล` and the alert says `ข้อมูลเปลี่ยน กรุณาคำนวณใหม่` | `:13` |
+| P4 | Submit: `XCProfitSummary.summarize(FormData)`; the cards show `<money> THB` and the alert `คำนวณเมื่อ <now, th-TH> · ไม่ได้บันทึกหรือถอนเงิน`; a refusal resets the cards and puts the sentence in the alert | `:13` |
+| P5 | `summarize`: (1) any of the eight absent, `null`, `''` or not a finite `Number` → `กรอกข้อมูลกำไรและเงินสำรองให้ครบก่อนคำนวณ`; (2) then any of `foreignValue`, `foreignCost`, `capital`, `reserve`, `cash`, `cashMinimum` below zero → `ต้นทุน ทุน และเงินสำรองต้องไม่ติดลบ`; (3) `c(k) = Math.round(Number(p[k]) × 100)`; answers `realized = c(realized)/100`, `unrealized = (c(foreignValue) − c(foreignCost))/100`, `withdrawable = max(0, min(c(realized), c(netAssets) − c(capital) − c(reserve), c(cash) − c(cashMinimum)))/100` | `profit-summary-core.js:2-8` |
+| P6 | The profit panel reads nothing from the shift: `shift` and `balance` are computed and never used | `profit-summary.js:4-5` |
+| M | `<money>` is `toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})` | `admin-html:45` |
+
+#### 12.20.2 Decisions
+
+| # | Decision | Status |
+|---|---|---|
+| CA1 | **One seam, its own ticket (V0-D).** A trait `ComputeAction` and its endpoint `ComputeEndpoint` in a new file `api/src/presentation/http/v3/action.rs`; each action is one file in a new directory `api/src/presentation/http/v3/actions/`, found by the build exactly as views are (§12.20.3) | decided (lane controller, issuecomment-6066362902) |
+| CA2 | **Route** `POST /api/v3/compute/{name}`, a JSON body, and the answer is the action's DTO itself: no `version`, no `changed`. The area `compute` is reserved for actions that write nothing, so the URL says so. `ApiClient.act('compute', name, body)` already sends this request (`web/src/shared/api/client.ts:136-153`) and is not edited | [required] |
+| CA3 | **Writes nothing.** A compute action never calls `BranchTx::run` or `BranchTx::lock_also`, never builds a `BranchTx`, never issues `INSERT`/`UPDATE`/`DELETE`, and so never moves `branch_versions`. It may read through a repository, as a view does | [required] |
+| CA4 | **Who may call it** is §4.4's rule, unchanged: each action declares `INHERITS`, and the endpoint asks `Policy::allow` before anything else. Both calculators inherit `(EntryPath::Rpc, "adminSnapshot")`, the row of the cash menu's views (#467 §7, `admin_shift_state` `views/admin_shift_state.rs:36`), so whoever sees the shift detail can use them: the owner and every staff role (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:64`, `:80`). No role row is added (W8) | [required] |
+| CA5 | **The valuation reads the shift; only the rates are typed.** v2 took the opening, the balance and the movements from the snapshot (V2, V4) and only the rates from the user. v3 stores all three (`Shift.opening`, `Shift.expected`, `stock_movements`: `api/crates/xc-shift/src/domain/shift/entities/shift.rs:16-31`, `.../entities/stock_movement.rs:9-19`), so the action reads them by `shiftId` and the screen sends `{shiftId, rates}`. §12.9: *every figure the server can compute from stored data is computed by the server* | [required] |
+| CA6 | **The profit summary computes only from its eight typed figures** (P5, P6). It reads nothing | [required] |
+| CA7 | **One rounding rule, v2's, on exact decimals**, in one shared helper owned by the seam ticket (§12.20.3) | [required] |
+| CA8 | **The panels live in their own folder** `web/src/screens/admin/cash/calculators/`, with their own text table, and are mounted in #467's shift detail dialog (§12.20.6) | [required] |
+| CA9 | **Four tickets**: the seam, one per action, and the panels (§12.20.9) | decided (lane controller, issuecomment-6066639842) |
+
+#### 12.20.3 The seam (V0-D)
+
+[proposed] names, [required] behaviour:
+
+```rust
+// api/src/presentation/http/v3/action.rs
+pub trait ComputeAction: Send + Sync + 'static {
+    /// The route segment and the generated file name: /api/v3/compute/{NAME}, generated/{NAME}.ts.
+    const NAME: &'static str;
+    /// §4.4: the v2 action whose row decides who may call this one.
+    const INHERITS: (EntryPath, &'static str);
+    type Request: serde::de::DeserializeOwned + ts_rs::TS + Send;
+    type Answer: serde::Serialize + ts_rs::TS + Send;
+    /// Computes, reading only. A refusal is the action's own V3Error (code, field, v2's sentence).
+    fn compute(
+        &self,
+        branch: &BranchId,
+        who: &Actor,
+        request: Self::Request,
+    ) -> impl Future<Output = Result<Self::Answer, V3Error>> + Send;
+}
+
+pub struct ComputeEndpoint;
+impl ComputeEndpoint {
+    pub fn register<A: ComputeAction>(cfg: &mut web::ServiceConfig, action: Arc<A>);
+}
+```
+
+**The endpoint, in order** [required]. Only `POST` is routed. Each refusal is §4.3's body.
+
+| Step | What | Refusal |
+|---|---|---|
+| 1 | Sign-in and `Policy::allow(actor, INHERITS)`, through the same function views use (`view.rs:324-347` `authenticate_and_authorize`) | as a view: `401 signIn`, `400 roleNotAllowedHere`, … (`api/src/presentation/http/v3/error.rs:71-105`) |
+| 2 | `same_origin(req)` (`api/src/presentation/extractors/origin.rs:41-63`), the check §4.2 requires of every v3 `POST`; after step 1, as `/api/rpc` orders them (`api/src/presentation/http/rpc.rs:156-161`) | `400 {code: "originRejected", message: "ORIGIN_REJECTED"}` — v2's body for the same check, byte for byte (`api/src/presentation/http/bookings.rs:128-129`); the code name is decided (lane controller, issuecomment-6066639842); the screen's text is `error.originRejected` (§12.20.6) |
+| 3 | The body: at most **16,384 bytes** (decided (lane controller, issuecomment-6066639842)), and a JSON object | `400 invalidRequest` `คำขอไม่ถูกต้อง`, no field |
+| 4 | The reserved key **`branch`** of that object: absent, `null` or `''` → none; a string `BranchId::is_well_formed` accepts → named; anything else refused. The rule is the view query's (`view.rs:140-154`), moved into one function `parse_branch(raw: Option<&str>)` in `view.rs` that `parse_query` and the endpoint both call [proposed]. **No action's `Request` may have a field named `branch`** [required] | `400 invalidRequest`, `field: "branch"` |
+| 5 | `Policy::branch(who, named)`, then `require_branch` (`view.rs:350-379`): staff are put on their own branch whatever they name, as for views (§4.4) | `400 noSuchBranch`, `field: "branch"`; `500 serverError` |
+| 6 | The same object deserialized into `A::Request` (unknown keys, `branch` included, are ignored) | `400 invalidRequest`, no field |
+| 7 | `A::compute(branch, who, request)` | the action's `V3Error` as returned; an internal failure is the action's `500 serverError` `เซิร์ฟเวอร์ขัดข้อง` |
+| ok | | `200`, the `Answer` as the whole body, `Content-Type: application/json`, `Cache-Control: no-store` |
+
+`view.rs` changes by visibility and by that one extraction only: `authenticate_and_authorize`, `require_branch` and the
+new `parse_branch` become `pub(super)`. No view's behaviour changes.
+
+**Discovery** [required] — actions are found the way views are, with no list to edit (§3.3, §5.1):
+
+- `api/build.rs` reads `src/presentation/http/v3/actions/` (absent → an empty table, as `build.rs:158` does for views),
+  runs the **same** pure function `views_table` (`api/build_support/views.rs:89-118`; it already requires
+  `pub fn register(` and `pub fn export_types(`), and writes `OUT_DIR/v3_actions.rs`: one `#[path] pub mod <action>;` per
+  file and `pub const ACTIONS: &[ViewEntry]`. `ViewEntry` (`mod.rs:10-14`) is reused as it is; its three fields fit.
+- A view and an action with the same module name would write the same `generated/<name>.ts` and the same Rust module.
+  A new pure function in `build_support/views.rs`, `disjoint(views, actions) -> Result<(), ViewTableError>`, refuses it
+  with a new variant `ViewTableError::NameInBoth { module }`, and the build fails.
+- `mod.rs` gains `pub mod action;`, `include!(concat!(env!("OUT_DIR"), "/v3_actions.rs"));`, and `configure_v3` loops
+  `ACTIONS` after `VIEWS`.
+- DTO discovery does not change: `dto_modules` (`build_support/views.rs:121-137`) already lists every file of `dto/v3/`, so
+  an action's DTO file is compiled by adding it. `api/tests/v3_dto_modules_test.rs` and
+  `api/tests/v3_views_generator_test.rs` are not edited.
+- **Types.** An action's DTOs follow §5.1's rules: `#[ts(export_to = "<name>.ts")]`, never `#[ts(export)]`
+  (`api/tests/no_ts_export_test.rs`), only their own types and `common`'s. `api/tests/v3_types_test.rs` exports `VIEWS`
+  only (`:65-70`, `:109-130`), so an action's committed `.ts` file would fail its drift check as an extra file. The
+  controller amends that test in the seam's up-front test commit, as §12.19.4 did for pinned asserts:
+  `export_everything` also exports `ACTIONS`, and `each_view_writes_only_its_own_file_and_common` also runs over `ACTIONS`
+  with the same allowed files. `ACTIONS` may be empty until the first action merges.
+
+**Arithmetic shared by every compute action** [required] (♻️: money rounding lives in the core, never in a variant).
+A new file `api/crates/xc-kernel/src/money/typed.rs` [proposed name], re-exported from `money/mod.rs`:
+
+| Function | Rule |
+|---|---|
+| `typed_decimal(text) -> Option<Decimal>` | What a browser `type=number` input sends, without the exponent form: an optional `-`, then digits with an optional `.digits`, or `.digits`. No space, no `+`, no exponent, no grouping. Built on `plain_decimal`'s rule (`api/crates/xc-kernel/src/money/plain_decimal.rs:9-26`), which has no sign and no leading-dot form. `None` when the text does not fit the 96-bit decimal |
+| `round_cents(x) -> Option<i128>` | **v2's `Math.round(x × 100)`, applied to the exact decimal**: `floor(x × 100 + ½)`, so a half goes toward +∞ (`0.005 → 1`, `−0.005 → 0`, `−0.015 → −1`). `None` on overflow |
+| `fixed2(cents) -> String` | `"-"` only when below zero, integer digits without grouping, `.`, two digits: `"1234.50"`, `"-0.10"`, `"0.00"` (never `"-0.00"`) — §4.2's decimal string |
+| `fixed6(x) -> String` | `x` rounded to six places by the same rule, six digits after the point (`toFixed(6)`, V6) |
+
+The kernel's `Rate` (`api/crates/xc-kernel/src/money/rate.rs:9-21`: four places, at most 100,000,000) is not reused: the
+valuation's rate input allows any number of places (`step=any`, V3).
+
+#### 12.20.4 `shift_valuation`
+
+`api/src/presentation/http/v3/actions/shift_valuation.rs`, DTOs in `api/src/presentation/dto/v3/shift_valuation.rs` →
+`web/src/shared/api/generated/shift_valuation.ts`. `INHERITS = (EntryPath::Rpc, "adminSnapshot")`. Field names on the wire
+are [required]; type names are [proposed].
+
+```rust
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export_to = "shift_valuation.ts")]
+pub struct ShiftValuationRequest {
+    pub shift_id: String,
+    #[ts(optional)]
+    pub rates: Option<BTreeMap<String, String>>, // absent or null: list the currencies only
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "shift_valuation.ts")]
+pub struct ShiftValuation {
+    pub currencies: Vec<ShiftValuationCurrency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub result: Option<ShiftValuationResult>,
+}
+pub struct ShiftValuationCurrency { pub currency: String, pub opening: Money, pub current: Money, pub needs_rate: bool }
+pub struct ShiftValuationResult {
+    pub rows: Vec<ShiftValuationRow>, // one per entry of `currencies`, same order
+    pub opening: Money, pub current: Money, pub movements: Money, pub difference: Money, pub adjusted: Money,
+}
+pub struct ShiftValuationRow { pub currency: String, pub rate: Rate, pub value: Money }
+```
+
+`Money` and `Rate` are `common`'s decimal-string types (`api/src/presentation/dto/v3/common.rs:45-53`); every
+`Serialize` struct above carries the same `rename_all` and `export_to` attributes.
+
+**Reads** [required]: the shift `shiftId` **of the resolved branch**, and that shift's movements. Neither exists as one
+read today: `ShiftRepository` answers a branch's whole shift list and whole movement list
+(`api/crates/xc-shift/src/domain/shift/repositories/shift_repository.rs:23-31`; the queries
+`api/crates/xc-shift/src/infrastructure/shift/shift_repository.rs:259`, `:293-296`). [proposed] The trait and its one
+implementation (`shift_repository.rs:216`) gain `shift(branch, id) -> AppResult<Option<Shift>>` and
+`shift_movements(branch, shift_id) -> AppResult<Vec<StockMovement>>`. Both are indexed reads: `shifts.id` is the primary
+key and `stock_movements_shift` indexes `shift_id` (`api/migrations/20261007110000_shifts.sql:2`, `:42`). The action
+holds the repository itself (`PgShiftRepository::new(state.db.clone())`), not a `ShiftService`, whose constructor takes a
+`BranchTx` (CA3).
+
+**What it answers** [required]. Let `o_c` be the shift's opening and `e_c` its stored expected balance of currency `c`
+(v3 keeps `expected` up to date for an open shift and freezes it at close, so it is v2's `shift.expected || balanceOf(shift)`).
+
+1. `currencies`: every register currency with `o_c ≠ 0`, or `e_c ≠ 0`, or at least one movement of the shift in `c`
+   (V2), **THB first, then the others A–Z by code** — v2's order (`admin-html:26`, W9; lane controller,
+   issuecomment-6066639842). The action sorts them itself; it does not use the order of `CurrencyCode::all()`
+   (`api/crates/xc-kernel/src/money/currency_code.rs:10-23`, `:59-61`: THB, USD, EUR, GBP, JPY, CNY, AUD, then A–Z). Each
+   comes with `opening = fixed2(o_c)`, `current = fixed2(e_c)`, `needsRate = (c ≠ THB)`.
+2. `rates` absent or `null` → the answer is `currencies` only. This is the call the panel makes when the dialog opens,
+   to know which rate inputs to render (V3).
+3. `rates` present: for each `c` with `needsRate`, `r_c = typed_decimal(rates[c])` and `0.000001 ≤ r_c ≤ 1,000,000`
+   (the input's `min` and `max`, V3, which bound every product), else the refusal below. `r_THB = 1`. A key for THB, for
+   a currency without `needsRate`, or that is no currency code is ignored, as v2 ignored any rate it had not asked for
+   (V4).
+4. `value(n, c) = round_cents(n × r_c)`. `opening = Σ_{o_c ≠ 0} value(o_c, c)`, `current = Σ_{e_c ≠ 0} value(e_c, c)`,
+   `movements = Σ_m (IN ? +1 : −1) × value(amount_m, c_m)` over **every** movement of the shift — each movement is
+   rounded on its own, as v2 does, so a per-currency net would not give the same cents. `difference = current − opening`,
+   `adjusted = current − opening − movements`. All are cents; each is answered as `fixed2`. v2's final
+   `Math.round(x × 100)/100` is a no-op on exact cents.
+5. `rows[i]` = `{currency, rate: fixed6(r_c), value: fixed2(round_cents(e_c × r_c))}` (V6's last two columns).
+
+| Case | Answer |
+|---|---|
+| a needed rate absent, `''`, not a typed decimal (`"abc"`, `"1e3"`, `" 34"`), `≤ 0`, below `0.000001` or above `1,000,000` | `400 {code: "valuationRate", field: "rates", message: "กรอกเรทให้ครบทุกสกุลที่มียอด"}` (`shift-valuation-core.js:3`; code name [proposed]) |
+| `rates: {}` on a shift that needs none (all zero, no movement) | `currencies: []`, `result` with `rows: []` and every figure `"0.00"` |
+| a currency moved in and out back to zero (`o_c = e_c = 0`, movements in `c`) | listed, its rate needed, its row value `"0.00"`, its movements counted (V2, V5) |
+| `shiftId` absent or `''` | `400 invalidRequest`, `field: "shiftId"` |
+| `shiftId` unknown, or a shift of another branch | `404 {code: "notFound", field: "shiftId", message: "Not found"}` (the existing code, `api/crates/xc-auth/src/domain/policy/value_objects/policy_error.rs:53-54`, `:103`; the screen shows `error.notFound`, `web/src/shared/i18n/th.ts:28`). v2 showed no panel (`shift-valuation.js:5`); the v3 screen only sends ids an `admin_shifts` row gave it |
+| an open shift | computed on its expected balance at the time of the call |
+| a rate with many places, `"32.123456789"` | used exactly; its row shows `"32.123457"` |
+| a movement direction other than IN/OUT | cannot happen: `Direction` is `In \| Out` (`api/crates/xc-shift/src/domain/shift/value_objects/stock_delta.rs:9-12`); v2's `ทิศทางรับ–จ่ายไม่ถูกต้อง` is not ported |
+
+Worked example for the up-front tests: opening THB 10,000.00 and USD 100.00; expected THB 6,600.00 and USD 200.00; one
+movement IN THB 500.00; `rates {"USD": "34.5"}` → rows THB `1.000000` / `6600.00`, USD `34.500000` / `6900.00`;
+`opening "13450.00"`, `current "13500.00"`, `movements "500.00"`, `difference "50.00"`, `adjusted "-450.00"`.
+
+#### 12.20.5 `profit_summary`
+
+`api/src/presentation/http/v3/actions/profit_summary.rs`, DTOs in `api/src/presentation/dto/v3/profit_summary.rs` →
+`web/src/shared/api/generated/profit_summary.ts`. `INHERITS = (EntryPath::Rpc, "adminSnapshot")`. Reads nothing (CA6).
+
+```rust
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(export_to = "profit_summary.ts")]
+pub struct ProfitSummaryRequest { // each #[ts(optional)]: absent or null is "not filled in"
+    pub realized: Option<String>, pub foreign_value: Option<String>, pub foreign_cost: Option<String>,
+    pub net_assets: Option<String>, pub capital: Option<String>, pub reserve: Option<String>,
+    pub cash: Option<String>, pub cash_minimum: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "profit_summary.ts")]
+pub struct ProfitSummary { pub realized: Money, pub unrealized: Money, pub withdrawable: Money }
+```
+
+The eight wire keys are v2's (`profit-summary-core.js:3`) [required]. A JSON number instead of a string is not a
+decimal string (W7) and fails step 6 of the seam (`400 invalidRequest`).
+
+**What it answers** [required], in v2's order (P5):
+
+1. Each of the eight must be present, not `null`, not `''`, a `typed_decimal`, and `round_cents` must not overflow;
+   otherwise `400 {code: "profitIncomplete", message: "กรอกข้อมูลกำไรและเงินสำรองให้ครบก่อนคำนวณ"}`.
+2. Then each of `foreignValue`, `foreignCost`, `capital`, `reserve`, `cash`, `cashMinimum` must not be below zero;
+   otherwise `400 {code: "profitNegative", message: "ต้นทุน ทุน และเงินสำรองต้องไม่ติดลบ"}`. `realized` and `netAssets`
+   may be negative (`profit-summary.js:10`).
+3. `c(k) = round_cents(value_k)`; `realized = fixed2(c(realized))`, `unrealized = fixed2(c(foreignValue) − c(foreignCost))`,
+   `withdrawable = fixed2(max(0, min(c(realized), c(netAssets) − c(capital) − c(reserve), c(cash) − c(cashMinimum))))`.
+
+`field` follows §4.3: it is the failing key when exactly one key fails that step, and absent when several do. Code names
+are decided (lane controller, issuecomment-6066639842).
+
+| Case | Answer |
+|---|---|
+| `"-0"` or `"-0.00"` in one of the six | allowed: v2's `Number("-0") < 0` is false |
+| a field both empty and another negative | `profitIncomplete`: step 1 runs over all eight before step 2 (`profit-summary-core.js:4-5`) |
+| `"1.005"` (more than two places) | rounded to `1.01`. v2's page blocks it before the core with `step=0.01` (P2), and the v3 panel keeps that attribute |
+| `realized "-0.004"` | `"0.00"` |
+| `withdrawable` formula below zero | `"0.00"` |
+| a figure too large for `× 100` in the 96-bit decimal | `profitIncomplete` |
+
+Worked examples for the up-front tests: `realized 1000`, `foreignValue 5000`, `foreignCost 4200`, `netAssets 20000`,
+`capital 15000`, `reserve 2000`, `cash 8000`, `cashMinimum 5000` → `realized "1000.00"`, `unrealized "800.00"`,
+`withdrawable "1000.00"`; the same with `netAssets 16000` → `withdrawable "0.00"`; `foreignCost 5200` →
+`unrealized "-200.00"`.
+
+#### 12.20.6 The panels (V2-cash-calculators)
+
+[required] `web/src/screens/admin/cash/calculators/` is a new folder: `ShiftValuationPanel.tsx`, `ProfitSummaryPanel.tsx`,
+their tests, and their text table `i18n.ts`, namespace `admin.cash.calculators.*` (W10 point 1; the folder has no
+`menu.ts`, so `menus.ts`'s glob `./*/menu.ts` does not list it, §3.3). Each panel takes `{ api: ApiClient; branch: string;
+shiftId: string }` [proposed]. The only edit outside the folder is #467's shift detail dialog, which renders the two
+panels after its table, valuation first (`admin-html:175`); the controller names that file in the ticket once #467 has
+merged.
+
+| # | Behaviour | v2 |
+|---|---|---|
+| W1 | Every text of V1, V3, V6, P1–P4 through the folder's table, Thai verbatim (W6) | as listed |
+| W2 | When the valuation panel is shown it calls `api.act('compute', 'shift_valuation', {branch, shiftId})` and renders one rate input per `currencies` entry with `needsRate`, keeping V3's attributes (`min`, `max`, `step=any`, `required`) and the required date and kind inputs. A refusal of that call is shown in the result area | `shift-valuation.js:7`, `:9` |
+| W3 | Submit sends `{branch, shiftId, rates}` with each rate **as typed** (a string) and renders `result`: the date and kind as typed, `ผู้ใช้กรอกเอง`, `คำนวณเมื่อ` with the browser's clock through `locale()` (W10 point 5), the table from `currencies` and `rows`, the five figures through `MoneyText` with `THB` | `:11-14` |
+| W4 | A `valuationRate` refusal re-reads `currencies` (step W2) and keeps what was typed, since the shift may have gained a currency since the dialog opened; then the sentence is shown | — (v2 read the snapshot once) |
+| W5 | The profit panel sends the eight values as typed strings (`{branch, realized, …}`); the cards, `รอข้อมูล`, the alert texts and the reset on input are P1–P4 | `profit-summary.js:12-13` |
+| W6 | **A stale answer is dropped.** An answer to a request sent before the latest input change, or before another submit, is ignored (a request counter per panel). v2 computed synchronously and had no such race | — |
+| W7 | Refusals are shown with `errorText(code, message)` (`web/src/shared/i18n/index.ts`) where v2 showed the sentence: the valuation's result area (`shift-valuation.js:15`), the profit alert (`profit-summary.js:13`) | as listed |
+| W8 | No arithmetic and no parsing of numbers in the folder: #467's done criterion 3 (`grep -rnE "Number\(\|parseFloat\|parseInt\|Math\.round\|toFixed\|\* *100" web/src/screens/admin/cash`) covers the subfolder and must stay empty. The input attributes are the browser's own checks, not arithmetic | W7 |
+
+[required] The four new refusal codes get shared keys in `web/src/shared/i18n/th.ts` and `en.ts`, added keys only
+(the English is decided, lane controller, issuecomment-6066639842):
+
+| Key | `th` | `en` |
+|---|---|---|
+| `error.valuationRate` | `กรอกเรทให้ครบทุกสกุลที่มียอด` (the server's sentence, byte for byte) | `Enter a rate for every currency with a balance.` |
+| `error.profitIncomplete` | `กรอกข้อมูลกำไรและเงินสำรองให้ครบก่อนคำนวณ` (byte for byte) | `Fill in the profit and reserve figures before calculating.` |
+| `error.profitNegative` | `ต้นทุน ทุน และเงินสำรองต้องไม่ติดลบ` (byte for byte) | `Cost, capital and reserves must not be negative.` |
+| `error.originRejected` | a Thai translation, [proposed] `คำขอถูกปฏิเสธ เพราะไม่ได้ส่งมาจากหน้าของระบบ` — W10 point 4's rule for a refusal the server sends in English | `ORIGIN_REJECTED`, the server's English kept |
+
+`originRejected` is not folded into `invalidRequest` (lane controller, issuecomment-6066639842). A v3 screen should not
+meet it, because `ApiClient.act` always sends `x-xchange-request: 1` (`client.ts:141-144`) and a browser's same-origin
+`POST` carries `Origin`; the key exists so that the shared table covers every code the seam answers.
+
+#### 12.20.7 Known differences
+
+- **Exact decimals, not floats.** v2 rounded binary floats: `Math.round(1.005 × 100)` is `100`, so v2 showed `1.00`;
+  v3 shows `1.01`. The same holds for `toFixed(6)` of a rate. Every other figure is the same to the cent.
+- **No negative zero.** v2 showed `-0.00 THB` for a `realized` between `-0.005` and `0` (`Math.round` gives `-0`, and
+  `toLocaleString` keeps the sign); v3 answers `"0.00"`.
+- **No exponent form.** A browser number input accepts `1e3` and v2's `Number()` read it; v3 refuses it with the
+  calculator's sentence (`typed_decimal`).
+- **Huge figures.** v2 accepted any finite float and lost precision past about 9 × 10¹³ THB; v3 refuses what does not fit
+  the 96-bit decimal.
+- **Fresh figures.** v2 valued the snapshot loaded with the page; v3 reads the shift when the panel opens and again on
+  each submit.
+- **Out-of-range rates.** v2's bounds were the input's own (`min`, `max`), checked by the browser; v3 keeps them on the
+  input and also enforces them on the server, with the core's sentence.
+
+#### 12.20.8 Class diagram additions
+
+Server (adds to §5.1):
+
+```mermaid
+classDiagram
+  class ComputeAction {
+    <<trait, http/v3/action.rs>>
+    +NAME: &'static str
+    +INHERITS: (EntryPath, &'static str)
+    +type Request: DeserializeOwned + TS
+    +type Answer: Serialize + TS
+    +compute(&self, branch: &BranchId, who: &Actor, request: Request) Result~Answer, V3Error~
+  }
+  class ComputeEndpoint { <<http/v3/action.rs>> +register~A: ComputeAction~(cfg, action: Arc~A~) -answer(req, body) HttpResponse }
+  class ViewCoreHelpers { <<http/v3/view.rs, pub(super)>> +authenticate_and_authorize(req, inherits) +parse_branch(raw) +require_branch(req, branch) }
+  class ActionsTable { <<http/v3/mod.rs + OUT_DIR/v3_actions.rs>> +ACTIONS: &[ViewEntry] +configure_v3() }
+  class ViewsGen { <<build_support/views.rs>> +views_table(files) +dto_modules(files) +disjoint(views, actions) }
+  class TypedMoney { <<xc-kernel money/typed.rs>> +typed_decimal(text) Option~Decimal~ +round_cents(x) Option~i128~ +fixed2(cents) String +fixed6(x) String }
+  class ShiftValuationAction { <<http/v3/actions/shift_valuation.rs>> +NAME = shift_valuation +INHERITS = Rpc, adminSnapshot }
+  class ShiftValuationDtos { <<dto/v3/shift_valuation.rs>> +ShiftValuationRequest +ShiftValuation +ShiftValuationCurrency +ShiftValuationResult +ShiftValuationRow }
+  class ProfitSummaryAction { <<http/v3/actions/profit_summary.rs>> +NAME = profit_summary +INHERITS = Rpc, adminSnapshot }
+  class ProfitSummaryDtos { <<dto/v3/profit_summary.rs>> +ProfitSummaryRequest +ProfitSummary }
+  class ShiftRepository { <<xc-shift repositories/shift_repository.rs>> +shift(branch, id) Option~Shift~ +shift_movements(branch, shift_id) Vec~StockMovement~ }
+  class Policy { +allow(actor, EntryPath, Action) +branch(actor, named) }
+
+  ComputeEndpoint --> ComputeAction : compute once per request
+  ComputeEndpoint --> ViewCoreHelpers : sign-in, policy, branch
+  ComputeEndpoint --> V3Error
+  ViewCoreHelpers --> Policy : allow(INHERITS) / branch — unchanged
+  ActionsTable --> ComputeEndpoint : each action's register
+  ViewsGen ..> ActionsTable : generates
+  ShiftValuationAction ..|> ComputeAction
+  ProfitSummaryAction ..|> ComputeAction
+  ShiftValuationAction --> ShiftValuationDtos
+  ProfitSummaryAction --> ProfitSummaryDtos
+  ShiftValuationAction --> ShiftRepository : reads only, no BranchTx
+  ShiftValuationAction --> TypedMoney
+  ProfitSummaryAction --> TypedMoney
+```
+
+Web (adds to §5.2, *Admin page*):
+
+```mermaid
+classDiagram
+  class ShiftValuationPanel { <<screens/admin/cash/calculators/ShiftValuationPanel.tsx>> +api +branch +shiftId }
+  class ProfitSummaryPanel { <<screens/admin/cash/calculators/ProfitSummaryPanel.tsx>> +api +branch +shiftId }
+  class CalculatorTexts { <<screens/admin/cash/calculators/i18n.ts>> +th +en }
+  class ShiftDetail { <<#467's shift detail dialog>> }
+  ShiftDetail --> ShiftValuationPanel : renders after its table
+  ShiftDetail --> ProfitSummaryPanel : renders after the valuation
+  ShiftValuationPanel --> ApiClient : act compute shift_valuation
+  ProfitSummaryPanel --> ApiClient : act compute profit_summary
+  ShiftValuationPanel --> MoneyText
+  ProfitSummaryPanel --> MoneyText
+  ShiftValuationPanel --> CalculatorTexts
+  ProfitSummaryPanel --> CalculatorTexts
+  ShiftValuationPanel --> I18n : errorText, locale
+  ProfitSummaryPanel --> I18n : errorText, locale
+```
+
+| Class / module | File | Ticket | Used by |
+|---|---|---|---|
+| `ComputeAction`, `ComputeEndpoint` | `api/src/presentation/http/v3/action.rs` (new) | V0-D | every compute action |
+| `authenticate_and_authorize`, `require_branch` (visibility), `parse_branch` (extracted) | `api/src/presentation/http/v3/view.rs` | V0-D | `ViewEndpoint`, `ComputeEndpoint` |
+| `ACTIONS`, `configure_v3` | `api/src/presentation/http/v3/mod.rs`; `OUT_DIR/v3_actions.rs` generated by `api/build.rs` | V0-D | the route table |
+| `disjoint`, `ViewTableError::NameInBoth` | `api/build_support/views.rs` | V0-D | `api/build.rs` |
+| `typed_decimal`, `round_cents`, `fixed2`, `fixed6` | `api/crates/xc-kernel/src/money/typed.rs` (new), one line in `money/mod.rs` | V0-D | both actions |
+| `ShiftValuationAction` | `api/src/presentation/http/v3/actions/shift_valuation.rs` | V2-cash-valuation | — (generated registration) |
+| `ShiftValuationRequest`, `ShiftValuation`, `ShiftValuationCurrency`, `ShiftValuationResult`, `ShiftValuationRow` | `api/src/presentation/dto/v3/shift_valuation.rs` → `web/src/shared/api/generated/shift_valuation.ts` | V2-cash-valuation | `ShiftValuationPanel` |
+| `ShiftRepository::shift`, `::shift_movements` | `api/crates/xc-shift/src/domain/shift/repositories/shift_repository.rs`, `api/crates/xc-shift/src/infrastructure/shift/shift_repository.rs` | V2-cash-valuation | `ShiftValuationAction` |
+| `ProfitSummaryAction` | `api/src/presentation/http/v3/actions/profit_summary.rs` | V2-cash-profit | — |
+| `ProfitSummaryRequest`, `ProfitSummary` | `api/src/presentation/dto/v3/profit_summary.rs` → `web/src/shared/api/generated/profit_summary.ts` | V2-cash-profit | `ProfitSummaryPanel` |
+| `ShiftValuationPanel`, `ProfitSummaryPanel`, their texts | `web/src/screens/admin/cash/calculators/**` (new) | V2-cash-calculators | #467's shift detail |
+| `error.valuationRate`, `error.profitIncomplete`, `error.profitNegative`, `error.originRejected` | `web/src/shared/i18n/th.ts`, `en.ts` | V2-cash-calculators | `errorText` |
+
+No file is in two of these tickets.
+
+#### 12.20.9 Tickets and order
+
+| Ticket | Owns | Start dependency | Merge order (not a start dependency) |
+|---|---|---|---|
+| **V0-D** compute seam | `api/src/presentation/http/v3/action.rs` (new), `mod.rs`, `view.rs` (visibility and `parse_branch` only), `api/build.rs` (the actions table after the views table), `api/build_support/views.rs` (`disjoint` and its variant), `api/crates/xc-kernel/src/money/typed.rs` (new), `api/crates/xc-kernel/src/money/mod.rs`, `api/tests/v3_compute_action_test.rs` (new), `api/tests/v3_actions_generator_test.rs` (new); the controller's amendment of `api/tests/v3_types_test.rs` | this section's design PR | — |
+| **V2-cash-valuation** | `api/src/presentation/http/v3/actions/shift_valuation.rs`, `api/src/presentation/dto/v3/shift_valuation.rs`, `web/src/shared/api/generated/shift_valuation.ts`, the two `ShiftRepository` files, `api/tests/v3_shift_valuation_test.rs` | V0-D | — |
+| **V2-cash-profit** | `api/src/presentation/http/v3/actions/profit_summary.rs`, `api/src/presentation/dto/v3/profit_summary.rs`, `web/src/shared/api/generated/profit_summary.ts`, `api/tests/v3_profit_summary_test.rs` | V0-D | — (runs in parallel with V2-cash-valuation: no shared file) |
+| **V2-cash-calculators** | `web/src/screens/admin/cash/calculators/` (new, whole subtree), the render lines in #467's shift detail file, the four `error.*` keys in `web/src/shared/i18n/th.ts` / `en.ts` | **#467** (its dialog file exists and its scope's lock on `web/src/screens/admin/cash/` is released), V2-cash-valuation and V2-cash-profit (the generated types it imports) | Shares `th.ts` / `en.ts` with any open ticket that adds keys there, added keys only on both sides; the queue's lock runs them one after the other and the second rebases |
+
+The up-front tests are written by the controller on each ticket's branch before dispatch (🧪 rule). What they lock:
+
+- **V0-D** — test actions registered directly through `ComputeEndpoint::register`, as `api/tests/v3_view_test.rs`
+  registers test views: `200` with the DTO and no `version`; `branch_versions` read before and after a call is equal;
+  callers refused exactly as `Policy::allow` refuses `INHERITS`, compared for every caller kind; no `X-Xchange-Request`
+  or a foreign `Origin` → `400 originRejected`; a body that is not JSON, not an object or over 16,384 bytes →
+  `400 invalidRequest`; `branch` ill-formed → `field: "branch"`; staff naming another branch compute on their own;
+  an unknown branch → `noSuchBranch`; an action's `V3Error` passes through with its status and field. The generator's
+  `disjoint` refuses a name in both directories. `typed_decimal`, `round_cents`, `fixed2` and `fixed6` over a table that
+  includes `"-0"`, `".5"`, `"5."`, `"+1"`, `"1e3"`, `" 1"`, `0.005`, `-0.005`, `-0.015` and the overflow edge.
+- **V2-cash-valuation** — §12.20.4's cases and worked example, each against a database seeded through the shift
+  service; `branch_versions` unchanged after a call; `currencies` and `rows` in THB-then-A–Z order (a shift holding
+  USD, AUD and EUR answers THB, AUD, EUR, USD, where `CurrencyCode::all()` would give THB, USD, EUR, AUD).
+- **V2-cash-profit** — §12.20.5's cases and worked examples; one test per refusal asserting `field` present for one bad
+  key and absent for two.
+- **V2-cash-calculators** — vitest against a fake `ApiClient`: W2–W7, the texts through the table, and the stale-answer
+  drop of W6.
+
+#### 12.20.10 Data migration
+
+None. No table, column, constraint, default or status value is added or changed. The valuation reads `shifts`,
+`shift_balances` and `stock_movements` through two new `SELECT`s on existing indexes (§12.20.4); nothing is written, so
+there is nothing to backfill, the deploy order does not matter (the old binary never calls the new route), and a `down`
+loses nothing. The profit summary touches no table.
