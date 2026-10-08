@@ -1,6 +1,6 @@
 import type { JSX } from 'solid-js';
 
-function formatDecimal(value: string): string {
+export function formatMoney(value: string): string {
   const isDecimal = /^-?\d+(\.\d+)?$/.test(value);
   if (!isDecimal) {
     return value;
@@ -14,7 +14,7 @@ function formatDecimal(value: string): string {
 }
 
 export function MoneyText(props: { value: string; currency: string }): JSX.Element {
-  const formatted = () => formatDecimal(props.value);
+  const formatted = () => formatMoney(props.value);
 
   return <span>{formatted()} {props.currency}</span>;
 }
