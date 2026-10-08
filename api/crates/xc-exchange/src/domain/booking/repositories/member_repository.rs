@@ -14,11 +14,16 @@ pub struct TokenTaken;
 pub trait MemberRepository: Send + Sync {
     fn list<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<Vec<Member>>>;
 
-    fn find<'a>(&'a self, id: &'a str) -> BoxFuture<'a, AppResult<Option<Member>>>;
+    fn find<'a>(
+        &'a self,
+        branch: &'a BranchId,
+        id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<Member>>>;
 
     fn find_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
         id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<Member>>>;
 
