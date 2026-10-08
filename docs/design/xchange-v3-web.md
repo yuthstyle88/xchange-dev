@@ -215,7 +215,7 @@ classDiagram
     +NAME: &'static str
     +INHERITS: (EntryPath, &'static str)
     +VERSIONED: bool = true
-    +own_version(&self) Future of Option i64, default None
+    +own_version(&self, branch: &BranchId, who: &Actor) Future of Option i64, default None
     +type Data: Serialize + TS
     +type Filter: ViewFilter
     +load(&self, branch: &BranchId, who: &Actor, filter: &Filter) AppResult~Data~
@@ -265,7 +265,8 @@ classDiagram
 
 | Class | File | Who provides | Who uses |
 |---|---|---|---|
-| `BranchView`, `PagedView` | `api/src/presentation/http/v3/view.rs` | V0-B; V0-C adds `type Filter`, the `filter` argument, `BranchView::VERSIONED` and `BranchView::own_version` (§12.1) | every view ticket |
+| `BranchView`, `PagedView` | `api/src/presentation/http/v3/view.rs` | V0-B; V0-C adds `type Filter`, the `filter` argument, `BranchView::VERSIONED` and `BranchView::own_version` (§12.1); V0-B-session-end passes `own_version` the branch and the caller (§12.19.4) | every view ticket |
+| `MeBranchView` (the `me` view) and its `own_version`, the caller's identity version | `api/src/presentation/http/v3/views/me.rs` | V0-B; V0-B-session-end adds `own_version` (§12.19.4) | `SessionStore` |
 | `ViewFilter` | `api/src/presentation/http/v3/view.rs` | V0-C | every view's filter type |
 | `ViewEndpoint`, `ViewQuery`, `ViewAnswer<T>` | `api/src/presentation/http/v3/view.rs` | V0-B; V0-C parses the filter (§12.1) | every view ticket (one `register` call each) |
 | `NoFilter`, `Period` | `api/src/presentation/dto/v3/common.rs` → `generated/common.ts` | V0-C | every view without a filter (`NoFilter`); the dated views (`Period`) |
@@ -322,12 +323,25 @@ classDiagram
     +version: Accessor~number | undefined~
     -tick() pauses while document.hidden, backs off on error
   }
-  class SessionStore { +me: Accessor~Me | undefined~ +signOut() }
+  class SessionStore {
+    +me: Accessor~Me | undefined~
+    +ended: Accessor~EndReason | undefined~
+    +end(reason: EndReason) void
+    +signOut() Promise
+    +dispose() void
+  }
+  class SharedApi {
+    <<session.ts>>
+    +sharedApi() ApiClient
+    +sharedSession() SessionStore
+    +endingFetch(inner: Fetch, onEnd) Fetch
+    +endsSession(status, code) boolean
+  }
   class useForm { +field(name) FieldBinding +submit(fn) +errorFor(name) }
   class PasswordField
   class TextField
   class MoneyText { +value: string +currency: string }
-  class AppShell { +title +nav +footer(version) }
+  class AppShell { +title +nav +ownsMain +footer(version) +locks its content while ended() }
   class I18n {
     <<module index.ts>>
     +lang: Accessor~Lang~
@@ -353,7 +367,11 @@ classDiagram
   class LangSwitch { <<LangSwitch.tsx>> +one button TH or EN }
 
   ViewPoller --> ApiClient
-  SessionStore --> ApiClient
+  SessionStore --> ApiClient : post logout
+  SessionStore --> ViewPoller : me, through a wrapped view
+  SharedApi --> ApiClient : new ApiClient(endingFetch((input, init) => fetch(input, init)))
+  SharedApi --> SessionStore : end('expired') on a view refusal
+  AppShell --> SessionStore : ended()
   useForm --> ApiError : focuses ApiError.field
   useForm --> I18n : errorText(code, message), read at render time
   PasswordField --> useForm
@@ -376,12 +394,13 @@ classDiagram
 | the shared exchange row | `web/src/shared/api/generated/transaction_row.ts` | V2-parts (#476) only |
 | generated DTO types of one view | `web/src/shared/api/generated/<view>.ts` | that view's ticket |
 | `ViewPoller<T>` | `web/src/shared/live/view-poller.ts` | V0-A |
-| `SessionStore` | `web/src/shared/session/session.ts` | V0-B (it reads the `me` view V0-B builds) |
+| `SessionStore` | `web/src/shared/session/session.ts` | V0-B (it reads the `me` view V0-B builds); V0-B-session-end adds `ended`, `end` and the switch check (§12.19.3) |
+| `EndReason`, `endsSession`, `endingFetch`, `sharedApi` (the page's one observed `ApiClient`) | `web/src/shared/session/session.ts` | V0-B-session-end (§12.19.3) |
 | `useForm` | `web/src/shared/ui/form.ts` | V0-A; V1-i18n (#427) shows refusals through `errorText` |
 | `TextField` | `web/src/shared/ui/TextField.tsx` | V0-A |
 | `PasswordField` | `web/src/shared/ui/PasswordField.tsx` | V0-A — the same component as #378: eye inside on the right, one border, never reads the value outside the form, conceals before submit; V1-i18n (#427) moves its eye's text and `aria-label` to `t()` |
 | `MoneyText` | `web/src/shared/ui/MoneyText.tsx` | V0-A — formats a decimal string, no arithmetic (W7) |
-| `AppShell` | `web/src/shared/ui/AppShell.tsx` | V0-A; V1-i18n (#427) adds `LangSwitch` to its header |
+| `AppShell` | `web/src/shared/ui/AppShell.tsx` | V0-A; V1-i18n (#427) adds `LangSwitch` to its header; #459 adds `ownsMain`; V0-B-session-end adds the ended-session notice and the content lock (§12.19.5) |
 | `lang`, `setLang`, `locale`, `t` (shared keys only), `fill`, `errorText`, `collectScreens`, `translator`, `screenT` (a screen's typed `t` over its own table) | `web/src/shared/i18n/index.ts` | V1-i18n (#427) |
 | the shared `th` table (`field.*`, `form.*`, `shell.*`, `error.*` only) and its `Key` type | `web/src/shared/i18n/th.ts` | V1-i18n (#427); a later shared component's ticket adds its keys, a screen ticket never does |
 | the shared `en` table | `web/src/shared/i18n/en.ts` | as `th.ts` |
@@ -521,6 +540,7 @@ run in parallel: each owns only its own files (§5.1).
 | V1-kiosk-queue-panel (#486) | the queue store, `QueuePanel`, the page `/kiosk-queue.html`, every `queue.*` key (§12.18.3–§12.18.5, §12.18.7) | the files of §12.18.10's panel rows | V0-C (#475); merges after V1-kiosk-queue-views (§12.18.11) |
 | V1-queue-card (#487) | the account bar's queue card, its sound and its session lock (§12.18.6, §12.18.8) | the files of §12.18.10's card rows | V1-kiosk-queue-panel (#486) |
 | **V0-C** (#475) filtered views (§12.1) | `ViewFilter`, `type Filter` and the `filter` argument on `BranchView` / `PagedView`, `NoFilter`, `Period`, `BranchView::VERSIONED`, `BranchView::own_version`, the filter parsing in `ViewEndpoint`, `ApiClient`'s `filter` param; `type Filter = NoFilter` on every existing view | `api/src/presentation/http/v3/view.rs`, `api/src/presentation/dto/v3/common.rs`, `web/src/shared/api/generated/common.ts`, every view file on `main` and the test views that implement the traits (§12.1), `web/src/shared/api/client.ts`, its new tests | this doc's §12 |
+| **V0-B-session-end** (#492, §12.19) | `SessionStore.ended` / `end`, the end on a view refusal (`endingFetch`, `sharedApi`), the switch check, the `me` view's own version and the caller-aware `own_version`, AppShell's notice and content lock, the two `shell.session.*` keys | the files of §12.19.8 | this section's design PR. Shares `th.ts` / `en.ts` with V1-kiosk-queue-panel (#486), added keys only on both sides (§12.19.8) |
 | V2-shell (#460) | the v3 admin page at `/ui/admin/`: entry `web/pages/admin.html`, `web/src/screens/admin/menus.ts` and its test, the admin layout, the `admin_branches` view (§12.3, §12.4) | `web/pages/admin.html`, the root files of `web/src/screens/admin/` (`menus.ts`, `menus.test.ts`, `AdminShell.tsx`, `main.tsx`, `admin.css`, `i18n.ts` — the shell's own texts only, namespace `admin.*`; a menu's text never goes here, W10), `admin_branches`' view, DTO, generated TS and test | V0-C (the view's trait shape); merges after V1-login and V2-parts |
 | **V2-parts** (#476, §12.2) | the admin parts several menus share, `TransactionRow`, and the views `transaction_documents`, `admin_request_status`, `admin_shift_state` | `web/src/screens/admin/parts/` (whole subtree), `api/src/presentation/dto/v3/transaction_row.rs` and `web/src/shared/api/generated/transaction_row.ts` (`TransactionRow`), the three views' files, `api/src/application/compat/abandon_request.rs` (`is_applied` visibility), `api/tests/v3_types_test.rs` (one allowed file name) | V0-C |
 | V2-<menu> | one per admin menu of §6 | `web/src/screens/admin/<menu>/**`, including its own text table `web/src/screens/admin/<menu>/i18n.ts` (namespace `admin.<menu>.*`, W10), and its view files, as above | V2-shell; V2-parts for a menu that uses a part; V0-C for a menu with a filtered view. V2-bookings waits for #413; V2-cash's calculators for §12.15 item 3 |
@@ -597,7 +617,8 @@ until the first install (owner 2026-10-06). That does not remove the four items.
 | The shift valuation and profit calculators (§12.15 item 3) | V2-cash (those panels only) | lane controller |
 | Payment settings route | V2-payments | PR 372 |
 | `Rpc` vs `StaffRpc` disagreement (design §11) | nothing: W8 keeps each screen on its own path's row | owner, when wanted |
-| `SessionStore` cannot end a session without signing out, nor see an account switch through the branch cursor (§12.18.9) | the page-wide form lock and the 5 s switch warning of the queue card (known differences until then) | a V0-B follow-up, lane controller |
+| `SessionStore` cannot end a session without signing out, nor see an account switch through the branch cursor (§12.18.9) | the page-wide form lock and the switch warning | **designed in §12.19** (V0-B-session-end) |
+| The `me` poll interval: 60 s, pinned by `web/src/shared/session/session.test.ts:90-112`; v2 checked every 5 s (`account-bar.js:46`). After §12.19 a switch is seen within 60 s on a visible tab, and at once when a hidden tab is shown again (§12.19.6) | the 5 s switch warning (a known difference until decided) | lane controller |
 
 Answered since this table was written: v3 sends `canAccept` (K-HTTP #329, Q1 PR 373), and the queue panel's file and owner are §12.18.
 
@@ -680,6 +701,8 @@ ticket (§5.1), so this is **V0-C** (#475), not part of any menu.
   `Ok(None)` (return-position `impl Trait` in traits may have a default body on stable). When it answers `Some(v)`, the
   endpoint uses `v` instead of `branch_versions` for the `version` field and the `since` shortcut; `VERSIONED` must be
   `true` for it to be asked. It exists for data that is not a branch's rows — today only the BOT reference.
+  **Amended by §12.19.4:** the method becomes `own_version(&self, branch: &BranchId, who: &Actor)`, so a version can
+  depend on the caller, and the `me` view is its second user (its version is the caller's identity).
 - **Web.** `ApiClient.view` / `ApiClient.page` (`web/src/shared/api/client.ts:71`, `:99`) take `filter?: F` in their
   params, `F` being the view's generated filter type; each value that is neither `undefined` nor `''` is sent as
   `key=value`. A view's filter type is exported to that view's own `generated/<view>.ts` (§5.1's rule, unchanged);
@@ -1177,7 +1200,7 @@ docked (§12.18.8), so the chime does not depend on which page is open. The styl
 [proposed], not test-locked.
 
 Known differences: v2's lock also disabled every `form button, form input, form select` on the page (`:42`). A card
-cannot reach another screen's forms, so that waits for `SessionStore` (§12.18.9). The account bar's branch line stays
+cannot reach another screen's forms, so that waits for `SessionStore` (§12.18.9); AppShell does it once §12.19 lands (§12.19.5). The account bar's branch line stays
 the branch id (#402 row V7); the card's title carries the branch name.
 
 #### 12.18.7 Texts (KQ7)
@@ -1206,6 +1229,9 @@ number or a name use `{placeholders}`.
   #471 renders in its bar (`admin-queue.js:12` moved v2's controls there). The card renders the same component.
 
 #### 12.18.9 `SessionStore` — what it lacks (a V0-B follow-up, not this work)
+
+> **Designed in §12.19** (V0-B-session-end): `ended` / `end` (D-S1), the end on a view refusal (D-S2), the `me` view's
+> own version (D-S3) and AppShell's lock (D-S4). The text below is the gap as it was measured.
 
 `SessionStore` is `{me, signOut, dispose}` (`session.ts:6-10`). The card needs two things it does not have:
 
@@ -1317,3 +1343,179 @@ No file is in two tickets. #471 owns only `web/src/screens/admin/queue/` and edi
 | #471 V2-queue | `web/src/screens/admin/queue/` | #460 (V2-shell), V1-kiosk-queue-panel, V1-queue-card | — |
 
 The up-front tests of each ticket are written by the controller on that ticket's branch before dispatch (🧪 rule).
+
+### 12.19 Session end — `SessionStore.ended`, the `me` view's own version and AppShell's lock (V0-B-session-end)
+
+> decided-by: claude/7ca80c (lane controller) · 2026-10-08 · measured on `main` at `4e54eef` and in
+> `xchange-v2-source@4d0bdbb` · answers §12.18.9 and the `SessionStore` row of §11
+
+Line references `:N` without a file are `src/devices-public/account-bar.js` of the v2 source.
+
+**Root cause.** v2's account bar was the one place that noticed a session ending: it locked the page itself (`:42`).
+v3 has no such place. Two links of the chain are missing:
+
+1. `SessionStore` is `{me, signOut, dispose}` (`web/src/shared/session/session.ts:6-10`). The only way out is
+   `signOut()`, which posts a logout and clears `me` (`session.ts:27-31`), so the account bar disappears with it.
+   Nothing can say "this session is over" and keep showing whose it was.
+2. The `me` view is versioned by the branch cursor: it has no version of its own (`api/src/presentation/http/v3/views/me.rs:29-34`),
+   so the endpoint reads `branch_versions` (`api/src/presentation/http/v3/view.rs:359-397`) and answers `changed: false`
+   whenever `since` equals it (`view.rs:400`), whoever is signed in. `BranchView::own_version` cannot help as it stands:
+   it takes `&self` only (`view.rs:38`), so a view cannot make its version depend on the caller.
+
+#### 12.19.1 What v2 does (the behaviour contract, W9)
+
+| # | v2 | Source | v3 after this section |
+|---|---|---|---|
+| E1 | Reads the signed-in user once, on load; no user → `/login` | `:4` | the `me` poller (`session.ts:14-18`), unchanged |
+| E2 | Polls every 5 s, on `focus`, on becoming visible, and 100 ms after any `change` | `:46` | the `me` poll stays every 60 s (§12.19.6, §11) and runs at once when a hidden tab is shown (`web/src/shared/live/view-poller.ts:57-60`) |
+| E3 | A `401`, or an error matching `/Staff access/` → `lock('เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่')` | `:44` | D-S2: `401`, or `400` with code `kioskStaff` (v3's code for that refusal: `api/src/presentation/http/v3/error.rs:88`, status `400` at `api/crates/xc-auth/src/domain/policy/value_objects/policy_error.rs:114`) |
+| E4 | The answer's `employee.id` or `employee.role` differs from the user read at load → `lock('บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ')` | `:44` | D-S3 |
+| E5 | `lock(message)`: stops polling; writes the message in the card's line; shows `เข้าสู่ระบบอีกครั้ง →` to `/login`; disables every `form button, form input, form select` on the page; fires `xc:queue-error` with `locked: true` | `:42` | stop: D-S1. Page lock and message: D-S4. The card's line and link: #487's C6 (§12.18.6). The event: no v3 bus (§12.18); a v3 reader reads `ended()` |
+| E6 | The sign-out button is not inside a form, so it stays usable after the lock | `:12`, `:42` | `AccountBar` sits in AppShell's `<header>`, outside the locked content (§12.19.5) |
+| E7 | The user's name and username are never re-read after load | `:4`, `:8` | the `me` view's version follows id and role only (§12.19.4), so a rename shows on the next page load, as in v2 |
+
+#### 12.19.2 Decisions
+
+| # | Decision | Status |
+|---|---|---|
+| D-S1 | `SessionStore` gains `ended: Accessor<EndReason \| undefined>` and `end(reason: EndReason): void`, `EndReason = 'expired' \| 'switched'` [proposed names]. `end` stops the `me` poller, keeps `me()` as it was (so the bar still shows whose session it was), and posts **no** logout. `signOut()` is unchanged | decided (lane controller 2026-10-08) |
+| D-S2 | The session ends itself with `'expired'` when a view read made through the shared `ApiClient` answers `401`, or the `kioskStaff` refusal (`400`). Where the hook sits: §12.19.3 rules SE3–SE6, all in `session.ts` (V0-B's file) | decided (lane controller 2026-10-08) |
+| D-S3 | The `me` view gets an `own_version` (V0-C, PR 483, `05a8851`) derived from the caller's id and role, so an account switch changes the version and the next poll answers `changed: true`. The store compares the new `me` with the one it holds and ends with `'switched'` when the id or the role differ. No session id is available: `Actor` holds `id`, `kind`, `role` and `branch_id` only (`api/crates/xc-auth/src/domain/policy/value_objects/actor.rs:10-15`) | decided (lane controller 2026-10-08) |
+| D-S4 | The page-wide form lock (`:42`) belongs to `AppShell`: while `ended()` is set, it disables the page's form controls and shows the message. Mechanism: §12.19.5 | decided (lane controller 2026-10-08) |
+
+#### 12.19.3 `SessionStore` (D-S1, D-S2, D-S3)
+
+[proposed] names, [required] behaviour:
+
+```ts
+export type EndReason = 'expired' | 'switched';
+export interface SessionStore {
+  me: Accessor<Me | undefined>;
+  ended: Accessor<EndReason | undefined>;
+  end(reason: EndReason): void;
+  signOut(): Promise<void>;
+  dispose(): void;
+}
+export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): SessionStore; // signature unchanged
+export function endsSession(status: number, code: string | undefined): boolean;
+export function endingFetch(inner: Fetch, onEnd: () => void): Fetch;
+export function sharedApi(): ApiClient;      // one per page, lazy
+export function sharedSession(): SessionStore; // built on sharedApi()
+```
+
+| # | Rule | Why |
+|---|---|---|
+| SE1 | `end(reason)` sets `ended()` once: the first reason wins and later calls change nothing. It stops the `me` poller, keeps `me()`, and makes no request. After `end`, `signOut()` still works as today (`session.ts:27-31`) | D-S1; v2 kept its bar and its sign-out (`:12`, `:42`) |
+| SE2 | The store hands the poller a **wrapped `view`** (the poller takes any `Pick<ApiClient, 'view'>`, `view-poller.ts:11`, `:25`). On a `changed: true` answer whose `id` or `role` differs from the `me()` it holds, the wrapper calls `end('switched')` **before** returning the answer. The poller then drops that answer, because it is no longer running (`view-poller.ts:101-102`), so `me()` keeps the account that was shown. A changed answer with the same `id` and `role` replaces `me()`, as today | D-S3, E4 |
+| SE3 | The same wrapper, on an `ApiError` for which `endsSession(err.status, err.code)` holds, calls `end('expired')`, **only when `me()` is defined**, i.e. on a session this page has seen. Before the first answer a `401` leaves `me()` undefined and the poller keeps retrying, as today (`session.test.ts:139-150`). This is what keeps `/login` usable: the login screen renders `AppShell` (`web/src/screens/login/LoginScreen.tsx:3`), whose `AccountBar` creates the shared session, and that session's first `me` read answers `401` there | D-S2 |
+| SE4 | `endsSession(status, code)` is `status === 401 \|\| (status === 400 && code === 'kioskStaff')`. `401` is `signIn` / `employeeAuthRequired` (`policy_error.rs:101`). On a view, `kioskStaff` means nobody is signed in (the `notifications` and `list` rows, `api/crates/xc-auth/src/domain/policy/entities/policy.rs:304-308`) | D-S2, E3 |
+| SE5 | `endingFetch(inner, onEnd)` passes every request to `inner` unchanged and returns its response unchanged. For a `GET` whose path starts with `/api/v3/views/` and whose response satisfies `endsSession` (the code is read from `res.clone()`), it calls `onEnd()`. It looks at **view reads only**, because on `POST /api/kiosk` `kioskStaff` also refuses a signed-in role that may not claim (`policy.rs:311-322`), which is not an ended session | D-S2 |
+| SE6 | `sharedApi()` is `new ApiClient(endingFetch((input, init) => fetch(input, init), onEnd))`. `ApiClient` already takes its fetch in the constructor (`web/src/shared/api/client.ts:40-41`). The global `fetch` is looked up at each call, not captured when the singleton is built, as `new ApiClient()` does today (`client.ts:41`): the web tests replace `fetch` per test with `vi.stubGlobal` (`web/src/shared/ui/AppShell.test.tsx:50`, `:64`, `:71`; `web/src/screens/login/LoginScreen.test.tsx:45`; `web/src/screens/staff-guide/StaffGuide.test.tsx:91`), and a captured `fetch` would send every later test's requests to the first test's stub. `onEnd` ends the shared session with `'expired'` only if it exists and its `me()` is defined. It never creates the session. `sharedSession()` builds its store on `sharedApi()`. Importing `session.ts` still starts no timer and no fetch (`session.lazy.test.ts:14`) | D-S2 |
+| SE7 | **Which reads count.** Only reads made through `sharedApi()`. At `4e54eef` the screens build their own client (`web/src/screens/login/main.tsx:8`, `screens/devices/main.tsx:20`, `screens/kiosk-currencies/main.tsx:12`), and #486's queue store defaults to `new ApiClient()` (#486 §7). Their refusals reach the session through its own `me` poll instead, within one `me` interval | fact, not a change to those files |
+| SE8 | **Where the hook sits.** Neither `ApiClient` nor `ViewPoller` is edited. `ViewPoller` swallows every error (`view-poller.ts:111-115`) and `ApiClient` has no observer. So the hook is the fetch given to `ApiClient` (SE5, SE6) and the `view` wrapper given to `ViewPoller` (SE2, SE3), both in `session.ts` | D-S2: V0-B's file only |
+
+#### 12.19.4 The `me` view's own version (D-S3)
+
+- [required] **`own_version` gets the caller.** In `view.rs` the trait method becomes
+  `fn own_version(&self, branch: &BranchId, who: &Actor) -> impl Future<Output = AppResult<Option<i64>>> + Send`, with the
+  default body still `Ok(None)`. The endpoint already holds both when it asks: `who` at `view.rs:342`, `branch` at `:357`,
+  the call at `:359`. The other implementor on `main` is the test view `OwnVersion`
+  (`api/tests/v3_view_filter_test.rs:424`), which ignores both. #468's `rates_reference` (§12.16) does not exist yet
+  (no branch on `origin` at measure time). It implements the new signature and ignores both.
+- [required] **`MeBranchView::own_version`** answers `Some(identity_version(who))`. `identity_version` is a pure function of
+  `who.id()` and `who.role()`, and its value is in `0 ..= 2^53 − 1`:
+  - `since` must be `≥ 0` (`view.rs:151`);
+  - the browser reads `version` as a JavaScript number (`client.ts:96`), which is exact only up to `2^53 − 1`. A larger
+    value would come back as a different `since` and never answer `changed: false`.
+
+  [proposed] FNV-1a 64 over `id`, a `\0` byte and `role`, masked to 53 bits, in `views/me.rs`.
+- **Consequences:**
+  - The same caller gets the same version, so an unchanged poll is `changed: false` without `load`, as today.
+  - A different id or role answers `changed: true` with the new `Me`.
+  - A branch write no longer moves the `me` version, and nothing in `Me` is a branch's row. `kind`, `id`, `role` and
+    `branch` come from the session; `name` and `username` come from the account row, which E7 does not re-read.
+  - Signing in again as the same account gives the same version, as in v2, which compared id and role only (`:44`).
+- **A fingerprint, not a counter.** It does not rise. The endpoint compares a version only for equality (`view.rs:400`),
+  and the poller only echoes it (`view-poller.ts:96-98`, `:105`). `SessionStore` exposes no version.
+- **Pinned asserts this changes** (the controller amends them in the up-front test commit; the implementer edits no test):
+  - `api/tests/v3_view_test.rs:780` and `:796` assert the `me` version is `0`, the branch version;
+  - `api/tests/v3_view_filter_test.rs:736` asserts the same;
+  - `web/src/shared/session/session.test.ts:128-137` expects an owner → RATES answer to replace `me()`, which SE2 turns
+    into `end('switched')`.
+
+#### 12.19.5 AppShell's lock (D-S4)
+
+[required] `AppShell` reads `sharedSession().ended()`; it already calls `sharedSession()` (`web/src/shared/ui/AppShell.tsx:51`).
+
+- **The notice.** While `ended()` is set, a `<p role="alert">` between `</header>` and the content shows
+  `t('shell.session.expired')` or `t('shell.session.switched')`. These are new shared keys under the existing `shell.*`
+  prefix (W10). Their Thai is v2's, verbatim (`:44`). The English is [proposed]:
+  `Session ended. Please sign in again.` and `The account changed in another window. Please sign in again before making a transaction.`
+- **The lock.** The content wrapper sits inside `<fieldset class="xc-lock" disabled={ended() !== undefined}>`. It works for
+  both of #459's wrappers (`AppShell.tsx:53-57`): `<main>` without `ownsMain`, and `<div class="xc-content">` with it.
+  The fieldset is always rendered, so the landmark tests (`AppShell.landmark.test.tsx:15`, `:33`) still find one
+  `<main>`. It is styled to draw no box (`border: 0; padding: 0; margin: 0; min-width: 0`) [proposed].
+- **Why a disabled `<fieldset>`, not `inert`.** A disabled fieldset disables every `button`, `input`, `select` and
+  `textarea` inside it, whether or not they are in a form, and the browser delivers no click or submit to them. Measured
+  on jsdom 29.1.1, the web tests' DOM (`web/package.json:16`, `web/vitest.config.ts:7`):
+  - `matches(':disabled')` was true for all four kinds of control;
+  - a click on the submit button fired neither `click` nor `submit`;
+  - both fired again after `disabled = false`.
+
+  jsdom 29.1.1 does not implement `inert`: there is no `inert` property, and a click on an inert descendant still fired.
+  So a test of `inert` could not go red. `inert` would also block links, which v2 left alone.
+- **Outside the lock.** The `<header>` stays outside: `LangSwitch`, `AccountBar`'s sign-out, and #487's card with its
+  `เข้าสู่ระบบอีกครั้ง →` link (E6).
+- **Stricter than v2.** v2 disabled only controls inside a `<form>` (`:42`). v3 disables every control of the content.
+  With `ownsMain`, #460's admin shell renders its sidebar inside `.xc-content`, so its menu search is locked too.
+
+#### 12.19.6 Known differences
+
+- **Switch warning delay.** On a visible tab the switch shows within the `me` interval, 60 s. v2 took up to 5 s (E2).
+  The interval is pinned by `session.test.ts:90-112` (V0-B) and is not changed here (§11).
+- **Hidden tab.** A hidden tab does not poll (`view-poller.ts:91`); v2 kept polling. The check runs at once when the tab
+  is shown (`view-poller.ts:57-60`), before anyone can type in it.
+- **The message twice.** Once #487 lands, an ended session shows the sentence twice: in AppShell's notice and in the
+  card's line (C6). v2 had only the card's line.
+- **No event.** v2 fired `xc:queue-error` with `locked: true` (`:42`). v3 readers read `ended()`.
+
+#### 12.19.7 Class diagram additions
+
+```mermaid
+classDiagram
+  class SessionStore {
+    <<shared/session/session.ts>>
+    +me: Accessor~Me~
+    +ended: Accessor~EndReason~
+    +end(reason: EndReason) void
+    +signOut() Promise
+    +dispose() void
+  }
+  class SessionFns {
+    <<shared/session/session.ts>>
+    +endsSession(status, code) boolean
+    +endingFetch(inner, onEnd) Fetch
+    +sharedApi() ApiClient
+    +sharedSession() SessionStore
+  }
+  class ViewPoller { <<shared/live/view-poller.ts, unchanged>> }
+  class ApiClient { <<shared/api/client.ts, unchanged>> +constructor(fetchFn) }
+  class AppShell { <<shared/ui/AppShell.tsx>> +notice role=alert +fieldset.xc-lock disabled while ended }
+  class BranchView { <<http/v3/view.rs>> +own_version(branch, who) Option~i64~ }
+  class MeBranchView { <<http/v3/views/me.rs>> +own_version = identity_version(who) }
+  SessionStore --> ViewPoller : wrapped view, SE2 and SE3
+  SessionFns --> ApiClient : endingFetch, SE5 and SE6
+  SessionFns --> SessionStore : end expired
+  AppShell --> SessionStore : ended()
+  MeBranchView ..|> BranchView
+  ViewPoller --> MeBranchView : GET /api/v3/views/me
+```
+
+#### 12.19.8 Ticket and order
+
+| Ticket | Owns | Start dependency | Merge order |
+|---|---|---|---|
+| V0-B-session-end (#492) | `web/src/shared/session/session.ts` and its tests; `web/src/shared/ui/AppShell.tsx` and a new lock test; the two `shell.session.*` keys in `web/src/shared/i18n/th.ts`, `en.ts`; `api/src/presentation/http/v3/view.rs` (the `own_version` signature and its call only); `api/src/presentation/http/v3/views/me.rs`; the me-view tests | this section's design PR | **#486** also adds keys to `th.ts` / `en.ts`, added keys only on both sides. The queue's file lock keeps the two from running together, and whichever merges second rebases. **#487:** no shared file (#487's done criterion 2 keeps `web/src/shared/session` untouched, and `AccountBar.tsx` is #487's, not here), so either order works. **#468:** written against the new `own_version` signature; it waits for #460 anyway |
+
+The up-front tests are written by the controller on the ticket's branch before dispatch (🧪 rule). They include the
+amended asserts of §12.19.4.
