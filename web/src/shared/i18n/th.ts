@@ -29,6 +29,7 @@ export const th = {
   'error.kioskOwnerOrRates': 'ต้องเป็นเจ้าของระบบหรือผู้ดูแลอัตราแลกเปลี่ยน',
   'error.kioskStaff': 'เฉพาะพนักงานเท่านั้น',
   'error.kioskUnknown': 'ไม่รู้จักคำสั่งของตู้คีออสก์',
+  'error.noSuchBranch': 'ไม่พบสาขาที่เลือก กรุณารีเฟรช',
   'queue.state.waiting': 'รอรับเรื่อง',
   'queue.state.working': 'กำลังทำรายการ',
   'queue.state.completed': 'เสร็จสิ้น',

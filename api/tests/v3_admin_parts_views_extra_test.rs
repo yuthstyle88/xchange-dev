@@ -85,7 +85,7 @@ async fn not_found_exchange_answers_files_empty_list() {
 #[actix_web::test]
 async fn lookup_failure_on_unknown_branch_propagates_error_and_is_not_files_empty() {
     let room = TestRoom::open().await;
-    // An unknown branch -> lookup.find fails with NO_SUCH_BRANCH, which is not NO_DOCUMENTS.
+    // An unknown branch -> the view core refuses it with 400 noSuchBranch (#500), not files: [].
     let path = view_path(DOCUMENTS, "branch=NONEXISTENT-BRANCH&ref=TX-123");
     let answer = room.get("OWNER", &path).await;
     assert_ne!(
@@ -94,8 +94,14 @@ async fn lookup_failure_on_unknown_branch_propagates_error_and_is_not_files_empt
         answer.text
     );
     assert_eq!(
-        answer.status, 500,
-        "lookup failure must return 500 serverError: {}",
+        answer.status, 400,
+        "an unknown branch must return 400 noSuchBranch: {}",
+        answer.text
+    );
+    assert_eq!(
+        answer.json()["error"]["code"],
+        json!("noSuchBranch"),
+        "{}",
         answer.text
     );
     assert!(
