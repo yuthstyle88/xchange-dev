@@ -1,5 +1,7 @@
 import { createSignal, onMount, type JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
+import { sharedSession } from '../session/session';
+import { AccountBar } from './AccountBar';
 
 interface ReadyData {
   version: string;
@@ -45,6 +47,7 @@ export function AppShell(props: {
         <h1>{props.title}</h1>
         {props.nav}
         <LangSwitch />
+        <AccountBar session={sharedSession()} />
       </header>
       <main>{props.children}</main>
       <footer>
