@@ -42,6 +42,13 @@ pub struct SaveExtras {
     pub kiosk_request_id: Option<String>,
 }
 
+/// A booking claimed by the save of an exchange (T15-h).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BookingClaim {
+    pub booking_id: String,
+    pub customer_confirmed: bool,
+}
+
 /// What a step is told about the save it takes part in.
 #[derive(Debug, Clone, Copy)]
 pub struct SaveContext<'a> {
@@ -49,6 +56,7 @@ pub struct SaveContext<'a> {
     /// The parsed form; its `staff` is already the saver's username.
     pub form: &'a TransactionForm,
     pub extras: &'a SaveExtras,
+    pub booking: Option<&'a BookingClaim>,
     pub actor: &'a SaveActor,
     /// The time the save was given, cut to milliseconds.
     pub now: DateTime<Utc>,
@@ -62,6 +70,12 @@ pub type StepFuture<'a> = Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a
 
 /// One context's part in the save of an exchange.
 pub trait SaveStep: Send + Sync + 'static {
+    /// Whether this step vouches for the form's rate, skipping the
+    /// counter-rate check.
+    fn vouches_for_rate(&self, _ctx: &SaveContext<'_>) -> bool {
+        false
+    }
+
     /// Runs inside the save's transaction after the form is judged and before
     /// anything of the exchange is checked or written. An error ends the save
     /// with that error.

@@ -102,6 +102,15 @@ pub trait KioskRepository: Send + Sync {
         page: u32,
     ) -> impl Future<Output = AppResult<Vec<(KioskRequest, WorkTimes)>>> + Send;
 
+    /// Confirmed requests for the page, newest first then id DESC, up to `limit`.
+    fn queue_before(
+        &self,
+        branch: &BranchId,
+        filter: QueueFilter,
+        before: Option<&str>,
+        limit: i64,
+    ) -> impl Future<Output = AppResult<Vec<(KioskRequest, WorkTimes)>>> + Send;
+
     /// Requests currently at work (ACCEPTED / ID_CHECKED), up to `limit`, and the total count.
     fn working(
         &self,

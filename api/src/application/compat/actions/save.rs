@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value};
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
+use xc_exchange::application::booking::service::BookingService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kiosk::application::kiosk::service::KioskService;
@@ -23,11 +24,12 @@ use crate::application::compat::envelope::RpcRoute;
 use crate::application::compat::rpc::RpcCaller;
 use crate::application::compat::v2_json::V2Json;
 use crate::application::settings::PaymentSettingsService;
+use crate::application::workflows::booking_save_step::BookingSaveStep;
 use crate::application::workflows::custody_save_step::CustodySaveStep;
 use crate::application::workflows::device_save_step::DeviceSaveStep;
 use crate::application::workflows::kiosk_save_step::KioskSaveStep;
 use crate::application::workflows::payment_save_step::PaymentSaveStep;
-use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
+use crate::application::workflows::save_step::{BookingClaim, SaveActor, SaveExtras, SaveStep};
 use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::infrastructure::devices::device_service::DeviceService;
 
@@ -62,6 +64,13 @@ impl SaveAction {
         self.workflow = self.workflow.with_steps(self.steps.clone());
         self
     }
+
+    /// Appends the booking save step to redeem and use bookings at the desk (T15-h).
+    pub fn with_booking_check(mut self, bookings: BookingService) -> Self {
+        self.steps.push(Arc::new(BookingSaveStep::new(bookings)));
+        self.workflow = self.workflow.with_steps(self.steps.clone());
+        self
+    }
 }
 
 impl RpcAction for SaveAction {
@@ -73,11 +82,12 @@ impl RpcAction for SaveAction {
         Box::pin(async move {
             let cmd = parse_command(&call.payload);
             let extras = parse_extras(&call.payload);
+            let booking = parse_booking(&call.payload);
             let actor = save_actor(call.caller);
 
             let saved = self
                 .workflow
-                .save_as(call.branch, cmd, &extras, &actor, call.now)
+                .save_as_booked(call.branch, cmd, &extras, booking, &actor, call.now)
                 .await?;
 
             let number = &saved.document_ref;
@@ -157,6 +167,21 @@ fn parse_extras(payload: &Map<String, Value>) -> SaveExtras {
         count_confirmed,
         kiosk_request_id,
     }
+}
+
+fn parse_booking(payload: &Map<String, Value>) -> Option<BookingClaim> {
+    let booking_id = match payload.get("onlineBookingId") {
+        Some(Value::String(s)) if !s.is_empty() => s.clone(),
+        _ => return None,
+    };
+    let customer_confirmed = matches!(
+        payload.get("onlineBookingCustomerConfirmed"),
+        Some(Value::Bool(true))
+    );
+    Some(BookingClaim {
+        booking_id,
+        customer_confirmed,
+    })
 }
 
 fn parse_command(payload: &Map<String, Value>) -> SaveTransaction {

@@ -99,7 +99,7 @@ fn claims_requests(actor: Option<&Actor>) -> bool {
 
 /// The usernames of the given holder ids, read in one query. A holder is stored by id;
 /// `owner` is the owner's id.
-async fn usernames<'a>(
+pub(crate) async fn usernames<'a>(
     pool: &sqlx::PgPool,
     ids: impl Iterator<Item = &'a str>,
 ) -> HashMap<String, String> {
@@ -129,7 +129,7 @@ async fn usernames<'a>(
 }
 
 /// The username of a holder, or the id as it is when nobody has it.
-fn username_or_id(names: &HashMap<String, String>, id: &str) -> String {
+pub(crate) fn username_or_id(names: &HashMap<String, String>, id: &str) -> String {
     names.get(id).cloned().unwrap_or_else(|| id.to_owned())
 }
 

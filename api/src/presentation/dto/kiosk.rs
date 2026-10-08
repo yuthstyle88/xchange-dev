@@ -60,8 +60,15 @@ fn optional<T>(value: Option<T>, print: impl FnOnce(T) -> V2Json) -> V2Json {
 }
 
 /// A kiosk time as v2 printed a PostgreSQL `timestamptz`: `YYYY-MM-DDTHH:MM:SS.mmmZ`.
-fn kiosk_time_json(at: KioskTime) -> V2Json {
+pub(crate) fn kiosk_time_json(at: KioskTime) -> V2Json {
     DateTime::<Utc>::from_timestamp_millis(at.epoch_millis()).map_or(V2Json::Null, time_json)
+}
+
+pub(crate) fn kiosk_time_iso(at: KioskTime) -> Option<String> {
+    match kiosk_time_json(at) {
+        V2Json::Text(s) => Some(s),
+        _ => None,
+    }
 }
 
 /// `startedAt`, `completedAt`, `durationSeconds` of a request.
@@ -77,7 +84,7 @@ fn work_times_json(times: &WorkTimes) -> [(&'static str, V2Json); 3] {
 }
 
 /// v2's queue label: `K-` and the first eight characters of the id, upper-cased.
-fn queue_of(id: &str) -> String {
+pub(crate) fn queue_of(id: &str) -> String {
     let first_eight: String = id.chars().take(8).collect();
     format!("K-{}", first_eight.to_uppercase())
 }

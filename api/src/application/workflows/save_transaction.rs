@@ -25,7 +25,9 @@ use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
-use crate::application::workflows::save_step::{SaveActor, SaveContext, SaveExtras, SaveStep};
+use crate::application::workflows::save_step::{
+    BookingClaim, SaveActor, SaveContext, SaveExtras, SaveStep,
+};
 use crate::infrastructure::files::file_service::{Attachment, FileService};
 
 pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
@@ -182,8 +184,22 @@ impl SaveTransactionWorkflow {
     pub async fn save_as(
         &self,
         branch: &BranchId,
+        cmd: SaveTransaction,
+        extras: &SaveExtras,
+        actor: &SaveActor,
+        now: DateTime<Utc>,
+    ) -> AppResult<SavedTransaction> {
+        self.save_as_booked(branch, cmd, extras, None, actor, now)
+            .await
+    }
+
+    /// The save as a signed-in person makes it, with an optional booking claim.
+    pub async fn save_as_booked(
+        &self,
+        branch: &BranchId,
         mut cmd: SaveTransaction,
         extras: &SaveExtras,
+        booking: Option<BookingClaim>,
         actor: &SaveActor,
         now: DateTime<Utc>,
     ) -> AppResult<SavedTransaction> {
@@ -193,7 +209,7 @@ impl SaveTransactionWorkflow {
             cmd,
             &actor.id,
             now,
-            Some((extras.clone(), actor.clone())),
+            Some((extras.clone(), booking, actor.clone())),
         )
         .await
     }
@@ -204,7 +220,7 @@ impl SaveTransactionWorkflow {
         cmd: SaveTransaction,
         actor_id: &str,
         now: DateTime<Utc>,
-        stepped: Option<(SaveExtras, SaveActor)>,
+        stepped: Option<(SaveExtras, Option<BookingClaim>, SaveActor)>,
     ) -> AppResult<SavedTransaction> {
         let b = branch.as_str();
         if !BranchId::is_well_formed(b) {
@@ -242,11 +258,12 @@ impl SaveTransactionWorkflow {
                         .transactions
                         .find_submission_in(tx, &branch, mode, &form.submission_id)
                         .await?;
-                    if let Some((extras, actor)) = &stepped {
+                    if let Some((extras, booking, actor)) = &stepped {
                         let ctx = SaveContext {
                             branch: &branch,
                             form: &form,
                             extras,
+                            booking: booking.as_ref(),
                             actor,
                             now,
                             prior: prior.as_ref().map(|(saved, _)| saved),
@@ -261,11 +278,12 @@ impl SaveTransactionWorkflow {
                         if *hash != payload_hash {
                             return refuse(CHANGED);
                         }
-                        if let Some((extras, actor)) = &stepped {
+                        if let Some((extras, booking, actor)) = &stepped {
                             let ctx = SaveContext {
                                 branch: &branch,
                                 form: &form,
                                 extras,
+                                booking: booking.as_ref(),
                                 actor,
                                 now,
                                 prior: Some(saved),
@@ -283,19 +301,36 @@ impl SaveTransactionWorkflow {
                             return Err(ShiftError::NoOpenShift.into());
                         }
                         let code = CurrencyCode::parse(&form.currency).ok();
-                        let counter = match code {
-                            Some(code) if !code.is_thb() => {
-                                RateService::rate_in(tx, &branch, code).await?
+                        let vouched = stepped.as_ref().is_some_and(|(extras, booking, actor)| {
+                            let ctx = SaveContext {
+                                branch: &branch,
+                                form: &form,
+                                extras,
+                                booking: booking.as_ref(),
+                                actor,
+                                now,
+                                prior: None,
+                            };
+                            this.steps.iter().any(|s| s.vouches_for_rate(&ctx))
+                        });
+                        if !vouched {
+                            let counter = match code {
+                                Some(code) if !code.is_thb() => {
+                                    RateService::rate_in(tx, &branch, code).await?
+                                }
+                                _ => None,
+                            };
+                            let (Some(_), Some((buy, sell))) = (code, counter) else {
+                                return refuse(RATE_MISMATCH);
+                            };
+                            let current = if form.side == Side::Buy { buy } else { sell };
+                            if current != form.rate {
+                                return refuse(RATE_MISMATCH);
                             }
-                            _ => None,
-                        };
-                        let (Some(code), Some((buy, sell))) = (code, counter) else {
-                            return refuse(RATE_MISMATCH);
-                        };
-                        let current = if form.side == Side::Buy { buy } else { sell };
-                        if current != form.rate {
-                            return refuse(RATE_MISMATCH);
                         }
+                        let Some(code) = code else {
+                            return refuse(RATE_MISMATCH);
+                        };
                         let delta = StockDelta::for_tx(
                             form.side,
                             code,
@@ -361,11 +396,12 @@ impl SaveTransactionWorkflow {
                         &document_ref,
                     )
                     .await?;
-                    if let Some((extras, actor)) = &stepped {
+                    if let Some((extras, booking, actor)) = &stepped {
                         let ctx = SaveContext {
                             branch: &branch,
                             form: &form,
                             extras,
+                            booking: booking.as_ref(),
                             actor,
                             now,
                             prior: None,

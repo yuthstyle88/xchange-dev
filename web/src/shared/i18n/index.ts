@@ -7,7 +7,7 @@ export type Locale = 'th-TH' | 'en-GB';
 export type Params = Record<string, string | number>;
 
 const STORAGE_KEY = 'xc.lang';
-const SHARED_PREFIXES = ['field', 'form', 'shell', 'error'];
+const SHARED_PREFIXES = ['field', 'form', 'shell', 'error', 'queue'];
 const SEGMENT_REGEX = /^[a-z][a-z0-9-]*$/;
 
 function readStorage(): Lang {
