@@ -4,6 +4,7 @@ pub mod customer;
 pub mod device;
 pub mod device_agent;
 pub mod device_setup;
+pub mod drawer_passport;
 pub mod file;
 pub mod kiosk;
 pub mod payment_methods;
