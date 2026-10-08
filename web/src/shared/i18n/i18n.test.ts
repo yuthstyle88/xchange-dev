@@ -409,12 +409,12 @@ describe('screen tables: each screen owns its i18n.ts, collected by import.meta.
   });
 
   it('screenT takes the dotted namespace of a nested folder', () => {
-    const lt = screenT('admin.payments', { th: { title: 'วิธีชำระเงิน' }, en: { title: 'Payment methods' } } as const);
+    const lt = screenT('zz-fixture.admin-payments', { th: { title: 'วิธีชำระเงิน' }, en: { title: 'Payment methods' } } as const);
     expect(lt('title')).toBe('วิธีชำระเงิน');
     setLang('en');
     expect(lt('title')).toBe('Payment methods');
     // @ts-expect-error — 'nope' is not a key of this table
-    expect(lt('nope')).toBe('admin.payments.nope');
+    expect(lt('nope')).toBe('zz-fixture.admin-payments.nope');
   });
 
   it('a folder path segment that is not [a-z][a-z0-9-]* is refused', () => {
@@ -456,7 +456,7 @@ describe('screenT: the typed t a screen makes over its own table', () => {
   } as const;
 
   it('resolves the screen key in the current language and fills placeholders by name', () => {
-    const lt = screenT('login', loginI18n);
+    const lt = screenT('zz-fixture-login', loginI18n);
     expect(lt('title')).toBe('เข้าสู่ระบบ');
     expect(lt('greet', { name: 'Ann' })).toBe('สวัสดี Ann');
     setLang('en');
@@ -465,7 +465,7 @@ describe('screenT: the typed t a screen makes over its own table', () => {
   });
 
   it('follows setLang reactively', () => {
-    const lt = screenT('login', loginI18n);
+    const lt = screenT('zz-fixture-login', loginI18n);
     createRoot((done) => {
       const shown = createMemo(() => lt('title'));
       expect(shown()).toBe('เข้าสู่ระบบ');
@@ -478,10 +478,10 @@ describe('screenT: the typed t a screen makes over its own table', () => {
   });
 
   it('a key the table does not have is a compile error, and at runtime shows as <screen>.<key>', () => {
-    const lt = screenT('login', loginI18n);
+    const lt = screenT('zz-fixture-login', loginI18n);
     // @ts-expect-error — 'nope' is not a key of loginI18n.th
     const shown = lt('nope');
-    expect(shown).toBe('login.nope');
+    expect(shown).toBe('zz-fixture-login.nope');
   });
 });
 

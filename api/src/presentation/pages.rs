@@ -3,9 +3,11 @@
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::str::FromStr;
 
 use actix_web::http::Method;
 use actix_web::{HttpRequest, HttpResponse, web};
+use rust_decimal::{Decimal, RoundingStrategy};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
@@ -156,6 +158,12 @@ pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
     );
     compiled_script(cfg, "/_xc/desk.js", include_str!("../../static/xc-desk.js"));
 
+    cfg.service(
+        web::resource("/devices/receipt")
+            .route(web::get().to(devices_receipt_handler))
+            .default_service(web::to(fallback)),
+    );
+
     for spec in PAGE_SPECS {
         cfg.service(
             web::resource(spec.path)
@@ -163,6 +171,222 @@ pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
                 .default_service(web::to(fallback)),
         );
     }
+}
+
+struct ReceiptQueryParams {
+    branch: Option<String>,
+    reference: Option<String>,
+}
+
+fn parse_receipt_query(query_str: &str) -> Result<ReceiptQueryParams, HttpResponse> {
+    if query_str.is_empty() {
+        return Ok(ReceiptQueryParams {
+            branch: None,
+            reference: None,
+        });
+    }
+    let pairs: Vec<(String, String)> = web::Query::from_query(query_str)
+        .map(|q: web::Query<Vec<(String, String)>>| q.into_inner())
+        .map_err(|_| {
+            HttpResponse::BadRequest()
+                .content_type("text/plain; charset=utf-8")
+                .body("Invalid branch")
+        })?;
+
+    let mut branch = None;
+    let mut reference = None;
+    for (k, v) in pairs {
+        if k == "branch" {
+            branch = Some(v);
+        } else if k == "ref" {
+            reference = Some(v);
+        }
+    }
+
+    Ok(ReceiptQueryParams { branch, reference })
+}
+
+fn format_rate(rate: Decimal) -> String {
+    rate.normalize().to_string()
+}
+
+fn to_locale_string(d: Decimal) -> String {
+    let rounded = d.round_dp_with_strategy(3, RoundingStrategy::MidpointAwayFromZero);
+    let normalized = rounded.normalize();
+    let s = normalized.to_string();
+    let (int_part, frac_part) = match s.split_once('.') {
+        Some((i, f)) => (i, Some(f)),
+        None => (s.as_str(), None),
+    };
+
+    let is_negative = int_part.starts_with('-');
+    let digits = if is_negative {
+        &int_part[1..]
+    } else {
+        int_part
+    };
+
+    let mut formatted_int = String::with_capacity(digits.len() + digits.len() / 3);
+    let rem = digits.len() % 3;
+    if rem > 0 {
+        formatted_int.push_str(&digits[..rem]);
+    }
+    for chunk in digits.as_bytes()[rem..].chunks(3) {
+        if !formatted_int.is_empty() {
+            formatted_int.push(',');
+        }
+        if let Ok(s) = std::str::from_utf8(chunk) {
+            formatted_int.push_str(s);
+        }
+    }
+    if is_negative {
+        formatted_int.insert(0, '-');
+    }
+    if formatted_int.is_empty() {
+        formatted_int.push('0');
+    }
+
+    match frac_part {
+        Some(f) if !f.is_empty() => format!("{formatted_int}.{f}"),
+        _ => formatted_int,
+    }
+}
+
+fn server_error() -> HttpResponse {
+    HttpResponse::InternalServerError()
+        .content_type("application/json; charset=utf-8")
+        .body("{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}")
+}
+
+async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
+    if req.method() != Method::GET {
+        return plain_404();
+    }
+
+    let sessions = sessions_of(&req).await;
+    if sessions.owner.is_none() && sessions.staff.is_none() {
+        return to_login(&req);
+    }
+
+    let query = match parse_receipt_query(req.query_string()) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+
+    let url_branch = match query.branch.as_deref() {
+        Some("") | None => "MAIN",
+        Some(b) => b,
+    };
+
+    if !is_valid_branch(url_branch) {
+        return HttpResponse::BadRequest()
+            .content_type("text/plain; charset=utf-8")
+            .body("Invalid branch");
+    }
+
+    let ref_str = match query.reference.as_deref() {
+        Some(r) if !r.is_empty() => r,
+        _ => {
+            return HttpResponse::NotFound()
+                .content_type("text/plain; charset=utf-8")
+                .body("ไม่พบรายการ");
+        }
+    };
+
+    let target_branch = if sessions.owner.is_some() {
+        url_branch
+    } else if let Some(staff) = &sessions.staff {
+        staff.branch_id().map(|b| b.as_str()).unwrap_or("MAIN")
+    } else {
+        url_branch
+    };
+
+    let Some(state) = req.app_data::<web::Data<AppState>>() else {
+        tracing::error!("missing AppState in devices_receipt_handler");
+        return server_error();
+    };
+
+    let branch_row: Option<(String,)> =
+        match sqlx::query_as("SELECT name FROM branches WHERE id = $1")
+            .bind(target_branch)
+            .fetch_optional(&state.db)
+            .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::error!("database error querying branch {target_branch}: {e}");
+                return server_error();
+            }
+        };
+
+    let Some((branch_name,)) = branch_row else {
+        return HttpResponse::NotFound()
+            .content_type("text/plain; charset=utf-8")
+            .body("ไม่พบรายการ");
+    };
+
+    let tx_row: Option<(String, String, String, String, String, String)> = match sqlx::query_as(
+        "SELECT customer_id, type, code, amount::text, rate::text, fee::text \
+         FROM transactions \
+         WHERE branch_id = $1 AND document_ref = $2 AND mode = 'LIVE'",
+    )
+    .bind(target_branch)
+    .bind(ref_str)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("database error querying transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
+
+    let Some((customer_id, tx_type, code, amount_str, rate_str, fee_str)) = tx_row else {
+        return HttpResponse::NotFound()
+            .content_type("text/plain; charset=utf-8")
+            .body("ไม่พบรายการ");
+    };
+
+    let amount = Decimal::from_str(&amount_str).unwrap_or_default();
+    let rate = Decimal::from_str(&rate_str).unwrap_or_default();
+    let fee = Decimal::from_str(&fee_str).unwrap_or_default();
+
+    let base = amount * rate;
+    let (verb, thb) = if tx_type == "BUY" {
+        ("จ่าย", base - fee)
+    } else {
+        ("รับ", base + fee)
+    };
+
+    let amount_formatted = to_locale_string(amount);
+    let rate_formatted = escape_html(&format_rate(rate));
+    let fee_formatted = to_locale_string(fee);
+    let thb_formatted = to_locale_string(thb);
+
+    const STYLE: &str = "<style>@page{size:80mm 285mm;margin:4mm}body{box-sizing:border-box;width:72mm;\
+    margin:0 auto;overflow-wrap:anywhere;font:14px/1.7 Tahoma,sans-serif}h1{text-align:center;\
+    font-size:20px}hr{border:0;border-top:1px dashed #333}</style>";
+    const FOOTER: &str = "<hr><p>ตัวอย่างก่อนพิมพ์ · พื้นที่พิมพ์ 72 มม. / กระดาษ 80 มม.</p>";
+
+    let escaped_ref = escape_html(ref_str);
+    let escaped_branch_name = escape_html(&branch_name);
+    let escaped_customer = escape_html(&customer_id);
+    let escaped_type = escape_html(&tx_type);
+    let escaped_currency = escape_html(code.trim());
+
+    let lines = format!(
+        "ลูกค้า {escaped_customer}<br>{escaped_type} {amount_formatted} {escaped_currency}<br>เรท {rate_formatted}<br>ค่าธรรมเนียม {fee_formatted} THB<br>{verb} {thb_formatted} THB"
+    );
+    let html = format!(
+        "<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><title>ตัวอย่างสลิป {escaped_ref}</title>{STYLE}\
+        <h1>XCHANGE × T.K.</h1><hr><p>สาขา {escaped_branch_name}<br>เลขรายการ {escaped_ref}<br>{lines}</p>{FOOTER}</html>"
+    );
+
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .insert_header(("Cache-Control", "no-store"))
+        .body(html)
 }
 
 async fn page_handler(req: HttpRequest) -> HttpResponse {
@@ -601,4 +825,74 @@ fn serve_static_file(web_dir: &Path, raw_path: &str) -> Option<HttpResponse> {
             .insert_header(("X-Content-Type-Options", "nosniff"))
             .body(bytes),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_4_decimal_rate_is_printed_as_stored_with_no_grouping() {
+        let rate = Decimal::from_str("32.1234").unwrap();
+        assert_eq!(format_rate(rate), "32.1234");
+        let rate_with_zero = Decimal::from_str("32.1230").unwrap();
+        assert_eq!(format_rate(rate_with_zero), "32.123");
+        let rate_one_dp = Decimal::from_str("32.1").unwrap();
+        assert_eq!(format_rate(rate_one_dp), "32.1");
+    }
+
+    #[test]
+    fn a_rate_ge_1000_has_no_thousands_grouping() {
+        let rate = Decimal::from_str("1234.5").unwrap();
+        assert_eq!(format_rate(rate), "1234.5");
+        let rate_large = Decimal::from_str("12345.6789").unwrap();
+        assert_eq!(format_rate(rate_large), "12345.6789");
+        let whole_rate = Decimal::from_str("1000.00").unwrap();
+        assert_eq!(format_rate(whole_rate), "1000");
+    }
+
+    #[test]
+    fn a_thb_amount_that_needs_rounding_to_3_decimals_rounds_half_away_from_zero() {
+        // 100.50 at 32.1234 gives 3228.4017 -> 3,228.402
+        let amount = Decimal::from_str("100.50").unwrap();
+        let rate = Decimal::from_str("32.1234").unwrap();
+        let thb = amount * rate;
+        assert_eq!(to_locale_string(thb), "3,228.402");
+
+        let half_up = Decimal::from_str("1234.5675").unwrap();
+        assert_eq!(to_locale_string(half_up), "1,234.568");
+
+        let round_down = Decimal::from_str("1234.5674").unwrap();
+        assert_eq!(to_locale_string(round_down), "1,234.567");
+
+        let half_down_away = Decimal::from_str("-1234.5675").unwrap();
+        assert_eq!(to_locale_string(half_down_away), "-1,234.568");
+    }
+
+    #[test]
+    fn a_whole_amount_has_thousands_grouping_and_no_fraction() {
+        let whole = Decimal::from_str("1000").unwrap();
+        assert_eq!(to_locale_string(whole), "1,000");
+        let whole_with_zeros = Decimal::from_str("1000.00").unwrap();
+        assert_eq!(to_locale_string(whole_with_zeros), "1,000");
+        let hundred = Decimal::from_str("100").unwrap();
+        assert_eq!(to_locale_string(hundred), "100");
+        let million = Decimal::from_str("1000000").unwrap();
+        assert_eq!(to_locale_string(million), "1,000,000");
+        let zero = Decimal::from_str("0").unwrap();
+        assert_eq!(to_locale_string(zero), "0");
+    }
+
+    #[test]
+    fn server_error_answers_500_with_thai_message_and_json_content_type() {
+        let resp = server_error();
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json; charset=utf-8"
+        );
+    }
 }
