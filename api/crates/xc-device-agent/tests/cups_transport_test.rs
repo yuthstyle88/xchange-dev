@@ -38,6 +38,13 @@ impl Fakes {
             &dir.join("lpstat"),
             &format!(
                 "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{d}/lpstat.args'\n\
+                 for fd in $(ls /proc/self/fd /dev/fd 2>/dev/null); do\n\
+                   case \"$fd\" in\n\
+                     0|1|2) ;;\n\
+                     [3-9]) eval \"exec $fd>&-\" 2>/dev/null ;;\n\
+                     *) if (eval \"exec $fd>&-\") 2>/dev/null; then eval \"exec $fd>&-\" 2>/dev/null; fi ;;\n\
+                   esac\n\
+                 done\n\
                  printf '%s' '{lpstat_out}'\nexit 0\n"
             ),
         );
@@ -45,6 +52,13 @@ impl Fakes {
             &dir.join("lp"),
             &format!(
                 "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{d}/lp.args'\n\
+                 for fd in $(ls /proc/self/fd /dev/fd 2>/dev/null); do\n\
+                   case \"$fd\" in\n\
+                     0|1|2) ;;\n\
+                     [3-9]) eval \"exec $fd>&-\" 2>/dev/null ;;\n\
+                     *) if (eval \"exec $fd>&-\") 2>/dev/null; then eval \"exec $fd>&-\" 2>/dev/null; fi ;;\n\
+                   esac\n\
+                 done\n\
                  cat > '{d}/lp.stdin'\nprintf '%s' '{lp_out}'\nprintf '%s' '{lp_err}' >&2\n\
                  exit {lp_exit}\n"
             ),
