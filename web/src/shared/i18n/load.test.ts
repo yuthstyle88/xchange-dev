@@ -16,9 +16,10 @@ describe('i18n load path: real glob and screenLookup', () => {
     expect(screenLookup).toBeDefined();
     expect(screenLookup.th).toBeDefined();
     expect(screenLookup.en).toBeDefined();
-    // In this repo there are no screen tables yet, so lookup starts empty
-    expect(screenLookup.th).toEqual({});
-    expect(screenLookup.en).toEqual({});
+    // It is what buildLookup builds from the real glob, whether there are zero screen tables or many (#441)
+    const expected = buildLookup(import.meta.glob('/src/screens/**/i18n.ts', { eager: true }));
+    expect(screenLookup.th).toEqual(expected.th);
+    expect(screenLookup.en).toEqual(expected.en);
   });
 
   it('buildLookup enforces collectScreens parity and segment checks', () => {
