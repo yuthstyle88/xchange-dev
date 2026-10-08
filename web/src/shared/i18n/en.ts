@@ -31,6 +31,7 @@ export const en: Record<Key, string> = {
   'error.kioskOwnerOrRates': 'Owner or Rates access required.',
   'error.kioskStaff': 'Staff access required.',
   'error.kioskUnknown': 'Unknown kiosk action.',
+  'error.noSuchBranch': 'The selected branch was not found. Please refresh.',
   'queue.state.waiting': 'Waiting',
   'queue.state.working': 'In progress',
   'queue.state.completed': 'Completed',

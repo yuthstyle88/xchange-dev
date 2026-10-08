@@ -124,6 +124,10 @@ impl TestDb {
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
+        sqlx::query("INSERT INTO branches (id, name) VALUES ('XC-B01', 'B01'), ('XC-B02', 'B02')")
+            .execute(&pool)
+            .await
+            .expect("insert the branches this file names into branches");
         Self { pool, schema }
     }
 
@@ -1255,24 +1259,24 @@ async fn an_own_version_that_moves_makes_the_same_since_changed() {
 
 #[actix_web::test]
 async fn an_equal_own_version_answers_without_reading_branch_versions() {
+    let db = TestDb::start().await;
     let views = Views::new();
-    // The control: on a pool that cannot be read, a view on the branch version fails.
-    let control = get_on(
-        common::unreachable_pool(),
-        &views,
-        "owner",
-        "/api/v3/views/test-plain?since=0",
-    )
-    .await;
+    // `branch_versions` renamed away; `branches` (the core's branch check, #500) stays.
+    sqlx::query("ALTER TABLE branch_versions RENAME TO hidden_branch_versions")
+        .execute(&db.pool)
+        .await
+        .expect("hide branch_versions");
+    // The control: without branch_versions, a view on the branch version fails.
+    let control = get(&db, &views, "owner", "/api/v3/views/test-plain?since=0").await;
     assert_eq!(
         control.status,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "a view on the branch version cannot answer without the database: {}",
+        "a view on the branch version cannot answer without branch_versions: {}",
         control.body
     );
 
-    let a = get_on(
-        common::unreachable_pool(),
+    let a = get(
+        &db,
         &views,
         "owner",
         "/api/v3/views/test-own-version?since=7",
@@ -1280,4 +1284,9 @@ async fn an_equal_own_version_answers_without_reading_branch_versions() {
     .await;
     is_unchanged(&a, 7, "own version with no branch_versions read");
     assert_eq!(views.own.loads.load(Ordering::SeqCst), 0);
+    sqlx::query("ALTER TABLE hidden_branch_versions RENAME TO branch_versions")
+        .execute(&db.pool)
+        .await
+        .expect("restore branch_versions");
+    db.finish().await;
 }

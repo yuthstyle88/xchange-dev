@@ -1366,7 +1366,7 @@ async fn since_at_the_current_version_answers_unchanged_without_loading() {
     assert_eq!(paged["changed"], json!(true), "{paged}");
     assert_eq!(ids(&paged["data"]), vec![rid(2), rid(1)], "{paged}");
 
-    for table in ["kiosk_requests", "branches"] {
+    for table in ["kiosk_requests"] {
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "ALTER TABLE {table} RENAME TO hidden_{table}"
         )))
@@ -1395,7 +1395,7 @@ async fn since_at_the_current_version_answers_unchanged_without_loading() {
         "a page with before loads: {:.300}",
         paged.text
     );
-    for table in ["kiosk_requests", "branches"] {
+    for table in ["kiosk_requests"] {
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "ALTER TABLE hidden_{table} RENAME TO {table}"
         )))

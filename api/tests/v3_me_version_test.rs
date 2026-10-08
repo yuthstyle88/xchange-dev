@@ -114,6 +114,10 @@ impl TestDb {
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
+        sqlx::query("INSERT INTO branches (id, name) VALUES ('XC-B01', 'B01'), ('XC-B02', 'B02')")
+            .execute(&pool)
+            .await
+            .expect("insert the branches this file names into branches");
         Self { pool, schema }
     }
 

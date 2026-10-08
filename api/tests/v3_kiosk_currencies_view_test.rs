@@ -408,8 +408,9 @@ impl Room {
 
     /// Every table the view can read, renamed away: loading the view now fails, while
     /// `branch_versions` (the `since` check) and the sign-in tables stay.
+    /// `branches` stays too: the core's branch check reads it before `since` (#500).
     async fn hide_the_views_tables(&self) {
-        for table in ["rates", "kiosk_currencies", "currencies", "branches"] {
+        for table in ["rates", "kiosk_currencies", "currencies"] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
                 "ALTER TABLE {table} RENAME TO hidden_{table}"
             )))

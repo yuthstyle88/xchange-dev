@@ -6,14 +6,18 @@ use std::sync::Arc;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
+use xc_rate::application::branch::service::BranchService;
+use xc_rate::domain::validation::NO_SUCH_BRANCH;
 
 use super::error::V3Error;
 use crate::bootstrap::AppState;
@@ -342,6 +346,38 @@ async fn authenticate_and_authorize(
     actor.ok_or_else(|| V3Error::from(PolicyError::SignIn).error_response())
 }
 
+/// 400 noSuchBranch when `branch` is not in `branches`; 500 serverError when it cannot be read.
+async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Result<(), V3Error> {
+    let pool = match req.app_data::<web::Data<AppState>>() {
+        Some(state) => state.db.clone(),
+        None => {
+            return Err(V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    let branch_tx = BranchTx::new(Transactor::new(pool));
+    let service = BranchService::new(branch_tx);
+    match service.require(branch).await {
+        Ok(_) => Ok(()),
+        Err(AppError::Domain(m)) if m == NO_SUCH_BRANCH => Err(V3Error::new(
+            "noSuchBranch",
+            Some("branch"),
+            NO_SUCH_BRANCH,
+            StatusCode::BAD_REQUEST,
+        )),
+        Err(_) => Err(V3Error::new(
+            "serverError",
+            None,
+            "เซิร์ฟเวอร์ขัดข้อง",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
+    }
+}
+
 async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpResponse {
     let who = match authenticate_and_authorize(req, V::INHERITS).await {
         Ok(who) => who,
@@ -353,12 +389,16 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Err(e) => return e.error_response(),
     };
 
+    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
+
+    if let Err(e) = require_branch(req, &branch).await {
+        return e.error_response();
+    }
+
     let filter = match parse_filter::<V::Filter>(req) {
         Ok(f) => f,
         Err(e) => return e.error_response(),
     };
-
-    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
 
     let version = if let Some(own_ver) = match view.own_version(&branch, &who).await {
         Ok(v) => v,
@@ -446,12 +486,16 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
         Err(e) => return e.error_response(),
     };
 
+    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
+
+    if let Err(e) = require_branch(req, &branch).await {
+        return e.error_response();
+    }
+
     let filter = match parse_filter::<V::Filter>(req) {
         Ok(f) => f,
         Err(e) => return e.error_response(),
     };
-
-    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
 
     let pool = match req.app_data::<web::Data<AppState>>() {
         Some(state) => state.db.clone(),

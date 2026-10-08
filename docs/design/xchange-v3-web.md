@@ -675,8 +675,7 @@ ticket (§5.1), so this is **V0-C** (#475), not part of any menu.
   removes the four paging keys, and deserializes the rest into `V::Filter`. An unknown key is ignored, as today. A
   value that does not parse is `400 {"error": {"code": "invalidRequest", "field": "<key>", "message": "คำขอไม่ถูกต้อง"}}`
   (§4.3; the sentence is `view.rs:105`'s). Then `filter.check()`. Both run **before** the `since` shortcut, so a bad
-  filter is refused even when nothing changed. Order: sign-in and policy (`INHERITS`, unchanged) → paging → filter →
-  `check` → branch → version → `since` → `load` / `page`.
+  filter is refused even when nothing changed. Order: sign-in and policy (`INHERITS`, unchanged) → `parse_query` (paging, ill-formed branch) → `Policy::branch` → `require_branch` → `parse_filter` (+ `check`) → version (`own_version` / `BranchVersions::current`) → `since` shortcut → `load` / `page`.
 - **`Period`** is the one shared period type (♻️): `{ from: String, to: String }`, ISO `YYYY-MM-DD` calendar days in
   Asia/Bangkok, both **inclusive**, `''` or absent = open on that side — v2's rule
   `(!from||t.date>=from)&&(!to||t.date<=to)` (`admin-html:57`). `Period::check` refuses a malformed date with the field
