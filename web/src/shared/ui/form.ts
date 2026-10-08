@@ -19,6 +19,7 @@ export interface Form {
 interface InternalField {
   binding: FieldBinding;
   element?: HTMLInputElement;
+  isClientError: boolean;
   setInvalid: (v: boolean) => void;
   setError: (v: string | undefined) => void;
 }
@@ -37,6 +38,7 @@ export function useForm(): Form {
 
     const internal: InternalField = {
       element: undefined,
+      isClientError: false,
       setInvalid,
       setError,
       binding: {
@@ -45,7 +47,23 @@ export function useForm(): Form {
         error,
         errorId,
         ref: (el: HTMLInputElement) => {
+          if (!el || internal.element === el) return;
           internal.element = el;
+
+          const onInputOrChange = () => {
+            if (internal.isClientError && internal.element) {
+              if (internal.element.validity.valid) {
+                internal.isClientError = false;
+                internal.setInvalid(false);
+                internal.setError(undefined);
+                internal.element.removeAttribute('aria-invalid');
+                internal.element.removeAttribute('aria-describedby');
+              }
+            }
+          };
+
+          el.addEventListener('input', onInputOrChange);
+          el.addEventListener('change', onInputOrChange);
         },
       },
     };
@@ -62,11 +80,30 @@ export function useForm(): Form {
 
       setFormErr(undefined);
       for (const f of fields.values()) {
+        f.isClientError = false;
         f.setInvalid(false);
         f.setError(undefined);
         if (f.element) {
           f.element.removeAttribute('aria-invalid');
         }
+      }
+
+      let firstFailed: HTMLInputElement | undefined;
+      for (const f of fields.values()) {
+        if (f.element && f.element.willValidate && !f.element.checkValidity()) {
+          f.isClientError = true;
+          f.setInvalid(true);
+          f.setError(f.element.validationMessage);
+          f.element.setAttribute('aria-invalid', 'true');
+          if (!firstFailed) {
+            firstFailed = f.element;
+          }
+        }
+      }
+
+      if (firstFailed) {
+        firstFailed.focus();
+        return;
       }
 
       try {
@@ -76,6 +113,7 @@ export function useForm(): Form {
           if (err.field) {
             const target = fields.get(err.field);
             if (target) {
+              target.isClientError = false;
               target.setInvalid(true);
               target.setError(err.message);
               if (target.element) {

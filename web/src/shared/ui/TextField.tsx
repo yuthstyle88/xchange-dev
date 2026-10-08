@@ -6,6 +6,13 @@ export function TextField(props: {
   label: string;
   type?: string;
   autocomplete?: string;
+  required?: boolean;
+  pattern?: string;
+  min?: string;
+  max?: string;
+  step?: string;
+  inputMode?: 'text' | 'decimal' | 'numeric' | 'email' | 'tel' | 'search' | 'url' | 'none';
+  maxLength?: number;
 }): JSX.Element {
   const id = `field-${props.field.name}`;
 
@@ -17,6 +24,13 @@ export function TextField(props: {
         name={props.field.name}
         type={props.type ?? 'text'}
         autocomplete={props.autocomplete}
+        required={props.required ? true : undefined}
+        pattern={props.pattern}
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        inputmode={props.inputMode}
+        maxlength={props.maxLength}
         ref={props.field.ref}
         aria-invalid={props.field.invalid() ? 'true' : undefined}
         aria-describedby={props.field.invalid() ? props.field.errorId : undefined}

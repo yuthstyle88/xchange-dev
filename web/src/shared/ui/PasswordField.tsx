@@ -5,6 +5,8 @@ export function PasswordField(props: {
   field: FieldBinding;
   label: string;
   autocomplete?: string;
+  required?: boolean;
+  maxLength?: number;
 }): JSX.Element {
   const id = `field-${props.field.name}`;
   const [visible, setVisible] = createSignal(false);
@@ -45,6 +47,8 @@ export function PasswordField(props: {
           name={props.field.name}
           type="password"
           autocomplete={props.autocomplete}
+          required={props.required ? true : undefined}
+          maxlength={props.maxLength}
           ref={(el) => {
             inputEl = el;
             props.field.ref(el);
