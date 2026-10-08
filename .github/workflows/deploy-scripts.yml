@@ -51,3 +51,6 @@ jobs:
 
       - name: Test
         run: bash deploy/server/scripts.test.sh
+
+      - name: Test the release lane guard
+        run: bash deploy/ci/lane.test.sh
