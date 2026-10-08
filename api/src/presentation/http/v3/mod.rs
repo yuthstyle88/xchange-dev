@@ -1,5 +1,6 @@
 //! v3 HTTP presentation module (§7.7).
 
+pub mod action;
 pub mod error;
 pub mod view;
 
@@ -14,9 +15,13 @@ pub struct ViewEntry {
 }
 
 include!(concat!(env!("OUT_DIR"), "/v3_views.rs"));
+include!(concat!(env!("OUT_DIR"), "/v3_actions.rs"));
 
 pub fn configure_v3(cfg: &mut web::ServiceConfig, state: &AppState) {
     for v in VIEWS {
         (v.register)(cfg, state);
+    }
+    for a in ACTIONS {
+        (a.register)(cfg, state);
     }
 }

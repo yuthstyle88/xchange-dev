@@ -11,6 +11,10 @@
 //! - `presentation::http::v3::VIEWS` is the generated table of the views in
 //!   `http/v3/views/`; each entry's `export_types(dir)` writes that view's DTOs
 //!   to `dir/<name>.ts` (and, through ts-rs, the common types they use).
+//! - `presentation::http::v3::ACTIONS` is the generated table of the compute
+//!   actions in `http/v3/actions/` (V0-D, #508, §12.20.3 *Types*); each entry
+//!   writes its DTOs the same way, under the same rules. It may be empty until
+//!   the first action merges. (The controller's amendment for #508.)
 //!
 //! No test here needs a database.
 
@@ -20,7 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use xchange::presentation::dto::v3::common;
-use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::http::v3::{ACTIONS, VIEWS};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -67,6 +71,9 @@ fn export_everything(dir: &Path) {
     for view in VIEWS {
         (view.export_types)(dir).unwrap_or_else(|e| panic!("export view {}: {e}", view.name));
     }
+    for action in ACTIONS {
+        (action.export_types)(dir).unwrap_or_else(|e| panic!("export action {}: {e}", action.name));
+    }
 }
 
 /// `XC_UPDATE_GENERATED=1 cargo test --test v3_types_test` rewrites the
@@ -109,7 +116,7 @@ fn the_committed_types_are_what_the_rust_dtos_generate() {
 #[test]
 fn each_view_writes_only_its_own_file_and_common() {
     assert!(!VIEWS.is_empty(), "the view table is empty");
-    for view in VIEWS {
+    for view in VIEWS.iter().chain(ACTIONS) {
         let scratch = Scratch::new();
         (view.export_types)(&scratch.0).unwrap_or_else(|e| panic!("export {}: {e}", view.name));
         let files = ts_files(&scratch.0);

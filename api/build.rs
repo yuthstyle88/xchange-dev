@@ -189,4 +189,46 @@ fn main() {
     views_code.push_str("];\n");
     std::fs::write(Path::new(&out_dir).join("v3_views.rs"), views_code).expect("write v3_views.rs");
     println!("cargo:rerun-if-changed=src/presentation/http/v3/views");
+
+    // Generate v3 actions table (§12.20.3)
+    let actions_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/presentation/http/v3/actions");
+    let mut action_files = Vec::new();
+    if actions_dir.exists() {
+        for entry in std::fs::read_dir(&actions_dir).expect("read http/v3/actions") {
+            let path = entry.expect("action entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                action_files.push((name, content));
+            }
+        }
+    }
+    let action_refs: Vec<(&str, &str)> = action_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let action_table =
+        views_gen::views_table(&action_refs).expect("views_table failed for actions");
+    views_gen::disjoint(&view_table, &action_table).expect("views and actions must be disjoint");
+    let mut actions_code = String::new();
+    for a in &action_table {
+        let file_path = actions_dir.join(&a.file);
+        actions_code.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n",
+            file_path.to_str().unwrap(),
+            a.module
+        ));
+    }
+    actions_code.push_str("pub const ACTIONS: &[ViewEntry] = &[\n");
+    for a in &action_table {
+        actions_code.push_str(&format!(
+            "    ViewEntry {{\n        name: {:?},\n        register: {}::register,\n        export_types: {}::export_types,\n    }},\n",
+            a.module, a.module, a.module
+        ));
+    }
+    actions_code.push_str("];\n");
+    std::fs::write(Path::new(&out_dir).join("v3_actions.rs"), actions_code)
+        .expect("write v3_actions.rs");
+    println!("cargo:rerun-if-changed=src/presentation/http/v3/actions");
 }
