@@ -38,6 +38,80 @@ const SELECT_QUOTED: &str = select_requests!("status = $2");
 const SELECT_QUEUE: &str =
     select_requests!("status <> $2 ORDER BY created_at DESC, id DESC LIMIT $3");
 
+macro_rules! queue_queries {
+    (@sql $pred:literal, $keyset:literal, $limit:literal) => {
+        concat!(
+            "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+             foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+             started_at, completed_at \
+             FROM kiosk_requests WHERE branch_id = $1 AND ",
+            $pred,
+            $keyset,
+            " ORDER BY created_at DESC, id DESC LIMIT ",
+            $limit
+        )
+    };
+    ($(($page:ident, $first:ident, $before:ident, $pred:literal)),* $(,)?) => {
+        $(
+            const $page: &str = queue_queries!(@sql $pred, "", "51 OFFSET $2");
+            const $first: &str = queue_queries!(@sql $pred, "", "$2");
+            const $before: &str = queue_queries!(
+                @sql $pred,
+                " AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2)",
+                "$3"
+            );
+        )*
+    };
+}
+
+queue_queries!(
+    (
+        SELECT_QUEUE_PAGE_ALL,
+        SELECT_QUEUE_FIRST_ALL,
+        SELECT_QUEUE_BEFORE_ALL,
+        "status <> 'QUOTED'"
+    ),
+    (
+        SELECT_QUEUE_PAGE_WAITING,
+        SELECT_QUEUE_FIRST_WAITING,
+        SELECT_QUEUE_BEFORE_WAITING,
+        "status = 'WAITING'"
+    ),
+    (
+        SELECT_QUEUE_PAGE_WORKING,
+        SELECT_QUEUE_FIRST_WORKING,
+        SELECT_QUEUE_BEFORE_WORKING,
+        "status IN ('ACCEPTED', 'ID_CHECKED')"
+    ),
+    (
+        SELECT_QUEUE_PAGE_COMPLETED,
+        SELECT_QUEUE_FIRST_COMPLETED,
+        SELECT_QUEUE_BEFORE_COMPLETED,
+        "status = 'COMPLETED'"
+    ),
+);
+
+/// The statuses each queue filter reads. `All` = every status but QUOTED (the CHECK of
+/// 20261007170000_kiosk.sql allows exactly these five).
+pub fn queue_statuses(filter: QueueFilter) -> &'static [&'static str] {
+    match filter {
+        QueueFilter::All => &["WAITING", "ACCEPTED", "ID_CHECKED", "COMPLETED"],
+        QueueFilter::Waiting => &["WAITING"],
+        QueueFilter::Working => &["ACCEPTED", "ID_CHECKED"],
+        QueueFilter::Completed => &["COMPLETED"],
+    }
+}
+
+/// The literal SQL status predicate for each queue filter.
+pub fn queue_predicate(filter: QueueFilter) -> &'static str {
+    match filter {
+        QueueFilter::All => "status <> 'QUOTED'",
+        QueueFilter::Waiting => "status = 'WAITING'",
+        QueueFilter::Working => "status IN ('ACCEPTED', 'ID_CHECKED')",
+        QueueFilter::Completed => "status = 'COMPLETED'",
+    }
+}
+
 #[derive(sqlx::FromRow)]
 struct RequestRow {
     id: String,
@@ -374,37 +448,13 @@ impl KioskRepository for PgKioskRepository {
         page: u32,
     ) -> AppResult<Vec<(KioskRequest, WorkTimes)>> {
         let offset = (page as i64) * 50;
-        let query_str = match filter {
-            QueueFilter::All => {
-                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                 started_at, completed_at \
-                 FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
-                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
-            }
-            QueueFilter::Waiting => {
-                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                 started_at, completed_at \
-                 FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
-                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
-            }
-            QueueFilter::Working => {
-                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                 started_at, completed_at \
-                 FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
-                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
-            }
-            QueueFilter::Completed => {
-                "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                 foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                 started_at, completed_at \
-                 FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
-                 ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET $2"
-            }
+        let sql = match filter {
+            QueueFilter::All => SELECT_QUEUE_PAGE_ALL,
+            QueueFilter::Waiting => SELECT_QUEUE_PAGE_WAITING,
+            QueueFilter::Working => SELECT_QUEUE_PAGE_WORKING,
+            QueueFilter::Completed => SELECT_QUEUE_PAGE_COMPLETED,
         };
-        let rows = sqlx::query_as::<_, QueueRow>(query_str)
+        let rows = sqlx::query_as::<_, QueueRow>(sql)
             .bind(branch.as_str())
             .bind(offset)
             .fetch_all(&self.pool)
@@ -423,38 +473,10 @@ impl KioskRepository for PgKioskRepository {
     ) -> AppResult<Vec<(KioskRequest, WorkTimes)>> {
         let rows = if let Some(before_id) = before {
             let sql = match filter {
-                QueueFilter::All => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
-                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
-                     ORDER BY created_at DESC, id DESC LIMIT $3"
-                }
-                QueueFilter::Waiting => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
-                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
-                     ORDER BY created_at DESC, id DESC LIMIT $3"
-                }
-                QueueFilter::Working => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
-                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
-                     ORDER BY created_at DESC, id DESC LIMIT $3"
-                }
-                QueueFilter::Completed => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
-                     AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2) \
-                     ORDER BY created_at DESC, id DESC LIMIT $3"
-                }
+                QueueFilter::All => SELECT_QUEUE_BEFORE_ALL,
+                QueueFilter::Waiting => SELECT_QUEUE_BEFORE_WAITING,
+                QueueFilter::Working => SELECT_QUEUE_BEFORE_WORKING,
+                QueueFilter::Completed => SELECT_QUEUE_BEFORE_COMPLETED,
             };
             sqlx::query_as::<_, QueueRow>(sql)
                 .bind(branch.as_str())
@@ -464,34 +486,10 @@ impl KioskRepository for PgKioskRepository {
                 .await?
         } else {
             let sql = match filter {
-                QueueFilter::All => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status <> 'QUOTED' \
-                     ORDER BY created_at DESC, id DESC LIMIT $2"
-                }
-                QueueFilter::Waiting => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'WAITING' \
-                     ORDER BY created_at DESC, id DESC LIMIT $2"
-                }
-                QueueFilter::Working => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
-                     ORDER BY created_at DESC, id DESC LIMIT $2"
-                }
-                QueueFilter::Completed => {
-                    "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-                     foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-                     started_at, completed_at \
-                     FROM kiosk_requests WHERE branch_id = $1 AND status = 'COMPLETED' \
-                     ORDER BY created_at DESC, id DESC LIMIT $2"
-                }
+                QueueFilter::All => SELECT_QUEUE_FIRST_ALL,
+                QueueFilter::Waiting => SELECT_QUEUE_FIRST_WAITING,
+                QueueFilter::Working => SELECT_QUEUE_FIRST_WORKING,
+                QueueFilter::Completed => SELECT_QUEUE_FIRST_COMPLETED,
             };
             sqlx::query_as::<_, QueueRow>(sql)
                 .bind(branch.as_str())
@@ -679,5 +677,81 @@ impl KioskRepository for PgKioskRepository {
         .execute(&mut **tx)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_DB_STATUSES: &[&str] = &["QUOTED", "WAITING", "ACCEPTED", "ID_CHECKED", "COMPLETED"];
+
+    #[test]
+    fn each_const_predicate_matches_queue_statuses() {
+        let filters = [
+            (
+                QueueFilter::All,
+                SELECT_QUEUE_PAGE_ALL,
+                SELECT_QUEUE_FIRST_ALL,
+                SELECT_QUEUE_BEFORE_ALL,
+            ),
+            (
+                QueueFilter::Waiting,
+                SELECT_QUEUE_PAGE_WAITING,
+                SELECT_QUEUE_FIRST_WAITING,
+                SELECT_QUEUE_BEFORE_WAITING,
+            ),
+            (
+                QueueFilter::Working,
+                SELECT_QUEUE_PAGE_WORKING,
+                SELECT_QUEUE_FIRST_WORKING,
+                SELECT_QUEUE_BEFORE_WORKING,
+            ),
+            (
+                QueueFilter::Completed,
+                SELECT_QUEUE_PAGE_COMPLETED,
+                SELECT_QUEUE_FIRST_COMPLETED,
+                SELECT_QUEUE_BEFORE_COMPLETED,
+            ),
+        ];
+
+        for (filter, page_sql, first_sql, before_sql) in filters {
+            let pred = queue_predicate(filter);
+            let expected_statuses = queue_statuses(filter);
+
+            // 1. Verify all 3 queries contain the exact predicate written beside queue_statuses
+            for sql in [page_sql, first_sql, before_sql] {
+                assert!(
+                    sql.contains(pred),
+                    "Query {sql} must contain predicate {pred}"
+                );
+            }
+
+            // 2. Verify that evaluating the SQL predicate over all database statuses
+            // matches the statuses defined in queue_statuses.
+            let matched_statuses: Vec<&str> = ALL_DB_STATUSES
+                .iter()
+                .copied()
+                .filter(|&status| {
+                    if pred == "status <> 'QUOTED'" {
+                        status != "QUOTED"
+                    } else if let Some(exact) = pred
+                        .strip_prefix("status = '")
+                        .and_then(|s| s.strip_suffix('\''))
+                    {
+                        status == exact
+                    } else if pred.starts_with("status IN (") {
+                        pred.contains(&format!("'{status}'"))
+                    } else {
+                        panic!("unrecognized predicate format: {pred}");
+                    }
+                })
+                .collect();
+
+            assert_eq!(
+                matched_statuses, expected_statuses,
+                "Predicate '{pred}' must match queue_statuses for {filter:?}"
+            );
+        }
     }
 }
