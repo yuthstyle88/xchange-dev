@@ -336,7 +336,10 @@ describe('LoginScreen — signing in (#396 L10, §9)', () => {
     submitButton(host).click();
     await settle();
     expect(fetched.length).toBeGreaterThan(0);
-    for (const url of fetched) expect(url).toMatch(/\/health\/ready$/);
+    // Ignore the shell's /api/v3/views/me request from AccountBar/session (#402),
+    // which only appears in the fetch log if this test runs first in the file.
+    const screenUrls = fetched.filter((url) => !/\/api\/v3\/views\/me(\?|$)/.test(url));
+    for (const url of screenUrls) expect(url).toMatch(/\/health\/ready$/);
   });
 });
 

@@ -240,7 +240,10 @@ describe('V1-staff-guide: the screen', () => {
     await settle();
     const urls = fetchMock.mock.calls.map((call) => String((call as unknown[])[0]));
     expect(urls.length).toBeGreaterThan(0);
-    for (const url of urls) expect(url).toMatch(/\/health\/ready$/);
+    // Ignore the shell's /api/v3/views/me request from AccountBar/session (#402),
+    // which only appears in the fetch log if this test runs first in the file.
+    const screenUrls = urls.filter((url) => !/\/api\/v3\/views\/me(\?|$)/.test(url));
+    for (const url of screenUrls) expect(url).toMatch(/\/health\/ready$/);
   });
 
   it('ignores a query string: ?branch=X shows the same guide (§9)', async () => {
