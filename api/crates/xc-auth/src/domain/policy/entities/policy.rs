@@ -35,6 +35,7 @@ impl Policy {
             EntryPath::PaymentMethods => Self::allow_payment_methods(actor, action),
             EntryPath::DrawerPassport => Self::allow_drawer_passport(actor),
             EntryPath::DeviceSetup => Self::allow_owner_route(actor),
+            EntryPath::StaffBookings => Self::allow_staff_bookings(actor, action),
         }
     }
 
@@ -362,6 +363,32 @@ impl Policy {
             Ok(())
         } else {
             Err(PolicyError::DrawerRoleNotAllowed)
+        }
+    }
+
+    // ── StaffBookings ────────────────────────────────────────────────────────
+
+    fn allow_staff_bookings(actor: Option<&Actor>, action: &Action) -> Result<(), PolicyError> {
+        let Some(actor) = actor else {
+            return Err(PolicyError::EmployeeAuthRequired);
+        };
+        if actor.kind() == ActorKind::Owner {
+            return Err(PolicyError::EmployeeAuthRequired);
+        }
+
+        let role = actor.role();
+        match role {
+            Role::Front | Role::Backend | Role::Manager => {
+                let act = action.as_str();
+                match act {
+                    "list" | "get" | "create" | "confirm" | "cancel" => Ok(()),
+                    "member" | "settings" | "registrations" | "approveRegistration" => {
+                        Err(PolicyError::OwnerOnly)
+                    }
+                    _ => Err(PolicyError::InvalidRequest),
+                }
+            }
+            _ => Err(PolicyError::RoleNotAllowed),
         }
     }
 
