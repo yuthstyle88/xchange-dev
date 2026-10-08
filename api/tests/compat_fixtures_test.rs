@@ -119,9 +119,11 @@ fn the_files_really_use_nested_references() {
     let raw: Value =
         serde_json::from_str(&std::fs::read_to_string(path).expect("read")).expect("JSON");
     let shared = raw["shared"].as_object().expect("the shared table");
-    assert_eq!(shared.len(), 417);
+    // 417 and 115 in the recording of the 10-05 bundle; the 10-06 one shares the payment
+    // rows of `adminDeskConfig` as two more values, one of them holding the other (row PM-D)
+    assert_eq!(shared.len(), 419);
     let nested = shared.values().filter(|v| has_shared_reference(v)).count();
-    assert_eq!(nested, 115);
+    assert_eq!(nested, 116);
     let written = raw["steps"].as_array().expect("steps");
     assert!(written.iter().any(|s| has_shared_reference(&s["body"])));
 }
@@ -281,12 +283,13 @@ fn steps_are_found_by_view() {
 #[test]
 fn the_text_of_a_body_is_v2s_own() {
     // Sizes measured on v2 when the fixtures were recorded: the owner's snapshot of
-    // an empty shop is 26,973 bytes, the desk configuration 26,761, and what a
-    // SYSTEM employee is shown on the staff path 1,295.
+    // an empty shop is 26,973 bytes, the desk configuration 27,328 (26,761 before the
+    // 10-06 bundle added `paymentMethods`, row PM-D), and what a SYSTEM employee is
+    // shown on the staff path 1,295.
     let empty = Fixture::load("snapshot/empty.json");
     for (n, action, route, bytes) in [
         (1, "adminSnapshot", "/api/rpc", 26_973),
-        (2, "adminDeskConfig", "/api/rpc", 26_761),
+        (2, "adminDeskConfig", "/api/rpc", 27_328),
         (31, "adminSnapshot", "/api/staff/rpc", 1_295),
     ] {
         let step = empty.step(n);

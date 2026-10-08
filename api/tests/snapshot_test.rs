@@ -51,13 +51,15 @@ const SNAPSHOT_KEYS: [&str; 15] = [
     "operations",
 ];
 
-const DESK_KEYS: [&str; 6] = [
+/// v2's keys in v2's order; `paymentMethods` since the 10-06 bundle (`server.mjs:7047`, row PM-D).
+const DESK_KEYS: [&str; 7] = [
     "branchId",
     "branchName",
     "rates",
     "activeShift",
     "adminUrl",
     "operations",
+    "paymentMethods",
 ];
 
 const INITIAL_OPERATIONS: &str = concat!(

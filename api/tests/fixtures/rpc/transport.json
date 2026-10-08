@@ -1,5 +1,5 @@
 {
- "source": "v2 server.mjs (xchange-online@3ffc5a5) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_compat.mjs",
+ "source": "v2 server.mjs of the 10-06 bundle (xchange-online@3ffc5a5 with the add-ons of XC-Desk-v2-Passport-Drawer-20261006.zip) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_compat.mjs",
  "about": "What both RPC routes do with a request before any action runs: the two headers of the same-origin rule, who is signed in, the method, a body that is not what the screens send, and the size limit.",
  "reading": "A step is one request. `at` is the server clock when it arrived; a step with `view` is a read taken at the clock of the step before it. `body` is the JSON v2 answered; wherever {\"$shared\":\"sN\"} stands, put `shared.sN` there (recursively) and serialise without spaces, keys in the order written: those are v2's bytes. `headers` is written only where it differs from `defaultHeaders`. `text` replaces `body` when the answer was not JSON.",
  "origin": "http://desk.test", "defaultHeaders": {"cache-control":"no-store","content-type":"application/json"},

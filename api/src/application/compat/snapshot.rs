@@ -41,6 +41,7 @@ use crate::application::compat::v2_json::{
     V2Json, branches_json, customers_json, money_json, movements_json, operations_json,
     rate_history_json, rate_json, rates_json, shifts_json, time_json, time_or_empty_json,
 };
+use crate::application::settings::rules_v2_json;
 
 /// The method v2 wrote before it had `Bank Transfer`, and read back as that.
 const OLD_TRANSFER_METHOD: &str = "SCB Transfer";
@@ -136,7 +137,7 @@ impl SnapshotBuilder {
     }
 
     /// v2's `adminDeskConfig` for `branch`: `{branchId, branchName, rates,
-    /// activeShift, adminUrl, operations}` — `rates` and `operations` are the
+    /// activeShift, adminUrl, operations, paymentMethods}` — `rates` and `operations` are the
     /// snapshot's, `activeShift` is the open shift's id or `null`.
     ///
     /// A branch that does not exist is refused with `ไม่พบสาขาที่เลือก กรุณารีเฟรช`.
@@ -145,6 +146,7 @@ impl SnapshotBuilder {
         let rates = self.rates.current(branch).await?;
         let active = self.shifts.active(branch).await?;
         let operations = self.operations(branch).await?;
+        let rules = self.sources.payment_rules(branch).await?;
         let branch_id = here.id.as_str();
 
         Ok(V2Json::object(vec![
@@ -160,6 +162,7 @@ impl SnapshotBuilder {
                 V2Json::text(format!("/?branch={}", uri_component(branch_id))),
             ),
             ("operations", operations),
+            ("paymentMethods", rules_v2_json(&rules, true)),
         ]))
     }
 

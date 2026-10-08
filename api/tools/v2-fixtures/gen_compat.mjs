@@ -4,12 +4,19 @@
 //   node gen_compat.mjs <v2 bundle dir> <postgres url of a scratch database> [out dir]
 //   out dir defaults to ../../tests/fixtures; it gets snapshot/*.json and rpc/*.json
 //
-// Unlike its neighbours this script runs the WHOLE deployed bundle (`server.mjs`,
-// `xchange-online@3ffc5a5`, with `schema.sql` beside it) against a real PostgreSQL, so every
+// Unlike its neighbours this script runs the WHOLE bundle (`server.mjs` with `schema.sql`
+// beside it) against a real PostgreSQL, so every
 // answer below went through v2's own `handle(request)`: the route table, the session
 // look-up, the staff bridge, the save hooks, the ledger (`execute`), v2's own SQL through
 // its own driver, and the engine. The bundle is not in this repository and nothing of it is
 // copied here; this file holds slice markers, payloads and the sentences v2 is expected to say.
+//
+// Which bundle: the 10-06 one (`XC-Desk-v2-Passport-Drawer-20261006.zip`, sha256 6514b4c8…4375f570;
+// `server.mjs` sha256 99ddcd10…8a1b0b; design §5.5). Its `server.mjs` imports three add-on modules
+// from beside itself (`payment-settings.mjs`, `queue-work.mjs`, `passport-drawer.mjs`); they are
+// copied, unchanged, next to the rewritten `server.mjs` in the scratch directory. Against the
+// 10-05 bundle, which has none of them, the only difference in these files is that every
+// `adminDeskConfig` answer lacks `paymentMethods` (measured 2026-10-07, row PM-D).
 //
 // The database: the script creates the schema `xc_compat_fixture` in the database named,
 // applies v2's `schema.sql` to it, drops it again for every scenario and at the end. Nothing
@@ -93,6 +100,11 @@ async function load() {
   if ((body.match(/globalThis\.__XC_COMPAT\.crypto/g) || []).length !== 9) throw Error('server.mjs: expected nine crypto imports in v2\'s own modules');
   src = 'const Date = globalThis.__XC_COMPAT.Date, fetch = globalThis.__XC_COMPAT.fetch, console = { log() {}, error() {}, warn() {} };\n' + head + body + '\nexport { handle, pool };\n';
   fs.writeFileSync(path.join(work, 'server.mjs'), src);
+  // the 10-06 bundle's add-on modules, imported from beside server.mjs; copied unchanged
+  for (const name of ['payment-settings.mjs', 'queue-work.mjs', 'passport-drawer.mjs']) {
+    if (!src.includes('"./' + name + '"')) throw Error('server.mjs does not import ./' + name + ': is this the 10-06 bundle?');
+    fs.copyFileSync(path.join(bundleDir, name), path.join(work, name));
+  }
   const url = new URL(databaseUrl);
   url.searchParams.set('options', '-c search_path=' + SCHEMA);
   Object.assign(process.env, { DATABASE_URL: url.toString(), UPLOAD_DIR: uploads, BOOKING_BRIDGE_SECRET: 'fixture-bridge-secret-0123456789abcdef', AUTH_ENABLED: '1', DEVICES_ENABLED: '1', CUSTOMER_HOST: 'customer.test', PORT: '0' });
@@ -365,9 +377,14 @@ async function checkWrite(w, as, action, payload, json) {
   same(answer, rest, action + ' answers with the snapshot');
   claims.writeAnswersAreTheSnapshot++;
 }
-/** Claim 2: the desk config is five values taken from the snapshot, plus the same `operations`. */
+/** Claim 2: the desk config is five values taken from the snapshot, plus the same `operations`,
+ *  plus the branch's payment rows (`server.mjs:7047` of the 10-06 bundle). No scenario saves
+ *  payment settings, so they are v2's defaults: five rows, in the module's order. */
+const PAYMENT_IDS = ['Cash', 'Credit Card', 'Alipay', 'PromptPay', 'Bank Transfer'];
 function checkDesk(snap, desk) {
-  same(desk, { branchId: snap.branchId, branchName: snap.branches.find((b) => b.id === snap.branchId).name, rates: snap.rates, activeShift: snap.stock.shifts.find((s) => s.status === 'OPEN')?.id || null, adminUrl: '/?branch=' + encodeURIComponent(snap.branchId), operations: snap.operations }, 'adminDeskConfig is part of adminSnapshot');
+  if (!Array.isArray(desk.paymentMethods)) throw Error('claim does not hold: adminDeskConfig carries paymentMethods');
+  same(desk.paymentMethods.map((r) => r.id), PAYMENT_IDS, 'paymentMethods are the five channels');
+  same(desk, { branchId: snap.branchId, branchName: snap.branches.find((b) => b.id === snap.branchId).name, rates: snap.rates, activeShift: snap.stock.shifts.find((s) => s.status === 'OPEN')?.id || null, adminUrl: '/?branch=' + encodeURIComponent(snap.branchId), operations: snap.operations, paymentMethods: desk.paymentMethods }, 'adminDeskConfig is part of adminSnapshot');
   claims.deskConfigIsPartOfTheSnapshot++;
 }
 /** Claim 3: what the staff bridge does to the answer of `/api/rpc` (server.mjs:7444-7459). */
@@ -426,7 +443,7 @@ function fileText(w) {
   };
   const inner = (v) => Array.isArray(v) ? '[' + v.map(put).join(',') + ']' : '{' + Object.entries(v).map(([k, x]) => { if (k === '$shared') throw Error('v2 used the key $shared'); return JSON.stringify(k) + ':' + put(x); }).join(',') + '}';
   const lines = w.steps.map((s) => { const { body, ...rest } = s; const head = JSON.stringify(rest); return '  ' + (body === undefined ? head : head.slice(0, -1) + ',"body":' + put(body) + '}'); });
-  const out = '{\n "source": ' + JSON.stringify('v2 server.mjs (xchange-online@3ffc5a5) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_compat.mjs') + ',\n'
+  const out = '{\n "source": ' + JSON.stringify('v2 server.mjs of the 10-06 bundle (xchange-online@3ffc5a5 with the add-ons of XC-Desk-v2-Passport-Drawer-20261006.zip) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_compat.mjs') + ',\n'
     + ' "about": ' + JSON.stringify(w.about) + ',\n'
     + ' "reading": ' + JSON.stringify('A step is one request. `at` is the server clock when it arrived; a step with `view` is a read taken at the clock of the step before it. `body` is the JSON v2 answered; wherever {"$shared":"sN"} stands, put `shared.sN` there (recursively) and serialise without spaces, keys in the order written: those are v2\'s bytes. `headers` is written only where it differs from `defaultHeaders`. `text` replaces `body` when the answer was not JSON.') + ',\n'
     + ' "origin": ' + JSON.stringify(ORIGIN) + ', "defaultHeaders": ' + JSON.stringify(DEFAULT_HEADERS) + ',\n'

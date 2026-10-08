@@ -21,6 +21,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Money, Rate, Side};
+use xc_kernel::payment::PaymentRules;
 
 use crate::application::compat::v2_json::People;
 
@@ -85,6 +86,11 @@ pub trait SnapshotSources: Send + Sync {
     /// Every person of `branch` by employee id — disabled accounts included —
     /// with the display name and the account's role as v2 spells it.
     fn people<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, People>;
+
+    /// The payment rules of `branch`. Default answers `PaymentRules::defaults()`.
+    fn payment_rules<'a>(&'a self, _branch: &'a BranchId) -> SourceFuture<'a, PaymentRules> {
+        Box::pin(async { Ok(PaymentRules::defaults()) })
+    }
 }
 
 /// The sources before any of the three has landed: no exchange, no member,

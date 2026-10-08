@@ -7,9 +7,10 @@
 //!   accounts included: a custody row names its sender long after the account
 //!   is closed;
 //! - nobody is a member: the members decision (D5) is not taken, so there is no
-//!   table to read. When it lands, `members` is the one method to fill in.
+//!   table to read. When it lands, `members` is the one method to fill in;
+//! - the payment rules of a branch come from `PaymentSettingsService`.
 //!
-//! No SQL here: both services keep theirs behind their own repositories.
+//! No SQL here: all services keep theirs behind their own repositories.
 
 use chrono::Utc;
 use pos_error::AppError;
@@ -20,11 +21,15 @@ use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::ids::BranchId;
+use xc_kernel::payment::PaymentRules;
+use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 
 use crate::application::compat::snapshot_sources::{
     MemberMark, SnapshotSources, SnapshotTransaction, SourceFuture,
 };
 use crate::application::compat::v2_json::{People, PersonLabel};
+use crate::application::settings::payment_settings::PaymentSettingsService;
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 
 /// Who the employee list is read as. Reading writes no audit row; the name
 /// only says where the question came from.
@@ -35,6 +40,7 @@ const READER: &str = "snapshot";
 pub struct ServiceSnapshotSources {
     transactions: TransactionService,
     accounts: AccountService<PgAccountRepository>,
+    payment_settings: PaymentSettingsService,
 }
 
 impl ServiceSnapshotSources {
@@ -42,9 +48,15 @@ impl ServiceSnapshotSources {
         transactions: TransactionService,
         accounts: AccountService<PgAccountRepository>,
     ) -> Self {
+        let branch_tx = transactions.branch_tx().clone();
+        let pool = branch_tx.pool().clone();
+        let store = BranchSettingStore::new(pool.clone());
+        let branches = PgBranchRepository::new(pool);
+        let payment_settings = PaymentSettingsService::new(branch_tx, store, branches);
         Self {
             transactions,
             accounts,
+            payment_settings,
         }
     }
 }
@@ -120,5 +132,9 @@ impl SnapshotSources for ServiceSnapshotSources {
                 })
                 .collect())
         })
+    }
+
+    fn payment_rules<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, PaymentRules> {
+        Box::pin(async move { self.payment_settings.rules(branch).await })
     }
 }
