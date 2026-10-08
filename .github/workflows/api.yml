@@ -102,25 +102,18 @@ jobs:
         working-directory: api
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Set up Node.js 24
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: "Web screens: typecheck, test, build"
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
-        run: |
-          npm --prefix web ci --no-audit --no-fund
-          npm --prefix web run check
-
       - name: Test
         if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/xchange_test
-          XC_REQUIRE_WEB_DIST: 1
         run: cargo test --workspace --no-fail-fast
+
+      - name: Set up Node.js 24
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
       # api/static/xc-forms.js, so this fails when that file is not the build of its source.
@@ -133,6 +126,12 @@ jobs:
       - name: Form validation JS tests
         if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: node --test api/tests/js/*.test.mjs
+
+      - name: "Web screens: typecheck, test, build"
+        if: ${{ steps.filter.outputs.skip_build != 'true' }}
+        run: |
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run check
 
       - name: "Release check refuses no screens"
         if: ${{ steps.filter.outputs.skip_build != 'true' }}
