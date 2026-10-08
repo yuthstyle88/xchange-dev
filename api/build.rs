@@ -67,6 +67,9 @@ fn get_built_at() -> String {
 #[path = "build_support/screens.rs"]
 mod screens;
 
+#[path = "build_support/views.rs"]
+mod views_gen;
+
 use std::path::Path;
 
 fn main() {
@@ -119,4 +122,72 @@ fn main() {
     std::fs::write(&dest_path, code).expect("failed to write v3_screens.rs");
 
     println!("cargo:rerun-if-changed=../web/dist");
+
+    // Generate v3 DTO modules (§7.7b)
+    let dto_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/presentation/dto/v3");
+    let mut dto_files = Vec::new();
+    if dto_dir.exists() {
+        for entry in std::fs::read_dir(&dto_dir).expect("read dto/v3") {
+            let path = entry.expect("dto entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                dto_files.push((name, content));
+            }
+        }
+    }
+    let dto_refs: Vec<(&str, &str)> = dto_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let dto_modules = views_gen::dto_modules(&dto_refs).expect("dto_modules failed");
+    let mut dtos_code = String::new();
+    for m in &dto_modules {
+        let file_path = dto_dir.join(format!("{m}.rs"));
+        dtos_code.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n",
+            file_path.to_str().unwrap(),
+            m
+        ));
+    }
+    std::fs::write(Path::new(&out_dir).join("v3_dtos.rs"), dtos_code).expect("write v3_dtos.rs");
+    println!("cargo:rerun-if-changed=src/presentation/dto/v3");
+
+    // Generate v3 views table (§7.7)
+    let views_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/presentation/http/v3/views");
+    let mut view_files = Vec::new();
+    if views_dir.exists() {
+        for entry in std::fs::read_dir(&views_dir).expect("read http/v3/views") {
+            let path = entry.expect("view entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                view_files.push((name, content));
+            }
+        }
+    }
+    let view_refs: Vec<(&str, &str)> = view_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let view_table = views_gen::views_table(&view_refs).expect("views_table failed");
+    let mut views_code = String::new();
+    for v in &view_table {
+        let file_path = views_dir.join(&v.file);
+        views_code.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n",
+            file_path.to_str().unwrap(),
+            v.module
+        ));
+    }
+    views_code.push_str("pub const VIEWS: &[ViewEntry] = &[\n");
+    for v in &view_table {
+        views_code.push_str(&format!(
+            "    ViewEntry {{\n        name: {:?},\n        register: {}::register,\n        export_types: {}::export_types,\n    }},\n",
+            v.module, v.module, v.module
+        ));
+    }
+    views_code.push_str("];\n");
+    std::fs::write(Path::new(&out_dir).join("v3_views.rs"), views_code).expect("write v3_views.rs");
+    println!("cargo:rerun-if-changed=src/presentation/http/v3/views");
 }

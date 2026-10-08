@@ -1,0 +1,137 @@
+#![allow(dead_code)]
+
+//! Pure build-support functions for generating v3 view and DTO tables (§7.7, §7.7b).
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewDecl {
+    pub module: String,
+    pub file: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ViewTableError {
+    NotAModuleName { file: String },
+    MissingRegister { file: String },
+    MissingExportTypes { file: String },
+}
+
+fn is_rust_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "dyn"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+    )
+}
+
+fn is_valid_module_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    if !chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+        return false;
+    }
+    !is_rust_keyword(name)
+}
+
+/// (file name, source) of each file in http/v3/views/ → the views, sorted by module.
+pub fn views_table(files: &[(&str, &str)]) -> Result<Vec<ViewDecl>, ViewTableError> {
+    let mut decls = Vec::new();
+    for &(file, source) in files {
+        if !file.ends_with(".rs") {
+            continue;
+        }
+        let module = &file[..file.len() - 3];
+        if !is_valid_module_name(module) {
+            return Err(ViewTableError::NotAModuleName {
+                file: file.to_owned(),
+            });
+        }
+        if !source.contains("pub fn register(") {
+            return Err(ViewTableError::MissingRegister {
+                file: file.to_owned(),
+            });
+        }
+        if !source.contains("pub fn export_types(") {
+            return Err(ViewTableError::MissingExportTypes {
+                file: file.to_owned(),
+            });
+        }
+        decls.push(ViewDecl {
+            module: module.to_owned(),
+            file: file.to_owned(),
+        });
+    }
+    decls.sort_by(|a, b| a.module.cmp(&b.module));
+    Ok(decls)
+}
+
+/// (file name, source) of each file in dto/v3/ → the module names, sorted. `mod.rs` and non-`.rs` files are ignored.
+pub fn dto_modules(files: &[(&str, &str)]) -> Result<Vec<String>, ViewTableError> {
+    let mut modules = Vec::new();
+    for &(file, _source) in files {
+        if file == "mod.rs" || !file.ends_with(".rs") {
+            continue;
+        }
+        let module = &file[..file.len() - 3];
+        if !is_valid_module_name(module) {
+            return Err(ViewTableError::NotAModuleName {
+                file: file.to_owned(),
+            });
+        }
+        modules.push(module.to_owned());
+    }
+    modules.sort();
+    Ok(modules)
+}

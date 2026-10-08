@@ -44,6 +44,13 @@ export class ApiClient {
     try {
       const json = JSON.parse(text);
       if (json && typeof json === 'object' && json.error) {
+        if (typeof json.error === 'string') {
+          throw new ApiError({
+            code: 'refused',
+            message: json.error,
+            status: res.status,
+          });
+        }
         throw new ApiError({
           code: json.error.code ?? 'unknown',
           field: json.error.field,
@@ -129,5 +136,28 @@ export class ApiClient {
     }
 
     return (await res.json()) as R;
+  }
+
+  post<B, R>(path: string, body: B): Promise<R> {
+    if (!path.startsWith('/api/') || path.startsWith('/api/v3/')) {
+      throw new Error(`Invalid path for post: ${path}`);
+    }
+    return (async () => {
+      const res = await this.fetchFn(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'x-xchange-request': '1',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        await this.parseError(res);
+      }
+
+      return (await res.json()) as R;
+    })();
   }
 }

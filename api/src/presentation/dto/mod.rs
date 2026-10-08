@@ -10,3 +10,4 @@ pub mod kiosk;
 pub mod payment_methods;
 pub mod shift;
 pub mod transaction;
+pub mod v3;
