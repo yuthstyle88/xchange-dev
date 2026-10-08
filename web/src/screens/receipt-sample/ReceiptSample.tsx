@@ -19,7 +19,7 @@ export function ReceiptSample(props: { print?: () => void }): JSX.Element {
   };
 
   return (
-    <AppShell title="XCHANGE • Exchange Ticket">
+    <AppShell title="XCHANGE • Exchange Ticket" ownsMain>
       <p class="screen-heading">XCHANGE / EXCHANGE TICKET</p>
       <main class="receipt" aria-label="Exchange transaction receipt">
         <section class="main-ticket">

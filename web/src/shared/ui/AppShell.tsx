@@ -14,6 +14,7 @@ export function AppShell(props: {
   title: string;
   nav?: JSX.Element;
   children?: JSX.Element;
+  ownsMain?: boolean;
 }): JSX.Element {
   const [ready, setReady] = createSignal<ReadyData | undefined>(undefined);
 
@@ -44,12 +45,16 @@ export function AppShell(props: {
   return (
     <div>
       <header>
-        <h1>{props.title}</h1>
         {props.nav}
+        <h1>{props.title}</h1>
         <LangSwitch />
         <AccountBar session={sharedSession()} />
       </header>
-      <main>{props.children}</main>
+      {props.ownsMain ? (
+        <div class="xc-content">{props.children}</div>
+      ) : (
+        <main>{props.children}</main>
+      )}
       <footer>
         {ready() && (
           <div>
