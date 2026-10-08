@@ -20,6 +20,8 @@ const EMPLOYEE_DATA: &str = "ข้อมูลพนักงานไม่ค
 const NOT_FOUND: &str = "ไม่พบพนักงาน";
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const MUST_CHANGE: &str = "กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน";
+const CURRENT_WRONG: &str = "รหัสผ่านปัจจุบันไม่ถูกต้อง";
+const SAME_PASSWORD: &str = "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน";
 
 const ROLES: &[&str] = &[
     "FRONT",
@@ -38,6 +40,10 @@ fn sha256_hex(text: &str) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+fn user_attempt_key(username: &str) -> String {
+    sha256_hex(&format!("USER:{username}"))
 }
 
 fn generate_token() -> String {
@@ -226,7 +232,7 @@ impl<R: AccountRepository> AccountService<R> {
         }
 
         // (3) name counter + 1, refused with LIMIT if above 10
-        let name_key = sha256_hex(&format!("USER:{username}"));
+        let name_key = user_attempt_key(&username);
         let name_count = self.repo.increment_attempt(&name_key, win).await?;
         if name_count > 10 {
             return Err(AppError::Domain(LIMIT.to_string()));
@@ -357,10 +363,51 @@ impl<R: AccountRepository> AccountService<R> {
     ) -> AppResult<()> {
         let employee = self.employee_session(staff_token, true, now).await?;
 
-        let password_hash = self.hasher.hash(new_password(payload))?;
+        if employee.must_change {
+            let password_hash = self.hasher.hash(new_password(payload))?;
+            let success = self
+                .repo
+                .change_employee_password(&employee.id, employee.version, &password_hash, now)
+                .await?;
+            if !success {
+                return Err(AppError::Unauthenticated);
+            }
+            return Ok(());
+        }
+
+        let win = window_start(now);
+        let name_key = user_attempt_key(&employee.username);
+        let name_count = self.repo.increment_attempt(&name_key, win).await?;
+        if name_count > 10 {
+            return Err(AppError::Domain(LIMIT.to_string()));
+        }
+
+        let (emp, stored_hash) = match self
+            .repo
+            .find_employee_by_username(&employee.username)
+            .await?
+        {
+            Some((emp, hash)) if emp.active && emp.version == employee.version => (emp, hash),
+            _ => return Err(AppError::Unauthenticated),
+        };
+
+        let current_password = payload.get("currentPassword").and_then(|v| v.as_str());
+        if !self
+            .hasher
+            .verify_at_full_cost(current_password, Some(&stored_hash), self.spare_hash())
+        {
+            return Err(AppError::Domain(CURRENT_WRONG.to_string()));
+        }
+
+        let new_pwd = new_password(payload);
+        if current_password == Some(new_pwd) {
+            return Err(AppError::Domain(SAME_PASSWORD.to_string()));
+        }
+
+        let password_hash = self.hasher.hash(new_pwd)?;
         let success = self
             .repo
-            .change_employee_password(&employee.id, employee.version, &password_hash, now)
+            .change_employee_password(&emp.id, emp.version, &password_hash, now)
             .await?;
         if !success {
             return Err(AppError::Unauthenticated);

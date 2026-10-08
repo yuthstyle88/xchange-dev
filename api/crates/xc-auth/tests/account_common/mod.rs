@@ -283,6 +283,8 @@ pub struct Replay {
     pub db: TestDb,
     pub service: Service,
     tokens: HashMap<String, String>,
+    /// The password each session signed in with, by its token (row SP-1).
+    passwords: HashMap<String, String>,
     employee_ids: Vec<String>,
     employees: Value,
     seen_audit: HashSet<String>,
@@ -309,6 +311,7 @@ impl Replay {
             db,
             service,
             tokens: HashMap::new(),
+            passwords: HashMap::new(),
             employee_ids: Vec::new(),
             employees: json!([]),
             seen_audit: HashSet::new(),
@@ -406,6 +409,31 @@ impl Replay {
         people
     }
 
+    fn remember_password(&mut self, login: &Login, payload: &Value) {
+        if let Some(password) = payload.get("password").and_then(Value::as_str) {
+            self.passwords
+                .insert(login.token.clone(), password.to_owned());
+        }
+    }
+
+    /// v2 had no screen for a voluntary password change, and its door read only
+    /// `password`. v3's door also needs `currentPassword` whenever the employee's
+    /// `mustChange` is false (row SP-1, `docs/design/xchange-v3.md` §5.3 *The staff's
+    /// own password change*; listed in `docs/design/xchange-v3-known-differences.md`).
+    /// The replay therefore sends, as v3's screen does, the password the session signed
+    /// in with; a first-password session ignores it. A payload that already names one,
+    /// or that is not an object, is sent as recorded.
+    fn with_current_password(&self, token: &str, payload: &Value) -> Value {
+        let mut payload = payload.clone();
+        if let (Some(fields), Some(password)) = (payload.as_object_mut(), self.passwords.get(token))
+        {
+            fields
+                .entry("currentPassword")
+                .or_insert_with(|| json!(password));
+        }
+        payload
+    }
+
     fn remember_token(&mut self, symbol: &Value, login: &Login, label: &str) {
         let symbol = symbol
             .as_str()
@@ -453,6 +481,7 @@ impl Replay {
                         }
                         SignedIn::Employee(e) => {
                             body["mustChange"] = json!(e.must_change);
+                            self.remember_password(&login, &step["payload"]);
                             self.remember_token(&set["staff"]["token"], &login, label)
                         }
                     }
@@ -462,6 +491,7 @@ impl Replay {
             },
             "staffLogin" => match self.service.login_employee(&step["payload"], ip, now).await {
                 Ok(login) => {
+                    self.remember_password(&login, &step["payload"]);
                     self.remember_token(&step["ok"]["token"], &login, label);
                     match &login.who {
                         SignedIn::Employee(e) => {
@@ -504,11 +534,14 @@ impl Replay {
                 )
                 .await
                 .map(|e| self.safe(&e)),
-            "password" => self
-                .service
-                .change_password(&self.token(&step["token"]), &step["payload"], now)
-                .await
-                .map(|()| json!({ "saved": true, "loginAgain": true })),
+            "password" => {
+                let token = self.token(&step["token"]);
+                let payload = self.with_current_password(&token, &step["payload"]);
+                self.service
+                    .change_password(&token, &payload, now)
+                    .await
+                    .map(|()| json!({ "saved": true, "loginAgain": true }))
+            }
             "employees" => {
                 let payload = self.resolve(&step["payload"]);
                 match self

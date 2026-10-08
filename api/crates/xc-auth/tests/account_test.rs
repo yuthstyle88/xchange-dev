@@ -835,8 +835,13 @@ async fn concurrent_password_changes_with_one_session_change_it_once() {
         calls.spawn(async move {
             let password = format!("candidate-password-{i}");
             start.wait().await;
+            // A voluntary change names the current password (row SP-1).
             service
-                .change_password(&token, &json!({ "password": password }), at(2))
+                .change_password(
+                    &token,
+                    &json!({ "currentPassword": "second-password-2", "password": password }),
+                    at(2),
+                )
                 .await
                 .map(|()| password)
         });
