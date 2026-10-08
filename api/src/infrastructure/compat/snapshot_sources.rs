@@ -6,8 +6,7 @@
 //! - the people of a branch come from the accounts' employee list, disabled
 //!   accounts included: a custody row names its sender long after the account
 //!   is closed;
-//! - nobody is a member: the members decision (D5) is not taken, so there is no
-//!   table to read. When it lands, `members` is the one method to fill in;
+//! - the members of a branch come from `PgMemberRepository` (D5 is decided);
 //! - the payment rules of a branch come from `PaymentSettingsService`.
 //!
 //! No SQL here: all services keep theirs behind their own repositories.
@@ -18,8 +17,10 @@ use serde_json::json;
 use xc_auth::application::account::service::{AccountService, EmployeesAnswer};
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
+use xc_exchange::domain::booking::repositories::member_repository::MemberRepository;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
+use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::payment::PaymentRules;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
@@ -41,6 +42,7 @@ pub struct ServiceSnapshotSources {
     transactions: TransactionService,
     accounts: AccountService<PgAccountRepository>,
     payment_settings: PaymentSettingsService,
+    members: PgMemberRepository,
 }
 
 impl ServiceSnapshotSources {
@@ -51,12 +53,14 @@ impl ServiceSnapshotSources {
         let branch_tx = transactions.branch_tx().clone();
         let pool = branch_tx.pool().clone();
         let store = BranchSettingStore::new(pool.clone());
-        let branches = PgBranchRepository::new(pool);
+        let branches = PgBranchRepository::new(pool.clone());
         let payment_settings = PaymentSettingsService::new(branch_tx, store, branches);
+        let members = PgMemberRepository::new(pool);
         Self {
             transactions,
             accounts,
             payment_settings,
+            members,
         }
     }
 }
@@ -99,9 +103,17 @@ impl SnapshotSources for ServiceSnapshotSources {
         })
     }
 
-    fn members<'a>(&'a self, _branch: &'a BranchId) -> SourceFuture<'a, Vec<MemberMark>> {
-        // decision D5 is open: there is no members table yet
-        Box::pin(async { Ok(Vec::new()) })
+    fn members<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, Vec<MemberMark>> {
+        Box::pin(async move {
+            let members = self.members.list(branch).await?;
+            Ok(members
+                .into_iter()
+                .map(|m| MemberMark {
+                    customer_id: m.customer_id,
+                    verified_at: Some(m.verified_at),
+                })
+                .collect())
+        })
     }
 
     fn people<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, People> {
