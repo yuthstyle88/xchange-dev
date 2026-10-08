@@ -50,7 +50,7 @@ authorises in one module, and does post-save work in the same DB transaction.
 | D2 | sqlx 0.9, `rust_decimal`, actix-web 4, edition 2024, toolchain 1.98.1 — and **the workspace is laid out like `pos108-core`** (owner, 2026-10-06: "rust ให้ ดู โครง สร้างจาก 108pos"); see §5.2 | [required] |
 | D3 | One repo `108-Plaza/xchange` with `api/` and `app/` | **decided** — repo created 2026-10-06 |
 | D4 | Sign-in = v3's own owner/employee accounts in `xc-auth`, with v2's contract and cookies: the kept `login.html` and `account-bar.js` post to `/api/auth` and rely on `__Host-xc_owner` / `__Host-xc_staff` (§6) | **decided** (owner 2026-10-06, in the Identity session, relayed by claude/21bc39ab: "ให้ xc-auth เก็บบัญชีพนักงานเอง"). The same day the owner first asked whether Identity could be plugged in; measured at `108-platform-services` `46be83f`, it cannot create an account with a username only (`crates/auth/src/application/register.rs:101-116`; 400 `missing_identifier` on a running copy) nor let an administrator set another person's password (no such route), and the owner decided to add nothing to Identity because other systems share it ("เพราะ identity platfrom มันทำหน้าที่ แค่ authen"; its ticket 395 closed not planned) |
-| D5 | Bookings/members API: the kept admin screen has a "การจองออนไลน์" menu that calls `/api/bookings` | **open — owner**: port it (screen keeps working) or leave it returning an error. No public booking site is deployed (`server.mjs:5922`) |
+| D5 | Bookings/members API: the kept admin screen has a "การจองออนไลน์" menu that calls `/api/bookings` | **decided — port it** (owner 2026-10-08, confirmed to the lane controller claude/7ca80c, #377): staff and the owner create bookings (a new `create` action), no public booking site (`server.mjs:5922` `PUBLIC_BOOKING_URL: ""` stays), nothing imported from v2 (D6). Designed in §5.6 |
 | D6 | v2 holds **test data only**; no real shop uses it (owner, 2026-10-06: "ตอนนี้ v2 ยังเป็นข้อมูลทดสอบ ยังไม่มีร้านจริง") | **decided**. v3 starts on an empty database; nothing is imported (§7). If a real shop starts on v2 before the cutover, this row and §7 must be reopened |
 | D7 | Service hours 11:00–22:50 / 23:00 stay hard-coded as in v2 (`server.mjs:6037`, `6876`) | [required] for parity; a setting would need a screen that does not exist |
 | D8 | Kiosk delivery = Flutter **web** served on the customer host | **decided** (owner 2026-10-06) and **extended by D9**. The reason first given here — "an installed app sends no `Origin`" — was wrong: measured 2026-10-06 on a local v2 copy, `POST /api/kiosk` answers 200 when the client itself sends `Origin: <the server's own origin>`, 400 with no `Origin`, 400 with another one. The check is a cross-site guard for browsers, not something an app cannot satisfy |
@@ -137,6 +137,7 @@ erDiagram
 | `receipt_images` | [proposed] `branch_id`, `document_ref` → `transactions.document_ref`, `file_key` → `files.key`, `created_at`; PK (`branch_id`, `document_ref`) — columns not yet read from v2, §5.4 | same name |
 | `employees`, `employee_audit`, `employee_sessions`, `owners`, `owner_sessions`, `auth_attempts` | as v2 | same names; `auth_attempts` replaces the reuse of `booking_limits` |
 | `branch_versions` | `branch_id` PK, `version bigint` — the per-branch lock row, incremented inside every committed `BranchTx::run`, and, for the second branch, every `BranchTx::lock_also` inside one, whether or not it wrote anything (a repeated request counts): the version never misses a change but may rise when nothing changed — an equal version reads as "unchanged", a higher one as "may have changed" (#231) | new |
+| `bookings`, `members` | as §5.6.6: `bookings` keyed by `id` (`BK-…`) with (`branch_id`, `request_id`) unique, `status` PENDING / CONFIRMED / USED / CANCELLED, money and rate in decimals, `transaction_ref` → `transactions.document_ref`; `members` unique on (`branch_id`, `customer_id`) and on `token_hash`. The booking rules are the `branch_settings` document `bookingRules` (§5.5.1) | `bookings`, `members`, `booking_rules`; `member_registrations` and `booking_limits` are not ported (§5.6.2) |
 
 None of these tables exists in any v3 database yet (the first migrations are in tickets #54 and #48), so a change to this section before they merge migrates nothing; after that, a change here needs its own data-migration section.
 
@@ -395,7 +396,8 @@ screens do arithmetic on it; decimals exist only inside the server and the datab
 | `POST /api/upload?branch=` · `GET /files/{key}` · `GET /documents?branch=&ref=` | raw file body | `7154`, `7095`, `7769` |
 | `POST /api/employees` | `{action: list\|create\|reset\|disable\|entity\|enable}` | `7371` |
 | `POST /api/reference-rates` | — | `7275` |
-| `POST /api/bookings` | `{action, payload}` | `7263` — subject to D5 |
+| `POST /api/bookings` | `{action, payload}` — owner only: `list`, `get`, `create` (new), `confirm`, `cancel`, `member`, `settings`, `registrations`, `approveRegistration` | `7263` (10-05; 10-06 `7271`); §5.6 |
+| `POST /api/staff/bookings` | as `/api/bookings`, the counter roles on their own branch (§5.6.4) | v2 refused every call (10-06 `7493-7498`); new in v3, §5.6.4 |
 | `POST /api/devices` · `GET /devices/receipt` | `{action: snapshot\|queue\|process\|retry\|printerOnline\|drawerObservation}` | `7665`, `7794` |
 | `POST /api/kiosk` | `{action, payload}` — public: `rates`, `quote`, `confirm`, `status`, `customerReceipt`; any signed-in role: `notifications`; OWNER, FRONT, BACKEND, MANAGER: `list`, `accept`, `get`, `identityChecked`, `publishReceipt`; OWNER and RATES: `manage`, `configure`. The 10-06 bundle moves `list` to any signed-in role and changes `rates`, `quote`, `confirm`, `notifications`, `list` and `accept` (§5.5.2, §5.5.3) | `8048` |
 | `POST /api/payment-methods` (10-06 bundle) | `{action: list\|save, payload}` | 10-06 `8154`; §5.5.2 |
@@ -1722,6 +1724,388 @@ The 10-06 change — `Kiosk` `list` for any signed-in caller, as `notifications`
 | the script lists | PG | the kept admin and desk pages |
 | `DevicePassportDrawer`, the switch | AG-PD (replaces PD-1) | PD-0's workflow, through the S0 builder |
 
+### 5.6 Online bookings and members (T15, D5 = port)
+
+> designed-by: claude/7ca80c (design subagent) · 2026-10-08 · ticket #377 · every `file:line` of this repository below is at `main` `7210f93`
+
+The kept admin menu *การจองออนไลน์* and the desk's booking hand-off call `/api/bookings`, which v3 does not answer yet:
+`api/src/presentation/http/bookings.rs:8` is an empty `configure`, so the request falls through to `pages::fallback` and its
+plain-text `Not found`, and the screen prints the JSON parser's error (#377). D5 is decided: **port it**. This section is
+the design T15's tickets are cut from.
+
+**Decided by the owner** (2026-10-08, recorded by the lane controller on #377): D5 = port to v3; staff and the owner create
+bookings, so the API gains a `create` action; there is no public booking site (`PUBLIC_BOOKING_URL` stays `""`); v2 rows
+are test data and v3 starts empty (D6), so nothing is imported; migrations of v3 are approved until the first install
+(owner 2026-10-06); **no new feature on the kept v2 pages** — the owner, in the lane controller's session on 2026-10-08,
+when it turned out the v2 pages use no framework: stop adding features to them and rebuild them in phase 2 instead
+("ตามนั้น ทำเลย"; PG #330 was closed `not planned` and SP-1 #331 narrowed to its server half on that basis; recorded on
+#377, https://github.com/108-Plaza/xchange/issues/377#issuecomment-6050446334). So `public/bookings.js` must work against v3 unchanged, and the SolidJS rewrite
+(`docs/design/xchange-v3-web.md` §6 row 2, ticket V2-bookings in its §8) redoes the screen later.
+
+[required] **`create` is API-only until phase 2** (lane controller, option A, 2026-10-08, https://github.com/108-Plaza/xchange/issues/377#issuecomment-6050446334): the kept
+`bookings.js` has no create form (`bookings.js:7-16`) and gets none, so until the V2-bookings screen gives `create` a form,
+the action is exercised only by tests. Since v3 starts empty (D6), `list`, `confirm`, `cancel` and the desk hand-off have no
+booking to act on before then; the V2-bookings ticket carries the create form, and its behaviour table uses the `create`
+row of §5.6.3. Bookings are one domain with no second variant in sight,
+so the design is concrete: no trait over "a kind of booking".
+
+**Sources.** Line numbers are `server.mjs:<line>` **of the 10-06 bundle** (§5.5). The booking code is byte-identical in the
+10-05 bundle, eight lines earlier (`diff` of 10-06 `7150-7290` against 10-05 `7142-7282`: no difference); #377 cites the
+10-05 numbers (`7182`, `7263-7273`, `8158`, `7417`). Screens: `public/bookings.js` and `public/registrations.js` (both
+loaded by the embedded admin page, `server.mjs:5531`; sha256 of `bookings.js` `2498ea62…`, the same in both bundles), and
+the desk's own hand-off script embedded at `server.mjs:5735-5748`.
+
+#### 5.6.1 What v2 does
+
+| Piece | v2 | Source |
+|---|---|---|
+| Route | `POST /api/bookings`, access `owner`: nobody → 401 `กรุณาเข้าสู่ระบบ`, an employee → 403 `เฉพาะเจ้าของระบบเท่านั้น` (router), then `POST3` | `server.mjs:8169`, `8289-8290`, `7271-7280` |
+| Envelope | `authorizeWrite` (Origin + `X-Xchange-Request: 1`, else the error text `ORIGIN_REJECTED`); body > 8,000 characters → `ข้อมูลมากเกินไป`; `JSON.parse`; `payload \|\| {}`. Every refusal is `{error}` with 400, except `AUTH_REQUIRED` → 401; `Cache-Control: no-store` on every answer | `5540-5543`, `7271-7280` |
+| Branch | `payload.branchId \|\| "MAIN"`; **every** action first runs `adminSnapshot` on it, so a malformed branch answers `สาขาไม่ถูกต้อง` and an unknown one the snapshot's `ไม่พบสาขาที่เลือก กรุณารีเฟรช` before anything else | `7191`, `7003-7005` |
+| Actions | `registrations`, `approveRegistration`, `list`, `settings`, `member` by name; every other name reads `payload.id` and the booking first, then `get`, `cancel`, `confirm`; a name matching none answers `คำขอไม่ถูกต้อง` only after the booking was found | `7190-7268` |
+| Booking JSON | `publicBooking`: `{id, branchId, name, phone, member, type, currency, amount, rate, status, createdAt, expiresAt, transactionRef}`; `status` is `EXPIRED` when the stored status is `CONFIRMED` and `expiresAt` ≤ now — never stored | `6969-6972` |
+| Who made bookings | the public booking site (`xchange-booking`), through a bridge secret — not deployed; nothing in this server inserts into `bookings` or `member_registrations` | `5926-5928`, `7185-7189` |
+| Staff path | `/staff/desk` rewrites `/api/bookings` → `/api/staff/bookings` (`7425`), but the staff door allows only `login`, `logout`, `password`, `me`, `rpc`, `upload` (`7493`, `7498`): **every** call to `/api/staff/bookings` answers 400 `คำขอไม่ถูกต้อง`. A booking could never be used from `/staff/desk` | `7425`, `7493-7498` |
+| Using a booking | the desk opened with `?booking=<id>` reads it with `get` (refusing anything not `CONFIRMED` on its own side), locks type, currency, amount and rate, asks for a tick *ตรวจตัวตนลูกค้าตรงกับผู้จอง …*, and adds `onlineBookingId`, `booking`, `onlineBookingCustomerConfirmed: true` to `saveTransaction` | `5735-5748` |
+| The save with a booking | `validateBookingForExchange` before the engine; the counter-rate check is skipped for a verified booking; at commit the booking becomes `USED` with `submission_id` and `transaction_ref`, guarded on it still being `CONFIRMED` and unexpired (or `USED` by the same submission) | `6961-6968`, `7031-7039`, `6749`, `7064`, `7071` |
+| Member flag | `adminSnapshot` sets `member` and `memberVerifiedAt` on every customer from `members` of the branch | `7043-7046` |
+| Tables | `booking_limits` (`schema.sql:29`), `booking_rules` (`:35`), `bookings` (`:41`), `members` (`:64`), `member_registrations` (`:104`) | 10-06 `schema.sql` |
+
+**v3 today** (`main` `7210f93`): the booking directories exist and are empty — `api/crates/xc-exchange/src/domain/booking/{entities/booking.rs,repositories/booking_repository.rs,commands/mod.rs,value_objects/mod.rs}`,
+`application/booking/service.rs`, `infrastructure/booking/booking_repository.rs` and `api/src/presentation/dto/booking.rs`
+hold one `//!` line each. `/api/staff/bookings` falls through to the same 404. The snapshot already prints the member
+flag from `SnapshotSources::members` (`api/src/application/compat/snapshot.rs:98`, `:113`, `with_members` `:225`), whose
+real source answers nobody (`api/src/infrastructure/compat/snapshot_sources.rs:102-105`). The save has no booking:
+`SaveExtras` (`api/src/application/workflows/save_step.rs:36`) carries no `onlineBookingId`, and the rate check refuses
+every rate that is not the counter rate (`api/src/application/workflows/save_transaction.rs:296`).
+
+#### 5.6.2 What v3 keeps, drops and adds
+
+| v2 | v3 | Why |
+|---|---|---|
+| `bookings` | **kept**: table `bookings` (§5.6.6), money and rate in decimals | the screen lists, confirms and cancels them |
+| `members` | **kept**: table `members` | the member dialog, the member flag of the snapshot, member bookings |
+| `booking_rules` | **moved** to the per-branch setting store of §5.5.1, document name `bookingRules`, body `{enabled, minutes}` | a per-branch setting is that store's job ("a second versioned setting later is one more small service over the same store", §5.5.1); no table of its own |
+| `member_registrations` | **not ported** [proposed] — `registrations` answers an empty page, `approveRegistration` answers `ไม่พบการลงทะเบียนของสาขานี้` after its id check | only the public site wrote it (`7185-7189`); with no public site (owner) no row can exist, and a table no code writes is dead. The day a public site is decided, it brings its table |
+| `booking_limits` | **not ported** | it rate-limited the public site and v2's sign-in; v3's sign-in has `auth_attempts` (§6), and no public booking endpoint exists |
+| `bookings.request_hash`, `status_token_hash` | `request_hash` kept for `create`'s idempotency; `status_token_hash` dropped | the status token let a public customer read their booking; there is no public reader |
+| `members.token_hash` = SHA-256 of `BOOKING_BRIDGE_SECRET + ":" + code` (`7185`) | SHA-256 hex of the code alone [proposed] | v3 has no bridge secret; the code is a random UUID made by the browser (`bookings.js:13`, `crypto.randomUUID()`), so a pepper adds nothing; nothing reads the hash until a public site exists |
+| no `create` (the public site created) | **new** `create` action (§5.6.3) | owner 2026-10-08: staff and the owner create bookings |
+| `/api/staff/bookings` always 400 | **new**: the staff route answers the counter roles (§5.6.4) | owner 2026-10-08: staff create bookings; and `/staff/desk`'s hand-off needs `get` |
+
+#### 5.6.3 Behaviour per action
+
+Common to every action, on both routes, after the envelope of §5.6.4: the branch (§5.6.4) must exist, else 400
+`ไม่พบสาขาที่เลือก กรุณารีเฟรช` (`CustomerService`'s `NO_SUCH_BRANCH`, `api/crates/xc-exchange/src/application/customer/service.rs:16`).
+[required] Every answer of `POST` on either path is JSON, and every refusal is `{"error": <sentence>}` — **never** the plain-text
+404 of #377. `Cache-Control: no-store` is on **every 200 and every refusal except two**, as v2 and as the helpers on
+`main` do it: (a) the owner route's step-1 401/403 (§5.6.4) carry no `Cache-Control`, as v2's router (`server.mjs:8289-8290`)
+and `reference_rates.rs`'s `policy_refusal_response` (`api/src/presentation/http/reference_rates.rs:34-41`, `answer(…, false)`);
+(b) a database failure answers the shared 500, `server_error()` (`api/src/presentation/extractors/actor.rs:68-72`), which
+sets no `Cache-Control`, as v2's top-level handler. Every other refusal is built with `refuse(status, sentence)`
+(`actor.rs:64-66`, `answer(…, true)`), so it carries `no-store` as v2's `POST3` catch (`7277-7278`) and staff-door catch
+do. A `GET` on either path is no route in v2 (`8169` is `POST` only) nor in v3, and gets the fallback.
+Times print as `time_json` (`api/src/application/compat/v2_json.rs:274`: ISO-8601 UTC with milliseconds); money and rates
+print as JSON numbers (§5.3). "Text" below is v2's `text(v, max)` (`7175-7178`): a JSON string, trimmed, 1 to `max` UTF-16
+units — the kernel's `text(raw, max, true)` (`api/crates/xc-kernel/src/input/text.rs:6`) — else
+`กรอกข้อมูลให้ครบและไม่เกินกำหนด`. "Phone" is v2's `phone` (`7180-7183`): text of at most 30, only `+0-9 ()-`, at least 7
+digits, else `เบอร์ติดต่อไม่ถูกต้อง`.
+
+[required] **The booking as printed** (`publicBooking`, `6969-6972`), the shape `bookings.js:10` and the desk (`5738-5745`) read:
+`{id, branchId, name, phone, member: bool, type: "BUY"|"SELL", currency, amount: number, rate: number, status, createdAt,
+expiresAt: string|null, transactionRef: string|null}` — `member` is "the booking names a member", `status` the shown one:
+`EXPIRED` when stored `CONFIRMED` and `expiresAt ≤ now`, else the stored one.
+
+**States.** Stored: `PENDING` (a member's booking waiting for the counter to set its expiry), `CONFIRMED` (rate locked until
+`expiresAt`), `USED` (an exchange was saved from it), `CANCELLED`. Shown only: `EXPIRED`.
+
+```
+create (not a member) ──► CONFIRMED ──save with it──► USED
+create (a member)     ──► PENDING ──confirm──► CONFIRMED
+PENDING, CONFIRMED (also shown EXPIRED) ──cancel──► CANCELLED
+```
+Nothing leaves `USED` or `CANCELLED`. A `CONFIRMED` booking past its expiry stays stored `CONFIRMED`; it can be cancelled,
+not confirmed again, not used.
+
+| Action | Payload (besides `branchId`) | Answer | State | Refusals, in order (all 400) | v2 |
+|---|---|---|---|---|---|
+| `list` | — | `{bookings: [booking…], members: [{id, customer_id, name, phone, verified_at}], rules, publicUrl: ""}` — bookings newest first (`created_at` desc, then `id` desc); members in `verified_at`, `id` order (v2: unordered); `rules` = the stored document printed `{branch_id, enabled: 1\|0, minutes}`, or `{enabled: 1, minutes: 30}` when the branch has none (the keys of members and rules stay snake_case, as v2's rows) | none | more than 1,000 bookings in the branch → `ประวัติจองเกิน 1,000 รายการ กรุณาติดต่อผู้ดูแลเพื่อเพิ่มการแบ่งหน้า` (read 1,001, as v2) | `7225-7231` |
+| `get` | `id` | the booking, plus `customerId`: the member's customer id, or `null` | none | `id` not text ≤ 60 → `กรอกข้อมูลให้ครบและไม่เกินกำหนด`; no booking with that id **in this branch** → `ไม่พบการจอง` | `7246-7250` |
+| `create` **(new)** — API-only until phase 2; statuses [required] (owner 2026-10-08, https://github.com/108-Plaza/xchange/pull/395#issuecomment-6050139400); payload and the two new sentences [proposed] | `requestId` (text ≤ 60), `name` (text ≤ 100), `phone`, `type` (`BUY`\|`SELL`), `currency`, `amount`, `expectedRate`, `customerId` (optional) | `{saved: true, booking}` | → `CONFIRMED`, `rate` = the counter rate, `expiresAt` = now + `minutes` of the branch's rules — or, when `customerId` is given, → `PENDING` with that member, `rate` = the counter rate (the screen's *~เรท*), `expiresAt` null | 1 `requestId`, 2 `name` → `กรอกข้อมูลให้ครบและไม่เกินกำหนด`; 3 phone; 4 `type` not `BUY`/`SELL`, or `currency` not a stock currency other than THB → `ข้อมูลรายการไม่ครบ` (`api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs:17`); 5 `amount`, 6 `expectedRate` → `Money::parse` / `Rate::parse` of the number's text: `จำนวนเงินหรือเรทไม่ถูกต้อง` / `ทศนิยมเกินกำหนด` / `ยอดเงินสูงเกินขอบเขตระบบ` (`transaction_form.rs:15`, `:16`, `:19`), an amount of zero → `จำนวนเงินหรือเรทไม่ถูกต้อง`; 7 a booking with this `requestId` in the branch: same request hash (over the parsed command) → answer it as stored, `{saved: true, booking}`, with no further check; another hash → `รายการเดิมมีข้อมูลเปลี่ยน ห้ามใช้รหัสส่งซ้ำกับข้อมูลใหม่` (the save's `CHANGED`, `api/src/application/workflows/save_transaction.rs:35`); 8 `customerId` given but no LIVE customer of the branch with a member row → `ไม่พบ Member ของลูกค้านี้ในสาขานี้` (new sentence); 9 rules `enabled` false → `ปิดรับจองใหม่` (the screen's own words, `bookings.js:9`); 10 no OPEN shift → `กรุณาเปิดกะจากหน้าแอดมินก่อน` (`ShiftError::NoOpenShift`, `api/crates/xc-shift/src/domain/shift/value_objects/shift_error.rs:27-28`); 11 no counter rate for the currency and side, or ≠ `expectedRate` → `เรทเปลี่ยน กรุณาโหลดใหม่` | none — v2's public site, not read |
+| `confirm` | `id`, `expiresAt` (RFC 3339 text), `expectedRate` | `{saved: true}` | `PENDING` (member) → `CONFIRMED`, `rate` = the counter rate now, `expiresAt` as sent, `confirmed_at`/`confirmed_by` set | 1–2 as `get`; 3 `expiresAt` not a time, or ≤ now → `วันหมดอายุต้องอยู่ในอนาคต`; 4 **double confirm**: stored `CONFIRMED` with the same `expiresAt` to the millisecond → `{saved: true}`, nothing written, no rate check; 5 not `PENDING`, or no member → `ยืนยันได้เฉพาะคำขอ Member ที่รอยืนยัน` (a second confirm with another expiry, a confirm after cancel or use, a non-member booking); 6 no counter rate for its currency and side, or ≠ `expectedRate` → `เรทเปลี่ยน กรุณาโหลดใหม่`; 7 the guarded write (`WHERE status = 'PENDING'`) changed nothing → `สถานะเปลี่ยน กรุณาโหลดใหม่` (cannot happen under the branch lock; kept as the guard's answer) | `7256-7265` |
+| `cancel` | `id` | `{saved: true}` | `PENDING`/`CONFIRMED` → `CANCELLED`; **cancel after cancel** → `{saved: true}`, nothing written | 1–2 as `get`; 3 stored `USED` → `การจองถูกใช้ทำรายการแล้ว` | `7251-7255` |
+| `member` (owner) | `customerId`, `identityConfirmed`, `phone`, `memberSecret` | `{saved: true, name, memberCode}` — `name` the customer's, `memberCode` the secret sent | a `members` row for (branch, customer): new with id `MB-<uuid>`, or the existing one's `name`, `phone`, `token_hash`, `verified_at`, `verified_by` replaced (its id kept, so its bookings still point at it; the old code no longer matches — the dialog says so, `bookings.js:13`) | 1 no LIVE customer of the branch with that id, or `identityConfirmed` not JSON `true` → `ต้องเลือกลูกค้าและยืนยันตรวจตัวตนหน้าร้านก่อน`; 2 phone; 3 `memberSecret` not text ≤ 80 → `กรอกข้อมูลให้ครบและไม่เกินกำหนด`; 4 not `^[a-f0-9-]{36}$` → `รหัสสมาชิกไม่ถูกต้อง`; 5 the hash is another member's (unique `token_hash`) → `รหัสสมาชิกไม่ถูกต้อง` [proposed; v2 surfaced the database's message] | `7238-7245` |
+| `settings` (owner) | `minutes`, `enabled` | `{saved: true}` | the branch's `bookingRules` document, last write wins (the screen sends no version) | `minutes` not a JSON integer 5–1440, or `enabled` not a JSON boolean → `กำหนดเวลา 5–1440 นาที` | `7232-7237` |
+| `registrations` (owner) | `page`, `query` | `{items: [], hasMore: false, page}` — `page` = `floor(Number(page))` clamped to 0–100,000, 0 when not a number (`7193`) | none | none | `7192-7196` |
+| `approveRegistration` (owner) | `id`, … | — | none | `id` not text ≤ 60 → `กรอกข้อมูลให้ครบและไม่เกินกำหนด`; else → `ไม่พบการลงทะเบียนของสาขานี้` (no registration can exist, §5.6.2) | `7197-7199` |
+| any other name | — | — | none | `คำขอไม่ถูกต้อง` | `7267` |
+
+**Using a booking at the desk** (the save, not an action of `/api/bookings`; row T15-h). When `saveTransaction` carries a
+non-empty `onlineBookingId`, inside the save's branch transaction, after the form is judged and before the rate check:
+
+| # | When | Answer |
+|---|---|---|
+| 1 | no booking with that id in the save's branch | `ไม่พบการจองของสาขานี้` (`6962`) |
+| 2 | stored `USED` by another `submissionId` | `การจองนี้ถูกใช้ทำรายการแล้ว` (`6964`) — `USED` by this one is a repeat and passes |
+| 3 | not `USED`, and not `CONFIRMED` or `expiresAt` ≤ now | `การจองยังไม่ยืนยัน หมดอายุ หรือถูกยกเลิกแล้ว` (`6965`) |
+| 4 | mode not LIVE, or `type`, `currency`, `amount`, `rate` differ from the booking, or `booking` ≠ the id, or `onlineBookingCustomerConfirmed` not JSON `true` | `ข้อมูลรายการไม่ตรงกับการจอง หรือยังไม่ยืนยันลูกค้า` (`6966`) |
+| 5 | a member's booking and `customerId` ≠ the member's customer | `ลูกค้าไม่ตรงกับ Member ที่จอง` (`7037`) |
+| — | passed | the counter-rate check is **skipped** (`6749`: the booked rate stands); after the exchange is stored, a first save writes `USED`, `submission_id`, `transaction_ref` = its document ref; a repeat writes nothing |
+
+#### 5.6.4 Routes, roles and branch
+
+[required] Two routes, one handler file (`api/src/presentation/http/bookings.rs`), one service. In order:
+
+| # | `POST /api/bookings` (owner) | `POST /api/staff/bookings` (staff) [required] (owner 2026-10-08, https://github.com/108-Plaza/xchange/pull/395#issuecomment-6050139400) |
+|---|---|---|
+| 1 | nobody → 401 `กรุณาเข้าสู่ระบบ`; an employee → 403 `เฉพาะเจ้าของระบบเท่านั้น` — `Policy::allow(actor, EntryPath::OwnerRoute, …)`, as `reference_rates.rs:52-55` | Origin / `X-Xchange-Request` → 400 `คำขอไม่ถูกต้อง` (the staff door's first check, `7496`) |
+| 2 | Origin / `X-Xchange-Request` → 400 `ORIGIN_REJECTED` (thrown at `5542` by `authorizeWrite`, called at `7273`; the catch at `7277-7278` answers 400; as `reference_rates.rs:57-60`) | body > 8,000 UTF-16 units → 400 `ข้อมูลมากเกินไป` |
+| 3 | body > 8,000 UTF-16 units → 400 `ข้อมูลมากเกินไป` (`7274`) | not JSON, or `payload` neither absent, `null` nor an object → 400 `คำขอไม่ถูกต้อง` |
+| 4 | not JSON, or `payload` neither absent, `null` nor an object → 400 `คำขอไม่ถูกต้อง` | `Policy::allow(actor, EntryPath::StaffBookings, action)` — below |
+| 5 | branch = `payload.branchId` when a non-empty string, else `MAIN` (`Policy::branch`); not 1–70 of `A-Za-z0-9-` → 400 `สาขาไม่ถูกต้อง` (`7005`) | branch = **the employee's own**, whatever is named (`Policy::branch`) |
+| 6 | the action (§5.6.3) | the action (§5.6.3) |
+
+[required] **`EntryPath::StaffBookings`** (new, `xc-auth`; owner 2026-10-08, https://github.com/108-Plaza/xchange/pull/395#issuecomment-6050139400): nobody, or only an owner's session → 401 `EMPLOYEE_AUTH_REQUIRED`
+(the staff bridge's, `7471`); roles FRONT, BACKEND, MANAGER — the counter roles that the kiosk's staff actions and the
+passport drawer already allow (§5.3, §5.5.7) — may `list`, `get`, `create`, `confirm`, `cancel`; the same roles asking
+`member`, `settings`, `registrations` or `approveRegistration` → 403 `เฉพาะเจ้าของระบบเท่านั้น` (`PolicyError::OwnerOnly`); any
+other role → 400 `บทบาทนี้ไม่มีสิทธิ์ทำรายการ` (`PolicyError::RoleNotAllowed`); an unknown name → 400 `คำขอไม่ถูกต้อง`
+(`PolicyError::InvalidRequest`). No new `PolicyError`. The owner route keeps v2's `OwnerRoute` check and needs no new
+path: the action name is judged by `BookingAction::parse`.
+
+[required] **Per branch everywhere.** Every read and write names the branch: a booking is found by (`id`, `branch_id`), so
+an id from another branch answers `ไม่พบการจอง`; members by (`branch_id`, `customer_id`); rules by branch; the save's
+booking by the save's branch. Every write runs in `BranchTx::run` of that branch (§4), so a confirm, a cancel and a save
+using the same booking are serialised, and the guarded `UPDATE … WHERE status …` of v2 can never lose a race.
+
+#### 5.6.5 Classes
+
+```mermaid
+classDiagram
+  direction LR
+  class Booking { <<xc-exchange domain/booking/entities/booking.rs>> +id: String; +branch_id: BranchId; +name: String; +phone: String; +member_id: Option~String~; +side: Side; +currency: CurrencyCode; +amount: Money; +rate: Rate; +status: BookingStatus; +created_at; +created_by: String; +expires_at: Option; +confirmed_at: Option; +confirmed_by: Option~String~; +submission_id: Option~String~; +transaction_ref: Option~String~; +shown_status(now) str; +is_member() bool }
+  class Member { <<xc-exchange domain/booking/entities/member.rs>> +id: String; +branch_id: BranchId; +customer_id: String; +name: String; +phone: String; +token_hash: String; +verified_at; +verified_by: String }
+  class BookingMachine { <<xc-exchange domain/booking/entities/booking_machine.rs>> +create(cmd, facts: CreateFacts, now)$ Result~NewBooking~; +confirm(booking, cmd, counter: Option~Rate~, now)$ Result~ConfirmStep~; +cancel(booking)$ Result~CancelStep~; +redeem(booking, member, cmd: RedeemBooking, now)$ Result~RedeemStep~ }
+  class BookingSteps { <<enums, xc-exchange domain/booking/entities/booking_steps.rs>> +ConfirmStep Unchanged or Confirm; +CancelStep Unchanged or Cancel; +RedeemStep Repeat or Use; +CreateFacts rules, open_shift, counter, member_id; +NewBooking; +StoredRequest booking and hash; +LiveCustomer id and name }
+  class BookingStatus { <<xc-exchange domain/booking/value_objects/booking_status.rs>> Pending; Confirmed; Used; Cancelled; +as_str() str; +parse(str) Option }
+  class BookingAction { <<xc-exchange domain/booking/value_objects/booking_action.rs>> List; Get; Create; Confirm; Cancel; Member; Settings; Registrations; ApproveRegistration; +parse(str) Option; +owner_only() bool }
+  class BookingRules { <<xc-exchange domain/booking/value_objects/booking_rules.rs>> +enabled: bool; +minutes: u16; +DEFAULT$; +parse(enabled: Value, minutes: Value)$ Result }
+  class BookingError { <<enum, xc-exchange domain/booking/value_objects/booking_error.rs>> the sentences of §5.6.3; +Display = v2 sentence; +status() u16 }
+  class BookingInput { <<fn, xc-exchange domain/booking/value_objects/booking_input.rs>> +required_text(Value, max)$ Result~String~; +contact_phone(Value)$ Result~String~; +member_secret(Value)$ Result~String~; +token_hash(secret)$ String }
+  class CreateBooking { <<xc-exchange domain/booking/commands/create_booking.rs>> +request_id; +name; +phone; +side; +currency; +amount: Money; +expected_rate: Rate; +customer_id: Option; +request_hash() String }
+  class ConfirmBooking { <<xc-exchange domain/booking/commands/confirm_booking.rs>> +id; +expires_at: Option~DateTime~ (None = unreadable); +expected_rate: Option~Rate~ }
+  class IssueMember { <<xc-exchange domain/booking/commands/issue_member.rs>> +customer_id; +identity_confirmed: bool; +phone; +secret }
+  class RedeemBooking { <<xc-exchange domain/booking/commands/redeem_booking.rs>> +booking_id; +submission_id; +live: bool; +side; +currency; +amount: Money; +rate: Rate; +form_booking; +customer_id; +customer_confirmed: bool }
+  class BookingRepository { <<trait, xc-exchange domain/booking/repositories/booking_repository.rs>> +list(branch, limit) Vec~Booking~; +find(branch, id) Option; +find_in(tx, branch, id) Option; +find_request_in(tx, branch, request_id) Option~StoredRequest~; +insert_in(tx, NewBooking); +confirm_in(tx, branch, id, rate, expires_at, at, by) bool; +cancel_in(tx, branch, id) bool; +mark_used_in(tx, branch, id, submission_id, document_ref) bool }
+  class MemberRepository { <<trait, xc-exchange domain/booking/repositories/member_repository.rs>> +list(branch) Vec~Member~; +find(id) Option; +find_in(tx, id) Option; +by_customer_in(tx, branch, customer_id) Option; +upsert_in(tx, Member) Result~Member, TokenTaken~ }
+  class BookingPorts { <<trait, xc-exchange domain/booking/repositories/booking_ports.rs>> +branch_exists(branch) bool; +live_customer(branch, id) Option~LiveCustomer~; +rules(branch) Option~BookingRules~; +rules_in(tx, branch) Option~BookingRules~; +has_open_shift_in(tx, branch) bool; +counter_rate_in(tx, branch, code, side) Option~Rate~ }
+  class BookingIds { <<trait, xc-exchange domain/booking/repositories/booking_ids.rs>> +booking_id() String; +member_id() String }
+  class BookingService { <<xc-exchange application/booking/service.rs>> +new(branch_tx, bookings, members, ports, ids); +branch_exists(branch) }
+  class BookingReads { <<impl BookingService, application/booking/list.rs>> +list(branch, now) BookingList; +get(branch, id) BookingView }
+  class BookingCreate { <<impl BookingService, application/booking/create.rs>> +create(branch, cmd, actor, now) Booking }
+  class BookingChanges { <<impl BookingService, application/booking/change.rs>> +confirm(branch, cmd, actor, now); +cancel(branch, id) }
+  class BookingMembers { <<impl BookingService, application/booking/members.rs>> +issue_member(branch, cmd, actor, now) Member; +members(branch) Vec~Member~ }
+  class BookingRedeem { <<impl BookingService, application/booking/redeem.rs>> +redeem_in(tx, branch, cmd, now) RedeemStep; +use_in(tx, branch, id, submission_id, document_ref) }
+  class PgBookingRepository { <<xc-exchange infrastructure/booking/booking_repository.rs>> }
+  class PgMemberRepository { <<xc-exchange infrastructure/booking/member_repository.rs>> }
+  class UuidBookingIds { <<xc-exchange infrastructure/booking/booking_ids.rs>> BK-uuid, MB-uuid }
+  class BookingRulesService { <<application/bookings/booking_rules_service.rs>> +new(branch_tx, store); +rules(branch) Option; +rules_in(tx, branch) Option; +save(branch, rules, actor, now) }
+  class PgBookingPorts { <<infrastructure/bookings/booking_ports.rs>> +new(pool) }
+  class BookingJson { <<fn, presentation/dto/booking.rs>> +booking_json(Booking, member_customer, now); +list_json(BookingList, now); +rules_json(branch, Option~BookingRules~) }
+  class BookingsRoute { <<presentation/http/bookings.rs>> +configure(cfg, state); POST /api/bookings; POST /api/staff/bookings }
+  class BookingSaveStep { <<application/workflows/booking_save_step.rs>> +new(bookings) }
+  class BookingClaim { <<application/workflows/save_step.rs>> +booking_id; +customer_confirmed: bool }
+  class SaveStep { <<trait, application/workflows/save_step.rs>> +before_in; +after_in; +vouches_for_rate(ctx) bool = false }
+  class ServiceSnapshotSources { <<infrastructure/compat/snapshot_sources.rs>> +members(branch) }
+  class BranchSettingStore { <<§5.5.1>> }
+  class Policy { <<xc-auth>> +allow(actor, StaffBookings, action) }
+
+  BookingService --> BookingRepository
+  BookingService --> MemberRepository
+  BookingService --> BookingPorts
+  BookingService --> BookingIds
+  BookingService ..> BookingMachine : every transition, pure
+  BookingReads ..> BookingService : impl block
+  BookingCreate ..> BookingService : impl block
+  BookingChanges ..> BookingService : impl block
+  BookingMembers ..> BookingService : impl block
+  BookingRedeem ..> BookingService : impl block
+  BookingMachine --> BookingSteps
+  Booking --> BookingStatus
+  PgBookingRepository ..|> BookingRepository
+  PgMemberRepository ..|> MemberRepository
+  UuidBookingIds ..|> BookingIds
+  PgBookingPorts ..|> BookingPorts
+  PgBookingPorts --> BookingRulesService : rules, rules_in
+  BookingRulesService --> BranchSettingStore : name bookingRules, under BranchTx
+  BookingsRoute --> BookingService
+  BookingsRoute --> BookingRulesService : settings
+  BookingsRoute --> BookingJson
+  BookingsRoute ..> Policy : OwnerRoute, StaffBookings
+  BookingSaveStep ..|> SaveStep
+  BookingSaveStep --> BookingService : redeem_in, use_in on the save's tx
+  BookingSaveStep --> BookingClaim
+  ServiceSnapshotSources --> PgMemberRepository : members of the branch
+```
+
+`BookingReads` … `BookingRedeem` are not types: they name the `impl BookingService` block each file holds, so the use cases
+live one per file (§5.2 file rule) and two rows never edit one file. Paths are under `api/src/` unless they name a crate
+(`api/crates/xc-exchange/src/…`).
+
+[required] **Dependency rule** (§5.2). `xc-exchange` cannot call `xc-rate` (counter rate), `xc-shift` (open shift) or the
+root's `BranchSettingStore` (rules), so they reach `BookingService` through `BookingPorts`, implemented in the root by
+`PgBookingPorts` — the `KioskPorts`/`PgKioskPorts` pattern (§5.5.7). `PgBookingPorts::new(pool)` builds what it needs from
+the pool: `RateService::rate_in` (`api/crates/xc-rate/src/application/rate/service.rs:294`), the shift repository's
+`active_in` (`api/crates/xc-shift/src/application/shift/service.rs:417`), `CustomerService::find` (`customer/service.rs:108`;
+a LIVE customer only), `PgBranchRepository`, and a `BookingRulesService` over `BranchSettingStore`. The live customer is a
+port too, although it is the same crate, so the service's tests can run on fakes without a customer table.
+
+[required] **The save seam** (row T15-h), so no test that builds a `SaveExtras` literal changes (`api/tests/device_save_step_test.rs:50`
+is one of eight such literals in six test files): `SaveExtras` is **not** edited. `SaveContext` (`save_step.rs:47`, built only in
+`save_transaction.rs`) gains `booking: Option<&'a BookingClaim>`; `SaveStep` gains a provided method
+`vouches_for_rate(&self, ctx) -> bool { false }`; `SaveTransactionWorkflow` gains `save_as_booked(branch, cmd, extras,
+booking: Option<BookingClaim>, actor, now)`, and `save_as` (`save_transaction.rs:182`) becomes `save_as_booked(…, None, …)`
+with its signature kept. The rate check (`:296`) is skipped when a registered step vouches. `BookingSaveStep::before_in`
+refuses rows 1–5 of *Using a booking*; `vouches_for_rate` answers `ctx.booking.is_some()` — safe because a claim that
+`before_in` did not refuse has the booked rate equal to the form's; `after_in` calls `use_in` on a first save. `SaveAction`
+reads the claim (`onlineBookingId`, `onlineBookingCustomerConfirmed`) beside `parse_extras` (`api/src/application/compat/actions/save.rs:132`)
+and gains `with_booking_check(self, bookings) -> Self`, chained in `registered_actions` (`api/src/presentation/http/rpc.rs:280`)
+as PM-S (#345) is planned to chain `with_payment_check` (§5.5.2; not on `main` `7210f93`, where the steps are chained in
+`SaveAction::new`, `api/src/application/compat/actions/save.rs:47`, called at `rpc.rs:314`); `SaveAction::new` keeps its signature.
+
+#### 5.6.6 Data migration — `bookings` and `members` (rows T15-b, T15-e)
+
+`api/migrations/<timestamp>_bookings.sql`, the timestamp later than every migration on `main` when it merges (on
+`7210f93` the last is `20261008120000_device_agents.sql`):
+
+```sql
+CREATE TABLE members (
+    id          text        PRIMARY KEY,                 -- MB-<uuid>
+    branch_id   text        NOT NULL REFERENCES branches (id),
+    customer_id text        NOT NULL REFERENCES customers (id),
+    name        text        NOT NULL,
+    phone       text        NOT NULL,
+    token_hash  text        NOT NULL UNIQUE,
+    verified_at timestamptz NOT NULL,
+    verified_by text        NOT NULL,
+    UNIQUE (branch_id, customer_id)
+);
+
+CREATE TABLE bookings (
+    id              text          PRIMARY KEY,           -- BK-<uuid>
+    branch_id       text          NOT NULL REFERENCES branches (id),
+    request_id      text          NOT NULL,
+    request_hash    text          NOT NULL,
+    name            text          NOT NULL,
+    phone           text          NOT NULL,
+    member_id       text          REFERENCES members (id),
+    type            text          NOT NULL CHECK (type IN ('BUY', 'SELL')),
+    code            char(3)       NOT NULL REFERENCES currencies (code),
+    amount          numeric(20,2) NOT NULL CHECK (amount > 0),
+    rate            numeric(14,4) NOT NULL CHECK (rate > 0),
+    status          text          NOT NULL CHECK (status IN ('PENDING', 'CONFIRMED', 'USED', 'CANCELLED')),
+    created_at      timestamptz   NOT NULL,
+    created_by      text          NOT NULL,
+    expires_at      timestamptz,
+    confirmed_at    timestamptz,
+    confirmed_by    text,
+    submission_id   text,
+    transaction_ref text          REFERENCES transactions (document_ref),
+    UNIQUE (branch_id, request_id),
+    CHECK (status <> 'PENDING'   OR (member_id IS NOT NULL AND expires_at IS NULL)),
+    CHECK (status <> 'CONFIRMED' OR expires_at IS NOT NULL),
+    CHECK ((status = 'USED') = (submission_id IS NOT NULL AND transaction_ref IS NOT NULL))
+);
+CREATE INDEX bookings_branch_created_idx ON bookings (branch_id, created_at DESC, id DESC);
+```
+
+The booking rules need no table: they are the `branch_settings` document `bookingRules` (§5.5.1, table on `main` in
+`api/migrations/20261008100000_branch_settings.sql`), body `{"enabled": bool, "minutes": 5..1440}`.
+
+1. *Existing rows.* None. Two new tables; no existing table, column, constraint or default changes; `branch_settings`
+   gains rows only when an owner saves booking settings. No v2 row is imported (D6, and the owner on #377 2026-10-08):
+   v2's `bookings`, `members`, `member_registrations`, `booking_rules` stay in the v2 database.
+2. *Backfill.* None: there is nothing to fill. A branch with no `bookingRules` document reads `{enabled: 1, minutes: 30}`,
+   the answer v2 gives before a branch's first save (`7229-7230`). Measured on every database at deploy, all three `0`:
+   `SELECT count(*) FROM bookings; SELECT count(*) FROM members; SELECT count(*) FROM branch_settings WHERE name = 'bookingRules';`
+3. *Deploy order.* The migration runs at start-up of the binary that contains it, before it binds (`bootstrap::connect`,
+   §5.2). An older binary never names the tables and keeps working against the new schema; its `/api/bookings` still
+   answers the 404 of #377 until the binary with T15-f is deployed.
+4. *What `down` loses.* No down migrations exist. Dropping the two tables by hand (`members` after `bookings`) loses every
+   booking and every issued member code; customers lose their member flag in the snapshot. The `bookingRules` documents
+   survive in `branch_settings` and are removed with
+   `DELETE FROM branch_setting_history WHERE name = 'bookingRules'; DELETE FROM branch_settings WHERE name = 'bookingRules';`
+
+#### 5.6.7 Known differences (rows for `docs/design/xchange-v3-known-differences.md`, written by T15-f)
+
+| Area | v2 | v3 |
+|---|---|---|
+| `/api/staff/bookings` | always 400 `คำขอไม่ถูกต้อง` (`7493-7498`) | answers the counter roles (§5.6.4) |
+| `create` | no such action; a name that is no action reads `payload.id` first (`7246`), so it answers `กรอกข้อมูลให้ครบและไม่เกินกำหนด` or `ไม่พบการจอง` before `คำขอไม่ถูกต้อง` | `create` exists; any other unknown name answers `คำขอไม่ถูกต้อง` at once |
+| Body not JSON | the parser's English message | `คำขอไม่ถูกต้อง` (as `/api/rpc`) |
+| `payload` a non-object (`"x"`, `[]`) | read as an object with no keys | `คำขอไม่ถูกต้อง` |
+| Text fields given as numbers (`id: 5`) | coerced with `String()` | refused as not text |
+| `expiresAt` | anything `new Date()` reads (a number of milliseconds, a date without a zone) | RFC 3339 text only |
+| `minutes` given as text (`"30"`) | coerced with `Number()` | refused |
+| `branchId` given as a number (`5`) | coerced to text, passes the branch check (`7005`) | refused `สาขาไม่ถูกต้อง` (§5.6.4 step 5: a non-empty string only) |
+| Registrations | rows from the public site | none exist; `registrations` is always empty |
+| `token_hash` reuse | the database's error text | `รหัสสมาชิกไม่ถูกต้อง` |
+| A bad form with a bad booking | the booking's refusal (checked before the engine) | the form's refusal (`before_in` runs after the form is judged) |
+| Member flag | from `members` | the same, from T15-g; the row "Customer JSON · Member fields pending D5" is removed |
+
+#### 5.6.8 Edge cases and the test of each
+
+| Edge | Expected | Test (row) |
+|---|---|---|
+| a CONFIRMED booking at exactly `expiresAt` | shown `EXPIRED`; cancel works; confirm refuses rule 5; a save refuses row 3 | `booking_machine_test.rs::expiry_is_inclusive_of_the_instant` (T15-a) |
+| confirm twice with the same `expiresAt` | second `{saved: true}`, nothing written, even when the counter rate moved since | `booking_machine_test.rs::double_confirm_same_expiry_is_unchanged` (T15-a); `booking_service_test.rs::double_confirm_writes_nothing` (T15-c) |
+| confirm twice with another `expiresAt` | `ยืนยันได้เฉพาะคำขอ Member ที่รอยืนยัน` | `booking_machine_test.rs::reconfirm_other_expiry_refused` (T15-a) |
+| cancel after cancel | `{saved: true}`, nothing written | `booking_machine_test.rs::cancel_twice_is_unchanged` (T15-a) |
+| cancel a USED booking | `การจองถูกใช้ทำรายการแล้ว` | `booking_machine_test.rs::cancel_used_refused` (T15-a) |
+| confirm a non-member booking still PENDING | impossible: the table's CHECK forbids PENDING without a member | `booking_repository_db_test.rs::pending_needs_a_member` (T15-b) |
+| `confirm` with `expectedRate` ≠ counter, or no counter rate | `เรทเปลี่ยน กรุณาโหลดใหม่` | `booking_machine_test.rs::confirm_rate_moved` (T15-a) |
+| a booking id from another branch | `ไม่พบการจอง`, on both routes | `booking_service_test.rs::other_branch_is_not_found` (T15-c); `bookings_http_test.rs::staff_cannot_read_another_branch` (T15-f) |
+| a FRONT naming another branch on `/api/staff/bookings` | runs on their own branch | `bookings_http_test.rs::staff_branch_is_forced` (T15-f) |
+| more than 1,000 bookings | `list` refuses with v2's sentence; 1,000 exactly is listed | `booking_service_test.rs::list_caps_at_one_thousand` (T15-c) |
+| `create` repeated with the same `requestId` and payload | the stored booking, no second row; another payload → `CHANGED` | `booking_service_test.rs::create_is_idempotent` (T15-c) |
+| `create` while rules are off, no shift open, or the rate moved | refusals 9, 10, 11 in that order | `booking_machine_test.rs::create_refusal_order` (T15-a) |
+| `create` for a member | PENDING with the member, `expiresAt` null | `booking_machine_test.rs::member_booking_waits` (T15-a) |
+| `member` re-issued for the same customer | same member id, new hash, old code no longer matches | `booking_repository_db_test.rs::reissue_keeps_id_replaces_hash` (T15-b) |
+| `member` for a DEMO customer, or `identityConfirmed: "true"` | `ต้องเลือกลูกค้าและยืนยันตรวจตัวตนหน้าร้านก่อน` | `booking_service_test.rs::member_needs_a_live_customer_and_true` (T15-c) |
+| `settings` with `minutes: 4`, `1441`, `30.5`, `"30"`, or `enabled: 1` | `กำหนดเวลา 5–1440 นาที` | `booking_values_test.rs::rules_parse` (T15-a) |
+| no `bookingRules` stored | `list` prints `{enabled: 1, minutes: 30}` without `branch_id`; `create` uses 30 minutes | `booking_ports_test.rs::rules_default` (T15-e); `bookings_http_test.rs::list_default_rules_shape` (T15-f) |
+| an employee on `/api/bookings` | 403 `เฉพาะเจ้าของระบบเท่านั้น`, before the Origin check | `bookings_http_test.rs::owner_route_refusal_order` (T15-f) |
+| `/api/staff/bookings` with only an owner's session | 401 `EMPLOYEE_AUTH_REQUIRED` | `policy_staff_bookings_test.rs` (T15-d); `bookings_http_test.rs` (T15-f) |
+| a RATES employee, or a FRONT asking `member` | 400 `บทบาทนี้ไม่มีสิทธิ์ทำรายการ`; 403 `เฉพาะเจ้าของระบบเท่านั้น` | `policy_staff_bookings_test.rs` (T15-d) |
+| any refusal of either route | JSON `{error}`, never plain text; `Cache-Control: no-store` on every refusal except the owner route's step-1 401/403 and the 500, which carry none (§5.6.3) | `bookings_http_test.rs::every_refusal_is_json` — asserts the body on every refusal, the header present on the rest and absent on those three (T15-f) |
+| the kept `bookings.js` against v3 | `list`, `confirm`, `cancel`, `member`, `settings` parse and draw | `bookings_http_test.rs::kept_screen_shapes` — the five requests exactly as `bookings.js:5` builds them (T15-f) |
+| the desk's `get` on `/staff/desk` | the booking with `customerId` | `bookings_http_test.rs::staff_desk_get` (T15-f) |
+| two saves using one booking, different submissions | one saves, the other gets `การจองนี้ถูกใช้ทำรายการแล้ว` | `booking_save_step_test.rs::second_submission_refused` (T15-h) |
+| the same save repeated | the stored answer; the booking stays USED by it | `booking_save_step_test.rs::repeat_passes` (T15-h) |
+| a booked rate that is no longer the counter rate | saved at the booked rate | `booking_save_step_test.rs::booked_rate_skips_counter_check` (T15-h) |
+| a save with no `onlineBookingId` | unchanged — the counter-rate check still refuses a wrong rate | `booking_save_step_test.rs::no_claim_keeps_rate_check` (T15-h) |
+| a member booking saved for another customer | `ลูกค้าไม่ตรงกับ Member ที่จอง` | `booking_save_step_test.rs::member_customer_must_match` (T15-h) |
+| a booking cancelled, or expired, between `get` and the save | `การจองยังไม่ยืนยัน หมดอายุ หรือถูกยกเลิกแล้ว`, nothing saved | `booking_save_step_test.rs::cancelled_or_expired_refused` (T15-h) |
+| the admin snapshot after `member` | `member: true`, `memberVerifiedAt` its time; the six write answers still strip both (`snapshot.rs:183`) | `snapshot_members_test.rs` (T15-g) |
+
+Tests that need the database follow the repository's opt-in (`TEST_DATABASE_URL`); `booking_machine_test.rs`,
+`booking_values_test.rs` and the policy test need none. There is no v2 recording of these actions to replay (§9): v2's
+booking module reads tables the recording harness does not hold, so the ticket author writes the failing tests from this
+table and from the cited lines.
+
+#### 5.6.9 Who provides, who uses
+
+| Provided | By row | Used by |
+|---|---|---|
+| `Booking`, `Member`, `BookingStatus`, `BookingAction`, `BookingRules`, `BookingError`, the input functions, the four commands, `BookingMachine` and its step types; the three traits and `BookingIds`; every `mod.rs` of the booking directories with all their `pub mod` lines | T15-a | every other row |
+| the two tables; `PgBookingRepository`, `PgMemberRepository`, `UuidBookingIds` | T15-b | T15-c (its database tests), T15-g, T15-f (wiring) |
+| `BookingService` and its five use-case files | T15-c | T15-f, T15-h |
+| `EntryPath::StaffBookings` | T15-d | T15-f |
+| `BookingRulesService`, `PgBookingPorts` | T15-e | T15-f (wiring, `settings`, `list`'s rules) |
+| `/api/bookings`, `/api/staff/bookings` | T15-f | `bookings.js`, `registrations.js`, the desk hand-off (`5738`) on `/desk` and `/staff/desk` |
+| the member flag of `adminSnapshot` | T15-g | the admin customer view |
+| the booking check of a save | T15-h | every `saveTransaction` that names `onlineBookingId`, both RPC routes |
+
 ## 6. Authorisation
 
 Two pure functions of `Policy` in `xc-auth` (`domain/policy/entities/policy.rs`; signatures in §5.1), which every route and service asks:
@@ -1820,7 +2204,7 @@ Source, had there been one: `ledger_rows` JSON arrays + side tables of `xc_desk_
 | `file_records` + upload dir | `files` + same directory | bytes not rewritten; `sha256` re-verified |
 | `employees`, `employee_audit`, `owners` | not migrated — v3 starts empty (D6) | accounts are created again through `create-owner` and the employee screen; no v2 password hash is loaded |
 | `kiosk_*`, `device_*`, `receipt_images` | same names | in-flight `QUOTED` kiosk rows dropped |
-| `bookings`, `members`, `member_registrations`, `booking_rules` | migrated as-is if D5 = port; otherwise left in the v2 database | `adminSnapshot` reads `members` to flag customers (`7038`) — if not ported, that flag is always false |
+| `bookings`, `members`, `member_registrations`, `booking_rules` | not migrated — v3 starts empty (D6; the owner on #377, 2026-10-08) | D5 = port: v3 has its own `bookings` and `members` (§5.6.6); the member flag of `adminSnapshot` (`7038`) reads v3's `members` (T15-g) |
 
 **(2) Backfill** — none after import; the importer writes final values. Measure before cutover:
 
@@ -2462,7 +2846,7 @@ A1 → A2 → A3 are in sequence: each row's Depends-on says which files it shar
 | T13a | `DeviceService`, `DeviceRepository`, `SavedExchanges` (trait), the tables `device_jobs`, `device_events`, `device_settings` — **merged** (PR 107, ticket #106) | `api/src/infrastructure/devices/` (the ten files of #106), `api/migrations/20261007180000_devices.sql` | T2d, T5a |
 | T13b | Devices over HTTP (§5.4): `POST /api/devices` (the six actions of §5.3, `snapshot` with the admin snapshot as `model`) and `GET /devices/receipt`, building `DeviceService` with T13b-S's `PgSavedExchanges`; the receipt image and its table `receipt_images`, with §5.4's data-migration section. The receipt half waits for a recording of v2 (§11) | `api/src/presentation/http/devices.rs`, `api/src/presentation/dto/device.rs`, `api/src/infrastructure/devices/{receipt_image_service,receipt_image_repository,pg_receipt_image_repository}.rs` (new), the `pub mod` lines of those three in `api/src/infrastructure/devices/mod.rs`, `api/migrations/*_receipt_images.sql`; the provided tests `api/tests/{devices_http_test.rs,devices_http_common/mod.rs,fixtures/devices_http/}`, `api/tools/v2-fixtures/gen_devices_http.mjs`; `api/Cargo.toml` and `api/Cargo.lock` **only if** the receipt image needs a renderer crate (§5.4, must take from the v2 recording) | T13a, T13b-S (#237), T8, T11b (`model`), T6b (`FileService`), T4c (the actor), SO (#161), T1b. Shares no file with T8c-2b |
 | T14 | `xc-import` — **not built** while D6 holds (v2 has test data only) | `api/crates/xc-import/` | reopens only if D6 changes |
-| T15 | Bookings/members (`/api/bookings`) | `api/crates/xc-exchange/src/{domain,application,infrastructure}/booking/`, `api/src/presentation/http/bookings.rs`, `api/src/presentation/dto/booking.rs`, `api/migrations/*_bookings.sql` | D5 |
+| T15 | (cut into T15-a … T15-h, *Online bookings* below; kept as the name other rows' Depends-on cells use) | — | D5 (decided, §5.6) |
 | P2-S (#236) | The save family on both RPC routes: `SaveAction` answers `saveTransaction` (the owner and FRONT on `/api/rpc`, FRONT on `/api/staff/rpc`; `Policy` has judged the role before). `run` reads the payload into `SaveTransaction` (the 23 fields as `rpc_common::save_behind` reads them; a `passport`/`slip` that is present and truthy but carries no text `uploadKey` is the key `""`, so the save answers `ไฟล์แนบไม่ถูกต้อง`, `engine_actions.json` #108, v2 `server.mjs:6987-6988`), `SaveExtras` (`staffDraftId`, `kioskRequestId` as text; `countConfirmed` only for the JSON `true`, §5.4) and `SaveActor` (the account's id, the caller's username, the employee's id for staff, the role), calls `SaveTransactionWorkflow::save_as`, and prints v2's nine keys in v2's order: `saved`, `mode`, `documentRef`, `receiptNo` (the document number), `passportUrl`, `slipUrl`, `receiptUrl`, `folderUrl` = `/documents?branch=<branch>&ref=<number>`, `sheetUrl` = `/?branch=<branch>#transactions` (`server.mjs:6853`; the staff route's dispatcher rewrites links, `staff_view.rs`). [required] `SaveAction::new(workflow, devices: DeviceService, kiosk: KioskService, custody: CustodyService)` registers the steps in v2's order — `DeviceSaveStep`, `KioskSaveStep`, `CustodySaveStep` (count check in v2's proxy, then the kiosk's `beforeSave`, then custody in the engine; #153) — and `registered_actions` builds the two new services. Its tests are provided on `feat/save-action-p2s`: `gap_save::WIRED = true`, `Desk::state()` sharing the upload directory, and `rpc_save_test.rs` (the named draft completed, the branch in both links, a kiosk request nobody made refused) | `api/src/application/compat/actions/save.rs`, `api/src/presentation/http/rpc.rs` (`registered_actions` only); provided: `api/tests/rpc_save_test.rs`, `api/tests/rpc_common/{gap_save.rs,mod.rs}` | T11a-0 (#155), T8c-1 (#138), T8c-2a (#153), #154 (a save completes only the saver's own matching draft); T8c-2b (#234, `DeviceSaveStep`), T13b-S (#237, `PgSavedExchanges`, the `SavedExchanges` `registered_actions` builds `DeviceService` with) |
 | T13b-S (#237) | `PgSavedExchanges`: the server's `SavedExchanges`, split out of T13b because nothing of it waits for the recording T13b needs (lane controller, 2026-10-07). [required] `new(transactions: TransactionService)`; `find(branch, reference)` answers from `TransactionService::find` with no SQL of its own: `Some(Completed)` for a live exchange of that branch with exactly that document number, `None` when there is none or it is `DEMO` (only live exchanges count, `saved_exchanges.rs`), the error on a database failure. v3 stores no pending or cancelled exchange, so `NotCompleted` is never answered. Its stub and tests are provided on `feat/pg-saved-exchanges-t13b-s` | `api/src/infrastructure/devices/pg_saved_exchanges.rs` and its `pub mod` line in `api/src/infrastructure/devices/mod.rs`; provided: `api/tests/pg_saved_exchanges_test.rs` | T8 (`TransactionService::find`), T13a (`SavedExchanges`) — both merged |
 | CS (#158) | One home for the custody port and one way to build `CustodyService`. `EmployeeCustody` moves, unchanged, to `application::custody::employee_custody` (new file); `presentation::http::employees` keeps the name with `pub use`, so the provided tests compile unchanged. `pg_custody_service(pool: &PgPool, shifts: &ShiftService, branch_tx: &BranchTx) -> CustodyService` (new file `infrastructure/custody/custody_service.rs`, the body of `rpc.rs`'s private `custody_service`) is the only place the four parts are put together: `rpc.rs` and `PgEmployeeCustody::new(pool)` (same signature) both call it. No `crate::presentation` import remains under `application` or `infrastructure` | `api/src/application/mod.rs`, `api/src/application/custody/{mod.rs,employee_custody.rs}`, `api/src/application/workflows/disable_employee.rs`, `api/src/presentation/http/{employees.rs,rpc.rs}`, `api/src/infrastructure/custody/{mod.rs,custody_service.rs,employee_custody.rs}` | DE (#157), #145 (both merged); BS (#163, merged) also edited `employee_custody.rs` |
@@ -2546,6 +2930,29 @@ a crate.
 **In parallel:** **AG-1 and AG-5** start together. After AG-1, **AG-2, AG-3 and AG-4** run side by side. AG-6 needs AG-5
 and AG-2; AG-PD needs AG-3 and PD-0/S0.
 
+#### Online bookings (§5.6, D5 = port)
+
+Every row owns its files alone; a `mod.rs` the later rows need is created whole by T15-a (or, for the root's two
+`bookings/` directories, by T15-e), so no other row edits it. Fixtures: none from v2 (§5.6.8); the ticket author commits
+the failing tests named in §5.6.8 first, on the branch the PR will come from. All rows are [required] for D5 except where
+§5.6 marks a choice [proposed]; those choices are named in the row so the owner can overrule one without re-cutting.
+
+| # | Ticket | Files owned | Depends on |
+|---|---|---|---|
+| T15-a | The booking domain, pure: `Booking`, `Member`, `BookingStatus`, `BookingAction`, `BookingRules` (`DEFAULT` enabled 30 min, `parse`), `BookingError` (the sentences of §5.6.3), `booking_input` (text, phone, member secret, `token_hash` = SHA-256 hex [proposed]), the four commands with `CreateBooking::request_hash`, `BookingMachine` and its step types (every transition and refusal order of §5.6.3, including `create`: statuses [required], payload [proposed]); the traits `BookingRepository`, `MemberRepository`, `BookingPorts`, `BookingIds`; every `mod.rs` of the three booking directories with all their `pub mod` lines, and one-line `//!` stubs for the files T15-b and T15-c fill; `sha2` and `uuid` (both already workspace dependencies, `api/Cargo.toml:44-45`) added to `xc-exchange` | `api/crates/xc-exchange/src/domain/booking/**`, `api/crates/xc-exchange/src/application/booking/mod.rs`, `api/crates/xc-exchange/src/infrastructure/booking/mod.rs`, the stubs `application/booking/{list,create,change,members,redeem}.rs` and `infrastructure/booking/{member_repository,booking_ids}.rs` of that crate, `api/crates/xc-exchange/Cargo.toml`, `api/Cargo.lock`; provided: `api/crates/xc-exchange/tests/{booking_machine_test,booking_values_test}.rs` | none |
+| T15-b | The two tables of §5.6.6 with its data-migration section; `PgBookingRepository`, `PgMemberRepository` (`upsert_in` maps the `token_hash` unique violation to `TokenTaken`), `UuidBookingIds` (`BK-<uuid>`, `MB-<uuid>`) | `api/migrations/<timestamp>_bookings.sql`, `api/crates/xc-exchange/src/infrastructure/booking/{booking_repository,member_repository,booking_ids}.rs`; provided: `api/crates/xc-exchange/tests/booking_repository_db_test.rs` | T15-a |
+| T15-c | `BookingService` (`new`, `branch_exists`) and its use cases, one `impl` block per file: `list`/`get`, `create`, `confirm`/`cancel`, `issue_member`/`members`, `redeem_in`/`use_in`; every write through `BranchTx::run` of the branch, every transition through `BookingMachine` | `api/crates/xc-exchange/src/application/booking/{service,list,create,change,members,redeem}.rs`; provided: `api/crates/xc-exchange/tests/booking_service_test.rs` (database, with a fake `BookingPorts`) | T15-a, T15-b |
+| T15-d | `EntryPath::StaffBookings` [required role table, §5.6.4; owner 2026-10-08]: nobody or an owner alone → `EmployeeAuthRequired`; FRONT, BACKEND, MANAGER may `list`, `get`, `create`, `confirm`, `cancel`; the same roles on the four owner actions → `OwnerOnly`; other roles → `RoleNotAllowed`; unknown → `InvalidRequest`. No new `PolicyError`; `policy_common::path_name` (`api/crates/xc-auth/tests/policy_common/mod.rs:85`) gains the variant | `api/crates/xc-auth/src/domain/policy/value_objects/entry_path.rs`, `api/crates/xc-auth/src/domain/policy/entities/policy.rs`, `api/crates/xc-auth/tests/policy_common/mod.rs` (`path_name` only); provided: `api/crates/xc-auth/tests/policy_staff_bookings_test.rs` | none — but not handed out while another row holds `policy.rs` |
+| T15-e | `BookingRulesService` over `BranchSettingStore` (§5.5.1, document `bookingRules`; `save` reads the stored version inside the branch's `BranchTx` and writes the next, last write wins) [proposed: the store instead of a `booking_rules` table]; `PgBookingPorts::new(pool)` (§5.6.5 *Dependency rule*) | `api/src/application/bookings/{mod.rs,booking_rules_service.rs}`, `api/src/infrastructure/bookings/{mod.rs,booking_ports.rs}`, one `pub mod bookings;` line each in `api/src/application/mod.rs` and `api/src/infrastructure/mod.rs`; provided: `api/tests/booking_ports_test.rs` | T15-a |
+| T15-g | The member flag: `ServiceSnapshotSources::members` reads `PgMemberRepository::list` of the branch (`MemberMark { customer_id, verified_at }`); [required] `ServiceSnapshotSources::new` keeps its signature and builds the repository from the pool it already holds (as it builds `PaymentSettingsService`, `snapshot_sources.rs:51-55`), so `presentation/http/rpc.rs` is not edited | `api/src/infrastructure/compat/snapshot_sources.rs`; provided: `api/tests/snapshot_members_test.rs` | T15-b |
+| T15-f | The two routes of §5.6.4 and the answers of §5.6.3 in `http/bookings.rs`'s `configure`, building `BookingService` with `PgBookingPorts`, the Pg repositories and `UuidBookingIds` from `state.db`; the JSON of `dto/booking.rs`; the known-difference rows of §5.6.7, replacing the two D5 rows of `xchange-v3-known-differences.md` (#376) | `api/src/presentation/http/bookings.rs`, `api/src/presentation/dto/booking.rs`, `docs/design/xchange-v3-known-differences.md`; provided: `api/tests/bookings_http_test.rs` | T15-c, T15-d, T15-e, T15-g (the known-differences file is this row's alone) |
+| T15-h | Using a booking at the desk (§5.6.3 *Using a booking*, §5.6.5 *The save seam*): `BookingClaim`, `SaveContext.booking`, `SaveStep::vouches_for_rate`, `save_as_booked`, the rate check consulting the steps, `BookingSaveStep`, `SaveAction::with_booking_check` chained in `registered_actions` | `api/src/application/workflows/{booking_save_step.rs,save_step.rs,save_transaction.rs}`, `api/src/application/workflows/mod.rs` (one line), `api/src/application/compat/actions/save.rs`, `api/src/presentation/http/rpc.rs` (`registered_actions` only); provided: `api/tests/booking_save_step_test.rs` | T15-b, T15-c, and **PM-S (#345)**, which edits `save.rs`, `registered_actions` and `workflows/mod.rs` too |
+
+**In parallel:** **T15-a and T15-d** start together. After T15-a, **T15-b and T15-e** run side by side. After T15-b,
+**T15-c and T15-g** run side by side. **T15-f** waits for T15-c, T15-d, T15-e and T15-g; **T15-h** for T15-c and PM-S —
+T15-f and T15-h share no file and run side by side. The kept screen works once T15-f is deployed; a booking can be used
+at the desk once T15-h is.
+
 ## 11. Open items that block specific tickets
 
 | Item | Phase | Blocks | Who |
@@ -2554,7 +2961,7 @@ and AG-2; AG-PD needs AG-3 and PD-0/S0.
 | Rust CI | 2 | nothing — `.github/workflows/api.yml` is on `main` (PR 21, then PR 24 for the shared build decision); `api` reported `success` on `main` `4d515d7` | — |
 | Lane for this repo in the fleet's lane table | 1, 2 | workers on other machines cannot verify who controls it | owner |
 | Source repos `xchange-online`, `xchange-booking` | 1, 2 | phase 1 works from the readable `public/kiosk.js`; the phase 2 test harness is simpler with source | owner |
-| D5 port bookings/members or not | 2 | T15, and the member flag in T11b | owner |
+| D5 port bookings/members or not | 2 | nothing — **answered**: port it (owner 2026-10-08, #377); §5.6. The staff role table (§5.6.4) and `create`'s statuses are [required] (owner 2026-10-08, https://github.com/108-Plaza/xchange/pull/395#issuecomment-6050139400); `create` is API-only until phase 2 (option A, https://github.com/108-Plaza/xchange/issues/377#issuecomment-6050446334). The choices §5.6 still marks [proposed] — `create`'s payload and its two new sentences, registrations not ported, rules in the setting store, the unpeppered member-code hash — are technical and judged by the design reviewer | owner |
 | A recording of v2's devices HTTP wrapper and receipt archive (`server.mjs:7545`, `7562-7766`, `7794`): the `/api/devices` envelope, what `/devices/receipt` returns, the columns of `receipt_images` (§5.4) | 2 | T13b's tests; `POST /api/devices` could go first if T13b is cut in two | lane controller (the bundle is not in this repository) |
 | Role table in §6 (v2's two allow-lists disagree) | 2 | nothing — the decision in force is that both paths are reproduced as recorded from v2, and `Policy` is on `main` that way (PR 70, `2314003`); T11a is not blocked by it. The owner may still rule which path is right for the cells listed in §6; that ruling would change the merged table and T11a's behaviour | owner, if and when |
 | Integrate the passport-step drawer (D10, §5.5.5) | 2 | nothing — **answered**: the owner, 2026-10-07, asked whether D11's "ทำเลย" also lifts this hold: "ทำเป็น ชุดเดียวกับ kioks" (recorded on #274, issuecomment-6040657227). AG-PD (which replaces PD-1) ships in the same batch as the kiosk work. Still open inside AG-PD: whether branches are switched on by configuration ([proposed] `devices.passportDrawerBranches`) | — |
