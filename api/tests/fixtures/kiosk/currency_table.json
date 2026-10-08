@@ -1,5 +1,5 @@
 {
- "source": "v2 server.mjs (xchange-online@3ffc5a5), the first manage answer of kiosk/currencies.json; api/tools/v2-fixtures/gen_kiosk_http.mjs",
+ "source": "v2 10-06 bundle (server.mjs sha256 99ddcd10…), the first manage answer of kiosk/currencies.json; api/tools/v2-fixtures/gen_kiosk_http.mjs",
  "currencies": [
   {"code":"AED","name":"เดอร์แฮมสหรัฐอาหรับเอมิเรตส์","nameEn":"United Arab Emirates Dirham","countries":[{"code":"AE","en":"United Arab Emirates","th":"สหรัฐอาหรับเอมิเรตส์"}]},
   {"code":"AFN","name":"อัฟกานิอัฟกานิสถาน","nameEn":"Afghan Afghani","countries":[{"code":"AF","en":"Afghanistan","th":"อัฟกานิสถาน"}]},

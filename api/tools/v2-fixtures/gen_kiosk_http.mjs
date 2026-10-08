@@ -1,20 +1,26 @@
 // Records what v2 answers on `POST /api/kiosk` — the one route of the customer kiosk, the
-// desk's kiosk queue and the kiosk-currency page — for ticket T12c.
+// desk's kiosk queue and the kiosk-currency page — for ticket T12c, re-recorded from the
+// 10-06 bundle for row K-HTTP (`docs/design/xchange-v3.md` §5.5.3).
 //   node gen_kiosk_http.mjs <v2 bundle dir> <postgres url of a scratch database> [out dir]
 //   out dir defaults to ../../tests/fixtures; it gets kiosk/*.json
 //
 // Like gen_compat.mjs (whose loader, clock, id counter and file writer are repeated here
-// unchanged, because that script runs on import) this runs the WHOLE deployed bundle
-// (`server.mjs`, `xchange-online@3ffc5a5`, with `schema.sql` beside it) against a real
-// PostgreSQL: every answer went through v2's own `handle(request)`. The bundle is not in this
+// unchanged, because that script runs on import) this runs the WHOLE bundle against a real
+// PostgreSQL: every answer went through v2's own `handle(request)`. The bundle is the 10-06
+// one (`XC-Desk-v2-Passport-Drawer-20261006.zip`, sha256 6514b4c8…; `server.mjs` sha256
+// 99ddcd10…), with `schema.sql` and the three add-on modules `queue-work.mjs`,
+// `payment-settings.mjs`, `passport-drawer.mjs` beside it. The bundle is not in this
 // repository and nothing of it is copied here.
 //
 // The database: the schema `xc_kiosk_http_fixture` of the database named, made from v2's
 // `schema.sql`, dropped for every scenario and at the end.
 //
-// Replaced, and nothing else: the listening statement is cut off; `Date` is a settable clock;
-// `randomUUID` / `randomBytes` count; `fetch` answers the two Bank of Thailand addresses;
-// v2's `console` is silent. Written beside v2's own statements: the `owners` row, the session
+// Replaced, and nothing else: the listening statement is cut off; `Date` is a settable clock,
+// in `server.mjs` and in the three add-on modules alike; PostgreSQL's `clock_timestamp()` (the
+// time queue-work.mjs stamps a claim and a completion with) is that same clock: a function of
+// that name in the fixture schema, found before `pg_catalog`'s because the search path names
+// `pg_catalog` after the schema; `randomUUID` / `randomBytes` count; `fetch` answers the two
+// Bank of Thailand addresses; v2's `console` is silent. Written beside v2's own statements: the `owners` row, the session
 // rows, and `must_change` cleared on the employees v2 created.
 //
 // Beside the three scenario files it writes kiosk/behind.json — per file and step number, what
@@ -84,10 +90,16 @@ async function load() {
   // The upload shim's bare `randomUUID` (temporary file names) is left alone.
   const head = src.slice(0, app), body = src.slice(app, tail).replace(/^import \{([^}]*)\} from "node:crypto";$/gm, (line, names) => /\bas\b|createHash|scrypt|randomBytes/.test(names) ? 'const {' + names.replace(/ as /g, ': ') + '} = globalThis.__XC_COMPAT.crypto;' : line);
   if ((body.match(/globalThis\.__XC_COMPAT\.crypto/g) || []).length !== 9) throw Error('server.mjs: expected nine crypto imports in v2\'s own modules');
+  // the add-on modules, beside it, on the same clock
+  for (const m of ['queue-work.mjs', 'payment-settings.mjs', 'passport-drawer.mjs']) {
+    const text = fs.readFileSync(path.join(bundleDir, m), 'utf8');
+    if (/\bDate\s*=/.test(text)) throw Error(m + ': assigns Date');
+    fs.writeFileSync(path.join(work, m), 'const Date = globalThis.__XC_COMPAT.Date;\n' + text);
+  }
   src = 'const Date = globalThis.__XC_COMPAT.Date, fetch = globalThis.__XC_COMPAT.fetch, console = { log() {}, error() {}, warn() {} };\n' + head + body + '\nexport { handle, pool };\n';
   fs.writeFileSync(path.join(work, 'server.mjs'), src);
   const url = new URL(databaseUrl);
-  url.searchParams.set('options', '-c search_path=' + SCHEMA);
+  url.searchParams.set('options', '-c search_path=' + SCHEMA + ',pg_catalog');
   Object.assign(process.env, { DATABASE_URL: url.toString(), UPLOAD_DIR: uploads, BOOKING_BRIDGE_SECRET: 'fixture-bridge-secret-0123456789abcdef', AUTH_ENABLED: '1', DEVICES_ENABLED: '1', CUSTOMER_HOST: 'customer.test', PORT: '0' });
   for (const k of ['OWNER_ID', 'OWNER_EMAIL', 'DESK_HOST', 'ADMIN_ORIGIN']) delete process.env[k];
   globalThis.__XC_COMPAT = { Date: FakeDate, fetch: fakeFetch, crypto: fakeCrypto };
@@ -97,6 +109,10 @@ async function load() {
 async function freshDatabase() {
   await sql('DROP SCHEMA IF EXISTS ' + SCHEMA + ' CASCADE');
   await sql('CREATE SCHEMA ' + SCHEMA);
+  // the database's clock is the script's: see the head of this file
+  await sql('CREATE TABLE ' + SCHEMA + '.xc_fixture_clock (at timestamptz NOT NULL)');
+  await sql('INSERT INTO ' + SCHEMA + '.xc_fixture_clock VALUES ($1)', [new RealDate(T0).toISOString()]);
+  await sql('CREATE FUNCTION ' + SCHEMA + '.clock_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT at FROM ' + SCHEMA + '.xc_fixture_clock $$');
   await sql(fs.readFileSync(path.join(bundleDir, 'schema.sql'), 'utf8'));
   fs.rmSync(uploads, { recursive: true, force: true });
   fs.mkdirSync(uploads, { recursive: true });
@@ -140,13 +156,19 @@ const SENTENCES = new Set(DISCOVER ? [] : [
   "Set valid counter buy and sell rates first.",
   "Staff access required.",
   "The assigned employee must confirm the passport check.",
-  "This request is already assigned or unavailable.",
   "Unexpected token 'o', \"not json\" is not valid JSON",
   "Unknown kiosk action.",
   "กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่",
   "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
   "ไม่พบสาขาที่เลือก กรุณารีเฟรช",
   "ไม่สามารถดึงเรทล่าสุดจาก ธปท. ได้ กรุณาลองใหม่ก่อนบันทึกเรท",
+  // the 10-06 bundle's queue work (queue-work.mjs)
+  "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด",
+  "ตัวกรองไม่ถูกต้อง",
+  "หน้าข้อมูลไม่ถูกต้อง",
+  "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว",
+  "ออเดอร์นี้มี fr2 กำลังทำรายการแล้ว",
+  "ออเดอร์นี้มี owner กำลังทำรายการแล้ว",
 ]);
 const seen = new Map();
 
@@ -195,6 +217,7 @@ class World {
     for (const k of Object.keys(h)) if (h[k] === null) delete h[k];
     const init = { method, headers: h };
     if (method !== 'GET' && method !== 'HEAD' && body !== undefined) init.body = body;
+    await sql('UPDATE ' + SCHEMA + '.xc_fixture_clock SET at = $1', [new RealDate(clock).toISOString()]);
     const res = await v2.handle(new Request(ORIGIN + route, init));
     const text = await res.text(), got = Object.fromEntries([...res.headers].filter(([k]) => k !== 'set-cookie'));
     return { status: res.status, headers: got, text };
@@ -283,7 +306,7 @@ function fileText(w) {
   };
   const inner = (v) => Array.isArray(v) ? '[' + v.map(put).join(',') + ']' : '{' + Object.entries(v).map(([k, x]) => { if (k === '$shared') throw Error('v2 used the key $shared'); return JSON.stringify(k) + ':' + put(x); }).join(',') + '}';
   const lines = w.steps.map((s) => { const { body, ...rest } = s; const head = JSON.stringify(rest); return '  ' + (body === undefined ? head : head.slice(0, -1) + ',"body":' + put(body) + '}'); });
-  const out = '{\n "source": ' + JSON.stringify('v2 server.mjs (xchange-online@3ffc5a5) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_kiosk_http.mjs') + ',\n'
+  const out = '{\n "source": ' + JSON.stringify('v2 10-06 bundle (server.mjs sha256 99ddcd10…, with queue-work.mjs) on PostgreSQL, every step through handle(); api/tools/v2-fixtures/gen_kiosk_http.mjs') + ',\n'
     + ' "about": ' + JSON.stringify(w.about) + ',\n'
     + ' "reading": ' + JSON.stringify('A step is one request. `at` is the server clock when it arrived; a step with `view` is a read taken at the clock of the step before it. `body` is the JSON v2 answered; wherever {"$shared":"sN"} stands, put `shared.sN` there (recursively) and serialise without spaces, keys in the order written: those are v2\'s bytes. `headers` is written only where it differs from `defaultHeaders`. `text` replaces `body` when the answer was not JSON.') + ',\n'
     + ' "origin": ' + JSON.stringify(ORIGIN) + ', "defaultHeaders": ' + JSON.stringify(DEFAULT_HEADERS) + ',\n'
@@ -485,14 +508,14 @@ async function queue() {
   const everyone = [null, 'owner', 'FR1', 'FR2', 'BE1', 'MG1', 'RT1', 'MO1', 'FI1', 'SY1', 'DO1', 'RV1'];
   const desk = ['owner', 'FR1', 'FR2', 'BE1', 'MG1'];
   for (const who of everyone) await w.k(who ? 'ok' : 'no', who, 'notifications', {});
-  for (const who of everyone) await w.k(desk.includes(who) ? 'ok' : 'no', who, 'list', {});
+  for (const who of everyone) await w.k(who ? 'ok' : 'no', who, 'list', {}); // the 10-06 bundle: anyone signed in (server.mjs:8026)
   for (const who of everyone.filter((x) => !desk.includes(x))) for (const action of ['accept', 'get', 'identityChecked', 'publishReceipt']) await w.no(who, action, { id: q1.id, confirmed: true, image: PNG_URL });
   // the desk
   await w.no('FR1', 'identityChecked', { id: q1.id, confirmed: true }, 'nobody accepted it');
   await w.no('FR1', 'publishReceipt', { id: q1.id, image: PNG_URL });
   await w.ok('FR1', 'accept', { id: q1.id });
   await w.no('FR2', 'accept', { id: q1.id }, 'somebody else has it');
-  await w.no('FR1', 'accept', { id: q1.id }, 'accepting twice');
+  await w.ok('FR1', 'accept', { id: q1.id }, 'accepting twice: the holder\'s repeat (queue-work.mjs:11)');
   await w.ok('BE1', 'list', {}, 'the queue names who has it');
   await w.ok('BE1', 'notifications', {}, 'nothing waits now');
   await w.ok(null, 'status', { id: q1.id });
@@ -568,12 +591,81 @@ async function queue() {
   return w;
 }
 
+async function queueWork() {
+  const w = await World.open('kiosk/queue_work.json', 'The 10-06 bundle\'s queue work (queue-work.mjs): list with filter and page for anyone signed in, the claim with its start time, the holder\'s repeat claim, the two Thai refusals of a claim, notifications with who is working since when, fifty to a page, and a second branch.');
+  await w.staff([['FR1', 'FRONT'], ['FR2', 'FRONT'], ['BE1', 'BACKEND'], ['MG1', 'MANAGER'], ['RT1', 'RATES'], ['MO1', 'MONITOR'], ['FI1', 'FINANCE']]);
+  await w.rate('USD', 32.1, 32.6);
+  await w.rpc('owner', 'adminOpenShift', { requestId: w.rq(), opening: { THB: 100000, USD: 2000 } });
+  const everyone = [null, 'owner', 'FR1', 'FR2', 'BE1', 'MG1', 'RT1', 'MO1', 'FI1'];
+  // an empty queue, to everyone signed in
+  for (const who of everyone) await w.k(who ? 'ok' : 'no', who, 'list', {});
+  for (const who of everyone) await w.k(who ? 'ok' : 'no', who, 'notifications', {});
+  // the page and the filter
+  for (const page of [-1, 1.5, 100001, 'x', '2px', {}, -0.5]) await w.no('FR1', 'list', { page }, 'not a page');
+  for (const page of [0, null, '', false, 2, '2', ' 3 ', '1e3', true, 100000]) await w.ok('FR1', 'list', { page }, 'a page');
+  for (const filter of ['Waiting', 'x', 1, true, 'WAITING']) await w.no('FR1', 'list', { filter }, 'not a filter');
+  for (const filter of ['waiting', 'working', 'completed', 'all', null, '', false, 0]) await w.ok('FR1', 'list', { filter }, 'a filter');
+  await w.no('FR1', 'list', { page: -1, filter: 'x' }, 'the page is judged before the filter');
+  // three requests wait
+  const buy = (amount) => ({ type: 'BUY', currency: 'USD', amount });
+  const waiting = async (amount, note) => { const q = await w.ok(null, 'quote', buy(amount), note, 4000); await w.ok(null, 'confirm', { id: q.id }, undefined, 4000); return q; };
+  const q1 = await waiting(101, 'the first request');
+  const q2 = await waiting(102);
+  const q3 = await waiting(103);
+  const q0 = await w.ok(null, 'quote', buy(99), 'a quote nobody confirmed', 4000);
+  await w.ok('FR1', 'notifications', {}, 'three wait, nobody works');
+  await w.ok('RT1', 'list', {}, 'three waiting; no button for a role that cannot claim');
+  // the claim
+  await w.no('FR1', 'accept', { id: q0.id }, 'not confirmed: not ready');
+  await w.no('FR1', 'accept', { id: 'no-such-request' }, 'no such request: not ready');
+  await w.no('FR1', 'accept', {}, 'no id: not ready');
+  await w.no('RT1', 'accept', { id: q1.id }, 'a role that cannot claim');
+  await w.no(null, 'accept', { id: q1.id });
+  await w.ok('FR1', 'accept', { id: q1.id }, 'the claim: its start time');
+  await w.ok('FR1', 'accept', { id: q1.id }, 'the holder again: the same start, no second line', 5000);
+  await w.no('FR2', 'accept', { id: q1.id }, 'somebody else holds it: named');
+  await w.no('owner', 'accept', { id: q1.id }, 'not even the owner');
+  await w.ok('FR2', 'accept', { id: q2.id }, undefined, 2000);
+  await w.no('BE1', 'accept', { id: q2.id }, 'FR2 holds it');
+  await w.ok('owner', 'accept', { id: q3.id }, undefined, 2000);
+  await w.no('FR1', 'accept', { id: q3.id }, 'the owner holds it');
+  for (const who of ['owner', 'FR1', 'FR2', 'RT1']) await w.ok(who, 'list', {}, 'who works on what since when; the holder alone may continue');
+  for (const filter of ['waiting', 'working', 'completed']) await w.ok('FR1', 'list', { filter });
+  await w.ok('MG1', 'notifications', {}, 'nobody waits; three work, in the order they started');
+  await w.ok('FR1', 'identityChecked', { id: q1.id, confirmed: true });
+  await w.ok('FR1', 'accept', { id: q1.id }, 'the holder after the passport check: the same start');
+  await w.no('FR2', 'accept', { id: q1.id }, 'still held');
+  await w.ok('FR2', 'list', { filter: 'working' });
+  // more than fifty
+  const many = [];
+  for (let i = 0; i < 52; i++) many.push(await waiting(110 + i, i === 0 ? 'fifty-two more wait' : undefined));
+  await w.ok('FR1', 'notifications', {}, 'fifty-two wait');
+  await w.ok('FR1', 'list', {}, 'the first page: fifty, and there is more');
+  await w.ok('FR1', 'list', { page: 1 }, 'the second page: the rest');
+  await w.ok('FR1', 'list', { page: 2 }, 'nothing on the third');
+  await w.ok('FR1', 'list', { filter: 'waiting', page: 1 }, 'two waiting on the second page of the waiting');
+  // more than ten at work
+  for (let i = 0; i < 9; i++) await w.ok(['BE1', 'MG1', 'FR2'][i % 3], 'accept', { id: many[i].id }, i === 0 ? 'nine more claimed: twelve at work' : undefined, 1000);
+  await w.ok('FR1', 'notifications', {}, 'ten of the twelve at work are listed, all twelve counted');
+  await w.ok('owner', 'list', { filter: 'working' });
+  // another branch
+  const airport = (await w.rpc('owner', 'adminCreateBranch', { requestId: w.rq(), name: 'Airport' })).branchId;
+  await w.staff([['FR9', 'FRONT']], airport);
+  await w.ok('FR9', 'list', {}, 'the airport has no queue');
+  await w.ok('FR9', 'list', { branchId: 'MAIN' }, 'an employee is answered for their own branch');
+  await w.ok('FR9', 'notifications', {});
+  await w.no('FR9', 'accept', { id: many[20].id }, 'a request of another branch: not ready');
+  await w.ok('owner', 'list', { branchId: airport });
+  await w.ok('owner', 'list', { branchId: 'MAIN', filter: 'working' });
+  return w;
+}
+
 // ════ run ═══════════════════════════════════════════════════════════════════
 async function main() {
   await load();
   const worlds = [];
   try {
-    for (const scenario of [transport, currencies, queue]) worlds.push(await scenario());
+    for (const scenario of [transport, currencies, queue, queueWork]) worlds.push(await scenario());
   } finally {
     await sql('DROP SCHEMA IF EXISTS ' + SCHEMA + ' CASCADE').catch(() => {});
     await v2.pool.end();
@@ -583,11 +675,11 @@ async function main() {
   for (const s of SENTENCES) if (!seen.has(s)) throw Error('a sentence this script expects was never said: ' + s);
   fs.mkdirSync(path.join(outDir, 'kiosk'), { recursive: true });
   for (const w of worlds) { const text = fileText(w); fs.writeFileSync(path.join(outDir, w.file), text); console.error(w.file.padEnd(28) + String(w.steps.length).padStart(5) + ' steps ' + String(Buffer.byteLength(text)).padStart(9) + ' bytes'); }
-  const behind = '{\n "source": "v2 server.mjs (xchange-online@3ffc5a5) on PostgreSQL; api/tools/v2-fixtures/gen_kiosk_http.mjs",\n "about": "Per file and step number: the audit lines v2 wrote while it answered that step, and the Bank of Thailand reference kept with a rate that an accepted configure saved. A step that is not listed wrote no line.",\n'
+  const behind = '{\n "source": "v2 10-06 bundle (server.mjs sha256 99ddcd10…, with queue-work.mjs) on PostgreSQL; api/tools/v2-fixtures/gen_kiosk_http.mjs",\n "about": "Per file and step number: the audit lines v2 wrote while it answered that step, and the Bank of Thailand reference kept with a rate that an accepted configure saved. A step that is not listed wrote no line.",\n'
     + worlds.map((w) => ' ' + JSON.stringify(w.file.replace('kiosk/', '')) + ': {\n' + Object.entries(w.behind).map(([n, v]) => '  ' + JSON.stringify(n) + ': ' + JSON.stringify(v)).join(',\n') + '\n }').join(',\n') + '\n}\n';
   fs.writeFileSync(path.join(outDir, 'kiosk/behind.json'), behind);
   const first = worlds.find((w) => w.file === 'kiosk/currencies.json').steps[0].body.currencies;
-  const table = '{\n "source": "v2 server.mjs (xchange-online@3ffc5a5), the first manage answer of kiosk/currencies.json; api/tools/v2-fixtures/gen_kiosk_http.mjs",\n "currencies": [\n' + first.map(({ code, name, nameEn, countries }) => '  ' + JSON.stringify({ code, name, nameEn, countries })).join(',\n') + '\n ]\n}\n';
+  const table = '{\n "source": "v2 10-06 bundle (server.mjs sha256 99ddcd10…), the first manage answer of kiosk/currencies.json; api/tools/v2-fixtures/gen_kiosk_http.mjs",\n "currencies": [\n' + first.map(({ code, name, nameEn, countries }) => '  ' + JSON.stringify({ code, name, nameEn, countries })).join(',\n') + '\n ]\n}\n';
   fs.writeFileSync(path.join(outDir, 'kiosk/currency_table.json'), table);
   console.error('sentences: ' + [...seen].map(([s, n]) => n + '× ' + s).join(' | '));
 }

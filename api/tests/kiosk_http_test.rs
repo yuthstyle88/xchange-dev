@@ -1,10 +1,11 @@
-//! Written before the implementation (ticket T12c). Do not edit, delete or weaken.
+//! Written before the implementation (ticket T12c); re-recorded from the 10-06 bundle and
+//! extended for row K-HTTP (`docs/design/xchange-v3.md` §5.5.3). Do not edit, delete or weaken.
 //!
 //! `POST /api/kiosk` — the one route of the customer kiosk, the desk's kiosk
 //! queue and the kiosk-currency page — against what v2 answered.
 //!
-//! The three recorded files (`tests/fixtures/kiosk/{transport,currencies,queue}.json`,
-//! written by `api/tools/v2-fixtures/gen_kiosk_http.mjs` from v2's whole bundle on
+//! The four recorded files (`tests/fixtures/kiosk/{transport,currencies,queue,queue_work}.json`,
+//! written by `api/tools/v2-fixtures/gen_kiosk_http.mjs` from the 10-06 bundle on
 //! PostgreSQL) are replayed step by step through the server's own route table:
 //! status, `Cache-Control`, content type, the body, and the audit lines each
 //! step wrote (`tests/fixtures/kiosk/behind.json`).
@@ -30,8 +31,8 @@ mod snapshot_common;
 use chrono::Duration;
 use compat_common::{Fixture, fixtures_dir};
 use kiosk_http_common::{
-    ACCEPT_FIRST, ALREADY_ASSIGNED, Counter, INVALID_REQUEST, KIOSK, KioskReplay, SERVER_ERROR,
-    TOO_MANY_QUOTES, person,
+    ACCEPT_FIRST, Counter, INVALID_REQUEST, KIOSK, KioskReplay, SERVER_ERROR, TOO_MANY_QUOTES,
+    person,
 };
 use rpc_common::{Call, Rule};
 use serde_json::{Value, json};
@@ -62,15 +63,10 @@ fn engine_sentences(fixture: &Fixture) -> Vec<usize> {
 /// shown the step before (#66); `accept` by the current holder answers `{"saved":true}`
 /// (`queue.json` #105; ticket #328, row Q1). Row K-HTTP re-records these files from the 10-06 bundle.
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
-    match name {
-        "kiosk/queue.json" => {
-            let mut rules: Vec<(usize, Rule)> =
-                (67..=72).map(|n| (n, Rule::AnswersAs(66))).collect();
-            rules.push((105, Rule::AnswersAs(103)));
-            rules
-        }
-        _ => Vec::new(),
-    }
+    // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
+    // role, the holder's repeat `accept`), so each step is replayed as recorded.
+    let _ = name;
+    Vec::new()
 }
 
 async fn replayed(name: &str) -> (Fixture, usize) {
@@ -144,6 +140,105 @@ async fn queue_json_is_answered_as_v2_answered_it() {
         "three requests confirmed, three accepted, two checked"
     );
     assert_eq!(fixture.steps().len(), 171);
+}
+
+/// The 10-06 bundle's queue work (`queue-work.mjs`, `server.mjs:8015-8055`): `list` for
+/// anyone signed in, with `filter` and `page` and v2's two refusals of them, fifty to a page
+/// with `hasMore`; the claim answering its start time, the holder's repeat claim answering
+/// the same start with no second line, the two Thai refusals of a claim (the holder's
+/// username, or not ready); `notifications` with `serverNow`, `workingCount` and up to ten
+/// `working` in the order they started; a second branch.
+#[actix_web::test]
+async fn queue_work_json_is_answered_as_v2_answered_it() {
+    let (fixture, lines) = replayed("kiosk/queue_work.json").await;
+    assert_eq!(
+        lines, 68,
+        "fifty-five requests confirmed, twelve claimed, one checked"
+    );
+    assert_eq!(fixture.steps().len(), 212);
+}
+
+/// What no recording shows (the 10-06 bundle's recording completes no request): a request
+/// completed with both times prints them and the whole seconds between them, rounded down;
+/// a request with no times prints `null` for all three (§5.5.3 data migration, item 1); and
+/// claiming a completed request names its holder — the caller's own included, as v2 does
+/// (`queue-work.mjs:12`).
+#[actix_web::test]
+async fn a_completed_request_shows_its_times_and_names_its_holder() {
+    let fr1 = person("FR1", "FRONT", 0x11);
+    let fr2 = person("FR2", "FRONT", 0x12);
+    let counter = Counter::open(&[fr1.clone(), fr2.clone()]).await;
+    let done = counter
+        .waiting_request("00000000-0000-4000-8000-0000000c0101")
+        .await;
+    let old = counter
+        .waiting_request("00000000-0000-4000-8000-0000000c0102")
+        .await;
+    // `done`: claimed by FR1 at 05:10:00.250, completed at 05:12:31.999 — 151.749 s
+    // `old`: completed before the columns existed, so no times at all
+    for (id, started, completed) in [
+        (
+            &done,
+            Some("2026-10-06T05:10:00.250Z"),
+            Some("2026-10-06T05:12:31.999Z"),
+        ),
+        (&old, None, None),
+    ] {
+        sqlx::query(
+            "UPDATE kiosk_requests SET status = 'COMPLETED', staff = $2, \
+             submission_id = $3, document_ref = $4, \
+             started_at = $5::timestamptz, completed_at = $6::timestamptz WHERE id = $1",
+        )
+        .bind(id)
+        .bind(&fr1.id)
+        .bind(format!("sub-{id}"))
+        .bind(format!("XC-{id}"))
+        .bind(started)
+        .bind(completed)
+        .execute(&counter.desk.db.pool)
+        .await
+        .expect("complete the request by hand");
+    }
+
+    let list = counter
+        .ask(Some("FR2"), "list", json!({ "filter": "completed" }))
+        .await;
+    assert_eq!(list.status, 200, "{}", list.text);
+    let requests = list.json()["requests"].clone();
+    let by_id = |id: &str| {
+        requests
+            .as_array()
+            .expect("requests")
+            .iter()
+            .find(|r| r["id"] == json!(id))
+            .cloned()
+            .unwrap_or_else(|| panic!("{id} is listed: {requests}"))
+    };
+    let first = by_id(&done);
+    assert_eq!(first["status"], json!("COMPLETED"));
+    assert_eq!(first["staff"], json!("fr1"));
+    assert_eq!(first["startedAt"], json!("2026-10-06T05:10:00.250Z"));
+    assert_eq!(first["completedAt"], json!("2026-10-06T05:12:31.999Z"));
+    assert_eq!(first["durationSeconds"], json!(151));
+    assert_eq!(first["transactionNo"], json!(format!("XC-{done}")));
+    assert_eq!(first["canAccept"], json!(false));
+    assert_eq!(first["canContinue"], json!(false));
+    let second = by_id(&old);
+    for key in ["startedAt", "completedAt", "durationSeconds"] {
+        assert_eq!(second[key], Value::Null, "{key} of a request without times");
+    }
+
+    for who in ["FR1", "FR2"] {
+        counter
+            .ask(Some(who), "accept", json!({ "id": done }))
+            .await
+            .assert_refused(
+                400,
+                "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว",
+                &format!("{who} claims a completed request"),
+            );
+    }
+    counter.finish().await;
 }
 
 /// The table of currencies a kiosk can offer is v2's: 152 codes with their
@@ -270,7 +365,9 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         .ask(Some("FR1"), "accept", json!({ "id": id }))
         .await;
     assert_eq!(accepted.status, 200, "{}", accepted.text);
-    assert_eq!(accepted.text, "{\"saved\":true}");
+    // the 10-06 bundle: the first claim answers its start (queue-work.mjs:9)
+    assert_eq!(accepted.json()["saved"], json!(true), "{}", accepted.text);
+    assert_eq!(accepted.json()["claimed"], json!(true), "{}", accepted.text);
 
     let stored: (Option<String>,) =
         sqlx::query_as("SELECT staff FROM kiosk_requests WHERE id = $1")
@@ -306,7 +403,11 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     counter
         .ask(Some("FR2"), "accept", json!({ "id": id }))
         .await
-        .assert_refused(400, ALREADY_ASSIGNED, "accepting what is held");
+        .assert_refused(
+            400,
+            "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว",
+            "accepting what is held: the holder's username (queue-work.mjs:12)",
+        );
 
     // the account is disabled: the queue still prints who holds the request
     let call = Call::action(
@@ -481,7 +582,8 @@ async fn the_answers_keep_v2s_key_order() {
     assert_eq!(
         notifications.text,
         format!(
-            "{{\"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"count\":1,\
+            "{{\"serverNow\":\"2026-10-06T05:00:04.000Z\",\"workingCount\":0,\"working\":[],\
+             \"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"count\":1,\
              \"latest\":\"{id}\",\"employee\":{{\"id\":\"{}\",\"username\":\"fr1\",\
              \"name\":\"FR1 of the test\",\"role\":\"FRONT\"}}}}",
             fr1.id
@@ -491,11 +593,14 @@ async fn the_answers_keep_v2s_key_order() {
     assert_eq!(
         list.text,
         format!(
-            "{{\"requests\":[{{\"id\":\"{id}\",\"branch_id\":\"MAIN\",\"status\":\"WAITING\",\
-             \"created\":{created},\"staff\":\"\",\"branch\":\"MAIN\",\"paymentMethod\":\"Cash\",\
-             \"type\":\"BUY\",\"currency\":\"USD\",\"rate\":32.1,\"foreign\":250,\"thb\":8025,\
-             \"inputAmount\":250,\"branchName\":\"XC-B\",\"queue\":\"K-00000000\",\
-             \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null}}]}}"
+            "{{\"branchId\":\"MAIN\",\"serverNow\":\"2026-10-06T05:00:04.000Z\",\"page\":0,\
+             \"hasMore\":false,\"requests\":[{{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\
+             \"currency\":\"USD\",\"rate\":32.1,\"foreign\":250,\"thb\":8025,\
+             \"inputAmount\":250,\"branchName\":\"XC-B\",\"id\":\"{id}\",\"branch\":\"MAIN\",\
+             \"status\":\"WAITING\",\"created\":{created},\"staff\":\"\",\"queue\":\"K-00000000\",\
+             \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
+             \"startedAt\":null,\"completedAt\":null,\"durationSeconds\":null,\
+             \"canAccept\":true,\"canContinue\":false}}]}}"
         )
     );
     let receipt = counter
@@ -528,14 +633,24 @@ async fn the_answers_keep_v2s_key_order() {
     assert!(
         rates.text.starts_with(
             "{\"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"open\":true,\"rates\":[{\"code\":\"USD\",\"name\":\""
-        ) && rates.text.ends_with("\"buy\":32.1,\"sell\":32.6}],\"simulation\":false}"),
+        ) && rates.text.ends_with(
+            "\"buy\":32.1,\"sell\":32.6}],\"paymentMethods\":[\
+             {\"id\":\"Cash\",\"enabled\":true,\"buy\":true,\"sell\":true,\"instruction\":\"\"},\
+             {\"id\":\"Credit Card\",\"enabled\":true,\"buy\":false,\"sell\":true,\"instruction\":\"\"},\
+             {\"id\":\"Alipay\",\"enabled\":true,\"buy\":false,\"sell\":true,\"instruction\":\"\"},\
+             {\"id\":\"PromptPay\",\"enabled\":true,\"buy\":false,\"sell\":true,\"instruction\":\"\"},\
+             {\"id\":\"Bank Transfer\",\"enabled\":true,\"buy\":true,\"sell\":true,\
+             \"instruction\":\"If transfer, call agent · หากโอนเงิน กรุณาติดต่อพนักงาน\"}],\
+             \"simulation\":false}"
+        ),
         "{}",
         rates.text
     );
     counter.finish().await;
 }
 
-/// The holder pressing accept again gets {"saved":true} (ticket #328).
+/// The holder pressing accept again is not refused, and another employee is (ticket #328),
+/// with the 10-06 answers (K-HTTP #329, lane controller's option A).
 #[actix_web::test]
 async fn a_holder_accepting_again_gets_saved() {
     let fr1 = person("FR1", "FRONT", 0x11);
@@ -549,20 +664,27 @@ async fn a_holder_accepting_again_gets_saved() {
         .ask(Some("FR1"), "accept", json!({ "id": id }))
         .await;
     assert_eq!(accepted.status, 200, "{}", accepted.text);
-    assert_eq!(accepted.text, "{\"saved\":true}");
+    let first = accepted.json();
+    assert_eq!(first["saved"], json!(true), "{}", accepted.text);
+    assert_eq!(first["claimed"], json!(true), "{}", accepted.text);
+    assert!(first["startedAt"].is_string(), "{}", accepted.text);
+    assert_eq!(first["completedAt"], Value::Null, "{}", accepted.text);
+    assert_eq!(first["durationSeconds"], Value::Null, "{}", accepted.text);
 
-    // The holder presses accept again: answered as saved, not refused.
+    // The holder presses accept again: answered as saved, not refused, same start time.
     let repeat = counter
         .ask(Some("FR1"), "accept", json!({ "id": id }))
         .await;
     assert_eq!(repeat.status, 200, "{}", repeat.text);
-    assert_eq!(repeat.text, "{\"saved\":true}");
+    let again = repeat.json();
+    assert_eq!(again["saved"], json!(true), "{}", repeat.text);
+    assert_eq!(again["startedAt"], first["startedAt"], "{}", repeat.text);
 
-    // Another employee pressing accept is refused as already assigned.
+    // Another employee pressing accept is refused, naming the holder.
     counter
         .ask(Some("FR2"), "accept", json!({ "id": id }))
         .await
-        .assert_refused(400, ALREADY_ASSIGNED, "another employee");
+        .assert_refused(400, "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว", "another employee");
 
     counter.finish().await;
 }

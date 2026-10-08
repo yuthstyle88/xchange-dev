@@ -1,5 +1,6 @@
 //! Kiosk routes: POST /api/kiosk.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use actix_web::error::PayloadError;
@@ -24,12 +25,11 @@ use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
-use xc_kiosk::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
-use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
+use xc_kiosk::domain::kiosk::value_objects::queue_page::QueuePage;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
@@ -90,6 +90,47 @@ fn kiosk_server_error() -> HttpResponse {
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .content_type("application/json")
         .body(json!({ "error": "เซิร์ฟเวอร์ขัดข้อง" }).to_string())
+}
+
+/// Whether the caller may claim a request: the policy's answer for `accept`.
+fn claims_requests(actor: Option<&Actor>) -> bool {
+    Policy::allow(actor, EntryPath::Kiosk, &Action::new("accept")).is_ok()
+}
+
+/// The usernames of the given holder ids, read in one query. A holder is stored by id;
+/// `owner` is the owner's id.
+async fn usernames<'a>(
+    pool: &sqlx::PgPool,
+    ids: impl Iterator<Item = &'a str>,
+) -> HashMap<String, String> {
+    let ids: Vec<String> = ids
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT id::text, username FROM employees WHERE id::text = ANY($1) \
+         UNION ALL \
+         SELECT 'owner', username FROM (SELECT username FROM owners LIMIT 1) o \
+         WHERE 'owner' = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|err| {
+        tracing::error!(error = ?err, "kiosk usernames failed");
+        Vec::new()
+    });
+    rows.into_iter().collect()
+}
+
+/// The username of a holder, or the id as it is when nobody has it.
+fn username_or_id(names: &HashMap<String, String>, id: &str) -> String {
+    names.get(id).cloned().unwrap_or_else(|| id.to_owned())
 }
 
 fn json_response(v2_json: V2Json) -> HttpResponse {
@@ -178,10 +219,12 @@ async fn handle_kiosk(
         }
     };
 
+    // A first-password session never reaches here: `AccountService::status` answers `None` for
+    // it, which is where the must-change rule lives.
     let policy_actor = match &who {
         Some(SignedIn::Owner(_)) => Some(Actor::owner(OWNER_ID)),
-        Some(SignedIn::Employee(emp)) if !emp.must_change => staff_actor(emp),
-        _ => None,
+        Some(SignedIn::Employee(emp)) => staff_actor(emp),
+        None => None,
     };
 
     let (kiosk_actor, caller) = match who {
@@ -193,24 +236,20 @@ async fn handle_kiosk(
             Caller::Owner(owner),
         ),
         Some(SignedIn::Employee(emp)) => {
-            if emp.must_change {
-                (KioskActor::Customer, Caller::Customer)
-            } else {
-                let role = match emp.role.as_str() {
-                    "FRONT" => KioskRole::Front,
-                    "BACKEND" => KioskRole::Backend,
-                    "MANAGER" => KioskRole::Manager,
-                    "RATES" => KioskRole::Rates,
-                    _ => KioskRole::Other,
-                };
-                (
-                    KioskActor::Staff {
-                        username: emp.id.clone(),
-                        role,
-                    },
-                    Caller::Employee(emp),
-                )
-            }
+            let role = match emp.role.as_str() {
+                "FRONT" => KioskRole::Front,
+                "BACKEND" => KioskRole::Backend,
+                "MANAGER" => KioskRole::Manager,
+                "RATES" => KioskRole::Rates,
+                _ => KioskRole::Other,
+            };
+            (
+                KioskActor::Staff {
+                    username: emp.id.clone(),
+                    role,
+                },
+                Caller::Employee(emp),
+            )
         }
         None => (KioskActor::Customer, Caller::Customer),
     };
@@ -395,47 +434,38 @@ async fn handle_kiosk(
                     },
                     Caller::Customer => unreachable!(),
                 };
+                let names =
+                    usernames(pool, notifications.working.iter().map(|w| w.staff.as_str())).await;
                 json_response(dto_kiosk::notifications_json(
                     &branch,
                     &notifications,
                     &emp_info,
+                    now,
+                    &|id| username_or_id(&names, id),
                 ))
             }
             Err(err) => handle_service_error(err),
         },
         KioskAction::List => {
-            match service
-                .list(&branch, &kiosk_actor, QueueFilter::All, 0, now)
-                .await
-            {
+            // v2 judges the page before the filter (`queue-work.mjs:15-16`).
+            let page = match QueuePage::parse(payload.get("page")) {
+                Ok(page) => page,
+                Err(err) => return refuse(400, &err.to_string()),
+            };
+            let filter = match QueueFilter::parse(payload.get("filter")) {
+                Ok(filter) => filter,
+                Err(err) => return refuse(400, &err.to_string()),
+            };
+            match service.list(&branch, &kiosk_actor, filter, page, now).await {
                 Ok(queue_page) => {
-                    let requests: Vec<IdentifiedRequest> = queue_page
-                        .items
-                        .into_iter()
-                        .map(|item| IdentifiedRequest {
-                            request: item.request,
-                            identity: item.identity,
-                        })
-                        .collect();
-                    let mut staff_names = Vec::with_capacity(requests.len());
-                    for req in &requests {
-                        if let Some(ref staff_id) = req.request.staff {
-                            let maybe_username: Option<String> = sqlx::query_scalar(
-                                "SELECT username FROM employees WHERE id = $1 \
-                                 UNION ALL \
-                                 SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
-                                 LIMIT 1",
-                            )
-                            .bind(staff_id)
-                            .fetch_optional(pool)
-                            .await
-                            .ok()
-                            .flatten();
-                            staff_names.push(maybe_username.unwrap_or_else(|| staff_id.clone()));
-                        } else {
-                            staff_names.push(String::new());
-                        }
-                    }
+                    let names = usernames(
+                        pool,
+                        queue_page
+                            .items
+                            .iter()
+                            .filter_map(|item| item.request.staff.as_deref()),
+                    )
+                    .await;
                     let branch_name: String =
                         sqlx::query_scalar("SELECT name FROM branches WHERE id = $1")
                             .bind(branch.as_str())
@@ -444,11 +474,21 @@ async fn handle_kiosk(
                             .ok()
                             .flatten()
                             .unwrap_or_default();
+                    let caller_id = match &kiosk_actor {
+                        KioskActor::Staff { username, .. } => username.as_str(),
+                        KioskActor::Customer => "",
+                    };
+                    let list_caller = dto_kiosk::ListCaller {
+                        id: caller_id,
+                        claims: claims_requests(policy_actor.as_ref()),
+                    };
                     json_response(dto_kiosk::list_json(
                         &branch,
-                        &requests,
-                        &staff_names,
+                        &queue_page,
                         &branch_name,
+                        now,
+                        &list_caller,
+                        &|id| username_or_id(&names, id),
                     ))
                 }
                 Err(err) => handle_service_error(err),
@@ -457,12 +497,23 @@ async fn handle_kiosk(
         KioskAction::Accept => {
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
             match service.accept(&branch, &kiosk_actor, id, now).await {
-                Ok(AcceptOutcome::Claimed(_)) | Ok(AcceptOutcome::AlreadyMine(_)) => {
-                    saved_response()
+                Ok(AcceptOutcome::Claimed(times)) => {
+                    json_response(dto_kiosk::accept_claimed_json(&times))
                 }
-                Ok(AcceptOutcome::HeldBy(_)) | Ok(AcceptOutcome::Unavailable) => {
-                    refuse(400, &KioskError::AlreadyAssignedOrUnavailable.to_string())
+                Ok(AcceptOutcome::AlreadyMine(times)) => {
+                    json_response(dto_kiosk::accept_mine_json(&times))
                 }
+                Ok(AcceptOutcome::HeldBy(holder)) => {
+                    let names = usernames(pool, std::iter::once(holder.as_str())).await;
+                    refuse(
+                        400,
+                        &format!(
+                            "ออเดอร์นี้มี {} กำลังทำรายการแล้ว",
+                            username_or_id(&names, &holder)
+                        ),
+                    )
+                }
+                Ok(AcceptOutcome::Unavailable) => refuse(400, "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด"),
                 Err(err) => handle_service_error(err),
             }
         }
