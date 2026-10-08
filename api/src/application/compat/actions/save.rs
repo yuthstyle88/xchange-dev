@@ -22,10 +22,12 @@ use crate::application::compat::actions::{ActionFuture, RpcAction, RpcCall};
 use crate::application::compat::envelope::RpcRoute;
 use crate::application::compat::rpc::RpcCaller;
 use crate::application::compat::v2_json::V2Json;
+use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::custody_save_step::CustodySaveStep;
 use crate::application::workflows::device_save_step::DeviceSaveStep;
 use crate::application::workflows::kiosk_save_step::KioskSaveStep;
-use crate::application::workflows::save_step::{SaveActor, SaveExtras};
+use crate::application::workflows::payment_save_step::PaymentSaveStep;
+use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::infrastructure::devices::device_service::DeviceService;
 
@@ -33,6 +35,7 @@ use crate::infrastructure::devices::device_service::DeviceService;
 #[derive(Clone)]
 pub struct SaveAction {
     workflow: SaveTransactionWorkflow,
+    steps: Vec<Arc<dyn SaveStep>>,
 }
 
 impl SaveAction {
@@ -44,12 +47,20 @@ impl SaveAction {
         kiosk: KioskService,
         custody: CustodyService,
     ) -> Self {
-        let workflow = workflow.with_steps(vec![
+        let steps: Vec<Arc<dyn SaveStep>> = vec![
             Arc::new(DeviceSaveStep::new(devices)),
             Arc::new(KioskSaveStep::new(kiosk)),
             Arc::new(CustodySaveStep::new(custody)),
-        ]);
-        Self { workflow }
+        ];
+        let workflow = workflow.with_steps(steps.clone());
+        Self { workflow, steps }
+    }
+
+    /// Appends the payment save step to enforce payment channel rules on first LIVE saves.
+    pub fn with_payment_check(mut self, payments: PaymentSettingsService) -> Self {
+        self.steps.push(Arc::new(PaymentSaveStep::new(payments)));
+        self.workflow = self.workflow.with_steps(self.steps.clone());
+        self
     }
 }
 

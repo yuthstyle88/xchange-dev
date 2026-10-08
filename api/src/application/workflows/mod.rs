@@ -6,5 +6,6 @@ pub mod documents;
 pub mod kiosk_save_step;
 pub mod passport_drawer;
 pub mod passport_drawer_device;
+pub mod payment_save_step;
 pub mod save_step;
 pub mod save_transaction;

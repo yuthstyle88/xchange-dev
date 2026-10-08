@@ -34,6 +34,7 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -48,6 +49,7 @@ use crate::application::compat::envelope::{
 };
 use crate::application::compat::rpc::{CompatRpc, RpcCaller, RpcFailure, RpcServices};
 use crate::application::compat::v2_json::V2Json;
+use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::documents::DocumentsLookup;
 use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::bootstrap::AppState;
@@ -60,6 +62,7 @@ use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
 use crate::infrastructure::devices::printer_models::PrinterModels;
 use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
     Accounts, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin, server_error,
     staff_actor,
@@ -303,15 +306,20 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
             .unwrap_or_else(|_| PrinterModels::built_in()),
     );
     let devices = DeviceService::new(
-        branch_tx,
+        branch_tx.clone(),
         Arc::new(PgSavedExchanges::new(transactions)),
         Arc::new(UuidJobIds),
     )
     .with_printer_models(printer_models);
+    let payments = PaymentSettingsService::new(
+        branch_tx,
+        BranchSettingStore::new(pool.clone()),
+        PgBranchRepository::new(pool.clone()),
+    );
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(CustodyAction::new(custody.clone())),
-        Arc::new(SaveAction::new(save, devices, kiosk, custody)),
+        Arc::new(SaveAction::new(save, devices, kiosk, custody).with_payment_check(payments)),
     ]
 }
 
