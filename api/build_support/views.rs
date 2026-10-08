@@ -13,6 +13,7 @@ pub enum ViewTableError {
     NotAModuleName { file: String },
     MissingRegister { file: String },
     MissingExportTypes { file: String },
+    NameInBoth { module: String },
 }
 
 fn is_rust_keyword(name: &str) -> bool {
@@ -134,4 +135,24 @@ pub fn dto_modules(files: &[(&str, &str)]) -> Result<Vec<String>, ViewTableError
     }
     modules.sort();
     Ok(modules)
+}
+
+/// Ensures that view modules and action modules share no module name (§12.20.3).
+pub fn disjoint(views: &[ViewDecl], actions: &[ViewDecl]) -> Result<(), ViewTableError> {
+    let mut view_names = std::collections::BTreeSet::new();
+    for v in views {
+        view_names.insert(&v.module);
+    }
+    let mut overlaps = std::collections::BTreeSet::new();
+    for a in actions {
+        if view_names.contains(&a.module) {
+            overlaps.insert(&a.module);
+        }
+    }
+    if let Some(&first) = overlaps.iter().next() {
+        return Err(ViewTableError::NameInBoth {
+            module: first.clone(),
+        });
+    }
+    Ok(())
 }

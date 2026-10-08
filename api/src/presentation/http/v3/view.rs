@@ -137,21 +137,14 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
         map.entry(k).or_insert(v);
     }
 
-    let named_branch = match map.get("branch") {
-        None => None,
-        Some(b) if b.is_empty() => None,
-        Some(b) => {
-            if !BranchId::is_well_formed(b) {
-                return Err(V3Error::new(
-                    "invalidRequest",
-                    None,
-                    "คำขอไม่ถูกต้อง",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
-            Some(BranchId::new(b))
-        }
-    };
+    let named_branch = parse_branch(map.get("branch").map(|s| s.as_str())).map_err(|()| {
+        V3Error::new(
+            "invalidRequest",
+            None,
+            "คำขอไม่ถูกต้อง",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
 
     let since = match map.get("since") {
         None => None,
@@ -321,7 +314,21 @@ fn parse_filter<F: ViewFilter>(req: &HttpRequest) -> Result<F, V3Error> {
     }
 }
 
-async fn authenticate_and_authorize(
+/// Parses the branch query or field according to §12.20.3 step 4.
+pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
+    match raw {
+        None | Some("") => Ok(None),
+        Some(b) => {
+            if !BranchId::is_well_formed(b) {
+                Err(())
+            } else {
+                Ok(Some(BranchId::new(b)))
+            }
+        }
+    }
+}
+
+pub(super) async fn authenticate_and_authorize(
     req: &HttpRequest,
     inherits: (EntryPath, &'static str),
 ) -> Result<Actor, HttpResponse> {
@@ -347,7 +354,7 @@ async fn authenticate_and_authorize(
 }
 
 /// 400 noSuchBranch when `branch` is not in `branches`; 500 serverError when it cannot be read.
-async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Result<(), V3Error> {
+pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Result<(), V3Error> {
     let pool = match req.app_data::<web::Data<AppState>>() {
         Some(state) => state.db.clone(),
         None => {
