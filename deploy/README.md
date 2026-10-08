@@ -1,9 +1,11 @@
 # Deployment files
 
 Everything a host needs to run XCHANGE is described here. **Nothing in this
-directory is applied by merging it, by CI, or by any agent: every step on a host
-— installing, updating, creating an account, changing nginx — is done only on the
-owner's order, and nginx on a host is its owner's to change.** `APP_ENVIRONMENT`
+directory is applied by merging it: every step on a host — installing, updating,
+creating an account, changing nginx — is done only on the owner's order, and nginx
+on a host is its owner's to change.** The one automated step is an update through a
+deploy lane (§3a), and it runs only when someone pushes a lane branch — which, too,
+happens only on the owner's order. `APP_ENVIRONMENT`
 and lane names say which settings file is read, not that a real shop is using it.
 
 | File | What it is |
@@ -13,6 +15,7 @@ and lane names say which settings file is read, not that a real shop is using it
 | `server/common.sh` | the variables (port, paths, database/role name, v2 bundle directory) and helpers of the two scripts below |
 | `server/install.sh` | first install on a host; safe to run again — a re-run keeps what it replaces as `xchange.prev`/`configuration.prev`, like `update.sh` |
 | `server/update.sh` | replace binary and configuration, keep the previous ones, print the way back |
+| `ci/lane.sh` | which deploy lane a run of `.github/workflows/release.yml` belongs to, by (repository, branch); tested by `ci/lane.test.sh` |
 | `server/backup.sh` | creates one backup set (database dump + uploads archive), prunes to newest 7, optional off-host copy |
 | `server/restore.sh` | rehearses a restore into a scratch database and scratch uploads directory, refusing live ones |
 | `server/xc-v3-backup.service` | oneshot systemd unit running backup.sh under hardening |
@@ -146,6 +149,41 @@ When the smoke check fails it prints the service log and the rollback commands
 and exits non-zero. If a step fails between the stop and the start, it says
 that the service is **stopped** and prints the commands that put back what was
 saved and start it. It never rolls back by itself.
+
+## 3a. Deploy lanes (git push)
+
+An update of an installed host (§3) can be run by pushing a lane branch instead of
+by hand. `.github/workflows/release.yml` builds on a self-hosted runner exactly as
+`server/build.md` §1–4 describes, copies the stage to the target over ssh and runs
+the target's `update.sh` (backup first, then `smoke.sh` against this build). It then
+reads `/health/ready` through the public URL and fails unless `build` is the pushed
+commit — an HTTP 200 from an older binary is not a deploy.
+
+| Push | Lane | Host |
+|---|---|---|
+| `108-Plaza/xchange` → `release/prod` | prod | do-sgp1 |
+| `yuthstyle88/xchange-dev` → `deploy/staging` | staging | Dell |
+| `workflow_dispatch` on either | build only | none |
+
+Any other pair — the org's `deploy/staging`, the mirror's `release/prod`, another
+branch — is refused before the build (`ci/lane.sh`). Release from the merged main:
+
+```bash
+git push origin origin/main:release/prod
+```
+
+- **Only on the owner's order**, like every other step on a host.
+- **First install is still by hand** (§1): the lane only updates a host where
+  `install.sh` has run and `xc-v3-backup.service` is installed.
+- **Nothing is rolled back automatically.** A red deploy job shows `update.sh`'s
+  output, including its rollback commands (§4); a person decides.
+- **Settings per lane**, on the repository that owns it: secret `XC_DEPLOY_SSH_KEY`;
+  variables `XC_DEPLOY_HOST`, `XC_DEPLOY_USER` (sudo-capable, not root),
+  `XC_DEPLOY_KNOWN_HOSTS` (the target's host key; there is no trust on first use) and
+  `XC_PUBLIC_URL`. A missing one turns the deploy job red by name; the build still
+  uploads its stage.
+- The mirror carries a copy of `release.yml` from the org (the bridge does not sync
+  `.github/`); after changing it here, copy it there unchanged.
 
 ## 4. Rollback
 

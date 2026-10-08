@@ -1,0 +1,218 @@
+name: release
+
+# ⚠️ THIS WORKFLOW DEPLOYS (#422). A push to a lane branch builds the v3 server
+# and updates a running host; deploying happens only on the owner's order, so
+# only push a lane branch when the owner has ordered that deploy.
+#
+#   108-Plaza/xchange        push release/prod    -> prod     (do-sgp1)
+#   yuthstyle88/xchange-dev  push deploy/staging  -> staging  (Dell)
+#   either repo              workflow_dispatch    -> build only, deploys nowhere
+#
+# The org has no staging lane and the mirror has no prod lane (fleet rule
+# "Deploy lanes", owner 2026-09-21/25). The lane is decided by the pair
+# (repository, branch) in deploy/ci/lane.sh, not by the branch alone, because
+# this same file is copied to the mirror unchanged — the copy must refuse the
+# org's lane and the org must refuse the mirror's. Reference: jh-api
+# release-image.yml.
+#
+# Release the org lane from the merged main, never a local branch:
+#   git push origin origin/main:release/prod
+#
+# The target machine is small (2 vCPU, 3.8 GiB) and builds nothing: the binary
+# is built here, on a self-hosted runner, exactly as deploy/server/build.md
+# describes, then the stage directory is copied over ssh and the target's own
+# deploy/server/update.sh installs it. update.sh takes a backup first, keeps the
+# previous binary and configuration, and runs smoke.sh, which fails unless
+# /health/ready names this build. Nothing is retried or rolled back here: a red
+# deploy job prints update.sh's rollback commands, and a person decides.
+#
+# Per lane, set on the repository that owns the lane (owner, O3 of #422):
+#   secret   XC_DEPLOY_SSH_KEY      private key of the deploy user on the target
+#   variable XC_DEPLOY_HOST         ssh host name or address
+#   variable XC_DEPLOY_USER         the deploy user (sudo-capable, not root)
+#   variable XC_DEPLOY_KNOWN_HOSTS  the target's host key line(s); no trust-on-first-use
+#   variable XC_PUBLIC_URL          https://… the vhost in front of the server
+
+on:
+  push:
+    branches: [release/prod, deploy/staging]
+  workflow_dispatch: {}
+
+# One rollout per lane at a time, never cancelled half way: a cancelled update
+# can leave the service stopped. Staging and prod do not wait for each other.
+concurrency:
+  group: release-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  lane:
+    name: lane
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    outputs:
+      lane: ${{ steps.lane.outputs.lane }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lane guard — org deploys prod only, mirror deploys staging only
+        id: lane
+        run: |
+          lane="$(bash deploy/ci/lane.sh "$GITHUB_REPOSITORY" "$GITHUB_REF")"
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+          echo "Lane: $lane ($GITHUB_REPOSITORY $GITHUB_REF)" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build
+    needs: lane
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Web bundle
+        run: npm --prefix web ci && npm --prefix web run build
+
+      - name: Build the server (deploy/server/build.md §1)
+        working-directory: api
+        run: |
+          test -z "$(git status --porcelain)" || { git status --porcelain; echo "::error::dirty tree"; exit 1; }
+          rustc --version
+          BUILD_SHA="$GITHUB_SHA" BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            cargo build --release --locked
+          n="$(strings target/release/xchange | grep -c "$GITHUB_SHA" || true)"
+          [ "$n" -ge 1 ] || { echo "::error::the binary does not carry $GITHUB_SHA"; exit 1; }
+
+      - name: Assemble the stage directory (deploy/server/build.md §3)
+        run: |
+          STAGE="$RUNNER_TEMP/xc-v3-stage"
+          rm -rf "$STAGE" && install -d -m 700 "$STAGE"
+          cp api/target/release/xchange "$STAGE/"
+          cp -R api/configuration "$STAGE/configuration"
+          cp api/tools/extract-v2-pages.mjs "$STAGE/"
+          cp deploy/server/{common.sh,install.sh,update.sh,smoke.sh,xc-v3.service} "$STAGE/"
+          echo "$GITHUB_SHA" > "$STAGE/BUILD"
+          ( cd "$STAGE" && sha256sum xchange configuration/*.yaml extract-v2-pages.mjs \
+              common.sh install.sh update.sh smoke.sh xc-v3.service BUILD > SHA256SUMS )
+          glibc="$(objdump -T "$STAGE/xchange" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+          echo "$glibc" > "$RUNNER_TEMP/glibc-needed"
+          {
+            echo "### Build"
+            echo "- build: \`$GITHUB_SHA\`"
+            echo "- needs: \`$glibc\`"
+            echo '```'
+            cat "$STAGE/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-v3-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/xc-v3-stage
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy:
+    name: deploy (${{ needs.lane.outputs.lane }})
+    needs: [lane, build]
+    # Each lane deploys only from its own pair, checked again here so that a
+    # change to lane.sh alone can never send a build to the wrong host.
+    if: >-
+      success() && github.event_name == 'push' && (
+        (needs.lane.outputs.lane == 'prod' && github.repository == '108-Plaza/xchange' && github.ref == 'refs/heads/release/prod') ||
+        (needs.lane.outputs.lane == 'staging' && github.repository == 'yuthstyle88/xchange-dev' && github.ref == 'refs/heads/deploy/staging')
+      )
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      XC_DEPLOY_HOST: ${{ vars.XC_DEPLOY_HOST }}
+      XC_DEPLOY_USER: ${{ vars.XC_DEPLOY_USER }}
+      XC_DEPLOY_KNOWN_HOSTS: ${{ vars.XC_DEPLOY_KNOWN_HOSTS }}
+      XC_PUBLIC_URL: ${{ vars.XC_PUBLIC_URL }}
+      XC_DEPLOY_SSH_KEY: ${{ secrets.XC_DEPLOY_SSH_KEY }}
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Check the lane's settings
+        run: |
+          missing=0
+          for v in XC_DEPLOY_HOST XC_DEPLOY_USER XC_DEPLOY_KNOWN_HOSTS XC_PUBLIC_URL XC_DEPLOY_SSH_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::$v is not set on $GITHUB_REPOSITORY"; missing=1; fi
+          done
+          exit "$missing"
+
+      - name: Download the stage
+        uses: actions/download-artifact@v4
+        with:
+          name: xc-v3-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/xc-v3-stage
+
+      - name: ssh setup
+        run: |
+          d="$RUNNER_TEMP/ssh"
+          install -d -m 700 "$d"
+          printf '%s\n' "$XC_DEPLOY_SSH_KEY" > "$d/key" && chmod 600 "$d/key"
+          printf '%s\n' "$XC_DEPLOY_KNOWN_HOSTS" > "$d/known_hosts"
+          {
+            echo "Host target"
+            echo "  HostName $XC_DEPLOY_HOST"
+            echo "  User $XC_DEPLOY_USER"
+            echo "  IdentityFile $d/key"
+            echo "  IdentitiesOnly yes"
+            echo "  UserKnownHostsFile $d/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  BatchMode yes"
+          } > "$d/config"
+
+      - name: The binary will run on the target (deploy/server/build.md §2)
+        run: |
+          S="$RUNNER_TEMP/xc-v3-stage"
+          need="$(objdump -T "$S/xchange" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1 | sed 's/GLIBC_//')"
+          have="$(ssh -F "$RUNNER_TEMP/ssh/config" target 'ldd --version | head -n 1' | grep -o '[0-9]*\.[0-9]*$')"
+          arch_here="$(uname -m)"
+          arch_there="$(ssh -F "$RUNNER_TEMP/ssh/config" target 'uname -m')"
+          echo "glibc needed $need, target has $have; arch $arch_here -> $arch_there"
+          [ "$arch_here" = "$arch_there" ] || { echo "::error::architecture differs"; exit 1; }
+          [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | tail -n 1)" = "$have" ] \
+            || { echo "::error::the binary needs glibc $need, the target has $have"; exit 1; }
+
+      - name: Copy and verify the stage (deploy/server/build.md §4)
+        run: |
+          dest="xc-v3-stage-$GITHUB_SHA"
+          ssh -F "$RUNNER_TEMP/ssh/config" target "rm -rf ~/$dest && install -d -m 700 ~/$dest"
+          rsync -a --chmod=D700,F600 -e "ssh -F $RUNNER_TEMP/ssh/config" \
+            "$RUNNER_TEMP/xc-v3-stage/" "target:$dest/"
+          ssh -F "$RUNNER_TEMP/ssh/config" target "cd ~/$dest \
+            && chmod +x xchange install.sh update.sh smoke.sh \
+            && sha256sum -c SHA256SUMS \
+            && ! ldd ./xchange | grep 'not found'"
+
+      - name: Update the server (update.sh runs the backup, then smoke.sh with this build)
+        run: |
+          ssh -F "$RUNNER_TEMP/ssh/config" target "bash ~/xc-v3-stage-$GITHUB_SHA/update.sh"
+
+      - name: Confirm the public URL serves this build
+        run: |
+          body="$(curl -fsS --max-time 20 "$XC_PUBLIC_URL/health/ready")"
+          echo "$body"
+          build="$(printf '%s' "$body" | jq -r '.build')"
+          {
+            echo "### Deployed ${{ needs.lane.outputs.lane }}"
+            printf '%s' "$body" | jq -r '"- version: `\(.version)`\n- build: `\(.build)`\n- builtAt: `\(.builtAt)`\n- channel: `\(.channel)`"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$build" = "$GITHUB_SHA" ] || { echo "::error::$XC_PUBLIC_URL serves build $build, not $GITHUB_SHA"; exit 1; }
+
+      - name: Remove the ssh key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
