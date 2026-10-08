@@ -35,7 +35,11 @@ pub trait BranchView: Send + Sync + 'static {
     const INHERITS: (EntryPath, &'static str);
     const VERSIONED: bool = true;
     /// A version that is not the branch's (design §12.16). None = use branch_versions.
-    fn own_version(&self) -> impl Future<Output = AppResult<Option<i64>>> + Send {
+    fn own_version(
+        &self,
+        _branch: &BranchId,
+        _who: &Actor,
+    ) -> impl Future<Output = AppResult<Option<i64>>> + Send {
         async { Ok(None) }
     }
     type Data: serde::Serialize + ts_rs::TS + Send;
@@ -356,7 +360,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
 
     let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
 
-    let version = if let Some(own_ver) = match view.own_version().await {
+    let version = if let Some(own_ver) = match view.own_version(&branch, &who).await {
         Ok(v) => v,
         Err(_) => {
             return V3Error::new(

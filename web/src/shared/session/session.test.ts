@@ -125,14 +125,16 @@ describe('createSessionStore', () => {
     store.dispose();
   });
 
-  it('takes the new object when the answer is changed: true', async () => {
+  it('ends as switched, keeping the shown account, when a changed: true answer is another account', async () => {
+    // Amended by #492 (design §12.19.3 SE2, D-S3): an owner → RATES answer no longer replaces me().
     const { api } = fakeApi([
       { version: 4, changed: true, data: owner },
       { version: 5, changed: true, data: rates },
     ]);
     const store = createSessionStore(api);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(store.me()).toBe(rates);
+    expect(store.me()).toBe(owner);
+    expect(store.ended()).toBe('switched');
     store.dispose();
   });
 

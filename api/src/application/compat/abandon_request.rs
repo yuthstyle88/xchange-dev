@@ -141,9 +141,21 @@ impl AbandonRequest {
             .await
     }
 
+    /// Read-only check whether a write was made with `request_id`.
+    /// Does not lock or increment branch version, does not write to abandoned_requests.
+    pub async fn check_applied(&self, branch: &BranchId, request_id: &str) -> AppResult<bool> {
+        let mut tx = self
+            .branch_tx
+            .pool()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
+        self.is_applied(&mut tx, branch, request_id).await
+    }
+
     /// Whether a write was made with `request_id`: a branch anywhere, or in
     /// `branch` a rate, a shift (opening or closing) or a stock movement.
-    async fn is_applied(
+    pub(crate) async fn is_applied(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,

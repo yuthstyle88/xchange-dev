@@ -1,6 +1,7 @@
 import { createSignal, Show, type JSX } from 'solid-js';
 import { t } from '../i18n';
 import { sharedSession, type SessionStore } from '../session/session';
+import { QueueCard } from './QueueCard';
 
 export function AccountBar(props: {
   session?: SessionStore;
@@ -48,6 +49,7 @@ export function AccountBar(props: {
           <button type="button" disabled={pending()} onClick={handleSignOut}>
             {t('shell.account.signOut')}
           </button>
+          <QueueCard session={session()} />
         </div>
       )}
     </Show>

@@ -421,7 +421,7 @@ impl BranchView for OwnVersion {
     type Data = Echo;
     type Filter = NoFilter;
 
-    async fn own_version(&self) -> AppResult<Option<i64>> {
+    async fn own_version(&self, _branch: &BranchId, _who: &Actor) -> AppResult<Option<i64>> {
         Ok(Some(self.version.load(Ordering::SeqCst)))
     }
 
@@ -733,7 +733,12 @@ async fn a_view_without_a_filter_answers_the_same_whatever_extra_keys_it_is_sent
     is_unchanged(&unchanged, 1, "since = version with an extra key");
 
     let me = get(&db, &views, "owner", "/api/v3/views/me").await;
-    is_changed(&me, 0, "me");
+    let me_version = me.body["version"].as_i64().unwrap_or(0);
+    assert_ne!(
+        me_version, 0,
+        "me: its own version, not the branch's 0 (#492)"
+    );
+    is_changed(&me, me_version, "me");
     let me_extra = get(&db, &views, "owner", "/api/v3/views/me?foo=1&q=x").await;
     assert_eq!(me_extra.status, StatusCode::OK, "me with extra keys");
     assert_eq!(

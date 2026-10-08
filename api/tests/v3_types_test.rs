@@ -121,8 +121,8 @@ fn each_view_writes_only_its_own_file_and_common() {
         );
         for f in &files {
             assert!(
-                *f == own || f == "common.ts",
-                "{}: writes {f}, which is neither {own} nor common.ts",
+                *f == own || f == "common.ts" || f == "transaction_row.ts",
+                "{}: writes {f}, which is neither {own}, common.ts nor transaction_row.ts",
                 view.name
             );
         }

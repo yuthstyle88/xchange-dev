@@ -6,6 +6,8 @@ export const en: Record<Key, string> = {
   'shell.langSwitch': 'Switch language to {language}',
   'shell.account.branch': 'Branch {branch}',
   'shell.account.signOut': 'Sign out',
+  'shell.session.expired': 'Session expired. Please sign in again.',
+  'shell.session.switched': 'The account changed in another window. Please sign in again before making a transaction.',
   'error.signIn': 'Please sign in',
   'error.ownerOnly': 'Owner access required',
   'error.invalidRequest': 'Invalid request',

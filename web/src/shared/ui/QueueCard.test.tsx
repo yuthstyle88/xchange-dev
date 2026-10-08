@@ -1,0 +1,978 @@
+// V1-queue-card (#487): the queue card on every signed-in v3 screen, design
+// docs/design/xchange-v3-web.md §12.18.6 rows C1–C9 and §12.18.8 (v2:
+// src/devices-public/account-bar.js:16-46 of xchange-v2-source@4d0bdbb), and the sound controls
+// of C7. Written before the implementation by the lane controller. Do not edit, delete or weaken;
+// add tests in a file of your own.
+//
+// The API this file pins:
+//
+//   web/src/shared/ui/QueueCard.tsx
+//     export function QueueCard(props: { session: SessionStore }): JSX.Element;
+//     export function dockQueueCard(): () => void;   // while held the card renders no DOM, but C4–C9 run
+//   web/src/shared/ui/QueueSoundControls.tsx
+//     export function QueueSoundControls(): JSX.Element;
+//
+// The card reads the queue store of #486 through `web/src/shared/queue/queue-store.ts`
+// (`useQueueStore(queueBranch)`, or `queueStore(queueBranch())`): this file replaces that module
+// with a fake whose stores the test drives — the same writes the real store makes (an answer
+// clears `error` then sets `state`; a failure sets `error` and keeps `state`; an unchanged answer
+// only clears `error`). So the card makes no request of its own: `fetch` is watched and only
+// `/api/v3/views/me` (the shared session, AppShell's) is allowed.
+//
+// From `SessionStore` the card reads `me()` only (`me().id` for the sound key, `me().role` for the
+// link). It never calls `signOut()` or `dispose()`.
+//
+// The card is found by its label, its parts by role and text, never by class or position, except
+// class `waiting` (C4, named by the ticket). "Shown" means connected, no `hidden` on it or an
+// ancestor, and no computed `display: none` — so a folded card may hide its parts with `hidden`,
+// by not rendering them, or with an inline `<style>`; a CSS file import is not loaded by vitest.
+// jsdom has no `matchMedia`: tests that need it install a fake answering `max-width` / `min-width`
+// queries for a given viewport width; without it the card starts unfolded.
+//
+// Each test is a fresh page (`vi.resetModules()` then `import()`), because the sound and the dock
+// are one per page. Thai is v2's, verbatim (W6).
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSignal, type Accessor, type JSX } from 'solid-js';
+import { render } from 'solid-js/web';
+import type { Me } from '../api/generated/common';
+import type { SessionStore } from '../session/session';
+import type { QueueError, QueueStore } from '../queue/queue-store';
+import type { KioskNotifications } from '../queue/wire';
+
+// ── fake queue store (#486's module) ─────────────────────────────────────────
+
+interface FakeQueues {
+  branch: Accessor<string>;
+  setBranch(b: string): void;
+  store(b: string): FakeStore;
+  /** Forget every store and follow B1 again (the mock may outlive vi.resetModules). */
+  reset(): void;
+}
+
+interface FakeStore extends QueueStore {
+  setState(v: KioskNotifications | undefined): void;
+  setError(v: QueueError | undefined): void;
+  refreshes: number;
+}
+
+const fake = vi.hoisted(() => ({ queues: undefined as unknown }));
+
+vi.mock('../queue/queue-store', async () => {
+  const solid = await import('solid-js');
+  const [branch, setBranch] = solid.createSignal('B1');
+  const stores = new Map<string, FakeStore>();
+  const store = (b: string): FakeStore => {
+    let s = stores.get(b);
+    if (!s) {
+      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
+      const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
+      const [version] = solid.createSignal<number | undefined>(undefined);
+      const created: FakeStore = {
+        state,
+        error,
+        lastUpdated,
+        version,
+        now: () => Date.now(),
+        refreshes: 0,
+        async refresh() {
+          created.refreshes += 1;
+        },
+        setState: (v) => setState(() => v),
+        setError: (v) => setError(() => v),
+      };
+      s = created;
+      stores.set(b, s);
+    }
+    return s;
+  };
+  const queues: FakeQueues = {
+    branch,
+    setBranch: (b) => setBranch(b),
+    store,
+    reset() {
+      stores.clear();
+      setBranch('B1');
+    },
+  };
+  fake.queues = queues;
+  return {
+    queueBranch: branch,
+    setQueueBranch: (b: string) => setBranch(b),
+    queueStore: (b: string) => store(b),
+    useQueueStore: (b: Accessor<string>) => () => store(b()),
+  };
+});
+
+function queues(): FakeQueues {
+  return fake.queues as FakeQueues;
+}
+
+let serverNow = Date.parse('2026-10-08T03:00:00.000Z');
+
+/** The store's answer: a new data object every time, like a `changed: true` poll. */
+function answer(branch: string, over: Partial<KioskNotifications> = {}) {
+  serverNow += 5000;
+  const s = queues().store(branch);
+  s.setError(undefined);
+  s.setState({
+    serverNow: new Date(serverNow).toISOString(),
+    branchId: branch,
+    branchName: 'Silom',
+    count: 0,
+    latest: null,
+    workingCount: 0,
+    working: [],
+    employee: { id: NOK.id, role: NOK.role },
+    ...over,
+  });
+}
+
+function fail(branch: string, error: QueueError) {
+  queues().store(branch).setError(error);
+}
+
+/** A `changed: false` poll after a failure: the error clears, `state` stays the same object. */
+function recover(branch: string) {
+  queues().store(branch).setError(undefined);
+}
+
+// ── fake audio, locks, storage, matchMedia ───────────────────────────────────
+
+const audio = {
+  resumeTo: 'running',
+  contexts: [] as FakeAudioContext[],
+  frequencies: [] as number[],
+  chimes(): number {
+    return audio.frequencies.filter((f) => f === 660).length;
+  },
+};
+
+class FakeAudioContext {
+  state = 'suspended';
+  currentTime = 1;
+  readonly destination = {};
+  constructor() {
+    audio.contexts.push(this);
+  }
+  async resume() {
+    this.state = audio.resumeTo;
+  }
+  createOscillator() {
+    const osc = {
+      frequency: {
+        set value(v: number) {
+          audio.frequencies.push(v);
+        },
+        get value() {
+          return audio.frequencies.at(-1) ?? 0;
+        },
+      },
+      connect() {},
+      start() {},
+      stop() {},
+    };
+    return osc;
+  }
+  createGain() {
+    return {
+      gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+    };
+  }
+}
+
+const locks = {
+  async request<T>(_name: string, cb: () => T | Promise<T>): Promise<T> {
+    await Promise.resolve();
+    return cb();
+  },
+};
+
+class FakeStorage {
+  readonly map = new Map<string, string>();
+  get length() {
+    return this.map.size;
+  }
+  key(i: number) {
+    return [...this.map.keys()][i] ?? null;
+  }
+  getItem(k: string) {
+    return this.map.has(k) ? (this.map.get(k) as string) : null;
+  }
+  setItem(k: string, v: string) {
+    this.map.set(k, String(v));
+  }
+  removeItem(k: string) {
+    this.map.delete(k);
+  }
+  clear() {
+    this.map.clear();
+  }
+}
+
+let storage: FakeStorage;
+
+/** A viewport `width` px wide: `matchMedia` answers max-width / min-width queries for it. */
+function viewport(width: number) {
+  const mm = (query: string) => {
+    const q = query.replace(/\s+/g, '');
+    const max = /max-width:(\d+(?:\.\d+)?)px/.exec(q);
+    const min = /min-width:(\d+(?:\.\d+)?)px/.exec(q);
+    let matches = max !== null || min !== null;
+    if (max) matches = matches && width <= Number(max[1]);
+    if (min) matches = matches && width >= Number(min[1]);
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    };
+  };
+  Object.defineProperty(window, 'matchMedia', { value: mm, configurable: true, writable: true });
+}
+
+// ── the page ─────────────────────────────────────────────────────────────────
+
+const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok' };
+
+const TH = {
+  aria: 'แจ้งเตือนคิวลูกค้า',
+  title: 'XC · คิวหน้าร้าน',
+  checking: 'กำลังตรวจคิว…',
+  checkingBranch: 'กำลังตรวจคิวของสาขา…',
+  fold: 'ย่อการแจ้งเตือน',
+  open: 'เปิดคิว / รับเรื่อง →',
+  waiting: (n: number, name: string) => `มีคิวลูกค้ารอ ${n} รายการ · ${name}`,
+  none: (name: string) => `ไม่มีคิวลูกค้ารอ · ${name}`,
+  offline: 'เชื่อมต่อไม่ได้ · กำลังลองใหม่',
+  expired: 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่',
+  switched: 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ',
+  signIn: 'เข้าสู่ระบบอีกครั้ง →',
+  soundOn: 'เปิดเสียงแจ้งเตือน',
+  soundIsOn: 'เสียงเปิด · กดปิด',
+  test: 'ทดสอบเสียง',
+  hintFirst: 'กดเปิดเสียงครั้งแรกเพื่อให้เบราว์เซอร์อนุญาต',
+  hintOn: 'แจ้งเตือนคิวใหม่ · ลดเสียงซ้ำระหว่างแท็บ',
+  hintOff: 'ปิดเสียงแล้ว ยังแสดงการแจ้งเตือน',
+  hintFail: 'เปิดเสียงไม่ได้ กรุณาตรวจการตั้งค่าเสียงเบราว์เซอร์',
+  testOn: 'เสียงทดสอบ · การแจ้งเตือนเปิดอยู่',
+  testOff: 'เสียงทดสอบ · กดเปิดเสียงเพื่อรับแจ้งเตือนคิว',
+  testFail: 'เล่นเสียงไม่ได้ กรุณาตรวจลำโพงและเบราว์เซอร์',
+};
+
+type CardModule = typeof import('./QueueCard');
+
+interface Page {
+  card: CardModule;
+  i18n: typeof import('../i18n');
+  en: typeof import('../i18n/en')['en'];
+  calls: { signOut: number; dispose: number };
+  setMe(me: Me | undefined): void;
+}
+
+const disposers: Array<() => void> = [];
+let fetchSpy: ReturnType<typeof vi.fn>;
+
+async function settle() {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+}
+
+/** A fresh page (its own sound and dock), with the fake session signed in as `me`. */
+async function openPage(me: Me | undefined = NOK, lang: 'th' | 'en' = 'th'): Promise<Page> {
+  vi.resetModules();
+  const i18n = await import('../i18n');
+  i18n.setLang(lang);
+  const card = await import('./QueueCard');
+  queues().reset();
+  const { en } = await import('../i18n/en');
+  const [meSig, setMe] = createSignal<Me | undefined>(me);
+  const calls = { signOut: 0, dispose: 0 };
+  const session: SessionStore = {
+    me: meSig,
+    signOut: async () => {
+      calls.signOut += 1;
+    },
+    dispose: () => {
+      calls.dispose += 1;
+    },
+  };
+  const page: Page = { card, i18n, en, calls, setMe: (m) => setMe(() => m) };
+  mountCard(page, session);
+  return page;
+}
+
+function mountCard(page: Page, session: SessionStore) {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const { QueueCard } = page.card;
+  disposers.push(render(() => <QueueCard session={session} />, host));
+}
+
+async function mountControls(): Promise<HTMLElement> {
+  const { QueueSoundControls } = await import('./QueueSoundControls');
+  const host = document.createElement('div');
+  host.setAttribute('data-test', 'controls');
+  document.body.appendChild(host);
+  disposers.push(render((): JSX.Element => <QueueSoundControls />, host));
+  return host;
+}
+
+function cards(label = TH.aria): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('aside')).filter(
+    (a) => a.getAttribute('aria-label') === label,
+  );
+}
+
+function theCard(label = TH.aria): HTMLElement {
+  const found = cards(label);
+  if (found.length !== 1) throw new Error(`expected one card labelled ${label}, found ${found.length}`);
+  return found[0];
+}
+
+function shown(el: Element | null | undefined): boolean {
+  if (!el || !el.isConnected) return false;
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    if (e.hasAttribute('hidden')) return false;
+    if (getComputedStyle(e).display === 'none') return false;
+  }
+  return true;
+}
+
+/** The element inside `root` whose whole text is `text` and that has no element child. */
+function leaf(root: Element, text: string): HTMLElement | undefined {
+  return Array.from(root.querySelectorAll<HTMLElement>('*')).find(
+    (e) => e.children.length === 0 && (e.textContent ?? '').trim() === text,
+  );
+}
+
+function statusLine(root = theCard()): HTMLElement {
+  const s = root.querySelector<HTMLElement>('[role="status"]');
+  if (!s) throw new Error('no role=status in the card');
+  return s;
+}
+
+function foldButton(root = theCard(), label = TH.fold): HTMLButtonElement {
+  const b = Array.from(root.querySelectorAll('button')).find((x) => x.getAttribute('aria-label') === label);
+  if (!b) throw new Error(`no fold button labelled ${label}`);
+  return b;
+}
+
+function button(root: Element, text: string): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === text);
+}
+
+function link(root: Element, text: string): HTMLAnchorElement | undefined {
+  return Array.from(root.querySelectorAll('a')).find((a) => (a.textContent ?? '').trim() === text);
+}
+
+function folded(root = theCard()): boolean {
+  return foldButton(root).getAttribute('aria-expanded') === 'false';
+}
+
+beforeEach(() => {
+  audio.resumeTo = 'running';
+  audio.contexts = [];
+  audio.frequencies = [];
+  storage = new FakeStorage();
+  vi.stubGlobal('localStorage', storage);
+  Object.defineProperty(window, 'localStorage', { value: storage, configurable: true });
+  vi.stubGlobal('AudioContext', FakeAudioContext);
+  Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true, writable: true });
+  Object.defineProperty(navigator, 'locks', { value: locks, configurable: true });
+  fetchSpy = vi.fn(async () => new Response('{}', { status: 503 }));
+  vi.stubGlobal('fetch', fetchSpy);
+});
+
+afterEach(() => {
+  while (disposers.length) disposers.pop()?.();
+  document.body.innerHTML = '';
+  vi.unstubAllGlobals();
+  for (const name of ['AudioContext', 'matchMedia', 'localStorage']) {
+    if (Object.getOwnPropertyDescriptor(window, name)?.configurable) {
+      delete (window as unknown as Record<string, unknown>)[name];
+    }
+  }
+  delete (navigator as unknown as Record<string, unknown>).locks;
+});
+
+/** Requests the card made: anything but the shared session's `me` read. */
+function ownRequests(): string[] {
+  return fetchSpy.mock.calls
+    .map((c) => String((c as unknown[])[0] instanceof Request ? ((c as unknown[])[0] as Request).url : (c as unknown[])[0]))
+    .filter((u) => !u.includes('/api/v3/views/me'));
+}
+
+// ── C1 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C1: the card before the first answer', () => {
+  it('an <aside> labelled แจ้งเตือนคิวลูกค้า: badge —, title XC · คิวหน้าร้าน, a polite status กำลังตรวจคิว…, fold button −', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    expect(card.tagName).toBe('ASIDE');
+    expect(leaf(card, '—')).toBeDefined();
+    expect(leaf(card, TH.title)).toBeDefined();
+    const status = statusLine(card);
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent?.trim()).toBe(TH.checking);
+    const fold = foldButton(card);
+    expect(fold.textContent?.trim()).toBe('−');
+    expect(fold.getAttribute('aria-expanded')).toBe('true');
+    expect(card.classList.contains('waiting')).toBe(false);
+  });
+
+  it('makes no request of its own and never signs out', async () => {
+    const page = await openPage();
+    await settle();
+    answer('B1', { count: 2, latest: 'kq-1' });
+    fail('B1', { kind: 'ended', reason: 'expired' });
+    await settle();
+    expect(ownRequests()).toEqual([]);
+    expect(page.calls).toEqual({ signOut: 0, dispose: 0 });
+  });
+});
+
+// ── C2 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C2: folding', () => {
+  it('a viewport of 700 px at mount: folded, +, aria-expanded false; link, sound buttons and hint hidden', async () => {
+    viewport(700);
+    await openPage();
+    await settle();
+    const card = theCard();
+    const fold = foldButton(card);
+    expect(fold.textContent?.trim()).toBe('+');
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    expect(shown(link(card, TH.open))).toBe(false);
+    expect(shown(button(card, TH.soundOn))).toBe(false);
+    expect(shown(button(card, TH.test))).toBe(false);
+    expect(shown(leaf(card, TH.hintFirst))).toBe(false);
+    // the top row stays
+    expect(shown(statusLine(card))).toBe(true);
+    expect(shown(fold)).toBe(true);
+    expect(shown(leaf(card, TH.title))).toBe(true);
+  });
+
+  it('a viewport of 701 px at mount: unfolded, and everything is shown', async () => {
+    viewport(701);
+    await openPage();
+    await settle();
+    const card = theCard();
+    expect(folded(card)).toBe(false);
+    expect(shown(link(card, TH.open))).toBe(true);
+    expect(shown(button(card, TH.soundOn))).toBe(true);
+    expect(shown(button(card, TH.test))).toBe(true);
+    expect(shown(leaf(card, TH.hintFirst))).toBe(true);
+  });
+
+  it('a browser without matchMedia: unfolded, nothing throws', async () => {
+    expect('matchMedia' in window && typeof window.matchMedia === 'function').toBe(false);
+    await openPage();
+    await settle();
+    expect(folded()).toBe(false);
+  });
+
+  it('the fold button folds and unfolds', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    foldButton(card).click();
+    await settle();
+    expect(foldButton(card).textContent?.trim()).toBe('+');
+    expect(folded(card)).toBe(true);
+    expect(shown(link(card, TH.open))).toBe(false);
+    expect(shown(button(card, TH.soundOn))).toBe(false);
+    foldButton(card).click();
+    await settle();
+    expect(foldButton(card).textContent?.trim()).toBe('−');
+    expect(folded(card)).toBe(false);
+    expect(shown(link(card, TH.open))).toBe(true);
+    expect(shown(button(card, TH.soundOn))).toBe(true);
+  });
+});
+
+// ── C3 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C3: the link to the queue page', () => {
+  for (const role of ['OWNER', 'FRONT', 'BACKEND', 'MANAGER']) {
+    it(`${role}: เปิดคิว / รับเรื่อง → to /kiosk-queue.html?branch=<branch>, in a new tab`, async () => {
+      await openPage({ ...NOK, role });
+      await settle();
+      const a = link(theCard(), TH.open);
+      expect(shown(a)).toBe(true);
+      expect(a?.getAttribute('href')).toBe('/kiosk-queue.html?branch=B1');
+      expect(a?.getAttribute('target')).toBe('_blank');
+      expect(a?.getAttribute('rel') ?? '').toContain('noopener');
+    });
+  }
+
+  for (const role of ['RATES', 'MONITOR', 'FINANCE', 'SYSTEM', 'DOCUMENTS', 'DOCUMENT_REVIEW']) {
+    it(`${role}: no link`, async () => {
+      await openPage({ ...NOK, role });
+      await settle();
+      answer('B1', { count: 1, latest: 'kq-1', employee: { id: NOK.id, role } });
+      await settle();
+      expect(shown(link(theCard(), TH.open))).toBe(false);
+      expect(Array.from(theCard().querySelectorAll('a')).filter((a) => shown(a))).toEqual([]);
+    });
+  }
+
+  it('the branch is encoded, and the link follows a branch change', async () => {
+    await openPage();
+    queues().setBranch('B 1&x');
+    await settle();
+    expect(link(theCard(), TH.open)?.getAttribute('href')).toBe('/kiosk-queue.html?branch=B%201%26x');
+    queues().setBranch('B2');
+    await settle();
+    expect(link(theCard(), TH.open)?.getAttribute('href')).toBe('/kiosk-queue.html?branch=B2');
+  });
+});
+
+// ── C4 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C4: each answer', () => {
+  it('count 0 → 2 while folded: badge 2, class waiting, the waiting line, title XC · <name>, and it unfolds', async () => {
+    viewport(390);
+    await openPage();
+    await settle();
+    expect(folded()).toBe(true);
+    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    await settle();
+    expect(folded()).toBe(true);
+    answer('B1', { count: 2, latest: 'kq-2', branchName: 'Silom' });
+    await settle();
+    const card = theCard();
+    expect(leaf(card, '2')).toBeDefined();
+    expect(card.classList.contains('waiting')).toBe(true);
+    expect(statusLine(card).textContent?.trim()).toBe(TH.waiting(2, 'Silom'));
+    expect(leaf(card, 'XC · Silom')).toBeDefined();
+    expect(leaf(card, TH.title)).toBeUndefined();
+    expect(folded(card)).toBe(false);
+    expect(foldButton(card).textContent?.trim()).toBe('−');
+  });
+
+  it('nothing waiting: badge 0, no class waiting, ไม่มีคิวลูกค้ารอ · <name>, and it stays folded', async () => {
+    viewport(390);
+    await openPage();
+    await settle();
+    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    await settle();
+    const card = theCard();
+    expect(leaf(card, '0')).toBeDefined();
+    expect(card.classList.contains('waiting')).toBe(false);
+    expect(statusLine(card).textContent?.trim()).toBe(TH.none('Silom'));
+    expect(folded(card)).toBe(true);
+  });
+
+  it('the same line again does not unfold it again; a new line with a waiting count does', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 2, latest: 'kq-2' });
+    await settle();
+    foldButton().click();
+    await settle();
+    expect(folded()).toBe(true);
+
+    answer('B1', { count: 2, latest: 'kq-2' });
+    await settle();
+    expect(folded()).toBe(true);
+    // one request served and another arrived: same count, same line, new latest — still folded
+    answer('B1', { count: 2, latest: 'kq-3' });
+    await settle();
+    expect(folded()).toBe(true);
+    expect(statusLine().textContent?.trim()).toBe(TH.waiting(2, 'Silom'));
+
+    answer('B1', { count: 3, latest: 'kq-4' });
+    await settle();
+    expect(folded()).toBe(false);
+    expect(statusLine().textContent?.trim()).toBe(TH.waiting(3, 'Silom'));
+  });
+
+  it('a waiting count that drops to 0 keeps it folded', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    foldButton().click();
+    await settle();
+    answer('B1', { count: 0, latest: null });
+    await settle();
+    expect(folded()).toBe(true);
+    expect(theCard().classList.contains('waiting')).toBe(false);
+  });
+
+  it('a branch change: กำลังตรวจคิวของสาขา… until that branch answers', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 1, latest: 'kq-1', branchName: 'Silom' });
+    await settle();
+    queues().setBranch('B2');
+    await settle();
+    expect(statusLine().textContent?.trim()).toBe(TH.checkingBranch);
+    answer('B2', { count: 0, latest: null, branchName: 'Ratchada' });
+    await settle();
+    expect(statusLine().textContent?.trim()).toBe(TH.none('Ratchada'));
+    expect(leaf(theCard(), 'XC · Ratchada')).toBeDefined();
+    expect(leaf(theCard(), '0')).toBeDefined();
+  });
+});
+
+// ── C5 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C5: offline', () => {
+  it('badge !, no class waiting, เชื่อมต่อไม่ได้ · กำลังลองใหม่; it does not unfold', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 2, latest: 'kq-2' });
+    await settle();
+    foldButton().click();
+    await settle();
+    fail('B1', { kind: 'offline' });
+    await settle();
+    const card = theCard();
+    expect(leaf(card, '!')).toBeDefined();
+    expect(leaf(card, '2')).toBeUndefined();
+    expect(card.classList.contains('waiting')).toBe(false);
+    expect(statusLine(card).textContent?.trim()).toBe(TH.offline);
+    expect(folded(card)).toBe(true);
+  });
+
+  it('the next success clears it — even an unchanged one — and the waiting line is new again, so it unfolds (account-bar.js:45 last=\'\')', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 2, latest: 'kq-2' });
+    await settle();
+    foldButton().click();
+    fail('B1', { kind: 'offline' });
+    await settle();
+    recover('B1');
+    await settle();
+    const card = theCard();
+    expect(statusLine(card).textContent?.trim()).toBe(TH.waiting(2, 'Silom'));
+    expect(leaf(card, '2')).toBeDefined();
+    expect(card.classList.contains('waiting')).toBe(true);
+    expect(folded(card)).toBe(false);
+  });
+});
+
+// ── C6 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueCard C6: the session ended', () => {
+  it('expired: เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่ and เข้าสู่ระบบอีกครั้ง → to /login', async () => {
+    const page = await openPage();
+    await settle();
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    fail('B1', { kind: 'ended', reason: 'expired' });
+    await settle();
+    const card = theCard();
+    expect(statusLine(card).textContent?.trim()).toBe(TH.expired);
+    const a = link(card, TH.signIn);
+    expect(shown(a)).toBe(true);
+    expect(a?.getAttribute('href')).toBe('/login');
+    expect(shown(link(card, TH.open))).toBe(false);
+    expect(page.calls.signOut).toBe(0);
+  });
+
+  it('switched: บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ, with the same link', async () => {
+    await openPage();
+    await settle();
+    fail('B1', { kind: 'ended', reason: 'switched' });
+    await settle();
+    const card = theCard();
+    expect(statusLine(card).textContent?.trim()).toBe(TH.switched);
+    expect(link(card, TH.signIn)?.getAttribute('href')).toBe('/login');
+  });
+
+  it('the sign-in link is shown to a role that never sees the queue link (RATES)', async () => {
+    await openPage({ ...NOK, role: 'RATES' });
+    await settle();
+    fail('B1', { kind: 'ended', reason: 'expired' });
+    await settle();
+    const a = link(theCard(), TH.signIn);
+    expect(shown(a)).toBe(true);
+    expect(a?.getAttribute('href')).toBe('/login');
+  });
+});
+
+// ── C7 ───────────────────────────────────────────────────────────────────────
+
+describe('QueueSoundControls C7 (account-bar.js:28-30, :35-36)', () => {
+  it('the card carries the controls: เปิดเสียงแจ้งเตือน (aria-pressed false), ทดสอบเสียง and the first hint', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    const sound = button(card, TH.soundOn);
+    expect(sound?.getAttribute('aria-pressed')).toBe('false');
+    expect(sound?.getAttribute('type')).toBe('button');
+    expect(button(card, TH.test)?.getAttribute('type')).toBe('button');
+    expect(shown(leaf(card, TH.hintFirst))).toBe(true);
+  });
+
+  it('pressing it: sound on, the button says เสียงเปิด · กดปิด (aria-pressed true), the hint changes, one chime', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.soundOn)?.click();
+    await settle();
+    const on = button(card, TH.soundIsOn);
+    expect(on?.getAttribute('aria-pressed')).toBe('true');
+    expect(leaf(card, TH.hintOn)).toBeDefined();
+    expect(audio.chimes()).toBe(1);
+  });
+
+  it('pressing it again: off, the first text back, ปิดเสียงแล้ว ยังแสดงการแจ้งเตือน, no chime', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.soundOn)?.click();
+    await settle();
+    button(card, TH.soundIsOn)?.click();
+    await settle();
+    expect(button(card, TH.soundOn)?.getAttribute('aria-pressed')).toBe('false');
+    expect(leaf(card, TH.hintOff)).toBeDefined();
+    expect(audio.chimes()).toBe(1);
+  });
+
+  it('the AudioContext does not reach running: เปิดเสียงไม่ได้…, sound stays off', async () => {
+    audio.resumeTo = 'suspended';
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.soundOn)?.click();
+    await settle();
+    expect(leaf(card, TH.hintFail)).toBeDefined();
+    expect(button(card, TH.soundOn)?.getAttribute('aria-pressed')).toBe('false');
+    expect(button(card, TH.soundIsOn)).toBeUndefined();
+    expect(audio.chimes()).toBe(0);
+  });
+
+  it('ทดสอบเสียง with sound off: one chime, the off test hint, sound still off', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.test)?.click();
+    await settle();
+    expect(audio.chimes()).toBe(1);
+    expect(leaf(card, TH.testOff)).toBeDefined();
+    expect(button(card, TH.soundOn)?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('ทดสอบเสียง with sound on: the on test hint', async () => {
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.soundOn)?.click();
+    await settle();
+    button(card, TH.test)?.click();
+    await settle();
+    expect(audio.chimes()).toBe(2);
+    expect(leaf(card, TH.testOn)).toBeDefined();
+  });
+
+  it('ทดสอบเสียง when audio cannot start: เล่นเสียงไม่ได้ กรุณาตรวจลำโพงและเบราว์เซอร์', async () => {
+    audio.resumeTo = 'suspended';
+    await openPage();
+    await settle();
+    const card = theCard();
+    button(card, TH.test)?.click();
+    await settle();
+    expect(leaf(card, TH.testFail)).toBeDefined();
+    expect(audio.chimes()).toBe(0);
+  });
+
+  it('two controls on one page share one sound (one per page — the card and #471’s bar)', async () => {
+    await openPage();
+    await settle();
+    const other = await mountControls();
+    button(theCard(), TH.soundOn)?.click();
+    await settle();
+    expect(button(other, TH.soundIsOn)?.getAttribute('aria-pressed')).toBe('true');
+    expect(leaf(other, TH.hintOn)).toBeDefined();
+    button(other, TH.soundIsOn)?.click();
+    await settle();
+    expect(button(theCard(), TH.soundOn)?.getAttribute('aria-pressed')).toBe('false');
+    expect(audio.chimes()).toBe(1);
+  });
+});
+
+// ── C9 from the card ─────────────────────────────────────────────────────────
+
+describe('QueueCard C9: it announces each answer', () => {
+  it('sound on and a new latest: one chime, stored at xc.queue.sound.<me().id>.<branch>; the same latest again: none', async () => {
+    await openPage();
+    await settle();
+    button(theCard(), TH.soundOn)?.click();
+    await settle();
+    expect(audio.chimes()).toBe(1);
+
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    expect(audio.chimes()).toBe(2);
+    expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-1');
+
+    answer('B1', { count: 2, latest: 'kq-1' });
+    await settle();
+    expect(audio.chimes()).toBe(2);
+
+    answer('B1', { count: 2, latest: 'kq-2' });
+    await settle();
+    expect(audio.chimes()).toBe(3);
+    expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-2');
+  });
+
+  it('sound off: an answer chimes nothing and stores nothing', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    expect(audio.chimes()).toBe(0);
+    expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
+  });
+
+  it('the key follows the branch the card follows', async () => {
+    await openPage();
+    await settle();
+    button(theCard(), TH.soundOn)?.click();
+    await settle();
+    queues().setBranch('B2');
+    await settle();
+    answer('B2', { count: 1, latest: 'kq-7', branchName: 'Ratchada' });
+    await settle();
+    expect(storage.map.get('xc.queue.sound.E7.B2')).toBe('kq-7');
+    expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
+  });
+
+  it('switching sound on while a request already waits announces it, as v2’s next poll did (:46 → :37)', async () => {
+    await openPage();
+    await settle();
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    button(theCard(), TH.soundOn)?.click();
+    await settle();
+    // the switch-on chime, then the waiting request
+    expect(audio.chimes()).toBe(2);
+    expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-1');
+  });
+});
+
+// ── docking (§12.18.8) ───────────────────────────────────────────────────────
+
+describe('dockQueueCard (§12.18.8, for #471)', () => {
+  it('docked: no card in the DOM; a new latest with sound on still chimes; undocked: the card is back with the current line', async () => {
+    const page = await openPage();
+    await settle();
+    const controls = await mountControls();
+    button(controls, TH.soundOn)?.click();
+    await settle();
+    expect(audio.chimes()).toBe(1);
+
+    const undock = page.card.dockQueueCard();
+    await settle();
+    expect(cards()).toEqual([]);
+
+    answer('B1', { count: 1, latest: 'kq-1' });
+    await settle();
+    expect(cards()).toEqual([]);
+    expect(audio.chimes()).toBe(2);
+    expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-1');
+
+    undock();
+    await settle();
+    expect(statusLine(theCard()).textContent?.trim()).toBe(TH.waiting(1, 'Silom'));
+  });
+
+  it('docked before the card mounts: it never shows', async () => {
+    vi.resetModules();
+    const card = await import('./QueueCard');
+    queues().reset();
+    const undock = card.dockQueueCard();
+    const [me] = createSignal<Me | undefined>(NOK);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    disposers.push(
+      render(() => <card.QueueCard session={{ me, signOut: async () => {}, dispose: () => {} }} />, host),
+    );
+    await settle();
+    expect(cards()).toEqual([]);
+    undock();
+    await settle();
+    expect(cards()).toHaveLength(1);
+  });
+
+  it('two docks: the card stays hidden until both are released; releasing twice does not over-count', async () => {
+    const page = await openPage();
+    await settle();
+    const a = page.card.dockQueueCard();
+    const b = page.card.dockQueueCard();
+    a();
+    a();
+    await settle();
+    expect(cards()).toEqual([]);
+    b();
+    await settle();
+    expect(cards()).toHaveLength(1);
+    const c = page.card.dockQueueCard();
+    await settle();
+    expect(cards()).toEqual([]);
+    c();
+    await settle();
+    expect(cards()).toHaveLength(1);
+  });
+});
+
+// ── language (W10) ───────────────────────────────────────────────────────────
+
+describe('QueueCard texts follow the language (W10)', () => {
+  it('lang en: the label, the lines, the link and the sound button come from en; back to th live', async () => {
+    const page = await openPage(NOK, 'en');
+    const { en } = page;
+    await settle();
+    const card = theCard(en['queue.card.aria']);
+    expect(statusLine(card).textContent?.trim()).toBe(en['queue.card.checking']);
+    expect(foldButton(card, en['queue.card.foldAria'])).toBeDefined();
+    expect(shown(link(card, en['queue.card.openQueue']))).toBe(true);
+    expect(button(card, en['queue.sound.enable'])).toBeDefined();
+    expect(leaf(card, en['queue.sound.hintInitial'])).toBeDefined();
+
+    answer('B1', { count: 2, latest: 'kq-2', branchName: 'Silom' });
+    await settle();
+    expect(statusLine(card).textContent?.trim()).toBe(
+      page.i18n.fill(en['queue.card.hasWaiting'], { count: 2, branchName: 'Silom' }),
+    );
+    fail('B1', { kind: 'offline' });
+    await settle();
+    expect(statusLine(card).textContent?.trim()).toBe(en['queue.card.offline']);
+    fail('B1', { kind: 'ended', reason: 'switched' });
+    await settle();
+    expect(statusLine(card).textContent?.trim()).toBe(en['queue.card.endedSwitched']);
+    expect(link(card, en['queue.card.signInAgain'])?.getAttribute('href')).toBe('/login');
+
+    page.i18n.setLang('th');
+    await settle();
+    const thCard = theCard(TH.aria);
+    expect(statusLine(thCard).textContent?.trim()).toBe(TH.switched);
+    expect(link(thCard, TH.signIn)).toBeDefined();
+  });
+
+  it('lang en, nothing waiting and expired', async () => {
+    const page = await openPage(NOK, 'en');
+    const { en } = page;
+    await settle();
+    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    await settle();
+    const card = theCard(en['queue.card.aria']);
+    expect(statusLine(card).textContent?.trim()).toBe(page.i18n.fill(en['queue.card.noWaiting'], { branchName: 'Silom' }));
+    fail('B1', { kind: 'ended', reason: 'expired' });
+    await settle();
+    expect(statusLine(card).textContent?.trim()).toBe(en['queue.card.endedExpired']);
+  });
+});
