@@ -1,16 +1,20 @@
 import type { JSX } from 'solid-js';
 
-export function MoneyText(props: { value: string; currency: string }): JSX.Element {
-  const isDecimal = /^-?\d+(\.\d+)?$/.test(props.value);
+function formatDecimal(value: string): string {
+  const isDecimal = /^-?\d+(\.\d+)?$/.test(value);
   if (!isDecimal) {
-    return <span>{props.value} {props.currency}</span>;
+    return value;
   }
 
-  const [intPart, decPart] = props.value.split('.');
+  const [intPart, decPart] = value.split('.');
   const isNegative = intPart!.startsWith('-');
   const unsignedInt = isNegative ? intPart!.slice(1) : intPart!;
   const groupedInt = unsignedInt.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const formatted = `${isNegative ? '-' : ''}${groupedInt}${decPart !== undefined ? `.${decPart}` : ''}`;
+  return `${isNegative ? '-' : ''}${groupedInt}${decPart !== undefined ? `.${decPart}` : ''}`;
+}
 
-  return <span>{formatted} {props.currency}</span>;
+export function MoneyText(props: { value: string; currency: string }): JSX.Element {
+  const formatted = () => formatDecimal(props.value);
+
+  return <span>{formatted()} {props.currency}</span>;
 }
