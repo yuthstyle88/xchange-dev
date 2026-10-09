@@ -540,8 +540,10 @@ Moving them is out of scope (§10).
 // dyn-safe: no associated const, no `async fn`; BoxFuture like the repo's other ports.
 pub trait ApprovalSubject: Send + Sync {
     fn type_name(&self) -> &'static str;             // "RATE_PUBLICATION", later "REVERSAL", …
-    /// The current hash of the object; a decision is refused if it moved.
-    fn version_hash<'a>(&'a self, object_id: &'a str) -> BoxFuture<'a, AppResult<String>>;
+    /// The current hash of the object, read in the caller's tx (so a hash written earlier in that
+    /// tx, e.g. a submit's `evaluation_hash`, is the one bound); a decision is refused if it moved.
+    fn version_hash<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, object_id: &'a str)
+        -> BoxFuture<'a, AppResult<String>>;
     /// What happens on APPROVED / REJECTED (e.g. the draft's status), in the caller's tx.
     fn on_decided<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, object_id: &'a str, outcome: Outcome)
         -> BoxFuture<'a, AppResult<()>>;
