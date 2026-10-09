@@ -1,10 +1,22 @@
 //! Booking entity.
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::booking::value_objects::booking_status::BookingStatus;
+
+/// Normalised rate per 1 foreign currency unit.
+/// Moves to `xc_kernel::money::CompatRate` once RE-4b merges.
+pub struct CompatRate;
+
+impl CompatRate {
+    pub fn per_one(rate: Rate, unit_size: UnitSize) -> Decimal {
+        (rate.value() / unit_size.value()).normalize()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Booking {
@@ -17,6 +29,8 @@ pub struct Booking {
     pub currency: CurrencyCode,
     pub amount: Money,
     pub rate: Rate,
+    pub unit_size: UnitSize,
+    pub published_rate_line_id: Option<Uuid>,
     pub status: BookingStatus,
     pub created_at: DateTime<Utc>,
     pub created_by: String,

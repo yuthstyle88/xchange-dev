@@ -20,6 +20,7 @@ use crate::presentation::pages::{SessionReader, Sessions};
 
 pub type Accounts = AccountService<PgAccountRepository>;
 
+pub const SESSION_COOKIE: &str = "__Host-xc_session";
 pub const OWNER_COOKIE: &str = "__Host-xc_owner";
 pub const STAFF_COOKIE: &str = "__Host-xc_staff";
 /// v2's `OWNER_ID`: the id every owner acts under.
@@ -123,17 +124,118 @@ pub fn actor_of(who: &SignedIn) -> Option<Actor> {
     }
 }
 
+use chrono::{DateTime, Utc};
+use xc_auth::application::session::SessionService;
+use xc_auth::domain::access::ScopedRole;
+use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
+
+/// Maps an `access::Actor` to a v2 `Actor`.
+///
+/// stopgap, removed by OR-4.
+pub fn legacy_actor(actor: &xc_auth::domain::access::Actor, now: DateTime<Utc>) -> Option<Actor> {
+    let valid_roles: Vec<&ScopedRole> = actor
+        .roles
+        .iter()
+        .filter(|r| r.valid_from <= now && r.valid_to.is_none_or(|to| to > now))
+        .collect();
+
+    let has_org_exec = valid_roles
+        .iter()
+        .any(|r| r.role == xc_auth::domain::access::Role::Executive && r.branch.is_none());
+    let has_org_admin = valid_roles
+        .iter()
+        .any(|r| r.role == xc_auth::domain::access::Role::Admin && r.branch.is_none());
+
+    if has_org_exec && has_org_admin {
+        return Some(Actor::owner(&actor.user_id));
+    }
+
+    let priority = [
+        (
+            xc_auth::domain::access::Role::Teller,
+            xc_auth::domain::policy::value_objects::role::Role::Front,
+        ),
+        (
+            xc_auth::domain::access::Role::BranchManager,
+            xc_auth::domain::policy::value_objects::role::Role::Manager,
+        ),
+        (
+            xc_auth::domain::access::Role::RateManager,
+            xc_auth::domain::policy::value_objects::role::Role::Rates,
+        ),
+        (
+            xc_auth::domain::access::Role::Finance,
+            xc_auth::domain::policy::value_objects::role::Role::Finance,
+        ),
+        (
+            xc_auth::domain::access::Role::Admin,
+            xc_auth::domain::policy::value_objects::role::Role::System,
+        ),
+        (
+            xc_auth::domain::access::Role::VerificationReviewer,
+            xc_auth::domain::policy::value_objects::role::Role::DocumentReview,
+        ),
+    ];
+
+    for (access_role, v2_role) in priority {
+        if let Some(r) = valid_roles.iter().find(|r| r.role == access_role) {
+            let branch = r.branch.clone().unwrap_or_else(|| BranchId::new("MAIN"));
+            return Actor::staff(&actor.user_id, v2_role, branch);
+        }
+    }
+
+    None
+}
+
 /// The reader `pages.rs` looks up as `web::Data<dyn SessionReader>`.
 pub struct AccountSessionReader {
     pub accounts: Accounts,
 }
 
 impl SessionReader for AccountSessionReader {
+    #[allow(clippy::collapsible_if)]
     fn sessions<'a>(
         &'a self,
         req: &'a HttpRequest,
     ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
         Box::pin(async move {
+            let session_token = cookie(req, SESSION_COOKIE);
+            if !session_token.is_empty() {
+                if let Some(session_svc) = req.app_data::<web::Data<SessionService>>() {
+                    let now_utc = Utc::now();
+                    if let Ok(Some((user, roles))) = session_svc
+                        .active_user_and_roles(&session_token, now_utc)
+                        .await
+                    {
+                        let access_actor = xc_auth::domain::access::Actor::new(
+                            &user.id,
+                            &user.organization_id,
+                            roles,
+                            None,
+                        );
+                        if let Some(legacy) = legacy_actor(&access_actor, now_utc) {
+                            match legacy.kind() {
+                                ActorKind::Owner => {
+                                    return Sessions {
+                                        owner: Some(legacy),
+                                        staff: None,
+                                    };
+                                }
+                                ActorKind::Staff => {
+                                    return Sessions {
+                                        owner: None,
+                                        staff: Some(legacy),
+                                    };
+                                }
+                            }
+                        }
+                        return Sessions {
+                            owner: None,
+                            staff: None,
+                        };
+                    }
+                }
+            }
             let now = SystemTime::now();
             let owner = match self
                 .accounts

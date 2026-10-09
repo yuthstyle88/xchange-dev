@@ -62,7 +62,7 @@ impl BookingService {
                         .unwrap_or(BookingRules::DEFAULT);
                     let open_shift = ports.has_open_shift_in(tx, &b).await?;
                     let counter = ports
-                        .counter_rate_in(tx, &b, &cmd.currency, cmd.side)
+                        .counter_rate_in(tx, &b, &cmd.currency, cmd.side, Some(cmd.amount))
                         .await?;
 
                     let facts = CreateFacts {
@@ -86,6 +86,8 @@ impl BookingService {
                         currency: cmd.currency,
                         amount: cmd.amount,
                         rate: new_booking.rate,
+                        unit_size: new_booking.unit_size,
+                        published_rate_line_id: new_booking.published_rate_line_id,
                         status: new_booking.status,
                         created_at: now,
                         created_by: actor_str,

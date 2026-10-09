@@ -5,12 +5,16 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use uuid::Uuid;
 use xc_exchange::domain::booking::entities::booking_steps::LiveCustomer;
-use xc_exchange::domain::booking::repositories::booking_ports::BookingPorts;
+use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate, Side};
+use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Side};
+use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
+use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
@@ -30,11 +34,6 @@ impl PgBookingPorts {
         let service = BookingRulesService::new(branch_tx, store);
         Self { pool, service }
     }
-}
-
-fn parse_rate(dec: Decimal) -> AppResult<Rate> {
-    Rate::parse(&dec.normalize().to_string())
-        .map_err(|e| AppError::Internal(format!("invalid rate decimal {dec}: {e}")))
 }
 
 impl BookingPorts for PgBookingPorts {
@@ -103,28 +102,65 @@ impl BookingPorts for PgBookingPorts {
         branch: &'a BranchId,
         code: &'a CurrencyCode,
         side: Side,
-    ) -> BoxFuture<'a, AppResult<Option<Rate>>> {
+        amount: Option<Money>,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
         Box::pin(async move {
-            let row: Option<(Decimal, Decimal)> = sqlx::query_as(
-                "SELECT buy, sell FROM rates WHERE branch_id = $1 AND code = $2 ORDER BY id DESC LIMIT 1",
-            )
-            .bind(branch.as_str())
-            .bind(code.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
+            let published_rates = PgPublishedRates::new(self.pool.clone());
+            let published_side = published_rates.line_in(tx, branch, *code, side).await?;
 
-            match row {
-                Some((buy, sell)) => {
-                    let dec = match side {
-                        Side::Buy => buy,
-                        Side::Sell => sell,
-                    };
-                    let rate = parse_rate(dec)?;
-                    Ok(Some(rate))
+            let published_side = match published_side {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+
+            if let Some(amount) = amount {
+                let foreign =
+                    ForeignAmount::from_decimal(Decimal::new(amount.minor_i128() as i64, 2));
+                let thb_amount =
+                    ExchangeArithmetic::thb(foreign, published_side.rate, published_side.unit_size);
+
+                if published_side.stale {
+                    let snapshot_row: Option<serde_json::Value> = sqlx::query_scalar(
+                        "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
+                    )
+                    .bind(published_side.line_id.as_uuid())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    let policy_id = snapshot_row
+                        .as_ref()
+                        .and_then(|s| s.get("policy_version_id"))
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| Uuid::parse_str(s).ok());
+
+                    if let Some(policy_id) = policy_id {
+                        let policy_row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
+                            "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
+                        )
+                        .bind(policy_id)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+
+                        if let Some((on_stale_str, stale_limit_dec)) = policy_row {
+                            let on_stale = on_stale_str.as_deref().and_then(OnStale::parse_db);
+                            let stale_limit_thb =
+                                stale_limit_dec.and_then(|d| Money::parse(&d.to_string()).ok());
+                            let stale_policy = StalePolicy::new(on_stale, stale_limit_thb);
+                            if stale_policy.admits(&published_side, thb_amount).is_err() {
+                                return Ok(None);
+                            }
+                        }
+                    }
                 }
-                None => Ok(None),
             }
+
+            Ok(Some(CounterLine {
+                line_id: published_side.line_id.as_uuid(),
+                rate: published_side.rate,
+                unit_size: published_side.unit_size,
+            }))
         })
     }
 }

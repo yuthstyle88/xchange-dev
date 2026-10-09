@@ -1,8 +1,12 @@
 //! Tests for repeat booking redemptions running row 4 (form check) and row 5 (member check).
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! §4.9 R1: a booking holds its `unit_size` and the line it was created at. The booking here is
+//! USD, unit 1, created before RE-4 (no line), so the rate reads as before.
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use xc_exchange::domain::booking::commands::redeem_booking::RedeemBooking;
 use xc_exchange::domain::booking::entities::booking::Booking;
@@ -56,6 +60,8 @@ fn booking(
         currency: code("USD"),
         amount: money("100.00"),
         rate: rate("32.1000"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: None,
         status,
         created_at: now() - Duration::hours(1),
         created_by: "owner".to_owned(),

@@ -34,6 +34,11 @@
 //! `verified_at` is checked on distinct and on equal instants, with the id as the tie-break.
 //!
 //! Needs `TEST_DATABASE_URL` (see `common/mod.rs`); nothing here skips.
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! §4.9 R1 and R6: a booking holds its `unit_size` and the line it was created at (the bookings
+//! here are unit 1, written with no line, as before RE-4); `confirm_in` takes no rate, because
+//! confirm never rewrites the rate stored at create (`confirm_in_changes_only_a_pending_booking`).
 
 // `common` re-exports the customer types its own tests name; this file names none of them.
 #[allow(unused_imports)]
@@ -46,7 +51,7 @@ use chrono::{DateTime, Utc};
 use common::{MAIN, TestDb, at, branch};
 use pos_error::AppResult;
 use sqlx::{AssertSqlSafe, Postgres, Transaction};
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use xc_exchange::domain::booking::entities::booking::Booking;
 use xc_exchange::domain::booking::entities::booking_steps::StoredRequest;
@@ -90,6 +95,8 @@ fn confirmed(id: &str, branch_id: &str, created: i64) -> Booking {
         currency: code("USD"),
         amount: money("1000.50"),
         rate: rate("32.6"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: None,
         status: BookingStatus::Confirmed,
         created_at: at(created),
         created_by: "owner".to_string(),
@@ -113,6 +120,8 @@ fn pending(id: &str, branch_id: &str, member_id: &str, created: i64) -> Booking 
         currency: code("EUR"),
         amount: money("250"),
         rate: rate("35.1234"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: None,
         status: BookingStatus::Pending,
         created_at: at(created),
         created_by: "FRONT-1".to_string(),
@@ -206,7 +215,6 @@ impl Shop {
         &self,
         branch_id: &str,
         id: &str,
-        to: Rate,
         expires_at: DateTime<Utc>,
         when: DateTime<Utc>,
         by: &str,
@@ -214,7 +222,7 @@ impl Shop {
         let mut tx = self.begin().await;
         let changed = self
             .bookings
-            .confirm_in(&mut tx, &branch(branch_id), id, to, expires_at, when, by)
+            .confirm_in(&mut tx, &branch(branch_id), id, expires_at, when, by)
             .await
             .expect("confirm_in");
         tx.commit().await.expect("commit");
@@ -1064,7 +1072,7 @@ async fn a_booking_is_read_and_written_only_with_its_own_branch() {
 
     assert!(
         !shop
-            .confirm(AIRPORT, "BK-P", rate("33"), at(900), at(60), "staff")
+            .confirm(AIRPORT, "BK-P", at(900), at(60), "staff")
             .await
     );
     assert!(!shop.cancel(AIRPORT, "BK-C").await);
@@ -1105,6 +1113,10 @@ async fn list_is_newest_first_then_by_id_desc_and_cut_to_the_limit() {
 }
 
 /// `confirm_in` changes a `PENDING` booking only (§5.6.3 confirm rule 7).
+///
+/// Amended for #758 (RE-4d, rates §4.9 R6): `confirm_in` took a rate and wrote it (32.75 over the
+/// stored 35.1234). Confirm never rewrites the rate, the unit or the line stored at create, so it
+/// takes no rate and the confirmed row keeps 35.1234.
 #[tokio::test]
 async fn confirm_in_changes_only_a_pending_booking() {
     let shop = Shop::open().await;
@@ -1119,13 +1131,9 @@ async fn confirm_in_changes_only_a_pending_booking() {
     shop.stored(&gone, "req-x").await;
     assert!(shop.cancel(MAIN, "BK-X").await);
 
-    assert!(
-        shop.confirm(MAIN, "BK-P", rate("32.75"), at(600), at(60), "FRONT-2")
-            .await
-    );
+    assert!(shop.confirm(MAIN, "BK-P", at(600), at(60), "FRONT-2").await);
     let now_confirmed = Booking {
         status: BookingStatus::Confirmed,
-        rate: rate("32.75"),
         expires_at: Some(at(600)),
         confirmed_at: Some(at(60)),
         confirmed_by: Some("FRONT-2".to_string()),
@@ -1135,21 +1143,21 @@ async fn confirm_in_changes_only_a_pending_booking() {
 
     assert!(
         !shop
-            .confirm(MAIN, "BK-P", rate("40"), at(1200), at(120), "FRONT-3")
+            .confirm(MAIN, "BK-P", at(1200), at(120), "FRONT-3")
             .await,
         "a second confirm"
     );
     assert_eq!(shop.found(MAIN, "BK-P").await, Some(now_confirmed));
     assert!(
         !shop
-            .confirm(MAIN, "BK-C", rate("40"), at(1200), at(120), "FRONT-3")
+            .confirm(MAIN, "BK-C", at(1200), at(120), "FRONT-3")
             .await,
         "a CONFIRMED non-member booking"
     );
     assert_eq!(shop.found(MAIN, "BK-C").await, Some(open));
     assert!(
         !shop
-            .confirm(MAIN, "BK-X", rate("40"), at(1200), at(120), "FRONT-3")
+            .confirm(MAIN, "BK-X", at(1200), at(120), "FRONT-3")
             .await,
         "a CANCELLED booking"
     );
@@ -1159,7 +1167,7 @@ async fn confirm_in_changes_only_a_pending_booking() {
     );
     assert!(
         !shop
-            .confirm(MAIN, "BK-nobody", rate("40"), at(1200), at(120), "FRONT-3")
+            .confirm(MAIN, "BK-nobody", at(1200), at(120), "FRONT-3")
             .await
     );
     shop.finish().await;

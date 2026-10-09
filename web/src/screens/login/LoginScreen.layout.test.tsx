@@ -4,8 +4,9 @@
 // Owner's order 2026-10-09: "ปรับ ดีไชน์ ให้ เหมือน หน้าlogin อื่น ทำเป็น component reuse".
 // Written before the implementation by the lane controller (claude/608dff). Do not edit, delete or weaken.
 //
-// LoginScreen.test.tsx and LoginScreen.mustchange.test.tsx keep pinning the behaviour (status, submit, mustChange,
-// errors, field rules); this file pins only the layout. auth.css is read from disk (vitest returns CSS imports empty).
+// LoginScreen.test.tsx keeps pinning the behaviour (session, submit, invite claim, errors, field rules); this file
+// pins only the layout. Amended by the OR-3 web follow-up (#762, claude/b060e9) only where the old AuthApi
+// (status/login) and the `username` label key are gone: the fake below and the identifier label key. auth.css is read from disk (vitest returns CSS imports empty).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../shared/i18n';
@@ -57,12 +58,15 @@ async function settle() {
 }
 
 async function signedOutScreen() {
-  const auth: AuthApi = {
-    status: async () => ({ user: null }),
+  const auth = {
+    session: async () => ({ user: null }),
     login: async () => {
       throw new Error('login was not expected in this test');
     },
-  };
+    claim: async () => {
+      throw new Error('claim was not expected in this test');
+    },
+  } as unknown as AuthApi;
   const host = document.createElement('div');
   document.body.appendChild(host);
   dispose = render(() => <LoginScreen auth={auth} navigate={() => {}} />, host);
@@ -135,14 +139,14 @@ describe('LoginScreen — in the signed-out frame (§12.21)', () => {
     (sw as HTMLButtonElement).click();
     await settle();
     expect(card.querySelector('header h1')?.textContent?.trim()).toBe(en.title);
-    expect(host.querySelector(`label[for="${input(host, 'username').id}"]`)?.textContent?.trim()).toBe(en.username);
+    expect(host.querySelector(`label[for="${input(host, 'username').id}"]`)?.textContent?.trim()).toBe((en as unknown as Record<string, string>).identifier);
     expect(Array.from(card.querySelectorAll('button')).some((b) => b.textContent?.trim() === en.submit)).toBe(true);
   });
 });
 
 describe("LoginScreen — v2's field look once auth.css applies (§12.21.1, login.html:1)", () => {
   it.each([
-    ['username', 'username'],
+    ['identifier', 'username'],
     ['password', 'current-password'],
   ])('the %s label is a block above its full-width input', async (_name, autocomplete) => {
     applyAuthCss();
@@ -156,7 +160,7 @@ describe("LoginScreen — v2's field look once auth.css applies (§12.21.1, logi
     expect(getComputedStyle(field).boxSizing).toBe('border-box');
   });
 
-  it("the username field's wrapper is TextField's .xc-field", async () => {
+  it("the identifier field's wrapper is TextField's .xc-field", async () => {
     const host = await signedOutScreen();
     expect(input(host, 'username').closest('.xc-field'), 'TextField wrapper class xc-field').not.toBeNull();
   });

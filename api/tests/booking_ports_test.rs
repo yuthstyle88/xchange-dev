@@ -34,8 +34,15 @@
 //! Times are fixed instants, never a clock; history is ordered by its version.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! D-3, §4.8 and §4.9 R1: `counter_rate_in(tx, branch, currency, side, amount: Option<Money>)`
+//! answers the current publication's line (`CounterLine`: id, rate per `unit_size`, unit) through
+//! `PublishedRates::line_in`, no longer the newest `rates` row. See
+//! `the_counter_rate_is_the_branchs_latest_for_the_side`.
 
 mod compat_common;
+mod rates_re4_common;
 mod snapshot_common;
 
 use chrono::{DateTime, Duration, Utc};
@@ -43,10 +50,10 @@ use serde_json::{Value, json};
 use snapshot_common::{TestDb, branch, time};
 use sqlx::{Postgres, Transaction};
 use xc_exchange::domain::booking::entities::booking_steps::LiveCustomer;
-use xc_exchange::domain::booking::repositories::booking_ports::BookingPorts;
+use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::branch_tx::BranchTx;
-use xc_kernel::money::{CurrencyCode, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 use xchange::application::bookings::booking_rules_service::BookingRulesService;
 use xchange::infrastructure::bookings::booking_ports::PgBookingPorts;
 use xchange::infrastructure::settings::branch_setting_store::BranchSettingStore;
@@ -183,22 +190,6 @@ impl Shop {
         .expect("insert into shifts");
     }
 
-    async fn seed_rate(&self, branch_id: &str, currency: &str, buy: &str, sell: &str, n: i64) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5, 'owner', $6)",
-        )
-        .bind(branch_id)
-        .bind(currency)
-        .bind(buy)
-        .bind(sell)
-        .bind(at(n))
-        .bind(format!("rate-{branch_id}-{currency}-{n}"))
-        .execute(&self.db.pool)
-        .await
-        .expect("insert into rates");
-    }
-
     async fn open_shift(&self, branch_id: &str) -> bool {
         let mut tx = self.begin().await;
         let open = self
@@ -210,12 +201,19 @@ impl Shop {
         open
     }
 
-    async fn counter(&self, branch_id: &str, currency: &str, side: Side) -> Option<Rate> {
+    /// The current line for (branch, currency, side), asked for 1.00 of the currency.
+    async fn counter(&self, branch_id: &str, currency: &str, side: Side) -> Option<CounterLine> {
         let c = code(currency);
         let mut tx = self.begin().await;
         let got = self
             .ports
-            .counter_rate_in(&mut tx, &branch(branch_id), &c, side)
+            .counter_rate_in(
+                &mut tx,
+                &branch(branch_id),
+                &c,
+                side,
+                Some(Money::parse("1.00").expect("an amount")),
+            )
             .await
             .expect("counter_rate_in");
         tx.rollback().await.expect("rollback");
@@ -602,30 +600,45 @@ async fn an_open_shift_counts_only_in_its_own_branch() {
 
 /// `create` refusal 11 and `confirm` rule 6 read this: the branch's current counter rate of the
 /// currency — buy for BUY, sell for SELL — and `None` when the branch has none.
+///
+/// Amended for #758 (RE-4d, `docs/design/blueprint/rates.md` D-3, §4.8, §4.9 R1): the counter is
+/// the line of the branch's current publication (`booking_ports.rs` reads `line_in`), no longer
+/// the newest `rates` row, so the rates are published instead of appended to `rates`, and the
+/// answer is the line: its id, its rate per `unit_size`, its unit. JPY's line is per 100 (21.95 /
+/// 22.5, the per-1 0.2195 / 0.225 of before). The rates answered are unchanged.
 #[tokio::test]
 async fn the_counter_rate_is_the_branchs_latest_for_the_side() {
     let shop = Shop::open().await;
-    shop.seed_rate(MAIN, "USD", "32.1", "32.6", 0).await;
-    shop.seed_rate(AIRPORT, "USD", "31.9", "32.9", 1).await;
-    shop.seed_rate(AIRPORT, "JPY", "0.2195", "0.2250", 2).await;
-    shop.seed_rate(MAIN, "USD", "32.25", "32.75", 3).await;
+    let pool = shop.db.pool.clone();
+    rates_re4_common::publish(&pool, MAIN, &[("USD", "32.1", "32.6")]).await;
+    rates_re4_common::publish(
+        &pool,
+        AIRPORT,
+        &[("USD", "31.9", "32.9"), ("JPY", "21.95", "22.5")],
+    )
+    .await;
+    rates_re4_common::publish(&pool, MAIN, &[("USD", "32.25", "32.75")]).await;
+    let main_usd = rates_re4_common::line(&pool, MAIN, "USD").await;
+    let air_usd = rates_re4_common::line(&pool, AIRPORT, "USD").await;
+    let air_jpy = rates_re4_common::line(&pool, AIRPORT, "JPY").await;
+    let rate_of = |l: Option<CounterLine>| l.map(|l| l.rate);
 
     assert_eq!(
-        shop.counter(MAIN, "USD", Side::Buy).await,
+        rate_of(shop.counter(MAIN, "USD", Side::Buy).await),
         Some(rate("32.25")),
-        "the latest row, its buy"
+        "the current publication, its buy"
     );
     assert_eq!(
-        shop.counter(MAIN, "USD", Side::Sell).await,
+        rate_of(shop.counter(MAIN, "USD", Side::Sell).await),
         Some(rate("32.75")),
-        "the latest row, its sell"
+        "the current publication, its sell"
     );
     assert_eq!(
-        shop.counter(AIRPORT, "USD", Side::Buy).await,
+        rate_of(shop.counter(AIRPORT, "USD", Side::Buy).await),
         Some(rate("31.9"))
     );
     assert_eq!(
-        shop.counter(AIRPORT, "USD", Side::Sell).await,
+        rate_of(shop.counter(AIRPORT, "USD", Side::Sell).await),
         Some(rate("32.9"))
     );
     assert_eq!(
@@ -638,5 +651,34 @@ async fn the_counter_rate_is_the_branchs_latest_for_the_side() {
         None,
         "no rate set"
     );
+
+    // the line itself (R1): the id the booking stores, the rate per unit and the unit
+    for (got, want, label) in [
+        (
+            shop.counter(MAIN, "USD", Side::Sell).await,
+            &main_usd,
+            "MAIN USD",
+        ),
+        (
+            shop.counter(AIRPORT, "USD", Side::Buy).await,
+            &air_usd,
+            "AIRPORT USD",
+        ),
+    ] {
+        let got = got.unwrap_or_else(|| panic!("{label} has a line"));
+        assert_eq!(
+            got.line_id.to_string(),
+            want.id,
+            "{label}: the current line"
+        );
+        assert_eq!(got.unit_size, UnitSize::ONE, "{label}");
+    }
+    let jpy = shop
+        .counter(AIRPORT, "JPY", Side::Sell)
+        .await
+        .expect("AIRPORT JPY has a line");
+    assert_eq!(jpy.line_id.to_string(), air_jpy.id);
+    assert_eq!(jpy.rate, rate("22.5"), "per 100 JPY, as published");
+    assert_eq!(jpy.unit_size, UnitSize::parse("100").expect("a unit"));
     shop.finish().await;
 }

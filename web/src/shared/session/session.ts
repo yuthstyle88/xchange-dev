@@ -106,7 +106,7 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
     ended,
     end,
     async signOut(): Promise<void> {
-      await api.post('/api/auth', { action: 'logout' });
+      await api.post('/api/auth/logout', {});
       poller.stop();
       setSignedOut(true);
     },

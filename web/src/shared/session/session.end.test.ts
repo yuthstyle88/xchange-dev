@@ -178,7 +178,7 @@ describe('createSessionStore: ended and end (SE1)', () => {
     store.dispose();
   });
 
-  it('signOut after end still posts logout to /api/auth and clears me', async () => {
+  it('signOut after end still posts logout to /api/auth/logout and clears me', async () => {
     const { api, posted } = fakeApi([{ version: 4, changed: true, data: owner }]);
     const store = createSessionStore(api);
     await vi.advanceTimersByTimeAsync(0);
@@ -186,7 +186,7 @@ describe('createSessionStore: ended and end (SE1)', () => {
 
     await store.signOut();
 
-    expect(posted).toEqual([{ path: '/api/auth', body: { action: 'logout' } }]);
+    expect(posted).toEqual([{ path: '/api/auth/logout', body: {} }]);
     expect(store.me()).toBeUndefined();
   });
 });
@@ -579,7 +579,7 @@ describe('sharedApi and sharedSession (SE6, SE7)', () => {
     await vi.advanceTimersByTimeAsync(0);
     s.end('expired');
     await s.signOut();
-    expect(net.posts()).toEqual([{ url: '/api/auth', method: 'POST', body: { action: 'logout' } }]);
+    expect(net.posts()).toEqual([{ url: '/api/auth/logout', method: 'POST', body: {} }]);
     expect(s.me()).toBeUndefined();
   });
 });

@@ -10,15 +10,16 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
-use rust_decimal::RoundingStrategy::MidpointAwayFromZero;
 use sqlx::{PgPool, Row};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_exchange::domain::booking::entities::booking::Booking;
+use xc_exchange::domain::booking::entities::booking::{Booking, CompatRate};
 use xc_exchange::domain::booking::value_objects::booking_status::BookingStatus;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
+};
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
 use crate::bootstrap::AppState;
@@ -93,18 +94,33 @@ impl PagedView for AdminBookingsPagedView {
             let query = qb.build();
             let db_rows = query.fetch_all(&db).await.map_err(AppError::Database)?;
 
-            let rate_rows: Vec<(String, Decimal, Decimal)> = sqlx::query_as(
-                "SELECT DISTINCT ON (code) code, buy, sell FROM rates WHERE branch_id = $1 ORDER BY code ASC, id DESC",
+            let line_rows: Vec<(String, Option<Decimal>, Option<Decimal>, Decimal)> = sqlx::query_as(
+                "SELECT l.currency_code, l.buy_rate, l.sell_rate, l.unit_size \
+                 FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 JOIN published_rate_lines l ON l.publication_id = p.id \
+                 WHERE b.id = $1 AND l.denomination_group = 'ALL'",
             )
             .bind(branch.as_str())
             .fetch_all(&db)
             .await
             .map_err(AppError::Database)?;
 
-            let rates_map: HashMap<String, (Decimal, Decimal)> = rate_rows
-                .into_iter()
-                .map(|(code, buy, sell)| (code.trim().to_string(), (buy, sell)))
-                .collect();
+            let mut lines_map: HashMap<String, (Option<Rate>, Option<Rate>, UnitSize)> =
+                HashMap::new();
+            for (code, buy_dec, sell_dec, unit_dec) in line_rows {
+                let unit_size = UnitSize::from_decimal(unit_dec)
+                    .map_err(|e| AppError::Internal(format!("invalid unit_size: {e}")))?;
+                let buy_rate = buy_dec
+                    .map(|d| Rate::parse(&d.normalize().to_string()))
+                    .transpose()
+                    .map_err(|e| AppError::Internal(format!("invalid buy_rate: {e}")))?;
+                let sell_rate = sell_dec
+                    .map(|d| Rate::parse(&d.normalize().to_string()))
+                    .transpose()
+                    .map_err(|e| AppError::Internal(format!("invalid sell_rate: {e}")))?;
+                lines_map.insert(code.trim().to_string(), (buy_rate, sell_rate, unit_size));
+            }
 
             let now = Utc::now();
             let mut out = Vec::with_capacity(db_rows.len());
@@ -137,6 +153,8 @@ impl PagedView for AdminBookingsPagedView {
                         currency: CurrencyCode::THB,
                         amount: Money::ZERO,
                         rate: Rate::parse("1").unwrap(),
+                        unit_size: UnitSize::ONE,
+                        published_rate_line_id: None,
                         status: st,
                         created_at,
                         created_by: String::new(),
@@ -152,14 +170,40 @@ impl PagedView for AdminBookingsPagedView {
                 };
 
                 let (counter_rate, counter_principal) = if status_raw == "PENDING" {
-                    if let Some(&(buy, sell)) = rates_map.get(&currency) {
-                        let cr = match side_str.as_str() {
-                            "BUY" => buy,
-                            "SELL" => sell,
-                            _ => buy,
-                        };
-                        let cp = counter_principal(amount, cr);
-                        (Some(format!("{cr:.4}")), Some(cp))
+                    if let Some(&(buy_opt, sell_opt, unit_size)) = lines_map.get(&currency) {
+                        match side_str.as_str() {
+                            "BUY" => {
+                                if let Some(buy_rate) = buy_opt {
+                                    let per_one = CompatRate::per_one(buy_rate, unit_size);
+                                    let cr = format_per_one_rate(per_one);
+                                    let cp = ExchangeArithmetic::thb(
+                                        ForeignAmount::from_decimal(amount),
+                                        buy_rate,
+                                        unit_size,
+                                    )
+                                    .to_string();
+                                    (Some(cr), Some(cp))
+                                } else {
+                                    (None, None)
+                                }
+                            }
+                            "SELL" => {
+                                if let Some(sell_rate) = sell_opt {
+                                    let per_one = CompatRate::per_one(sell_rate, unit_size);
+                                    let cr = format_per_one_rate(per_one);
+                                    let cp = ExchangeArithmetic::thb(
+                                        ForeignAmount::from_decimal(amount),
+                                        sell_rate,
+                                        unit_size,
+                                    )
+                                    .to_string();
+                                    (Some(cr), Some(cp))
+                                } else {
+                                    (None, None)
+                                }
+                            }
+                            _ => (None, None),
+                        }
                     } else {
                         (None, None)
                     }
@@ -239,22 +283,45 @@ impl BranchView for AdminBookingSettingsBranchView {
                     .await
                     .map_err(AppError::Database)?;
 
-            let rate_rows: Vec<(String, Decimal, Decimal)> = sqlx::query_as(
-                "SELECT DISTINCT ON (code) code, buy, sell FROM rates WHERE branch_id = $1 ORDER BY code ASC, id DESC",
+            let line_rows: Vec<(String, Option<Decimal>, Option<Decimal>, Decimal)> = sqlx::query_as(
+                "SELECT l.currency_code, l.buy_rate, l.sell_rate, l.unit_size \
+                 FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 JOIN published_rate_lines l ON l.publication_id = p.id \
+                 WHERE b.id = $1 AND l.denomination_group = 'ALL' \
+                 ORDER BY l.currency_code ASC",
             )
             .bind(branch.as_str())
             .fetch_all(&db)
             .await
             .map_err(AppError::Database)?;
 
-            let counter_rates = rate_rows
-                .into_iter()
-                .map(|(code, buy, sell)| AdminBookingCounterRate {
+            let mut counter_rates = Vec::new();
+            for (code, buy_dec, sell_dec, unit_dec) in line_rows {
+                let unit_size = UnitSize::from_decimal(unit_dec)
+                    .map_err(|e| AppError::Internal(format!("invalid unit_size: {e}")))?;
+                let buy = buy_dec
+                    .map(|d| Rate::parse(&d.normalize().to_string()))
+                    .transpose()
+                    .map_err(|e| AppError::Internal(format!("invalid buy_rate: {e}")))?;
+                let sell = sell_dec
+                    .map(|d| Rate::parse(&d.normalize().to_string()))
+                    .transpose()
+                    .map_err(|e| AppError::Internal(format!("invalid sell_rate: {e}")))?;
+
+                let buy_str = buy
+                    .map(|b| format_per_one_rate(CompatRate::per_one(b, unit_size)))
+                    .unwrap_or_default();
+                let sell_str = sell
+                    .map(|s| format_per_one_rate(CompatRate::per_one(s, unit_size)))
+                    .unwrap_or_default();
+
+                counter_rates.push(AdminBookingCounterRate {
                     currency: code.trim().to_string(),
-                    buy: format!("{buy:.4}"),
-                    sell: format!("{sell:.4}"),
-                })
-                .collect();
+                    buy: buy_str,
+                    sell: sell_str,
+                });
+            }
 
             Ok(AdminBookingSettingsData {
                 rules,
@@ -277,8 +344,18 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     ViewEndpoint::register(cfg, Arc::new(settings_view));
 }
 
+fn format_per_one_rate(dec: Decimal) -> String {
+    let norm = dec.normalize();
+    if norm.scale() <= 4 {
+        format!("{norm:.4}")
+    } else {
+        norm.to_string()
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn counter_principal(amount: Decimal, rate: Decimal) -> String {
-    let cp = (amount * rate).round_dp_with_strategy(2, MidpointAwayFromZero);
+    let cp = (amount * rate).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
     format!("{cp:.2}")
 }
 
@@ -292,7 +369,15 @@ mod tests {
 
     use rust_decimal::Decimal;
 
-    use super::counter_principal;
+    use super::{counter_principal, format_per_one_rate};
+
+    #[test]
+    fn format_per_one_rate_formats_at_least_four_decimals() {
+        assert_eq!(format_per_one_rate(Decimal::from_str("36.25").unwrap()), "36.2500");
+        assert_eq!(format_per_one_rate(Decimal::from_str("0.231").unwrap()), "0.2310");
+        assert_eq!(format_per_one_rate(Decimal::from_str("37").unwrap()), "37.0000");
+        assert_eq!(format_per_one_rate(Decimal::from_str("0.02512345678").unwrap()), "0.02512345678");
+    }
 
     #[test]
     fn counter_principal_rounds_half_away_from_zero() {

@@ -38,7 +38,7 @@ impl BookingService {
                         .ok_or_else(|| AppError::Domain(BookingError::NotFound.to_string()))?;
 
                     let counter = ports
-                        .counter_rate_in(tx, &b, &booking.currency, booking.side)
+                        .counter_rate_in(tx, &b, &booking.currency, booking.side, None)
                         .await?;
 
                     let step = BookingMachine::confirm(&booking, &cmd, counter, now)
@@ -46,9 +46,9 @@ impl BookingService {
 
                     match step {
                         ConfirmStep::Unchanged {} => Ok(()),
-                        ConfirmStep::Confirm { rate, expires_at } => {
+                        ConfirmStep::Confirm { expires_at } => {
                             let changed = bookings
-                                .confirm_in(tx, &b, &cmd.id, rate, expires_at, now, &actor_str)
+                                .confirm_in(tx, &b, &cmd.id, expires_at, now, &actor_str)
                                 .await?;
                             if !changed {
                                 return Err(AppError::Internal(format!(

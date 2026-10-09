@@ -5,7 +5,7 @@
 //
 //   export interface SessionStore {
 //     me: Accessor<Me | undefined>;   // the `me` view's data; undefined until the first answer and after signOut
-//     signOut(): Promise<void>;       // api.post('/api/auth', {action: 'logout'}), then me() is undefined and polling stops
+//     signOut(): Promise<void>;       // api.post('/api/auth/logout', {}), then me() is undefined and polling stops
 //     dispose(): void;                // stops polling
 //   }
 //   export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): SessionStore;
@@ -16,8 +16,10 @@
 // (`SESSION_SECONDS` = 43 200, api/src/presentation/extractors/actor.rs:27). Once a minute notices a
 // sign-out from another tab within a minute and costs one indexed read of `branch_versions` per tab.
 //
-// Sign-out is v2's and v3's own: `/api/auth` action `logout` clears both the owner and the staff
-// cookie (api/src/presentation/http/auth.rs:121-129). It goes through `ApiClient.post`, which sends
+// Sign-out goes to the Identity BFF's `/api/auth/logout`, which ends the `__Host-xc_session` row and clears it plus
+// the old owner and staff cookies (api/src/presentation/http/auth.rs:181-189, :477-490 @ 8234e77). The old
+// `/api/auth` action `logout` clears only the owner and staff cookies (:556-563), so it would leave a person signed
+// in through the new login screen still signed in (amended by the OR-3 web follow-up #762, claude/b060e9). It goes through `ApiClient.post`, which sends
 // `X-Xchange-Request: 1` (pinned in ../api/client.post.test.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type ViewAnswer, type ViewParams } from '../api/client';
@@ -151,7 +153,7 @@ describe('createSessionStore', () => {
     store.dispose();
   });
 
-  it('signOut posts logout to /api/auth through api.post, clears me and stops polling', async () => {
+  it('signOut posts logout to /api/auth/logout through api.post, clears me and stops polling', async () => {
     const { api, seen, posted } = fakeApi([{ version: 4, changed: true, data: owner }]);
     const store = createSessionStore(api);
     await vi.advanceTimersByTimeAsync(0);
@@ -159,7 +161,7 @@ describe('createSessionStore', () => {
 
     await store.signOut();
 
-    expect(posted).toEqual([{ path: '/api/auth', body: { action: 'logout' } }]);
+    expect(posted).toEqual([{ path: '/api/auth/logout', body: {} }]);
 
     expect(store.me()).toBeUndefined();
     const before = seen.length;
