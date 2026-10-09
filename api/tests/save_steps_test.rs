@@ -39,6 +39,7 @@ use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::phase::Phase;
+use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::application::workflows::custody_save_step::CustodySaveStep;
 use xchange::application::workflows::save_step::{
@@ -589,6 +590,22 @@ impl CustodyPorts for NothingOutside {
         _employee_id: &'a str,
     ) -> Asked<'a, Option<CustodyRole>> {
         Box::pin(async { Ok(None) })
+    }
+
+    fn service_window<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        now: CustodyTime,
+    ) -> Asked<'a, ServiceWindow> {
+        Box::pin(async move {
+            let bkk_millis = now.epoch_millis() + 7 * 3600 * 1000;
+            let bkk_day_start = bkk_millis.div_euclid(86_400 * 1000) * (86_400 * 1000);
+            let utc_day_start = bkk_day_start - 7 * 3600 * 1000;
+            let open = CustodyTime::from_epoch_millis(utc_day_start + 11 * 3600 * 1000);
+            let close = CustodyTime::from_epoch_millis(utc_day_start + 23 * 3600 * 1000);
+            Ok(ServiceWindow::Open { open, close })
+        })
     }
 }
 

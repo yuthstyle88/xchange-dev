@@ -38,6 +38,7 @@ pub use xc_shift::domain::custody::value_objects::request_status::{
     Reconciliation, RequestStatus, TransferStage,
 };
 pub use xc_shift::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
+pub use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 pub use xc_shift::domain::custody::value_objects::shift_effect::ShiftEffect;
 pub use xc_shift::domain::custody::value_objects::signature::Signature;
 pub use xc_shift::domain::custody::value_objects::transition::Transition;
@@ -244,6 +245,7 @@ fn role_name(role: CustodyRole) -> &'static str {
 
 pub fn facts(f: &Facts, new_id: &str) -> CustodyFacts {
     CustodyFacts {
+        service_window: v2_hours(),
         open_shift: f.open_shift.as_ref().map(|s| OpenShift {
             id: s.id.clone(),
             expected: balances(&s.expected),
@@ -561,6 +563,13 @@ pub fn bangkok(hhmm: &str) -> i64 {
     NOON + (minutes - 12 * 60) * 60_000
 }
 
+pub fn v2_hours() -> ServiceWindow {
+    ServiceWindow::Open {
+        open: CustodyTime::from_epoch_millis(bangkok("11:00")),
+        close: CustodyTime::from_epoch_millis(bangkok("23:00")),
+    }
+}
+
 pub fn request_id(n: u32) -> String {
     format!("00000000-0000-4000-8000-0000000a{n:04x}")
 }
@@ -625,6 +634,7 @@ impl Desk {
 
     pub fn facts(&self) -> CustodyFacts {
         CustodyFacts {
+            service_window: v2_hours(),
             open_shift: self.shift.clone(),
             has_live_rate: self.has_live_rate,
             rates_updated: self.rates_updated.clone(),

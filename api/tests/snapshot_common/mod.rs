@@ -66,6 +66,7 @@ use xc_shift::domain::custody::value_objects::request_kind::RequestKind;
 use xc_shift::domain::custody::value_objects::request_status::{
     Reconciliation, RequestStatus, TransferStage,
 };
+use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::domain::custody::value_objects::signature::Signature;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
@@ -280,6 +281,23 @@ impl TestDb {
             seed_opener(&pool, opener).await;
         }
 
+        let v2_hours = serde_json::json!({
+            "mon": [{ "open": "11:00", "close": "23:00" }],
+            "tue": [{ "open": "11:00", "close": "23:00" }],
+            "wed": [{ "open": "11:00", "close": "23:00" }],
+            "thu": [{ "open": "11:00", "close": "23:00" }],
+            "fri": [{ "open": "11:00", "close": "23:00" }],
+            "sat": [{ "open": "11:00", "close": "23:00" }],
+            "sun": [{ "open": "11:00", "close": "23:00" }],
+        });
+        sqlx::query(
+            "UPDATE branches SET timezone = 'Asia/Bangkok', opening_hours = $1 WHERE id = 'MAIN'",
+        )
+        .bind(&v2_hours)
+        .execute(&pool)
+        .await
+        .expect("seed MAIN branch hours");
+
         Self { pool, schema }
     }
 
@@ -289,9 +307,19 @@ impl TestDb {
 
     /// Add a branch behind the service's back (`MAIN` is there already).
     pub async fn seed_branch(&self, id: &str, name: &str) {
-        sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $2)")
+        let v2_hours = serde_json::json!({
+            "mon": [{ "open": "11:00", "close": "23:00" }],
+            "tue": [{ "open": "11:00", "close": "23:00" }],
+            "wed": [{ "open": "11:00", "close": "23:00" }],
+            "thu": [{ "open": "11:00", "close": "23:00" }],
+            "fri": [{ "open": "11:00", "close": "23:00" }],
+            "sat": [{ "open": "11:00", "close": "23:00" }],
+            "sun": [{ "open": "11:00", "close": "23:00" }],
+        });
+        sqlx::query("INSERT INTO branches (id, name, timezone, opening_hours) VALUES ($1, $2, 'Asia/Bangkok', $3)")
             .bind(id)
             .bind(name)
+            .bind(&v2_hours)
             .execute(&self.pool)
             .await
             .expect("insert into branches");
@@ -389,6 +417,15 @@ impl CustodyPorts for NoPorts {
         _branch: &'a BranchId,
         _employee_id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>> {
+        Box::pin(async { never_asked() })
+    }
+
+    fn service_window<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+        _now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<ServiceWindow>> {
         Box::pin(async { never_asked() })
     }
 }

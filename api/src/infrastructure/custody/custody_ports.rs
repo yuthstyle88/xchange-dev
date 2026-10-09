@@ -17,9 +17,12 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
+use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xc_rate::domain::validation::format_iso;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 
 use crate::application::custody_role::employee_custody_role;
 
@@ -137,6 +140,51 @@ impl CustodyPorts for PgCustodyPorts {
             .await
             .map_err(AppError::Database)?;
             Ok(stored.as_deref().map(employee_custody_role))
+        })
+    }
+
+    fn service_window<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        now: CustodyTime,
+    ) -> Answer<'a, ServiceWindow> {
+        Box::pin(async move {
+            let row: Option<(String, Option<serde_json::Value>)> =
+                sqlx::query_as("SELECT timezone, opening_hours FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+            let (timezone, opening_hours) = match row {
+                Some((tz, Some(hours))) if !hours.is_null() => (tz, hours),
+                _ => return Ok(ServiceWindow::NotSet),
+            };
+
+            let hours = BranchHours::new(&timezone, Some(&opening_hours))?;
+
+            let now_millis = now.epoch_millis();
+            let now_utc = match DateTime::<Utc>::from_timestamp_millis(now_millis) {
+                Some(dt) => dt,
+                None => return Ok(ServiceWindow::Closed),
+            };
+
+            let now_date = now_utc.date_naive();
+            for offset in [-2, -1, 0, 1] {
+                if let Some(date) = now_date.checked_add_signed(chrono::Duration::days(offset))
+                    && let HoursWindow::Open { open, close } = hours.window(date)
+                    && open <= now_utc
+                    && now_utc < close
+                {
+                    return Ok(ServiceWindow::Open {
+                        open: CustodyTime::from_epoch_millis(open.timestamp_millis()),
+                        close: CustodyTime::from_epoch_millis(close.timestamp_millis()),
+                    });
+                }
+            }
+
+            Ok(ServiceWindow::Closed)
         })
     }
 }
