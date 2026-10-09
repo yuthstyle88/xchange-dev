@@ -63,39 +63,7 @@ profit-summary
 shift-valuation
 
 # admin/customers
-branch-status
-btn-history
-btn-link
-btn-load-older
-btn-member
-checkbox
-customer-details
-customer-history
-customer-info
-customers-screen
-customers-table
-empty-text
-empty-title
 error-banner
-error-container
-history-header
-history-table
-load-older-container
-member-card
-member-form
-member-pill
-not-loaded
-page-info
-refusal-message
-reg-empty
-reg-search-bar
-reissue-note
-search-bar
-search-section
-summary-status
-tab-list
-volume-note
-waiting-text
 
 # admin/overview
 activity-bars
@@ -150,11 +118,6 @@ desk-nav
 desk-step-content
 
 # devices
-counter-card
-devices-page
-drawer-card
-overview-section
-scan-card
 
 # kiosk-currencies
 cards

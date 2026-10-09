@@ -151,16 +151,6 @@
   margin: 6px 0 12px;
 }
 
-.xc-admin .xc-content .field {
-  margin-bottom: 16px;
-}
-
-.xc-admin .xc-content .field label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-}
 
 .xc-admin .xc-content .form-error {
   color: #a5003c;

@@ -1,0 +1,5 @@
+//! User infrastructure module.
+
+pub mod user_repository;
+
+pub use user_repository::PgUserRepository;

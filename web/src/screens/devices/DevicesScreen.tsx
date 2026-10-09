@@ -21,6 +21,8 @@ import { errorText, locale, screenT } from '../../shared/i18n';
 import { ViewPoller } from '../../shared/live/view-poller';
 import { sharedSession } from '../../shared/session/session';
 import { AppShell } from '../../shared/ui/AppShell';
+import { Card, CardGrid, CardHead } from '../../shared/ui/Card';
+import { CheckField } from '../../shared/ui/Field';
 import { formatMoney, MoneyText } from '../../shared/ui/MoneyText';
 import { deviceNotice } from './banner';
 import { eventsCsv } from './csv';
@@ -305,8 +307,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     });
   }
 
-  async function handlePrinterOnlineChange(e: Event & { currentTarget: HTMLInputElement }): Promise<void> {
-    const checked = e.currentTarget.checked;
+  async function handlePrinterOnlineChange(checked: boolean): Promise<void> {
     await runAction(async () => {
       await props.api.post('/api/devices', {
         action: 'printerOnline',
@@ -389,12 +390,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         </nav>
       }
     >
-      <div class="devices-page">
+      <div>
         <Show when={overview()} keyed>
           {(ov) => <div class="banner">{deviceNotice(ov).banner}</div>}
         </Show>
 
-        <section class="overview-section">
+        <section>
           <div class="eyebrow">{t('eyebrow')}</div>
           <h2>{t('heading')}</h2>
           <p>{t('intro')}</p>
@@ -438,46 +439,43 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
           </div>
         </section>
 
-        <section class="cards-grid">
-          <div class="card printer-card">
+        <CardGrid columns={4}>
+          <Card>
             <span class="tag">{t('printerTag')}</span>
-            <h3>{t('printerName')}</h3>
+            <CardHead title={t('printerName')} level={3} />
             <p>{t('printerText')}</p>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={overview()?.printerOnline ?? false}
-                onChange={handlePrinterOnlineChange}
-                disabled={busy()}
-              />
-              {t('printerOnline')}
-            </label>
+            <CheckField
+              label={t('printerOnline')}
+              checked={overview()?.printerOnline ?? false}
+              onChange={handlePrinterOnlineChange}
+              disabled={busy()}
+            />
             <Show
               when={overview()?.printerOnline}
               fallback={<p>{t('printerOffline')}</p>}
             >
               <p>{t('printerReady')}</p>
             </Show>
-          </div>
+          </Card>
 
-          <div class="card scan-card">
+          <Card>
             <span class="tag">{t('scanTag')}</span>
-            <h3>{t('scanName')}</h3>
+            <CardHead title={t('scanName')} level={3} />
             <p>{t('scanText')}</p>
-          </div>
+          </Card>
 
-          <div class="card counter-card">
+          <Card>
             <span class="tag">{t('counterTag')}</span>
-            <h3>{t('counterName')}</h3>
+            <CardHead title={t('counterName')} level={3} />
             <p>{t('counterText')}</p>
             <p class="counter-notes">
               <span>{t('counterNoteCount')}</span>
               <br />
               <span>{t('counterNoteCheck')}</span>
             </p>
-          </div>
+          </Card>
 
-          <div class="card drawer-card">
+          <Card>
             <Show when={overview()} keyed>
               {(ov) => <p>{deviceNotice(ov).drawer}</p>}
             </Show>
@@ -498,8 +496,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               </button>
             </div>
             <p class="note">{t('drawerNote')}</p>
-          </div>
-        </section>
+          </Card>
+        </CardGrid>
 
         <section class="request-section">
           <div class="eyebrow">{t('requestEyebrow')}</div>

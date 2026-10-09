@@ -213,11 +213,10 @@ impl RateSource for BotRateSource {
                 };
 
                 let unit: u64 = if currency_id == "JPY" { 100 } else { 1 };
-                let unit_dec = Decimal::from(unit);
 
-                let bs_rate = decimal_to_number(bs_dec / unit_dec);
-                let bt_rate = decimal_to_number(bt_dec / unit_dec);
-                let selling_rate = decimal_to_number(selling_dec / unit_dec);
+                let bs_rate = decimal_to_number(bs_dec);
+                let bt_rate = decimal_to_number(bt_dec);
+                let selling_rate = decimal_to_number(selling_dec);
 
                 let original = serde_json::json!({
                     "buyingSight": bs_val.unwrap().clone(),

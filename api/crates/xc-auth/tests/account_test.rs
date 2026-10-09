@@ -598,6 +598,8 @@ async fn active_employees_are_the_active_people_of_one_branch() {
         at(0),
     )
     .await;
+    // OR-2: an employee's branch must name a `branches` row (design #550 follow-up, PR 636).
+    db.seed_branch("BR-2").await;
     let other = create_employee(
         &service,
         &new_employee("dao", "FRONT", "BR-2", "first-password-1"),

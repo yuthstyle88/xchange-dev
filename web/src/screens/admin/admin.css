@@ -60,7 +60,7 @@
   font-weight:600;
 }
 
-.xc-admin .xc-content.xc-content input, .xc-admin .xc-content.xc-content select {
+.xc-admin .xc-content.xc-content input:not([type="checkbox"]), .xc-admin .xc-content.xc-content select {
   width:100%;
   background:#fff;
   border:1px solid #cdd0d7;
@@ -74,13 +74,13 @@
   outline-offset:3px;
 }
 
-.xc-admin .xc-content.xc-content label {
+.xc-admin .xc-content.xc-content label:not(.check-field) {
   display:block;
   font-size:14px;
   font-weight:500;
 }
 
-.xc-admin .xc-content.xc-content label input, .xc-admin .xc-content.xc-content label select {
+.xc-admin .xc-content.xc-content label:not(.check-field) input, .xc-admin .xc-content.xc-content label:not(.check-field) select {
   display:block;
   margin-top:6px;
 }

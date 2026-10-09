@@ -45,22 +45,28 @@ impl DatabaseProbe for PgPool {
     }
 }
 
+use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
+
 #[derive(Clone)]
 pub struct AppState {
     pub settings: Arc<Settings>,
     pub db: PgPool,
     pub build: BuildInfo,
     pub database_probe: Arc<dyn DatabaseProbe>,
+    pub rate_source: Arc<dyn RateSource>,
 }
 
 impl AppState {
     pub fn new(settings: Arc<Settings>, db: PgPool) -> Self {
         let probe = Arc::new(db.clone());
+        let rate_source = Arc::new(BotRateSource::bot());
         Self {
             settings,
             db,
             build: BuildInfo::current(),
             database_probe: probe,
+            rate_source,
         }
     }
 
@@ -71,6 +77,11 @@ impl AppState {
 
     pub fn with_database_probe(mut self, database_probe: Arc<dyn DatabaseProbe>) -> Self {
         self.database_probe = database_probe;
+        self
+    }
+
+    pub fn with_rate_source(mut self, source: Arc<dyn RateSource>) -> Self {
+        self.rate_source = source;
         self
     }
 }

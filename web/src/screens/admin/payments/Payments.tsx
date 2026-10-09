@@ -21,6 +21,8 @@ import type {
 } from '../../../shared/api/generated/admin_payments';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
+import { Card, CardHead, CardBody, CardGrid } from '../../../shared/ui/Card';
+import { Field, CheckField } from '../../../shared/ui/Field';
 import { en, th } from './i18n';
 import { formatDate } from './text';
 import './payments.css';
@@ -391,7 +393,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           }}
         >
           <fieldset disabled={saving() || !canEdit()} class="xc-payment-fieldset">
-            <div class="xc-payment-cards">
+            <CardGrid columns={2}>
               <For each={CHANNELS}>
                 {(c) => {
                   const method = () =>
@@ -405,95 +407,85 @@ export function Payments(props: AdminMenuProps): JSX.Element {
                     };
 
                   return (
-                    <div class="xc-payment-card" data-payment-id={c.id}>
-                      <div class="xc-payment-card-head">
-                        <h3>{t(c.nameKey)}</h3>
-                        <span class="xc-payment-line">{c.line}</span>
-                      </div>
+                    <div data-payment-id={c.id} style="display: contents">
+                      <Card>
+                        <CardHead
+                          level={3}
+                          title={t(c.nameKey)}
+                          aside={<span class="xc-payment-line">{c.line}</span>}
+                        />
 
-                      <div class="xc-payment-card-body">
-                        <label class="xc-payment-enabled-label">
-                          <input
-                            type="checkbox"
+                        <CardBody>
+                          <CheckField
+                            label={t('enabled')}
                             checked={method().enabled}
-                            onChange={(e) =>
-                              updateMethod(c.id, { enabled: e.currentTarget.checked })
+                            onChange={(checked) =>
+                              updateMethod(c.id, { enabled: checked })
                             }
                           />
-                          {t('enabled')}
-                        </label>
 
-                        <div class="xc-payment-directions">
-                          <label class="xc-payment-sell-label">
-                            <input
-                              type="checkbox"
+                          <div class="xc-payment-directions">
+                            <CheckField
+                              label={t('sell')}
+                              hint={t('sellNote')}
                               checked={method().sell}
-                              onChange={(e) =>
-                                updateMethod(c.id, { sell: e.currentTarget.checked })
+                              onChange={(checked) =>
+                                updateMethod(c.id, { sell: checked })
                               }
                             />
-                            <span>{t('sell')}</span>
-                            <span class="xc-note">{t('sellNote')}</span>
-                          </label>
 
-                          <Show
-                            when={BUY_CHANNELS.includes(c.id)}
-                            fallback={
-                              <div class="xc-payment-receive-only">{t('receiveOnly')}</div>
-                            }
-                          >
-                            <label class="xc-payment-buy-label">
-                              <input
-                                type="checkbox"
+                            <Show
+                              when={BUY_CHANNELS.includes(c.id)}
+                              fallback={
+                                <div class="xc-payment-receive-only">{t('receiveOnly')}</div>
+                              }
+                            >
+                              <CheckField
+                                label={t('buy')}
+                                hint={t('buyNote')}
                                 checked={method().buy}
-                                onChange={(e) =>
-                                  updateMethod(c.id, { buy: e.currentTarget.checked })
+                                onChange={(checked) =>
+                                  updateMethod(c.id, { buy: checked })
                                 }
                               />
-                              <span>{t('buy')}</span>
-                              <span class="xc-note">{t('buyNote')}</span>
-                            </label>
-                          </Show>
-                        </div>
+                            </Show>
+                          </div>
 
-                        <label class="xc-payment-field-label">
-                          <span>{t('account')}</span>
-                          <span class="xc-unit">{t('accountUnit')}</span>
-                          <input
-                            type="text"
-                            maxLength={100}
-                            placeholder={
-                              c.id === 'Cash' ? t('accountCash') : t('accountOther')
-                            }
-                            value={method().account}
-                            onInput={(e) =>
-                              updateMethod(c.id, { account: e.currentTarget.value })
-                            }
-                          />
-                        </label>
+                          <Field label={t('account')} unit={t('accountUnit')}>
+                            <input
+                              type="text"
+                              maxLength={100}
+                              placeholder={
+                                c.id === 'Cash' ? t('accountCash') : t('accountOther')
+                              }
+                              value={method().account}
+                              onInput={(e) =>
+                                updateMethod(c.id, { account: e.currentTarget.value })
+                              }
+                            />
+                          </Field>
 
-                        <label class="xc-payment-field-label">
-                          <span>{t('instruction')}</span>
-                          <span class="xc-unit">{t('instructionUnit')}</span>
-                          <textarea
-                            maxLength={400}
-                            placeholder={t('instructionPlaceholder')}
-                            value={method().instruction}
-                            onInput={(e) =>
-                              updateMethod(c.id, { instruction: e.currentTarget.value })
-                            }
-                          />
-                        </label>
+                          <Field label={t('instruction')} unit={t('instructionUnit')}>
+                            <textarea
+                              maxLength={400}
+                              placeholder={t('instructionPlaceholder')}
+                              value={method().instruction}
+                              onInput={(e) =>
+                                updateMethod(c.id, { instruction: e.currentTarget.value })
+                              }
+                            />
+                          </Field>
 
-                        <div class="xc-payment-evidence">
-                          {c.id === 'Cash' ? t('evidenceCash') : t('evidenceOther')}
-                        </div>
-                      </div>
+                          <div class="xc-payment-evidence">
+                            {c.id === 'Cash' ? t('evidenceCash') : t('evidenceOther')}
+                          </div>
+                        </CardBody>
+                      </Card>
                     </div>
                   );
                 }}
               </For>
-            </div>
+            </CardGrid>
           </fieldset>
 
           <div class="xc-payment-save-bar">

@@ -11,7 +11,6 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::reference::reference_batch_writer::ReferenceBatchWriter;
-use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_rate::infrastructure::reference::pg_reference_batch_store::PgReferenceBatchStore;
 
 use super::commands::map_rate_engine_error;
@@ -70,8 +69,8 @@ impl CommandAction for RateReferenceFetchCommand {
     }
 }
 
-pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
-    let source = Arc::new(BotRateSource::bot());
+pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
+    let source = state.rate_source.clone();
     let store = Arc::new(PgReferenceBatchStore::new());
     let writer = Arc::new(ReferenceBatchWriter::new(source, store));
     CommandEndpoint::register(cfg, Arc::new(RateReferenceFetchCommand::new(writer)));

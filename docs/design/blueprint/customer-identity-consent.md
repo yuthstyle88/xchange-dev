@@ -160,7 +160,7 @@ All writes are `CommandAction`s (PR 570 §6) with an `Idempotency-Key`. Routes f
 | `retentionSet` | `PUT /api/retention-policies/{dataType}` | `ConsentPolicyManage` |
 | view `my_profile` | `/api/v3/views/my_profile` | `CustomerSelf` |
 | view `consent_texts` (current per purpose and language; public read for sign-up) | `/api/v3/views/consent_texts` | none (published texts are public) |
-| view `admin_customers` (kept; organisation-wide, `branch` filter = customers who transacted at that branch) | unchanged | unchanged |
+| view `admin_customers` (kept; every LIVE customer of the organisation, as the compat snapshot's `list_live`; completed, volume, lastAt and the member flag are the branch's the view is read at; no passport. Owner, 2026-10-09: "Yes, all company customers") | unchanged | unchanged |
 
 ### 4.5 The token verifier (I-2, K9)
 
