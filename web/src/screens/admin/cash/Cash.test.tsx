@@ -14,8 +14,9 @@
 // close (design §12.9, ticket §9 row 4).
 //
 // Panel A5 (the valuation and profit calculators) is not this ticket's (controller,
-// issuecomment-6066362902): the shift detail renders without it — no panel, no placeholder, no
-// TODO text, no input, no compute request.
+// issuecomment-6066362902): #511 mounts it in the shift detail (calculators/, its own tests). The
+// tests here keep what stays #467's: the detail's own part has no placeholder or TODO text, and
+// the only compute request opening a detail makes is panel A5's one valuation read.
 //
 // The menu is the record `./menu.ts` exports, mounted as the shell mounts it: its `Component` with
 // `branch()`, `period()` and `shown()` (design §12.3), beside the page's one `Dialog` and `Toast`
@@ -970,8 +971,8 @@ describe('V2-cash: the close dialog (A4; admin-html:129; design §12.9)', () => 
   });
 });
 
-describe('V2-cash: the shift detail (A4; admin-html:130) — without panel A5', () => {
-  it('a closed shift: its title, who, the expected / counted / difference rows and the note; nothing read', async () => {
+describe('V2-cash: the shift detail (A4; admin-html:130) — panel A5 is #511\'s', () => {
+  it("a closed shift: its title, who, the expected / counted / difference rows and the note; nothing read but panel A5's valuation (#511)", async () => {
     const m = mount();
     await settle();
     const before = server.own().length;
@@ -987,7 +988,11 @@ describe('V2-cash: the shift detail (A4; admin-html:130) — without panel A5', 
       ['USD', '100.00', '95.00', '-5.00'],
     ]);
     expect(text(d)).toContain('USD ขาด 5 · EUR เกิน 2');
-    expect(server.own().length, 'the detail is the row already read').toBe(before);
+    const asked = server.own().slice(before);
+    expect(
+      asked.filter((r) => r.path !== '/api/v3/compute/shift_valuation'),
+      "the detail is the row already read; panel A5's one valuation read is #511's",
+    ).toEqual([]);
     button(d, 'ปิด').click();
     await settle();
     expect(document.querySelector('dialog')?.open ?? false).toBe(false);
@@ -1005,22 +1010,29 @@ describe('V2-cash: the shift detail (A4; admin-html:130) — without panel A5', 
     ]);
   });
 
-  it('renders no calculator: no A5 text, no input, no form, no placeholder or TODO, no compute request', async () => {
+  it("opens with panel A5 (#511) and nothing more: one valuation request per detail, no placeholder or TODO, no other request", async () => {
     const m = mount();
     await settle();
     for (const id of ['S-0000', 'S-0001']) {
+      const before = server.sent.length;
       button(m.el, id).click();
       await settle();
       const d = dialog();
       const all = text(d);
-      for (const t of A5_TEXTS) expect(all.includes(t), `${id}: no ${JSON.stringify(t)}`).toBe(false);
-      expect(d.querySelectorAll('input, select, textarea, form').length, `${id}: nothing to type into`).toBe(0);
+      const ownFields = [...d.querySelectorAll('input, select, textarea, form')].filter((el) => !el.closest('.calc-panel'));
+      expect(ownFields.length, `${id}: nothing to type into outside panel A5`).toBe(0);
       expect(/\bTODO\b|coming soon|เร็ว ๆ นี้|เร็วๆ นี้|ยังไม่รองรับ/i.test(all), `${id}: no placeholder`).toBe(false);
+      for (const heading of [A5_TEXTS[0]!, A5_TEXTS[5]!]) {
+        expect(all.includes(heading), `${id}: panel A5's ${JSON.stringify(heading)} is shown`).toBe(true);
+      }
+      const compute = server.sent.slice(before).filter((s) => s.path.startsWith('/api/v3/compute'));
+      expect(compute.map((s) => s.path), `${id}: panel A5's one valuation read`).toEqual(['/api/v3/compute/shift_valuation']);
       closeDialog();
       await settle();
     }
-    expect(server.sent.some((s) => s.path.startsWith('/api/v3/compute')), 'no compute action is called').toBe(false);
-    expect(server.own().every((s) => VIEWS.includes(s.path))).toBe(true);
+    expect(
+      server.own().every((s) => VIEWS.includes(s.path) || s.path === '/api/v3/compute/shift_valuation'),
+    ).toBe(true);
   });
 });
 

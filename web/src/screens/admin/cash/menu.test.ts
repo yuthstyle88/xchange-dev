@@ -257,8 +257,8 @@ describe('V2-cash: the source does no money arithmetic and calls no fetch (crite
     }
   });
 
-  it('calls no compute action and carries no calculator (panel A5 is out of this ticket)', () => {
-    for (const [path, text] of own) {
+  it('calls no compute action and carries no calculator outside calculators/ (panel A5 is #511\'s)', () => {
+    for (const [path, text] of own.filter(([p]) => !p.startsWith('./calculators/'))) {
       expect(text.includes('/api/v3/compute'), `${path}: no compute call`).toBe(false);
       expect(/'compute'|"compute"/.test(text), `${path}: no act('compute', …)`).toBe(false);
       expect(/\bTODO\b|FIXME/.test(text), `${path}: no TODO left for A5`).toBe(false);

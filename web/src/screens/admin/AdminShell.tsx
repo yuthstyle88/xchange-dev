@@ -22,6 +22,7 @@ import { pendingWrite } from './parts/pending-write';
 import { requestRefresh } from './parts/refresh';
 import { en, th } from './i18n';
 import type { AdminMenu } from './menus';
+import { QueueBar } from './queue/QueueBar';
 
 export interface AdminShellProps {
   api: ApiClient;
@@ -687,6 +688,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </main>
       </div>
 
+      <QueueBar branch={currentBranch} branchLabel={currentBranchName} />
       <Dialog />
       <Toast />
     </AppShell>

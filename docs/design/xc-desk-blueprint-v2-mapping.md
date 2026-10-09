@@ -5,7 +5,7 @@
 
 | | |
 |---|---|
-| **Source** | The owner-supplied file `XC-Desk-Blueprint-Data-Model-v2.html`, *"Blueprint v2 • 8 ตุลาคม 2026 • XC X TK"*. It calls itself a design proposal: its routes and tables were not checked against an existing system, and it asks for a mapping before any migration (its §01 and §13). This document is that mapping |
+| **Source** | The owner-supplied file, committed as [`docs/blueprint/XC-Desk-Blueprint-Data-Model-v2.html`](../blueprint/XC-Desk-Blueprint-Data-Model-v2.html) (sha256 `332af941…f1bd566`), *"Blueprint v2 • 8 ตุลาคม 2026 • XC X TK"*. It calls itself a design proposal: its routes and tables were not checked against an existing system, and it asks for a mapping before any migration (its §01 and §13). This document is that mapping |
 | **What this is** | A mapping, **not a decision**. It records, for every blueprint screen, entity, role, locked value and acceptance criterion, what v3 already has on `main`, what is being built, what is missing, and where the blueprint contradicts a decision. It changes nothing in `xchange-v3.md`, `xchange-v3-web.md` or `xchange-v3-known-differences.md` |
 | **Why** | The owner chose (2026-10-09) to map the blueprint against the v3 design so they can choose which blueprint phases to fund |
 | **Read** | `docs/design/xchange-v3.md`, `docs/design/xchange-v3-web.md`, `docs/design/xchange-v3-known-differences.md`; the route table (`api/src/presentation/http/mod.rs:25-42` and every `configure` it calls); the page table (`api/src/presentation/pages.rs`); every migration in `api/migrations/`; `api/crates/*/src`; `web/src/screens/`; `app/lib/`; the open issues and PRs of `108-Plaza/xchange` (listed 2026-10-09) |
@@ -23,6 +23,7 @@ with the PR's head when it was read; it says nothing about the PR's state after 
 | O-4 | Identity-Platform only authenticates; it gets no account-management features (`xchange-v3.md` D4) | 2026-10-06 |
 | O-5 | v2 data is test data only; v3 starts on an empty database; no data-migration tool (`xchange-v3.md` D6) | 2026-10-06 |
 | O-6 | Bookings are ported; staff and the owner create them; no public booking site (`xchange-v3.md` D5) | 2026-10-08 |
+| O-7 | **Follow the blueprint fully.** The owner chose "Follow the blueprint fully" ("ให้ เอาตามเอกสาร พิมพ์เขียว", session claude/2b9ffb, PR 527 issuecomment-6073063976). This overrides the morning's Q1–Q4 answers and **reopens O-6 (D5)**. O-1 stands: brokers stay in Broker-Platform. Design tickets: umbrella #564, children #547–#563 | 2026-10-09 |
 
 O-6 is a v3 design decision recorded as the owner's (D5 cites the owner on #377 and PR 395); it is listed because the
 blueprint's customer booking contradicts it.
@@ -279,6 +280,19 @@ rows of `rates`, `customers`, `bookings` and `members` exist and each change bel
 | **5 — marketing and member** | Campaigns with versions, benefit rules, coupons and redemptions with atomic budget; tiers and points ledgers; segments; rate alerts; consent-gated eligibility; simulator that must equal real quotes | **L** | Phase 4 customer accounts and consent; phase 2 margin (for contribution); phase 1 publications (for simulated rates) |
 
 ### Questions only the owner can answer
+
+> **Superseded in part on 2026-10-09 (O-7).** The owner chose to follow the blueprint fully. For Q1–Q7, read the
+> blueprint's answer, not the options below:
+> - **Q1:** the draft → approve → publish engine replaces direct saves (#548).
+> - **Q2:** THB per `unit_size`, rate scale 8 (#547).
+> - **Q3:** approval by policy per type and amount (#549). The approver for each type is still a §12 value to ask for.
+> - **Q4:** D5 is reopened (#554, #555, #558).
+> - **Q5:** a booking is a queue place, and the rate is set at completion (#555).
+> - **Q6:** one customer per company (#554).
+> - **Q7:** `organization_id` on every row (#550).
+>
+> **Still open with the owner:** Q8 (#563), Q9 (#558), Q10 (#553). The answers recorded on PR 527 in
+> issuecomment-6072917547 are kept for history only.
 
 | # | Question | Options | Controller's recommendation |
 |---|---|---|---|

@@ -770,7 +770,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                         <button
                           type="button"
                           class="link-button"
-                          onClick={() => openShiftDetail(s)}
+                          onClick={() => openShiftDetail(s, props.branch())}
                         >
                           {s.id}
                         </button>
