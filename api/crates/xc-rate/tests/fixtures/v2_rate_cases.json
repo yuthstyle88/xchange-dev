@@ -1194,13 +1194,13 @@
    ]
   },
   {
-   "name": "buy with five decimals",
+   "name": "buy with nine decimals",
    "steps": [
     {
      "op": "saveRate",
      "requestId": "req-0001-aaaaaaaaaaaa",
      "code": "USD",
-     "buy": "32.12345",
+     "buy": "32.123456789",
      "sell": "33",
      "previousUpdated": "@current",
      "branch": "MAIN",
@@ -1220,14 +1220,14 @@
    ]
   },
   {
-   "name": "sell with five decimals",
+   "name": "sell with nine decimals",
    "steps": [
     {
      "op": "saveRate",
      "requestId": "req-0001-aaaaaaaaaaaa",
      "code": "USD",
      "buy": "32",
-     "sell": "33.00001",
+     "sell": "33.000000001",
      "previousUpdated": "@current",
      "branch": "MAIN",
      "v2Error": "ทศนิยมเกินกำหนด",
@@ -1382,7 +1382,7 @@
      "op": "saveRate",
      "requestId": "req-0001-aaaaaaaaaaaa",
      "code": "USD",
-     "buy": "32.12345",
+     "buy": "32.123456789",
      "sell": "0",
      "previousUpdated": "@current",
      "branch": "MAIN",
@@ -2267,7 +2267,7 @@
    ]
   },
   {
-   "name": "partner cost with five decimals",
+   "name": "partner cost with nine decimals",
    "steps": [
     {
      "op": "saveRate",
@@ -2277,7 +2277,7 @@
      "sell": "32.6",
      "previousUpdated": "@current",
      "partnerName": "P",
-     "partnerCost": "32.00001",
+     "partnerCost": "32.000000001",
      "branch": "MAIN",
      "v2Error": "ทศนิยมเกินกำหนด",
      "after": {

@@ -5078,7 +5078,7 @@
   {
    "type": "BUY",
    "amount": "100",
-   "rate": "32.12345",
+   "rate": "32.123456789",
    "fee": "0",
    "v2Error": "ทศนิยมเกินกำหนด",
    "error": "TOO_MANY_DECIMALS"
@@ -5086,7 +5086,7 @@
   {
    "type": "SELL",
    "amount": "100",
-   "rate": "32.12345",
+   "rate": "32.123456789",
    "fee": "0",
    "v2Error": "ทศนิยมเกินกำหนด",
    "error": "TOO_MANY_DECIMALS"

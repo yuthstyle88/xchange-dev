@@ -61,7 +61,7 @@ for (const type of ['BUY', 'SELL']) for (const [amount, rate, fee] of [['100.00'
 for (const bad of [
   { amount: '0', rate: '32.1', fee: '0' }, { amount: '-1', rate: '32.1', fee: '0' }, { amount: '100000000.01', rate: '1', fee: '0' },
   { amount: '1.001', rate: '32.1', fee: '0' }, { amount: 'abc', rate: '32.1', fee: '0' }, { amount: '', rate: '32.1', fee: '0' },
-  { amount: '100', rate: '0', fee: '0' }, { amount: '100', rate: '-3', fee: '0' }, { amount: '100', rate: '32.12345', fee: '0' },
+  { amount: '100', rate: '0', fee: '0' }, { amount: '100', rate: '-3', fee: '0' }, { amount: '100', rate: '32.123456789', fee: '0' },
   { amount: '100', rate: '100000000.0001', fee: '0' }, { amount: '100', rate: '32.1', fee: '-1' }, { amount: '100', rate: '32.1', fee: '1.005' },
 ]) for (const type of ['BUY', 'SELL']) inputs.push({ type, ...bad });
 
