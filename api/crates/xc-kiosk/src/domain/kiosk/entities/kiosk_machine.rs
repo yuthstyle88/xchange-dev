@@ -1,4 +1,5 @@
-use xc_kernel::money::{Money, Quote, Side};
+use rust_decimal::RoundingStrategy;
+use xc_kernel::money::{CurrencyUnits, ExchangeArithmetic, ForeignAmount, Money, Side};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
@@ -34,9 +35,9 @@ impl KioskMachine {
         // 2. input.side is None -> DirectionRequired.
         let side = input.side.ok_or(KioskError::DirectionRequired)?;
 
-        // 3. facts.rate is None, or input.currency is None, or input.amount is None,
+        // 3. facts.line is None, or input.currency is None, or input.amount is None,
         // or the amount is zero, or the amount is greater than 10,000,000.00 -> AmountOrCurrencyInvalid.
-        let rate = facts.rate.ok_or(KioskError::AmountOrCurrencyInvalid)?;
+        let line = facts.line.ok_or(KioskError::AmountOrCurrencyInvalid)?;
         let currency = input.currency.ok_or(KioskError::AmountOrCurrencyInvalid)?;
         let amount = input.amount.ok_or(KioskError::AmountOrCurrencyInvalid)?;
         if amount.is_zero() || amount.minor_i128() > 1_000_000_000 {
@@ -44,29 +45,32 @@ impl KioskMachine {
         }
 
         // 4. Compute
+        let units = CurrencyUnits::new(currency, line.unit_size, line.minor_unit);
         let (foreign, thb) = match side {
             Side::Buy => {
-                let foreign = amount;
-                let quote = Quote::compute(Side::Buy, foreign, rate, Money::ZERO)
+                let foreign_amt = ForeignAmount::parse(&amount.to_string(), &units)
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                (foreign, quote.principal)
+                let thb = ExchangeArithmetic::thb(foreign_amt, line.rate, line.unit_size);
+                (amount, thb)
             }
             Side::Sell => {
-                let a = amount.minor_i128();
-                let r = rate.value().mantissa();
-                let foreign_hundredths = a * 10_000 / r;
-                // 5. foreign is zero -> AmountTooSmall.
-                if foreign_hundredths == 0 {
+                let foreign_amt = ExchangeArithmetic::foreign_for_thb(amount, line.rate, &units);
+                if foreign_amt.value().is_zero() {
                     return Err(KioskError::AmountTooSmall);
                 }
-                let foreign_minor: i64 = foreign_hundredths
-                    .try_into()
+                let truncated = foreign_amt
+                    .value()
+                    .round_dp_with_strategy(2, RoundingStrategy::ToZero);
+                if truncated.is_zero() {
+                    return Err(KioskError::AmountTooSmall);
+                }
+                let mut dec = truncated;
+                dec.rescale(2);
+                let foreign = Money::try_from_minor_i128(dec.mantissa())
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                let foreign = Money::from_minor(foreign_minor)
-                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                let quote = Quote::compute(Side::Sell, foreign, rate, Money::ZERO)
-                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                (foreign, quote.principal)
+                let truncated_amt = ForeignAmount::from_decimal(truncated);
+                let thb = ExchangeArithmetic::thb(truncated_amt, line.rate, line.unit_size);
+                (foreign, thb)
             }
         };
 
@@ -98,7 +102,9 @@ impl KioskMachine {
             quote: KioskQuote {
                 side,
                 currency,
-                rate,
+                rate: line.rate,
+                unit_size: line.unit_size,
+                line_id: Some(line.line_id),
                 foreign,
                 thb,
                 input_amount: amount,
@@ -146,8 +152,11 @@ impl KioskMachine {
                     return Err(KioskError::ReviewThreeSeconds);
                 }
 
-                // 5. facts.open is false, or facts.rate != Some(request.quote.rate) -> RateChangedOrClosed.
-                if !facts.open || facts.rate != Some(req.quote.rate) {
+                // 5. facts.open is false, or line is missing/different -> RateChangedOrClosed.
+                if !facts.open
+                    || req.quote.line_id.is_none()
+                    || facts.line.as_ref().map(|l| l.line_id) != req.quote.line_id
+                {
                     return Err(KioskError::RateChangedOrClosed);
                 }
 
@@ -373,5 +382,44 @@ impl KioskMachine {
 
     pub fn receipt_readable(published: KioskTime, now: KioskTime) -> bool {
         now.epoch_millis() - published.epoch_millis() < 600_000
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rust_decimal::Decimal;
+    use xc_kernel::money::{CurrencyCode, MinorUnit, Rate, UnitSize};
+
+    use super::*;
+    use crate::domain::kiosk::commands::quote_input::QuoteInput;
+    use crate::domain::kiosk::value_objects::counter_facts::{CounterFacts, CounterLine, LineId};
+
+    #[test]
+    fn kwd_sell_truncates_foreign_to_hundredths_before_computing_thb() {
+        let line = CounterLine {
+            line_id: LineId(42),
+            rate: Rate::parse("100.12345678").unwrap(),
+            unit_size: UnitSize::parse("1").unwrap(),
+            minor_unit: MinorUnit::new(3).unwrap(),
+        };
+        let facts = CounterFacts {
+            open: true,
+            line: Some(line),
+        };
+        let input = QuoteInput {
+            side: Some(Side::Sell),
+            currency: Some(CurrencyCode::parse("KWD").unwrap()),
+            amount: Some(Money::parse("1000.00").unwrap()),
+            payment_method: None,
+        };
+        let req =
+            KioskMachine::quote(&input, &facts, "req-1", KioskTime::from_epoch_millis(0)).unwrap();
+        assert_eq!(req.quote.foreign, Money::parse("9.98").unwrap());
+        let expected_thb = ExchangeArithmetic::thb(
+            ForeignAmount::from_decimal(Decimal::new(998, 2)),
+            line.rate,
+            line.unit_size,
+        );
+        assert_eq!(req.quote.thb, expected_thb);
     }
 }

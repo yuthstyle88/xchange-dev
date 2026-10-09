@@ -13,6 +13,9 @@
 //! The ten-million boundary itself (`10000000` accepted, `10000000.01` refused)
 //! is held by `kiosk_machine_test.rs`; this file repeats it only as the guard
 //! that the cap still lets the largest legal amount through.
+//!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1): the
+//! machine is handed the published line (`kiosk_common::line_at`) instead of a bare rate.
 
 mod kiosk_common;
 
@@ -26,7 +29,7 @@ const ID: &str = "3fa9c1d2-7e57-4000-8000-00000000cafe";
 fn open_at(rate_text: &str) -> CounterFacts {
     CounterFacts {
         open: true,
-        rate: Some(rate(rate_text)),
+        line: Some(line_at(rate_text)),
     }
 }
 

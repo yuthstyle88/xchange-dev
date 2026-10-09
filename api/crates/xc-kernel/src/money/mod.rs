@@ -1,5 +1,6 @@
 //! Money, rate, quote, delta and currency types.
 
+mod compat_rate;
 mod currency_code;
 mod currency_units;
 mod exchange_arithmetic;
@@ -16,6 +17,7 @@ mod side;
 mod typed;
 mod unit_size;
 
+pub use compat_rate::{CompatRate, CompatRateError};
 pub use currency_code::{CurrencyCode, UnknownCurrency};
 pub use currency_units::CurrencyUnits;
 pub use exchange_arithmetic::ExchangeArithmetic;

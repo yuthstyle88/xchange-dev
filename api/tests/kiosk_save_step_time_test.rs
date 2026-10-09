@@ -15,13 +15,14 @@ use save_common::*;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Rate, Side};
+use xc_kernel::money::{MinorUnit, Rate, Side, UnitSize};
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
+use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -47,6 +48,10 @@ impl Counter {
                 code: code("USD"),
                 buy: Rate::parse("32.1").expect("a rate"),
                 sell: Rate::parse("33").expect("a rate"),
+                // #756 (RE-4b, rates.md §4.9 R1): the port answers the published line.
+                unit_size: UnitSize::ONE,
+                minor_unit: MinorUnit::TWO,
+                line_id: LineId(1),
             }],
         }
     }
@@ -81,10 +86,13 @@ impl KioskPorts for Counter {
 
     fn counter_in<'a>(
         &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a BranchId,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
     ) -> Asked<'a, Option<CounterView>> {
-        Box::pin(async { Ok(Some(Self::view())) })
+        Box::pin(async move {
+            the_line_exists(tx, branch).await?;
+            Ok(Some(Self::view()))
+        })
     }
 
     fn save_rate<'a>(
@@ -284,4 +292,44 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
     assert_eq!(completed_after[0].3, millis(save_now));
 
     s.shop.finish().await;
+}
+
+/// #756 (RE-4b, migration 5): a stored quote references its line, so the counter's one line is
+/// a row of `published_rate_lines` (with its approved request and publication), written in the
+/// caller's transaction the first time the counter is read.
+async fn the_line_exists(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+) -> AppResult<()> {
+    let line = LineId(1).to_string();
+    let request = format!("{line}-{}", branch.as_str());
+    sqlx::query(
+        "WITH r AS ( \
+           INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, \
+               object_version_hash, policy_version, proposed_payload, requested_by, requested_at, \
+               status, idempotency_key) \
+           SELECT gen_random_uuid(), organization_id, 'RATE_PUBLICATION', id, $1::uuid, 'test', \
+               '1', '{}'::jsonb, 'test', now(), 'APPROVED', $3 \
+           FROM branches WHERE id = $2 \
+             AND NOT EXISTS (SELECT 1 FROM published_rate_lines WHERE id = $1::uuid) \
+           RETURNING id, organization_id, branch_id), \
+         p AS ( \
+           INSERT INTO rate_publications (id, organization_id, branch_id, version, published_at, \
+               approved_request_id, draft_id, published_by) \
+           SELECT $1::uuid, r.organization_id, r.branch_id, \
+               COALESCE((SELECT max(version) FROM rate_publications WHERE branch_id = r.branch_id), 0) + 1, \
+               now(), r.id, NULL, 'test' FROM r \
+           RETURNING id, organization_id) \
+         INSERT INTO published_rate_lines (id, organization_id, publication_id, currency_code, \
+             denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+         SELECT p.id, p.organization_id, p.id, 'USD', 'ALL', 1, 32.1, 33, \
+             '{\"buy_mode\": \"MANUAL\", \"sell_mode\": \"MANUAL\"}'::jsonb FROM p",
+    )
+    .bind(&line)
+    .bind(branch.as_str())
+    .bind(&request)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
 }

@@ -331,7 +331,10 @@ async fn handle_kiosk(
 
     match action {
         KioskAction::Rates => match service.public_rates(&branch).await {
-            Ok(public_rates) => json_response(dto_kiosk::rates_json(&public_rates)),
+            Ok(public_rates) => match dto_kiosk::rates_json(&public_rates) {
+                Ok(json) => json_response(json),
+                Err(err) => handle_service_error(err),
+            },
             Err(err) => handle_service_error(err),
         },
         KioskAction::Quote => {
@@ -387,11 +390,14 @@ async fn handle_kiosk(
                             .ok()
                             .flatten()
                             .unwrap_or_default();
-                    json_response(dto_kiosk::quote_json(
+                    match dto_kiosk::quote_json(
                         &identified.request,
                         &identified.identity,
                         &branch_name,
-                    ))
+                    ) {
+                        Ok(json) => json_response(json),
+                        Err(err) => handle_service_error(err),
+                    }
                 }
                 Err(err) => handle_service_error(err),
             }
@@ -482,14 +488,17 @@ async fn handle_kiosk(
                         id: caller_id,
                         claims: claims_requests(policy_actor.as_ref()),
                     };
-                    json_response(dto_kiosk::list_json(
+                    match dto_kiosk::list_json(
                         &branch,
                         &queue_page,
                         &branch_name,
                         now,
                         &list_caller,
                         &|id| username_or_id(&names, id),
-                    ))
+                    ) {
+                        Ok(json) => json_response(json),
+                        Err(err) => handle_service_error(err),
+                    }
                 }
                 Err(err) => handle_service_error(err),
             }
@@ -543,7 +552,10 @@ async fn handle_kiosk(
                             .ok()
                             .flatten()
                             .unwrap_or_default();
-                    json_response(dto_kiosk::get_json(&kiosk_req, &branch_name))
+                    match dto_kiosk::get_json(&kiosk_req, &branch_name) {
+                        Ok(json) => json_response(json),
+                        Err(err) => handle_service_error(err),
+                    }
                 }
                 Err(err) => handle_service_error(err),
             }

@@ -22,8 +22,19 @@
 //!   of a step that was rolled back is not there. The log also refuses a line
 //!   that comes on a transaction other than the step's own.
 //!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` D-3, §4.8, §4.9):
+//! the kiosk prices from the branch's current publication, not from the newest `rates` row. v2
+//! had no publication: a saved rate was the counter rate at once. So when a replayed
+//! `adminSaveRate` or kiosk `configure` changes a branch's saved rates, the replay publishes that
+//! branch's saved rates as they now stand, per each currency's `unit_size`, through the rate
+//! engine (`publish_saved_rates`) — what the owner of a v3 shop does after a direct save. A step
+//! the replay plays is never changed by this.
+//!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 #![allow(dead_code)]
+
+#[path = "../rates_re4_common/mod.rs"]
+pub mod rates_re4_common;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
@@ -475,7 +486,28 @@ impl<'f> KioskReplay<'f> {
             }
         }
 
+        let saves = matches!(action, Some("adminSaveRate") | Some("configure"));
+        let saved_before = if saves {
+            saved_rates(&self.replay.desk.db.pool).await
+        } else {
+            BTreeMap::new()
+        };
+
         self.replay.step(step).await;
+
+        // #756: a direct save is published, as a v3 owner publishes it (D-3)
+        if saves {
+            let saved_after = saved_rates(&self.replay.desk.db.pool).await;
+            for (branch, lines) in &saved_after {
+                if saved_before.get(branch) != Some(lines) {
+                    let lines: Vec<(&str, &str, &str)> = lines
+                        .iter()
+                        .map(|(code, buy, sell)| (code.as_str(), buy.as_str(), sell.as_str()))
+                        .collect();
+                    rates_re4_common::publish(&self.replay.desk.db.pool, branch, &lines).await;
+                }
+            }
+        }
 
         // a quote that v3 refused where v2 accepted must not leave its id behind
         if Self::is_kiosk(step) && action == Some("quote") && accepted {
@@ -570,6 +602,27 @@ impl<'f> KioskReplay<'f> {
     }
 }
 
+/// Every branch's newest saved rate per currency, per that currency's `unit_size` (#756):
+/// branch → `(code, buy, sell)` in code order.
+pub async fn saved_rates(pool: &sqlx::PgPool) -> BTreeMap<String, Vec<(String, String, String)>> {
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT r.branch_id, trim(r.code::text), (r.buy * c.unit_size)::text, \
+                (r.sell * c.unit_size)::text \
+         FROM (SELECT DISTINCT ON (branch_id, code) branch_id, code, buy, sell \
+                 FROM rates ORDER BY branch_id, code, id DESC) r \
+         JOIN currencies c ON c.code = r.code \
+         ORDER BY 1, 2",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("read the saved rates");
+    let mut saved: BTreeMap<String, Vec<(String, String, String)>> = BTreeMap::new();
+    for (branch, code, buy, sell) in rows {
+        saved.entry(branch).or_default().push((code, buy, sell));
+    }
+    saved
+}
+
 fn text(value: &Value, key: &str) -> String {
     value
         .get(key)
@@ -581,7 +634,8 @@ fn text(value: &Value, key: &str) -> String {
 // ── a counter set up by hand, for the tests that are not a replay ────────────
 
 /// A desk whose `MAIN` has the dollar at 32.1 / 32.6 and an open shift, the
-/// owner and the people given signed in — all through the routes.
+/// owner and the people given signed in — all through the routes, and the dollar
+/// published (#756 RE-4b).
 pub struct Counter {
     pub desk: Desk,
     pub app: App,
@@ -642,6 +696,10 @@ impl Counter {
                         "buy": 32.1, "sell": 32.6, "previousUpdated": "" }),
             )
             .await;
+        // Amended for #756 (RE-4b, `docs/design/blueprint/rates.md` D-3, §4.8, §4.9 R1): the
+        // kiosk's counter rate is the line of the current publication, no longer the newest
+        // `rates` row; the same dollar is published (the rate engine is RE-1's, merged).
+        rates_re4_common::publish(&counter.desk.db.pool, MAIN, &[("USD", "32.1", "32.6")]).await;
         counter
             .owner_rpc(
                 "adminOpenShift",

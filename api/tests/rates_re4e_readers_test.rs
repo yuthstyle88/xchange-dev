@@ -97,7 +97,7 @@
 mod common;
 mod compat_common;
 mod kiosk_http_common;
-mod rates_re4_common;
+use kiosk_http_common::rates_re4_common;
 mod rpc_common;
 mod snapshot_common;
 

@@ -2,19 +2,28 @@
 //! function that plays a recorded step against the machine.
 //! Provided with ticket T12a — do not edit. (POL's author removed `Access`: the role table
 //! moved to `Policy`, and `v2_kiosk_cases.json` no longer carries `access`.)
+//!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1, R4): the
+//! machine is handed the published line it prices from (`CounterFacts::line`, a `CounterLine`),
+//! and a quote keeps that line's id and `unit_size`. The v2 fixture prices every currency per 1
+//! with two-place amounts, so `line_at` gives each fixture rate a line with `unit_size` 1 and
+//! minor unit 2, and an id that is the same for the same rate (`line_of`): v2's "the rate
+//! changed" is RE-4b's "the line changed", with the same answers.
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
 
 // Every kiosk path the tests name is in this one block.
 pub use xc_kiosk::domain::kiosk::commands::kiosk_command::KioskCommand;
 pub use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_request::KioskRequest;
-pub use xc_kiosk::domain::kiosk::value_objects::counter_facts::CounterFacts;
+pub use xc_kiosk::domain::kiosk::value_objects::counter_facts::{
+    CounterFacts, CounterLine, LineId,
+};
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
@@ -320,10 +329,27 @@ pub fn actor(fx: &Fixture, name: &str) -> KioskActor {
     }
 }
 
+/// The id of the line a fixture rate stands for: the same rate, the same line (#756).
+pub fn line_of(text: &str) -> LineId {
+    let mut value = rate(text).value();
+    value.rescale(8);
+    LineId(u128::try_from(value.mantissa()).expect("a rate is positive"))
+}
+
+/// A line priced per 1, with two-place amounts, as v2 priced every currency (#756).
+pub fn line_at(text: &str) -> CounterLine {
+    CounterLine {
+        line_id: line_of(text),
+        rate: rate(text),
+        unit_size: UnitSize::ONE,
+        minor_unit: MinorUnit::TWO,
+    }
+}
+
 pub fn facts(f: &Facts) -> CounterFacts {
     CounterFacts {
         open: f.open,
-        rate: f.rate.as_deref().map(rate),
+        line: f.rate.as_deref().map(line_at),
     }
 }
 
@@ -337,6 +363,8 @@ pub fn request(r: &RequestJson) -> KioskRequest {
             side: side(&r.quote.side),
             currency: code(&r.quote.currency),
             rate: rate(&r.quote.rate),
+            unit_size: UnitSize::ONE,
+            line_id: Some(line_of(&r.quote.rate)),
             foreign: money(&r.quote.foreign),
             thb: money(&r.quote.thb),
             input_amount: money(&r.quote.input_amount),
@@ -387,7 +415,7 @@ pub fn save(s: &SaveJson) -> SaveAttempt {
 pub fn no_facts() -> CounterFacts {
     CounterFacts {
         open: false,
-        rate: None,
+        line: None,
     }
 }
 

@@ -5,10 +5,11 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::repositories::kiosk_repository::{KioskRepository, StoredReceipt};
+use crate::domain::kiosk::value_objects::counter_facts::LineId;
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
 use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
@@ -26,6 +27,7 @@ macro_rules! select_requests {
     ($tail:literal) => {
         concat!(
             "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+             unit_size, published_rate_line_id::text AS published_rate_line_id, \
              foreign_amount, thb, input_amount, payment_method, submission_id, document_ref \
              FROM kiosk_requests WHERE branch_id = $1 AND ",
             $tail
@@ -42,6 +44,7 @@ macro_rules! queue_queries {
     (@sql $pred:literal, $keyset:literal, $limit:literal) => {
         concat!(
             "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
+             unit_size, published_rate_line_id::text AS published_rate_line_id, \
              foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
              started_at, completed_at \
              FROM kiosk_requests WHERE branch_id = $1 AND ",
@@ -121,6 +124,8 @@ struct RequestRow {
     side: String,
     currency: String,
     rate: Decimal,
+    unit_size: Decimal,
+    published_rate_line_id: Option<String>,
     foreign_amount: Decimal,
     thb: Decimal,
     input_amount: Decimal,
@@ -208,6 +213,12 @@ impl RequestRow {
                 currency: CurrencyCode::parse(self.currency.trim())
                     .map_err(|_| unreadable("currency", &self.currency))?,
                 rate: rate_from(self.rate)?,
+                unit_size: UnitSize::from_decimal(self.unit_size)
+                    .map_err(|_| unreadable("unit size", &self.unit_size))?,
+                line_id: self
+                    .published_rate_line_id
+                    .as_deref()
+                    .and_then(LineId::parse_uuid),
                 foreign: money_from(self.foreign_amount)?,
                 thb: money_from(self.thb)?,
                 input_amount: money_from(self.input_amount)?,
@@ -233,6 +244,8 @@ struct QueueRow {
     side: String,
     currency: String,
     rate: Decimal,
+    unit_size: Decimal,
+    published_rate_line_id: Option<String>,
     foreign_amount: Decimal,
     thb: Decimal,
     input_amount: Decimal,
@@ -257,6 +270,8 @@ impl QueueRow {
             side: self.side,
             currency: self.currency,
             rate: self.rate,
+            unit_size: self.unit_size,
+            published_rate_line_id: self.published_rate_line_id,
             foreign_amount: self.foreign_amount,
             thb: self.thb,
             input_amount: self.input_amount,
@@ -328,11 +343,12 @@ impl KioskRepository for PgKioskRepository {
         client_ip: &str,
     ) -> AppResult<()> {
         let link = request.transaction.as_ref();
+        let line_uuid_str = request.quote.line_id.map(|l| l.to_string());
         sqlx::query(
             "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
-             rate, foreign_amount, thb, input_amount, payment_method, client_ip, submission_id, \
+             rate, unit_size, published_rate_line_id, foreign_amount, thb, input_amount, payment_method, client_ip, submission_id, \
              document_ref) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11, $12, $13, $14, $15, $16, $17)",
         )
         .bind(branch.as_str())
         .bind(&request.id)
@@ -342,6 +358,8 @@ impl KioskRepository for PgKioskRepository {
         .bind(side_text(request.quote.side))
         .bind(request.quote.currency.as_str())
         .bind(request.quote.rate.value())
+        .bind(request.quote.unit_size.value())
+        .bind(line_uuid_str)
         .bind(money_to(request.quote.foreign))
         .bind(money_to(request.quote.thb))
         .bind(money_to(request.quote.input_amount))

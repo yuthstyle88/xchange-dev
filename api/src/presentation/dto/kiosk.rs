@@ -4,10 +4,11 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use chrono::{DateTime, Utc};
+use pos_error::{AppError, AppResult};
 use serde::Deserialize;
 use serde_json::Value;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Side;
+use xc_kernel::money::{CompatRate, Rate, Side, UnitSize};
 use xc_kiosk::domain::kiosk::entities::kiosk_request::KioskRequest;
 use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use xc_kiosk::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
@@ -97,30 +98,43 @@ pub struct EmployeeInfo {
     pub role: String,
 }
 
-pub fn rates_json(public_rates: &PublicRates) -> V2Json {
-    let rate_items: Vec<V2Json> = public_rates
-        .rates
-        .iter()
-        .map(|rate| {
-            let entry = CURRENCY_MAP.get(rate.code.as_str());
-            let name = entry.map_or("", |e| &e.name);
-            let name_en = entry.map_or("", |e| &e.name_en);
-            let countries = entry.map_or_else(
-                || V2Json::Array(vec![]),
-                |e| V2Json::from_value(&e.countries),
-            );
-            V2Json::object(vec![
-                ("code", V2Json::text(rate.code.as_str())),
-                ("name", V2Json::text(name)),
-                ("nameEn", V2Json::text(name_en)),
-                ("countries", countries),
-                ("buy", rate_json(rate.buy)),
-                ("sell", rate_json(rate.sell)),
-            ])
-        })
-        .collect();
+fn shortest(decimal: &str) -> String {
+    if !decimal.contains('.') {
+        return decimal.to_string();
+    }
+    decimal
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
 
-    V2Json::object(vec![
+fn compat_rate_json(rate: Rate, unit_size: UnitSize) -> AppResult<V2Json> {
+    let dec = CompatRate::per_one(rate, unit_size)
+        .map_err(|e| AppError::Internal(format!("kiosk compat rate error: {e}")))?;
+    Ok(V2Json::Number(shortest(&dec.to_string())))
+}
+
+pub fn rates_json(public_rates: &PublicRates) -> AppResult<V2Json> {
+    let mut rate_items = Vec::with_capacity(public_rates.rates.len());
+    for rate in &public_rates.rates {
+        let entry = CURRENCY_MAP.get(rate.code.as_str());
+        let name = entry.map_or("", |e| &e.name);
+        let name_en = entry.map_or("", |e| &e.name_en);
+        let countries = entry.map_or_else(
+            || V2Json::Array(vec![]),
+            |e| V2Json::from_value(&e.countries),
+        );
+        rate_items.push(V2Json::object(vec![
+            ("code", V2Json::text(rate.code.as_str())),
+            ("name", V2Json::text(name)),
+            ("nameEn", V2Json::text(name_en)),
+            ("countries", countries),
+            ("buy", compat_rate_json(rate.buy, rate.unit_size)?),
+            ("sell", compat_rate_json(rate.sell, rate.unit_size)?),
+        ]));
+    }
+
+    Ok(V2Json::object(vec![
         ("branchId", V2Json::text(public_rates.branch_id.as_str())),
         ("branchName", V2Json::text(&public_rates.branch_name)),
         ("open", V2Json::Bool(public_rates.open)),
@@ -130,11 +144,16 @@ pub fn rates_json(public_rates: &PublicRates) -> V2Json {
             rules_v2_json(&public_rates.payment, false),
         ),
         ("simulation", V2Json::Bool(false)),
-    ])
+    ]))
 }
 
-pub fn quote_json(req: &KioskRequest, identity: &RequestIdentity, branch_name: &str) -> V2Json {
-    V2Json::object(vec![
+pub fn quote_json(
+    req: &KioskRequest,
+    identity: &RequestIdentity,
+    branch_name: &str,
+) -> AppResult<V2Json> {
+    let rate_v2 = compat_rate_json(req.quote.rate, req.quote.unit_size)?;
+    Ok(V2Json::object(vec![
         ("id", V2Json::text(&identity.id)),
         ("queue", V2Json::text(&identity.queue)),
         ("orderNo", V2Json::text(&identity.order_no)),
@@ -157,12 +176,12 @@ pub fn quote_json(req: &KioskRequest, identity: &RequestIdentity, branch_name: &
             }),
         ),
         ("currency", V2Json::text(req.quote.currency.as_str())),
-        ("rate", rate_json(req.quote.rate)),
+        ("rate", rate_v2),
         ("foreign", money_json(req.quote.foreign)),
         ("thb", money_json(req.quote.thb)),
         ("inputAmount", money_json(req.quote.input_amount)),
         ("branchName", V2Json::text(branch_name)),
-    ])
+    ]))
 }
 
 pub fn identity_json(identity: &RequestIdentity) -> V2Json {
@@ -257,72 +276,70 @@ pub fn list_json(
     server_now: DateTime<Utc>,
     caller: &ListCaller<'_>,
     username_of: &dyn Fn(&str) -> String,
-) -> V2Json {
-    let items: Vec<V2Json> = page
-        .items
-        .iter()
-        .map(|item| {
-            let request = &item.request;
-            let status = item.identity.status;
-            let held_by_caller = request.staff.as_deref() == Some(caller.id);
-            let can_accept = caller.claims && status == KioskStatus::Waiting;
-            let can_continue = caller.claims
-                && held_by_caller
-                && matches!(status, KioskStatus::Accepted | KioskStatus::IdChecked);
-            let mut pairs = vec![
-                (
-                    "paymentMethod",
-                    V2Json::text(request.quote.payment_method.as_str()),
+) -> AppResult<V2Json> {
+    let mut items = Vec::with_capacity(page.items.len());
+    for item in &page.items {
+        let request = &item.request;
+        let status = item.identity.status;
+        let held_by_caller = request.staff.as_deref() == Some(caller.id);
+        let can_accept = caller.claims && status == KioskStatus::Waiting;
+        let can_continue = caller.claims
+            && held_by_caller
+            && matches!(status, KioskStatus::Accepted | KioskStatus::IdChecked);
+        let rate_v2 = compat_rate_json(request.quote.rate, request.quote.unit_size)?;
+        let mut pairs = vec![
+            (
+                "paymentMethod",
+                V2Json::text(request.quote.payment_method.as_str()),
+            ),
+            (
+                "type",
+                V2Json::text(match request.quote.side {
+                    Side::Buy => "BUY",
+                    Side::Sell => "SELL",
+                }),
+            ),
+            ("currency", V2Json::text(request.quote.currency.as_str())),
+            ("rate", rate_v2),
+            ("foreign", money_json(request.quote.foreign)),
+            ("thb", money_json(request.quote.thb)),
+            ("inputAmount", money_json(request.quote.input_amount)),
+            ("branchName", V2Json::text(branch_name)),
+            ("id", V2Json::text(&item.identity.id)),
+            ("branch", V2Json::text(branch_id.as_str())),
+            ("status", V2Json::text(status.as_str())),
+            ("created", V2Json::int(request.created.epoch_millis())),
+            (
+                "staff",
+                V2Json::text(
+                    request
+                        .staff
+                        .as_deref()
+                        .map_or_else(String::new, username_of),
                 ),
-                (
-                    "type",
-                    V2Json::text(match request.quote.side {
-                        Side::Buy => "BUY",
-                        Side::Sell => "SELL",
-                    }),
-                ),
-                ("currency", V2Json::text(request.quote.currency.as_str())),
-                ("rate", rate_json(request.quote.rate)),
-                ("foreign", money_json(request.quote.foreign)),
-                ("thb", money_json(request.quote.thb)),
-                ("inputAmount", money_json(request.quote.input_amount)),
-                ("branchName", V2Json::text(branch_name)),
-                ("id", V2Json::text(&item.identity.id)),
-                ("branch", V2Json::text(branch_id.as_str())),
-                ("status", V2Json::text(status.as_str())),
-                ("created", V2Json::int(request.created.epoch_millis())),
-                (
-                    "staff",
-                    V2Json::text(
-                        request
-                            .staff
-                            .as_deref()
-                            .map_or_else(String::new, username_of),
-                    ),
-                ),
-                ("queue", V2Json::text(&item.identity.queue)),
-                ("orderNo", V2Json::text(&item.identity.order_no)),
-                (
-                    "transactionNo",
-                    optional(item.identity.transaction_no.as_ref(), |t| {
-                        V2Json::text(t.as_str())
-                    }),
-                ),
-            ];
-            pairs.extend(work_times_json(&item.times));
-            pairs.push(("canAccept", V2Json::Bool(can_accept)));
-            pairs.push(("canContinue", V2Json::Bool(can_continue)));
-            V2Json::object(pairs)
-        })
-        .collect();
+            ),
+            ("queue", V2Json::text(&item.identity.queue)),
+            ("orderNo", V2Json::text(&item.identity.order_no)),
+            (
+                "transactionNo",
+                optional(item.identity.transaction_no.as_ref(), |t| {
+                    V2Json::text(t.as_str())
+                }),
+            ),
+        ];
+        pairs.extend(work_times_json(&item.times));
+        pairs.push(("canAccept", V2Json::Bool(can_accept)));
+        pairs.push(("canContinue", V2Json::Bool(can_continue)));
+        items.push(V2Json::object(pairs));
+    }
 
-    V2Json::object(vec![
+    Ok(V2Json::object(vec![
         ("branchId", V2Json::text(branch_id.as_str())),
         ("serverNow", time_json(server_now)),
         ("page", V2Json::int(i64::from(page.page))),
         ("hasMore", V2Json::Bool(page.has_more)),
         ("requests", V2Json::Array(items)),
-    ])
+    ]))
 }
 
 /// `accept` when the caller has just claimed the request.
@@ -342,9 +359,10 @@ pub fn accept_mine_json(times: &WorkTimes) -> V2Json {
     V2Json::object(pairs)
 }
 
-pub fn get_json(req: &KioskRequest, branch_name: &str) -> V2Json {
+pub fn get_json(req: &KioskRequest, branch_name: &str) -> AppResult<V2Json> {
     let queue = queue_of(&req.id);
-    V2Json::object(vec![
+    let rate_v2 = compat_rate_json(req.quote.rate, req.quote.unit_size)?;
+    Ok(V2Json::object(vec![
         (
             "paymentMethod",
             V2Json::text(req.quote.payment_method.as_str()),
@@ -357,14 +375,14 @@ pub fn get_json(req: &KioskRequest, branch_name: &str) -> V2Json {
             }),
         ),
         ("currency", V2Json::text(req.quote.currency.as_str())),
-        ("rate", rate_json(req.quote.rate)),
+        ("rate", rate_v2),
         ("foreign", money_json(req.quote.foreign)),
         ("thb", money_json(req.quote.thb)),
         ("inputAmount", money_json(req.quote.input_amount)),
         ("branchName", V2Json::text(branch_name)),
         ("id", V2Json::text(&req.id)),
         ("queue", V2Json::text(&queue)),
-    ])
+    ]))
 }
 
 pub fn manage_json(switches: &[CurrencySwitch], rates: &[CounterRate]) -> V2Json {
@@ -435,4 +453,37 @@ pub fn manage_json(switches: &[CurrencySwitch], rates: &[CounterRate]) -> V2Json
         .collect();
 
     V2Json::object(vec![("currencies", V2Json::Array(items))])
+}
+
+#[cfg(test)]
+mod tests {
+    use xc_kernel::money::{CurrencyCode, MinorUnit, Rate, UnitSize};
+    use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
+    use xc_kiosk::domain::kiosk::value_objects::counter_view::CounterRate;
+
+    use super::*;
+
+    #[test]
+    fn non_power_of_10_unit_gives_internal_not_a_number() {
+        let err = compat_rate_json(Rate::parse("23.1").unwrap(), UnitSize::parse("3").unwrap())
+            .unwrap_err();
+        assert!(matches!(err, AppError::Internal(_)));
+
+        let public_rates = PublicRates {
+            branch_id: BranchId::new("MAIN"),
+            branch_name: "Main Branch".to_string(),
+            open: true,
+            payment: Default::default(),
+            rates: vec![CounterRate {
+                code: CurrencyCode::parse("USD").unwrap(),
+                buy: Rate::parse("35.0").unwrap(),
+                sell: Rate::parse("36.0").unwrap(),
+                unit_size: UnitSize::parse("3").unwrap(),
+                minor_unit: MinorUnit::new(2).unwrap(),
+                line_id: LineId(1),
+            }],
+        };
+        let err = rates_json(&public_rates).unwrap_err();
+        assert!(matches!(err, AppError::Internal(_)));
+    }
 }

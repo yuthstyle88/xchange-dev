@@ -15,6 +15,7 @@ use crate::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 use crate::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
+use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_service_error::KioskServiceError;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::public_rates::PublicRates;
@@ -53,6 +54,7 @@ impl KioskService {
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
         self.branch_name(branch).await?;
+        let at = cut_to_millis(now);
         let now = time(now);
         let (repo, ports, b) = (self.repo.clone(), self.ports.clone(), branch.clone());
         self.branch_tx
@@ -71,6 +73,24 @@ impl KioskService {
                     // v2's last quote check: the method must be on for the direction.
                     let rules = ports.payment_rules_in(tx, &b).await?;
                     PaymentGate::quote(&request, &rules).map_err(refuse)?;
+
+                    // Check staleness under R5
+                    if let Some(line_id) = request.quote.line_id {
+                        let admitted = ports
+                            .check_stale_in(
+                                tx,
+                                &b,
+                                line_id,
+                                request.quote.currency,
+                                request.quote.side,
+                                request.quote.thb,
+                                at,
+                            )
+                            .await?;
+                        if !admitted {
+                            return Err(refuse(KioskError::AmountOrCurrencyInvalid));
+                        }
+                    }
 
                     for old in repo.quoted_in(tx, &b).await? {
                         if KioskMachine::is_purgeable(&old, now) {

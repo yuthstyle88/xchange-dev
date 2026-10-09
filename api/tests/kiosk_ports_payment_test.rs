@@ -153,6 +153,13 @@ async fn each_branch_kiosk_reads_its_own_switch() {
                     "code": "USD", "buy": 32.0, "sell": 32.5, "previousUpdated": "" }),
         )
         .await;
+    // #756 (RE-4b, rates.md D-3, §4.9): the kiosk's counter rate is the current publication.
+    kiosk_http_common::rates_re4_common::publish(
+        &counter.desk.db.pool,
+        &airport,
+        &[("USD", "32", "32.5")],
+    )
+    .await;
     counter
         .owner_rpc(
             "adminOpenShift",

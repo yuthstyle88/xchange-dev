@@ -16,6 +16,12 @@
 //! Edited by the author of ticket #328 (row Q1, design §5.5.3): `list` takes a filter and a page
 //! and answers a `QueuePage`, `accept` answers an `AcceptOutcome`. `play` prints the outcome in the
 //! words of the 10-06 bundle, which the fixture recorded (see `accept_answer`).
+//!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1, R4):
+//! `KioskPorts` answers each currency's published line, so a `CounterRate` carries the line's
+//! id, `unit_size` and minor unit. The fake prices per 1 with two-place amounts, as v2 did, and
+//! its line id follows the pair of rates (`fake_line`): a save that changes a rate is a new line,
+//! as a new publication is.
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
@@ -37,7 +43,7 @@ use sqlx::{AssertSqlSafe, PgPool, Row};
 use tokio::sync::Semaphore;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
 
 pub use xc_kiosk::application::kiosk::service::KioskService;
 pub use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
@@ -50,6 +56,9 @@ pub use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 pub use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 pub use xc_kiosk::domain::kiosk::value_objects::audit_line::{
     AuditLine, CUSTOMER_KIOSK, KioskAudit,
+};
+pub use xc_kiosk::domain::kiosk::value_objects::counter_facts::{
+    CounterFacts, CounterLine, LineId,
 };
 pub use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
 pub use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
@@ -189,12 +198,92 @@ pub fn code(text: &str) -> CurrencyCode {
     CurrencyCode::parse(text).unwrap_or_else(|e| panic!("currency {text}: {e:?}"))
 }
 
+/// The fake's line id: one per pair of rates (#756).
+pub fn fake_line(buy: Rate, sell: Rate) -> LineId {
+    let at_8 = |r: Rate| {
+        let mut v = r.value();
+        v.rescale(8);
+        u128::try_from(v.mantissa()).expect("a rate is positive")
+    };
+    LineId((at_8(buy) << 64) | at_8(sell))
+}
+
 pub fn counter_rate(c: &str, buy: &str, sell: &str) -> CounterRate {
     CounterRate {
         code: code(c),
         buy: rate(buy),
         sell: rate(sell),
+        unit_size: UnitSize::ONE,
+        minor_unit: MinorUnit::TWO,
+        line_id: fake_line(rate(buy), rate(sell)),
     }
+}
+
+/// Writes the fake's line as a row of `published_rate_lines` (with the approved request and the
+/// one-line publication it needs), in the caller's transaction, unless it is there already:
+/// `kiosk_requests.published_rate_line_id` references it (#756, migration 5). The branch's
+/// current publication is not moved; the fake answers the lines itself.
+pub async fn publish_line(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    rate: &CounterRate,
+) -> AppResult<()> {
+    let line = rate.line_id.to_string();
+    let there: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM published_rate_lines WHERE id = $1::uuid)")
+            .bind(&line)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+    if there {
+        return Ok(());
+    }
+    let request = format!("{line}-request");
+    sqlx::query(
+        "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, \
+             object_version_hash, policy_version, proposed_payload, requested_by, requested_at, \
+             status, idempotency_key) \
+         SELECT gen_random_uuid(), organization_id, 'RATE_PUBLICATION', id, $2::uuid, 'test', \
+             '1', '{}'::jsonb, 'test', now(), 'APPROVED', $3 \
+         FROM branches WHERE id = $1",
+    )
+    .bind(branch.as_str())
+    .bind(&line)
+    .bind(&request)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    sqlx::query(
+        "INSERT INTO rate_publications (id, organization_id, branch_id, version, published_at, \
+             approved_request_id, draft_id, published_by) \
+         SELECT $2::uuid, b.organization_id, b.id, \
+             COALESCE((SELECT max(version) FROM rate_publications WHERE branch_id = b.id), 0) + 1, \
+             now(), r.id, NULL, 'test' \
+         FROM branches b JOIN approval_requests r ON r.idempotency_key = $3 \
+         WHERE b.id = $1",
+    )
+    .bind(branch.as_str())
+    .bind(&line)
+    .bind(&request)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    sqlx::query(
+        "INSERT INTO published_rate_lines (id, organization_id, publication_id, currency_code, \
+             denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+         SELECT $1::uuid, organization_id, $1::uuid, $2, 'ALL', $3, $4, $5, \
+             '{\"buy_mode\": \"MANUAL\", \"sell_mode\": \"MANUAL\"}'::jsonb \
+         FROM rate_publications WHERE id = $1::uuid",
+    )
+    .bind(&line)
+    .bind(rate.code.as_str())
+    .bind(rate.unit_size.value())
+    .bind(rate.buy.value())
+    .bind(rate.sell.value())
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
 }
 
 /// One call of `KioskPorts::save_rate`.
@@ -339,13 +428,22 @@ impl KioskPorts for FakePorts {
 
     fn counter_in<'a>(
         &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
-            let mut world = self.world();
-            world.counter_reads_in += 1;
-            Ok(world.counters.get(branch.as_str()).cloned())
+            let view = {
+                let mut world = self.world();
+                world.counter_reads_in += 1;
+                world.counters.get(branch.as_str()).cloned()
+            };
+            // #756: a quote stores its line's id, a foreign key; the line must exist.
+            if let Some(view) = &view {
+                for rate in &view.rates {
+                    publish_line(tx, branch, rate).await?;
+                }
+            }
+            Ok(view)
         })
     }
 
@@ -376,6 +474,9 @@ impl KioskPorts for FakePorts {
                     code: rate.code,
                     buy: self::rate(&rate.buy),
                     sell: self::rate(&rate.sell),
+                    unit_size: UnitSize::ONE,
+                    minor_unit: MinorUnit::TWO,
+                    line_id: fake_line(self::rate(&rate.buy), self::rate(&rate.sell)),
                 },
             );
             Ok(())

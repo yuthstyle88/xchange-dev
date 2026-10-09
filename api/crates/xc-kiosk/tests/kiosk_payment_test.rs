@@ -18,6 +18,9 @@
 //!
 //! The service tests need `TEST_DATABASE_URL` (see `kiosk_service_common/mod.rs`); nothing
 //! here skips.
+//!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1, R4): the
+//! machine is handed the published line (`CounterFacts::line`) instead of a bare rate.
 
 mod kiosk_service_common;
 
@@ -29,10 +32,9 @@ use futures::future::BoxFuture;
 use kiosk_service_common::*;
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Side, UnitSize};
 use xc_kernel::payment::{ChannelRule, PaymentRules};
 use xc_kiosk::domain::kiosk::entities::payment_gate::PaymentGate;
-use xc_kiosk::domain::kiosk::value_objects::counter_facts::CounterFacts;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_event_kind::KioskEventKind;
 use xc_kiosk::domain::kiosk::value_objects::transition::Transition;
 
@@ -81,7 +83,12 @@ fn request(side: Side, method: &str) -> KioskRequest {
     };
     let facts = CounterFacts {
         open: true,
-        rate: Some(rate("32.1000")),
+        line: Some(CounterLine {
+            line_id: fake_line(rate("32.1000"), rate("32.6")),
+            rate: rate("32.1000"),
+            unit_size: UnitSize::ONE,
+            minor_unit: MinorUnit::TWO,
+        }),
     };
     KioskMachine::quote(&input, &facts, "q1", KioskTime::from_epoch_millis(T0))
         .unwrap_or_else(|e| panic!("the machine quotes {side:?} {method}: {e}"))

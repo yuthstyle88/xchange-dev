@@ -7455,7 +7455,37 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "error": "Rate changed or counter closed. Please start again.",
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED"
+     }
     },
     {
      "at": 6000,
@@ -7512,7 +7542,36 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED"
+     }
     },
     {
      "at": 6000,
@@ -7555,7 +7614,37 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "error": "Rate changed or counter closed. Please start again.",
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED; not waiting, and the counter is closed"
+     }
     },
     {
      "at": 6000,
@@ -7604,7 +7693,37 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "error": "คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด",
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED; a QUOTED request is not accepted"
+     }
     },
     {
      "at": 6100,
@@ -7654,7 +7773,37 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "error": "The assigned employee must confirm the passport check.",
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED; nobody holds it"
+     }
     },
     {
      "at": 7000,
@@ -7719,7 +7868,36 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "WAITING",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED"
+     }
     },
     {
      "at": 301000,
@@ -7762,7 +7940,36 @@
        "submissionId": null
       }
      ],
-     "switches": []
+     "switches": [],
+     "v3": {
+      "rows": [
+       {
+        "branch": "B2",
+        "id": "ac55c1df-7e57-4000-8000-000000000001",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ad56c2e0-7e57-4000-8000-000000000002",
+        "status": "QUOTED",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       },
+       {
+        "branch": "MAIN",
+        "id": "ae57c3e1-7e57-4000-8000-000000000003",
+        "status": "WAITING",
+        "staff": null,
+        "documentRef": null,
+        "submissionId": null
+       }
+      ],
+      "note": "#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED"
+     }
     }
    ]
   },
