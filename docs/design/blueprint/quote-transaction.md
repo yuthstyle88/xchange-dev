@@ -564,13 +564,13 @@ and TX-5's):
 | rates CM-1 (#597): `CommandAction`, `IdempotencyStore` | every command | TX-2 and TX-3 start after CM-1 |
 | rates AP-1 (#596): `ApprovalService`, `ApprovalSubject/Policy`, `AuditLog` | §5; settings audit | TX-4 starts after AP-1 |
 | #582 CA-1/CA-3 (PR 590): `CashPostings`, `InterimCashPostings`, the teller's shift | §4.5 posting, `shift_id` | TX-5 declares a stub `CashPostings` impl calling `ShiftService::apply_delta_in` in its own file, removed when #582's lands |
-| #550 OR-1/OR-2/OR-4 (PR 589): `organization_id`, `Permission`, `Authorizer` | every table, every route | the routes use today's `Policy` rows until OR-4 re-points them (as every v3 route) |
+| #550 OR-1/OR-2/OR-4 (PR 589): `organization_id`, `Permission`, `Authorizer` | every table, every route | **OR-1 #615 is a start dependency of TX-1 and TX-2**: migration 1 reads `organizations` and every new table's composite FK needs OR-1's `(organization_id, id)` keys. The routes use today's `Policy` rows until OR-4 re-points them (as every v3 route) |
 | #563 OB-1 (PR 606): `OutboxWriter` | §6.3 | the completion enqueues nothing until a handler exists; no stub needed |
 | #553, #559, #560 | cost and margin; points; benefits | the columns stay NULL / `[]` |
 
 ---
 
-## 8. Data migration (two in this area's block `20261014*`, one in the cleanup block `20261030*`)
+## 8. Data migration (three in this area's block `20261014*`, one in the cleanup block `20261030*`)
 
 Version blocks: #564 issuecomment-6074369626 (this area = `20261014*`) and issuecomment-6074383060 (a migration that
 drops a transitional column goes in the cleanup block `20261030*`, after every feature block).
@@ -631,6 +631,23 @@ assigned on #564 (issuecomment-6074437590)
   origin/main -- api/src api/crates` must list no reader of the wide row.
 - *Deploy:* with TX-9's binary only. *`down`:* re-adds the columns NULL-able and fills them from the children.
 
+**4. `api/migrations/20261014120000_kiosk_quote_id.sql`** (TX-7; added when the tickets were cut, because §4.6 stores
+`kiosk_requests.quote_id` and no migration above created it)
+
+- *Changes:* `ALTER TABLE kiosk_requests ADD COLUMN quote_id uuid NULL REFERENCES quotes(id)`.
+- *Existing rows:* every row keeps `quote_id NULL`. A request quoted before TX-7 is either finished (`COMPLETED`,
+  `CANCELLED`, `EXPIRED`) or expires within its 300 s, so no open request is left without a quote for long.
+- *Backfill:* none, because a past kiosk quote has no `quotes` row to point at, and inventing one would invent a
+  publication it was never priced on. The kiosk step's rule: a request with `quote_id NULL` completes by the rule in
+  force before TX-7 (RE-4's published-line-id match, rates §4.8; the rate text at `kiosk_machine.rs:149-151` before RE-4); a request with a `quote_id` completes only with that `quoteId`.
+  TX-7's binary writes `quote_id` on every new request, so only pre-TX-7 requests take the first branch.
+  Count first: `SELECT status, count(*) FROM kiosk_requests GROUP BY status;`.
+- *Deploy:* with TX-7's binary. An older binary inserts `quote_id NULL`, which the column allows.
+- *`down`:* drops the column; the requests keep every other field.
+- **The kiosk's old amount columns** (`kiosk_requests.foreign_amount`, `input_amount`, `numeric(20,2)`, rates §3.3)
+  stay, written from the quote line by TX-7 like the wide `transactions` columns (D-2). Their drop needs every kiosk
+  reader moved first and a cleanup-block slot from the lane controller. No ticket here drops them.
+
 ---
 
 ## 9. Tickets
@@ -639,13 +656,13 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| TX-1 | quote domain, settings domain, `QuoteService`; migration 1 | `xc-exchange/src/domain/{quote,settings}/**`, `api/src/application/workflows/exchange/quote.rs`, `xc-exchange/src/infrastructure/{quote,settings}/**` (all new); migration 1 | RU-1 #595, RE-1 #598 |
-| TX-2 | transaction aggregate, children, store; migration 2; the compat writer fills the children | `xc-exchange/src/domain/transaction/**`, `xc-exchange/src/infrastructure/transaction/**` (new); `transaction_repository.rs` (`insert_in` writes the children); migration 2 | TX-1, **RE-4 #601 merged** (§8 migration 2) |
+| TX-1 | quote domain, settings domain, `QuoteService`; migration 1 | `xc-exchange/src/domain/{quote,settings}/**`, `api/src/application/workflows/exchange/quote.rs`, `xc-exchange/src/infrastructure/{quote,settings}/**` (all new); migration 1 | RU-1 #595, RE-1 #598, OR-1 #615 |
+| TX-2 | transaction aggregate, children, store; migration 2; the compat writer fills the children | `xc-exchange/src/domain/transaction/**`, `xc-exchange/src/infrastructure/transaction/**` (new); `transaction_repository.rs` (`insert_in` writes the children); migration 2 | TX-1, OR-1 #615, **RE-4 #601 merged** (§8 migration 2) |
 | TX-3 | `POST /api/quotes` command + DTO | `http/v3/commands/exchange/quotes.rs`, `dto/v3/quote.rs` + its TS | TX-1, CM-1 #597 |
 | TX-4 | create, confirm, cancel; approval subject and policy; settings commands | `api/src/application/workflows/exchange/{create,confirm,cancel,approval}.rs`, `http/v3/commands/exchange/{transactions,settings}.rs`, `dto/v3/transaction.rs` + TS | TX-2, TX-3, AP-1 #596 |
 | TX-5 | `complete`: §09 order, `TransactionForm::from_transaction`, posting, receipt, outbox | `api/src/application/workflows/exchange/complete.rs`, `transaction_form.rs` (the new constructor only), `payment_save_step.rs` (check moves to `before_in`), the `complete` arm in `commands/exchange/transactions.rs` is TX-4's file ⇒ **TX-5 adds `commands/exchange/complete.rs`** | TX-4, #582 CA-3 (or the stub of §7.1) |
 | TX-6 | compat `saveTransaction` becomes the adapter (§4.6); `save_transaction.rs` removed once DK-C #539 is on the new routes | `compat/actions/save.rs`, `workflows/save_transaction.rs` | TX-5, then the strict chain on `save_transaction.rs`: **RE-4 #601 → #582 CA-7 #623 → TX-6** (lane controller's ruling, 2026-10-09; a fourth ticket on that file is split per 📐, not added to the chain) |
-| TX-7 | kiosk quotes through `QuoteService` | `xc-kiosk/.../kiosk_machine.rs` (quote part), `kiosk_ports.rs`, `kiosk_save_step.rs` | TX-3, RE-4 #601 (owns `kiosk_machine.rs`'s rate reading first) |
+| TX-7 | kiosk quotes through `QuoteService` | `xc-kiosk/.../kiosk_machine.rs` (quote part), `kiosk_ports.rs`, `kiosk_save_step.rs`; migration 4 | TX-3, RE-4 #601 (owns `kiosk_machine.rs`'s rate reading first) |
 | TX-8 | readers: filter `status = 'COMPLETED'` and read the children | per reader file (§1 and the survey's list): `views/{admin_transactions,admin_slips,admin_overview,admin_customer_history,admin_customers,admin_reports,admin_cash,device_transactions,devices}.rs`, `dto/v3/transaction_row.rs`, `pages.rs` (receipt), `custody_ports.rs:59` — **one ticket per file**, each after RE-4 has finished that file | TX-2 |
 | TX-9 | migration 3 | migration 3 | every TX-8 ticket, TX-6 |
 | TX-10 | B04 view `transaction` | `views/transaction.rs`, `dto/v3/transaction_detail.rs` + TS | TX-2 |
@@ -669,7 +686,7 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 | TX-4 | create refuses an expired quote (`quoteExpired`) and another branch's quote (`outOfScope`); confirm under the limit ⇒ `CONFIRMED`, above ⇒ `PENDING_APPROVAL` with a request; no limit ⇒ never pending; the teller cannot decide (`outOfScope`); a manager of another branch cannot; approve ⇒ `CONFIRMED`, reject ⇒ `CANCELLED` with the reason; cancel from `DRAFT` and `CONFIRMED`, refused (`staleVersion`) from `PENDING_APPROVAL` |
 | TX-5 | complete gives `COMPLETED`, a `document_ref`, a receipt revision 1, and the same stock change as today's save (v2_stock_cases.json survive); a repeat replays and posts once; `CONFIRMED` only; an expired quote ⇒ `quoteExpired` and nothing written; **an `ACCEPTED` quote past `expires_at` (a late approval) ⇒ `quoteExpired`**, and the same after a new publication; insufficient stock ⇒ `stockInsufficient` and nothing written; the five steps' after-effects (kiosk COMPLETED, booking USED, device jobs) happen once |
 | TX-6 | today's provided save tests pass through the adapter (`api/tests/*save*`), byte-for-byte answers; over the limit ⇒ `approvalRequired`; **a refused compat save (over the limit, stock, custody, payment, expired quote) leaves no `quotes`, `transactions` or `approval_requests` row** |
-| TX-7 | a kiosk quote has a `quote_id`; the kiosk's 300 s and 3 s rules unchanged; the kiosk tests pass |
+| TX-7 | a kiosk quote has a `quote_id`; the kiosk's 300 s and 3 s rules unchanged; the kiosk tests pass; a request with `quote_id NULL` (before migration 4) still completes by the pre-TX-7 rule |
 | TX-8 | each reader ignores a `DRAFT`/`CANCELLED` row and reads figures from the line |
 
 ---
