@@ -2,14 +2,18 @@
 //! reference-rate fetch behind the `RateSource` port.
 //!
 //! Written before the implementation. Do not edit, delete or weaken.
+//! Amended for #599 (RE-2) by its ticket author (claude/e5ab6c), as `docs/design/blueprint/rates.md`
+//! §9's table says: the yen is kept in the bank's own unit and value, per 100, never divided
+//! (§4.2 "Raw, as received"; Blueprint §05/§07 "ข้อมูลดิบไม่แก้ทับ").
 //!
 //! What the source does, in v2's words turned into tests:
 //! - two `GET`s per call, never fewer and never kept: `<base>.labels.json`, then
 //!   exactly one of `<base>.results.level{1,2,3}cache.json`, chosen by the two
 //!   time windows the labels carry and the clock;
 //! - of the bank's table it keeps six currencies (USD, EUR, GBP, JPY, CNY, AUD)
-//!   in the bank's order, the yen divided by 100, each row with the bank's own
-//!   text under `original`;
+//!   in the bank's order, every rate in the bank's own unit (the yen per 100, as
+//!   the bank quotes it, `unit` 100), each row with the bank's own text under
+//!   `original`;
 //! - anything else — no answer, a status that is not 2xx, a body that is not the
 //!   table, a currency missing or twice, a rate that is not a positive number, a
 //!   date that is not `YYYY-MM-DD` — is one refusal, `AppError::Domain` with one
@@ -18,10 +22,10 @@
 //! `tests/fixtures/v2_bot_source_cases.json` was recorded by running v2's own
 //! fetch against scripted answers of the bank (`api/tools/v2-fixtures/
 //! gen_reference_rates.mjs source`). v3 differs from v2 in one place, on purpose:
-//! v2 divides the yen as a binary float (`20.9382 / 100` is
-//! `0.20938199999999998` there); v3 computes in decimal and answers `0.209382`.
-//! The fixture's `answer` holds every rate as the exact decimal text the JSON
-//! number must print as.
+//! v2 divides the yen by 100 (as a binary float); v3 keeps the bank's value per
+//! 100. The fixture's `answer` holds v2's per-1 rates as exact decimal text, so a
+//! row is compared at the fixture's value × its `unit` (`want_in_bank_unit`): for
+//! the yen `0.209382` × 100 = `20.9382`, for every other currency the value itself.
 //!
 //! No test here reaches the network or needs a database: the bank is a socket
 //! on 127.0.0.1 that this file opens.
@@ -305,6 +309,15 @@ fn script_of(case: &Case, bodies: &[String]) -> Script {
         .collect()
 }
 
+/// The fixture's per-1 rate (v2's answer) in the bank's own unit: `want × unit`, printed the way
+/// a JSON number of the source prints (no trailing zeros, no point for a whole number).
+fn want_in_bank_unit(want: &str, unit: u64) -> String {
+    let value = rust_decimal::Decimal::from_str_exact(want)
+        .unwrap_or_else(|e| panic!("the fixture's rate {want:?} is a decimal: {e}"))
+        * rust_decimal::Decimal::from(unit);
+    value.normalize().to_string()
+}
+
 /// Everything in which `got` is not the answer the fixture wants.
 fn differences(got: &ReferenceRates, want: &Expected) -> Vec<String> {
     let mut wrong = Vec::new();
@@ -353,17 +366,17 @@ fn differences(got: &ReferenceRates, want: &Expected) -> Vec<String> {
         check(
             format!("row {i} ({}) buyingSight", w.code),
             text("buyingSight"),
-            w.buying_sight.clone(),
+            want_in_bank_unit(&w.buying_sight, w.unit),
         );
         check(
             format!("row {i} ({}) buyingTransfer", w.code),
             text("buyingTransfer"),
-            w.buying_transfer.clone(),
+            want_in_bank_unit(&w.buying_transfer, w.unit),
         );
         check(
             format!("row {i} ({}) selling", w.code),
             text("selling"),
-            w.selling.clone(),
+            want_in_bank_unit(&w.selling, w.unit),
         );
         check(
             format!("row {i} original"),
@@ -691,10 +704,10 @@ async fn rates_are_decimals_never_floats() {
         .await
         .expect("the bank answers");
 
-    // a binary float gives 0.20938199999999998 here
-    assert_eq!(field(&rates, "JPY", "buyingSight"), "0.209382");
-    assert_eq!(field(&rates, "JPY", "buyingTransfer"), "0.21");
-    assert_eq!(field(&rates, "JPY", "selling"), "0.2163");
+    // the yen stays per 100, the bank's own value (#599): never divided
+    assert_eq!(field(&rates, "JPY", "buyingSight"), "20.9382");
+    assert_eq!(field(&rates, "JPY", "buyingTransfer"), "21");
+    assert_eq!(field(&rates, "JPY", "selling"), "21.63");
     assert_eq!(field(&rates, "JPY", "unit"), "100");
     // the bank's own text is kept beside it, untouched
     assert_eq!(
