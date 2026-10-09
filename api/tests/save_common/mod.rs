@@ -248,6 +248,10 @@ impl Shop {
             .await
             .expect("apply api/migrations to the test schema");
 
+        for opener in ["test"] {
+            seed_opener(&pool, opener).await;
+        }
+
         let scratch = std::env::temp_dir().join(format!("xc-{schema}"));
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).expect("create a scratch directory");
@@ -624,4 +628,42 @@ pub fn command(
             other => panic!("fixture form.referenceRate is {other}"),
         }),
     }
+}
+
+/// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
+/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
+/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
+/// up-front commit.
+pub async fn seed_opener(pool: &PgPool, id: &str) {
+    if id == "owner" {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("look for the owner's user");
+        if !exists {
+            sqlx::query(
+                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
+                       SELECT id, 'owner', 'INVITED', 'test' FROM o RETURNING id, organization_id) \
+                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+            )
+            .execute(pool)
+            .await
+            .expect("seed the owner's user");
+        }
+        return;
+    }
+    sqlx::query(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, $1, 'INVITED', 'test', $1 FROM organizations WHERE code = 'XC' \
+         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .expect("seed an opener's user");
 }

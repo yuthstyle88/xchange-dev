@@ -327,6 +327,7 @@ impl Desk {
             .execute(&self.db.pool)
             .await
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
+            crate::snapshot_common::seed_opener(&self.db.pool, &person.id).await;
         }
     }
 

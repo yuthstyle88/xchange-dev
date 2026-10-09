@@ -174,8 +174,18 @@ mod tests {
 
             // Open shift in MAIN
             sqlx::query(
-                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id) \
-                 VALUES ('shift-1', 'MAIN', 'OPEN', now(), 'test', 'open-1')",
+                "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+                 SELECT id, 'test', 'INVITED', 'test', 'test' FROM organizations WHERE code = 'XC' \
+                 ON CONFLICT (legacy_employee_id) DO NOTHING",
+            )
+            .execute(&self.pool)
+            .await
+            .expect("seed the opener's user (CA-1 #617)");
+
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+                 VALUES ('shift-1', 'MAIN', 'OPEN', now(), 'test', 'open-1', \
+                 (SELECT id FROM users WHERE legacy_employee_id = 'test'))",
             )
             .execute(&self.pool)
             .await

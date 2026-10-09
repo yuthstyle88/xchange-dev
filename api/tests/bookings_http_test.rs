@@ -202,8 +202,8 @@ impl Room {
     async fn seed_shift(&self, id: &str, branch: &str) {
         sqlx::query(
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
-                 open_request_id) \
-             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4)",
+                 open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
         )
         .bind(id)
         .bind(branch)

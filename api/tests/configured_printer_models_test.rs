@@ -110,8 +110,8 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .expect("insert rate");
 
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id) \
-         VALUES ('shift-1', $1, 'OPEN', now(), 'owner', 'open-req-1')",
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+         VALUES ('shift-1', $1, 'OPEN', now(), 'owner', 'open-req-1', (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
     )
     .bind(MAIN)
     .execute(&desk.db.pool)

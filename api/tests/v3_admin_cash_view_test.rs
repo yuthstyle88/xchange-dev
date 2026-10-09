@@ -1052,8 +1052,9 @@ async fn a_second_open_shift_is_refused_with_the_servers_sentence() {
         answer.text
     );
     let inserted = sqlx::query(
-        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id) \
-         VALUES ('S-TWIN', 'MAIN', 'OPEN', now(), 'test', 'twin-0000000000000001')",
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+         VALUES ('S-TWIN', 'MAIN', 'OPEN', now(), 'test', 'twin-0000000000000001', \
+         (SELECT id FROM users WHERE legacy_employee_id = 'test'))",
     )
     .execute(&room.desk.db.pool)
     .await;

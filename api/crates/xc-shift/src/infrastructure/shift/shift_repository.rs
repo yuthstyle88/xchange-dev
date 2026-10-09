@@ -11,6 +11,7 @@ use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
+use crate::domain::shift::value_objects::shift_error::ShiftError;
 use crate::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 
 type ShiftRow = (
@@ -196,6 +197,109 @@ fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
         reason,
         request_id,
     })
+}
+
+async fn resolve_teller(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch_id: &BranchId,
+    opened_by: &str,
+) -> AppResult<String> {
+    let org_id: Option<String> =
+        sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+            .bind(branch_id.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+
+    let Some(org_id) = org_id else {
+        return Err(ShiftError::BranchNotFound.into());
+    };
+
+    // 1. users.id (users.id::text = opened_by)
+    let user_by_id: Option<String> = sqlx::query_scalar(
+        "SELECT id::text FROM users WHERE organization_id = $1::uuid AND id::text = $2",
+    )
+    .bind(&org_id)
+    .bind(opened_by)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(uid) = user_by_id {
+        return Ok(uid);
+    }
+
+    // 2. employees.id -> users.legacy_employee_id
+    let user_by_legacy: Option<String> = sqlx::query_scalar(
+        "SELECT id::text FROM users WHERE organization_id = $1::uuid AND legacy_employee_id = $2",
+    )
+    .bind(&org_id)
+    .bind(opened_by)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(uid) = user_by_legacy {
+        return Ok(uid);
+    }
+
+    // 3. employees.username -> that employee's user
+    let user_by_username: Option<String> = sqlx::query_scalar(
+        "SELECT u.id::text FROM employees e \
+         JOIN users u ON u.legacy_employee_id = e.id AND u.organization_id = $1::uuid \
+         WHERE e.username = $2",
+    )
+    .bind(&org_id)
+    .bind(opened_by)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(uid) = user_by_username {
+        return Ok(uid);
+    }
+
+    // 4. "owner" or an owners.username -> the one organisation-wide EXECUTIVE + ADMIN user (legacy_employee_id IS NULL)
+    let is_owner_str = opened_by == "owner";
+    let is_owner_match = if is_owner_str {
+        true
+    } else {
+        let in_owners: Option<bool> =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM owners WHERE username = $1)")
+                .bind(opened_by)
+                .fetch_optional(&mut **tx)
+                .await?;
+        in_owners.unwrap_or(false)
+    };
+
+    if is_owner_match {
+        let owners: Vec<String> = sqlx::query_scalar(
+            "SELECT u.id::text FROM users u \
+             WHERE u.organization_id = $1::uuid \
+               AND u.legacy_employee_id IS NULL \
+               AND EXISTS ( \
+                   SELECT 1 FROM user_roles r \
+                   WHERE r.user_id = u.id \
+                     AND r.organization_id = u.organization_id \
+                     AND r.role_code = 'EXECUTIVE' \
+                     AND r.branch_id IS NULL \
+               ) \
+               AND EXISTS ( \
+                   SELECT 1 FROM user_roles r \
+                   WHERE r.user_id = u.id \
+                     AND r.organization_id = u.organization_id \
+                     AND r.role_code = 'ADMIN' \
+                     AND r.branch_id IS NULL \
+               )",
+        )
+        .bind(&org_id)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        if owners.len() == 1 {
+            return Ok(owners.into_iter().next().unwrap());
+        } else {
+            return Err(ShiftError::TellerUnknown.into());
+        }
+    }
+
+    Err(ShiftError::TellerUnknown.into())
 }
 
 #[derive(Clone)]
@@ -493,15 +597,18 @@ impl ShiftRepository for PgShiftRepository {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         shift: &Shift,
     ) -> AppResult<()> {
+        let teller_id = resolve_teller(tx, &shift.branch_id, &shift.opened_by).await?;
+
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id) \
-             VALUES ($1, $2, 'OPEN', $3, $4, '', $5)",
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
         )
         .bind(&shift.id)
         .bind(shift.branch_id.as_str())
         .bind(shift.opened_at)
         .bind(&shift.opened_by)
         .bind(&shift.open_request_id)
+        .bind(&teller_id)
         .execute(&mut **tx)
         .await?;
 

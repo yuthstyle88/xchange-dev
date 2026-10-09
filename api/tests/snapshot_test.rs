@@ -491,6 +491,7 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
         .expect("a rate at the airport");
     let opening =
         json!({"requestId": "00000000-0000-4000-8000-0000000b0004", "opening": {"THB": 20000}});
+    snapshot_common::seed_opener(&shop.db.pool, "be2").await;
     let shift = shop
         .shifts
         .open(
