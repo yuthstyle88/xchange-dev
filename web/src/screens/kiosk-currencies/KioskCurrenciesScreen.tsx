@@ -19,6 +19,7 @@ import { TextField } from '../../shared/ui/TextField';
 import { matches } from './filter';
 import * as screenI18n from './i18n';
 import { configure } from './kiosk-api';
+import './kiosk-currencies.css';
 
 type CardStatusState =
   | { kind: 'savedOn' }
@@ -330,7 +331,7 @@ export function KioskCurrenciesScreen(props: {
                   round: ref().round,
                 })}
               </p>
-              <p>{t('compareWarning')}</p>
+              <p class="warning">{t('compareWarning')}</p>
               <p>
                 <a href={ref().source} target="_blank" rel="noopener noreferrer">
                   {t('compareLink')}
