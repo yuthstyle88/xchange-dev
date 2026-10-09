@@ -3,6 +3,7 @@
 pub mod action;
 pub mod command;
 pub mod commands;
+pub mod desk;
 pub mod error;
 pub mod view;
 
