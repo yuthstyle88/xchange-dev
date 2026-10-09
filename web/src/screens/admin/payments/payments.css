@@ -57,46 +57,11 @@
   margin-bottom: 16px;
 }
 
-.xc-admin .xc-content .xc-payment-card-body {
-  display: flex;
-  flex-direction: column;
-}
-
-.xc-admin .xc-content .xc-payment-enabled-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--brand);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.xc-admin .xc-content .xc-payment-sell-label {
-  font-size: 13px;
-  display: block;
-}
-
-.xc-admin .xc-content .xc-payment-buy-label {
-  font-size: 13px;
-  display: block;
-}
-
 .xc-admin .xc-content .xc-payment-receive-only {
   display: block;
   color: var(--muted);
   font-size: 11px;
   margin: 6px 0 0 25px;
-}
-
-.xc-admin .xc-content .xc-payment-field-label {
-  display: block;
-  margin-top: 18px;
-  font-size: 13px;
-}
-
-.xc-admin .xc-content .xc-unit {
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .xc-admin .xc-content .xc-payment-save-bar {

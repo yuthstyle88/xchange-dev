@@ -14,6 +14,7 @@ import { DataTable } from '../parts/DataTable';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { refreshTick } from '../parts/refresh';
+import { Field } from '../../../shared/ui/Field';
 import * as table from './i18n';
 import './rates.css';
 
@@ -210,62 +211,50 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               void handleSave();
             }}
           >
-            <div class="field">
-              <label>
-                <span>{t('headerBuy')}</span>
-                <input
-                  type="number"
-                  required
-                  min="0.0001"
-                  max="1000000"
-                  step="0.0001"
-                  value={buyVal()}
-                  onInput={(e) => setBuyVal(e.currentTarget.value)}
-                />
-              </label>
-            </div>
+            <Field label={t('headerBuy')}>
+              <input
+                type="number"
+                required
+                min="0.0001"
+                max="1000000"
+                step="0.0001"
+                value={buyVal()}
+                onInput={(e) => setBuyVal(e.currentTarget.value)}
+              />
+            </Field>
 
-            <div class="field">
-              <label>
-                <span>{t('headerSell')}</span>
-                <input
-                  type="number"
-                  required
-                  min="0.0001"
-                  max="1000000"
-                  step="0.0001"
-                  value={sellVal()}
-                  onInput={(e) => setSellVal(e.currentTarget.value)}
-                />
-              </label>
-            </div>
+            <Field label={t('headerSell')}>
+              <input
+                type="number"
+                required
+                min="0.0001"
+                max="1000000"
+                step="0.0001"
+                value={sellVal()}
+                onInput={(e) => setSellVal(e.currentTarget.value)}
+              />
+            </Field>
 
-            <div class="field">
-              <label>
-                <span>{t('partnerNameLabel')}</span>
-                <input
-                  type="text"
-                  maxLength={100}
-                  placeholder={t('partnerNamePlaceholder')}
-                  value={partnerNameVal()}
-                  onInput={(e) => setPartnerNameVal(e.currentTarget.value)}
-                />
-              </label>
-            </div>
+            <Field label={t('partnerNameLabel')}>
+              <input
+                type="text"
+                maxLength={100}
+                placeholder={t('partnerNamePlaceholder')}
+                value={partnerNameVal()}
+                onInput={(e) => setPartnerNameVal(e.currentTarget.value)}
+              />
+            </Field>
 
-            <div class="field">
-              <label>
-                <span>{`${t('partnerCostPrefix')}${rate.code})`}</span>
-                <input
-                  type="number"
-                  min="0.0001"
-                  max="1000000"
-                  step="0.0001"
-                  value={partnerCostVal()}
-                  onInput={(e) => setPartnerCostVal(e.currentTarget.value)}
-                />
-              </label>
-            </div>
+            <Field label={`${t('partnerCostPrefix')}${rate.code})`}>
+              <input
+                type="number"
+                min="0.0001"
+                max="1000000"
+                step="0.0001"
+                value={partnerCostVal()}
+                onInput={(e) => setPartnerCostVal(e.currentTarget.value)}
+              />
+            </Field>
 
             <Show when={formError()}>
               <div class="form-error">{formError()}</div>

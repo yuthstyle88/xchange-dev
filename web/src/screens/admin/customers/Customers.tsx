@@ -18,7 +18,10 @@ import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
 import { TransactionDetail } from '../parts/TransactionDetail';
+import { Card, CardBody, CardActions } from '../../../shared/ui/Card';
+import { Field, CheckField } from '../../../shared/ui/Field';
 import { en, th } from './i18n';
+import './customers.css';
 
 function formatBangkokDateTime(iso: string): string {
   try {
@@ -75,19 +78,20 @@ function MemberForm(props: MemberFormProps): JSX.Element {
 
       // On success, show member card
       openDialog(`${t('memberCardTitle')} · ${res.name}`, () => (
-        <div class="member-card">
-          <p>{t('memberHandOver')}</p>
-          <div class="field">
-            <label>{t('memberCode')}</label>
-            <input type="text" readOnly value={res.memberCode} />
-          </div>
-          <p class="note">{t('memberCardNote')}</p>
-          <div class="actions">
-            <button type="button" onClick={closeDialog}>
-              {t('close')}
-            </button>
-          </div>
-        </div>
+        <Card>
+          <CardBody>
+            <p>{t('memberHandOver')}</p>
+            <Field label={t('memberCode')}>
+              <input type="text" readOnly value={res.memberCode} />
+            </Field>
+            <p class="note">{t('memberCardNote')}</p>
+            <CardActions>
+              <button type="button" onClick={closeDialog}>
+                {t('close')}
+              </button>
+            </CardActions>
+          </CardBody>
+        </Card>
       ));
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -109,30 +113,22 @@ function MemberForm(props: MemberFormProps): JSX.Element {
         {(sentence) => <div class="error-banner">{sentence()}</div>}
       </Show>
 
-      <div class="field">
-        <label>
-          {t('memberPhone')}
-          <input
-            type="tel"
-            required
-            maxLength={30}
-            value={phone()}
-            onInput={(e) => setPhone(e.currentTarget.value)}
-          />
-        </label>
-      </div>
+      <Field label={t('memberPhone')}>
+        <input
+          type="tel"
+          required
+          maxLength={30}
+          value={phone()}
+          onInput={(e) => setPhone(e.currentTarget.value)}
+        />
+      </Field>
 
-      <div class="field checkbox">
-        <label>
-          <input
-            type="checkbox"
-            required
-            checked={verified()}
-            onChange={(e) => setVerified(e.currentTarget.checked)}
-          />
-          {t('memberVerified')}
-        </label>
-      </div>
+      <CheckField
+        label={t('memberVerified')}
+        required
+        checked={verified()}
+        onChange={(checked) => setVerified(checked)}
+      />
 
       <p class="reissue-note">{t('memberReissue')}</p>
 
