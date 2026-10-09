@@ -21,6 +21,13 @@ use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
 use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
 use crate::presentation::extractors::origin::same_origin;
 
+/// The locks required by a command action (§6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Locks {
+    One(BranchId),
+    Pair(BranchId, BranchId),
+}
+
 /// A command action that declares its route, method, input and output types, and policy gate (§6).
 pub trait CommandAction: Send + Sync + 'static {
     /// The unique operation name stored in `idempotency_records`.
@@ -33,6 +40,14 @@ pub trait CommandAction: Send + Sync + 'static {
     const ROUTE: &'static str;
     /// The HTTP method for this command.
     const METHOD: Method;
+
+    /// Returns the locks required by this command action (§6).
+    ///
+    /// Defaults to `Locks::One(branch.clone())`.
+    fn locks(&self, branch: &BranchId, input: &Self::Input) -> Locks {
+        let _ = input;
+        Locks::One(branch.clone())
+    }
 
     /// Runs the command with authenticated actor, branch, typed input, and idempotency key
     /// within the caller's database transaction.
@@ -53,6 +68,16 @@ pub fn server_error() -> V3Error {
         None,
         "เซิร์ฟเวอร์ขัดข้อง",
         StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
+
+/// Helper for commands to map scope violations to `403 outOfScope`.
+pub fn out_of_scope() -> V3Error {
+    V3Error::new(
+        "outOfScope",
+        None,
+        "ไม่มีสิทธิ์ทำรายการสำหรับสาขานี้",
+        StatusCode::FORBIDDEN,
     )
 }
 
@@ -212,14 +237,70 @@ async fn handle_command<C: CommandAction>(
         }
     };
 
-    // Step 7: Request hash & idempotency claim
-    let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+    // Step 6.5: Determine locks and validate scope
+    let locks = command.locks(&branch, &input);
+    match &locks {
+        Locks::One(b) => {
+            if b != &branch {
+                return out_of_scope().error_response();
+            }
+        }
+        Locks::Pair(a, b) => {
+            if a != &branch && b != &branch {
+                return out_of_scope().error_response();
+            }
+        }
+    }
 
     let pool = match req.app_data::<web::Data<AppState>>() {
         Some(state) => state.db.clone(),
         None => return server_error().error_response(),
     };
-    let store = Arc::new(PgIdempotencyStore::new(pool.clone()));
+
+    // Resolve organisation from caller's branch
+    let org_id: String =
+        match sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_optional(&pool)
+            .await
+        {
+            Ok(Some(org)) => org,
+            Ok(None) => return out_of_scope().error_response(),
+            Err(e) => {
+                tracing::error!(error = %e, "failed to query branch organization");
+                return server_error().error_response();
+            }
+        };
+
+    // If Pair, check that the other branch belongs to the same organization
+    if let Locks::Pair(a, b) = &locks {
+        let other = if a == &branch { b } else { a };
+        if other != &branch {
+            let other_org_id: String = match sqlx::query_scalar(
+                "SELECT organization_id::text FROM branches WHERE id = $1",
+            )
+            .bind(other.as_str())
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query second branch organization");
+                    return server_error().error_response();
+                }
+            };
+
+            if other_org_id != org_id {
+                return out_of_scope().error_response();
+            }
+        }
+    }
+
+    // Step 7: Request hash & idempotency claim
+    let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+
+    let store = Arc::new(PgIdempotencyStore::new(pool.clone(), org_id));
 
     let claim = match store.claim(C::NAME, &idem_key, &hash).await {
         Ok(c) => c,
@@ -260,45 +341,48 @@ async fn handle_command<C: CommandAction>(
     let claim_token_clone = claim_token.clone();
     let store_clone = store.clone();
 
-    let run_res = branch_tx
-        .run(&branch, move |tx| {
-            Box::pin(async move {
-                let output = match command_clone
-                    .run(tx, &branch_clone, &who_clone, input, idem_key_clone.clone())
-                    .await
-                {
-                    Ok(out) => out,
-                    Err(err) => {
-                        *captured_error_clone.lock().unwrap() = Some(err);
-                        return Err(pos_error::AppError::Conflict(
-                            "command rejected".to_string(),
-                        ));
-                    }
-                };
-
-                let response_val = match serde_json::to_value(&output) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(pos_error::AppError::Internal(format!(
-                            "failed to serialize command output: {e}"
-                        )));
-                    }
-                };
-
-                store_clone
-                    .finish_in(
-                        tx,
-                        C::NAME,
-                        &idem_key_clone,
-                        &claim_token_clone,
-                        response_val.clone(),
-                    )
-                    .await?;
-
-                Ok(response_val)
-            })
-        })
-        .await;
+    let run_res = match &locks {
+        Locks::One(b) => {
+            branch_tx
+                .run(b, move |tx| {
+                    Box::pin(async move {
+                        execute_in_tx(
+                            &command_clone,
+                            tx,
+                            &branch_clone,
+                            &who_clone,
+                            input,
+                            &idem_key_clone,
+                            &claim_token_clone,
+                            &store_clone,
+                            &captured_error_clone,
+                        )
+                        .await
+                    })
+                })
+                .await
+        }
+        Locks::Pair(a, b) => {
+            branch_tx
+                .run_pair(a, b, move |tx| {
+                    Box::pin(async move {
+                        execute_in_tx(
+                            &command_clone,
+                            tx,
+                            &branch_clone,
+                            &who_clone,
+                            input,
+                            &idem_key_clone,
+                            &claim_token_clone,
+                            &store_clone,
+                            &captured_error_clone,
+                        )
+                        .await
+                    })
+                })
+                .await
+        }
+    };
 
     match run_res {
         Ok(response_val) => HttpResponse::Ok()
@@ -316,4 +400,42 @@ async fn handle_command<C: CommandAction>(
             server_error().error_response()
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_in_tx<C: CommandAction>(
+    command: &Arc<C>,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    who: &Actor,
+    input: C::Input,
+    idem_key: &IdempotencyKey,
+    claim_token: &crate::infrastructure::idempotency::store::ClaimToken,
+    store: &Arc<PgIdempotencyStore>,
+    captured_error: &Arc<std::sync::Mutex<Option<V3Error>>>,
+) -> pos_error::AppResult<Value> {
+    let output = match command.run(tx, branch, who, input, idem_key.clone()).await {
+        Ok(out) => out,
+        Err(err) => {
+            *captured_error.lock().unwrap() = Some(err);
+            return Err(pos_error::AppError::Conflict(
+                "command rejected".to_string(),
+            ));
+        }
+    };
+
+    let response_val = match serde_json::to_value(&output) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(pos_error::AppError::Internal(format!(
+                "failed to serialize command output: {e}"
+            )));
+        }
+    };
+
+    store
+        .finish_in(tx, C::NAME, idem_key, claim_token, response_val.clone())
+        .await?;
+
+    Ok(response_val)
 }

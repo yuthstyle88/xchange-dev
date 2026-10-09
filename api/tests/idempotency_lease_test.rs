@@ -113,7 +113,10 @@ impl TestDb {
     }
 
     fn store(&self) -> Arc<dyn IdempotencyStore> {
-        Arc::new(PgIdempotencyStore::new(self.pool.clone()))
+        Arc::new(PgIdempotencyStore::new(
+            self.pool.clone(),
+            "00000000-0000-0000-0000-000000000001",
+        ))
     }
 
     /// Drop the schema. Reached only by a test that passed.

@@ -5,28 +5,23 @@ use sqlx::PgPool;
 
 use super::store::{BoxFuture, Claim, ClaimToken, IdempotencyKey, IdempotencyStore};
 
-const DEFAULT_ORG_ID: &str = "00000000-0000-4000-8000-000000000000";
-
 /// PostgreSQL-backed idempotency store over `idempotency_records`.
 #[derive(Clone)]
 pub struct PgIdempotencyStore {
     pool: PgPool,
-    org_id: String,
+    organization_id: String,
 }
 
 impl PgIdempotencyStore {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: PgPool, organization_id: impl Into<String>) -> Self {
         Self {
             pool,
-            org_id: DEFAULT_ORG_ID.to_string(),
+            organization_id: organization_id.into(),
         }
     }
 
-    pub fn with_org_id(pool: PgPool, org_id: impl Into<String>) -> Self {
-        Self {
-            pool,
-            org_id: org_id.into(),
-        }
+    pub fn organization_id(&self) -> &str {
+        &self.organization_id
     }
 }
 
@@ -42,12 +37,12 @@ impl IdempotencyStore for PgIdempotencyStore {
 
             // Attempt to insert a new pending record.
             let inserted: Option<i32> = sqlx::query_scalar(
-                "INSERT INTO idempotency_records (org_id, operation, key, request_hash, status, created_at, claim_token) \
-                 VALUES ($1, $2, $3, $4, 'PENDING', now(), $5) \
-                 ON CONFLICT (org_id, operation, key) DO NOTHING \
+                "INSERT INTO idempotency_records (organization_id, operation, key, request_hash, status, created_at, claim_token) \
+                 VALUES ($1::uuid, $2, $3, $4, 'PENDING', now(), $5) \
+                 ON CONFLICT (organization_id, operation, key) DO NOTHING \
                  RETURNING 1",
             )
-            .bind(&self.org_id)
+            .bind(&self.organization_id)
             .bind(op)
             .bind(key.as_str())
             .bind(hash)
@@ -63,9 +58,9 @@ impl IdempotencyStore for PgIdempotencyStore {
             let row: Option<(String, Option<String>, String, bool)> = sqlx::query_as(
                 "SELECT request_hash, response_ref::text, status, (created_at <= now() - interval '60 seconds') \
                  FROM idempotency_records \
-                 WHERE org_id = $1 AND operation = $2 AND key = $3",
+                 WHERE organization_id = $1::uuid AND operation = $2 AND key = $3",
             )
-            .bind(&self.org_id)
+            .bind(&self.organization_id)
             .bind(op)
             .bind(key.as_str())
             .fetch_optional(&self.pool)
@@ -76,12 +71,12 @@ impl IdempotencyStore for PgIdempotencyStore {
                 None => {
                     // Record was released/deleted concurrently. Try insert again.
                     let reinserted: Option<i32> = sqlx::query_scalar(
-                        "INSERT INTO idempotency_records (org_id, operation, key, request_hash, status, created_at, claim_token) \
-                         VALUES ($1, $2, $3, $4, 'PENDING', now(), $5) \
-                         ON CONFLICT (org_id, operation, key) DO NOTHING \
+                        "INSERT INTO idempotency_records (organization_id, operation, key, request_hash, status, created_at, claim_token) \
+                         VALUES ($1::uuid, $2, $3, $4, 'PENDING', now(), $5) \
+                         ON CONFLICT (organization_id, operation, key) DO NOTHING \
                          RETURNING 1",
                     )
-                    .bind(&self.org_id)
+                    .bind(&self.organization_id)
                     .bind(op)
                     .bind(key.as_str())
                     .bind(hash)
@@ -115,7 +110,7 @@ impl IdempotencyStore for PgIdempotencyStore {
                 "UPDATE idempotency_records \
                  SET created_at = now(), \
                      claim_token = $1 \
-                 WHERE org_id = $2 \
+                 WHERE organization_id = $2::uuid \
                    AND operation = $3 \
                    AND key = $4 \
                    AND status = 'PENDING' \
@@ -123,7 +118,7 @@ impl IdempotencyStore for PgIdempotencyStore {
                    AND created_at <= now() - interval '60 seconds'",
             )
             .bind(token.as_str())
-            .bind(&self.org_id)
+            .bind(&self.organization_id)
             .bind(op)
             .bind(key.as_str())
             .bind(hash)
@@ -151,10 +146,10 @@ impl IdempotencyStore for PgIdempotencyStore {
             let res = sqlx::query(
                 "UPDATE idempotency_records \
                  SET response_ref = $1::jsonb, status = 'FINISHED' \
-                 WHERE org_id = $2 AND operation = $3 AND key = $4 AND claim_token = $5 AND status = 'PENDING'",
+                 WHERE organization_id = $2::uuid AND operation = $3 AND key = $4 AND claim_token = $5 AND status = 'PENDING'",
             )
             .bind(json_str)
-            .bind(&self.org_id)
+            .bind(&self.organization_id)
             .bind(op)
             .bind(key.as_str())
             .bind(token.as_str())
@@ -180,9 +175,9 @@ impl IdempotencyStore for PgIdempotencyStore {
         Box::pin(async move {
             sqlx::query(
                 "DELETE FROM idempotency_records \
-                 WHERE org_id = $1 AND operation = $2 AND key = $3 AND claim_token = $4 AND status = 'PENDING'",
+                 WHERE organization_id = $1::uuid AND operation = $2 AND key = $3 AND claim_token = $4 AND status = 'PENDING'",
             )
-            .bind(&self.org_id)
+            .bind(&self.organization_id)
             .bind(op)
             .bind(key.as_str())
             .bind(token.as_str())

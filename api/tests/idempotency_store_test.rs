@@ -29,8 +29,11 @@
 //!   answers with the same hash is not pinned here, except that it is never `New`.
 //! - `IdempotencyKey::new(&str)` builds a key (an `impl Into<String>` parameter
 //!   also satisfies this).
-//! - `PgIdempotencyStore::new(pool: PgPool)`; `org_id` is the single
-//!   organisation's constant until #550 (§5.6) — not pinned beyond "not empty".
+//! - `PgIdempotencyStore::new(pool: PgPool, organization_id: impl Into<String>)`: the store
+//!   writes and reads only that organisation's records (#704 Part 2, CM-3: `organization_id`
+//!   is the record's one organisation column; OR-1's install organisation `XC` is
+//!   `00000000-0000-0000-0000-000000000001`). Retired by the ticket author: the
+//!   one-argument `new` and the `org_id` column.
 //! - `request_hash` stores the `hash` argument as given; `response_ref` stores
 //!   the finished response as given.
 //!
@@ -57,6 +60,9 @@ use xchange::infrastructure::idempotency::store::{
 const MUST_FINISH: Duration = Duration::from_secs(30);
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+/// OR-1's install organisation (`20261011100000_organizations.sql`).
+const XC: &str = "00000000-0000-0000-0000-000000000001";
 
 fn unique(prefix: &str) -> String {
     let nanos = SystemTime::now()
@@ -120,14 +126,14 @@ impl TestDb {
     }
 
     fn store(&self) -> Arc<dyn IdempotencyStore> {
-        Arc::new(PgIdempotencyStore::new(self.pool.clone()))
+        Arc::new(PgIdempotencyStore::new(self.pool.clone(), XC))
     }
 
-    /// Every row as `(org_id, operation, key, request_hash, response_ref)`.
+    /// Every row as `(organization_id, operation, key, request_hash, response_ref)`.
     /// `response_ref` is read as text (the crate has no sqlx `json` feature).
     async fn rows(&self) -> Vec<(String, String, String, String, Option<Value>)> {
         sqlx::query_as::<_, (String, String, String, String, Option<String>)>(
-            "SELECT org_id, operation, key, request_hash, response_ref::text \
+            "SELECT organization_id::text, operation, key, request_hash, response_ref::text \
              FROM idempotency_records ORDER BY operation, key",
         )
         .fetch_all(&self.pool)
@@ -232,12 +238,15 @@ async fn a_new_key_is_new_then_finished_then_replayed() {
 
     let rows = db.rows().await;
     assert_eq!(rows.len(), 1, "one row: {rows:?}");
-    let (org_id, operation, k, hash, response) = rows.into_iter().next().expect("one row");
-    assert!(!org_id.is_empty(), "org_id is the organisation's constant");
+    let (organization, operation, k, hash, response) = rows.into_iter().next().expect("one row");
+    assert_eq!(
+        organization, XC,
+        "the record belongs to the store's organisation"
+    );
     assert_eq!(
         (operation.as_str(), k.as_str(), hash.as_str()),
         ("rateDraftSubmit", "k-1", "h-1"),
-        "the row is keyed (org_id, operation, key) and keeps the hash"
+        "the row is keyed (organization_id, operation, key) and keeps the hash"
     );
     assert_eq!(
         response,
