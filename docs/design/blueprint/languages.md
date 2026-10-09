@@ -38,9 +38,9 @@
 |---|---|---|
 | L1 | `Lang` becomes `'th' \| 'en' \| 'zh'`. `Locale` becomes `'th-TH' \| 'en-GB' \| 'zh-CN'`. `<html lang>` becomes `zh-CN` for Chinese. | §15, L-A1 |
 | L2 | **Two audiences.** A **customer** screen speaks TH/EN/ZH. A **staff** screen (desk, staff, admin, devices, set-up, login, guides) speaks TH/EN only and **never** carries `zh`. | L-A4 |
-| L3 | **The audience is the folder.** Customer screens live under `web/src/screens/customer/**`, and every other folder is staff. The core reads the audience from the glob path, so no screen declares it and no shared list grows. | W10 point 1 (one file per folder, no shared table) |
+| L3 | **The audience is the folder.** Customer screens live under `web/src/screens/customer/**`, and every other folder is staff. The core reads the audience from the glob path, so no screen declares which tables must carry `zh` and no shared list grows. (The runtime audience is set by the customer entry, L5.) | W10 point 1 (one file per folder, no shared table) |
 | L4 | **A customer table must export a complete `zh`**: same keys and same placeholders as `th`, with no empty value. **A staff table must not export `zh`.** Either breach throws at page load, naming the screen, like a missing `en` key today. | L2, §18 *"ครบ"* |
-| L5 | **The switch offers what the page's audience speaks.** `AppShell` takes `audience: 'customer' \| 'staff'` from its page entry, and `LangSwitch` shows `TH / EN / 中文` or `TH / EN`. `setLang` ignores a language the current audience does not speak. A stored `xc.lang = 'zh'` opened on a staff page shows Thai (the default) and is not overwritten, so the customer's choice survives. | L2 |
+| L5 | **The switch offers what the page's audience speaks.** A customer page's entry module calls `setAudience('customer')` before it renders, and `LangSwitch` shows `TH / EN / 中文` or `TH / EN`. `setLang` ignores a language the current audience does not speak. A stored `xc.lang = 'zh'` opened on a staff page shows Thai (the default) and is not overwritten, so the customer's choice survives. | L2 |
 | L6 | **Per-key fallback is `zh → en → key`** on customer pages: it guards a shared key the shared `zh.ts` lacks, never Thai and never `''`. Staff pages keep today's `th`/`en` lookup unchanged. | #576 §3 |
 | L7 | **The Chinese is reviewed before its screen merges.** The ticket author drafts every `zh` string (L-A2). A person who reads Chinese checks the draft on that ticket, and the reviewer of the PR checks that the review is recorded there. No global switch-on flag is needed. | L-A2 |
 | L8 | Dates and currency names follow `locale()` / `lang()` as today, so they become Chinese with no screen change. `MoneyText` digits do not change (W7, §18 *"ไม่เปลี่ยน stored amount"*). | §15, §18 |
@@ -69,9 +69,9 @@ export const NATIVE_NAME: Record<Lang, string> = { th: 'ไทย', en: 'English
 // web/src/shared/i18n/index.ts   (LN-1)   [required: exported names and signatures; body proposed]
 export type { Lang, Audience } from './languages';
 export type Locale = (typeof LOCALE)[Lang];
-export function setAudience(a: Audience): void;            // called once by AppShell from its page entry
-// The audience starts as 'staff' [required]: a page that never calls setAudience('customer') (login, AuthLayout pages,
-// anything outside AppShell) is TH/EN. setAudience('customer') is the only way to get Chinese.
+export function setAudience(a: Audience): void;            // called once by a customer page's entry module, before render
+// The audience starts as 'staff' [required]: a page that never calls setAudience('customer') (every staff page, login, AuthLayout pages)
+// is TH/EN. setAudience('customer') is the only way to get Chinese.
 export function setLang(l: Lang): void;                    // ignored when l is not in SPOKEN[audience]
 export const lang: Accessor<Lang>;                          // the stored choice if the audience speaks it, else 'th'
 export const locale: Accessor<Locale>;
@@ -97,8 +97,10 @@ export const zh: Record<keyof typeof th, string> = { … };   // complete
 // web/src/screens/<any other folder>/i18n.ts keeps today's th + en, and exports no zh
 ```
 
-`AppShell.tsx` gains one prop, `audience: Audience` (required, no default, so every page entry states it). Today's
-pages pass `'staff'`. [required: the prop and its type; where the page entry sets it is proposed.]
+**No `AppShell` change.** Since the audience starts as `'staff'` (§3.1), a staff page needs no call and no prop. A customer page's
+entry module (`web/src/screens/customer/<x>/main.tsx`) calls `setAudience('customer')` once before `render`. [required]
+This replaces an earlier `AppShell` `audience` prop: that prop would have made LN-1 edit `AppShell.tsx` and every screen
+that renders it, the same files the look tickets LK-1/2/4/5 (#630–#634) hold. (Amended 2026-10-09 by the designer, claude/b060e9.)
 
 ### 3.2 Rules the core enforces (`collectScreens`, at page load, as today)
 
@@ -112,10 +114,14 @@ pages pass `'staff'`. [required: the prop and its type; where the page entry set
 
 ### 3.3 The switch
 
-`LangSwitch.tsx` renders one control per language in `SPOKEN[audience]` (`NATIVE_NAME`), the current one marked
-`aria-pressed`, each labelled `t('shell.langSwitch', { language: NATIVE_NAME[l] })`. On staff pages it shows `TH`
-and `EN`. [proposed: buttons. A `<select>` is fine if the customer page design prefers it. The behaviour is required:
-only the audience's languages, each label through `t`.]
+**Staff pages keep today's switch exactly.** That is one toggle button showing the *other* language (`EN` on a Thai page, `TH`
+on an English one), labelled `t('shell.langSwitch', { language: … })` (`LangSwitch.tsx:5-12` on `main`). Existing tests
+pin it (`AuthLayout.test.tsx:158-163`, `AppShell.lock.test.tsx:256`, `AdminShell.test.tsx`, `i18n.test.ts`), and LN-1
+changes none of them. **Customer pages** (audience `customer`, three languages) render one button per language in
+`SPOKEN.customer` (`TH`, `EN`, `中文`). The current one is marked `aria-pressed="true"`, and each is labelled
+`t('shell.langSwitch', { language: NATIVE_NAME[l] })`. [required: the staff toggle unchanged, and only the
+audience's languages on customer pages. proposed: buttons; a `<select>` is fine if the customer page design prefers it.]
+(Amended 2026-10-09 by the designer, claude/b060e9.)
 
 ## 4. Class diagram
 
@@ -127,7 +133,7 @@ classDiagram
   class SharedEn { <<web/src/shared/i18n/en.ts>> }
   class SharedZh { <<web/src/shared/i18n/zh.ts  new>> }
   class LangSwitch { <<web/src/shared/i18n/LangSwitch.tsx>> }
-  class AppShell { <<web/src/shared/ui/AppShell.tsx>> +audience }
+  class CustomerEntry { <<web/src/screens/customer/*/main.tsx>> }
   class CustomerTable { <<web/src/screens/customer/**/i18n.ts>> th; en; zh }
   class StaffTable { <<web/src/screens/(other)/**/i18n.ts>> th; en }
 
@@ -137,8 +143,7 @@ classDiagram
   I18nCore --> SharedZh
   I18nCore ..> CustomerTable : import.meta.glob
   I18nCore ..> StaffTable : import.meta.glob
-  AppShell --> I18nCore : setAudience
-  AppShell --> LangSwitch
+  CustomerEntry --> I18nCore : setAudience('customer')
   LangSwitch --> Languages : SPOKEN, NATIVE_NAME
   LangSwitch --> I18nCore : setLang, t
 ```
@@ -147,7 +152,7 @@ classDiagram
 
 | Provider | Used by | Fallback if not merged |
 |---|---|---|
-| LN-1 `Lang`, `Audience`, `screens/customer/**` rule, shared `zh.ts`, `AppShell` `audience` | every customer screen ticket (rate board P01 #548/#603, the member/booking web parts of #558, any other `customer/` screen) | none: a customer screen ticket starts after LN-1. Before it, a `zh` export would be ignored and untyped |
+| LN-1 `Lang`, `Audience`, `screens/customer/**` rule, shared `zh.ts` | every customer screen ticket (rate board P01 #548/#603, the member/booking web parts of #558, any other `customer/` screen) | none: a customer screen ticket starts after LN-1. Before it, a `zh` export would be ignored and untyped |
 | The Chinese reviewer (L-A2, L7) | each customer screen ticket | that ticket's PR waits |
 
 ## 5. Data migration
@@ -160,11 +165,11 @@ left in storage (L5). Customer `preferred_language` (§07) is #554's column, wit
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| LN-1 | core: `Lang`/`Locale` with `zh`, `languages.ts` (`Audience`, `SPOKEN`, `CUSTOMER_ROOT`), `setAudience`, the audience rules of §3.2 in `collectScreens`, fallback `zh → en → key` on customer pages, `HTML_LANG`, shared `zh.ts`, `LangSwitch` from `SPOKEN`, `AppShell`'s `audience` prop, and every existing page entry passing `'staff'` | `web/src/shared/i18n/{index.ts,languages.ts,zh.ts,LangSwitch.tsx}`; the i18n tests `web/src/shared/i18n/{i18n.test.ts,load.test.ts,namespace.test.ts,retrofit.test.tsx}`; `web/src/shared/ui/AppShell.tsx`; the `AppShell` call in each screen that renders it (measured on `main` `4495f5f`: `admin/AdminShell.tsx`, `devices/DevicesScreen.tsx`, `kiosk-currencies/main.tsx`, `kiosk-queue/main.tsx`, `receipt-sample/ReceiptSample.tsx`, `staff-guide/StaffGuide.tsx`; `login` now uses `AuthLayout` and is not touched); and **every existing test that renders `<AppShell>`**: `web/src/shared/ui/{AppShell.test.tsx,AppShell.landmark.test.tsx,AppShell.order.test.tsx,VersionFooter.test.tsx}` and `retrofit.test.tsx`. **The only change allowed in those five existing tests is adding `audience="staff"` to each `<AppShell>`;** nothing else in them changes (`AppShell.lock.test.tsx` renders no `<AppShell>` and is not touched). Before cutting the ticket, re-run `git grep -l '<AppShell' origin/main -- web/src` and add any new hit | this design |
+| LN-1 | core: `Lang`/`Locale` with `zh`, `languages.ts` (`Audience`, `SPOKEN`, `CUSTOMER_ROOT`), `setAudience` (audience starts `'staff'`), the audience rules of §3.2 in `collectScreens`, fallback `zh → en → key` on customer pages, `HTML_LANG`, shared `zh.ts`, `LangSwitch` from `SPOKEN` | `web/src/shared/i18n/{index.ts,languages.ts,zh.ts,LangSwitch.tsx}` and a new test file of its own. **No other file**: no `AppShell`, no screen, no existing test (the existing i18n tests stay green unchanged, since staff behaviour does not change) | this design |
 
 **Customer screens.** Every customer screen ticket cut after LN-1 merges puts its folder under
-`web/src/screens/customer/`, ships `th`, `en` and a complete `zh` in its own `i18n.ts`, and passes
-`audience: 'customer'`. Its ticket author drafts the `zh` strings in the ticket body (`key | th | en | zh`). A person
+`web/src/screens/customer/`, ships `th`, `en` and a complete `zh` in its own `i18n.ts`, and its `main.tsx` calls
+`setAudience('customer')` before `render`. Its ticket author drafts the `zh` strings in the ticket body (`key | th | en | zh`). A person
 who reads Chinese marks the draft checked on that ticket before the PR is reviewed (L7). The implementer copies the
 draft unchanged. Staff screen tickets (the Wave 3 desk, staff, staff report and documents screens included) stay
 TH/EN and carry no `zh`. Their designs' note "zh once #576 adds it" is superseded by L2 and should be removed in their
@@ -172,8 +177,8 @@ next edit.
 
 ### 6.1 Tests written before implementation (LN-1)
 
-- **Staff pages.** `setLang('zh')` changes nothing. A stored `xc.lang = 'zh'` shows Thai and stays in storage. The switch shows two buttons.
-- **No audience set.** With no `setAudience` call at all, the audience is `staff`. `LangSwitch` shows two buttons, and `setLang('zh')` does nothing. This keeps `LoginScreen.tsx` and `AuthLayout.tsx` untouched.
+- **Staff pages.** `setLang('zh')` changes nothing. A stored `xc.lang = 'zh'` shows Thai and stays in storage. The switch is still the single toggle (`EN`, then `TH` after a click).
+- **No audience set.** With no `setAudience` call at all, the audience is `staff`. `LangSwitch` is the single toggle, and `setLang('zh')` does nothing. This keeps `LoginScreen.tsx` and `AuthLayout.tsx` untouched.
 - **Customer pages, with a fixture table under `customer/`.**
   - `setLang('zh')` gives `lang()` `zh`, `locale()` `zh-CN` and `<html lang>` `zh-CN`.
   - The screen shows its `zh` text.
@@ -185,7 +190,12 @@ next edit.
   - a staff table that exports `zh`.
 - **Shared table.** `zh.ts` has every key of `th.ts`, no empty value and the same placeholders, plus an `error.<code>` for every `error.*` key.
 - **Errors in Chinese.** `errorText` on a customer page in Chinese shows the table text, else the server's message.
-- **`AppShell`.** It calls `setAudience` with its prop.
+- **No `AppShell` change.** A customer fixture page that calls `setAudience('customer')` gets three buttons from the `LangSwitch` that `AppShell` already renders.
+- **Every customer entry declares its audience before it renders.** This is the regression guard that the required `AppShell` prop gave in PR 607.
+  - The test reads every `web/src/screens/customer/*/main.tsx` through `import.meta.glob(..., { query: '?raw', eager: true })`.
+  - It asserts that each file calls `setAudience('customer')`, and that the call comes before its first `render(`.
+  - It passes vacuously until the first customer screen lands. From then on, an entry that forgets the call, or makes it after `render`, fails.
+  - (Added 2026-10-09 on claude/9e7ea4c7's review of PR 666.)
 
 ## 7. CI gates that measure this ticket
 
