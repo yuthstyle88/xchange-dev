@@ -1,0 +1,160 @@
+//! PgPublishedRates: PostgreSQL implementation of PublishedRates port.
+
+use futures::future::BoxFuture;
+use pos_error::AppResult;
+use rust_decimal::Decimal;
+use sqlx::{PgPool, Postgres, Row, Transaction};
+use uuid::Uuid;
+use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Rate, Side, UnitSize};
+
+use crate::domain::publication::publication::{Publication, PublicationId};
+use crate::domain::publication::published_rates::{
+    PublicationRef, PublishedRateLineId, PublishedRates, PublishedSide,
+};
+
+pub struct PgPublishedRates {
+    pool: PgPool,
+}
+
+impl PgPublishedRates {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl PublishedRates for PgPublishedRates {
+    fn current<'a>(
+        &'a self,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<Option<Publication>>> {
+        Box::pin(async move {
+            let row = sqlx::query(
+                "SELECT p.id, p.version, p.published_at, p.published_by, \
+                        p.approved_request_id::text, p.draft_id::text \
+                 FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 WHERE b.id = $1",
+            )
+            .bind(branch.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let r = match row {
+                Some(r) => r,
+                None => return Ok(None),
+            };
+
+            let id: Uuid = r.get(0);
+            let version: i32 = r.get(1);
+            let published_at: chrono::DateTime<chrono::Utc> = r.get(2);
+            let published_by: String = r.get(3);
+            let approved_request_id: String = r.get(4);
+            let draft_id: Option<String> = r.get(5);
+
+            Ok(Some(Publication {
+                id: PublicationId::new(id),
+                version,
+                published_at,
+                published_by,
+                approved_request_id,
+                draft_id,
+            }))
+        })
+    }
+
+    fn line_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        code: CurrencyCode,
+        side: Side,
+    ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>> {
+        Box::pin(async move {
+            let row = sqlx::query(
+                "SELECT l.id, l.buy_rate, l.sell_rate, l.unit_size, l.source_snapshot, p.id, p.version \
+                 FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 JOIN published_rate_lines l ON l.publication_id = p.id \
+                 WHERE b.id = $1 AND l.currency_code = $2 AND l.denomination_group = 'ALL'",
+            )
+            .bind(branch.as_str())
+            .bind(code.as_str())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let r = match row {
+                Some(r) => r,
+                None => return Ok(None),
+            };
+
+            let line_id: Uuid = r.get(0);
+            let buy_rate: Option<Decimal> = r.get(1);
+            let sell_rate: Option<Decimal> = r.get(2);
+            let unit_size_dec: Decimal = r.get(3);
+            let snapshot: serde_json::Value = r.get(4);
+            let pub_id: Uuid = r.get(5);
+            let pub_version: i32 = r.get(6);
+
+            let rate_dec = match side {
+                Side::Buy => buy_rate,
+                Side::Sell => sell_rate,
+            };
+
+            let rate = match rate_dec {
+                Some(d) => Rate::parse(&d.to_string())
+                    .map_err(|e| pos_error::AppError::Internal(format!("invalid rate: {e}")))?,
+                None => return Ok(None),
+            };
+
+            let unit_size = UnitSize::parse(&unit_size_dec.to_string())
+                .map_err(|e| pos_error::AppError::Internal(format!("invalid unit size: {e}")))?;
+
+            let buy_mode = snapshot.get("buy_mode").and_then(|v| v.as_str());
+            let sell_mode = snapshot.get("sell_mode").and_then(|v| v.as_str());
+            let side_mode = match side {
+                Side::Buy => buy_mode,
+                Side::Sell => sell_mode,
+            };
+            let is_manual = side_mode == Some("MANUAL");
+
+            let fetched_at_str = snapshot.get("fetched_at").and_then(|v| v.as_str());
+            let source_date = snapshot
+                .get("source_date")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+            let max_age = snapshot
+                .get("max_reference_age_hours")
+                .and_then(|v| v.as_i64());
+
+            let stale = if is_manual && fetched_at_str.is_none() {
+                false
+            } else if let (Some(fat_str), Some(max_hours)) = (fetched_at_str, max_age) {
+                if let Ok(fat) = chrono::DateTime::parse_from_rfc3339(fat_str) {
+                    let now = chrono::Utc::now();
+                    let age = now.signed_duration_since(fat.with_timezone(&chrono::Utc));
+                    age.num_seconds() > max_hours * 3600
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            Ok(Some(PublishedSide {
+                line_id: PublishedRateLineId::new(line_id),
+                rate,
+                unit_size,
+                publication: PublicationRef {
+                    id: PublicationId::new(pub_id),
+                    version: pub_version,
+                },
+                stale,
+                source_date,
+            }))
+        })
+    }
+}

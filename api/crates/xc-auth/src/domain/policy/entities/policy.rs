@@ -67,6 +67,10 @@ impl Policy {
                 | "adminCloseShift"
                 | "adminMoveStock"
                 | "adminSaveRate"
+                | "ratePolicySave"
+                | "rateDraft"
+                | "approvalDecide"
+                | "approvalRead"
                 | "adminCreateBranch"
                 | "adminAbandonRequest"
                 | "getConnectionStatus"
@@ -79,7 +83,7 @@ impl Policy {
                 let allowed = match act {
                     "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => true,
                     "reserveCustomer" | "saveTransaction" => role == Role::Front,
-                    "adminSaveRate" => role == Role::Rates,
+                    "adminSaveRate" | "rateDraft" => role == Role::Rates,
                     "adminOpenShift" | "adminCloseShift" => {
                         role == Role::Backend || role == Role::Manager
                     }
@@ -112,7 +116,7 @@ impl Policy {
         // and does not start with ops -> R5
         let in_write_list = match role {
             Role::Front => act == "reserveCustomer" || act == "saveTransaction",
-            Role::Rates => act == "adminSaveRate",
+            Role::Rates => act == "adminSaveRate" || act == "rateDraft",
             _ => false,
         };
         let recognized = act == "adminSnapshot"

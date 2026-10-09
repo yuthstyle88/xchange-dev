@@ -3969,9 +3969,13 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "thiserror",
  "tokio",
+ "uuid",
+ "xc-approval",
+ "xc-auth",
  "xc-kernel",
 ]
 
@@ -4017,6 +4021,7 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
+ "xc-approval",
  "xc-auth",
  "xc-exchange",
  "xc-kernel",
