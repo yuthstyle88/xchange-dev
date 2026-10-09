@@ -30,6 +30,18 @@ pub trait ShiftRepository: Send + Sync + 'static {
         branch: &BranchId,
     ) -> impl std::future::Future<Output = AppResult<Vec<StockMovement>>> + Send;
 
+    fn shift(
+        &self,
+        branch: &BranchId,
+        id: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send;
+
+    fn shift_movements(
+        &self,
+        branch: &BranchId,
+        shift_id: &str,
+    ) -> impl std::future::Future<Output = AppResult<Vec<StockMovement>>> + Send;
+
     fn is_request_abandoned<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
