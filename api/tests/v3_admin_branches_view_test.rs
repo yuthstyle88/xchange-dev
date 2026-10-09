@@ -11,12 +11,11 @@
 //!   (`adminCreateBranch`, `rpc.rs:277`), so the version of the branch on screen does not move
 //!   when the list changes, and the view answers `changed: true` with data whatever `since`
 //!   says.
-//! - `GET /ui/admin/` — the screen `web/pages/admin.html` declares (`xc-path="/ui/admin/"`,
-//!   `xc-gate="branch"`): the gate of v2's `/` (`PageKind::Branch`), answered as v2's `/`
-//!   answers every case it refuses; `/` stays v2's page; `/ui/admin` (no slash) is the plain
-//!   404 (ticket §8, done criterion 3). The screen table is read from a `dist` made of the
-//!   committed entry (`ScreenTable::from_dist`, as `ui_assets_test.rs` does), so no Node build is
-//!   needed: Vite rewrites only the entry's script, not its `meta`s.
+//! - The admin page's HTML entry was tested here at `/ui/admin/` until V2-switch (#472) moved it
+//!   to `/`. Those five page tests were retired by #472's up-front test commit; their
+//!   successors are in `v3_admin_switch_test.rs` (entry → `the_admin_entry_declares_root_with_the_branch_gate`,
+//!   served → `root_serves_the_v3_admin_entry_once_the_table_holds_it`, sign-in and refusals →
+//!   `root_refuses_as_v2s_branch_page_did`, `/ui/admin` → `the_review_path_redirects_to_root_keeping_the_query`).
 //!
 //! The view tests go through the server's whole route table with real sessions made at the
 //! real sign-in doors (`rpc_common`); branches are inserted with explicit, distinct
@@ -28,15 +27,10 @@ mod rpc_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use actix_web::http::{Method, StatusCode, header};
-use actix_web::{App as ActixApp, HttpRequest, test as atest, web};
-use common::{FakeDatabase, settings, state_with};
+use actix_web::http::Method;
 use compat_common::Person;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
@@ -47,10 +41,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
-use xchange::bootstrap;
 use xchange::presentation::http::v3::VIEWS;
-use xchange::presentation::pages::{SessionReader, Sessions};
-use xchange::presentation::screens::ScreenTable;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -495,266 +486,4 @@ fn the_generated_file_is_committed() {
     let committed = std::fs::read_to_string(&file)
         .unwrap_or_else(|e| panic!("web/src/shared/api/generated/{VIEW}.ts: {e}"));
     assert_eq!(committed, exported(), "{VIEW}.ts is what the DTOs generate");
-}
-
-// ── the admin page at /ui/admin/ (done criterion 3) ──────────────────────────
-
-const HOST: &str = "xc.test";
-const AS: &str = "x-test-as";
-
-/// Who is signed in, from the request header `x-test-as`, as in `ui_assets_test.rs`:
-/// `owner`, `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
-
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch, possibly empty");
-    Actor::staff("employee-7", role, BranchId::new(branch))
-}
-
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = req
-            .headers()
-            .get(AS)
-            .map(|v| v.to_str().expect("an ASCII header").to_owned())
-            .unwrap_or_default();
-        Box::pin(async move {
-            if spec.is_empty() {
-                return Sessions {
-                    owner: None,
-                    staff: None,
-                };
-            }
-            if spec == "owner" {
-                return Sessions {
-                    owner: Some(Actor::owner("owner-1")),
-                    staff: None,
-                };
-            }
-            if let Some(staff) = spec.strip_prefix("owner+") {
-                return Sessions {
-                    owner: Some(Actor::owner("owner-1")),
-                    staff: staff_of(staff),
-                };
-            }
-            Sessions {
-                owner: None,
-                staff: staff_of(&spec),
-            }
-        })
-    }
-}
-
-#[derive(Debug)]
-struct Page {
-    status: StatusCode,
-    location: Option<String>,
-    content_type: String,
-    cache_control: Option<String>,
-    nosniff: bool,
-    body: Vec<u8>,
-}
-
-impl Page {
-    fn text(&self) -> String {
-        String::from_utf8_lossy(&self.body).into_owned()
-    }
-}
-
-/// The committed entry `web/pages/admin.html`.
-fn admin_entry() -> Vec<u8> {
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/pages/admin.html");
-    std::fs::read(&file).unwrap_or_else(|e| panic!("web/pages/admin.html: {e}"))
-}
-
-/// A built `dist` holding the admin entry only (and Vite's manifest, so it counts as built).
-fn admin_dist() -> Scratch {
-    let dist = Scratch::new("dist");
-    std::fs::create_dir_all(dist.0.join("pages")).expect("pages/");
-    std::fs::create_dir_all(dist.0.join(".vite")).expect(".vite/");
-    std::fs::write(dist.0.join("pages/admin.html"), admin_entry()).expect("pages/admin.html");
-    std::fs::write(dist.0.join(".vite/manifest.json"), "{}").expect("manifest");
-    dist
-}
-
-/// `GET uri` as `who` on a server whose screen table is read from `dist`, with v2's pages in
-/// `fixtures/pages/web` (v2's `/` is its admin page).
-async fn page(dist: &Path, who: &str, uri: &str) -> Page {
-    let screens = ScreenTable::from_dist(dist)
-        .unwrap_or_else(|e| panic!("the dist {} must load: {e:?}", dist.display()));
-    let v2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pages/web");
-    let state = state_with(
-        settings(&[("APP_WEB__DIR", v2.to_str().expect("a UTF-8 path"))]),
-        FakeDatabase::Up,
-    );
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
-    let app = atest::init_service(
-        ActixApp::new()
-            .configure(move |cfg| bootstrap::configure_with_screens(cfg, state, screens))
-            .app_data(web::Data::from(reader)),
-    )
-    .await;
-    let mut req = atest::TestRequest::get()
-        .uri(uri)
-        .insert_header((header::HOST, HOST));
-    if !who.is_empty() {
-        req = req.insert_header((AS, who));
-    }
-    let resp = atest::call_service(&app, req.to_request()).await;
-    let value = |name: header::HeaderName| {
-        resp.headers()
-            .get(name)
-            .map(|v| v.to_str().expect("a text header").to_owned())
-    };
-    let status = resp.status();
-    let location = value(header::LOCATION);
-    let content_type = value(header::CONTENT_TYPE).unwrap_or_default();
-    let cache_control = value(header::CACHE_CONTROL);
-    let nosniff = value(header::X_CONTENT_TYPE_OPTIONS).as_deref() == Some("nosniff");
-    let body = atest::read_body(resp).await.to_vec();
-    Page {
-        status,
-        location,
-        content_type,
-        cache_control,
-        nosniff,
-        body,
-    }
-}
-
-fn is_admin_screen(p: &Page, what: &str) {
-    assert_eq!(p.status, StatusCode::OK, "{what}: body {:?}", p.text());
-    assert!(
-        p.content_type.starts_with("text/html"),
-        "{what}: Content-Type {:?}",
-        p.content_type
-    );
-    assert_eq!(
-        p.cache_control.as_deref(),
-        Some("no-cache"),
-        "{what}: Cache-Control"
-    );
-    assert!(p.nosniff, "{what}: nosniff");
-    assert_eq!(
-        p.body,
-        admin_entry(),
-        "{what}: the admin entry, unchanged (no XC_BRANCH, no version line)"
-    );
-}
-
-/// The entry declares `/ui/admin/` behind the `branch` gate (ticket §7 `admin.html`).
-#[test]
-fn the_admin_entry_declares_ui_admin_behind_the_branch_gate() {
-    let dist = admin_dist();
-    let table = ScreenTable::from_dist(&dist.0)
-        .unwrap_or_else(|e| panic!("the admin entry is a valid screen: {e:?}"));
-    assert!(table.holds("/ui/admin/"), "the table holds /ui/admin/");
-    assert!(!table.holds("/"), "/ is not switched here (V2-switch #472)");
-    let text = String::from_utf8(admin_entry()).expect("UTF-8");
-    assert!(
-        text.contains(r#"<meta name="xc-gate" content="branch">"#),
-        "xc-gate branch, as done criterion 2 greps it:\n{text}"
-    );
-    assert!(
-        text.contains(r#"<meta name="xc-path" content="/ui/admin/">"#),
-        "xc-path /ui/admin/, as done criterion 2 greps it:\n{text}"
-    );
-}
-
-/// Signed in as the owner or any employee: the entry, `no-cache`, `nosniff`.
-#[actix_web::test]
-async fn ui_admin_serves_the_entry_to_the_owner_and_to_staff() {
-    let dist = admin_dist();
-    for who in [
-        "owner",
-        "staff:FRONT:MAIN",
-        "staff:BACKEND:XC-B01",
-        "staff:RATES:MAIN",
-        "owner+staff:FRONT:MAIN",
-    ] {
-        is_admin_screen(
-            &page(&dist.0, who, "/ui/admin/").await,
-            &format!("GET /ui/admin/ as {who}"),
-        );
-    }
-    is_admin_screen(
-        &page(&dist.0, "owner", "/ui/admin/?branch=XC-B02").await,
-        "GET /ui/admin/?branch=XC-B02 as the owner",
-    );
-}
-
-/// Nobody signed in: 303 to `/login`, as v2's `/` answers.
-#[actix_web::test]
-async fn ui_admin_sends_nobody_to_login() {
-    let dist = admin_dist();
-    let v3 = page(&dist.0, "", "/ui/admin/").await;
-    assert_eq!(v3.status, StatusCode::SEE_OTHER, "{:?}", v3.text());
-    assert_eq!(v3.location.as_deref(), Some("http://xc.test/login"));
-    let v2 = page(&dist.0, "", "/").await;
-    assert_eq!(v3.status, v2.status, "as v2's /");
-    assert_eq!(v3.location, v2.location, "as v2's /");
-}
-
-/// Every case v2's `/` refuses, `/ui/admin/` refuses the same way (status, Location,
-/// Content-Type and body): `PageKind::Branch`'s gate (ticket §8).
-#[actix_web::test]
-async fn ui_admin_refuses_what_v2s_admin_page_refuses() {
-    let dist = admin_dist();
-    let cases = [
-        ("", ""),
-        ("owner", "?branch=%ff"),
-        ("owner", "?branch=XC_B02"),
-        ("owner", "?branch=bad%20name"),
-        ("staff:FRONT:", "?branch=XC-B02"),
-        ("staff:BACKEND:\"x", ""),
-    ];
-    let mut refused = 0;
-    for (who, query) in cases {
-        let v2 = page(&dist.0, who, &format!("/{query}")).await;
-        let v3 = page(&dist.0, who, &format!("/ui/admin/{query}")).await;
-        let what = format!("{query:?} as {who:?}");
-        assert_eq!(v3.status, v2.status, "{what}: v3 {:?}", v3.text());
-        if v2.status == StatusCode::OK {
-            is_admin_screen(&v3, &what);
-        } else {
-            refused += 1;
-            assert_eq!(v3.location, v2.location, "{what}: Location");
-            assert_eq!(v3.content_type, v2.content_type, "{what}: Content-Type");
-            assert_eq!(v3.body, v2.body, "{what}: body {:?}", v2.text());
-        }
-    }
-    assert!(refused >= 4, "the refusals were exercised: {refused}");
-    let bad = page(&dist.0, "owner", "/ui/admin/?branch=XC_B02").await;
-    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
-    assert_eq!(bad.text(), "Invalid branch");
-}
-
-/// `/` stays v2's admin page (the switch is V2-switch's), and `/ui/admin` without the slash is
-/// the plain 404 (`/ui/{tail}` answers only `assets/…`).
-#[actix_web::test]
-async fn slash_stays_v2s_page_and_ui_admin_without_a_slash_is_not_found() {
-    let dist = admin_dist();
-    let v2 = page(&dist.0, "owner", "/").await;
-    assert_eq!(v2.status, StatusCode::OK, "{:?}", v2.text());
-    assert!(
-        v2.text().contains("window.XC_BRANCH="),
-        "v2's page tells the branch"
-    );
-    assert_ne!(v2.body, admin_entry(), "/ is not the v3 entry");
-    let empty = Scratch::new("empty");
-    let before = page(&empty.0, "owner", "/").await;
-    assert_eq!(
-        v2.body, before.body,
-        "/ answers as it did with no v3 screen"
-    );
-
-    let bare = page(&dist.0, "owner", "/ui/admin").await;
-    assert_eq!(bare.status, StatusCode::NOT_FOUND, "{:?}", bare.text());
-    assert_eq!(bare.text(), "Not found");
 }

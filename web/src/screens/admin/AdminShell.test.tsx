@@ -495,7 +495,7 @@ describe('V2-shell: web/pages/admin.html (#460 §7)', () => {
     const doc = parse();
     expect(doc.documentElement.getAttribute('lang')).toBe('th');
     expect(doc.title).toBe('XCHANGE · แอดมินหน้าร้าน');
-    expect(metas(doc, 'xc-path')).toEqual(['/ui/admin/']);
+    expect(metas(doc, 'xc-path')).toEqual(['/']);
     expect(metas(doc, 'xc-gate')).toEqual(['branch']);
   });
 

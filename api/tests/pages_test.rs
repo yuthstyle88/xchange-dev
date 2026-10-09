@@ -668,6 +668,13 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     let scratch = Scratch::new("live");
     let app = app!(&scratch.0);
     let login_held = ScreenTable::compiled().holds("/login");
+    // a v2 branch page read from the directory: `/` until V2-switch (#472) hands it to the
+    // v3 admin screen, then `/desk` (`pages.rs` `PAGE_SPECS`)
+    let (live_path, live_file) = if ScreenTable::compiled().holds("/") {
+        ("/desk", "desk.html")
+    } else {
+        ("/", "admin.html")
+    };
 
     if login_held {
         let answer = ask(&app, get("/login", "none").to_request()).await;
@@ -683,7 +690,7 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
         .is_the_plain_404("before the file exists");
 
     scratch.write("login.html", "<html><body>first</body></html>");
-    scratch.write("admin.html", "<html><head></head><body>first</body></html>");
+    scratch.write(live_file, "<html><head></head><body>first</body></html>");
     scratch.write("late.js", "first();");
     if login_held {
         let answer = ask(&app, get("/login", "none").to_request()).await;
@@ -698,14 +705,11 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "first();");
-    let answer = ask(&app, get("/", "owner").to_request()).await;
+    let answer = ask(&app, get(live_path, "owner").to_request()).await;
     assert!(String::from_utf8_lossy(&answer.body).contains("<body>first"));
 
     scratch.write("login.html", "<html><body>second</body></html>");
-    scratch.write(
-        "admin.html",
-        "<html><head></head><body>second</body></html>",
-    );
+    scratch.write(live_file, "<html><head></head><body>second</body></html>");
     scratch.write("late.js", "second();");
     if login_held {
         let answer = ask(&app, get("/login", "none").to_request()).await;
@@ -720,7 +724,7 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "second();");
-    let answer = ask(&app, get("/", "owner").to_request()).await;
+    let answer = ask(&app, get(live_path, "owner").to_request()).await;
     assert!(String::from_utf8_lossy(&answer.body).contains("<body>second"));
 }
 

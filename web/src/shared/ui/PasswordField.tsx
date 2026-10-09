@@ -40,9 +40,9 @@ export function PasswordField(props: {
   });
 
   return (
-    <div>
+    <div class="xc-field">
       <label for={id}>{props.label}</label>
-      <div ref={wrapperEl}>
+      <div class="xc-password" ref={wrapperEl}>
         <input
           id={id}
           name={props.field.name}
@@ -59,11 +59,14 @@ export function PasswordField(props: {
         />
         <button
           type="button"
+          class="xc-reveal"
           onClick={toggle}
           aria-label={visible() ? t('field.password.hide') : t('field.password.show')}
           aria-pressed={visible() ? 'true' : 'false'}
         >
-          {visible() ? t('field.password.hide') : t('field.password.show')}
+          <span class="xc-reveal-text">
+            {visible() ? t('field.password.hide') : t('field.password.show')}
+          </span>
         </button>
       </div>
       {props.field.invalid() && props.field.error() && (
