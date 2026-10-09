@@ -11,9 +11,64 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A PR that only touches docs/** or *.md builds nothing (owner 2026-10-09; pilot
+  # 108-Plaza/rust-project-backend#700). The heavy jobs below are skipped by their job-level `if:`;
+  # a skipped job reports success to branch protection. A cancelled run reports them as cancelled,
+  # not skipped/green (measured: 108-Plaza/note-front-end-main run 37405196163,
+  # changes=cancelled test=cancelled). A push to main is judged the same way on before..after, so a
+  # merged doc PR does not build either. Anything else, an empty diff, a new branch or a push whose
+  # `before` the runner cannot resolve, a manual run, or a FAILED `changes` job => full CI.
+  changes:
+    name: changes
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          docs_only=false
+          files=
+          # --no-renames: a rename lists only its new path, so moving code into docs/ would
+          # read as docs-only and skip the build that just lost a file.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            # A new branch has before=000…0; a force-push can leave `before` unreachable. Both => full CI.
+            if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] \
+                && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              files=$(git diff --no-renames --name-only "$before" "${{ github.event.after }}")
+            fi
+          fi
+          if [ -n "$files" ]; then
+            echo "changed files:"; echo "$files"
+            if ! echo "$files" | grep -vqE '^docs/|\.md$'; then
+              docs_only=true
+              # A doc the build or a test reads is not a doc (pos108-core#2524 review): e.g.
+              # include_str!("../docs/x.md") in a guard test. Any such reader of a changed file
+              # => full CI. Over-matching only costs a full build; comments that merely mention
+              # a doc do not match (the reader call must be on the same line).
+              for f in $files; do
+                b=$(basename "$f" | sed 's/[][\.*^$()+?{}|]/\\&/g')
+                if git grep -qE "(include_(str|bytes)!|read_to_string|fs::read|readFileSync|readFile|File\(|open\().*${b}|${b}\?raw" \
+                    -- '*.rs' '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.py' '*.sh' '*.dart'; then
+                  echo "read by the build or a test: $f"; docs_only=false; break
+                fi
+              done
+            fi
+          fi
+          echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
+
   web:
     name: web
-    runs-on: [self-hosted, Linux, X64]
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    # Node only, so the idle macOS pool, not the saturated Linux pool (#611; owner 2026-10-09).
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 10
     steps:
       - name: Refuse to report green when the run was cancelled

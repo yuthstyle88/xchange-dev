@@ -11,8 +11,59 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A light job decides whether the api needs building, so a PR that does not touch api/, web/
+  # or the shared CI files (for example a docs-only PR) never waits for a Linux runner and never
+  # starts the postgres service (owner 2026-10-09; doc PR 565 waited 5 min for a Dell runner and
+  # started postgres only to skip every step). The decision is the same should-build.sh as before.
+  # The heavy `api` job is skipped at job level; a skipped job reports success for the required
+  # `api` check. A cancelled run reports `api` as cancelled, not skipped/green (measured:
+  # 108-Plaza/note-front-end-main run 37405196163, changes=cancelled test=cancelled).
+  # A FAILED `changes` job leaves skip_build empty => the full api job runs.
+  changes:
+    name: changes
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    outputs:
+      skip_build: ${{ steps.filter.outputs.skip_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Self-test should-build
+        run: bash .github/scripts/should-build.test.sh
+
+      - name: Check changed files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE"
+            HEAD="$PR_HEAD"
+          else
+            BASE="$PUSH_BEFORE"
+            HEAD="$PUSH_AFTER"
+          fi
+          should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+          should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+          echo "should_build_api=$should_build_api should_build_web=$should_build_web"
+          if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
+            skip_build=false
+          else
+            skip_build=true
+          fi
+          echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
+
   api:
     name: api
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_build != 'true' }}
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     services:
@@ -50,34 +101,7 @@ jobs:
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh
 
-      - name: Check changed files
-        id: filter
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.event.after }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            BASE="$PR_BASE"
-            HEAD="$PR_HEAD"
-          else
-            BASE="$PUSH_BEFORE"
-            HEAD="$PUSH_AFTER"
-          fi
-          should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-          should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-          echo "should_build_api=$should_build_api should_build_web=$should_build_web"
-          if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
-            skip_build=false
-          else
-            skip_build=true
-          fi
-          echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
-
       - name: Verify rustc 1.98.1
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         run: |
           if [ -d "$HOME/.cargo/bin" ]; then
@@ -93,29 +117,24 @@ jobs:
           fi
 
       - name: Check formatting
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         run: cargo fmt --all --check
 
       - name: Clippy
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Set up Node.js 24
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: "Web screens: typecheck, test, build"
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: |
           npm --prefix web ci --no-audit --no-fund
           npm --prefix web run check
 
       - name: Test
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/xchange_test
@@ -125,22 +144,18 @@ jobs:
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
       # api/static/xc-forms.js, so this fails when that file is not the build of its source.
       - name: Form helper typecheck and build check
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: |
           npm --prefix api/web/forms ci --no-audit --no-fund
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         run: cargo check --release --locked
 
       - name: Dependency policy
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: api
         run: |
           VERSION="0.19.9"

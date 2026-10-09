@@ -11,15 +11,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  app:
-    name: app
+  # A light job decides whether the app needs building (same should-build.sh as before), so a PR
+  # that does not touch app/ or the shared CI files (for example a docs-only PR) runs no Flutter
+  # job at all (owner 2026-10-09). The heavy `app` job is skipped at job level; a skipped job
+  # reports success for the required `app` check. A cancelled run reports `app` as cancelled, not
+  # skipped/green (measured: 108-Plaza/note-front-end-main run 37405196163, changes=cancelled
+  # test=cancelled). A FAILED `changes` job leaves skip_build empty => the full app job runs.
+  changes:
+    name: changes
     runs-on: [self-hosted, macOS, ARM64]
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      skip_build: ${{ steps.filter.outputs.skip_build }}
     steps:
-      - name: Refuse to report green when the run was cancelled
-        if: cancelled()
-        run: exit 1
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -50,8 +54,23 @@ jobs:
           fi
           echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
 
+  app:
+    name: app
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_build != 'true' }}
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up Flutter (use runner SDK)
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: |
           FLUTTER_ROOT="${FLUTTER_ROOT:-}"
           if [ -z "$FLUTTER_ROOT" ]; then
@@ -70,7 +89,6 @@ jobs:
           echo "$FLUTTER_ROOT/bin/cache/dart-sdk/bin" >> "$GITHUB_PATH"
 
       - name: Verify Flutter 3.44.0
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         run: |
           flutter --version
           VERSION=$(flutter --version | head -n 1)
@@ -80,26 +98,21 @@ jobs:
           fi
 
       - name: Install dependencies
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: app
         run: flutter pub get
 
       - name: Check formatting
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: app
         run: dart format --output=none --set-exit-if-changed lib test
 
       - name: Analyze
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: app
         run: flutter analyze
 
       - name: Test
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: app
         run: flutter test
 
       - name: Build web
-        if: ${{ steps.filter.outputs.skip_build != 'true' }}
         working-directory: app
         run: flutter build web --release
