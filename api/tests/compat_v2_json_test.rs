@@ -778,16 +778,34 @@ fn branches_json_prints_main_without_a_request_id() {
             id: main_branch(),
             name: "XC-B".to_string(),
             request_id: None,
+            // OR-1 (#550 §6): the branch profile; branches_json prints none of it.
+            code: None,
+            address: None,
+            timezone: "Asia/Bangkok".to_string(),
+            opening_hours: None,
+            booking_enabled: false,
         },
         Branch {
             id: BranchId::new("B00000000-0000-4000-8000-0000000a0002"),
             name: "Airport".to_string(),
             request_id: Some("00000000-0000-4000-8000-0000000a0002".to_string()),
+            // OR-1 (#550 §6): the branch profile; branches_json prints none of it.
+            code: None,
+            address: None,
+            timezone: "Asia/Bangkok".to_string(),
+            opening_hours: None,
+            booking_enabled: false,
         },
         Branch {
             id: BranchId::new("B00000000-0000-4000-8000-0000000a0003"),
             name: "Old Town".to_string(),
             request_id: Some("00000000-0000-4000-8000-0000000a0003".to_string()),
+            // OR-1 (#550 §6): the branch profile; branches_json prints none of it.
+            code: None,
+            address: None,
+            timezone: "Asia/Bangkok".to_string(),
+            opening_hours: None,
+            booking_enabled: false,
         },
     ];
     let printed = branches_json(&branches);
@@ -1128,6 +1146,12 @@ fn text_that_starts_with_a_formula_sign_is_printed_as_typed() {
             id: BranchId::new("B1"),
             name: typed.to_string(),
             request_id: None,
+            // OR-1 (#550 §6): the branch profile; branches_json prints none of it.
+            code: None,
+            address: None,
+            timezone: "Asia/Bangkok".to_string(),
+            opening_hours: None,
+            booking_enabled: false,
         };
         let printed = branches_json(&[branch]);
         assert_eq!(member(&items(&printed)[0], "name").to_value(), json!(typed));

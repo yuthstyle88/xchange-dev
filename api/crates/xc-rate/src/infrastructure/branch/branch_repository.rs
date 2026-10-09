@@ -8,7 +8,30 @@ use xc_kernel::ids::BranchId;
 use crate::domain::branch::entities::branch::Branch;
 use crate::domain::branch::repositories::branch_repository::BranchRepository;
 
-type BranchRow = (String, String, Option<String>);
+type BranchRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<serde_json::Value>,
+    bool,
+);
+
+fn row_to_branch(row: BranchRow) -> Branch {
+    let (id, name, request_id, code, address, timezone, opening_hours, booking_enabled) = row;
+    Branch {
+        id: BranchId::new(id),
+        name,
+        request_id,
+        code,
+        address,
+        timezone,
+        opening_hours,
+        booking_enabled,
+    }
+}
 
 #[derive(Clone)]
 pub struct PgBranchRepository {
@@ -24,36 +47,25 @@ impl PgBranchRepository {
 impl BranchRepository for PgBranchRepository {
     async fn list(&self) -> AppResult<Vec<Branch>> {
         let rows = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::Database)?;
 
-        Ok(rows
-            .into_iter()
-            .map(|(id, name, request_id)| Branch {
-                id: BranchId::new(id),
-                name,
-                request_id,
-            })
-            .collect())
+        Ok(rows.into_iter().map(row_to_branch).collect())
     }
 
     async fn find_by_id(&self, id: &BranchId) -> AppResult<Option<Branch>> {
         let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id FROM branches WHERE id = $1",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE id = $1",
         )
         .bind(id.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(AppError::Database)?;
 
-        Ok(row.map(|(id, name, request_id)| Branch {
-            id: BranchId::new(id),
-            name,
-            request_id,
-        }))
+        Ok(row.map(row_to_branch))
     }
 
     async fn branch_exists(&self, id: &BranchId) -> AppResult<bool> {
@@ -70,18 +82,14 @@ impl BranchRepository for PgBranchRepository {
         request_id: &str,
     ) -> AppResult<Option<Branch>> {
         let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id FROM branches WHERE request_id = $1",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE request_id = $1",
         )
         .bind(request_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
-        Ok(row.map(|(id, name, request_id)| Branch {
-            id: BranchId::new(id),
-            name,
-            request_id,
-        }))
+        Ok(row.map(row_to_branch))
     }
 
     async fn is_abandoned(
@@ -129,7 +137,7 @@ impl BranchRepository for PgBranchRepository {
         request_id: &str,
     ) -> AppResult<()> {
         sqlx::query(
-            "INSERT INTO branches (id, name, created_at, created_by, request_id) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO branches (id, name, created_at, created_by, request_id, code) VALUES ($1, $2, $3, $4, $5, $1)",
         )
         .bind(id)
         .bind(name)

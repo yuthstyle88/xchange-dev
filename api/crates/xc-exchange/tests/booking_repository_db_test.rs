@@ -457,6 +457,8 @@ async fn the_columns_are_the_designs() {
             col("token_hash", "text", "NO"),
             col("verified_at", TZ, "NO"),
             col("verified_by", "text", "NO"),
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     assert_eq!(
@@ -482,6 +484,8 @@ async fn the_columns_are_the_designs() {
             col("submission_id", "text", "YES"),
             col("transaction_ref", "text", "YES"),
             col("unit_size", "numeric", "NO"), // RU-1 (#595)
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     let sizes: Vec<Size> = sqlx::query_as(

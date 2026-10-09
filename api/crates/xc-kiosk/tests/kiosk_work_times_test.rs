@@ -152,7 +152,8 @@ async fn old_columns(pool: &PgPool) -> Value {
     let rows = sqlx::query(
         // `unit_size` is added later by RU-1's migration (#595, `20261010100000_rate_units.sql`) and is
         // checked by `xc-rate/tests/currency_register_test.rs`; it is not a column the older binary knows.
-        "SELECT (to_jsonb(r) - 'started_at' - 'completed_at' - 'unit_size')::text AS row \
+        // `organization_id` is OR-1's (#615), checked by `xc-rate/tests/organizations_migration_test.rs`.
+        "SELECT (to_jsonb(r) - 'started_at' - 'completed_at' - 'unit_size' - 'organization_id')::text AS row \
          FROM kiosk_requests r ORDER BY branch_id, id",
     )
     .fetch_all(pool)
@@ -236,8 +237,8 @@ async fn the_migration_adds_two_nullable_times_and_nothing_else() {
     .await
     .expect("count the columns");
     assert_eq!(
-        count, 18,
-        "the fifteen columns of the kiosk table, the two new ones and RU-1's unit_size (#595)"
+        count, 19,
+        "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595) and OR-1's organization_id (#615)"
     );
     db.finish().await;
 }
