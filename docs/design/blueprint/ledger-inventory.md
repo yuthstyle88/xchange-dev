@@ -192,6 +192,7 @@ pub struct PostingRequest {
     pub currency: CurrencyCode, pub quantity: ForeignAmount,   // THB as ForeignAmount with minor unit 2
     pub source: SourceRef,                                      // (source_type, source_id, source_key)
     pub line: Option<TransactionLineId>,                       // #551's line, for cost freezing
+    pub reverses: Option<TransactionLineId>,                   // #552: value this leg at that line's frozen cost (§4.6)
 }
 pub trait CashPostings: Send + Sync {
     fn post_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, req: &'a [PostingRequest],
@@ -199,8 +200,10 @@ pub trait CashPostings: Send + Sync {
     fn expected_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, place: &'a CashPlace)
                    -> BoxFuture<'a, AppResult<Balances>>;
 }
-pub struct PostingResult { pub posting_id: PostingId, pub costs: Vec<LineCost> }   // per request with a `line`
+pub struct PostingResult { pub posting_id: PostingId, pub costs: Vec<LineCost>,    // per request with a `line`
+                          pub reversed: Vec<ReversedCost> }                         // per request with `reverses` (§4.6)
 pub struct LineCost { pub line: TransactionLineId, pub cost_basis_thb: Money, pub realized_margin_thb: Option<Money> }
+pub struct ReversedCost { pub reverses: TransactionLineId, pub cost_thb: Money, pub difference_thb: Money }
 ```
 
 - `Outside` of the cash design becomes `Customer` (an exchange's counterparty) or `Bank` (non-cash payments and
@@ -270,6 +273,30 @@ One posting, `source_type EXCHANGE`, `source_key complete`, per currency balance
   above zero, the difference between that provisional cost and the acquisition's unit cost on the negative quantity
   is posted as an `ADJUST` movement (and a `realized_margin_thb` correction line on the adjustment posting), so the
   average restarts from real cost. `[proposed]`; the Blueprint leaves it to *"negative stock policy"* (§12).
+
+### 4.6 A reversal (#552, `reversal.md` V-6)
+
+A reversal values its foreign leg at the **original line's frozen cost**, not at today's average. The caller says so
+with `reverses`; `LedgerCashPostings` reads that line's `cost_basis_thb` (call it `C`) and its `shop_side`, inside
+the posting's transaction:
+
+- **Reversing a BUY** (the shop gives back the `q` it bought): `DISPOSE` of `q` at `C`, not at the average. The position
+  becomes `quantity − q`, `cost_thb − C`. The foreign entries carry `±C`.
+- **Reversing a SELL** (the shop takes back the `q` it sold): `ACQUIRE` a lot of `q` with `unit_cost_thb = C ÷ q`
+  (8 places HALF_UP) and `cost_thb_signed = +C` exactly. The position becomes `quantity + q`, `cost_thb + C`.
+- **The last unit:** when a reversed BUY takes the position to exactly zero, the whole remaining `cost_thb` is moved,
+  as §4.3's last-unit rule, so no crumb is left. `difference_thb = moved − C`; it is `0` in every other case.
+- **Negative stock:** with an approved `NEGATIVE_STOCK` request (§5.1) the dispose is still at `C`; no average is
+  needed.
+- **What it returns:** one `ReversedCost` per request with `reverses`, and **no `LineCost`**. `LedgerCashPostings`
+  writes nothing on `transaction_lines`, so the original's figures are never rewritten (`reversal.md` V-2). The caller
+  records `difference_thb` on its own row.
+- **Refusals** (`validationFailed`): `line` and `reverses` both set; `reverses` on a THB request; `reverses` with a
+  `source_type` other than `REVERSAL`; a referenced line whose `cost_basis_thb` is NULL (not completed through the
+  ledger).
+- THB requests carry neither field and move at face value, as in §4.3.
+
+Owned by **LG-2**, with the rest of the port's final shape (§10).
 
 ---
 
@@ -435,7 +462,7 @@ database with rows.
 |---|---|---|---|
 | LG-0 | `BranchTx::run_pair(a, b, f)`: one transaction, both `branch_versions` rows created if absent and locked `FOR UPDATE` in the same order (`MAIN` first, then ascending `branch_id`), both versions bumped on commit; `a == b` behaves as `run` | `api/crates/xc-kernel/src/branch_tx.rs` (one new method beside `run`) and its tests | this design |
 | LG-1 | tables and domain: accounts, postings, entries, the balance trigger; positions, lots, movements; `WeightedAverage` | `xc-cash/src/domain/{ledger,inventory}/**`, `xc-cash/src/infrastructure/{ledger,inventory}/**` (new); migration 1 | #582 CA-3 |
-| LG-2 | `LedgerCashPostings` and the port's final shape (§4.1) | `xc-cash/src/domain/posting.rs` (shape), `xc-cash/src/infrastructure/ledger_postings.rs` (new) | LG-0, LG-1 |
+| LG-2 | `LedgerCashPostings` and the port's final shape (§4.1), including the reversal rule (§4.6) | `xc-cash/src/domain/posting.rs` (shape), `xc-cash/src/infrastructure/ledger_postings.rs` (new) | LG-0, LG-1 |
 | LG-3 | the two approval subjects and `CountDifferenceGate`; `cash_limits` commands | `xc-cash/src/application/ledger_approval/{negative_stock,count_difference}.rs`, `http/v3/commands/ledger/limits.rs` (outside CA-8's `commands/cash/**`) | LG-1, AP-1 |
 | LG-4 | cutover: wire `LedgerCashPostings` in bootstrap, remove `InterimCashPostings`; `TransferFlow::receive` onto `run_pair`; migration 2 | `api/src/bootstrap/mod.rs` (one line), `interim_postings.rs` (deleted), the file of `TransferFlow::receive` under `xc-cash/src/application/transfer/` (#582 CA-5's; the `BranchTx` call only); migration 2 | LG-0, LG-2, #551 TX-5, #582 CA-5, #582 CA-7 |
 | LG-5 | the count-difference hook in `CashCountService::verify` | `xc-cash/src/application/count/count_service.rs` (cash design §5, `CashCountService`; the one call only) | LG-3, CA-3 |
@@ -448,7 +475,7 @@ database with rows.
 |---|---|
 | LG-0 | `run_pair(A, B)` and `run_pair(B, A)` started at once both commit (no deadlock, measured with a barrier, repeated); both versions move by one on commit and neither on rollback; `run_pair(A, A)` = `run(A)` |
 | LG-1 | an unbalanced posting (per currency) is refused at commit; the same `(source, key)` twice is one posting; `WeightedAverage`: buy 100 USD at 3,200 then 100 at 3,300 ⇒ average 32.50; selling 50 costs 1,625.00; selling the last unit takes the whole remaining cost |
-| LG-2 | `v2_shift_cases.json` and `v2_stock_cases.json` give the same `expected` through `LedgerCashPostings` as through `InterimCashPostings`; a BUY posts a lot and NULL margin; a SELL freezes `cost_basis_thb` and `realized_margin_thb = thb_amount − cost`; non-cash THB goes to `BANK`, not the drawer; a move inside a branch changes no position |
+| LG-2 | `v2_shift_cases.json` and `v2_stock_cases.json` give the same `expected` through `LedgerCashPostings` as through `InterimCashPostings`; a BUY posts a lot and NULL margin; a SELL freezes `cost_basis_thb` and `realized_margin_thb = thb_amount − cost`; non-cash THB goes to `BANK`, not the drawer; a move inside a branch changes no position; **§4.6 after the average has moved**: buy 100 USD at 32.00, buy 100 at 34.00, then a `reverses` request on the first buy disposes 3,200.00 (not the average 3,300.00) and leaves 100 at 3,400.00; a reversed SELL acquires a lot at the original `cost_basis_thb` whatever the average is; buy 100 at 32.00, sell 50, buy 50 at 34.00, reverse the first buy ⇒ the position ends at 0 / 0.00 and `difference_thb = 100.00`; `line` and `reverses` together ⇒ `validationFailed`; the original line is unchanged |
 | LG-3 | a shortfall without approval ⇒ `stockInsufficient`; with an APPROVED `NEGATIVE_STOCK` request ⇒ posted and the position goes negative; a teller cannot approve; a difference above the limit waits for FINANCE; a NULL limit sends every non-zero difference to FINANCE |
 | LG-4 | migration 2 on a seeded DB: every OPEN shift's expected equals its drawer balance after the backfill; reconciliation (§6) is clean; a BRANCH transfer received through `TransferFlow::receive` moves both branches' versions, and two opposite receipts at once both complete |
 | LG-7 | each of the five checks fails on a hand-broken row and passes on a clean ledger; check 3 holds for a BRANCH transfer DISPATCHED and not received (sender's `IN_TRANSIT` and position both carry it), after a short receipt before reconcile, and after reconcile (`VARIANCE` + `ADJUST`); check 5 holds for a SELL with a margin; **a receipt moves the sender's and the receiver's `branch_versions`**; two opposite receipts (A→B and B→A, both USD) run at once both complete |
