@@ -89,15 +89,15 @@ fn map_booking(row: &sqlx::postgres::PgRow) -> AppResult<Booking> {
 
     let code_str: String = row.try_get("code").map_err(AppError::Database)?;
     let currency = CurrencyCode::parse(code_str.trim())
-        .map_err(|e| AppError::Internal(format!("invalid stored currency {code_str}: {e:?}")))?;
+        .map_err(|e| AppError::Internal(format!("invalid stored currency {code_str}: {e}")))?;
 
     let amount_str: String = row.try_get("amount").map_err(AppError::Database)?;
     let amount = Money::parse(&amount_str)
-        .map_err(|e| AppError::Internal(format!("invalid stored amount {amount_str}: {e:?}")))?;
+        .map_err(|e| AppError::Internal(format!("invalid stored amount {amount_str}: {e}")))?;
 
     let rate_str: String = row.try_get("rate").map_err(AppError::Database)?;
     let rate = Rate::parse(&rate_str)
-        .map_err(|e| AppError::Internal(format!("invalid stored rate {rate_str}: {e:?}")))?;
+        .map_err(|e| AppError::Internal(format!("invalid stored rate {rate_str}: {e}")))?;
 
     let branch_str: String = row.try_get("branch_id").map_err(AppError::Database)?;
 
