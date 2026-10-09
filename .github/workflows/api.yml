@@ -43,9 +43,6 @@ jobs:
       - name: Self-test api-test-plan
         run: bash .github/scripts/api-test-plan.test.sh
 
-      - name: Self-test main-push-base
-        run: bash .github/scripts/main-push-base.test.sh
-
       - name: Check changed files
         id: filter
         env:
@@ -54,32 +51,21 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
-          REF: ${{ github.ref }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE="$PR_BASE"
             HEAD="$PR_HEAD"
-          elif [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
-            BASE=$(bash .github/scripts/main-push-base.sh api "$PUSH_AFTER" 2>/dev/null || true)
-            HEAD="$PUSH_AFTER"
           else
             BASE="$PUSH_BEFORE"
             HEAD="$PUSH_AFTER"
           fi
-
-          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ] && [ -z "$BASE" ]; then
-            echo "No successful ancestor run on main found — running full build."
+          should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+          should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+          echo "should_build_api=$should_build_api should_build_web=$should_build_web"
+          if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
             skip_build=false
           else
-            should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-            should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-            echo "should_build_api=$should_build_api should_build_web=$should_build_web"
-            if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
-              skip_build=false
-            else
-              skip_build=true
-            fi
+            skip_build=true
           fi
           echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
 
