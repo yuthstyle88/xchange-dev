@@ -48,7 +48,7 @@ Blueprint item.
 | K7 | **A customer account is a `User` with role CUSTOMER linked to one customer** (`customers.user_id UNIQUE`). `access::Actor.customer_id` is filled from that link when the session is built. A walk-in customer has no user. Duplicates are **not** merged automatically: a merge is a later workflow (open item O-1). | #550 §5.4 (`org-roles-branches.md:375-378`), §07 `:420` *"merge duplicate ผ่าน workflow"* |
 | K8 | **Who sees what.** No list, export or log carries an identity value. A value is shown only through `reveal`, which needs `IdentityDocumentRead` (TELLER, VERIFICATION_REVIEWER; never MARKETING) and writes an audit row of who, when, which customer, which identity field and why: never the value or its `lookup_hash`. Elsewhere a value shows as its last 4 characters. | §02 (`:50-62`), §07 Audit `:500-501`, #550 §3.4 |
 | K9 | **I-2, the token verifier**, is named here (#550 §5.2 asks this design to name it): `TokenVerifier` (trait) and `JwksTokenVerifier`, in `xc-auth`, checking EdDSA signature, `iss = auth-service`, `aud = xchange` and expiry against the xchange Identity's JWKS. Staff, the owner and customers all verify through it. | #550 `:353-356`, `:424`; PR 593 `deploy/HOST-do-sgp1.md` §4 |
-| K10 | **No identity value in any log.** A database error's detail (which can carry `Key (…)=(…)`) is dropped from `AppError`'s `Display`/`Debug`. | §07 `:501` |
+| K10 | **No identity value in any log.** `AppError` (crate `pos-error`, `108-platform-services` rev `8b53cee`) logs 5xx with `Display` (`%self`), which for a Postgres error prints only the message (`sqlx-postgres-0.9.0/src/error.rs:157-165`). The leak is **`Debug`**: `PgDatabaseError`'s `Debug` prints `detail` (`:135-141`), i.e. `Key (…)=(…)` with the clashing value. xchange formats errors with `?` at 14 `tracing` call sites (`api/src/bootstrap/mod.rs:144` (the expired-session purge, a DB error), `api/src/presentation/http/rpc.rs:122`, `files.rs:89`, `documents.rs:208`, `kiosk.rs:125,155,217`, `reference_rates.rs:82`, `device_agent.rs:127,164,214,251,277`, `extractors/actor.rs:80`, measured at `c891e06` with `git grep -nE "error = \?" c891e06 -- api/src` = 14). Those sites log with `%` (Display), and a guard test refuses `error = ?` in `api/src` (CI-9). | §07 `:501` |
 
 ## 3. Who does what
 
@@ -184,12 +184,13 @@ It is not under `xc-auth/src/{domain,infrastructure}/identity/**`, which #550's 
 classDiagram
   class PiiCipher { <<xc-kernel pii/cipher.rs>> +encrypt(aad, plain) Sealed +decrypt(aad, sealed) }
   class LookupHasher { <<xc-kernel pii/lookup_hash.rs>> +hash(IdentityType, normalized) }
-  class Normalize { <<xc-kernel pii/normalize.rs>> +normalize(IdentityType, raw) }
+  %% LookupHasher::hash = HMAC(hk, TYPE || 0x1f || normalized)
+  class Normalize { <<xc-kernel pii/normalize.rs>> +normalize(IdentityType, raw, nationality?) }
   class PiiKeys { <<xc-kernel pii/key_file.rs  /etc/xc-v3/pii.key>> +load(path) }
   class Masked { <<xc-kernel pii/masked.rs  last 4>> }
   class Customer { <<xc-customer domain/customer.rs>> id; organization_id; customer_no; display_name; status; user_id? }
   class CustomerIdentity { <<xc-customer domain/identity.rs>> type; encrypted_value; key_id; lookup_hash; status }
-  class IdentityType { <<enum xc-customer domain/identity_type.rs>> PASSPORT; NATIONAL_ID; PHONE; EMAIL }
+  class IdentityType { <<enum xc-kernel pii/identity_type.rs  used by xc-customer, not copied>> PASSPORT; NATIONAL_ID; PHONE; EMAIL }
   class CustomerRepository { <<trait xc-customer domain/repository.rs>> }
   class PgCustomerRepository { <<xc-customer infrastructure/repository.rs>> }
   class CustomerService { <<xc-customer application/customer_service.rs>> +reserve() +confirm_in() +reveal() +find() }
@@ -284,12 +285,13 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 |---|---|---|---|
 | CI-1 | schema (§4.1, M1) | `api/migrations/20261019100000_customers_org.sql` | this design, #550 OR-1 and OR-2 |
 | CI-2 | I-2 token verifier (§4.5) | `xc-auth/src/domain/token/**`, `xc-auth/src/infrastructure/token/**`, `xc-auth/Cargo.toml` (the JWT and HTTP client dependencies), its tests | this design only |
-| CI-3 | PII core (§4.1 keys, normalisation; K3, K10) | `xc-kernel/src/pii/**`, `xc-kernel/src/error.rs` (detail dropped), `xc-kernel/Cargo.toml` | this design only |
+| CI-3 | PII core (§4.1 keys, normalisation; K3) | `xc-kernel/src/pii/**`, `xc-kernel/src/lib.rs` (one `pub mod pii;` line), `xc-kernel/Cargo.toml` | this design only |
 | CI-4 | `xc-customer` crate: customer, identity, `CustomerService` (`reserve`, `confirm_in`, `reveal`, `find`), the repository; the move out of `xc-exchange` | `api/crates/xc-customer/**`, `xc-exchange/src/{domain,application,infrastructure}/customer/**` (deleted), the retired tests of §6 | CI-1, CI-3, PR 570 AP-1 |
 | CI-5 | callers re-pointed: the desk's `reserveCustomer`, the save's re-check and digest, snapshot, bookings and custody ports, `admin_customers` organisation-wide | `api/src/application/compat/rpc.rs` (the `reserveCustomer` arm), `save_transaction.rs`, `compat/snapshot.rs`, `infrastructure/bookings/booking_ports.rs`, `infrastructure/custody/custody_ports.rs`, `views/admin_customers.rs`, `api/Cargo.toml` | CI-4 |
 | CI-6 | consent and retention: `ConsentService`, `RetentionJob`, `consentTextPublish`, `retentionSet`, the `ConsentPolicyManage` row, view `consent_texts` | `xc-customer/src/{domain,application}/{consent*,retention*}`, `http/v3/commands/{consent_text_publish,retention_set}.rs`, `views/consent_texts.rs`, `xc-auth/.../role_permissions.rs` (one row) | CI-4, PR 570 CM-1 |
 | CI-7 | customer account: `customerRegister`, `consentRecord`, `profileUpdate`, view `my_profile`, `Actor.customer_id` filled at session build | `http/v3/commands/{customer_register,consent_record,profile_update}.rs`, `views/my_profile.rs`, the `customer_id` lookup in OR-3's session builder (one function) | CI-6, #550 OR-3 |
 | CI-8 | admin screens: consent texts and retention (EXECUTIVE) | `web/src/screens/admin/consent/**` | CI-6 |
+| CI-9 | no `Debug`-formatted error in any log (K10): the 14 `error = ?` call sites log `error = %…`; a guard test fails on `error = ?` in `api/src` | the 8 files holding the 14 sites of K10 (incl. `api/src/bootstrap/mod.rs`), `api/tests/log_no_debug_errors_test.rs` | this design only |
 
 The desk's own screen (`steps/customer`, #536 O-6) and the customer app (#558) use CI-5/CI-7 and are not cut here.
 
@@ -299,12 +301,13 @@ The desk's own screen (`steps/customer`, #536 O-6) and the customer app (#558) u
 |---|---|
 | CI-1 | on a fresh database every migration applies in version order; with one customer row present M1 refuses with the U4 sentence; the unique index refuses a second ACTIVE identity with the same (organisation, type, hash) and allows it once the first is REVOKED; `consents` has no UPDATE path (a trigger or the repository refuses) |
 | CI-2 | a JWT signed by the JWKS key with the right `iss`/`aud`/`exp` verifies; a wrong signature, `iss`, `aud`, an expired token, an `alg` other than EdDSA each refused with their `TokenError`; an unknown `kid` refetches once; an unreachable JWKS answers `KeysUnavailable` |
-| CI-3 | encrypt then decrypt round-trips; a changed AAD fails; the newest key encrypts and an older one still decrypts; the hash is stable across encryption-key rotation; normalisation of each type (passport spacing and case, Thai `0…` phone → `+66…`, e-mail case); `AppError` of a unique violation prints no `Key (…)=(…)` |
+| CI-3 | encrypt then decrypt round-trips; a changed AAD fails; the newest key encrypts and an older one still decrypts; the hash is stable across encryption-key rotation; normalisation of each `IdentityType` (passport spacing and case, Thai `0…` phone → `+66…`, e-mail case) |
 | CI-4 | the same passport and nationality reserved at two branches gives **one** customer; a concurrent reserve of one passport gives one customer; `confirm_in` refuses a different passport (`NOT_THIS_PASSPORT`); `reveal` without `IdentityDocumentRead` refused, with it returns the value and writes one audit row whose stored columns hold neither the value, its `lookup_hash` nor its last 4 (asserted by reading the row back); `consentRecord`/`customerRegister` in a language with no published text of that purpose refused `consentTextMissing` with nothing written; no list method returns an identity value; the six reserve sentences unchanged |
 | CI-5 | the desk's reserve and save work end to end with hashes; the stored `payload_hash` no longer changes when only the passport's spelling (spacing/case) changes; `admin_customers` with `branch` lists customers who transacted there; no view or CSV carries a passport number |
 | CI-6 | publishing a text makes a new version and never changes an old one; registering without a published `TERMS` in the request's language refused (`consentTextMissing`), also when `TERMS` exists in another language; withdrawing MARKETING for SMS makes `marketing_allowed(SMS)` false and leaves EMAIL unchanged; the purge job deletes nothing for a type with no period and deletes a REVOKED identity older than its period |
 | CI-7 | a verified Identity user registers once and becomes CUSTOMER with a customer and a TERMS consent row; a second register refused; a CUSTOMER reading another customer's profile → `outOfScope`; `Actor.customer_id` is set for a CUSTOMER session and absent for staff |
 | CI-8 | vitest: EXECUTIVE sees and publishes texts; other roles do not see the screen; the retention form sends `period_days` or null |
+| CI-9 | the guard test finds no `error = ?` in `api/src` (and fails when one is put back); a unique-violation `AppError::Database` formatted with `%` contains no `Key (` while the same error with `?` does (the reason, pinned) |
 
 ## 10. Open (not decided here)
 
