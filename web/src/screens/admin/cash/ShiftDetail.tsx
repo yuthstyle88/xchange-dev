@@ -3,12 +3,16 @@ import { For, Show } from 'solid-js';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
 import { screenT } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
+import { ApiClient } from '../../../shared/api/client';
 import { closeDialog, openDialog } from '../parts/Dialog';
+import { ProfitSummaryPanel } from './calculators/ProfitSummaryPanel';
+import { ShiftValuationPanel } from './calculators/ShiftValuationPanel';
 import * as table from './i18n';
 
 const t = screenT('admin.cash', table);
 
-export function openShiftDetail(row: AdminShiftRow): void {
+export function openShiftDetail(row: AdminShiftRow, branch: string): void {
+  const api = new ApiClient();
   const isClosed = row.status === 'CLOSED';
   const title = isClosed ? t('detailTitleClosed') : t('detailTitleOpen');
 
@@ -44,6 +48,9 @@ export function openShiftDetail(row: AdminShiftRow): void {
       <Show when={isClosed && row.note.trim() !== ''}>
         <p class="shift-detail-note">{row.note}</p>
       </Show>
+
+      <ShiftValuationPanel api={api} branch={branch} shiftId={row.id} />
+      <ProfitSummaryPanel api={api} branch={branch} shiftId={row.id} />
 
       <div class="dialog-actions">
         <button type="button" onClick={closeDialog}>
