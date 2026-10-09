@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.event_name == 'pull_request' && format('app-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'app-main') || format('app-{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   # A light job decides whether the app needs building (same should-build.sh as before), so a PR
   # that does not touch app/ or the shared CI files (for example a docs-only PR) runs no Flutter
@@ -29,6 +33,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Self-test main-push-base
+        run: bash .github/scripts/main-push-base.test.sh
+
       - name: Check changed files
         id: filter
         env:
@@ -37,20 +44,31 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
+          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE="$PR_BASE"
             HEAD="$PR_HEAD"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
+            BASE=$(bash .github/scripts/main-push-base.sh app "$PUSH_AFTER" 2>/dev/null || true)
+            HEAD="$PUSH_AFTER"
           else
             BASE="$PUSH_BEFORE"
             HEAD="$PUSH_AFTER"
           fi
-          should_build=$(bash .github/scripts/should-build.sh app .github/workflows/app.yml "$EVENT_NAME" "$BASE" "$HEAD")
-          echo "should_build=$should_build"
-          if [ "$should_build" = "false" ]; then
-            skip_build=true
-          else
+
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ] && [ -z "$BASE" ]; then
+            echo "No successful ancestor run on main found — running full build."
             skip_build=false
+          else
+            should_build=$(bash .github/scripts/should-build.sh app .github/workflows/app.yml "$EVENT_NAME" "$BASE" "$HEAD")
+            echo "should_build=$should_build"
+            if [ "$should_build" = "false" ]; then
+              skip_build=true
+            else
+              skip_build=false
+            fi
           fi
           echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
 
