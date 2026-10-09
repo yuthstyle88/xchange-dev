@@ -95,7 +95,7 @@ The composite key `(organization_id, id)` and the composite FKs are #550's conve
 ```
 quotes(
   id                uuid PK,
-  organization_id   text NOT NULL,
+  organization_id   uuid NOT NULL,
   branch_id         text NOT NULL,                  -- FK branches, composite with organization_id
   customer_id       text NULL,                      -- FK customers; NULL for an anonymous kiosk or app quote (§07 nullable)
   type              text NOT NULL CHECK (type IN ('INDICATIVE','BINDING')),
@@ -111,7 +111,7 @@ quotes(
 )
 quote_lines(
   id                     uuid PK,
-  organization_id        text NOT NULL,
+  organization_id        uuid NOT NULL,
   quote_id               uuid NOT NULL,             -- FK quotes
   published_rate_line_id uuid NOT NULL,             -- FK published_rate_lines (rates §4.1)
   shop_side              text NOT NULL CHECK (shop_side IN ('BUY','SELL')),   -- the shop's side, as v3's type today
@@ -166,7 +166,7 @@ written by the one writer from the line and the payment until migration 3 drops 
 ```
 transaction_lines(
   id                  uuid PK,
-  organization_id     text NOT NULL,
+  organization_id     uuid NOT NULL,
   transaction_id      uuid NOT NULL REFERENCES transactions(id),
   quote_line_id       uuid NULL REFERENCES quote_lines(id),     -- NULL only for rows backfilled from before migration 2
   shop_side           text NOT NULL CHECK (shop_side IN ('BUY','SELL')),
@@ -191,7 +191,7 @@ transaction_lines(
 ```
 transaction_payments(
   id               uuid PK,
-  organization_id  text NOT NULL,
+  organization_id  uuid NOT NULL,
   transaction_id   uuid NOT NULL REFERENCES transactions(id),
   payment_no       int NOT NULL DEFAULT 1,
   method           text NOT NULL,                  -- today's six (transaction_form.rs:123-131); per-branch rules stay (PaymentSaveStep)
@@ -213,7 +213,7 @@ transaction_payments(
 ```
 receipts(
   id               uuid PK,
-  organization_id  text NOT NULL,
+  organization_id  uuid NOT NULL,
   transaction_id   uuid NOT NULL REFERENCES transactions(id),
   number           text NOT NULL,          -- revision 1 = transactions.document_ref; revision n = '<document_ref>-R<n>'
   revision         int  NOT NULL CHECK (revision >= 1),
@@ -235,12 +235,12 @@ receipts(
 
 ```
 exchange_settings(
-  organization_id    text PK,
+  organization_id    uuid PK,
   quote_ttl_seconds  int NOT NULL DEFAULT 300 CHECK (quote_ttl_seconds BETWEEN 30 AND 3600),
   updated_by text NOT NULL, updated_at timestamptz NOT NULL
 )
 branch_exchange_limits(
-  organization_id    text NOT NULL,
+  organization_id    uuid NOT NULL,
   branch_id          text NOT NULL,          -- FK branches (composite)
   approval_limit_thb numeric(20,2) NULL CHECK (approval_limit_thb IS NULL OR approval_limit_thb > 0),
   updated_by text NOT NULL, updated_at timestamptz NOT NULL,
@@ -296,8 +296,9 @@ completion, or the desk asked for a new quote) | `EXPIRED` (derived, D-5).
 | `PUT /api/exchange-settings` | command | `SystemSettings` | the new settings |
 | `PUT /api/branches/:id/exchange-limit` | command | `BranchesManage` (A04) | the new limit |
 
-**`POST /api/quotes` input** `[required]`: `{ branchId, customerId?, channel, lines: [{ currency, shopSide, quantity,
-feeThb? }] }`. Money and quantities are decimal strings (D-4 of the desk design). The server computes everything else
+**`POST /api/quotes` input** `[required]`: `{ branch?, customerId?, channel, lines: [{ currency, shopSide, quantity,
+feeThb? }] }`. The branch is the command seam's `branch`, the key every v3 command uses. It is never a body `branchId`.
+`locks()` returns the named branch, so a staff caller who names another branch is refused `outOfScope` (#669). Money and quantities are decimal strings (D-4 of the desk design). The server computes everything else
 (§10 *"server คำนวณทั้งหมด"*).
 
 **`POST /api/transactions` input** `[required]`: `{ quoteId, customerId, bookingId?, kioskRequestId?, staffDraftId?,
@@ -314,10 +315,11 @@ refusals, `NOT_THIS_PASSPORT`.
 1. Validates the body; one line only (§3.1).
 2. Reads the current publication's line for `(branch, currency, side)` through `PublishedRates::line_in`
    (rates §4.8). No line ⇒ `rateUnavailable`.
-3. Applies `StalePolicy::admits(side, thb)` (rates §4.8, A7).
+3. Applies `StalePolicy::admits(side, thb)` (rates §4.8, A7), with the stale settings of the policy version **the line
+   was published under** (`source_snapshot.policy_version_id`), not the branch's current policy.
 4. Computes `thb_amount = ExchangeArithmetic::thb(quantity, final_rate, unit_size)` and `settle_thb` through
    `Quote::per_unit` (rates §3.2). `quantity` must fit the currency's minor unit (`ForeignAmount::parse`).
-5. `expires_at = now + exchange_settings.quote_ttl_seconds` (T1).
+5. `expires_at = now + exchange_settings.quote_ttl_seconds` (T1). An organisation with no settings row uses 300 s.
 6. Writes `quotes` + `quote_lines`, `status ACTIVE`, `publication_id` = the branch's current one.
 
 A quote is a write (a row), so it is a command with an idempotency key. A new quote is asked for on each change of
@@ -491,9 +493,9 @@ classDiagram
   class OutboxWriter { <<xc-outbox PR 606 OB-1>> }
   class CommandAction { <<trait api http/v3/command.rs CM-1>> }
 
-  class QuotesCommand { <<api http/v3/commands/exchange/quotes.rs>> }
-  class TransactionCommands { <<api http/v3/commands/exchange/transactions.rs>> }
-  class SettingsCommands { <<api http/v3/commands/exchange/settings.rs>> }
+  class QuotesCommand { <<api http/v3/commands/quotes.rs>> }
+  class TransactionCommands { <<api http/v3/commands/transactions.rs>> }
+  class SettingsCommands { <<api http/v3/commands/exchange_settings.rs>> }
   class TransactionView { <<api http/v3/views/transaction.rs>> }
 
   QuoteService --> PublishedRates : line_in
@@ -658,9 +660,9 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 |---|---|---|---|
 | TX-1 | quote domain, settings domain, `QuoteService`; migration 1 | `xc-exchange/src/domain/{quote,settings}/**`, `api/src/application/workflows/exchange/quote.rs`, `xc-exchange/src/infrastructure/{quote,settings}/**` (all new); migration 1 | RU-1 #595, RE-1 #598, OR-1 #615 |
 | TX-2 | transaction aggregate, children, store; migration 2; the compat writer fills the children | `xc-exchange/src/domain/transaction/**`, `xc-exchange/src/infrastructure/transaction/**` (new); `transaction_repository.rs` (`insert_in` writes the children); migration 2 | TX-1, OR-1 #615, **RE-4 #601 merged** (§8 migration 2) |
-| TX-3 | `POST /api/quotes` command + DTO | `http/v3/commands/exchange/quotes.rs`, `dto/v3/quote.rs` + its TS | TX-1, CM-1 #597 |
-| TX-4 | create, confirm, cancel; approval subject and policy; settings commands | `api/src/application/workflows/exchange/{create,confirm,cancel,approval}.rs`, `http/v3/commands/exchange/{transactions,settings}.rs`, `dto/v3/transaction.rs` + TS | TX-2, TX-3, AP-1 #596 |
-| TX-5 | `complete`: §09 order, `TransactionForm::from_transaction`, posting, receipt, outbox | `api/src/application/workflows/exchange/complete.rs`, `transaction_form.rs` (the new constructor only), `payment_save_step.rs` (check moves to `before_in`), the `complete` arm in `commands/exchange/transactions.rs` is TX-4's file ⇒ **TX-5 adds `commands/exchange/complete.rs`** | TX-4, #582 CA-3 (or the stub of §7.1) |
+| TX-3 | `POST /api/quotes` command + DTO | `http/v3/commands/quotes.rs`, `dto/v3/quote.rs` (no committed TS: `v3_types_test` exports no command DTO) | TX-1, CM-1 #597 |
+| TX-4 | create, confirm, cancel; approval subject and policy; settings commands | `api/src/application/workflows/exchange/{create,confirm,cancel,approval}.rs`, `http/v3/commands/{transactions,exchange_settings}.rs`, `dto/v3/transaction.rs` (no committed TS: command DTOs are not exported) | TX-2, TX-3, AP-1 #596 |
+| TX-5 | `complete`: §09 order, `TransactionForm::from_transaction`, posting, receipt, outbox | `api/src/application/workflows/exchange/complete.rs`, `transaction_form.rs` (the new constructor only), `payment_save_step.rs` (check moves to `before_in`), the `complete` arm in `commands/transactions.rs` is TX-4's file ⇒ **TX-5 adds `commands/complete.rs`** | TX-4, #582 CA-3 (or the stub of §7.1) |
 | TX-6 | compat `saveTransaction` becomes the adapter (§4.6); `save_transaction.rs` removed once DK-C #539 is on the new routes; the save's idempotency digest (`save_transaction.rs:66-106`) hashes the passport's `lookup_hash` (`xc-kernel::pii`), never the plain number at `:70` (#554 K4; moved here from #554's CI-5 by the lane controller's ruling (b), 2026-10-09) | `compat/actions/save.rs`, `workflows/save_transaction.rs` | TX-5, then the strict chain on `save_transaction.rs`: **RE-4 #601 → #582 CA-7 #623 → TX-6** (lane controller's ruling, 2026-10-09; a fourth ticket on that file is split per 📐, not added to the chain) |
 | TX-7 | kiosk quotes through `QuoteService` | `xc-kiosk/.../kiosk_machine.rs` (quote part), `kiosk_ports.rs`, `kiosk_save_step.rs`; migration 4 | TX-3, RE-4 #601 (owns `kiosk_machine.rs`'s rate reading first) |
 | TX-8 | readers: filter `status = 'COMPLETED'` and read the children | per reader file (§1 and the survey's list): `views/{admin_transactions,admin_slips,admin_overview,admin_customer_history,admin_customers,admin_reports,admin_cash,device_transactions,devices}.rs`, `dto/v3/transaction_row.rs`, `pages.rs` (receipt), `custody_ports.rs:59` — **one ticket per file**, each after RE-4 has finished that file | TX-2 |
