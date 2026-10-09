@@ -23,6 +23,7 @@ import { requestRefresh } from './parts/refresh';
 import { en, th } from './i18n';
 import type { AdminMenu } from './menus';
 import { QueueBar } from './queue/QueueBar';
+import './admin.css';
 
 export interface AdminShellProps {
   api: ApiClient;
@@ -329,7 +330,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 setDialogError('');
               }}
             />
-            <button type="submit">{t('addSubmit')}</button>
+            <button type="submit" class="primary">{t('addSubmit')}</button>
           </form>
         </div>
       );
@@ -396,6 +397,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   return (
     <AppShell
+      look="admin"
       title={t('pageTitle')}
       ownsMain={true}
       nav={
@@ -413,7 +415,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         {/* Sidebar */}
         <aside
           id="admin-sidebar"
-          class="admin-sidebar"
+          class={mobileOpen() ? 'admin-sidebar open' : 'admin-sidebar'}
           style={mobileOpen() ? {} : undefined}
         >
           {/* Branch management header */}
@@ -607,7 +609,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
           {/* Connection info button */}
           <div class="connection-action">
-            <button type="button" onClick={openConnectionDialog}>
+            <button
+              type="button"
+              class="desk-link"
+              onClick={openConnectionDialog}
+            >
               {t('connection')}
             </button>
           </div>

@@ -119,7 +119,7 @@ async fn handle(
             .body(result.to_text()),
         Err(RpcFailure::Refused(refusal)) => refuse(&refusal.response()),
         Err(RpcFailure::Failed(error)) => {
-            tracing::error!(error = ?error, "rpc request failed");
+            tracing::error!(error = %error, "rpc request failed");
             server_error()
         }
     }

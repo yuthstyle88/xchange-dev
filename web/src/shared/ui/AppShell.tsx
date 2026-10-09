@@ -5,25 +5,29 @@ import type { Key } from '../i18n/th';
 import { sharedSession } from '../session/session';
 import { AccountBar } from './AccountBar';
 import { VersionFooter } from './VersionFooter';
+import './shell.css';
+
+export type AppShellLook = 'devices' | 'kiosk' | 'admin';
 
 export function AppShell(props: {
   title: string;
   nav?: JSX.Element;
   children?: JSX.Element;
   ownsMain?: boolean;
+  look?: AppShellLook;
 }): JSX.Element {
   const session = sharedSession();
 
   return (
-    <div>
-      <header>
-        {props.nav}
-        <h1>{props.title}</h1>
+    <div class={props.look ? `xc-shell xc-${props.look}` : 'xc-shell'}>
+      <header class="xc-shell-header">
+        {props.nav ? <div class="xc-shell-nav">{props.nav}</div> : null}
+        <h1 class="xc-shell-title">{props.title}</h1>
         <LangSwitch />
         <AccountBar session={session} />
       </header>
       <Show when={session.ended()}>
-        <p role="alert">{t(`shell.session.${session.ended()!}` as Key)}</p>
+        <p role="alert" class="xc-shell-alert">{t(`shell.session.${session.ended()!}` as Key)}</p>
       </Show>
       <fieldset
         class="xc-lock"
@@ -33,10 +37,12 @@ export function AppShell(props: {
         {props.ownsMain ? (
           <div class="xc-content">{props.children}</div>
         ) : (
-          <main>{props.children}</main>
+          <main class="xc-shell-main">{props.children}</main>
         )}
       </fieldset>
-      <VersionFooter />
+      <div class="xc-shell-footer">
+        <VersionFooter />
+      </div>
     </div>
   );
 }

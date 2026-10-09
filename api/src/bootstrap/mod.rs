@@ -141,7 +141,7 @@ where
                 "purged expired sessions and past sign-in windows"
             ),
             Err(error) => tracing::error!(
-                error = ?error,
+                error = %error,
                 "the purge of expired sessions failed; the next round will try again"
             ),
         }

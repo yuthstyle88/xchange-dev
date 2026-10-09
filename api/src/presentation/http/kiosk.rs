@@ -122,7 +122,7 @@ pub(crate) async fn usernames<'a>(
     .fetch_all(pool)
     .await
     .unwrap_or_else(|err| {
-        tracing::error!(error = ?err, "kiosk usernames failed");
+        tracing::error!(error = %err, "kiosk usernames failed");
         Vec::new()
     });
     rows.into_iter().collect()
@@ -152,7 +152,7 @@ fn handle_service_error(err: AppError) -> HttpResponse {
         AppError::Domain(msg) => refuse(400, &msg),
         AppError::Unauthenticated => refuse(401, "EMPLOYEE_AUTH_REQUIRED"),
         other => {
-            tracing::error!(error = ?other, "kiosk service error");
+            tracing::error!(error = %other, "kiosk service error");
             kiosk_server_error()
         }
     }
@@ -214,7 +214,7 @@ async fn handle_kiosk(
     {
         Ok(w) => w,
         Err(err) => {
-            tracing::error!(error = ?err, "status failed");
+            tracing::error!(error = %err, "status failed");
             return kiosk_server_error();
         }
     };
