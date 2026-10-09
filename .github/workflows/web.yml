@@ -68,7 +68,8 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     # Node only, so the idle macOS pool, not the saturated Linux pool (#611; owner 2026-10-09).
-    runs-on: [self-hosted, macOS, ARM64]
+    # Runs on fast-mac to avoid Studio timeouts (#696 addendum 2).
+    runs-on: [self-hosted, macOS, ARM64, fast-mac]
     timeout-minutes: 10
     steps:
       - name: Refuse to report green when the run was cancelled
