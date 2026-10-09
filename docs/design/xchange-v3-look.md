@@ -38,18 +38,32 @@ v2 has **three palettes**, one per family of pages, and only some pages have a h
      - LK-4: `look="kiosk"` in `web/src/screens/kiosk-currencies/main.tsx`, added to LK-4's scope.
      - LK-5: `look="admin"` in `web/src/screens/admin/AdminShell.tsx`.
      - kiosk-queue passes **no look**, so the shell's fallbacks apply (rule 5).
+   - **What the root carries (amended 2026-10-09, lane controller ruling on #633 issuecomment-6078576748).** `.xc-<look>` itself
+     carries **only** the palette (custom properties) and v2's `body`-equivalent values: `background`, `color`, `font-family`,
+     `font-size`, `line-height`, `min-height:100vh` [required]. Nothing else is declared on the root.
+   - **Why.** The root is also the ancestor of the shell's header and footer. A page rule written `.xc-<look> button` therefore matches
+     the shell's account bar, language switch and nav too, and ties with `shell.css`. Measured on PR 643 at `312b5a7`: the logout
+     button rendered white on white with `min-height:68px`.
+   - **The content root.** Page content sits in `.xc-shell-main` (the shell's `<main>`), or in `.xc-content` when the screen passes
+     `ownsMain` (`AppShell.tsx`: admin and receipt-sample do). Below, `<content>` means whichever of the two that screen renders.
    - **v2's out-of-root rules.**
-     - v2's `body{…}` rule goes on `.xc-<look>` itself, plus `min-height:100vh`.
-     - v2's `header{…}`, `main{…}` and `footer{…}` become `.xc-<look> > header` and so on, where `AppShell` renders them as children of the root; otherwise `.xc-<look> header`.
-     - v2's `*{box-sizing…}` becomes `.xc-<look>, .xc-<look> *`.
+     - v2's `body{…}` rule: its `body`-equivalent values go on `.xc-<look>` (above). Any other declaration in it goes on `.xc-<look> <content>`.
+     - v2's `main{…}` becomes `.xc-<look> <content>`. v2's `footer{…}` becomes `.xc-<look> <content> footer` when the page has its own footer; the shell's footer keeps `shell.css`.
+     - v2's `header{…}`: see rule 5. It targets the shell's own class `.xc-<look> .xc-shell-header`, never the element `header`.
+     - v2's `*{box-sizing…}` becomes `.xc-<look>, .xc-<look> *` (it is harmless on the shell).
      - The browser's default `body` margin is reset once by the shell: `shell.css` has `body:has(.xc-shell){margin:0}`. This is the only rule outside `.xc-shell`.
    `.xc-devices{--brand:#a90045;…}`, `.xc-kiosk{--xc:#a5003c;…}`, `.xc-admin{--brand:#a5003c;…}`, with the values copied from the table above.
    The shell reads `--brand`, `--ink`, `--muted` and `--line`. A palette that uses other names (`kiosk.css` has `--xc`) also declares those four
    with the same values (`--brand:#a5003c` beside `--xc:#a5003c`), so the header reads one set of names on every page.
-4. **No global element rules.** A v2 file's `*`, `body`, `h1`, `h2`, `p`, `a`, `label`, `input`, `select` and `button` rules are scoped under
-   that screen's root (`.xc-devices h1{…}`). They then reach only the pages whose v2 page used that file.
+4. **Element and page-class rules are scoped to the content root, never to the page root** [required] (amended 2026-10-09,
+   #633 issuecomment-6078576748). A v2 file's `h1`, `h2`, `p`, `a`, `label`, `input`, `select`, `button`, `table`… rules **and** its page
+   classes (`.card`, `.primary`, `.sidebar`, …) become `.xc-<look> <content> <selector>`, e.g. `.xc-kiosk .xc-shell-main h1{…}` or
+   `.xc-admin .xc-content button{…}`. Never `.xc-<look> button`. They then reach only that page's content, not the shell.
+   Every element rule that v2's page uses is either carried this way or listed in the PR as left out, with the reason (rule 1).
    `receipt-sample` and `staff-guide` keep the CSS they already ship.
-5. **The header takes each page's v2 header, or its palette when v2 had no header.** This is a v2 fact, read from each page:
+5. **The header takes each page's v2 header, or its palette when v2 had no header.** This is a v2 fact, read from each page.
+   A rule meant for the shell's header names the shell's own classes (`.xc-<look> .xc-shell-header`, `.xc-<look> .xc-shell-nav`,
+   `.xc-<look> .xc-shell-title`), never an element under `.xc-<look>`:
    - devices: `devices.css`'s `header`, `.brand*` and `nav` rules, in the devices palette;
    - admin: `admin-html.ts`'s header and sidebar rules, in the admin palette;
    - kiosk-currencies and kiosk-queue: v2 shows no header. v3's `AppShell` header stays, with the shell's layout and the page's palette
@@ -90,6 +104,8 @@ v2 has **three palettes**, one per family of pages, and only some pages have a h
    | login | `shared/ui/auth.css` |
 
 2. No `.css` file under `web/src/` declares custom properties on `:root` (rule 3).
+3. No selector in a screen's CSS is `.xc-<look>` followed directly by an element or a page class (`.xc-admin button`, `.xc-kiosk .card`).
+   After `.xc-<look>`, the next part must be `*`, `.xc-shell-main`, `.xc-content` or a `.xc-shell-*` class (rules 3–5).
 
 ## Done criterion for every LK ticket
 
