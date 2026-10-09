@@ -1,4 +1,4 @@
-import { createSignal, onMount, type JSX } from 'solid-js';
+import { createSignal, onMount, Show, type JSX } from 'solid-js';
 import { ApiError } from '../../shared/api/client';
 import { AuthLayout } from '../../shared/ui/AuthLayout';
 import { PasswordField } from '../../shared/ui/PasswordField';
@@ -11,6 +11,17 @@ import * as loginI18n from './i18n';
 
 const t = screenT('login', loginI18n);
 
+function toErrorKey(err: unknown): keyof typeof loginI18n.th {
+  if (err instanceof ApiError) {
+    const key = `err_${err.code}` as keyof typeof loginI18n.th;
+    if (key in loginI18n.th) {
+      return key;
+    }
+    return 'errUnknown';
+  }
+  return 'errNetwork';
+}
+
 export function LoginScreen(props: {
   auth: AuthApi;
   navigate: (url: string) => void;
@@ -18,23 +29,17 @@ export function LoginScreen(props: {
   const form = useForm();
   let formEl: HTMLFormElement | undefined;
   const [pending, setPending] = createSignal(false);
-  const [statusError, setStatusError] = createSignal<string | undefined>(undefined);
-  const [submitError, setSubmitError] = createSignal<string | undefined>(undefined);
+  const [showInvite, setShowInvite] = createSignal(false);
+  const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
 
   onMount(async () => {
     try {
-      const res = await props.auth.status();
+      const res = await props.auth.session();
       if (res.user) {
         props.navigate(homeOf(res.user));
       }
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err);
-      setStatusError(msg);
+      setErrorKey(toErrorKey(err));
     }
   });
 
@@ -43,25 +48,26 @@ export function LoginScreen(props: {
     if (!formEl) return;
 
     const data = new FormData(formEl);
-    const username = String(data.get('username') ?? '');
+    const identifier = String(data.get('identifier') ?? '');
     const password = String(data.get('password') ?? '');
+    const inviteCode = String(data.get('inviteCode') ?? '');
 
     setPending(true);
-    setStatusError(undefined);
-    setSubmitError(undefined);
+    setErrorKey(undefined);
 
     try {
-      const res = await props.auth.login({ username, password });
-      if (res.mustChange) {
-        props.navigate('/staff');
+      if (showInvite()) {
+        const res = await props.auth.claim({ identifier, password, inviteCode });
+        props.navigate(homeOf(res.user));
       } else {
+        const res = await props.auth.login({ identifier, password });
         props.navigate(homeOf(res.user));
       }
     } catch (err) {
-      if (err instanceof ApiError) {
-        throw err;
+      if (err instanceof ApiError && err.code === 'signIn') {
+        setShowInvite(true);
       }
-      setSubmitError(err instanceof Error ? err.message : String(err));
+      setErrorKey(toErrorKey(err));
     } finally {
       setPending(false);
     }
@@ -74,22 +80,23 @@ export function LoginScreen(props: {
       }
       return;
     }
-    setStatusError(undefined);
     return onSubmit(e);
   };
 
-  const message = () => statusError() ?? submitError() ?? form.formError() ?? '';
+  const message = () => {
+    const k = errorKey();
+    return k ? t(k) : '';
+  };
 
   return (
     <AuthLayout title={t('title')}>
       <form ref={formEl} onSubmit={handleSubmit}>
         <TextField
-          field={form.field('username')}
-          label={t('username')}
+          field={form.field('identifier')}
+          label={t('identifier')}
           autocomplete="username"
           required
-          pattern="[a-zA-Z0-9._\-]{3,40}"
-          maxLength={40}
+          maxLength={254}
         />
         <PasswordField
           field={form.field('password')}
@@ -98,6 +105,21 @@ export function LoginScreen(props: {
           required
           maxLength={128}
         />
+        <Show when={showInvite()}>
+          <TextField
+            field={form.field('inviteCode')}
+            label={t('inviteCode')}
+            required={showInvite()}
+          />
+        </Show>
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowInvite(true)}
+          >
+            {t('haveInvite')}
+          </button>
+        </div>
         <div>
           <button type="submit" disabled={pending()}>
             {t('submit')}
