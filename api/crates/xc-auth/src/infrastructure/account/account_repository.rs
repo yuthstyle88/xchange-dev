@@ -259,6 +259,18 @@ impl AccountRepository for PgAccountRepository {
     ) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
 
+        let branch_row: Option<(String,)> =
+            sqlx::query_as("SELECT organization_id::text FROM branches WHERE id = $1")
+                .bind(&employee.branch_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(AppError::Database)?;
+
+        let org_id = match branch_row {
+            Some((org,)) => org,
+            None => return Err(AppError::Domain("ไม่พบสาขาที่เลือก กรุณารีเฟรช".to_string())),
+        };
+
         let res = sqlx::query(
             r#"
             INSERT INTO employees (id, username, name, role, branch_id, password_hash, active, must_change, version, created_at)
@@ -286,6 +298,47 @@ impl AccountRepository for PgAccountRepository {
             }
             return Err(AppError::Database(e));
         }
+
+        let user_id: String = sqlx::query_scalar(
+            r#"
+            INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id)
+            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'INVITED', 1, $3, $4, $5)
+            RETURNING id::text
+            "#,
+        )
+        .bind(&org_id)
+        .bind(&employee.name)
+        .bind(employee.created_at)
+        .bind(actor)
+        .bind(&employee.id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let blueprint_role = match employee.role.as_str() {
+            "FRONT" => "TELLER",
+            "BACKEND" | "MANAGER" => "BRANCH_MANAGER",
+            "RATES" => "RATE_MANAGER",
+            "FINANCE" => "FINANCE",
+            "SYSTEM" => "ADMIN",
+            "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => "VERIFICATION_REVIEWER",
+            _ => "TELLER",
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO user_roles (id, user_id, role_code, organization_id, branch_id, valid_from, valid_to)
+            VALUES (gen_random_uuid(), $1::uuid, $2, $3::uuid, $4, $5, NULL)
+            "#,
+        )
+        .bind(&user_id)
+        .bind(blueprint_role)
+        .bind(&org_id)
+        .bind(&employee.branch_id)
+        .bind(employee.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         sqlx::query(
             "INSERT INTO employee_audit (actor, subject, action, at) VALUES ($1, $2, 'CREATE', $3)",
@@ -354,6 +407,14 @@ impl AccountRepository for PgAccountRepository {
             .execute(&mut **tx)
             .await
             .map_err(AppError::Database)?;
+
+        sqlx::query(
+            "UPDATE users SET status = 'DISABLED', version = version + 1 WHERE legacy_employee_id = $1",
+        )
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
 
         sqlx::query(
             "INSERT INTO employee_audit (actor, subject, action, at) VALUES ($1, $2, 'DISABLE', $3)",
@@ -489,6 +550,41 @@ impl AccountRepository for PgAccountRepository {
             }
             AppError::Database(e)
         })?;
+
+        let org_id: String =
+            sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = 'XC' LIMIT 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(AppError::Database)?
+                .unwrap_or_else(|| "00000000-0000-0000-0000-000000000001".to_string());
+
+        let user_id: String = sqlx::query_scalar(
+            r#"
+            INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id)
+            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'INVITED', 1, $3, 'owner', NULL)
+            RETURNING id::text
+            "#,
+        )
+        .bind(&org_id)
+        .bind(name)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO user_roles (id, user_id, role_code, organization_id, branch_id, valid_from, valid_to)
+            VALUES (gen_random_uuid(), $1::uuid, 'ADMIN', $2::uuid, NULL, $3, NULL),
+                   (gen_random_uuid(), $1::uuid, 'EXECUTIVE', $2::uuid, NULL, $3, NULL)
+            "#,
+        )
+        .bind(&user_id)
+        .bind(&org_id)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         tx.commit().await.map_err(AppError::Database)?;
 

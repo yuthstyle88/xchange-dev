@@ -241,6 +241,8 @@ async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
     let front = employ(&accounts, "fr1", "FR1 Front", "FRONT", MAIN).await;
     let review = employ(&accounts, "rv1", "RV1 Review", "DOCUMENT_REVIEW", MAIN).await;
     let gone = employ(&accounts, "be1", "BE1 Backend", "BACKEND", MAIN).await;
+    // OR-2: an employee's branch must name a `branches` row (design #550 follow-up, PR 636).
+    shop.seed_branch(OTHER, "Second").await;
     let other = employ(&accounts, "fr2", "FR2 Front", "FRONT", OTHER).await;
     accounts
         .employees("disable", &json!({ "id": gone }), OWNER, at(5))

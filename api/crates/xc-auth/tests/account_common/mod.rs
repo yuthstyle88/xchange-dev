@@ -159,6 +159,16 @@ impl TestDb {
         )
     }
 
+    /// A branch besides `MAIN`. OR-2: an employee's branch must name a `branches` row
+    /// (design #550 follow-up, PR 636).
+    pub async fn seed_branch(&self, id: &str) {
+        sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1) ON CONFLICT (id) DO NOTHING")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .unwrap_or_else(|e| panic!("insert the branch {id}: {e}"));
+    }
+
     pub async fn count(&self, table: &str) -> i64 {
         sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!("SELECT count(*) FROM {table}")))
             .fetch_one(&self.pool)
@@ -295,6 +305,18 @@ impl Replay {
         let db = TestDb::start().await;
         let service = db.service();
         let steps = story["steps"].as_array().expect("steps");
+        // OR-2: an employee's branch must name a `branches` row (design #550 follow-up,
+        // PR 636). v2 kept no branch list at the account layer, so the story names its
+        // branches only in the creates v2 accepted; they are given their rows first.
+        for step in steps {
+            if step["op"] == "employees"
+                && step["action"] == "create"
+                && step.get("ok").is_some()
+                && let Some(branch) = step["payload"]["branchId"].as_str()
+            {
+                db.seed_branch(branch).await;
+            }
+        }
         let begin = at_millis(steps[0]["at"].as_i64().expect("at"));
         let owner = &story["owner"];
         let made = service
