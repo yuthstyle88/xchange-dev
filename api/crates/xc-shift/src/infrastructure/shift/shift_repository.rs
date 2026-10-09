@@ -302,6 +302,58 @@ impl ShiftRepository for PgShiftRepository {
         rows.into_iter().map(map_movement_row).collect()
     }
 
+    async fn shift(&self, branch: &BranchId, id: &str) -> AppResult<Option<Shift>> {
+        let row: Option<ShiftRow> = sqlx::query_as(
+            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
+             FROM shifts WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(r) = row {
+            let status = parse_shift_status(&r.2)?;
+            let (opening, expected, counted, difference) =
+                load_shift_balances(&self.pool, &r.0, status).await?;
+            Ok(Some(Shift {
+                id: r.0,
+                branch_id: BranchId::new(r.1),
+                status,
+                opened_at: r.3,
+                opened_by: r.4,
+                opening,
+                expected,
+                closed_at: r.5,
+                closed_by: r.6,
+                counted,
+                difference,
+                note: r.7,
+                open_request_id: r.8,
+                close_request_id: r.9,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn shift_movements(
+        &self,
+        branch: &BranchId,
+        shift_id: &str,
+    ) -> AppResult<Vec<StockMovement>> {
+        let rows: Vec<MovementRow> = sqlx::query_as(
+            "SELECT id, shift_id, at, by, code, direction, amount::text, reason, request_id \
+             FROM stock_movements WHERE branch_id = $1 AND shift_id = $2 ORDER BY seq ASC",
+        )
+        .bind(branch.as_str())
+        .bind(shift_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(map_movement_row).collect()
+    }
+
     async fn is_request_abandoned(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,

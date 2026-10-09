@@ -1,0 +1,571 @@
+// V2-payments (#470): payment settings menu component (§7, §10, design §12.3, §12.6)
+
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+  type JSX,
+} from 'solid-js';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { errorText, screenT } from '../../../shared/i18n';
+import type {
+  AdminPaymentsData,
+  PaymentHistoryItem,
+  PaymentMethodItem,
+} from '../../../shared/api/generated/admin_payments';
+import type { AdminMenuProps } from '../menus';
+import { refreshTick } from '../parts/refresh';
+import { en, th } from './i18n';
+import { formatDate } from './text';
+
+const t = screenT('admin.payments', { th, en });
+
+const CHANNELS = [
+  { id: 'Cash', nameKey: 'channelCash' as const, line: 'Cash' },
+  { id: 'Credit Card', nameKey: 'channelCreditCard' as const, line: 'Credit card' },
+  { id: 'Alipay', nameKey: 'channelAlipay' as const, line: 'Alipay' },
+  { id: 'PromptPay', nameKey: 'channelPromptPay' as const, line: 'PromptPay' },
+  { id: 'Bank Transfer', nameKey: 'channelBankTransfer' as const, line: 'Bank transfer' },
+] as const;
+
+const BUY_CHANNELS: readonly string[] = ['Cash', 'Bank Transfer'];
+
+interface BranchInfo {
+  id: string;
+  name: string;
+}
+
+export function Payments(props: AdminMenuProps): JSX.Element {
+  const api = new ApiClient();
+
+  const [branches, setBranches] = createSignal<BranchInfo[]>([]);
+  const [displayedBranch, setDisplayedBranch] = createSignal<string>('');
+  const [branchNotice, setBranchNotice] = createSignal<string | null>(null);
+
+  const [data, setData] = createSignal<AdminPaymentsData | null>(null);
+  const [version, setVersion] = createSignal<number | null>(null);
+  const [loading, setLoading] = createSignal<boolean>(false);
+  const [error, setError] = createSignal<{ code: string; message: string } | null>(null);
+
+  const [edits, setEdits] = createSignal<PaymentMethodItem[] | null>(null);
+  const [saving, setSaving] = createSignal<boolean>(false);
+  const [feedback, setFeedback] = createSignal<string>('');
+
+  let pendingBranchSwitch: string | null = null;
+  let savePromise: Promise<void> | null = null;
+
+  const isDirty = () => edits() !== null;
+  const canEdit = () => data()?.canEdit ?? false;
+
+  const branchDisplayName = createMemo(() => {
+    const bId = displayedBranch();
+    const found = branches().find((b) => b.id === bId);
+    return found ? found.name : bId;
+  });
+
+  const currentMethods = createMemo<PaymentMethodItem[]>(() => {
+    const e = edits();
+    if (e) return e;
+    const d = data();
+    if (d) return d.methods;
+    return [];
+  });
+
+  const openCount = createMemo(() => {
+    const list = currentMethods();
+    const open = list.filter((m) => m.enabled).length;
+    const total = list.length;
+    return t('openCount', { open, total });
+  });
+
+  const metaText = createMemo(() => {
+    const d = data();
+    if (!d || !d.updatedAt) {
+      return t('neverEdited');
+    }
+    return t('editedMeta', {
+      date: formatDate(d.updatedAt),
+      by: d.updatedBy ?? '',
+    });
+  });
+
+  const onBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (isDirty()) {
+      e.preventDefault();
+    }
+  };
+
+  onMount(() => {
+    window.addEventListener('beforeunload', onBeforeUnload);
+  });
+
+  onCleanup(() => {
+    window.removeEventListener('beforeunload', onBeforeUnload);
+  });
+
+  // Load branches for branch name display in heading
+  const loadBranches = async () => {
+    try {
+      const res = await api.view<{ branches: BranchInfo[] }>('admin_branches');
+      if (res.data?.branches) {
+        setBranches(res.data.branches);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadData = async (branch: string, since?: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await loadBranches();
+      const res = await api.view<AdminPaymentsData>('admin_payments', {
+        branch,
+        since,
+      });
+      if (res.changed && res.data) {
+        setData(res.data);
+        setVersion(res.version);
+        setEdits(null);
+      } else if (!res.changed) {
+        // unchanged: keep data, update version
+        setVersion(res.version);
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setError({ code: err.code, message: err.message });
+      } else if (err instanceof Error) {
+        setError({ code: 'error', message: err.message });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Tracking shown & branch switch from shell
+  createEffect(() => {
+    const isShown = props.shown();
+    const targetBranch = props.branch();
+    if (!isShown) return;
+
+    untrack(() => {
+      const current = displayedBranch();
+      if (current === '') {
+        setDisplayedBranch(targetBranch);
+        void loadData(targetBranch);
+        return;
+      }
+
+      if (targetBranch === current) return;
+
+      if (saving()) {
+        pendingBranchSwitch = targetBranch;
+        return;
+      }
+
+      if (isDirty()) {
+        const confirmed = window.confirm(t('confirmBranch'));
+        if (confirmed) {
+          setEdits(null);
+          setBranchNotice(null);
+          setDisplayedBranch(targetBranch);
+          void loadData(targetBranch);
+        } else {
+          setBranchNotice(t('branchNotice', { branch: branchDisplayName() }));
+        }
+      } else {
+        setBranchNotice(null);
+        setDisplayedBranch(targetBranch);
+        void loadData(targetBranch);
+      }
+    });
+  });
+
+  // Refresh tick (design §12.6)
+  createEffect(
+    on(
+      refreshTick,
+      (tick) => {
+        if (tick > 0 && props.shown() && !untrack(isDirty) && !untrack(saving)) {
+          const v = untrack(version);
+          const b = untrack(displayedBranch);
+          void loadData(b, v !== null ? v : undefined);
+        }
+      },
+      { defer: true },
+    ),
+  );
+
+  const updateMethod = (id: string, patch: Partial<PaymentMethodItem>) => {
+    const base = currentMethods();
+    const next = base.map((m) => (m.id === id ? { ...m, ...patch } : { ...m }));
+
+    const d = data();
+    if (!d) return;
+
+    let dirty = false;
+    for (const m of next) {
+      const orig = d.methods.find((o) => o.id === m.id);
+      if (
+        !orig ||
+        orig.enabled !== m.enabled ||
+        orig.buy !== m.buy ||
+        orig.sell !== m.sell ||
+        orig.account !== m.account ||
+        orig.instruction !== m.instruction
+      ) {
+        dirty = true;
+        break;
+      }
+    }
+
+    if (dirty) {
+      setEdits(next);
+    } else {
+      setEdits(null);
+    }
+  };
+
+  const handleDiscard = () => {
+    if (saving()) return;
+    setEdits(null);
+    setFeedback('');
+    if (displayedBranch() !== props.branch()) {
+      const nextBranch = props.branch();
+      setBranchNotice(null);
+      setDisplayedBranch(nextBranch);
+      void loadData(nextBranch);
+    }
+  };
+
+  const handleReload = () => {
+    if (saving()) return;
+    if (isDirty()) {
+      const confirmed = window.confirm(t('confirmReload'));
+      if (!confirmed) return;
+    }
+    setEdits(null);
+    void loadData(displayedBranch());
+  };
+
+  const handleSave = async () => {
+    if (saving() || !canEdit()) return;
+
+    setSaving(true);
+    setFeedback(t('saving'));
+
+    const branchToSave = displayedBranch();
+    const methodsToSave = currentMethods().map((m) => ({
+      id: m.id,
+      enabled: m.enabled,
+      buy: m.buy,
+      sell: m.sell,
+      account: m.account.trim(),
+      instruction: m.instruction.trim(),
+    }));
+
+    const currentVersion = data()?.settingsVersion ?? 0;
+
+    const execute = async () => {
+      try {
+        await api.post('/api/payment-methods', {
+          action: 'save',
+          payload: {
+            branchId: branchToSave,
+            version: currentVersion,
+            methods: methodsToSave,
+          },
+        });
+        setFeedback(t('saved'));
+        setEdits(null);
+        await loadData(branchToSave);
+
+        if (pendingBranchSwitch && pendingBranchSwitch !== displayedBranch()) {
+          const next = pendingBranchSwitch;
+          pendingBranchSwitch = null;
+          setBranchNotice(null);
+          setDisplayedBranch(next);
+          await loadData(next);
+        } else if (displayedBranch() !== props.branch()) {
+          const next = props.branch();
+          setBranchNotice(null);
+          setDisplayedBranch(next);
+          await loadData(next);
+        }
+      } catch (err: unknown) {
+        if (err instanceof ApiError) {
+          setFeedback(errorText(err.code, err.message));
+        } else if (err instanceof Error) {
+          setFeedback(err.message);
+        }
+      } finally {
+        setSaving(false);
+        savePromise = null;
+      }
+    };
+
+    savePromise = execute();
+    await savePromise;
+  };
+
+  const computeChangedChannels = (
+    before: PaymentMethodItem[],
+    after: PaymentMethodItem[],
+  ): string => {
+    const changed: string[] = [];
+    for (const c of CHANNELS) {
+      const b = before.find((m) => m.id === c.id);
+      const a = after.find((m) => m.id === c.id);
+      if (!b || !a) {
+        changed.push(t(c.nameKey));
+      } else if (
+        b.enabled !== a.enabled ||
+        b.buy !== a.buy ||
+        b.sell !== a.sell ||
+        b.account !== a.account ||
+        b.instruction !== a.instruction
+      ) {
+        changed.push(t(c.nameKey));
+      }
+    }
+    if (changed.length === 0) {
+      return t('unchanged');
+    }
+    return changed.join(', ');
+  };
+
+  return (
+    <div class="xc-payments">
+      <Show when={loading() && !data()}>
+        <div class="xc-payment-loading">{t('loading')}</div>
+      </Show>
+
+      <Show when={error() && !data()}>
+        <div class="xc-payment-error">
+          <span>{errorText(error()!.code, error()!.message)}</span>
+          <button type="button" onClick={() => void loadData(displayedBranch())}>
+            {t('retry')}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={data()}>
+        <header class="xc-payment-header">
+          <div class="xc-payment-intro-eyebrow">{t('introEyebrow')}</div>
+          <h2>
+            {t('headingOf')} {branchDisplayName()}
+          </h2>
+          <Show when={branchNotice()}>
+            <div class="xc-branch-notice">{branchNotice()}</div>
+          </Show>
+          <div class="xc-payment-intro">{t('intro')}</div>
+          <div class="xc-payment-meta-bar">
+            <span class="xc-payment-count-pill">{openCount()}</span>
+            <span class="xc-payment-meta-text">{metaText()}</span>
+            <button
+              type="button"
+              disabled={saving()}
+              onClick={handleReload}
+              class="xc-payment-reload-btn"
+            >
+              {t('reload')}
+            </button>
+          </div>
+          <Show when={!canEdit()}>
+            <div class="xc-payment-readonly">{t('readOnly')}</div>
+          </Show>
+        </header>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSave();
+          }}
+        >
+          <fieldset disabled={saving() || !canEdit()} class="xc-payment-fieldset">
+            <div class="xc-payment-cards">
+              <For each={CHANNELS}>
+                {(c) => {
+                  const method = () =>
+                    currentMethods().find((m) => m.id === c.id) ?? {
+                      id: c.id,
+                      enabled: false,
+                      buy: false,
+                      sell: false,
+                      account: '',
+                      instruction: '',
+                    };
+
+                  return (
+                    <div class="xc-payment-card" data-payment-id={c.id}>
+                      <div class="xc-payment-card-head">
+                        <h3>{t(c.nameKey)}</h3>
+                        <span class="xc-payment-line">{c.line}</span>
+                      </div>
+
+                      <div class="xc-payment-card-body">
+                        <label class="xc-payment-enabled-label">
+                          <input
+                            type="checkbox"
+                            checked={method().enabled}
+                            onChange={(e) =>
+                              updateMethod(c.id, { enabled: e.currentTarget.checked })
+                            }
+                          />
+                          {t('enabled')}
+                        </label>
+
+                        <div class="xc-payment-directions">
+                          <label class="xc-payment-sell-label">
+                            <input
+                              type="checkbox"
+                              checked={method().sell}
+                              onChange={(e) =>
+                                updateMethod(c.id, { sell: e.currentTarget.checked })
+                              }
+                            />
+                            <span>{t('sell')}</span>
+                            <span class="xc-note">{t('sellNote')}</span>
+                          </label>
+
+                          <Show
+                            when={BUY_CHANNELS.includes(c.id)}
+                            fallback={
+                              <div class="xc-payment-receive-only">{t('receiveOnly')}</div>
+                            }
+                          >
+                            <label class="xc-payment-buy-label">
+                              <input
+                                type="checkbox"
+                                checked={method().buy}
+                                onChange={(e) =>
+                                  updateMethod(c.id, { buy: e.currentTarget.checked })
+                                }
+                              />
+                              <span>{t('buy')}</span>
+                              <span class="xc-note">{t('buyNote')}</span>
+                            </label>
+                          </Show>
+                        </div>
+
+                        <label class="xc-payment-field-label">
+                          <span>{t('account')}</span>
+                          <span class="xc-unit">{t('accountUnit')}</span>
+                          <input
+                            type="text"
+                            maxLength={100}
+                            placeholder={
+                              c.id === 'Cash' ? t('accountCash') : t('accountOther')
+                            }
+                            value={method().account}
+                            onInput={(e) =>
+                              updateMethod(c.id, { account: e.currentTarget.value })
+                            }
+                          />
+                        </label>
+
+                        <label class="xc-payment-field-label">
+                          <span>{t('instruction')}</span>
+                          <span class="xc-unit">{t('instructionUnit')}</span>
+                          <textarea
+                            maxLength={400}
+                            placeholder={t('instructionPlaceholder')}
+                            value={method().instruction}
+                            onInput={(e) =>
+                              updateMethod(c.id, { instruction: e.currentTarget.value })
+                            }
+                          />
+                        </label>
+
+                        <div class="xc-payment-evidence">
+                          {c.id === 'Cash' ? t('evidenceCash') : t('evidenceOther')}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </fieldset>
+
+          <div class="xc-payment-save-bar">
+            <div class="xc-payment-save-status">
+              <span class="xc-payment-dirty-state">{isDirty() ? t('dirty') : t('clean')}</span>
+              <span class="xc-payment-save-note">{t('saveNote')}</span>
+            </div>
+
+            <div class="xc-payment-save-actions">
+              <button
+                type="button"
+                disabled={!isDirty() || saving()}
+                onClick={handleDiscard}
+                class="xc-payment-discard-btn"
+              >
+                {t('discard')}
+              </button>
+              <button
+                type="submit"
+                disabled={!canEdit() || saving()}
+                class="xc-payment-save-btn"
+              >
+                {t('save')}
+              </button>
+            </div>
+          </div>
+
+          <div role="status" id="payment-feedback" class="xc-payment-feedback">
+            {feedback()}
+          </div>
+
+          <div class="xc-payment-footnote">{t('footnote')}</div>
+        </form>
+
+        <Show when={data()?.history !== undefined}>
+          <details class="xc-payment-history-details">
+            <summary>
+              {t('historySummary', { count: data()!.history.length })}
+            </summary>
+            <table class="xc-payment-history-table">
+              <thead>
+                <tr>
+                  <th>{t('historyHeaderDate')}</th>
+                  <th>{t('historyHeaderActor')}</th>
+                  <th>{t('historyHeaderChanges')}</th>
+                  <th>{t('historyHeaderVersion')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <Show
+                  when={data()!.history.length > 0}
+                  fallback={
+                    <tr>
+                      <td colspan="4">{t('noHistory')}</td>
+                    </tr>
+                  }
+                >
+                  <For each={data()!.history}>
+                    {(h: PaymentHistoryItem) => (
+                      <tr>
+                        <td>{formatDate(h.createdAt)}</td>
+                        <td>{h.actor}</td>
+                        <td>{computeChangedChannels(h.beforeMethods, h.afterMethods)}</td>
+                        <td>{String(h.version)}</td>
+                      </tr>
+                    )}
+                  </For>
+                </Show>
+              </tbody>
+            </table>
+          </details>
+        </Show>
+      </Show>
+    </div>
+  );
+}
