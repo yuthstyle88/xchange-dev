@@ -23,6 +23,7 @@ import { requestRefresh } from './parts/refresh';
 import { en, th } from './i18n';
 import type { AdminMenu } from './menus';
 import { QueueBar } from './queue/QueueBar';
+import './admin.css';
 
 export interface AdminShellProps {
   api: ApiClient;
@@ -49,6 +50,14 @@ function formatTime(d: Date): string {
     timeZone: 'Asia/Bangkok',
   }).format(d);
 }
+
+const Shell = AppShell as unknown as (props: {
+  title: string;
+  nav?: JSX.Element;
+  children?: JSX.Element;
+  ownsMain?: boolean;
+  look?: 'devices' | 'kiosk' | 'admin';
+}) => JSX.Element;
 
 export function AdminShell(props: AdminShellProps): JSX.Element {
   const t = screenT('admin', { th, en });
@@ -329,7 +338,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 setDialogError('');
               }}
             />
-            <button type="submit">{t('addSubmit')}</button>
+            <button type="submit" class="primary">{t('addSubmit')}</button>
           </form>
         </div>
       );
@@ -395,7 +404,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   });
 
   return (
-    <AppShell
+    <Shell
+      look="admin"
       title={t('pageTitle')}
       ownsMain={true}
       nav={
@@ -409,11 +419,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </button>
       }
     >
-      <div class="admin-shell-container">
+      <div class="admin-shell-container xc-admin">
         {/* Sidebar */}
         <aside
           id="admin-sidebar"
-          class="admin-sidebar"
+          class={mobileOpen() ? 'admin-sidebar open' : 'admin-sidebar'}
           style={mobileOpen() ? {} : undefined}
         >
           {/* Branch management header */}
@@ -607,7 +617,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
           {/* Connection info button */}
           <div class="connection-action">
-            <button type="button" onClick={openConnectionDialog}>
+            <button
+              type="button"
+              class="desk-link"
+              onClick={openConnectionDialog}
+            >
               {t('connection')}
             </button>
           </div>
@@ -691,6 +705,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       <QueueBar branch={currentBranch} branchLabel={currentBranchName} />
       <Dialog />
       <Toast />
-    </AppShell>
+    </Shell>
   );
 }
