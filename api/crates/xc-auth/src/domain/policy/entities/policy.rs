@@ -478,3 +478,264 @@ impl Policy {
         }
     }
 }
+
+// ── OR-4 (#550): the route table onto `Authorizer` ─────────────────────────────
+//
+// Signatures only, from the ticket author of OR-4: the bodies are OR-4's to write
+// (`api/crates/xc-auth/tests/policy_*_test.rs`, design `docs/design/blueprint/org-roles-branches.md`
+// §3.5, §4.2).
+
+use std::collections::HashSet;
+
+use chrono::{DateTime, Utc};
+
+use crate::domain::access::{
+    Actor as Who, Authorizer, Grant, Permission, Refusal, Role as BpRole, RolePermissions, Target,
+};
+
+/// What a (path, name) requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Need {
+    /// Nobody's role is asked (the customer kiosk).
+    Public,
+    /// `Authorizer::check` with this permission.
+    Permission(Permission),
+    /// #582's row: until #582, the custody engine asks the v2 rule [`Policy::allow`].
+    Custody,
+}
+
+fn actor_single_branch(actor: &Who) -> Option<BranchId> {
+    let mut branches = HashSet::new();
+    for r in &actor.roles {
+        if let Some(b) = &r.branch {
+            branches.insert(b.clone());
+        }
+    }
+    if branches.len() == 1 {
+        branches.into_iter().next()
+    } else {
+        None
+    }
+}
+
+impl Policy {
+    /// The row of the route table for `action` on `path` (§4.2); `None` = no row.
+    pub fn need(path: EntryPath, action: &Action) -> Option<Need> {
+        let act = action.as_str();
+        match path {
+            EntryPath::Rpc => match act {
+                "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => {
+                    Some(Need::Permission(Permission::CompatRead))
+                }
+                "reserveCustomer" | "saveTransaction" => {
+                    Some(Need::Permission(Permission::ExchangeTransact))
+                }
+                "adminSaveRate" | "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
+                "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
+                "adminMoveStock" => Some(Need::Permission(Permission::CashManage)),
+                "adminCreateBranch" => Some(Need::Permission(Permission::BranchesManage)),
+                "adminAbandonRequest" => Some(Need::Permission(Permission::RequestAbandon)),
+                "ratePolicySave" => Some(Need::Permission(Permission::RatePolicySave)),
+                "approvalDecide" | "approvalRead" => {
+                    Some(Need::Permission(Permission::ApprovalsDecide))
+                }
+                _ => None,
+            },
+            EntryPath::StaffRpc => match act {
+                "adminSnapshot" | "getConnectionStatus" => {
+                    Some(Need::Permission(Permission::CompatRead))
+                }
+                "adminDeskConfig" | "reserveCustomer" | "saveTransaction" => {
+                    Some(Need::Permission(Permission::ExchangeTransact))
+                }
+                "adminSaveRate" | "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
+                "documents" => Some(Need::Permission(Permission::IdentityDocumentRead)),
+                "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
+                name if name.starts_with("ops") => Some(Need::Custody),
+                _ => None,
+            },
+            EntryPath::Upload => Some(Need::Permission(Permission::ProofUpload)),
+            EntryPath::StaffUpload => Some(Need::Permission(Permission::ProofUpload)),
+            EntryPath::File => Some(Need::Permission(Permission::FileRead)),
+            EntryPath::StaffFile => Some(Need::Permission(Permission::IdentityDocumentRead)),
+            EntryPath::StaffDesk => Some(Need::Permission(Permission::ExchangeTransact)),
+            EntryPath::Devices => match act {
+                "setPrinter" | "setDrawer" => Some(Need::Permission(Permission::SystemSettings)),
+                "queue" => Some(Need::Permission(Permission::DeviceQueue)),
+                "process" | "retry" | "drawerObservation" => {
+                    Some(Need::Permission(Permission::DeviceProcess))
+                }
+                "printerOnline" => Some(Need::Permission(Permission::DevicePrinterOnline)),
+                _ => Some(Need::Permission(Permission::SignedIn)),
+            },
+            EntryPath::Kiosk => match act {
+                "rates" | "quote" | "confirm" | "status" | "customerReceipt" => Some(Need::Public),
+                "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
+                "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
+                "identityChecked" | "publishReceipt" | "get" | "accept" => {
+                    Some(Need::Permission(Permission::QueueOperate))
+                }
+                _ => None,
+            },
+            EntryPath::OwnerRoute => match act {
+                "/api/bookings" => Some(Need::Permission(Permission::BookingsAdmin)),
+                "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
+                _ => Some(Need::Permission(Permission::UsersManage)),
+            },
+            EntryPath::UserRoute => match act {
+                "documents" => Some(Need::Permission(Permission::DocumentsList)),
+                _ => Some(Need::Permission(Permission::SignedIn)),
+            },
+            EntryPath::Custody => Some(Need::Custody),
+            EntryPath::PaymentMethods => match act {
+                "save" => Some(Need::Permission(Permission::SystemSettings)),
+                "list" => Some(Need::Permission(Permission::SignedIn)),
+                _ => None,
+            },
+            EntryPath::DrawerPassport => Some(Need::Permission(Permission::DrawerPassport)),
+            EntryPath::DeviceSetup => Some(Need::Permission(Permission::SystemSettings)),
+            EntryPath::StaffBookings => match act {
+                "list" | "get" | "create" | "confirm" | "cancel" => {
+                    Some(Need::Permission(Permission::BookingsDesk))
+                }
+                "member" | "settings" | "registrations" | "approveRegistration" => {
+                    Some(Need::Permission(Permission::BookingsAdmin))
+                }
+                _ => None,
+            },
+        }
+    }
+
+    /// Whether `actor` may ask for `action` on `path`, naming `named`, at `now`; and on which branch
+    /// (§3.5 `Grant`). A refusal is said in the words of its path.
+    pub fn authorize(
+        actor: Option<&Who>,
+        path: EntryPath,
+        action: &Action,
+        named: Option<&BranchId>,
+        now: DateTime<Utc>,
+    ) -> Result<Grant, PolicyError> {
+        let need = Self::need(path, action);
+
+        // 1. Need::Public -> Grant
+        if need == Some(Need::Public) {
+            let branch = named
+                .cloned()
+                .or_else(|| actor.and_then(actor_single_branch))
+                .unwrap_or_else(|| BranchId::new("MAIN"));
+            return Ok(Grant {
+                branch,
+                roles_used: vec![],
+            });
+        }
+
+        // 2. No actor -> path's sign-in sentence
+        let Some(actor) = actor else {
+            return match path {
+                EntryPath::StaffRpc
+                | EntryPath::StaffDesk
+                | EntryPath::StaffFile
+                | EntryPath::StaffUpload
+                | EntryPath::StaffBookings => Err(PolicyError::EmployeeAuthRequired),
+                EntryPath::Kiosk => match action.as_str() {
+                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    _ => Err(PolicyError::KioskStaff),
+                },
+                _ => Err(PolicyError::SignIn),
+            };
+        };
+
+        // 3. StaffBookings without BookingsDesk -> RoleNotAllowed before the name is read (#410)
+        if path == EntryPath::StaffBookings {
+            let has_bookings_desk = actor.roles.iter().any(|r| {
+                r.valid_from <= now
+                    && r.valid_to.is_none_or(|to| now < to)
+                    && RolePermissions::of(r.role).contains(&Permission::BookingsDesk)
+            });
+            if !has_bookings_desk {
+                return Err(PolicyError::RoleNotAllowed);
+            }
+        }
+
+        // 4. No row (need is None) -> path's unknown-name sentence
+        let Some(need) = need else {
+            return match path {
+                EntryPath::Rpc => {
+                    let is_executive = actor.roles.iter().any(|r| {
+                        r.valid_from <= now
+                            && r.valid_to.is_none_or(|to| now < to)
+                            && r.role == BpRole::Executive
+                    });
+                    if is_executive {
+                        Err(PolicyError::InvalidRequest)
+                    } else {
+                        Err(PolicyError::RoleNotAllowedHere)
+                    }
+                }
+                EntryPath::StaffRpc => Err(PolicyError::RoleNotAllowed),
+                EntryPath::Kiosk => {
+                    let has_queue_operate = actor.roles.iter().any(|r| {
+                        r.valid_from <= now
+                            && r.valid_to.is_none_or(|to| now < to)
+                            && RolePermissions::of(r.role).contains(&Permission::QueueOperate)
+                    });
+                    if has_queue_operate {
+                        Err(PolicyError::KioskUnknown)
+                    } else {
+                        Err(PolicyError::KioskStaff)
+                    }
+                }
+                _ => Err(PolicyError::InvalidRequest),
+            };
+        };
+
+        // 5. Need::Custody -> refused with InvalidRequest
+        let permission = match need {
+            Need::Public => unreachable!(),
+            Need::Custody => return Err(PolicyError::InvalidRequest),
+            Need::Permission(p) => p,
+        };
+
+        // 6. Authorizer::check
+        let target = Target::new(
+            &actor.organization_id,
+            named.cloned(),
+            actor.customer_id.as_deref(),
+        );
+        match Authorizer::check(Some(actor), permission, &target, now) {
+            Ok(grant) => Ok(grant),
+            Err(Refusal::SignIn) => Err(PolicyError::SignIn),
+            Err(Refusal::OutOfScope) => Err(PolicyError::OutOfScope),
+            Err(Refusal::RoleNotAllowed) => match path {
+                EntryPath::Rpc => Err(PolicyError::RoleNotAllowedHere),
+                EntryPath::StaffRpc => match action.as_str() {
+                    "adminDeskConfig" => Err(PolicyError::FrontOnly),
+                    "documents" => Err(PolicyError::DocumentsNotReadable),
+                    _ => Err(PolicyError::RoleNotAllowed),
+                },
+                EntryPath::StaffDesk => Err(PolicyError::FrontOnly),
+                EntryPath::Upload | EntryPath::StaffUpload => Err(PolicyError::UploadNotAllowed),
+                EntryPath::File => Err(PolicyError::NotFound),
+                EntryPath::StaffFile => Err(PolicyError::FilesNotReadable),
+                EntryPath::OwnerRoute | EntryPath::DeviceSetup => Err(PolicyError::OwnerOnly),
+                EntryPath::Devices => Err(PolicyError::DeviceStepNotAllowed),
+                EntryPath::Kiosk => match action.as_str() {
+                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    _ => Err(PolicyError::KioskStaff),
+                },
+                EntryPath::PaymentMethods => match action.as_str() {
+                    "save" => Err(PolicyError::PaymentOwnerOnly),
+                    _ => Err(PolicyError::RoleNotAllowed),
+                },
+                EntryPath::DrawerPassport => Err(PolicyError::DrawerRoleNotAllowed),
+                EntryPath::StaffBookings => match action.as_str() {
+                    "member" | "settings" | "registrations" | "approveRegistration" => {
+                        Err(PolicyError::OwnerOnly)
+                    }
+                    _ => Err(PolicyError::RoleNotAllowed),
+                },
+                _ => Err(PolicyError::RoleNotAllowed),
+            },
+        }
+    }
+}

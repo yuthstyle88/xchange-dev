@@ -1,6 +1,9 @@
 //! Non-counter roles get RoleNotAllowed on EntryPath::StaffBookings whatever the action.
 //!
 //! Ticket T15-d rework (#410): the role check comes first.
+//!
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.3) onto the
+//! Blueprint's users: every role but TELLER is outside the counter (C9 adds BRANCH_MANAGER).
 
 mod policy_common;
 
@@ -8,13 +11,15 @@ use policy_common::*;
 
 const B2: &str = "B2";
 
-const NON_COUNTER_ROLES: [Role; 6] = [
-    Role::Rates,
-    Role::Monitor,
+const NON_COUNTER_ROLES: [Role; 8] = [
+    Role::Executive,
+    Role::Admin,
+    Role::RateManager,
+    Role::BranchManager,
     Role::Finance,
-    Role::System,
-    Role::Documents,
-    Role::DocumentReview,
+    Role::Marketing,
+    Role::Customer,
+    Role::VerificationReviewer,
 ];
 
 #[test]

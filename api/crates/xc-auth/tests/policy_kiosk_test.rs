@@ -25,6 +25,14 @@
 //! The same answers are recorded, caller by caller, in `fixtures/v2_policy_cases.json` (path
 //! `Kiosk`, written by `api/tools/v2-fixtures/gen_policy.mjs` from that bundle); the last test
 //! holds the table below to that recording.
+//!
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.2, §4.3):
+//! each v2 caller is now the user B1 makes of it (§3.3; OWNER → EXECUTIVE + ADMIN), and the
+//! table's columns keep v2's names so the rows read as before. Two cells change, both C8 (§03 B06:
+//! the kiosk queue is TELLER's and MANAGER's, QueueOperate; EXECUTIVE is refused): OWNER on the
+//! desk row (OK → "Staff access required.") and OWNER on an unknown name ("Unknown kiosk action."
+//! is said only to a QueueOperate holder → "Staff access required."). The last test holds the
+//! table to `fixtures/blueprint_policy_cases.json`.
 
 mod policy_common;
 
@@ -79,9 +87,11 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
     //             ANON OWNER FRONT BACK  MGR  RATES MON  FIN  SYS  DOCS DREV
     let open = [OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
     let signed_in = [R15, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
-    let desk = [R15, OK, OK, OK, OK, R15, R15, R15, R15, R15, R15];
+    // C8: OWNER is refused the queue (was OK)
+    let desk = [R15, R15, OK, OK, OK, R15, R15, R15, R15, R15, R15];
     let currencies = [R14, OK, R14, R14, R14, OK, R14, R14, R14, R14, R14];
-    let unknown = [R15, R16, R16, R16, R16, R15, R15, R15, R15, R15, R15];
+    // C8: OWNER hears the staff sentence (was R16)
+    let unknown = [R15, R15, R16, R16, R16, R15, R15, R15, R15, R15, R15];
     let mut rows = vec![
         ("rates", open),
         ("quote", open),
@@ -101,11 +111,15 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
     rows
 }
 
+/// v2's caller as the user B1 makes of it (§3.3).
 fn caller_of(name: &str) -> Option<Actor> {
     match name {
         "ANON" => None,
         "OWNER" => Some(owner()),
-        role_name => Some(staff(role(role_name), "B2")),
+        v2 => Some(user(
+            &format!("U-{v2}"),
+            b1(v2).iter().map(|r| row(*r, Some("B2"))).collect(),
+        )),
     }
 }
 
@@ -141,7 +155,7 @@ fn every_kiosk_action_by_every_caller_is_answered_from_the_one_table() {
 fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
     // server.mjs:8026 of the 10-06 bundle: `if (name === "list" && user) return queueWork.list(…)`
     assert_eq!(ask(Some(&owner()), EntryPath::Kiosk, "list"), Ok(()));
-    for r in Role::STAFF {
+    for r in BLUEPRINT {
         assert_eq!(
             ask(Some(&staff(r, "B2")), EntryPath::Kiosk, "list"),
             Ok(()),
@@ -153,20 +167,26 @@ fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
         said(ask(None, EntryPath::Kiosk, "list")),
         (KIOSK_STAFF.to_owned(), 400)
     );
-    // taking a request off the queue stays the desk's
-    for r in [
-        Role::Rates,
-        Role::Monitor,
-        Role::Finance,
-        Role::System,
-        Role::Documents,
-        Role::DocumentReview,
-    ] {
+    // taking a request off the queue stays the desk's (C8: the owner's user is no longer desk)
+    let mut off_desk = vec![owner()];
+    off_desk.extend(
+        [
+            Role::Executive,
+            Role::Admin,
+            Role::RateManager,
+            Role::Finance,
+            Role::Marketing,
+            Role::Customer,
+            Role::VerificationReviewer,
+        ]
+        .map(|r| staff(r, "B2")),
+    );
+    for who in &off_desk {
         assert_eq!(
-            said(ask(Some(&staff(r, "B2")), EntryPath::Kiosk, "accept")),
+            said(ask(Some(who), EntryPath::Kiosk, "accept")),
             (KIOSK_STAFF.to_owned(), 400),
-            "{}",
-            r.as_str()
+            "{:?}",
+            who.roles
         );
     }
 }
@@ -181,46 +201,47 @@ fn a_name_v2_does_not_answer_is_refused_by_what_the_caller_is() {
             "{name:?} by nobody"
         );
     }
-    // the owner and the desk: the name is unknown
-    let desk = [
-        owner(),
-        staff(Role::Front, "B2"),
-        staff(Role::Backend, "B2"),
-        staff(Role::Manager, "B2"),
-    ];
-    for who in &desk {
-        for name in UNKNOWN_NAMES {
-            assert_eq!(
-                said(ask(Some(who), EntryPath::Kiosk, name)),
-                (KIOSK_UNKNOWN.to_owned(), 400),
-                "{name:?} by {}",
-                who.role().as_str()
-            );
-        }
-    }
-    // an employee outside the desk: refused as staff before the name is looked at
-    for r in [
-        Role::Rates,
-        Role::Monitor,
-        Role::Finance,
-        Role::System,
-        Role::Documents,
-        Role::DocumentReview,
-    ] {
+    // the desk (TELLER, BRANCH_MANAGER): the name is unknown
+    for r in [Role::Teller, Role::BranchManager] {
         for name in UNKNOWN_NAMES {
             assert_eq!(
                 said(ask(Some(&staff(r, "B2")), EntryPath::Kiosk, name)),
-                (KIOSK_STAFF.to_owned(), 400),
+                (KIOSK_UNKNOWN.to_owned(), 400),
                 "{name:?} by {}",
                 r.as_str()
+            );
+        }
+    }
+    // anybody signed in outside the desk, the owner's user included (C8): refused as staff
+    // before the name is looked at
+    let mut off_desk = vec![owner()];
+    off_desk.extend(
+        [
+            Role::Executive,
+            Role::Admin,
+            Role::RateManager,
+            Role::Finance,
+            Role::Marketing,
+            Role::Customer,
+            Role::VerificationReviewer,
+        ]
+        .map(|r| staff(r, "B2")),
+    );
+    for who in &off_desk {
+        for name in UNKNOWN_NAMES {
+            assert_eq!(
+                said(ask(Some(who), EntryPath::Kiosk, name)),
+                (KIOSK_STAFF.to_owned(), 400),
+                "{name:?} by {:?}",
+                who.roles
             );
         }
     }
 }
 
 #[test]
-fn the_table_is_what_v2_recorded() {
-    let f = fixture();
+fn the_table_is_what_the_mapping_records() {
+    let f = mapped_fixture();
     let rows: Vec<_> = f.cases.iter().filter(|c| c.path == "Kiosk").collect();
     // 11 callers × the 13 names of `action2` and "nope"
     assert_eq!(rows.len(), 11 * 14);
@@ -236,7 +257,7 @@ fn the_table_is_what_v2_recorded() {
             .unwrap_or_else(|| panic!("{} is a caller of the table", c.actor));
         assert_eq!(
             expected(row[column]),
-            recorded(c),
+            recorded_mapped(c),
             "{:?} by {}",
             c.action,
             c.actor

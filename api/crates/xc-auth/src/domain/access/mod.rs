@@ -5,6 +5,7 @@ pub mod role;
 pub mod role_permissions;
 pub mod scope_rule;
 pub mod scoped_role;
+pub mod v3_roles;
 
 pub use actor::Actor;
 pub use authorizer::{Authorizer, Grant, Refusal, Target};
