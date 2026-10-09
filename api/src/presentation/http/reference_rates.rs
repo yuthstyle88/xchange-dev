@@ -79,7 +79,7 @@ async fn handler(req: HttpRequest) -> HttpResponse {
         }
         Err(AppError::Domain(sentence)) => refuse(400, &sentence),
         Err(other) => {
-            tracing::error!(error = ?other, "the reference-rate source failed");
+            tracing::error!(error = %other, "the reference-rate source failed");
             server_error()
         }
     }

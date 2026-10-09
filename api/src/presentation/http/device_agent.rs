@@ -124,7 +124,7 @@ async fn pair_handler(
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .json(serde_json::json!({ "error": "PAIRING_CODE_INVALID" })),
         Err(e) => {
-            tracing::error!(error = ?e, "pair failed");
+            tracing::error!(error = %e, "pair failed");
             server_error()
         }
     }
@@ -161,7 +161,7 @@ async fn claim_handler(
                 .json(serde_json::json!({ "error": "AGENT_TOKEN_INVALID" }));
         }
         Err(e) => {
-            tracing::error!(error = ?e, "claim auth failed");
+            tracing::error!(error = %e, "claim auth failed");
             return server_error();
         }
     };
@@ -211,7 +211,7 @@ async fn claim_handler(
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .json(serde_json::json!({ "error": "AGENT_TOKEN_INVALID" })),
         Err(e) => {
-            tracing::error!(error = ?e, "claim failed");
+            tracing::error!(error = %e, "claim failed");
             server_error()
         }
     }
@@ -248,7 +248,7 @@ async fn report_handler(
                 .json(serde_json::json!({ "error": "AGENT_TOKEN_INVALID" }));
         }
         Err(e) => {
-            tracing::error!(error = ?e, "report auth failed");
+            tracing::error!(error = %e, "report auth failed");
             return server_error();
         }
     };
@@ -274,7 +274,7 @@ async fn report_handler(
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .json(serde_json::json!({ "error": "LEASE_MISMATCH" })),
         Err(e) => {
-            tracing::error!(error = ?e, "report failed");
+            tracing::error!(error = %e, "report failed");
             server_error()
         }
     }

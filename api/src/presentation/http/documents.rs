@@ -205,7 +205,7 @@ async fn documents(req: HttpRequest) -> HttpResponse {
 }
 
 fn server_error(error: &AppError) -> HttpResponse {
-    tracing::error!(error = ?error, "documents request failed");
+    tracing::error!(error = %error, "documents request failed");
     HttpResponse::InternalServerError()
         .content_type("application/json; charset=utf-8")
         .body(json!({ "error": SERVER_ERROR }).to_string())

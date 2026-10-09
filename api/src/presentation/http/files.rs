@@ -86,7 +86,7 @@ fn refuse(status: u16, sentence: &str, no_store: bool) -> HttpResponse {
 }
 
 fn server_error(error: &AppError) -> HttpResponse {
-    tracing::error!(error = ?error, "file request failed");
+    tracing::error!(error = %error, "file request failed");
     HttpResponse::InternalServerError()
         .content_type("application/json; charset=utf-8")
         .body(json!({ "error": SERVER_ERROR }).to_string())

@@ -77,7 +77,7 @@ pub fn failure(error: AppError) -> HttpResponse {
         AppError::Domain(sentence) => refuse(400, &sentence),
         AppError::Unauthenticated => refuse(401, "EMPLOYEE_AUTH_REQUIRED"),
         other => {
-            tracing::error!(error = ?other, "request failed");
+            tracing::error!(error = %other, "request failed");
             server_error()
         }
     }
