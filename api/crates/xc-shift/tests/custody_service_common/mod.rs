@@ -21,6 +21,7 @@ use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, Outsi
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::domain::shift::entities::shift::ShiftStatus;
 use xc_shift::domain::shift::value_objects::stock_delta::Direction;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
@@ -168,6 +169,15 @@ impl CustodyPorts for FakeOutside {
                 .contains(&employee_id.trim_end_matches(|c: char| c.is_ascii_digit()));
             Ok(known.then(|| actor(employee_id).role))
         })
+    }
+
+    fn service_window<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+        _now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<ServiceWindow>> {
+        Box::pin(async move { Ok(crate::custody_common::v2_hours()) })
     }
 }
 

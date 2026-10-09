@@ -743,8 +743,7 @@ impl CustodyMachine {
                 if state.custodian.as_deref() != Some(me) || state.phase != Phase::Open {
                     return Err(CustodyError::NotCustodianInOpenService);
                 }
-                let t = now.bangkok_minute_of_day();
-                if !(660..1370).contains(&t) {
+                if !facts.service_window.allows_begin(now) {
                     return Err(CustodyError::OutsideServiceHours);
                 }
                 if currency.is_thb() {
@@ -801,10 +800,9 @@ impl CustodyMachine {
                 if actor.role != CustodyRole::Backend {
                     return Err(CustodyError::RoleNotAllowed);
                 }
-                let t = now.bangkok_minute_of_day();
                 if facts.open_shift.is_none()
                     || state.phase != Phase::Ready
-                    || !(660..1370).contains(&t)
+                    || !facts.service_window.allows_start(now)
                 {
                     return Err(CustodyError::ServiceNotReady);
                 }
@@ -1192,14 +1190,13 @@ impl CustodyMachine {
         // 4. Only when save.prior == PriorSave::None:
         let me = actor.employee_id.as_deref().unwrap_or_default();
         if save.prior == PriorSave::None {
-            let t = now.bangkok_minute_of_day();
-            if !(660..1380).contains(&t) {
+            if !facts.service_window.allows_save(now) {
                 return Err(CustodyError::SaveClosed);
             }
             if state.phase != Phase::Open && state.phase != Phase::CutOff {
                 return Err(CustodyError::SaveClosed);
             }
-            let needs_draft = state.phase != Phase::Open || t >= 1370;
+            let needs_draft = state.phase != Phase::Open || facts.service_window.needs_draft(now);
             if needs_draft {
                 let open_shift_id = facts.open_shift.as_ref().map(|s| s.id.as_str());
                 let has_matching_draft = state.drafts.iter().any(|d| {

@@ -15,6 +15,7 @@ pub mod phase;
 pub mod request_kind;
 pub mod request_status;
 pub mod save_attempt;
+pub mod service_window;
 pub mod shift_effect;
 pub mod signature;
 pub mod transition;

@@ -6,6 +6,8 @@ use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
+use crate::domain::custody::value_objects::custody_time::CustodyTime;
+use crate::domain::custody::value_objects::service_window::ServiceWindow;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OutsideFacts {
@@ -44,4 +46,11 @@ pub trait CustodyPorts: Send + Sync + 'static {
         branch: &'a BranchId,
         employee_id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>>;
+
+    fn service_window<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<ServiceWindow>>;
 }

@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 
 use crate::application::user::UserService;
+use crate::application::user::user_service::{ClaimError, InviteRefusal};
 use crate::domain::access::{Role, ScopedRole};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
@@ -51,7 +52,7 @@ pub enum SessionError {
     Identity(IdentityError),
     UserDisabled,
     UserNotBound,
-    InviteRefused(String),
+    InviteRefused(InviteRefusal),
     Database(String),
 }
 
@@ -74,8 +75,15 @@ impl SessionError {
                 "signIn",
                 "บัญชีนี้ยังไม่ได้ผูกกับผู้ใช้ของ XCHANGE กรุณาใช้รหัสเชิญ".to_string(),
             ),
-            Self::InviteRefused(msg) => (400, "inviteRefused", msg.clone()),
+            Self::InviteRefused(reason) => (400, "inviteRefused", reason.message().to_string()),
             Self::Database(_) => (503, "identityUnavailable", UNAVAILABLE_MESSAGE.to_string()),
+        }
+    }
+
+    pub fn reason(&self) -> Option<InviteRefusal> {
+        match self {
+            Self::InviteRefused(reason) => Some(*reason),
+            _ => None,
         }
     }
 }
@@ -352,8 +360,8 @@ impl SessionService {
             .claim(&mut tx, invite_code, &verified.subject, now)
             .await
             .map_err(|err| match err {
-                pos_error::AppError::Domain(msg) => SessionError::InviteRefused(msg),
-                other => SessionError::Database(other.to_string()),
+                ClaimError::Refused(reason) => SessionError::InviteRefused(reason),
+                ClaimError::App(other) => SessionError::Database(other.to_string()),
             })?;
 
         let token = generate_session_token();

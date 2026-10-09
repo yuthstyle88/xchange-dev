@@ -8,6 +8,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService};
+use xc_auth::application::user::user_service::InviteRefusal;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
@@ -143,13 +144,25 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
 }
 
 fn refusal_response(status: u16, code: &str, message: &str) -> HttpResponse {
+    refusal_response_with_reason(status, code, message, None)
+}
+
+fn refusal_response_with_reason(
+    status: u16,
+    code: &str,
+    message: &str,
+    reason: Option<InviteRefusal>,
+) -> HttpResponse {
+    let mut err_obj = serde_json::Map::new();
+    err_obj.insert("code".to_string(), json!(code));
+    if let Some(reason) = reason {
+        err_obj.insert("reason".to_string(), json!(reason));
+    }
+    err_obj.insert("message".to_string(), json!(message));
     HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap())
         .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
         .json(json!({
-            "error": {
-                "code": code,
-                "message": message,
-            }
+            "error": err_obj
         }))
 }
 
@@ -162,8 +175,9 @@ fn handle_session_error(err: SessionError) -> HttpResponse {
             "Identity unavailable"
         );
     }
+    let reason = err.reason();
     let (status, code, msg) = err.refusal();
-    refusal_response(status, code, &msg)
+    refusal_response_with_reason(status, code, &msg, reason)
 }
 
 fn attach_signin_cookies(builder: &mut actix_web::HttpResponseBuilder, session_token: &str) {

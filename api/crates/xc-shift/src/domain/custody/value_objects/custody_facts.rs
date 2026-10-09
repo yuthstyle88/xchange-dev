@@ -1,5 +1,6 @@
 //! Facts supplied to the custody machine.
 
+use crate::domain::custody::value_objects::service_window::ServiceWindow;
 use crate::domain::shift::value_objects::balances::Balances;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +11,7 @@ pub struct OpenShift {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustodyFacts {
+    pub service_window: ServiceWindow,
     pub open_shift: Option<OpenShift>,
     pub has_live_rate: bool,
     pub rates_updated: String,
