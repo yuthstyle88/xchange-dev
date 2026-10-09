@@ -161,6 +161,8 @@ function shown(el: Element | null | undefined): boolean {
 }
 
 beforeEach(() => {
+  while (disposers.length) disposers.pop()?.();
+  document.body.innerHTML = '';
   storage.clear();
   FakeAudioContext.chimes = 0;
   vi.stubGlobal('localStorage', fakeStorage);

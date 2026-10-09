@@ -35,4 +35,8 @@ export default defineConfig({
       input: getInputs(),
     },
   },
+  test: {
+    // Capacity limit to prevent worker starvation under runner load (#567)
+    maxWorkers: 8,
+  },
 });

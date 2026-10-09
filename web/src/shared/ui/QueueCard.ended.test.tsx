@@ -221,6 +221,8 @@ async function openPage(initialEnded?: EndReason): Promise<Page> {
 }
 
 beforeEach(() => {
+  while (disposers.length) disposers.pop()?.();
+  document.body.innerHTML = '';
   audio.resumeTo = 'running';
   audio.contexts = [];
   audio.frequencies = [];

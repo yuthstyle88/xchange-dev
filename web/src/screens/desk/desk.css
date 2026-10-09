@@ -1,0 +1,55 @@
+.desk-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+ol.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+ol.steps li {
+  padding: 8px 16px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  font-weight: 500;
+  user-select: none;
+}
+
+ol.steps li[aria-current="step"] {
+  background: #1976d2;
+  color: #fff;
+  font-weight: 600;
+}
+
+.desk-body {
+  display: flex;
+  flex: 1;
+  gap: 24px;
+  min-height: 0;
+}
+
+.panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.desk-aside {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+.desk-empty {
+  padding: 32px;
+  text-align: center;
+  color: #888;
+}

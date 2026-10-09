@@ -7,7 +7,7 @@
 // `main.tsx`, which is imported into a document with `<div id="app">` and a stubbed `fetch` that
 // answers like the server (`me`, `kiosk_notifications`, `kiosk_queue`). The files are reached
 // through `import.meta.glob`, so a missing file fails an assertion here, not the whole file.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PAGES = import.meta.glob('../../../pages/kiosk-queue.html', {
   query: '?raw',
@@ -20,6 +20,20 @@ const TABLES = import.meta.glob('./i18n.ts', { eager: true }) as Record<
 >;
 const MAIN = import.meta.glob('./main.tsx');
 const STORE = import.meta.glob('../../shared/queue/queue-store.ts');
+
+const disposers: Array<() => void> = [];
+
+vi.mock('solid-js/web', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('solid-js/web')>();
+  return {
+    ...mod,
+    render: (code: () => any, element: Node, init?: any, options?: any) => {
+      const dispose = mod.render(code, element, init, options);
+      disposers.push(dispose);
+      return dispose;
+    },
+  };
+});
 
 const THAI = /[฀-๿]/;
 
@@ -108,6 +122,17 @@ function serve(input: unknown): Response {
           },
         ],
       });
+    case '/health/ready':
+      // Injected ready answer: AppShell polls /health/ready on mount (#567)
+      return json({
+        status: 'ok',
+        database: true,
+        version: '1.0.0',
+        build: '0123456789abcdef0123456789abcdef01234567',
+        builtAt: '2026-10-08T01:02:03Z',
+        channel: 'staging',
+        ui: 'built',
+      });
     default:
       return json({ error: { code: 'notFound', message: 'Not found' } }, 404);
   }
@@ -141,6 +166,14 @@ function queueReads(): URL[] {
   return urls.filter((u) => u.pathname === '/api/v3/views/kiosk_queue');
 }
 
+beforeAll(async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: unknown) => serve(input)));
+  await MAIN['./main.tsx']!();
+  while (disposers.length) disposers.pop()?.();
+  vi.unstubAllGlobals();
+  document.body.innerHTML = '';
+});
+
 beforeEach(() => {
   vi.useFakeTimers({ now: Date.parse('2026-10-08T03:00:00.000Z') });
   urls = [];
@@ -148,6 +181,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  while (disposers.length) disposers.pop()?.();
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();

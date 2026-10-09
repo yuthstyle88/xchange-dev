@@ -378,6 +378,8 @@ function folded(root = theCard()): boolean {
 }
 
 beforeEach(() => {
+  while (disposers.length) disposers.pop()?.();
+  document.body.innerHTML = '';
   audio.resumeTo = 'running';
   audio.contexts = [];
   audio.frequencies = [];
