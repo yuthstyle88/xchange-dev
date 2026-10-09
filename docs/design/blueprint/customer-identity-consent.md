@@ -190,6 +190,7 @@ classDiagram
   class Masked { <<xc-kernel pii/masked.rs  last 4>> }
   class Customer { <<xc-customer domain/customer.rs>> id; organization_id; customer_no; display_name; status; user_id? }
   class CustomerIdentity { <<xc-customer domain/identity.rs>> type; encrypted_value; key_id; lookup_hash; status }
+  class Mode { <<enum xc-kernel mode.rs  moved, not copied, from xc-exchange domain/customer/value_objects/mode.rs>> LIVE; DEMO }
   class IdentityType { <<enum xc-kernel pii/identity_type.rs  used by xc-customer, not copied>> PASSPORT; NATIONAL_ID; PHONE; EMAIL }
   class CustomerRepository { <<trait xc-customer domain/repository.rs>> }
   class PgCustomerRepository { <<xc-customer infrastructure/repository.rs>> }
@@ -211,6 +212,7 @@ classDiagram
   CustomerService --> Authorizer
   CustomerRepository <|.. PgCustomerRepository
   Customer *-- CustomerIdentity
+  Customer --> Mode
   CustomerIdentity --> IdentityType
   ConsentService --> Consent
   ConsentService --> ConsentText
@@ -225,13 +227,18 @@ classDiagram
 
 The customer code moves out of `xc-exchange` (`domain/customer/**`, `application/customer/**`,
 `infrastructure/customer/**`) into a new crate `xc-customer`: exchange, bookings, holds, the desk and the customer app
-all use it, and the PII it holds should not sit inside the exchange crate.
+all use it, and the PII it holds should not sit inside the exchange crate. `Mode` (LIVE/DEMO) is not a customer
+concept: the exchange, bookings, devices and documents use it too (25 imports at `5b160b5`). It moves to
+`xc-kernel/src/mode.rs` unchanged, so neither `xc-exchange` nor `xc-customer` depends on the other for it.
+`xc-exchange` depends on `xc-customer` (its transaction, receipt and booking types hold a customer reference);
+`xc-customer` never depends on `xc-exchange`. Until CA-10, `xc-exchange`'s old `customer` paths are `pub use` shims
+over `xc-customer` (§9.2).
 
 ### 5.1 Who provides, who uses
 
 | Provider | Used by | Fallback if not merged |
 |---|---|---|
-| #550 OR-1 `organizations`, OR-2 `users`, `Permission`, `Authorizer` | every table and service here | none — CI-1 starts after OR-2 |
+| #550 OR-1 `organizations`, OR-2 `users`, `Permission`, `Authorizer` | every table and service here | none — CI-4 (which carries CI-1) starts after OR-2 |
 | #550: a new permission `ConsentPolicyManage` (EXECUTIVE) | `consentTextPublish`, `retentionSet` | **not in #550's table** (`org-roles-branches.md` §3.4): CI-6 adds the row to `role_permissions.rs` after OR-2 merges, a one-line change agreed with #550's owner (claude/e5ab6c) on #554 |
 | #550 OR-3 `SessionService` | fills `Actor.customer_id` (CI-7) | OR-3 depends on CI-2 (I-2), not the reverse |
 | PR 570 CM-1 `CommandAction`, AP-1 audit (`audit_events`) | commands; `reveal`'s audit row | none — CI-6/CI-7 start after CM-1; CI-4 (its `reveal` audit row) after AP-1 |
@@ -247,7 +254,7 @@ all use it, and the PII it holds should not sit inside the exchange crate.
 | the passport number inside `transactions.payload_hash`'s digest | its `lookup_hash` (K4) |
 | *(not this design's)* `transactions.customer_name` / `nationality` (`20261007190000_transactions.sql:12-13`) | **#551** (the exchange's Quote/Transaction redesign) owns their protection and retention |
 | *(not this design's)* the per-exchange `PASSPORT` scan in `transaction_files` (`20261007190000_transactions.sql:41`) | **#557** (verification documents: private store, `retention_until`) owns it |
-| the per-branch tests that pin the old model: `xc-exchange/tests/customers_test.rs` (16; per-branch lookup `:280`), fixture `v2_customer_cases.json` (62 scenarios), and the per-branch cases of `v3_admin_customers_view_test.rs` (`member_flag_is_per_branch` `:1497`, live customers of the branch `:766`) | CI-3's and CI-4's tests (the surviving rules restated: one customer per passport, the six sentences, the shared counter, the concurrent reserve) |
+| the per-branch tests that pin the old model: `xc-exchange/tests/customers_test.rs` (16; per-branch lookup `:280`), fixture `v2_customer_cases.json` (62 scenarios), and the per-branch cases of `v3_admin_customers_view_test.rs` (`member_flag_is_per_branch` `:1497`, live customers of the branch `:766`) | CI-3's and CI-4's tests (the surviving rules restated: one customer per passport, the six sentences, the shared counter, the concurrent reserve). The ticket author retires them, and moves the other provided tests' imports to the new paths, in CI-4's up-front commit (§9.2) |
 
 ## 7. Known differences from v2 (decided by the Blueprint and U1–U4)
 
@@ -263,15 +270,15 @@ all use it, and the PII it holds should not sit inside the exchange crate.
 v3 has not been installed for a shop (`xchange-v3.md` D6). The owner decided (U4) that the test database is
 **recreated**, not converted. The owner approved v3 migrations until the first install (2026-10-06).
 
-**M1. `api/migrations/20261019100000_customers_org.sql` (CI-1).**
+**M1. `api/migrations/20261019100000_customers_org.sql` (CI-4 Part 1, was CI-1).**
 1. *Existing rows.* None are carried. The migration first runs `SELECT count(*) FROM customers` and `RAISE`s if it is
    not 0 (*"recreate the test database first (U4)"*): reshaping `customers` would otherwise orphan or mis-key every
    transaction, member, booking and hold that points at it. On a fresh or recreated database it reshapes `customers` and
    creates the four new tables of §4.1.
 2. *Backfill.* None (U4). Before the deploy: `SELECT count(*) FROM customers;` on the target (`xc_v3`, do-sgp1); if
    not 0, the owner orders the database recreated.
-3. *Order.* After #550's OR-1 and OR-2 migrations (`organizations`, `users`). Deploy is migration + the CI-1…CI-5
-   binary together; the old binary cannot read the reshaped `customers` (its `passport_no` reads fail).
+3. *Order.* After #550's OR-1 and OR-2 migrations (`organizations`, `users`). Deploy is migration + CI-4's binary
+   together (one ticket carrying CI-1 and CI-5, §9.2); the old binary cannot read the reshaped `customers` (its `passport_no` reads fail).
 4. *`down`.* Forward-only like every v3 migration: restoring the old shape is restoring the database from its backup.
 
 No transitional drop is needed (nothing is carried), so this design takes no cleanup-block slot.
@@ -283,27 +290,135 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| CI-1 | schema (§4.1, M1) | `api/migrations/20261019100000_customers_org.sql` | this design, #550 OR-1 and OR-2 |
 | CI-2 | I-2 token verifier (§4.5) | `xc-auth/src/domain/token/**`, `xc-auth/src/infrastructure/token/**`, `xc-auth/Cargo.toml` (the JWT and HTTP client dependencies), its tests | this design only |
 | CI-3 | PII core (§4.1 keys, normalisation; K3) | `xc-kernel/src/pii/**`, `xc-kernel/src/lib.rs` (one `pub mod pii;` line), `xc-kernel/Cargo.toml` | this design only |
-| CI-4 | `xc-customer` crate: customer, identity, `CustomerService` (`reserve`, `confirm_in`, `reveal`, `find`), the repository; the move out of `xc-exchange` | `api/crates/xc-customer/**`, `xc-exchange/src/{domain,application,infrastructure}/customer/**` (deleted), the retired tests of §6 | CI-1, CI-3, PR 570 AP-1 |
-| CI-5 | callers re-pointed: the desk's `reserveCustomer`, the save's re-check and digest, snapshot, bookings and custody ports, `admin_customers` organisation-wide | `api/src/application/compat/rpc.rs` (the `reserveCustomer` arm), `save_transaction.rs`, `compat/snapshot.rs`, `infrastructure/bookings/booking_ports.rs`, `infrastructure/custody/custody_ports.rs`, `views/admin_customers.rs`, `api/Cargo.toml` | CI-4 |
+| CI-4 | **one ticket in three parts (§9.2)**: Part 1 = the schema (§4.1, M1; was CI-1); Part 2 = `xc-customer` crate: customer, identity, `CustomerService` (`reserve`, `confirm_in`, `reveal`, `find`), the repository, the move out of `xc-exchange` behind re-export shims at the old paths, `Mode` → `xc-kernel`; Part 3 = the readers of `customers`' removed columns and the PII key wiring (was CI-5, narrowed by the lane controller's ruling (b) on #554, 2026-10-09) | see §9.2 (owned files, and the order against each other owner) | #550 OR-1 and OR-2, CI-3, PR 570 AP-1 |
 | CI-6 | consent and retention: `ConsentService`, `RetentionJob`, `consentTextPublish`, `retentionSet`, the `ConsentPolicyManage` row, view `consent_texts` | `xc-customer/src/{domain,application}/{consent*,retention*}`, `http/v3/commands/{consent_text_publish,retention_set}.rs`, `views/consent_texts.rs`, `xc-auth/.../role_permissions.rs` (one row) | CI-4, PR 570 CM-1 |
 | CI-7 | customer account: `customerRegister`, `consentRecord`, `profileUpdate`, view `my_profile`, `Actor.customer_id` filled at session build | `http/v3/commands/{customer_register,consent_record,profile_update}.rs`, `views/my_profile.rs`, the `customer_id` lookup in OR-3's session builder (one function) | CI-6, #550 OR-3 |
 | CI-8 | admin screens: consent texts and retention (EXECUTIVE) | `web/src/screens/admin/consent/**` | CI-6 |
 | CI-9 | no `Debug`-formatted error in any log (K10): the 14 `error = ?` call sites log `error = %…`; a guard test fails on `error = ?` in `api/src` | the 8 files holding the 14 sites of K10 (incl. `api/src/bootstrap/mod.rs`), `api/tests/log_no_debug_errors_test.rs` | this design only |
 
-The desk's own screen (`steps/customer`, #536 O-6) and the customer app (#558) use CI-5/CI-7 and are not cut here.
+The desk's own screen (`steps/customer`, #536 O-6) and the customer app (#558) use CI-4 (Part 3, was CI-5) and CI-7 and are not cut here.
+Other designs that wait on "CI-1" or "CI-5" (for example the staff design's S-2) wait on CI-4.
+
+### 9.2 Why CI-1, CI-4 and CI-5 are one ticket
+
+Measured on `main` at `5b160b5` with
+`git grep -l -E "customer::|domain::customer|application::customer|infrastructure::customer" -- api`, outside the
+customer module itself: **46 files** import it (`ReserveCustomer` ×23, `Mode` ×25, `CustomerService` ×18, `Customer`,
+`CustomerDetails`, `Reservation`, `CustomerRepository`, `PgCustomerRepository`, `NO_SUCH_BRANCH`). The first cut gave
+CI-4 the deletion and CI-5 eight of these callers, so CI-4 alone could not compile and CI-5 alone could not start.
+CI-1 alone would reshape `customers` under the old repository (`passport_no` reads fail, §8 M1 item 3). Each of
+the three would leave `main` red until the next merged, so they are one ticket, one PR and one CI run.
+
+**How CI-4 touches the importers: shims, not edits.** This follows the lane controller's ruling (b) on #554, 2026-10-09. The merged
+designs already own several of the 46 files:
+- `save_transaction.rs` is the strict chain RE-4 #601 → #582 CA-7 #623 → TX-6, which takes no fourth ticket;
+- `compat/rpc.rs` is CA-10's;
+- `compat/actions/save.rs` is TX-6's;
+- `compat/snapshot.rs` is RE-4's;
+- `payment_save_step.rs` and `transaction_form.rs` are TX-5's;
+- `kiosk_save_step.rs` is TX-7's;
+- `transaction_repository.rs` is TX-2's.
+
+So:
+- `xc-exchange/src/{domain,application,infrastructure}/customer/**` stay as modules at the same paths and become
+  `pub use xc_customer::…` re-exports, and `value_objects::mode` re-exports `xc_kernel::mode::Mode`. CI-4 edits none of the 46
+  importers.
+- [required] `xc-customer` keeps the public names and call shapes the importers use, with the organisation-wide, hashed
+  behaviour of §4 behind them. The organisation is the branch's (`branches.organization_id`, OR-1). The names, measured in
+  `xc-exchange/src/application/customer/service.rs:16-128` at `5b160b5`:
+  - `CustomerService::{reserve, find, list_live, confirm_in, record_exchange_in, branch_tx}`;
+  - `ReserveCustomer`, `Customer`, `CustomerDetails`, `Reservation`;
+  - `CustomerRepository`, `PgCustomerRepository`;
+  - `NO_SUCH_BRANCH`, `COUNTER_EXHAUSTED`.
+- The save's digest (`save_transaction.rs:66-106`, the plain passport at `:70`) is the one substantive caller change.
+  It is **TX-6's** (a line in TX-6's row of `quote-transaction.md`), not CI-4's.
+- **CA-10** deletes the shims and the `Mode` re-export (a named line in its row, `cash-shift-transfer.md`).
+
+**Part 3: files that read `customers`' removed columns.**
+- Measured at `5b160b5` with `git grep -n -i -E "customers" -- api/src api/crates | grep -i -E "select|from|join|insert"`, outside the customer
+  module and its tests.
+- M1 breaks each of these files, so each one is CI-4's.
+- The ticket lists each shared file with its other owner and the order:
+
+| File (CI-4 changes) | Other owner on `main` | Order |
+|---|---|---|
+| `api/src/infrastructure/bookings/booking_ports.rs` (`live_customer`, `:60`: `WHERE id = $1 AND branch_id = $2`) | RE-4 (`rates.md:1003`, `counter_rate_in` `:100-125`) | either order; different functions; the second rebases |
+| `api/src/infrastructure/custody/custody_ports.rs` (`customer_known`, `:88`) | TX-8 (`quote-transaction.md:666`, `:59`, one ticket per file) | CI-4 first; that file's TX-8 ticket after it |
+| `api/src/presentation/http/v3/views/admin_customers.rs` (`:71`, `:99`; organisation-wide, `branch` = customers who transacted there) | TX-8 (`quote-transaction.md:666`) | CI-4 first; that file's TX-8 ticket after it |
+| `api/src/application/workflows/booking_save_step.rs` (its in-file test inserts a customer with `branch_id`, `passport_no`, `:208`) | none (`git grep booking_save_step -- docs/design` names no owner row) | — |
+| `api/src/presentation/http/rpc.rs` (`:361` `CustomerService::new(branch_tx)` gains the PII keys) and `api/src/bootstrap/mod.rs` (loads `/etc/xc-v3/pii.key`, U3) | `bootstrap/mod.rs`: LG-4 (`ledger-inventory.md:467`, one wiring line) | either order; different lines |
+
+**The provided tests.**
+- 20 of the 46 importers are tests. Other tests write `customers` by branch
+  (`xc-exchange/tests/common/mod.rs:236`, `booking_repository_db_test.rs:876`).
+- The ticket author adjusts all of them, and retires §6's per-branch tests, in CI-4's up-front commit. The implementer never
+  edits a provided test.
+- `api/tests/save_common/mod.rs` keeps re-exporting the same names (`Mode`, `ReserveCustomer`, …), because seven tests reach
+  them only through `save_common::*`.
+
+The importing files, for reference: 12 in `xc-exchange/src`, 5 in its tests, 14 in `api/src` and 15 in `api/tests`. CI-4
+edits none of them except as listed above:
+
+```
+api/crates/xc-exchange/src/application/booking/change.rs
+api/crates/xc-exchange/src/application/booking/create.rs
+api/crates/xc-exchange/src/application/booking/list.rs
+api/crates/xc-exchange/src/application/booking/members.rs
+api/crates/xc-exchange/src/application/exchange/service.rs
+api/crates/xc-exchange/src/domain/exchange/commands/save_transaction.rs
+api/crates/xc-exchange/src/domain/exchange/entities/receipt.rs
+api/crates/xc-exchange/src/domain/exchange/entities/transaction.rs
+api/crates/xc-exchange/src/domain/exchange/repositories/transaction_repository.rs
+api/crates/xc-exchange/src/domain/exchange/value_objects/document_ref.rs
+api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs
+api/crates/xc-exchange/src/infrastructure/exchange/transaction_repository.rs
+api/crates/xc-exchange/tests/bangkok_day_test.rs
+api/crates/xc-exchange/tests/common/mod.rs
+api/crates/xc-exchange/tests/customers_test.rs
+api/crates/xc-exchange/tests/transaction_form_ceiling_test.rs
+api/crates/xc-exchange/tests/transaction_form_test.rs
+api/src/application/compat/actions/save.rs
+api/src/application/compat/rpc.rs
+api/src/application/compat/snapshot.rs
+api/src/application/compat/v2_json.rs
+api/src/application/workflows/booking_save_step.rs
+api/src/application/workflows/custody_save_step.rs
+api/src/application/workflows/device_save_step.rs
+api/src/application/workflows/documents.rs
+api/src/application/workflows/kiosk_save_step.rs
+api/src/application/workflows/payment_save_step.rs
+api/src/application/workflows/save_transaction.rs
+api/src/infrastructure/compat/snapshot_sources.rs
+api/src/infrastructure/devices/pg_saved_exchanges.rs
+api/src/presentation/http/rpc.rs
+api/tests/compat_v2_json_test.rs
+api/tests/devices_receipt_errors_test.rs
+api/tests/devices_receipt_route_test.rs
+api/tests/rpc_common/mod.rs
+api/tests/save_common/mod.rs
+api/tests/snapshot_common/mod.rs
+api/tests/snapshot_test.rs
+api/tests/v3_admin_cash_view_test.rs
+api/tests/v3_admin_customers_view_test.rs
+api/tests/v3_admin_overview_view_test.rs
+api/tests/v3_admin_parts_views_test.rs
+api/tests/v3_admin_reports_view_test.rs
+api/tests/v3_admin_slips_view_test.rs
+api/tests/v3_admin_transactions_view_test.rs
+api/tests/v3_devices_view_test.rs
+```
 
 ### 9.1 Tests written before implementation
 
 | Ticket | Tests (red until implemented) |
 |---|---|
-| CI-1 | on a fresh database every migration applies in version order; with one customer row present M1 refuses with the U4 sentence; the unique index refuses a second ACTIVE identity with the same (organisation, type, hash) and allows it once the first is REVOKED; `consents` has no UPDATE path (a trigger or the repository refuses) |
+| CI-4 Part 1 (was CI-1) | on a fresh database every migration applies in version order; with one customer row present M1 refuses with the U4 sentence; the unique index refuses a second ACTIVE identity with the same (organisation, type, hash) and allows it once the first is REVOKED; `consents` has no UPDATE path (a trigger or the repository refuses) |
 | CI-2 | a JWT signed by the JWKS key with the right `iss`/`aud`/`exp` verifies; a wrong signature, `iss`, `aud`, an expired token, an `alg` other than EdDSA each refused with their `TokenError`; an unknown `kid` refetches once; an unreachable JWKS answers `KeysUnavailable` |
 | CI-3 | encrypt then decrypt round-trips; a changed AAD fails; the newest key encrypts and an older one still decrypts; the hash is stable across encryption-key rotation; normalisation of each `IdentityType` (passport spacing and case, Thai `0…` phone → `+66…`, e-mail case) |
-| CI-4 | the same passport and nationality reserved at two branches gives **one** customer; a concurrent reserve of one passport gives one customer; `confirm_in` refuses a different passport (`NOT_THIS_PASSPORT`); `reveal` without `IdentityDocumentRead` refused, with it returns the value and writes one audit row whose stored columns hold neither the value, its `lookup_hash` nor its last 4 (asserted by reading the row back); `consentRecord`/`customerRegister` in a language with no published text of that purpose refused `consentTextMissing` with nothing written; no list method returns an identity value; the six reserve sentences unchanged |
-| CI-5 | the desk's reserve and save work end to end with hashes; the stored `payload_hash` no longer changes when only the passport's spelling (spacing/case) changes; `admin_customers` with `branch` lists customers who transacted there; no view or CSV carries a passport number |
+| CI-4 Part 2 | the same passport and nationality reserved at two branches gives **one** customer; a concurrent reserve of one passport gives one customer; `confirm_in` refuses a different passport (`NOT_THIS_PASSPORT`); `reveal` without `IdentityDocumentRead` refused, with it returns the value and writes one audit row whose stored columns hold neither the value, its `lookup_hash` nor its last 4 (asserted by reading the row back); `consentRecord`/`customerRegister` in a language with no published text of that purpose refused `consentTextMissing` with nothing written; no list method returns an identity value; the six reserve sentences unchanged |
+| CI-4 Part 3 (was CI-5) | the desk's reserve and save work end to end with hashes through the shims; `live_customer` and `customer_known` find a customer of the branch's organisation; `admin_customers` with `branch` lists customers who transacted there; no view or CSV carries a passport number |
 | CI-6 | publishing a text makes a new version and never changes an old one; registering without a published `TERMS` in the request's language refused (`consentTextMissing`), also when `TERMS` exists in another language; withdrawing MARKETING for SMS makes `marketing_allowed(SMS)` false and leaves EMAIL unchanged; the purge job deletes nothing for a type with no period and deletes a REVOKED identity older than its period |
 | CI-7 | a verified Identity user registers once and becomes CUSTOMER with a customer and a TERMS consent row; a second register refused; a CUSTOMER reading another customer's profile → `outOfScope`; `Actor.customer_id` is set for a CUSTOMER session and absent for staff |
 | CI-8 | vitest: EXECUTIVE sees and publishes texts; other roles do not see the screen; the retention form sends `period_days` or null |
