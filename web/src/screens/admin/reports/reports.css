@@ -1,19 +1,5 @@
 /* LK-SD (#716): admin reports screen look ported from v2 admin-html.ts */
 
-.xc-admin .xc-content .stat-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 24px;
-}
-
-.xc-admin .xc-content .stat-note {
-  font-size: 12px;
-  color: var(--muted, #676a73);
-  line-height: 1.5;
-  display: block;
-}
-
 .xc-admin .xc-content .value {
   font-variant-numeric: tabular-nums;
 }
@@ -36,14 +22,3 @@
   margin-top: 2px;
 }
 
-@media (max-width: 900px) {
-  .xc-admin .xc-content .stat-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 600px) {
-  .xc-admin .xc-content .stat-cards {
-    grid-template-columns: 1fr;
-  }
-}

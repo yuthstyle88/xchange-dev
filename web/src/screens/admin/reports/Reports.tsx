@@ -15,7 +15,9 @@ import type {
 } from '../../../shared/api/generated/admin_reports';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { errorText, screenT } from '../../../shared/i18n';
+import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { formatMoney } from '../../../shared/ui/MoneyText';
+import { StatCard } from '../../../shared/ui/StatCard';
 import type { AdminMenuProps } from '../menus';
 import { downloadCsv, walkPages } from '../parts/csv';
 import { DataTable } from '../parts/DataTable';
@@ -359,75 +361,63 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         aria-labelledby="workspace-reports-0-tab"
         hidden={activeTab() !== 0}
       >
-        <div class="stat-cards" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
-          <div class="stat-card">
-            <div class="stat-label">{t('statReceivedLabel')}</div>
-            <div class="stat-value">
-              <span class="value">{formatMoney(data()?.stats.received ?? '0.00')}</span>
-              {' '}
-              <span class="unit">THB</span>
-            </div>
-            <div class="stat-note">{t('statReceivedNote')}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">{t('statPaidLabel')}</div>
-            <div class="stat-value">
-              <span class="value">{formatMoney(data()?.stats.paid ?? '0.00')}</span>
-              {' '}
-              <span class="unit">THB</span>
-            </div>
-            <div class="stat-note">{t('statPaidNote')}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">{t('statFeeLabel')}</div>
-            <div class="stat-value">
-              <span class="value">{formatMoney(data()?.stats.fees ?? '0.00')}</span>
-              {' '}
-              <span class="unit">THB</span>
-            </div>
-            <div class="stat-note">{t('statFeeNote')}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">{t('statBankFeeLabel')}</div>
-            <div class="stat-value">
-              <span class="value">{formatMoney(data()?.stats.bankFees ?? '0.00')}</span>
-              {' '}
-              <span class="unit">THB</span>
-            </div>
-            <div class="stat-note">{t('statBankFeeNote')}</div>
-          </div>
-        </div>
+        <CardGrid columns={4}>
+          <StatCard
+            label={t('statReceivedLabel')}
+            value={data()?.stats.received ?? '0.00'}
+            note={t('statReceivedNote')}
+          />
+          <StatCard
+            label={t('statPaidLabel')}
+            value={data()?.stats.paid ?? '0.00'}
+            note={t('statPaidNote')}
+          />
+          <StatCard
+            label={t('statFeeLabel')}
+            value={data()?.stats.fees ?? '0.00'}
+            note={t('statFeeNote')}
+          />
+          <StatCard
+            label={t('statBankFeeLabel')}
+            value={data()?.stats.bankFees ?? '0.00'}
+            note={t('statBankFeeNote')}
+          />
+        </CardGrid>
 
-        <div class="card">
-          <p class="eyebrow">{t('settlementEyebrow')}</p>
-          <h2>{t('settlementHeading')}</h2>
-          <p class="unit">THB</p>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('colChannel')}</th>
-                <th class="num">{t('colCount')}</th>
-                <th class="num">{t('colReceived')}</th>
-                <th class="num">{t('colPaid')}</th>
-                <th class="num">{t('colNet')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={data()?.byChannel ?? []}>
-                {(ch: ReportChannel) => (
-                  <tr>
-                    <td>{methodName(ch.method)}</td>
-                    <td class="num">{String(ch.count)}</td>
-                    <td class="num">{formatMoney(ch.received)}</td>
-                    <td class="num">{formatMoney(ch.paid)}</td>
-                    <td class="num">{formatMoney(ch.net)}</td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+        <Card>
+          <CardHead
+            eyebrow={t('settlementEyebrow')}
+            title={t('settlementHeading')}
+            aside={<span class="unit">THB</span>}
+          />
+          <CardBody flush>
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('colChannel')}</th>
+                  <th class="num">{t('colCount')}</th>
+                  <th class="num">{t('colReceived')}</th>
+                  <th class="num">{t('colPaid')}</th>
+                  <th class="num">{t('colNet')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={data()?.byChannel ?? []}>
+                  {(ch: ReportChannel) => (
+                    <tr>
+                      <td>{methodName(ch.method)}</td>
+                      <td class="num">{String(ch.count)}</td>
+                      <td class="num">{formatMoney(ch.received)}</td>
+                      <td class="num">{formatMoney(ch.paid)}</td>
+                      <td class="num">{formatMoney(ch.net)}</td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </CardBody>
           <p class="footnote">{t('footnote')}</p>
-        </div>
+        </Card>
       </div>
 
       {/* Tab 1: Currencies and spreads */}
@@ -437,9 +427,11 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         aria-labelledby="workspace-reports-1-tab"
         hidden={activeTab() !== 1}
       >
-        <div class="card">
-          <p class="eyebrow">{t('currenciesEyebrow')}</p>
-          <h2>{t('currenciesHeading')}</h2>
+        <Card>
+          <CardHead
+            eyebrow={t('currenciesEyebrow')}
+            title={t('currenciesHeading')}
+          />
           <div style="background: #f7f6f8; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
             <div>
               {t('referenceSpreadPrefix')}
@@ -462,29 +454,31 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             </p>
           </div>
 
-          <DataTable
-            headers={[
-              { text: t('colCurrency'), numeric: false },
-              { text: t('colBuyUnits'), numeric: true },
-              { text: t('colSellUnits'), numeric: true },
-              { text: t('colPrincipalThb'), numeric: true },
-              { text: t('colFeeThb'), numeric: true },
-            ]}
-            rowCount={data()?.byCurrency.length ?? 0}
-          >
-            <For each={data()?.byCurrency ?? []}>
-              {(c) => (
-                <tr>
-                  <td>{c.currency}</td>
-                  <td class="num">{formatMoney(c.buyAmount)}</td>
-                  <td class="num">{formatMoney(c.sellAmount)}</td>
-                  <td class="num">{formatMoney(c.principal)}</td>
-                  <td class="num">{formatMoney(c.fees)}</td>
-                </tr>
-              )}
-            </For>
-          </DataTable>
-        </div>
+          <CardBody flush>
+            <DataTable
+              headers={[
+                { text: t('colCurrency'), numeric: false },
+                { text: t('colBuyUnits'), numeric: true },
+                { text: t('colSellUnits'), numeric: true },
+                { text: t('colPrincipalThb'), numeric: true },
+                { text: t('colFeeThb'), numeric: true },
+              ]}
+              rowCount={data()?.byCurrency.length ?? 0}
+            >
+              <For each={data()?.byCurrency ?? []}>
+                {(c) => (
+                  <tr>
+                    <td>{c.currency}</td>
+                    <td class="num">{formatMoney(c.buyAmount)}</td>
+                    <td class="num">{formatMoney(c.sellAmount)}</td>
+                    <td class="num">{formatMoney(c.principal)}</td>
+                    <td class="num">{formatMoney(c.fees)}</td>
+                  </tr>
+                )}
+              </For>
+            </DataTable>
+          </CardBody>
+        </Card>
       </div>
 
       {/* Tab 2: Employee summary */}
@@ -494,19 +488,22 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         aria-labelledby="workspace-reports-2-tab"
         hidden={activeTab() !== 2}
       >
-        <div class="card" id="employee-summary">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h2>{t('employeeSummaryHeading')}</h2>
-            <button
-              type="button"
-              class="secondary"
-              id="employee-csv"
-              onClick={handleEmployeeCsv}
-            >
-              {t('downloadCsv')}
-            </button>
-          </div>
-          <p class="unit">{t('employeeSummaryNote')}</p>
+        <Card>
+          <div id="employee-summary">
+            <CardHead
+              title={t('employeeSummaryHeading')}
+              aside={
+                <button
+                  type="button"
+                  class="secondary"
+                  id="employee-csv"
+                  onClick={handleEmployeeCsv}
+                >
+                  {t('downloadCsv')}
+                </button>
+              }
+            />
+            <p class="unit">{t('employeeSummaryNote')}</p>
 
           <div style="display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0;">
             <label>
@@ -704,7 +701,8 @@ export function Reports(props: AdminMenuProps): JSX.Element {
               </details>
             )}
           </For>
-        </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

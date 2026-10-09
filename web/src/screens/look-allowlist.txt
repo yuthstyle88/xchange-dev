@@ -150,11 +150,6 @@ desk-nav
 desk-step-content
 
 # devices
-counter-card
-devices-page
-drawer-card
-overview-section
-scan-card
 
 # kiosk-currencies
 cards

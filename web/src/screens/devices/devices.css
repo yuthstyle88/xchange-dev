@@ -174,15 +174,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.xc-devices .xc-shell-main .devices,
-.xc-devices .xc-shell-main .cards-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-
-.xc-devices .xc-shell-main .devices article,
-.xc-devices .xc-shell-main .cards-grid .card,
 .xc-devices .xc-shell-main .panel,
 .xc-devices .xc-shell-main .request-section,
 .xc-devices .xc-shell-main .jobs-section,
@@ -193,21 +184,9 @@
   padding: 20px;
 }
 
-.xc-devices .xc-shell-main .devices article,
-.xc-devices .xc-shell-main .cards-grid .card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.xc-devices .xc-shell-main .devices p,
-.xc-devices .xc-shell-main .cards-grid p {
+/* v2 devices.css:1 .devices p */
+.xc-devices .xc-shell-main .card p {
   font-size: 13px;
-}
-
-.xc-devices .xc-shell-main .cards-grid h3 {
-  font-size: 19px;
-  margin: 8px 0;
 }
 
 .xc-devices .xc-shell-main .tag {
@@ -232,12 +211,6 @@
   border-radius: 5px;
 }
 
-.xc-devices .xc-shell-main .check,
-.xc-devices .xc-shell-main .printer-card label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 
 .xc-devices .xc-shell-main .panel,
 .xc-devices .xc-shell-main .request-section,
@@ -332,10 +305,6 @@
 }
 
 @media (max-width: 1050px) {
-  .xc-devices .xc-shell-main .devices,
-  .xc-devices .xc-shell-main .cards-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .xc-devices .xc-shell-main .heading {
     align-items: flex-start;
     flex-direction: column;
@@ -352,8 +321,6 @@
     width: 100%;
   }
   .xc-devices .xc-shell-main .scenario,
-  .xc-devices .xc-shell-main .devices,
-  .xc-devices .xc-shell-main .cards-grid,
   .xc-devices .xc-shell-main .metrics,
   .xc-devices .xc-shell-main .request-grid {
     grid-template-columns: 1fr;
