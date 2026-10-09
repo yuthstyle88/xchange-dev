@@ -17,7 +17,7 @@ export function TextField(props: {
   const id = `field-${props.field.name}`;
 
   return (
-    <div>
+    <div class="xc-field">
       <label for={id}>{props.label}</label>
       <input
         id={id}
