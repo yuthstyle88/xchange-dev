@@ -521,13 +521,13 @@ contract.
 |---|---|---|
 | R1 | **Storage is per unit.** A row a reader writes stores the line's `rate` (scale 8, per `unit_size`), its `unit_size` and its `published_rate_line_id`. | §4.8: a quote and its row keep the line id and the rate snapshot |
 | R2 | **Every THB figure** is `ExchangeArithmetic::thb(quantity, rate, unit_size)`, HALF_UP once (§3.2). No reader divides or multiplies a rate by hand. | one arithmetic (§3.2) |
-| R3 | **The v2-compat wire stays per 1.** These surfaces keep v2's shape, and with it v2's per-1 rate: `adminSnapshot.rates[]`, `adminDeskConfig`, the kiosk JSON `rate`, and the v2 booking JSON. That rate is `rate ÷ unit_size`, exact, normalised, through **one** function, `CompatRate::per_one(rate, unit_size) -> Decimal` (`api/crates/xc-kernel/src/money/compat_rate.rs`, created by RE-4b). The kept v2 desk computes `amount × rate` per 1, so a per-100 JPY there would be 100× wrong. v3 views and every stored row speak per unit (R1). | the kept v2 pages until V4 (`xchange-v3-web.md` §7) |
+| R3 | **The v2-compat wire stays per 1.** These surfaces keep v2's shape, and with it v2's per-1 rate: `adminSnapshot.rates[]` and `.transactions[]` (`rate` and `referenceRate`), `adminDeskConfig`, the kiosk JSON `rate`, the v2 booking JSON, and the desk receipt's "Booked Rate". That rate is `rate ÷ unit_size`, exact, normalised, through **one** function, `CompatRate::per_one(rate, unit_size) -> Result<Decimal, _>` (`api/crates/xc-kernel/src/money/compat_rate.rs`, created by RE-4b). A `unit_size` that is not a power of 10 is refused, so the division only moves the decimal point and never rounds. The result has at most `8 + log10(unit_size)` places, so up to **11** (KRW per 1000). **On the way in**, a per-1 rate on the v2 wire (desk save, booking create and confirm, the reference rate) takes up to 11 places, and a 12th non-zero place is `TOO_MANY_DECIMALS`; it is stored × `unit_size`. **Printed** (the receipt), it keeps v2's format of at least 4 places: JPY 0.235 prints `0.2350`. The kept v2 desk computes `amount × rate` per 1, so a per-100 JPY there would be 100× wrong. v3 views and every stored row speak per unit (R1). | the kept v2 pages until V4 (`xchange-v3-web.md` §7) |
 | R4 | **One check before a write.** A reader that quoted from a line, and later writes on that quote (kiosk confirm, booking confirm), refuses when the branch's current line for that (currency, side) is not the stored line id. It answers with its existing "the rate changed" refusal, and writes nothing. The v2 desk save has no line id on the wire. It is accepted only when the client's per-1 rate equals the current line's `per_one`; otherwise `RATE_MISMATCH`. The row then stores the current line. | §4.8 guards; v2's own "rate changed" sentences kept |
-| R5 | **Stale.** `StalePolicy::admits(side, thb)` uses the stale settings of the policy version **the line was published under** (`source_snapshot.policy_version_id`), the same rule as quotes (`quote-transaction.md` §4.3). A refusal is the reader's existing "no rate for this currency" answer. | §4.8 "of the policy version it was published under"; A7 |
-| R6 | **Booking confirm** compares the line stored at create with the current line (R4). It never re-locks a new line silently (`booking_machine.rs:84-97` today re-reads the rate). A moved line refuses confirm, and the customer books again. | a booking's price is the price the customer saw (§05) |
-| R7 | **Kiosk-vouched desk save.** A desk save that completes a kiosk request stores **the request's** line id and rate. The customer was quoted that at the kiosk, and the kiosk confirm already applied R4. It is not re-checked against a newer publication; the request's own validity governs. | one price per customer journey |
+| R5 | **Stale.** `StalePolicy::admits(side, thb)` uses the stale settings of the policy version **the line was published under** (`source_snapshot.policy_version_id`), the same rule as quotes (`quote-transaction.md` §4.3). It applies where a price is first taken: the kiosk quote, booking create and the LIVE desk save. A refusal is the reader's existing "no rate for this currency" answer (`RATE_MISMATCH` for the desk save). A stale line whose policy cannot be found must be an error; today's quote and booking copies admit it (fail open, #769). | §4.8 "of the policy version it was published under"; A7 |
+| R6 | **Booking confirm** compares the line stored at create with the current line (R4). It never re-locks a new line silently (`booking_machine.rs:84-97` before RE-4d re-read the rate). A moved line refuses confirm, and the customer books again. **Stale is not checked at confirm**: the price was admitted at create, and only the line's identity decides. | a booking's price is the price the customer saw (§05) |
+| R7 | **A vouched desk save stores the vouching line.** A save that completes a kiosk request stores **the request's** line id and rate. A save that redeems a booking stores **the booking's** line id, rate and unit. Neither is re-checked against a newer publication; the request's or the booking's own validity governs. The client's per-1 rate must still equal that line's `per_one`, otherwise `RATE_MISMATCH` and nothing is written. That comparison runs in `save_transaction.rs` before the steps' `before_in`, so it is never answered by redeem's `FORM_MISMATCH`. Redeem compares the exact per-1 `Decimal` (`RedeemBooking.rate`, up to 11 places, never rounded). | one price per customer journey |
 | R8 | **`transaction_form.rs`** checks the principal limit and fees on R2's figure, not on `amount × per-1 rate`. | R2 |
-| R9 | **Admin and report readers** read each row's `unit_size` and go through R2. Rows with a NULL line id (before RE-4) show their own stored rate (§8 migration 5). | §8 migration 5 "Readers" |
+| R9 | **Admin and report readers** read each row's own `unit_size` and go through R2, never the register's current `currencies.unit_size`. Rows with a NULL line id (before RE-4) show their own stored rate (§8 migration 5). A reader that needs a row (the device step reads the saved `transactions` row by document number) and finds none answers `Internal`: a missing row is an error, never a guess. The device count line's THB (`COUNT_CONFIRMED`) is the row's principal, 2 places, HALF_UP. | §8 migration 5 "Readers" |
 | R10 | **`adminSnapshot`** reads `PublishedRates::current` for `rates[]` (R3): `updated` = `published_at`; `requestId` `""`; `partnerName`/`partnerCost` from `source_snapshot.partner` (else `""`/null); `botReference` `""`; `rateHistory` stays on `rates` until RE-7 drops it, then `[]`. `adminSaveRate` still writes `rates` until RE-7, but its answer (`write_answer(snapshot)`) shows the publication, so a direct save is no longer visible in it. | D-3; v2 shape kept |
 
 **Open, for the owner (§10 O-6):** a **DEMO** save (`Mode::Demo`, "SAMPLE / DEMO — NOT A VALID RECEIPT") prices from
@@ -548,6 +548,19 @@ what the teller typed today. Does it read the publication, or keep its typed rat
 
 - **CompatRate.** RE-4c and RE-4d consume it. If RE-4b has not merged, each declares the same one-line stub in its own
   file, with a comment that it moves to `compat_rate.rs` (📐 fallback), and deletes the stub when it rebases.
+  - **RE-4d merged first** (PR 764, `e28e941c`), so its stub stays in `xc-exchange/.../booking/entities/booking.rs`
+    with a bare `Decimal` return. **RE-4c deletes it** and re-points its callers (`booking_machine.rs`,
+    `dto/booking.rs`, `admin_bookings.rs`) to RE-4b's function; a refusal there is `Internal`.
+- **Scopes grew while the tests were written** (2026-10-10), each recorded on its ticket:
+  - RE-4b #756: `xc-kernel/src/money/mod.rs`, `dto/kiosk.rs`, `xc-kiosk/.../service.rs`.
+  - RE-4c #757: `receipt.rs`, `booking_save_step.rs`, both `compat/snapshot_sources.rs` files (the row's unit),
+    `redeem_booking.rs`, and in `booking_machine.rs` only the redeem comparison; plus the stub removal above.
+  - RE-4d #758 (merged): the booking entity, steps and commands, `create.rs`/`change.rs`, `dto/booking.rs`,
+    `http/bookings.rs`, `views/admin_bookings.rs`.
+- **Merge order.** RE-4b, RE-4d and RE-4e in any order; **RE-4c last**, after all three, because their publish
+  seeding lands in test files its switch would otherwise turn red, and it edits RE-4d's redeem line. RE-6 after RE-4b.
+- **Follow-ups, after RE-4:** #769 (one stale-policy reader, not fail-open) and #770 (one per-1 wire parser in
+  `CompatRate`, instead of a copy of `Rate::parse` per reader).
 - **RE-6 #603 adds `published_both_sides_in` to `KioskRepository`**, a file RE-4b reserves. **RE-6 merges after RE-4b**
   and adds its method on top.
 - **RE-4b…e start after RE-4a** (they write its columns). They run in parallel with each other.
@@ -1174,20 +1187,31 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
   - a kiosk quote stores the line id, rate and unit;
   - a publish between quote and confirm refuses confirm (R4);
   - the kiosk JSON rate is per 1 (R3);
-  - BUY rounds HALF_UP once (R2).
+  - BUY rounds HALF_UP once (R2);
+  - `CompatRate::per_one` is exact, normalised, at most `8 + log10(unit)` places, and refuses a unit that is not a power
+    of 10.
 - **RE-4c**:
   - a JPY save at 23.5 per 100 for 1000 JPY gives principal 235.00;
   - `RATE_MISMATCH` when the client's per-1 rate is not the current line's (R4);
   - the row stores the current line;
   - a kiosk-vouched save stores the request's line (R7);
-  - `adminSnapshot.rates[]` is the publication per 1 (R10).
+  - `adminSnapshot.rates[]` is the publication per 1 (R10);
+  - `adminSnapshot.transactions[]` lists `rate` and `referenceRate` per 1 by the row's own unit (R3, R9);
+  - a stale AUTO line under STOP refuses the LIVE save (R5);
+  - a booked or kiosk-vouched save at another per-1 rate is `RATE_MISMATCH` and writes nothing (R7);
+  - a booked save redeems a KRW-per-1000 booking at its 11-place per-1 rate (R7);
+  - the receipt prints the per-1 rate in v2's format (R3).
 - **RE-4d**:
   - create stores the line;
   - confirm refuses when the current line moved (R6);
-  - a JPY booking stores the rate per 100.
+  - a JPY booking stores the rate per 100;
+  - stale is checked at create and not at confirm (R5, R6);
+  - the v2 booking JSON and `expectedRate` are per 1, up to 11 places (R3).
 - **RE-4e**:
   - the transaction row, reports, cash and devices divide by each row's unit (R9);
-  - a NULL-line row shows its stored rate.
+  - a NULL-line row shows its stored rate;
+  - a device step with no stored row is refused (R9);
+  - the count line's THB is the row's principal, HALF_UP to 2 places (R9).
 - **RE-5 / RE-6** (screens):
   - draft → simulate → submit → publish;
   - MANUAL keeps its value under "adjust all";
