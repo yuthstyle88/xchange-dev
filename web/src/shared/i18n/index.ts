@@ -1,9 +1,18 @@
 import { createSignal, type Accessor } from 'solid-js';
 import { en } from './en';
 import { th, type Key } from './th';
+import { zh } from './zh';
+import {
+  CUSTOMER_ROOT,
+  HTML_LANG,
+  LOCALE,
+  SPOKEN,
+  type Audience,
+  type Lang,
+} from './languages';
 
-export type Lang = 'th' | 'en';
-export type Locale = 'th-TH' | 'en-GB';
+export type { Audience, Lang } from './languages';
+export type Locale = (typeof LOCALE)[Lang];
 export type Params = Record<string, string | number>;
 
 const STORAGE_KEY = 'xc.lang';
@@ -14,7 +23,7 @@ function readStorage(): Lang {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const val = window.localStorage.getItem(STORAGE_KEY);
-      if (val === 'th' || val === 'en') return val;
+      if (val === 'th' || val === 'en' || val === 'zh') return val;
     }
   } catch {
     // storage blocked or getter throws
@@ -25,23 +34,38 @@ function readStorage(): Lang {
 function syncHtmlLang(l: Lang): void {
   try {
     if (typeof document !== 'undefined' && document.documentElement) {
-      document.documentElement.lang = l;
+      document.documentElement.lang = HTML_LANG[l];
     }
   } catch {
     // ignore
   }
 }
 
-const initialLang = readStorage();
-const [currentLang, setCurrentLang] = createSignal<Lang>(initialLang);
-syncHtmlLang(initialLang);
+const [storedChoice, setStoredChoice] = createSignal<Lang>(readStorage());
+const [currentAudience, setCurrentAudience] = createSignal<Audience>('staff');
 
-export const lang: Accessor<Lang> = currentLang;
+export const audience: Accessor<Audience> = currentAudience;
 
-export const locale: Accessor<Locale> = () => (currentLang() === 'th' ? 'th-TH' : 'en-GB');
+export const lang: Accessor<Lang> = () => {
+  const choice = storedChoice();
+  const allowed = SPOKEN[currentAudience()];
+  return allowed.includes(choice) ? choice : 'th';
+};
+
+export const locale: Accessor<Locale> = () => LOCALE[lang()];
+
+// Sync initial HTML lang
+syncHtmlLang(lang());
+
+export function setAudience(a: Audience): void {
+  setCurrentAudience(a);
+  syncHtmlLang(lang());
+}
 
 export function setLang(l: Lang): void {
-  setCurrentLang(l);
+  const allowed = SPOKEN[currentAudience()];
+  if (!allowed.includes(l)) return;
+  setStoredChoice(l);
   syncHtmlLang(l);
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -63,23 +87,46 @@ export function fill(template: string, params?: Params): string {
 }
 
 export function t(key: Key, params?: Params): string {
-  const l = currentLang();
-  const table = l === 'th' ? th : en;
-  const text = table[key] ?? key;
+  const l = lang();
+  let text: string;
+  if (l === 'zh') {
+    text = (zh as Record<string, string>)[key] ?? (en as Record<string, string>)[key] ?? key;
+  } else if (l === 'en') {
+    text = en[key] ?? key;
+  } else {
+    text = th[key] ?? key;
+  }
   return fill(text, params);
 }
 
 export function errorText(code: string, message: string): string {
-  const key = `error.${code}`;
+  const key = `error.${code}` as Key;
+  const l = lang();
+  if (l === 'zh') {
+    if (Object.prototype.hasOwnProperty.call(zh, key) && (zh as Record<string, string>)[key]) {
+      return (zh as Record<string, string>)[key];
+    }
+    if (Object.prototype.hasOwnProperty.call(en, key) && (en as Record<string, string>)[key]) {
+      return (en as Record<string, string>)[key];
+    }
+    return message;
+  }
   if (Object.prototype.hasOwnProperty.call(th, key)) {
-    return t(key as Key);
+    return t(key);
   }
   return message;
+}
+
+export interface ScreenTable {
+  readonly th: Record<string, string>;
+  readonly en: Record<string, string>;
+  readonly zh?: Record<string, string>;
 }
 
 export interface ScreenTables {
   th: Record<string, string>;
   en: Record<string, string>;
+  zh: Record<string, string>;
 }
 
 function extractPlaceholders(text: string): string[] {
@@ -89,7 +136,7 @@ function extractPlaceholders(text: string): string[] {
 export function collectScreens(
   glob: Record<string, unknown>,
 ): ScreenTables {
-  const result: ScreenTables = { th: {}, en: {} };
+  const result: ScreenTables = { th: {}, en: {}, zh: {} };
 
   for (const [path, mod] of Object.entries(glob)) {
     const match = path.match(/^\/src\/screens\/(.+)\/i18n\.ts$/);
@@ -113,8 +160,14 @@ export function collectScreens(
     }
 
     const screenName = segments.join('.');
+    const isCustomer = segments[0] === CUSTOMER_ROOT;
 
-    const m = mod as { th?: Record<string, string>; en?: Record<string, string> } | null | undefined;
+    const m = mod as {
+      th?: Record<string, string>;
+      en?: Record<string, string>;
+      zh?: Record<string, string>;
+    } | null | undefined;
+
     if (
       !m ||
       typeof m !== 'object' ||
@@ -149,6 +202,47 @@ export function collectScreens(
       }
     }
 
+    if (isCustomer) {
+      if (!m.zh || typeof m.zh !== 'object') {
+        throw new Error(`Screen "${screenName}" is a customer screen and must export zh table in "${path}"`);
+      }
+
+      const zhKeys = Object.keys(m.zh).sort();
+
+      for (const k of thKeys) {
+        if (!Object.prototype.hasOwnProperty.call(m.zh, k)) {
+          throw new Error(`Screen "${screenName}" key "${k}" is missing in zh`);
+        }
+      }
+
+      for (const k of zhKeys) {
+        if (!Object.prototype.hasOwnProperty.call(m.th, k)) {
+          throw new Error(`Screen "${screenName}" key "${k}" in zh is not in th (extra key)`);
+        }
+      }
+
+      for (const k of thKeys) {
+        const val = m.zh[k];
+        if (typeof val !== 'string' || val.trim() === '') {
+          throw new Error(`Screen "${screenName}" key "${k}" in zh has empty value`);
+        }
+        const thP = extractPlaceholders(m.th[k]);
+        const zhP = extractPlaceholders(val);
+        if (thP.join(',') !== zhP.join(',')) {
+          throw new Error(`Screen "${screenName}" placeholders mismatch for key "${k}" in zh: [${thP}] vs [${zhP}]`);
+        }
+      }
+
+      for (const k of thKeys) {
+        const namespacedKey = `${screenName}.${k}`;
+        result.zh[namespacedKey] = m.zh[k];
+      }
+    } else {
+      if (m.zh !== undefined) {
+        throw new Error(`Screen "${screenName}" is a staff screen: TH/EN only (must not export zh) in "${path}"`);
+      }
+    }
+
     for (const k of thKeys) {
       const namespacedKey = `${screenName}.${k}`;
       if (Object.prototype.hasOwnProperty.call(result.th, namespacedKey)) {
@@ -174,7 +268,24 @@ export function translator(
   screens: ScreenTables,
 ): (key: string, params?: Params) => string {
   return (key: string, params?: Params): string => {
-    const l = currentLang();
+    const l = lang();
+    if (l === 'zh') {
+      if (screens.zh && Object.prototype.hasOwnProperty.call(screens.zh, key) && screens.zh[key]) {
+        return fill(screens.zh[key], params);
+      }
+      if (screens.en && Object.prototype.hasOwnProperty.call(screens.en, key) && screens.en[key]) {
+        return fill(screens.en[key], params);
+      }
+      const zhShared = (zh as Record<string, string>)[key];
+      if (zhShared) {
+        return fill(zhShared, params);
+      }
+      const enShared = (en as Record<string, string>)[key];
+      if (enShared) {
+        return fill(enShared, params);
+      }
+      return key;
+    }
     const table = l === 'th' ? screens.th : screens.en;
     if (Object.prototype.hasOwnProperty.call(table, key)) {
       return fill(table[key], params);
@@ -188,21 +299,36 @@ export function translator(
 }
 
 export function screenT<
-  T extends { readonly th: Record<string, string>; readonly en: Record<string, string> },
+  T extends ScreenTable,
 >(
   screen: string,
   table: T,
 ): (key: keyof T['th'] & string, params?: Params) => string {
   return (key: keyof T['th'] & string, params?: Params): string => {
-    const l = currentLang();
+    const l = lang();
     const namespacedKey = `${screen}.${String(key)}`;
+    if (l === 'zh') {
+      if (screenLookup.zh && Object.prototype.hasOwnProperty.call(screenLookup.zh, namespacedKey) && screenLookup.zh[namespacedKey]) {
+        return fill(screenLookup.zh[namespacedKey], params);
+      }
+      if (table.zh && Object.prototype.hasOwnProperty.call(table.zh, key) && table.zh[key as keyof typeof table.zh]) {
+        return fill((table.zh as Record<string, string>)[key as string], params);
+      }
+      if (screenLookup.en && Object.prototype.hasOwnProperty.call(screenLookup.en, namespacedKey) && screenLookup.en[namespacedKey]) {
+        return fill(screenLookup.en[namespacedKey], params);
+      }
+      if (table.en && Object.prototype.hasOwnProperty.call(table.en, key) && table.en[key as keyof typeof table.en]) {
+        return fill((table.en as Record<string, string>)[key as string], params);
+      }
+      return namespacedKey;
+    }
     const collectedTable = l === 'th' ? screenLookup.th : screenLookup.en;
     if (Object.prototype.hasOwnProperty.call(collectedTable, namespacedKey)) {
       return fill(collectedTable[namespacedKey], params);
     }
     const currentTable = l === 'th' ? table.th : table.en;
     if (currentTable && Object.prototype.hasOwnProperty.call(currentTable, key)) {
-      return fill((currentTable as Record<string, string>)[key], params);
+      return fill((currentTable as Record<string, string>)[key as string], params);
     }
     return namespacedKey;
   };

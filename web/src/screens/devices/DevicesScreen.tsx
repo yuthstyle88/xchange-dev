@@ -17,7 +17,7 @@ import type { DeviceEventRow } from '../../shared/api/generated/device_events';
 import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
 import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
 import type { DevicesOverview } from '../../shared/api/generated/devices';
-import { errorText, locale, screenT } from '../../shared/i18n';
+import { errorText, locale, screenT, type Locale } from '../../shared/i18n';
 import { ViewPoller } from '../../shared/live/view-poller';
 import { sharedSession } from '../../shared/session/session';
 import { AppShell } from '../../shared/ui/AppShell';
@@ -53,7 +53,7 @@ function defaultDownload(name: string, blob: Blob): void {
   URL.revokeObjectURL(url);
 }
 
-function formatTimestamp(iso: string, currentLocale: 'th-TH' | 'en-GB'): string {
+function formatTimestamp(iso: string, currentLocale: Locale): string {
   try {
     return new Date(iso).toLocaleString(currentLocale, { timeZone: 'Asia/Bangkok' });
   } catch {
