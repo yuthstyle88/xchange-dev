@@ -481,7 +481,8 @@ user_roles(id uuid PK, user_id FK, role_code FK, organization_id FK, branch_id N
            FOREIGN KEY (organization_id, branch_id) REFERENCES branches(organization_id, id))
 user_sessions(hash text PK, user_id FK, version integer, expires timestamptz, refresh_token_enc bytea)
 user_audit(id, actor_id, subject_id, action, at)   -- or PR 570's audit_events once AP-1 lands
-<every other table> + organization_id uuid NOT NULL DEFAULT <install org>, with the composite FK where branch_id exists
+<every other table> + organization_id uuid NOT NULL DEFAULT <install org>, with the composite FK where branch_id exists,
+                      except branch_versions and employees (§9 migration 1)
 ```
 
 ---
@@ -505,7 +506,13 @@ approved until the first install. The migrations below still run correctly on a 
     `code` stays nullable in this migration. OR-1's branch creation writes it (the id, unless given), and a later
     migration sets it `NOT NULL` once no writer leaves it empty (checked by `SELECT count(*) FROM branches WHERE code IS
     NULL` = 0);
-  - adds `organization_id` (default: that org) to **every** table, plus the composite FKs.
+  - adds `organization_id` (default: that org) to **every** table, plus the composite FKs, **except on two tables**
+    that keep only the FK to `organizations(id)` (found by OR-1's up-front tests, #615, measured):
+    - `branch_versions`: the kernel's lock row for any branch id, by contract (`BranchTx::run` inserts it on first use,
+      `xc-kernel/src/branch_tx.rs:70`; `api/tests/v3_view_unknown_branch_test.rs:131-142`). It holds no business data;
+    - `employees`: the old model OR-7 retires. Its branch check is at the writer (§9 migration 2, "Mirroring"), and
+      `user_roles` carries the composite FK. With the FK here, v2-parity creates at an unregistered branch would fail
+      with a raw FK error before OR-2's check exists.
 - **Existing rows** all belong to the one organisation. `opening_hours NULL` means "not set", so **service will not
   open on any branch until ADMIN sets its hours** (B4). That is the rule, not a fault, and the release note must say it.
 - **Count first:**
@@ -628,7 +635,7 @@ Each ticket owns disjoint files.
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| OR-1 | organisation and branch profile; hours | `xc-auth/src/domain/organization/**`; `xc-rate/src/domain/branch/{entities/branch.rs, branch_hours.rs}`; `xc-rate/src/infrastructure/branch/branch_repository.rs`; migration 1 | this design |
+| OR-1 | organisation and branch profile; hours | `xc-auth/src/domain/organization/**`, `xc-auth/src/domain/mod.rs`; `xc-rate/src/domain/branch/{entities/branch.rs, branch_hours.rs, mod.rs}`; `xc-rate/src/application/branch/service.rs` (the `Branch` literal, `:113`); `xc-rate/Cargo.toml` + `api/Cargo.lock` (an IANA timezone crate: `chrono-tz`, none in the workspace today); `xc-rate/src/infrastructure/branch/branch_repository.rs`; migration 1 | this design |
 | OR-2 | users, scoped roles, permissions, `Authorizer`, the employees mirror | `xc-auth/src/domain/{user,access}/**` (all **new** files, beside the old types), `xc-auth/src/application/user/**`, `xc-auth/src/infrastructure/user/**`, `xc-auth/src/infrastructure/account/account_repository.rs` (the mirror only: `create_employee`, `disable_employee_in`, `create_owner`, and the unknown-branch check); migration 2 | OR-1 |
 | OR-3 | Identity sign-in BFF and sessions | `xc-auth/src/domain/identity/**`, `xc-auth/src/infrastructure/identity/**`, `xc-auth/src/application/session/**`, `api/src/presentation/http/auth.rs`, `api/src/presentation/extractors/actor.rs`, `web/src/screens/login/**` | OR-2; I-2 (#554, the token verifier) |
 | OR-4 | every route and view onto `Authorizer` (§4.2); the provided tests of §4.3 moved 1:1 (one commit per file, before any behaviour change); `api/tools/policy-map.mjs` + `blueprint_policy_cases.json` | `xc-auth/src/domain/policy/entities/policy.rs` (reduced to the route table), `entry_path.rs`, `api/src/presentation/http/v3/view.rs`, `action.rs`, the 19 call sites, the test files of §4.3 | OR-2, OR-3 (which supplies `access::Actor`). Split per area if the controller prefers; custody rows are #582's |
