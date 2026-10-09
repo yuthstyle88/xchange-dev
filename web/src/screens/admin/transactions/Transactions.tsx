@@ -21,6 +21,7 @@ import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
 import { en, th } from './i18n';
+import './transactions.css';
 
 const CSV_HEADERS = [
   'Branch ID',

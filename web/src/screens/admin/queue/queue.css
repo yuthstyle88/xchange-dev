@@ -1,0 +1,181 @@
+/* LK-SD (#716): admin queue bar & dialog look ported from v2 src/devices-public/queue-panel.css */
+
+.xc-admin .xc-content .admin-queue-bar {
+  margin: 18px 0;
+  padding: 18px 22px;
+  border: 1px solid #e7d7df;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 5px 20px #39152b08;
+  color: #2b2430;
+}
+
+.xc-admin .xc-content .queue-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.xc-admin .xc-content .queue-bar-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.xc-admin .xc-content .queue-bar-status {
+  margin: 6px 0;
+  color: #716572;
+}
+
+.xc-admin .xc-content .queue-bar-open-button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #a5003c;
+  color: #fff;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .queue-bar-open-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-admin .xc-content .queue-sound-area {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.xc-admin .xc-content .queue-workers-list {
+  font-size: 13px;
+  border-top: 1px solid #f0e7eb;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.xc-admin .xc-content .queue-worker-line {
+  padding: 4px 0;
+  color: #716572;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .admin-queue-toast {
+  position: fixed;
+  right: 22px;
+  top: 24px;
+  z-index: 1050;
+  padding: 18px;
+  background: #fff;
+  border: 2px solid #a5003c;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px #2b092d25;
+  max-width: 340px;
+}
+
+.xc-admin .xc-content .toast-text {
+  display: block;
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #2b2430;
+}
+
+.xc-admin .xc-content .toast-view-button {
+  cursor: pointer;
+  border: 1px solid #e0d5db;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 16px;
+  font: inherit;
+  color: #6b2945;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.xc-admin .xc-content .toast-close-button {
+  cursor: pointer;
+  border: 1px solid #e0d5db;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 16px;
+  font: inherit;
+  color: #776d75;
+}
+
+.xc-admin .xc-content .queue-dialog {
+  width: min(880px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow: auto;
+  border: 0;
+  border-radius: 22px;
+  padding: 24px;
+  color: #302630;
+  background: #faf8fa;
+  box-shadow: 0 25px 90px #21051140;
+}
+
+.xc-admin .xc-content .queue-dialog::backdrop {
+  background: #24172399;
+  backdrop-filter: blur(3px);
+}
+
+.xc-admin .xc-content .queue-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  position: sticky;
+  top: -24px;
+  background: #faf8fa;
+  z-index: 1;
+  padding: 12px 0;
+}
+
+.xc-admin .xc-content .queue-dialog-header h2 {
+  margin: 0;
+  font-size: 23px;
+}
+
+.xc-admin .xc-content .queue-dialog-close {
+  cursor: pointer;
+  border: 1px solid #e0d5db;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 16px;
+  font: inherit;
+  color: #6b2945;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .xc-admin .xc-content .admin-queue-bar {
+    margin: 12px 0;
+    padding: 16px;
+  }
+
+  .xc-admin .xc-content .queue-bar-open-button {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .xc-admin .xc-content .queue-dialog {
+    padding: 16px;
+  }
+
+  .xc-admin .xc-content .queue-dialog-header {
+    top: -16px;
+  }
+
+  .xc-admin .xc-content .admin-queue-toast {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+}

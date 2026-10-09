@@ -1,0 +1,49 @@
+/* LK-SD (#716): admin reports screen look ported from v2 admin-html.ts */
+
+.xc-admin .xc-content .stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.xc-admin .xc-content .stat-note {
+  font-size: 12px;
+  color: var(--muted, #676a73);
+  line-height: 1.5;
+  display: block;
+}
+
+.xc-admin .xc-content .value {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content .link-button {
+  font-family: Arial, sans-serif;
+  color: var(--brand, #a5003c);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0;
+  min-height: 32px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .small {
+  font-size: 12px;
+  color: var(--muted, #676a73);
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .xc-admin .xc-content .stat-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .xc-admin .xc-content .stat-cards {
+    grid-template-columns: 1fr;
+  }
+}

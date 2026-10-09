@@ -18,6 +18,7 @@ import { refreshTick } from '../parts/refresh';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { formatBangkokTime } from '../parts/TransactionTable';
 import { en, th } from './i18n';
+import './slips.css';
 
 export function Slips(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.slips', { th, en });

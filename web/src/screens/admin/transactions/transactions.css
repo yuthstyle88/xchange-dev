@@ -1,0 +1,114 @@
+/* LK-SD (#716): admin transactions screen look ported from v2 admin-html.ts */
+
+.xc-admin .xc-content .transactions-screen {
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.xc-admin .xc-content .transactions-screen .transactions-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px;
+  border-bottom: 1px solid var(--line, #e5e6ea);
+}
+
+.xc-admin .xc-content .transactions-screen .filter-group {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.xc-admin .xc-content .transactions-screen .filter-group label {
+  flex: 1;
+  min-width: 140px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.xc-admin .xc-content .transactions-screen .filter-group label:first-child {
+  flex: 2;
+  min-width: 200px;
+}
+
+.xc-admin .xc-content .transactions-screen .filter-group select {
+  min-width: 140px;
+}
+
+.xc-admin .xc-content .transactions-screen .actions-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.xc-admin .xc-content .transactions-screen .actions-group button {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .transactions-screen .transactions-error {
+  color: var(--brand, #a5003c);
+  font-size: 14px;
+  padding: 14px 20px;
+  background: var(--soft, #fbf0f4);
+  border-radius: 8px;
+  margin: 12px 20px;
+}
+
+.xc-admin .xc-content .transactions-screen .summary-line {
+  font-size: 13px;
+  color: var(--muted, #676a73);
+  padding: 12px 20px 4px;
+}
+
+.xc-admin .xc-content .transactions-screen .load-more-wrapper {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid var(--line, #e5e6ea);
+}
+
+.xc-admin .xc-content .transactions-screen .load-more-wrapper button {
+  min-height: 40px;
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  color: var(--ink, #17181b);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .xc-admin .xc-content .transactions-screen .transactions-toolbar {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .xc-admin .xc-content .transactions-screen .filter-group {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .xc-admin .xc-content .transactions-screen .filter-group label {
+    min-width: 100%;
+  }
+
+  .xc-admin .xc-content .transactions-screen .actions-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

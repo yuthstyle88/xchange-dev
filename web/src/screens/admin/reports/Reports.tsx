@@ -26,6 +26,7 @@ import { methodName, statusName, typeName } from '../parts/transaction';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { formatBangkokTime } from '../parts/TransactionTable';
 import * as table from './i18n';
+import './reports.css';
 
 const t = screenT('admin.reports', table);
 

@@ -1,0 +1,70 @@
+/* LK-SD (#716): admin bookings screen look ported from v2 admin-html.ts & bookings.js */
+
+.xc-admin .xc-content .admin-bookings {
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.xc-admin .xc-content .admin-bookings .toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.xc-admin .xc-content .admin-bookings .toolbar label {
+  flex: 1;
+  min-width: 200px;
+}
+
+.xc-admin .xc-content .admin-bookings .info-line {
+  margin: 16px 0;
+  font-size: 14px;
+  color: var(--muted, #676a73);
+  line-height: 1.6;
+}
+
+.xc-admin .xc-content .admin-bookings .load-more {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.xc-admin .xc-content .admin-bookings .load-more button {
+  min-height: 40px;
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  color: var(--ink, #17181b);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+@media (max-width: 720px) {
+  .xc-admin .xc-content .admin-bookings {
+    padding: 14px;
+  }
+
+  .xc-admin .xc-content .admin-bookings .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .xc-admin .xc-content .admin-bookings .toolbar label {
+    min-width: 100%;
+  }
+}
