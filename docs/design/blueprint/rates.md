@@ -494,7 +494,7 @@ CREATE UNIQUE INDEX one_pending_per_object ON approval_requests (type, object_id
 approval_decisions(id uuid PK, request_id FK UNIQUE, approver_id text, approver_role text,
                    outcome text CHECK (outcome IN ('APPROVED','REJECTED')), reason text, at timestamptz)
 idempotency_records(org_id text, operation text, key text, request_hash text, response_ref jsonb,
-                    status text, created_at timestamptz,
+                    status text, created_at timestamptz, claim token (§5.6; its column is CM-1's choice),
                     PRIMARY KEY (org_id, operation, key))        -- Blueprint §07 IdempotencyRecord
 audit_events(id bigint GENERATED ALWAYS AS IDENTITY PK, actor_id text, actor_role text, scope text,
              branch_id text NULL, action text, object_ref text, before_redacted jsonb NULL,
@@ -585,6 +585,26 @@ Rate payloads hold no PII. The rule is in the core so that no type has to rememb
   organisations, `org_id` is the single organisation's constant. The same key with the same hash replays the stored
   answer. The same key with a different hash is refused `idempotencyConflict` (§07: *"retry key เดิม payload ต่างต้อง
   reject"*).
+- **How a claim ends** (#691; the lane controller's rulings on #597, option A then **X**). `claim` commits on its own,
+  before the command, so concurrent claimers see it. Then `CommandEndpoint` opens the branch's `BranchTx`, calls
+  `run(tx, …)` and, in the **same** transaction, `finish_in(tx, token, answer)` (§6):
+  - **`run` succeeds and `finish_in` succeeds** ⇒ the command's writes and its stored answer commit together. The
+    record replays at any age. "Committed but not finished" cannot exist.
+  - **`run` returns `Err`** ⇒ the transaction rolls back (R-TX, §6), `CommandEndpoint` calls `release`, which deletes
+    the `PENDING` record, and answers `run`'s own error. A failure is never stored or replayed, and a retry with the
+    same key and body runs again.
+  - **`finish_in` fails** (the token no longer holds a `PENDING` record: it was taken over, or the record is gone) ⇒
+    the whole transaction rolls back, **`run`'s writes with it**, and the endpoint calls `release` (a no-op if the
+    record was taken over) and answers an error. Nothing of that run survives.
+  - **The process dies before the commit** ⇒ the transaction is gone and the record stays `PENDING`. The **60 s
+    lease** from `created_at` exists only to recover from this: after it, the next claim with **the same hash** takes
+    the record over (`New`, a new token, `created_at = now()`). A different hash is `idempotencyConflict` at any age.
+  - **A `run` that outlives the lease** is not run twice to effect: if a retry takes it over meanwhile, the slow run's
+    `finish_in` finds its token gone and fails, so its transaction rolls back; only the taker's writes and answer
+    remain. (Two runs on one branch also queue on the `BranchTx` row lock, so they do not interleave their writes.)
+  - **Every claim has a token** (`Claim::New(ClaimToken)`). `finish_in` must update exactly the one `PENDING` record
+    that token claimed, else it is an `Err`. `release` deletes only that record, and is a no-op otherwise. Binding to
+    the key alone would let a dead or slow claimer finish or delete the taker's record.
 - **Draft edits.** They carry `expected_version`, so two editors cannot both win.
 - **Decisions.** `decide` locks the request row (`FOR UPDATE`), so of two decisions on one request exactly one applies;
   the other gets `staleVersion`.
@@ -607,10 +627,23 @@ pub trait CommandAction: Send + Sync + 'static {
     type Output: Serialize + TS;
     const ROUTE: &'static str;                     // e.g. "/api/rate-drafts/{id}/submit" (Blueprint §10 paths)
     const METHOD: Method;                          // POST or PUT
-    fn run(&self, branch: &BranchId, who: &Actor, input: Self::Input, key: IdempotencyKey)
+    fn run(&self, tx: &mut Transaction<'_, Postgres>,  // the endpoint's BranchTx transaction (§5.6, R-TX)
+           branch: &BranchId, who: &Actor, input: Self::Input, key: IdempotencyKey)
         -> impl Future<Output = Result<Self::Output, V3Error>> + Send;
 }
 ```
+
+**R-TX [required] on every `CommandAction::run`** (#691; §5.6 depends on it):
+1. All of `run`'s database writes go through the `tx` it is given: the branch's `BranchTx` transaction that
+   `CommandEndpoint` opens, and commits only after `run` returned `Ok` **and** `finish_in` succeeded. `run` opens no
+   transaction of its own and never commits. A write that also touches a second branch takes that branch's lock in
+   the same `tx` with `BranchTx::lock_also` (MAIN first). An `Err` from `run` rolls `tx` back.
+2. `run` must **not** return `Err` after a side effect outside that transaction: a print job, an HTTP call to another
+   service, a file write, a message sent. Such an effect either runs **after** the commit (an outbox row written in
+   the transaction and delivered later, OB-1), or carries its own idempotency on the command's key, so that running
+   `run` again repeats nothing.
+3. A reviewer of any command checks R-TX: a `run` that commits and then can still fail, or that calls out before it
+   can still fail, is **FAIL**.
 
 `CommandEndpoint::register` serves `METHOD ROUTE`, so a command keeps the route its area's design names (the
 Blueprint's §10 paths here):
@@ -629,7 +662,9 @@ condition 5).
   callers. `authenticate_and_authorize` then resolves a service actor instead of a session.
 - `idempotency_records` (§5.6) is keyed by `(org_id, operation, key)`, so every command shares it. CM-1 owns it: the
   table (migration 3), the port `IdempotencyStore` (`api/src/infrastructure/idempotency/store.rs`:
-  `claim(op, key, hash) -> Claim::{New, Replay(response), Conflict}`, `finish(op, key, response)`), and
+  `claim(op, key, hash) -> Claim::{New(ClaimToken), Replay(response), Conflict}`, `finish_in(tx, op, key, token, response)` (in the
+  command's transaction; an `Err` unless it finishes exactly the token's `PENDING` record),
+  `release(op, key, token)`; §5.6 says when each runs), and
   `PgIdempotencyStore`. `CommandEndpoint` calls it around `run`, so no command handles idempotency itself.
 - **The system path is not CM-1's.** `CommandAction` works with whatever actor `authenticate_and_authorize`
   (`view.rs:331-353`) resolves, and today that is the owner and staff sessions. Teaching it a service actor is #563's
@@ -703,7 +738,7 @@ classDiagram
   class ApprovalRegistry { <<xc-approval application/registry.rs>> }
 
   class CommandAction { <<trait api presentation/http/v3/command.rs>> }
-  class IdempotencyStore { <<trait api infrastructure/idempotency/store.rs>> +claim() +finish() }
+  class IdempotencyStore { <<trait api infrastructure/idempotency/store.rs>> +claim() +finish_in() +release() }
   class PgIdempotencyStore { <<api infrastructure/idempotency/pg_store.rs>> }
   class StalePolicy { <<xc-rate domain/policy/stale_policy.rs>> +admits(side, thb) }
   PgIdempotencyStore ..|> IdempotencyStore
@@ -803,7 +838,8 @@ edited: sqlx checksums them.
 
 **3. `api/migrations/20261010115000_idempotency.sql`** (CM-1)
 
-- Creates `idempotency_records` (§5.1). There are no existing rows.
+- Creates `idempotency_records` (§5.1), including the claim token §5.6 binds `finish_in` and `release` to. There are no
+  existing rows: the migration has never been merged, so the token goes into the same file.
 - **`down`** drops it, which loses the stored replays. A retry after `down` runs as new.
 
 **4. `api/migrations/20261010120000_rate_engine.sql`** (RE-1)
