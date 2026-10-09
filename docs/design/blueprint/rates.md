@@ -586,8 +586,9 @@ Rate payloads hold no PII. The rule is in the core so that no type has to rememb
   answer. The same key with a different hash is refused `idempotencyConflict` (§07: *"retry key เดิม payload ต่างต้อง
   reject"*).
 - **How a claim ends** (#691; the lane controller's rulings on #597, option A then **X**). `claim` commits on its own,
-  before the command, so concurrent claimers see it. Then `CommandEndpoint` opens the branch's `BranchTx`, calls
-  `run(tx, …)` and, in the **same** transaction, `finish_in(tx, token, answer)` (§6):
+  before the command, so concurrent claimers see it. Then `CommandEndpoint` opens the transaction the command's
+  `locks()` declares (§6: `BranchTx::run` for one branch, `BranchTx::run_pair` for two), calls `run(tx, …)` and,
+  in the **same** transaction, `finish_in(tx, token, answer)` (§6):
   - **`run` succeeds and `finish_in` succeeds** ⇒ the command's writes and its stored answer commit together. The
     record replays at any age. "Committed but not finished" cannot exist.
   - **`run` returns `Err`** ⇒ the transaction rolls back (R-TX, §6), `CommandEndpoint` calls `release`, which deletes
@@ -627,17 +628,30 @@ pub trait CommandAction: Send + Sync + 'static {
     type Output: Serialize + TS;
     const ROUTE: &'static str;                     // e.g. "/api/rate-drafts/{id}/submit" (Blueprint §10 paths)
     const METHOD: Method;                          // POST or PUT
-    fn run(&self, tx: &mut Transaction<'_, Postgres>,  // the endpoint's BranchTx transaction (§5.6, R-TX)
+    /// The branches whose locks `run`'s writes need (#701). Provided; one-branch commands never override it.
+    fn locks(&self, branch: &BranchId, _input: &Self::Input) -> Locks { Locks::One(branch.clone()) }
+    fn run(&self, tx: &mut Transaction<'_, Postgres>,  // the transaction `locks()` asked for (§5.6, R-TX)
            branch: &BranchId, who: &Actor, input: Self::Input, key: IdempotencyKey)
         -> impl Future<Output = Result<Self::Output, V3Error>> + Send;
 }
+pub enum Locks { One(BranchId), Pair(BranchId, BranchId) }   // same file
 ```
+
+**Locks [required]** (#701, the lane controller's ruling A):
+- `One(b)` ⇒ `CommandEndpoint` opens `BranchTx::run(b)`. `Pair(a, b)` ⇒ `BranchTx::run_pair(a, b)`, which takes both
+  locks in the one total order (`MAIN` first, then ascending `branch_id`) and moves both versions; that is ledger
+  L-5's rule, so a two-branch command and a two-branch posting lock alike, and two opposite commands cannot deadlock.
+- A `Pair` must contain `branch` (the caller's branch, the one the policy checked). Otherwise the endpoint refuses it
+  `outOfScope` before claiming, so a command cannot lock (and write) a pair the caller was never checked against.
+  `Pair(b, b)` is `One(b)`.
+- The default is `One(branch)`, so `locks()` is additive: no existing command changes.
 
 **R-TX [required] on every `CommandAction::run`** (#691; §5.6 depends on it):
 1. All of `run`'s database writes go through the `tx` it is given: the branch's `BranchTx` transaction that
    `CommandEndpoint` opens, and commits only after `run` returned `Ok` **and** `finish_in` succeeded. `run` opens no
-   transaction of its own and never commits. A write that also touches a second branch takes that branch's lock in
-   the same `tx` with `BranchTx::lock_also` (MAIN first). An `Err` from `run` rolls `tx` back.
+   transaction of its own, never commits, and takes no branch lock itself: a write that touches two branches declares
+   `Locks::Pair` (above), and the endpoint opens `BranchTx::run_pair` for it. `lock_also` is not used by commands
+   (#701). An `Err` from `run` rolls `tx` back.
 2. `run` must **not** return `Err` after a side effect outside that transaction: a print job, an HTTP call to another
    service, a file write, a message sent. Such an effect either runs **after** the commit (an outbox row written in
    the transaction and delivered later, OB-1), or carries its own idempotency on the command's key, so that running
@@ -737,7 +751,8 @@ classDiagram
   class ApprovalService { <<xc-approval application/approval_service.rs>> }
   class ApprovalRegistry { <<xc-approval application/registry.rs>> }
 
-  class CommandAction { <<trait api presentation/http/v3/command.rs>> }
+  class CommandAction { <<trait api presentation/http/v3/command.rs>> +locks() Locks +run(tx) }
+  class Locks { <<enum api presentation/http/v3/command.rs>> One(BranchId); Pair(BranchId, BranchId) }
   class IdempotencyStore { <<trait api infrastructure/idempotency/store.rs>> +claim() +finish_in() +release() }
   class PgIdempotencyStore { <<api infrastructure/idempotency/pg_store.rs>> }
   class StalePolicy { <<xc-rate domain/policy/stale_policy.rs>> +admits(side, thb) }
@@ -981,6 +996,7 @@ Each ticket owns disjoint files. The order is by start dependency.
 | RU-1 | units in the kernel and the register | `xc-kernel` `money/{rate.rs, unit_size.rs, minor_unit.rs, currency_units.rs, foreign_amount.rs, rate_percent.rs, exchange_arithmetic.rs, quote.rs, mod.rs}`; `xc-rate` `domain/currency/**`, `infrastructure/currency/**`; migration 1; kernel tests | this design |
 | AP-1 | approval and audit core | new crate `api/crates/xc-approval/**`; migration 2 | this design |
 | CM-1 | the command seam and its idempotency store | `api/src/presentation/http/v3/command.rs`; `api/src/presentation/http/v3/commands/` (new dir; the generated table reads it); `api/build.rs` (the commands generation, after the views and actions blocks at `:155-190`); `api/build_support/commands.rs` (new, as `views.rs`); `api/src/presentation/http/v3/mod.rs` (`pub mod command;`, one `include!`, one loop in `configure_v3`, as `:18-27`); `api/src/infrastructure/idempotency/**` (new: `IdempotencyStore` port + `PgIdempotencyStore`); migration 3; `web/src/shared/api/client.ts` (`command(method, path, body, key)`); their tests | this design. **`http/v3/mod.rs` is also in DK-A #537** (`pub mod desk;`), so the queue serialises the two: CM-1 starts after #537 merges, or the controller orders the reverse |
+| CM-2 #704 | `Locks` and `CommandAction::locks()` (§6, #701): the endpoint opens `run` or `run_pair` from it | `api/src/presentation/http/v3/command.rs` (the trait's provided method, `Locks`, and the endpoint's choice of transaction); its tests | CM-1 #597 and LG-0 #661 merged; merges before cash CA-8 #624, the first two-branch command |
 | RE-1 | engine domain, tables and services | `xc-rate` `domain/{reference,policy,draft,publication}/**`, `application/{reference,draft,publication,approval}/**`, `infrastructure/{reference,policy,draft,publication}/**`; migration 4 | RU-1, AP-1 |
 | RE-2 | BoT adapter writes batches | `xc-rate/src/infrastructure/rate/bot_rate_source.rs` and its tests | RU-1, RE-1 |
 | RE-3 | routes: the views and commands of §4.7, the policy rows of §6 | `api/src/presentation/http/v3/views/{published_rates,staff_published_rates,rate_drafts,rate_draft,rate_publications,rate_policy,approval_requests}.rs`, `http/v3/commands/**`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/.../policy.rs` | RE-1, CM-1 |
