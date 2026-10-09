@@ -484,6 +484,8 @@ async fn the_columns_are_the_designs() {
             col("submission_id", "text", "YES"),
             col("transaction_ref", "text", "YES"),
             col("unit_size", "numeric", "NO"), // RU-1 (#595)
+            // RE-4 (#601): migration 5 (`20261010125000`) links a booking to its published line
+            col("published_rate_line_id", "uuid", "YES"),
             // OR-1 (#550 D-1): every table carries the organisation.
             col("organization_id", "uuid", "NO"),
         ]

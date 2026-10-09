@@ -169,3 +169,59 @@
   color: var(--muted);
   margin-bottom: 8px;
 }
+
+.xc-admin .xc-content .rates-pill {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--soft);
+  border-radius: 12px;
+  padding: 4px 10px;
+}
+
+.xc-admin .xc-content .draft-status-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.xc-admin .xc-content .btn-new-draft,
+.xc-admin .xc-content .btn-simulate,
+.xc-admin .xc-content .btn-submit,
+.xc-admin .xc-content .btn-publish,
+.xc-admin .xc-content .btn-adjust-all {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .in-bound-status {
+  color: #1b873f;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.xc-admin .xc-content .adjust-all-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.xc-admin .xc-content .adjust-field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .out-of-bound {
+  display: inline-block;
+  font-size: 11px;
+  color: #a5003c;
+  background: #fde8ef;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}

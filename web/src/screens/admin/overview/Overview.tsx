@@ -20,8 +20,10 @@ import { toast } from '../parts/toast';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
-import { StatCard } from '../parts/StatCard';
+import { CardGrid } from '../../../shared/ui/Card';
+import { StatCard } from '../../../shared/ui/StatCard';
 import { en, th } from './i18n';
+import './overview.css';
 
 const CSV_HEADERS = [
   'Branch ID',
@@ -314,7 +316,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       </div>
 
       {/* Four Stat Cards (B1) */}
-      <div class="overview-cards">
+      <CardGrid>
         <StatCard
           label={t('totalVolume')}
           value={data()?.totals.volume ?? '0.00'}
@@ -346,7 +348,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
             pending: data()?.totals.pendingCount ?? 0,
           })}
         />
-      </div>
+      </CardGrid>
 
       {/* Activity and Flow row (B2 & B3) */}
       <div class="overview-split">

@@ -83,7 +83,7 @@ impl Policy {
                 let allowed = match act {
                     "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => true,
                     "reserveCustomer" | "saveTransaction" => role == Role::Front,
-                    "adminSaveRate" | "rateDraft" => role == Role::Rates,
+                    "adminSaveRate" | "rateDraft" | "ratePolicySave" => role == Role::Rates,
                     "adminOpenShift" | "adminCloseShift" => {
                         role == Role::Backend || role == Role::Manager
                     }

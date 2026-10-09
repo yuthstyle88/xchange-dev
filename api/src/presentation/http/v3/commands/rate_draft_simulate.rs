@@ -31,10 +31,18 @@ pub struct SimulateDraftInput {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "rate_draft_simulate.ts")]
+pub struct OutOfBoundSide {
+    pub currency: String,
+    pub side: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "rate_draft_simulate.ts")]
 pub struct SimulateDraftOutput {
     pub id: String,
     pub is_in_bound: bool,
-    pub out_of_bound: Vec<String>,
+    pub out_of_bound: Vec<OutOfBoundSide>,
 }
 
 pub struct SimulateDraftCommand {
@@ -78,15 +86,23 @@ impl CommandAction for SimulateDraftCommand {
             .await
             .map_err(map_rate_engine_error)?;
 
+        let out_of_bound = outcome
+            .evaluation
+            .out_of_bound()
+            .into_iter()
+            .map(|(c, s)| OutOfBoundSide {
+                currency: c.as_str().to_string(),
+                side: match s {
+                    xc_kernel::money::Side::Buy => "BUY".to_string(),
+                    xc_kernel::money::Side::Sell => "SELL".to_string(),
+                },
+            })
+            .collect();
+
         Ok(SimulateDraftOutput {
             id: input.id,
             is_in_bound: outcome.evaluation.is_in_bound(),
-            out_of_bound: outcome
-                .evaluation
-                .out_of_bound()
-                .iter()
-                .map(|(c, s)| format!("{}:{:?}", c.as_str(), s))
-                .collect(),
+            out_of_bound,
         })
     }
 }
@@ -100,6 +116,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     SimulateDraftInput::export_all(&cfg)?;
+    OutOfBoundSide::export_all(&cfg)?;
     SimulateDraftOutput::export_all(&cfg)?;
     Ok(())
 }

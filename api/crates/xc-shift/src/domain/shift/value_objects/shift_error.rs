@@ -32,6 +32,8 @@ pub enum ShiftError {
     ExpectedChanged,
     #[error("กรุณาระบุเหตุผลยอดต่างก่อนปิดกะ")]
     DifferenceNeedsNote,
+    #[error("ไม่พบผู้เปิดกะในรายชื่อผู้ใช้")]
+    TellerUnknown,
 }
 
 impl From<ShiftError> for pos_error::AppError {

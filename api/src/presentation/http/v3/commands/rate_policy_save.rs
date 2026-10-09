@@ -13,6 +13,8 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
+use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -42,6 +44,15 @@ pub struct RatePolicySaveOutput {
     pub version: i32,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct CurrentPolicyRow {
+    version: i32,
+    guards: Value,
+    max_reference_age_hours: Option<i32>,
+    on_stale: Option<String>,
+    stale_limit_thb: Option<Decimal>,
+}
+
 pub struct RatePolicySaveCommand;
 
 impl CommandAction for RatePolicySaveCommand {
@@ -60,80 +71,118 @@ impl CommandAction for RatePolicySaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-            let buy_pct = Decimal::from_str(&input.buy_adjust_pct).map_err(|e| {
+        if input.reason.trim().is_empty() {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("reason"),
+                "reason cannot be empty",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        let buy_pct = Decimal::from_str(&input.buy_adjust_pct).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("buyAdjustPct"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        let sell_pct = Decimal::from_str(&input.sell_adjust_pct).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("sellAdjustPct"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        let stale_limit = match input.stale_limit_thb.as_deref() {
+            Some(s) => Some(Decimal::from_str(s).map_err(|e| {
                 V3Error::new(
                     "validationFailed",
-                    Some("buyAdjustPct"),
+                    Some("staleLimitThb"),
                     e.to_string(),
                     StatusCode::BAD_REQUEST,
                 )
-            })?;
-            let sell_pct = Decimal::from_str(&input.sell_adjust_pct).map_err(|e| {
-                V3Error::new(
-                    "validationFailed",
-                    Some("sellAdjustPct"),
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
-            let stale_limit = match input.stale_limit_thb.as_deref() {
-                Some(s) => Some(Decimal::from_str(s).map_err(|e| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("staleLimitThb"),
-                        e.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?),
-                None => None,
+            })?),
+            None => None,
+        };
+
+        // Query current version with valid_to IS NULL
+        let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
+            "SELECT version, guards, max_reference_age_hours, on_stale, stale_limit_thb \
+             FROM rate_policy_versions \
+             WHERE branch_id = $1 AND valid_to IS NULL \
+             FOR UPDATE",
+        )
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+
+        // If caller is not owner (i.e. staff with RATES role):
+        if who.role() != Role::Owner {
+            let Some(cur) = &cur_row else {
+                return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
             };
 
-            let cur_max_ver: Option<(i32,)> = sqlx::query_as(
-                "SELECT COALESCE(MAX(version), 0) FROM rate_policy_versions WHERE branch_id = $1",
-            )
-            .bind(branch.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+            if input.guards != cur.guards
+                || input.max_reference_age_hours != cur.max_reference_age_hours
+                || input.on_stale != cur.on_stale
+                || stale_limit != cur.stale_limit_thb
+            {
+                return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+            }
+        }
 
-            let next_ver = cur_max_ver.map(|r| r.0).unwrap_or(0) + 1;
-            let id = Uuid::new_v4();
+        let cur_max_ver: Option<(i32,)> = sqlx::query_as(
+            "SELECT COALESCE(MAX(version), 0) FROM rate_policy_versions WHERE branch_id = $1",
+        )
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
 
-            // Update valid_to on previous version
-            sqlx::query(
-                "UPDATE rate_policy_versions SET valid_to = now() WHERE branch_id = $1 AND valid_to IS NULL",
-            )
-            .bind(branch.as_str())
-            .execute(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+        let next_ver = cur_max_ver.map(|r| r.0).unwrap_or(0) + 1;
+        let source_ver = cur_row.as_ref().map(|r| r.version);
+        let id = Uuid::new_v4();
 
-            sqlx::query(
-                "INSERT INTO rate_policy_versions \
-                 (id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, \
-                  max_reference_age_hours, on_stale, stale_limit_thb, valid_from, \
-                  approved_by, reason) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11)",
-            )
-            .bind(id)
-            .bind(branch.as_str())
-            .bind(next_ver)
-            .bind(buy_pct)
-            .bind(sell_pct)
-            .bind(&input.guards)
-            .bind(input.max_reference_age_hours)
-            .bind(&input.on_stale)
-            .bind(stale_limit)
-            .bind(who.id())
-            .bind(&input.reason)
-            .execute(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+        // Update valid_to on previous version
+        sqlx::query(
+            "UPDATE rate_policy_versions SET valid_to = now() WHERE branch_id = $1 AND valid_to IS NULL",
+        )
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
 
-            Ok(RatePolicySaveOutput {
-                id: id.to_string(),
-                version: next_ver,
-            })
+        sqlx::query(
+            "INSERT INTO rate_policy_versions \
+             (id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, \
+              max_reference_age_hours, on_stale, stale_limit_thb, valid_from, \
+              approved_by, reason, source_version) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12)",
+        )
+        .bind(id)
+        .bind(branch.as_str())
+        .bind(next_ver)
+        .bind(buy_pct)
+        .bind(sell_pct)
+        .bind(&input.guards)
+        .bind(input.max_reference_age_hours)
+        .bind(&input.on_stale)
+        .bind(stale_limit)
+        .bind(who.id())
+        .bind(&input.reason)
+        .bind(source_ver)
+        .execute(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+
+        Ok(RatePolicySaveOutput {
+            id: id.to_string(),
+            version: next_ver,
+        })
     }
 }
 

@@ -11,39 +11,19 @@ use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+// no-op since #731; removed with its calls by RE-7 #604
+pub fn stage_evaluation_hash(_draft_id: &str, _hash: &str) {}
 
-// stopgap: staged evaluation hashes in a process-wide Mutex<HashMap> to allow
-// ApprovalSubject::version_hash to see uncommitted draft evaluation hashes.
-// The root cause is the AP-1 port's version_hash reading outside the caller's transaction (#731).
-static STAGED_HASHES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-fn get_staged_hashes() -> &'static Mutex<HashMap<String, String>> {
-    STAGED_HASHES.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-pub fn stage_evaluation_hash(draft_id: &str, hash: &str) {
-    let mut map = get_staged_hashes().lock().unwrap();
-    map.insert(draft_id.to_string(), hash.to_string());
-}
-
-pub fn unstage_evaluation_hash(draft_id: &str) {
-    let mut map = get_staged_hashes().lock().unwrap();
-    map.remove(draft_id);
-}
-
-pub fn get_staged_hash(draft_id: &str) -> Option<String> {
-    get_staged_hashes().lock().unwrap().get(draft_id).cloned()
-}
+// no-op since #731; removed with its calls by RE-7 #604
+pub fn unstage_evaluation_hash(_draft_id: &str) {}
 
 pub struct RatePublicationSubject {
-    pool: PgPool,
+    _pool: PgPool,
 }
 
 impl RatePublicationSubject {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self { _pool: pool }
     }
 }
 
@@ -52,16 +32,16 @@ impl ApprovalSubject for RatePublicationSubject {
         "RATE_PUBLICATION"
     }
 
-    fn version_hash<'a>(&'a self, object_id: &'a str) -> BoxFuture<'a, AppResult<String>> {
+    fn version_hash<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        object_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<String>> {
         Box::pin(async move {
-            if let Some(hash) = get_staged_hash(object_id) {
-                return Ok(hash);
-            }
-
             let hash: Option<Option<String>> =
                 sqlx::query_scalar("SELECT evaluation_hash FROM rate_drafts WHERE id::text = $1")
                     .bind(object_id)
-                    .fetch_optional(&self.pool)
+                    .fetch_optional(&mut **tx)
                     .await
                     .map_err(pos_error::AppError::Database)?;
 

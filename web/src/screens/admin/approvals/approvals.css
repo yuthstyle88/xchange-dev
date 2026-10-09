@@ -1,0 +1,123 @@
+.xc-admin .xc-content .admin-approvals-screen {
+  display: block;
+}
+
+.xc-admin .xc-content .approvals-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.xc-admin .xc-content .empty-queue-msg {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.xc-admin .xc-content .approval-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .approval-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .approval-type {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content .approval-status {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.xc-admin .xc-content .approval-proposer {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content .approval-out-of-bound-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.xc-admin .xc-content .approval-out-of-bound-item {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  background: #fde8ef;
+  color: #a5003c;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content .currency-code {
+  font-weight: bold;
+}
+
+.xc-admin .xc-content .currency-side {
+  font-size: 12px;
+}
+
+.xc-admin .xc-content .approval-decision-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.xc-admin .xc-content .approval-reason-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content .approval-error-text {
+  color: #a5003c;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .approval-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.xc-admin .xc-content .approval-btn-approve,
+.xc-admin .xc-content .approval-btn-reject {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+}
+
+.xc-admin .xc-content .approval-btn-approve {
+  background: var(--brand);
+  color: white;
+  border-color: var(--brand);
+}
+
+.xc-admin .xc-content .approval-btn-reject {
+  background: white;
+  color: #a5003c;
+  border-color: #edd4df;
+}

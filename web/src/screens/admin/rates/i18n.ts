@@ -25,19 +25,10 @@ export const th = {
   notSet: 'ยังไม่ตั้ง',
   editRateButton: 'แก้ไขเรท',
 
-  // Edit dialog (admin-html:134; rates-reference.js:5, :10)
-  editTitlePrefix: 'ตั้งเรทจริง ',
-  editNotice: 'ใช้กับรายการใหม่ของหน้าทำรายการ การแก้ไขจะบันทึกผู้แก้และเวลาใน เซิร์ฟเวอร์',
+  // Edit dialog / common
   cancel: 'ยกเลิก',
-  saveToServer: 'บันทึกเรทลง เซิร์ฟเวอร์',
   sellBelowBuyError: 'เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ',
   noReferenceData: 'ยังไม่มีข้อมูลอ้างอิง',
-  jpyConversionNote: ' · แปลงจากต่อ 100 เยนเป็นต่อ 1 เยนแล้ว',
-  botSaveNotice: 'ระบบจะดึงและบันทึกเรท ธปท. ใหม่อีกครั้งตอนกดบันทึก หากดึงไม่ได้จะยังไม่ปรับเรทร้าน',
-  partnerNameLabel: 'ชื่อคู่ค้า',
-  partnerNamePlaceholder: 'ไม่ระบุได้ หากยังไม่มีต้นทุนคู่ค้า',
-  partnerPairError: 'กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่',
-  partnerCostPrefix: 'เรทที่ร้านรับซื้อจากคู่ค้า (THB ต่อ 1 ',
 
   // BOT panel (rates-reference.js:7)
   botEyebrow: 'BOT REFERENCE / PARTNER COST',
@@ -50,9 +41,6 @@ export const th = {
   headerPair: 'คู่เงิน',
   headerShopRates: 'ร้านรับซื้อ / ขาย',
   headerBotRates: 'ธปท. ซื้อตั๋ว / โอน / ขาย',
-  headerPartnerCost: 'ต้นทุนจากคู่ค้า',
-  headerPartnerSpread: 'ส่วนต่างขาย − ต้นทุน',
-  partnerNotSpecified: 'ยังไม่ระบุ',
   botFetchedPrefix: 'ดึงข้อมูล ',
   botLastFetchedPrefix: 'ดึงข้อมูลล่าสุด ',
   botDatePrefix: 'ธปท. วันที่ ',
@@ -62,11 +50,36 @@ export const th = {
 
   // History dialog (rates-reference.js:8)
   historyTitlePrefix: 'ประวัติการปรับเรท · ',
-  historyNote: 'ค่า ธปท. ที่เซิร์ฟเวอร์ดึงขณะบันทึกแต่ละครั้ง · รายการเก่าอาจยังไม่มีค่าอ้างอิง',
+  historyTitle: 'ประวัติการปรับเรท',
   headerTimeActor: 'เวลา / ผู้แก้',
   headerPairShopRate: 'คู่เงิน / เรทร้าน',
-  headerPartnerCostHistory: 'คู่ค้า / ต้นทุน',
-  headerBotReferenceCopy: 'สำเนาเรท ธปท.',
+  headerVersion: 'ฉบับที่',
+  headerPublishedBy: 'ผู้เผยแพร่',
+  headerPublishedAt: 'เวลาที่เผยแพร่',
+
+  // RE-5 Actions & Drafts
+  newDraft: 'สร้างฉบับร่างใหม่',
+  simulate: 'จำลองเรท',
+  submit: 'ส่งขออนุมัติ',
+  publish: 'เผยแพร่เรท',
+  adjustAll: 'ปรับทั้งหมด',
+  adjustBuyPct: 'ปรับ % รับซื้อ',
+  adjustSellPct: 'ปรับ % ขาย',
+  outOfBound: 'นอกกรอบ',
+  inBound: 'อยู่ในกรอบ',
+
+  // Draft statuses
+  statusDraft: 'ฉบับร่าง',
+  statusPendingApproval: 'รออนุมัติ',
+  statusApproved: 'อนุมัติแล้ว',
+  statusPublished: 'เผยแพร่แล้ว',
+  statusRejected: 'ปฏิเสธ',
+
+  // Draft section headers
+  draftTitle: 'ฉบับร่างเรทปัจจุบัน',
+  noOpenDraft: 'ไม่มีฉบับร่างที่เปิดอยู่',
+  currentPublicationTitle: 'เรทที่เผยแพร่อยู่ปัจจุบัน',
+  noPublication: 'ยังไม่มีการเผยแพร่เรท',
 };
 
 export const en = {
@@ -96,19 +109,10 @@ export const en = {
   notSet: 'Not set',
   editRateButton: 'Edit rate',
 
-  // Edit dialog
-  editTitlePrefix: 'Set Live Rate ',
-  editNotice: 'Applies to new transactions. Edits will record editor and timestamp on server.',
+  // Edit dialog / common
   cancel: 'Cancel',
-  saveToServer: 'Save Rates to Server',
   sellBelowBuyError: 'Selling rate must not be less than buying rate',
   noReferenceData: 'No reference data',
-  jpyConversionNote: ' · Converted from per 100 JPY to per 1 JPY',
-  botSaveNotice: 'System will re-fetch and save BOT rates upon submitting. If failed, rates will not be updated.',
-  partnerNameLabel: 'Partner Name',
-  partnerNamePlaceholder: 'Optional if partner cost is not set',
-  partnerPairError: 'Please provide both partner name and cost rate as a pair',
-  partnerCostPrefix: 'Partner cost rate (THB per 1 ',
 
   // BOT panel
   botEyebrow: 'BOT REFERENCE / PARTNER COST',
@@ -121,9 +125,6 @@ export const en = {
   headerPair: 'Currency Pair',
   headerShopRates: 'Shop Buy / Sell',
   headerBotRates: 'BOT Sight / Transfer / Sell',
-  headerPartnerCost: 'Partner Cost',
-  headerPartnerSpread: 'Sell − Cost Spread',
-  partnerNotSpecified: 'Not specified',
   botFetchedPrefix: 'Fetched ',
   botLastFetchedPrefix: 'Last fetched ',
   botDatePrefix: 'BOT Date ',
@@ -133,9 +134,34 @@ export const en = {
 
   // History dialog
   historyTitlePrefix: 'Rate Change History · ',
-  historyNote: 'BOT reference captured by server during each save · older records may lack reference data',
+  historyTitle: 'Rate Publication History',
   headerTimeActor: 'Time / Editor',
   headerPairShopRate: 'Pair / Shop Rates',
-  headerPartnerCostHistory: 'Partner / Cost',
-  headerBotReferenceCopy: 'BOT Reference Copy',
+  headerVersion: 'Version',
+  headerPublishedBy: 'Published by',
+  headerPublishedAt: 'Published at',
+
+  // RE-5 Actions & Drafts
+  newDraft: 'New draft',
+  simulate: 'Simulate',
+  submit: 'Submit',
+  publish: 'Publish',
+  adjustAll: 'Adjust all',
+  adjustBuyPct: 'Adjust buy %',
+  adjustSellPct: 'Adjust sell %',
+  outOfBound: 'Out of bound',
+  inBound: 'In bound',
+
+  // Draft statuses
+  statusDraft: 'Draft',
+  statusPendingApproval: 'Pending approval',
+  statusApproved: 'Approved',
+  statusPublished: 'Published',
+  statusRejected: 'Rejected',
+
+  // Draft section headers
+  draftTitle: 'Current Rate Draft',
+  noOpenDraft: 'No open draft',
+  currentPublicationTitle: 'Current Published Rates',
+  noPublication: 'No published rates yet',
 };

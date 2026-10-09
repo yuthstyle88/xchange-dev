@@ -230,6 +230,13 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
   });
 });
 
+// Menus the Blueprint adds that v2 never served. Amended by #602 (RE-5), by its ticket author
+// (claude/e5ab6c): A06 `/admin/approvals` (`docs/design/blueprint/rates.md` §4.7, §9 RE-5; Blueprint
+// §03) is a v3 menu with no v2 row, OWNER only (its view and command are OWNER rows), so it can match
+// neither SERVED nor `roles: 'all'`. Its own record is pinned in
+// `web/src/screens/admin/approvals/Approvals.test.tsx`. Every served menu is still held to its row.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals'];
+
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {
     const { menus } = mod();
@@ -239,6 +246,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
     expect(new Set(menus.map((m) => m.id)).size).toBe(menus.length);
     expect(new Set(orders).size).toBe(menus.length);
     for (const m of menus) {
+      if (BLUEPRINT_MENUS.includes(m.id)) continue;
       expect(Object.keys(SERVED), `${m.id} is a served menu (referrals is not ported)`).toContain(m.id);
     }
   });
@@ -246,7 +254,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
   it("gives each merged menu its served group, order, icon, label, heading and period toolbar, and roles 'all'", () => {
     const { menus } = mod();
     setLang('th');
-    for (const m of menus) {
+    for (const m of menus.filter((x) => !BLUEPRINT_MENUS.includes(x.id))) {
       const s = SERVED[m.id]!;
       expect(m.group, `${m.id}.group`).toBe(s.group);
       expect(m.order, `${m.id}.order`).toBe(s.order);

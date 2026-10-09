@@ -164,11 +164,12 @@ impl Shop {
     }
 
     async fn seed_shift(&self, id: &str, branch_id: &str, status: &str) {
+        snapshot_common::seed_opener(&self.db.pool, "owner").await;
         let closed = status == "CLOSED";
         sqlx::query(
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
-                 open_request_id) \
-             VALUES ($1, $2, $3, $4, 'owner', $5, $6, $7)",
+                 open_request_id, teller_id) \
+             VALUES ($1, $2, $3, $4, 'owner', $5, $6, $7, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
         )
         .bind(id)
         .bind(branch_id)

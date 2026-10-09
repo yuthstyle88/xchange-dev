@@ -16,10 +16,12 @@ import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { refreshTick } from '../parts/refresh';
-import { StatCard } from '../parts/StatCard';
+import { Card, CardHead, CardBody, CardActions, CardGrid } from '../../../shared/ui/Card';
+import { StatCard } from '../../../shared/ui/StatCard';
 import { toast } from '../parts/toast';
 import { openShiftDetail } from './ShiftDetail';
 import * as table from './i18n';
+import './cash.css';
 
 const t = screenT('admin.cash', table);
 
@@ -585,7 +587,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       </Show>
 
       {/* 4 Stat Cards */}
-      <div class="stat-cards-grid">
+      <CardGrid>
         <StatCard
           label={t('statOpening')}
           value={cash()?.stats ? cash()!.stats!.opening : '—'}
@@ -610,7 +612,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
           unit="THB"
           note={t('statRemainingNote')}
         />
-      </div>
+      </CardGrid>
 
       {/* Reference Summary */}
       <div class="reference-summary">
@@ -631,81 +633,85 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       </div>
 
       {/* Stock Card and Actions */}
-      <div class="stock-card">
-        <div class="card-eyebrow">{t('stockEyebrow')}</div>
-        <div class="card-title">{t('stockTitle')}</div>
+      <Card class="stock-card">
+        <CardHead
+          eyebrow={t('stockEyebrow')}
+          title={t('stockTitle')}
+          aside={
+            <CardActions>
+              <button
+                type="button"
+                onClick={handleOpenShiftDialog}
+                disabled={isWriteDisabled() || hasOpenShift()}
+              >
+                {t('btnOpenShift')}
+              </button>
+              <button
+                type="button"
+                onClick={handleMoveStockDialog}
+                disabled={isWriteDisabled() || !hasOpenShift()}
+              >
+                {t('btnMoveStock')}
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseShiftDialog}
+                disabled={isWriteDisabled() || !hasOpenShift()}
+              >
+                {t('btnCloseShift')}
+              </button>
+              <button
+                type="button"
+                onClick={handleExampleDialog}
+                disabled={isWriteDisabled()}
+              >
+                {t('btnViewExample')}
+              </button>
+            </CardActions>
+          }
+        />
+        <CardBody flush>
+          <table class="stock-table">
+            <thead>
+              <tr>
+                <th>{t('headerCurrency')}</th>
+                <th>{t('headerOpening')}</th>
+                <th>{t('headerNet')}</th>
+                <th>{t('headerExpected')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={cash()?.stock ?? []}>
+                {(row) => (
+                  <tr>
+                    <td>{row.code}</td>
+                    <td>{formatMoney(row.opening)}</td>
+                    <td>{formatMoney(row.net)}</td>
+                    <td>{formatMoney(row.expected)}</td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
 
-        <div class="card-actions">
-          <button
-            type="button"
-            onClick={handleOpenShiftDialog}
-            disabled={isWriteDisabled() || hasOpenShift()}
-          >
-            {t('btnOpenShift')}
-          </button>
-          <button
-            type="button"
-            onClick={handleMoveStockDialog}
-            disabled={isWriteDisabled() || !hasOpenShift()}
-          >
-            {t('btnMoveStock')}
-          </button>
-          <button
-            type="button"
-            onClick={handleCloseShiftDialog}
-            disabled={isWriteDisabled() || !hasOpenShift()}
-          >
-            {t('btnCloseShift')}
-          </button>
-          <button
-            type="button"
-            onClick={handleExampleDialog}
-            disabled={isWriteDisabled()}
-          >
-            {t('btnViewExample')}
-          </button>
-        </div>
+          <div class="stock-notes">
+            <p>{t('stockNote1')}</p>
+            <p>{t('stockNote2')}</p>
+          </div>
 
-        <table class="stock-table">
-          <thead>
-            <tr>
-              <th>{t('headerCurrency')}</th>
-              <th>{t('headerOpening')}</th>
-              <th>{t('headerNet')}</th>
-              <th>{t('headerExpected')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={cash()?.stock ?? []}>
-              {(row) => (
-                <tr>
-                  <td>{row.code}</td>
-                  <td>{formatMoney(row.opening)}</td>
-                  <td>{formatMoney(row.net)}</td>
-                  <td>{formatMoney(row.expected)}</td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-
-        <div class="stock-notes">
-          <p>{t('stockNote1')}</p>
-          <p>{t('stockNote2')}</p>
-        </div>
-
-        <div class="stock-filter">
-          <label>
-            <input
-              type="checkbox"
-              checked={showAll()}
-              onChange={handleToggleShowAll}
-            />
-            {t('filterAll')}
-          </label>
-          <p>{t('filterAllNote')}</p>
-        </div>
-      </div>
+          <div class="stock-filter">
+            <label>
+              <input
+                type="checkbox"
+                checked={showAll()}
+                onChange={handleToggleShowAll}
+              />
+              {t('filterAll')}
+            </label>
+            <p>{t('filterAllNote')}</p>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Footnote */}
       <p class="cash-footnote">{t('footnote')}</p>

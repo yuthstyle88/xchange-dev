@@ -153,7 +153,10 @@ async fn old_columns(pool: &PgPool) -> Value {
         // `unit_size` is added later by RU-1's migration (#595, `20261010100000_rate_units.sql`) and is
         // checked by `xc-rate/tests/currency_register_test.rs`; it is not a column the older binary knows.
         // `organization_id` is OR-1's (#615), checked by `xc-rate/tests/organizations_migration_test.rs`.
-        "SELECT (to_jsonb(r) - 'started_at' - 'completed_at' - 'unit_size' - 'organization_id')::text AS row \
+        // `published_rate_line_id` is RE-4's migration 5 (#601, `20261010125000_published_rate_line_ids.sql`),
+        // checked by `api/tests/rates_re4_migration_test.rs`.
+        "SELECT (to_jsonb(r) - 'started_at' - 'completed_at' - 'unit_size' - 'organization_id' \
+                 - 'published_rate_line_id')::text AS row \
          FROM kiosk_requests r ORDER BY branch_id, id",
     )
     .fetch_all(pool)
@@ -237,8 +240,8 @@ async fn the_migration_adds_two_nullable_times_and_nothing_else() {
     .await
     .expect("count the columns");
     assert_eq!(
-        count, 19,
-        "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595) and OR-1's organization_id (#615)"
+        count, 20,
+        "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595), OR-1's organization_id (#615) and RE-4's published_rate_line_id (#601)"
     );
     db.finish().await;
 }

@@ -1,20 +1,24 @@
-import { createEffect, createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
-import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
-import type { AdminRateHistoryRow } from '../../../shared/api/generated/admin_rate_history';
-import type { AdminRateRow, AdminRatesData } from '../../../shared/api/generated/admin_rates';
+import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import type {
+  RateDraftDetailData,
+  RateDraftFilter,
+  RateDraftLineDto,
+} from '../../../shared/api/generated/rate_draft';
+import type { RateDraftsData } from '../../../shared/api/generated/rate_drafts';
+import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
+import type { RatePublicationsData } from '../../../shared/api/generated/rate_publications';
 import type {
   RatesReferenceData,
   RatesReferenceFilter,
   RatesReferenceRow,
 } from '../../../shared/api/generated/rates_reference';
 import { locale, screenT } from '../../../shared/i18n';
+import { formatRate } from '../../../shared/ui/rate';
 import type { AdminMenuProps } from '../menus';
-import { DataTable } from '../parts/DataTable';
-import { closeDialog, openDialog } from '../parts/Dialog';
-import { pendingWrite } from '../parts/pending-write';
-import { refreshTick } from '../parts/refresh';
-import { Field } from '../../../shared/ui/Field';
+import { openDialog } from '../parts/Dialog';
+import { toast } from '../parts/toast';
 import * as table from './i18n';
 import './rates.css';
 
@@ -25,39 +29,32 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
-function renderBotLine(r: RatesReferenceRow): string {
-  return `${t('botDatePrefix')}${r.date} · ${t('botSight')} ${r.buyingSight} · ${t('botTransfer')} ${r.buyingTransfer} · ${t('botSelling')} ${r.selling}`;
+interface OutOfBoundItem {
+  currency: string;
+  side: 'BUY' | 'SELL';
 }
 
 export function Rates(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
 
-  const [ratesData, setRatesData] = createSignal<AdminRatesData | null>(null);
-  const [ratesVersion, setRatesVersion] = createSignal<number | undefined>(undefined);
+  const [pubData, setPubData] = createSignal<PublishedRatesData | null>(null);
+  const [, setDraftsData] = createSignal<RateDraftsData | null>(null);
+  const [draftDetail, setDraftDetail] = createSignal<RateDraftDetailData | null>(null);
+  const [policyData, setPolicyData] = createSignal<RatePolicyData | null>(null);
 
   const [refData, setRefData] = createSignal<RatesReferenceData | null>(null);
   const [refVersion, setRefVersion] = createSignal<number | undefined>(undefined);
   const [refError, setRefError] = createSignal<string | null>(null);
   const [refLoading, setRefLoading] = createSignal<boolean>(true);
 
-  const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
+  const [simulateResult, setSimulateResult] = createSignal<{
+    id: string;
+    isInBound: boolean;
+    outOfBound: OutOfBoundItem[];
+  } | null>(null);
 
-  const readRates = async (opts: { since?: number }) => {
-    if (!props.shown()) return;
-    const branch = props.branch();
-    try {
-      const res = await client.view<AdminRatesData>('admin_rates', {
-        branch,
-        since: opts.since,
-      });
-      setRatesVersion(res.version);
-      if (res.changed && res.data) {
-        setRatesData(res.data);
-      }
-    } catch {
-      // Rates error handling
-    }
-  };
+  const [adjustBuyPct, setAdjustBuyPct] = createSignal<string>('0.0000');
+  const [adjustSellPct, setAdjustSellPct] = createSignal<string>('0.0000');
 
   const fetchReference = async (opts: { since?: number; fresh?: boolean }) => {
     if (!props.shown()) return;
@@ -84,14 +81,71 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const readPublished = async (branch: string) => {
+    try {
+      const res = await client.view<PublishedRatesData>('published_rates', { branch });
+      if (res.changed && res.data) {
+        setPubData(res.data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const readDrafts = async (branch: string) => {
+    try {
+      const res = await client.view<RateDraftsData>('rate_drafts', { branch });
+      if (res.changed && res.data) {
+        setDraftsData(res.data);
+      }
+      const draftsList = res.data?.drafts ?? [];
+      const openDraft = draftsList.find((d) =>
+        ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(d.status),
+      );
+      if (openDraft) {
+        const detailRes = await client.view<RateDraftDetailData, RateDraftFilter>(
+          'rate_draft',
+          { branch, filter: { id: openDraft.id } },
+        );
+        if (detailRes.changed && detailRes.data) {
+          setDraftDetail(detailRes.data);
+        }
+      } else {
+        setDraftDetail(null);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const readPolicy = async (branch: string) => {
+    try {
+      const res = await client.view<RatePolicyData>('rate_policy', { branch });
+      if (res.changed && res.data) {
+        setPolicyData(res.data);
+        if (res.data.policy) {
+          setAdjustBuyPct(res.data.policy.buyAdjustPct);
+          setAdjustSellPct(res.data.policy.sellAdjustPct);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const readAll = async (branch: string) => {
+    if (!props.shown()) return;
+    setSimulateResult(null);
+    void fetchReference({ since: undefined });
+    await Promise.all([readPublished(branch), readDrafts(branch), readPolicy(branch)]);
+  };
+
   let lastShown = false;
   let lastBranch = '';
-  let lastTick = refreshTick();
 
   createEffect(() => {
     const shown = props.shown();
     const branch = props.branch();
-    const tick = refreshTick();
 
     if (!shown) {
       lastShown = false;
@@ -101,22 +155,14 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!lastShown) {
       lastShown = true;
       lastBranch = branch;
-      lastTick = tick;
-      void readRates({ since: undefined });
-      void fetchReference({ since: undefined, fresh: false });
+      void readAll(branch);
       return;
     }
 
     if (branch !== lastBranch) {
       lastBranch = branch;
-      lastTick = tick;
-      void readRates({ since: undefined });
+      void readAll(branch);
       return;
-    }
-
-    if (tick !== lastTick) {
-      lastTick = tick;
-      void readRates({ since: ratesVersion() });
     }
   });
 
@@ -137,260 +183,377 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   });
 
-  const openEdit = (rate: AdminRateRow) => {
-    void fetchReference({ since: undefined, fresh: false });
+  const getUnitSize = (currency: string): string => {
+    const pubLine = pubData()?.lines?.find((p) => p.currency === currency);
+    if (pubLine?.unitSize) return pubLine.unitSize;
+    const rRow = refData()?.rows?.find((r) => r.code === currency);
+    if (rRow?.unit) return String(rRow.unit);
+    return '1';
+  };
 
-    const [buyVal, setBuyVal] = createSignal(rate.buy ?? '');
-    const [sellVal, setSellVal] = createSignal(rate.sell ?? '');
-    const [partnerNameVal, setPartnerNameVal] = createSignal(rate.partnerName ?? '');
-    const [partnerCostVal, setPartnerCostVal] = createSignal(rate.partnerCost ?? '');
-    const [formError, setFormError] = createSignal<string | null>(null);
+  const isOutOfBound = (currency: string): boolean => {
+    const sim = simulateResult();
+    if (!sim || !Array.isArray(sim.outOfBound)) return false;
+    return sim.outOfBound.some((item) => item.currency === currency);
+  };
 
-    const handleSave = async () => {
-      const trimmedName = partnerNameVal().trim();
-      const trimmedCost = partnerCostVal().trim();
-      if ((trimmedName === '') !== (trimmedCost === '')) {
-        setFormError(t('partnerPairError'));
-        return;
+  const formatStatus = (status: string | undefined): string => {
+    if (!status) return '';
+    switch (status) {
+      case 'DRAFT':
+        return t('statusDraft');
+      case 'PENDING_APPROVAL':
+        return t('statusPendingApproval');
+      case 'APPROVED':
+        return t('statusApproved');
+      case 'PUBLISHED':
+        return t('statusPublished');
+      case 'REJECTED':
+        return t('statusRejected');
+      default:
+        return status;
+    }
+  };
+
+  const handleNewDraft = async () => {
+    const branch = props.branch();
+    try {
+      await client.command(
+        'POST',
+        '/api/rate-references/fetch',
+        { branch },
+        crypto.randomUUID(),
+      );
+
+      const curPub = pubData();
+      const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
+        currency: l.currency,
+        buyMode: 'AUTO',
+        sellMode: 'AUTO',
+        manualBuy: null,
+        manualSell: null,
+        reason: null,
+      }));
+
+      const createRes = await client.command<unknown, { id: string; version: number; status: string }>(
+        'POST',
+        '/api/rate-drafts',
+        { branch, lines },
+        crypto.randomUUID(),
+      );
+
+      const detailRes = await client.view<RateDraftDetailData, RateDraftFilter>(
+        'rate_draft',
+        { branch, filter: { id: createRes.id } },
+      );
+      if (detailRes.data) {
+        setDraftDetail(detailRes.data);
       }
-      setFormError(null);
-      await pendingWrite.run(
-        client,
-        props.branch(),
-        'adminSaveRate',
+
+      await readDrafts(branch);
+      setSimulateResult(null);
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      toast(message);
+    }
+  };
+
+  const handleSimulate = async () => {
+    const draft = draftDetail()?.draft;
+    if (!draft) return;
+    const branch = props.branch();
+    try {
+      const res = await client.command<
+        unknown,
         {
-          code: rate.code,
-          buy: buyVal(),
-          sell: sellVal(),
-          partnerName: trimmedName,
-          partnerCost: trimmedCost === '' ? null : trimmedCost,
-          previousUpdated: rate.updated,
-        },
-        () => {
-          void readRates({ since: ratesVersion() });
-        },
+          id: string;
+          isInBound: boolean;
+          outOfBound: OutOfBoundItem[];
+        }
+      >(
+        'POST',
+        `/api/rate-drafts/${draft.id}/simulate`,
+        { branch },
+        crypto.randomUUID(),
       );
-    };
+      setSimulateResult(res);
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      toast(message);
+    }
+  };
 
-    openDialog(`${t('editTitlePrefix')}${rate.code}`, () => {
-      const currentRef = refData();
-      const err = refError();
-      const botRow = currentRef?.rows.find((r) => r.code === rate.code);
-
-      return (
-        <div class="edit-rate-dialog">
-          <p class="notice">{t('editNotice')}</p>
-          <div class="bot-reference-info">
-            <Show when={err}>
-              <p class="bot-error">{err}</p>
-            </Show>
-            <Show when={!err && botRow}>
-              {(br) => (
-                <p class="bot-line">
-                  {renderBotLine(br())}
-                  <Show when={br().unit === 100 || rate.code === 'JPY'}>
-                    <span>{t('jpyConversionNote')}</span>
-                  </Show>
-                  <br />
-                  <span>
-                    {t('botFetchedPrefix')}
-                    {formatTime(currentRef!.fetchedAt)}
-                  </span>
-                </p>
-              )}
-            </Show>
-            <Show when={!err && !botRow}>
-              <p class="no-bot">{t('noReferenceData')}</p>
-            </Show>
-          </div>
-          <p class="save-notice">{t('botSaveNotice')}</p>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleSave();
-            }}
-          >
-            <Field label={t('headerBuy')}>
-              <input
-                type="number"
-                required
-                min="0.0001"
-                max="1000000"
-                step="0.0001"
-                value={buyVal()}
-                onInput={(e) => setBuyVal(e.currentTarget.value)}
-              />
-            </Field>
-
-            <Field label={t('headerSell')}>
-              <input
-                type="number"
-                required
-                min="0.0001"
-                max="1000000"
-                step="0.0001"
-                value={sellVal()}
-                onInput={(e) => setSellVal(e.currentTarget.value)}
-              />
-            </Field>
-
-            <Field label={t('partnerNameLabel')}>
-              <input
-                type="text"
-                maxLength={100}
-                placeholder={t('partnerNamePlaceholder')}
-                value={partnerNameVal()}
-                onInput={(e) => setPartnerNameVal(e.currentTarget.value)}
-              />
-            </Field>
-
-            <Field label={`${t('partnerCostPrefix')}${rate.code})`}>
-              <input
-                type="number"
-                min="0.0001"
-                max="1000000"
-                step="0.0001"
-                value={partnerCostVal()}
-                onInput={(e) => setPartnerCostVal(e.currentTarget.value)}
-              />
-            </Field>
-
-            <Show when={formError()}>
-              <div class="form-error">{formError()}</div>
-            </Show>
-
-            <div class="dialog-actions">
-              <button type="button" onClick={closeDialog}>
-                {t('cancel')}
-              </button>
-              <button type="submit">{t('saveToServer')}</button>
-            </div>
-          </form>
-        </div>
+  const handleSubmit = async () => {
+    const draft = draftDetail()?.draft;
+    if (!draft) return;
+    const branch = props.branch();
+    try {
+      const res = await client.command<unknown, { requestId?: string; status: string }>(
+        'POST',
+        `/api/rate-drafts/${draft.id}/submit`,
+        { branch },
+        crypto.randomUUID(),
       );
-    });
+      if (res?.status) {
+        setDraftDetail((prev) =>
+          prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
+        );
+      }
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      toast(message);
+    }
+  };
+
+  const handlePublish = async () => {
+    const draft = draftDetail()?.draft;
+    if (!draft) return;
+    const branch = props.branch();
+    const curVersion = pubData()?.publication?.version ?? null;
+    try {
+      await client.command<unknown, { id: string; version: number }>(
+        'POST',
+        `/api/rate-drafts/${draft.id}/publish`,
+        { branch, expectedVersion: curVersion },
+        crypto.randomUUID(),
+      );
+      await readPublished(branch);
+      await readDrafts(branch);
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      toast(message);
+    }
+  };
+
+  const handleAdjustAll = async () => {
+    const draft = draftDetail()?.draft;
+    const lines = draftDetail()?.lines ?? [];
+    if (!draft) return;
+    const branch = props.branch();
+    const policy = policyData()?.policy;
+    try {
+      await client.command(
+        'POST',
+        '/api/rate-policies',
+        {
+          branch,
+          buyAdjustPct: adjustBuyPct(),
+          sellAdjustPct: adjustSellPct(),
+          guards: policy?.guards ?? {},
+          maxReferenceAgeHours: policy?.maxReferenceAgeHours ?? 24,
+          onStale: policy?.onStale ?? 'STOP',
+          staleLimitThb: policy?.staleLimitThb ?? null,
+          reason: policy?.reason || 'adjust all',
+        },
+        crypto.randomUUID(),
+      );
+
+      const putLines = lines.map((l: RateDraftLineDto) => ({
+        currency: l.currency,
+        buyMode: l.buyMode,
+        sellMode: l.sellMode,
+        manualBuy: l.manualBuy,
+        manualSell: l.manualSell,
+        reason: l.reason,
+      }));
+
+      await client.command(
+        'PUT',
+        `/api/rate-drafts/${draft.id}`,
+        {
+          branch,
+          expectedVersion: draft.version,
+          lines: putLines,
+        },
+        crypto.randomUUID(),
+      );
+
+      const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
+        'rate_draft',
+        { branch, filter: { id: draft.id } },
+      );
+      if (updated.data) {
+        setDraftDetail(updated.data);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      toast(message);
+    }
   };
 
   const openHistory = async () => {
-    let branchName = props.branch();
-    if (branches().length === 0) {
-      try {
-        const bRes = await client.view<AdminBranchesData>('admin_branches');
-        if (bRes.data?.branches) {
-          setBranches(bRes.data.branches);
-          const found = bRes.data.branches.find((b) => b.id === props.branch());
-          if (found) branchName = found.name;
-        }
-      } catch {
-        // Fallback to branch id
-      }
-    } else {
-      const found = branches().find((b) => b.id === props.branch());
-      if (found) branchName = found.name;
-    }
-
-    const allRows: AdminRateHistoryRow[] = [];
-    let beforeId: string | undefined = undefined;
-
-    while (true) {
-      const pageRows: AdminRateHistoryRow[] = await client.page<AdminRateHistoryRow>('admin_rate_history', {
-        branch: props.branch(),
-        before: beforeId,
-        limit: 100,
-      });
-      allRows.push(...pageRows);
-      if (pageRows.length < 100) {
-        break;
-      }
-      beforeId = pageRows[pageRows.length - 1].id;
-    }
-
-    openDialog(`${t('historyTitlePrefix')}${branchName}`, () => (
-      <div class="rate-history-dialog">
-        <p class="history-note">{t('historyNote')}</p>
-        <DataTable
-          headers={[
-            { text: t('headerTimeActor') },
-            { text: t('headerPairShopRate') },
-            { text: t('headerPartnerCostHistory') },
-            { text: t('headerBotReferenceCopy') },
-          ]}
-          rowCount={allRows.length}
-        >
-          {allRows.map((row) => {
-            const botRow = row.botReference?.rows.find((r) => r.code === row.code);
-            return (
+    const branch = props.branch();
+    const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+    const pubs = res.data?.publications ?? [];
+    openDialog(
+      t('historyTitle'),
+      () => (
+        <div class="rate-history-dialog">
+          <table class="rates-table">
+            <thead>
               <tr>
-                <td>
-                  <div>{formatTime(row.updated)}</div>
-                  <div>{row.actor}</div>
-                </td>
-                <td>
-                  <div>{row.code}/THB</div>
-                  <div>
-                    {row.buy} / {row.sell}
-                  </div>
-                </td>
-                <td>
-                  <Show when={row.partnerName || row.partnerCost}>
-                    <div>{row.partnerName || '—'}</div>
-                    <div>{row.partnerCost || '—'}</div>
-                  </Show>
-                  <Show when={!row.partnerName && !row.partnerCost}>
-                    <div>— —</div>
-                  </Show>
-                </td>
-                <td>
-                  <Show when={botRow}>
-                    <div>
-                      {renderBotLine(botRow!)}
-                      <Show when={botRow!.unit === 100 || row.code === 'JPY'}>
-                        <span>{t('jpyConversionNote')}</span>
-                      </Show>
-                    </div>
-                    <div>
-                      {t('botFetchedPrefix')}
-                      {formatTime(row.botReference!.fetchedAt)}
-                    </div>
-                  </Show>
-                  <Show when={!botRow}>
-                    <div>{t('noReferenceData')}</div>
-                  </Show>
-                </td>
+                <th>{t('headerVersion')}</th>
+                <th>{t('headerPublishedBy')}</th>
+                <th>{t('headerPublishedAt')}</th>
               </tr>
-            );
-          })}
-        </DataTable>
-      </div>
-    ));
+            </thead>
+            <tbody>
+              <For each={pubs}>
+                {(p) => (
+                  <tr>
+                    <td>{p.version}</td>
+                    <td>{p.publishedBy}</td>
+                    <td>{formatTime(p.publishedAt)}</td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      ),
+    );
   };
 
   return (
     <div class="admin-rates-screen">
+      {/* R5 Kiosk Currency Link */}
       <div class="kiosk-currency-link-bar">
         <p>{t('kioskCurrencyNote')}</p>
         <a href={`/kiosk-currencies.html?branch=${props.branch()}`}>
-          <span aria-hidden="true">◎</span>
-          <span>{t('kioskCurrencyLink')}</span>
+          <span aria-hidden="true">◎</span> {t('kioskCurrencyLink')}
         </a>
       </div>
 
-      <section class="rates-section">
-        <header class="section-header">
-          <div class="eyebrow">{t('ratesEyebrow')}</div>
+      {/* Draft Section */}
+      <div class="rates-section">
+        <div class="section-header">
           <div class="title-row">
-            <h2>{t('ratesTitle')}</h2>
-            <span class="pill">{t('ratesPill')}</span>
+            <div>
+              <div class="eyebrow">{t('eyebrow')}</div>
+              <h2>{t('draftTitle')}</h2>
+              <Show when={draftDetail()?.draft}>
+                <div class="live-note">
+                  <span class="draft-status-label">
+                    {formatStatus(draftDetail()?.draft?.status)}
+                  </span>
+                </div>
+              </Show>
+            </div>
+            <div class="actions">
+              <button
+                type="button"
+                class="btn-new-draft"
+                onClick={handleNewDraft}
+              >
+                {t('newDraft')}
+              </button>
+              <Show when={draftDetail()?.draft}>
+                <button
+                  type="button"
+                  class="btn-simulate"
+                  onClick={handleSimulate}
+                >
+                  {t('simulate')}
+                </button>
+                <button
+                  type="button"
+                  class="btn-submit"
+                  onClick={handleSubmit}
+                >
+                  {t('submit')}
+                </button>
+                <button
+                  type="button"
+                  class="btn-publish"
+                  onClick={handlePublish}
+                >
+                  {t('publish')}
+                </button>
+              </Show>
+            </div>
           </div>
-          <p class="live-note">{t('ratesLiveNote')}</p>
-          <Show when={ratesData()?.updated}>
-            <p class="last-edited">
-              {t('lastEditedPrefix')}
-              {formatTime(ratesData()!.updated)}
-            </p>
+          <Show when={simulateResult() && simulateResult()!.isInBound}>
+            <div class="in-bound-status">{t('inBound')}</div>
           </Show>
-        </header>
+        </div>
+
+        <Show when={draftDetail()?.draft}>
+          {/* Adjust all form */}
+          <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '16px', "align-items": 'center' }}>
+            <label class="adjust-field-label">
+              {t('adjustBuyPct')}
+              <input
+                type="text"
+                value={adjustBuyPct()}
+                onInput={(e) => setAdjustBuyPct(e.currentTarget.value)}
+              />
+            </label>
+            <label class="adjust-field-label">
+              {t('adjustSellPct')}
+              <input
+                type="text"
+                value={adjustSellPct()}
+                onInput={(e) => setAdjustSellPct(e.currentTarget.value)}
+              />
+            </label>
+            <button
+              type="button"
+              class="btn-adjust-all"
+              onClick={handleAdjustAll}
+            >
+              {t('adjustAll')}
+            </button>
+          </div>
+
+          <table class="rates-table">
+            <thead>
+              <tr>
+                <th>{t('headerCurrency')}</th>
+                <th>{t('headerBuy')}</th>
+                <th>{t('headerSell')}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={draftDetail()?.lines ?? []}>
+                {(line) => (
+                  <tr data-draft-line={line.currency}>
+                    <td class="code">{line.currency}</td>
+                    <td>
+                      {line.buyMode === 'MANUAL' && line.manualBuy
+                        ? formatRate(line.manualBuy, getUnitSize(line.currency), line.currency)
+                        : line.buyMode}
+                    </td>
+                    <td>
+                      {line.sellMode === 'MANUAL' && line.manualSell
+                        ? formatRate(line.manualSell, getUnitSize(line.currency), line.currency)
+                        : line.sellMode}
+                    </td>
+                    <td>
+                      <Show when={isOutOfBound(line.currency)}>
+                        <span class="out-of-bound">{t('outOfBound')}</span>
+                      </Show>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Show>
+      </div>
+
+      {/* Published Rates Section */}
+      <div class="rates-section">
+        <div class="section-header">
+          <div class="title-row">
+            <div>
+              <div class="eyebrow">{t('ratesEyebrow')}</div>
+              <h2>{t('ratesTitle')}</h2>
+              <div class="live-note">{t('ratesLiveNote')}</div>
+            </div>
+            <div class="rates-pill">{t('ratesPill')}</div>
+          </div>
+        </div>
 
         <table class="rates-table">
           <thead>
@@ -398,121 +561,84 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <th>{t('headerCurrency')}</th>
               <th>{t('headerBuy')}</th>
               <th>{t('headerSell')}</th>
-              <th>{t('headerSpread')}</th>
-              <th />
             </tr>
           </thead>
           <tbody>
-            {(ratesData()?.rates ?? []).map((rate) => (
-              <tr>
-                <td>
-                  <span aria-hidden="true">{rate.symbol}</span>
-                  <span class="code">{rate.code}</span>
-                  <span class="name">{rate.name}</span>
-                </td>
-                <td>{rate.buy ?? t('notSet')}</td>
-                <td>{rate.sell ?? t('notSet')}</td>
-                <td>{rate.spread ?? '—'}</td>
-                <td>
-                  <button
-                    type="button"
-                    aria-label={`${t('editRateAria')}${rate.code}`}
-                    onClick={() => openEdit(rate)}
-                  >
-                    {t('editRateButton')}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            <For each={pubData()?.lines ?? []}>
+              {(l) => (
+                <tr data-published-line={l.currency}>
+                  <td class="code">{l.currency}</td>
+                  <td>{l.buyRate !== null ? formatRate(l.buyRate, l.unitSize, l.currency) : t('notSet')}</td>
+                  <td>{l.sellRate !== null ? formatRate(l.sellRate, l.unitSize, l.currency) : t('notSet')}</td>
+                </tr>
+              )}
+            </For>
           </tbody>
         </table>
-      </section>
+      </div>
 
-      <section class="bot-reference-section">
-        <header class="section-header">
-          <div class="eyebrow">{t('botEyebrow')}</div>
-          <h2>{t('botTitle')}</h2>
-          <p class="subtitle">{t('botSubtitle')}</p>
+      {/* BOT Reference Section */}
+      <div class="bot-reference-section">
+        <div class="section-header">
+          <div class="title-row">
+            <div>
+              <div class="eyebrow">{t('botEyebrow')}</div>
+              <h2>{t('botTitle')}</h2>
+              <div class="subtitle">{t('botSubtitle')}</div>
+            </div>
+            <div class="actions">
+              <button
+                type="button"
+                onClick={() => fetchReference({ fresh: true })}
+              >
+                {t('botRefreshButton')}
+              </button>
+              <button
+                type="button"
+                onClick={openHistory}
+              >
+                {t('rateHistoryButton')}
+              </button>
+            </div>
+          </div>
           <div class="status-row">
-            <Show when={refLoading() && !refError()}>
+            <Show when={refLoading()}>
               <p class="loading">{t('botLoading')}</p>
             </Show>
-            <Show when={refError()}>
-              <p class="error">{refError()}</p>
-            </Show>
-            <Show when={!refLoading() && !refError() && refData()?.fetchedAt}>
+            <Show when={!refLoading() && refData()?.fetchedAt}>
               <p class="fetched">
-                {t('botLastFetchedPrefix')}
-                {formatTime(refData()!.fetchedAt)}
+                {t('botLastFetchedPrefix')}{formatTime(refData()!.fetchedAt)}
               </p>
             </Show>
+            <Show when={refError()}>
+              <p class="bot-error">{refError()}</p>
+            </Show>
           </div>
-          <div class="actions">
-            <button type="button" onClick={() => fetchReference({ fresh: true })}>
-              {t('botRefreshButton')}
-            </button>
-            <button type="button" onClick={openHistory}>
-              {t('rateHistoryButton')}
-            </button>
-            <a
-              href="https://www.bot.or.th/th/statistics/exchange-rate.html"
-              target="_blank"
-              rel="noopener"
-            >
-              {t('botSourceLink')}
-            </a>
-          </div>
-        </header>
+        </div>
 
-        <table class="comparison-table">
-          <thead>
-            <tr>
-              <th>{t('headerPair')}</th>
-              <th>{t('headerShopRates')}</th>
-              <th>{t('headerBotRates')}</th>
-              <th>{t('headerPartnerCost')}</th>
-              <th>{t('headerPartnerSpread')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(ratesData()?.rates ?? []).map((rate) => {
-              const botRow = !refError() ? refData()?.rows.find((r) => r.code === rate.code) : undefined;
-              return (
-                <tr>
-                  <td>{rate.code}/THB</td>
-                  <td>
-                    {rate.buy ?? '—'} / {rate.sell ?? '—'}
-                  </td>
-                  <td>
-                    <Show when={botRow}>
-                      {(br) => (
-                        <div>
-                          <div>
-                            {br().buyingSight} / {br().buyingTransfer} / {br().selling}
-                          </div>
-                          <div>{br().date}</div>
-                        </div>
-                      )}
-                    </Show>
-                    <Show when={!botRow}>—</Show>
-                  </td>
-                  <td>
-                    <Show when={rate.partnerCost}>
-                      <div>{rate.partnerCost}</div>
-                      <div>{rate.partnerName}</div>
-                    </Show>
-                    <Show when={!rate.partnerCost}>
-                      <div>—</div>
-                      <div>{t('partnerNotSpecified')}</div>
-                    </Show>
-                  </td>
-                  <td>{rate.partnerSpread ?? '—'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+        <Show when={refData()?.rows && refData()!.rows.length > 0}>
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>{t('headerPair')}</th>
+                <th>{t('headerBotRates')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={refData()!.rows}>
+                {(r: RatesReferenceRow) => (
+                  <tr>
+                    <td><strong>{r.code}</strong></td>
+                    <td>
+                      {formatRate(r.buyingSight, r.unit, r.code)} / {formatRate(r.buyingTransfer, r.unit, r.code)} / {formatRate(r.selling, r.unit, r.code)}
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Show>
+      </div>
     </div>
   );
 }

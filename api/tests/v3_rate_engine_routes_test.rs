@@ -3,8 +3,16 @@
 //! Written before the implementation by the ticket author (claude/e5ab6c). Do not edit,
 //! delete or weaken; add tests in a file of your own.
 //!
+//! Provided-test amendment for #602 (RE-5), by the same author: `ratePolicySave` lets OWNER and
+//! RATES through on Rpc (lane controller's ruling 2026-10-09: RATE_MANAGER may save a policy
+//! version changing only buy/sell %, per Blueprint RATE_MANAGER 'ปรับ %'). The "save policy"
+//! route's row is `Who::OwnerOrRates`; since a RATES save must keep the branch's current frame, XC-B01 is given
+//! a frame equal to the route's body before the sweep. RATES's percent-only rule itself is pinned in
+//! `api/tests/v3_rate_policy_save_test.rs`.
+//!
 //! Design: `docs/design/blueprint/rates.md` §4.7 (routes, Blueprint §10 paths), §6 (the command
-//! seam, merged as CM-1; the "Policy rows" table: `ratePolicySave` OWNER; `rateDraft` (save,
+//! seam, merged as CM-1; the "Policy rows" table: `ratePolicySave` OWNER (OWNER and RATES since
+//! #602); `rateDraft` (save,
 //! submit, simulate, publish, fetch reference) OWNER and RATES on Rpc, RATES on StaffRpc;
 //! `approvalDecide` OWNER; `approvalRead` OWNER), §4.8 (`published_rates` inherits
 //! `(Rpc, "adminSnapshot")`, `staff_published_rates` inherits `(StaffRpc, "adminSnapshot")`, the
@@ -275,7 +283,7 @@ fn is_rates_staff(spec: &str) -> bool {
 enum Who {
     /// `rateDraft` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
     OwnerOrRates,
-    /// `ratePolicySave`, `approvalDecide`, `approvalRead` on Rpc: OWNER.
+    /// `approvalDecide`, `approvalRead` on Rpc: OWNER. (`ratePolicySave` was here until #602.)
     Owner,
     /// `adminSnapshot` on Rpc: any signed-in caller.
     AnySession,
@@ -491,6 +499,22 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
         }
     };
 
+    // #602: a RATES save must keep the branch's current frame, so XC-B01 (the RATES caller's
+    // branch) gets, from OWNER, a frame equal to the "save policy" body below
+    let policy_body = json!({
+        "buyAdjustPct": "0.0000",
+        "sellAdjustPct": "0.0000",
+        "guards": {},
+        "maxReferenceAgeHours": null,
+        "onStale": null,
+        "staleLimitThb": null,
+        "reason": "test",
+    });
+    let mut framed = policy_body.clone();
+    framed["branch"] = json!(B01);
+    let frame = command(&db, "owner", Method::POST, "/api/rate-policies", framed).await;
+    ok(&frame, "OWNER frames XC-B01");
+
     let rpc_draft = (EntryPath::Rpc, "rateDraft");
     let routes: Vec<Route> = vec![
         Route {
@@ -563,17 +587,9 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
             what: "save policy",
             method: Method::POST,
             uri: Box::new(|_| "/api/rate-policies".to_owned()),
-            body: Some(json!({
-                "buyAdjustPct": "0.0000",
-                "sellAdjustPct": "0.0000",
-                "guards": {},
-                "maxReferenceAgeHours": null,
-                "onStale": null,
-                "staleLimitThb": null,
-                "reason": "test",
-            })),
+            body: Some(policy_body.clone()),
             pair: (EntryPath::Rpc, "ratePolicySave"),
-            who: Who::Owner,
+            who: Who::OwnerOrRates,
             send_allowed: true,
         },
         Route {

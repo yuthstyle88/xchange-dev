@@ -2,7 +2,8 @@ import { createSignal, For, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../../shared/api/client';
 import type { ProfitSummary, ProfitSummaryRequest } from '../../../../shared/api/generated/profit_summary';
 import { errorText, locale, screenT } from '../../../../shared/i18n';
-import { MoneyText } from '../../../../shared/ui/MoneyText';
+import { CardGrid } from '../../../../shared/ui/Card';
+import { StatCard } from '../../../../shared/ui/StatCard';
 import * as table from './i18n';
 
 const t = screenT('admin.cash.calculators', table);
@@ -54,17 +55,19 @@ export function ProfitSummaryPanel(props: { api: ApiClient; branch: string; shif
     <section class="calc-panel profit-summary">
       <h3>{t('profitHeading')}</h3>
       <p class="dialog-note">{t('profitNote')}</p>
-      <div class="profit-cards">
+      <CardGrid columns={3}>
         <For each={CARDS}>
           {(c) => (
-            <div class="profit-card">
-              <h4>{t(c.title)}</h4>
-              <strong>{result() ? <MoneyText value={result()![c.key]} currency="THB" /> : t('waiting')}</strong>
-              <small>{t(c.note)}</small>
-            </div>
+            <StatCard
+              label={t(c.title)}
+              value={result() ? result()![c.key] : t('waiting')}
+              unit={result() ? 'THB' : ''}
+              format={result() ? 'money' : 'plain'}
+              note={t(c.note)}
+            />
           )}
         </For>
-      </div>
+      </CardGrid>
       <details>
         <summary>{t('inputsSummary')}</summary>
         <form

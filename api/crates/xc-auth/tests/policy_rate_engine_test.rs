@@ -2,12 +2,18 @@
 //! Written before the implementation by the ticket author (claude/e5ab6c). Do not edit,
 //! delete or weaken; add tests in a file of your own.
 //!
+//! Provided-test amendment for #602 (RE-5), by the same author: `ratePolicySave` is OWNER and RATES
+//! on Rpc (lane controller's ruling 2026-10-09: RATE_MANAGER may save a policy version changing
+//! only buy/sell %, per Blueprint RATE_MANAGER 'ปรับ %'). RATES may move only the percents; that
+//! rule is the command's (`api/tests/v3_rate_policy_save_test.rs`), the row here only lets RATES in.
+//! StaffRpc has no row for it, as before.
+//!
 //! Design: `docs/design/blueprint/rates.md` §6 "Policy rows" (the only edit to the role table, in
 //! RE-3):
 //!
 //! | Action | Rpc (owner page) | StaffRpc |
 //! |---|---|---|
-//! | `ratePolicySave` | OWNER | — |
+//! | `ratePolicySave` | OWNER, RATES (#602) | — |
 //! | `rateDraft` (save, submit, simulate, publish, fetch reference) | OWNER, RATES | RATES |
 //! | `approvalDecide` | OWNER | — |
 //! | `approvalRead` | OWNER | — |
@@ -71,8 +77,39 @@ fn rate_draft_is_owner_and_rates_on_rpc_and_rates_on_the_staff_bridge() {
 }
 
 #[test]
-fn rate_policy_save_approval_decide_and_approval_read_are_the_owners_alone() {
-    for name in ["ratePolicySave", "approvalDecide", "approvalRead"] {
+fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
+    // #602: RATE_MANAGER "ปรับ %" (Blueprint §02); the command keeps RATES to the percents
+    assert_eq!(
+        ask(Some(&owner()), EntryPath::Rpc, "ratePolicySave"),
+        Ok(())
+    );
+    assert_eq!(allowed_roles(EntryPath::Rpc, "ratePolicySave"), ["RATES"]);
+    assert!(allowed_roles(EntryPath::StaffRpc, "ratePolicySave").is_empty());
+    for r in Role::STAFF.into_iter().filter(|r| *r != Role::Rates) {
+        assert_eq!(
+            ask(Some(&staff(r, B2)), EntryPath::Rpc, "ratePolicySave"),
+            Err(PolicyError::RoleNotAllowedHere),
+            "{} on Rpc",
+            r.as_str()
+        );
+    }
+    for r in Role::STAFF {
+        assert_eq!(
+            ask(Some(&staff(r, B2)), EntryPath::StaffRpc, "ratePolicySave"),
+            Err(PolicyError::RoleNotAllowed),
+            "{} on StaffRpc",
+            r.as_str()
+        );
+    }
+    assert_eq!(
+        ask(None, EntryPath::Rpc, "ratePolicySave"),
+        Err(PolicyError::SignIn)
+    );
+}
+
+#[test]
+fn approval_decide_and_approval_read_are_the_owners_alone() {
+    for name in ["approvalDecide", "approvalRead"] {
         assert_eq!(ask(Some(&owner()), EntryPath::Rpc, name), Ok(()), "{name}");
         assert!(
             allowed_roles(EntryPath::Rpc, name).is_empty(),

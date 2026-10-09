@@ -146,7 +146,11 @@ impl ApprovalSubject for FakeSubject {
         self.type_name
     }
 
-    fn version_hash<'a>(&'a self, object_id: &'a str) -> BoxFuture<'a, AppResult<String>> {
+    fn version_hash<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        object_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<String>> {
         Box::pin(async move {
             Ok(self
                 .hashes

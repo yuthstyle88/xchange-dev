@@ -120,7 +120,7 @@ impl ApprovalService {
         })?;
 
         let version_hash = subject
-            .version_hash(object_id)
+            .version_hash(tx, object_id)
             .await
             .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
 
@@ -203,7 +203,7 @@ impl ApprovalService {
             })?;
 
         let current_hash = subject
-            .version_hash(&request.object_id)
+            .version_hash(tx, &request.object_id)
             .await
             .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
         if current_hash != request.object_version_hash {
@@ -284,7 +284,7 @@ impl ApprovalService {
         })?;
 
         let current_hash = subject
-            .version_hash(&request.object_id)
+            .version_hash(tx, &request.object_id)
             .await
             .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
         if current_hash != request.object_version_hash {
@@ -375,7 +375,7 @@ impl ApprovalService {
         }
 
         let current_hash = subject
-            .version_hash(&request.object_id)
+            .version_hash(tx, &request.object_id)
             .await
             .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
         if current_hash != request.object_version_hash {

@@ -481,13 +481,28 @@ impl RateDraftService {
 
         let eval_res = self.evaluate(tx, branch, id).await?;
 
+        let out_of_bound = eval_res
+            .evaluation
+            .out_of_bound()
+            .iter()
+            .map(|(c, s)| {
+                json!({
+                    "currency": c.as_str(),
+                    "side": match s {
+                        xc_kernel::money::Side::Buy => "BUY",
+                        xc_kernel::money::Side::Sell => "SELL",
+                    },
+                })
+            })
+            .collect::<Vec<_>>();
+
         // Canonical JSON representation for evaluation and hash
         let eval_json = json!({
             "draft_id": id.to_string(),
             "policy_version_id": eval_res.policy.as_ref().map(|p| p.id()),
             "reference_line_ids": eval_res.ref_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
             "is_in_bound": eval_res.evaluation.is_in_bound(),
-            "out_of_bound": eval_res.evaluation.out_of_bound().iter().map(|(c, s)| format!("{}:{:?}", c.as_str(), s)).collect::<Vec<_>>(),
+            "out_of_bound": out_of_bound,
         });
         let eval_hash = sha256_hex(&serde_json::to_vec(&eval_json).unwrap());
 
