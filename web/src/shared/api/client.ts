@@ -174,4 +174,29 @@ export class ApiClient {
       return (await res.json()) as R;
     })();
   }
+
+  command<B, R>(method: string, path: string, body: B, key: string): Promise<R> {
+    if (!key || key.trim() === '') {
+      throw new Error('Idempotency key must not be empty');
+    }
+    const url = path.startsWith('/') ? path : `/${path}`;
+    return (async () => {
+      const res = await this.fetchFn(url, {
+        method,
+        credentials: 'same-origin',
+        headers: {
+          'x-xchange-request': '1',
+          'idempotency-key': key,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        await this.parseError(res);
+      }
+
+      return (await res.json()) as R;
+    })();
+  }
 }
