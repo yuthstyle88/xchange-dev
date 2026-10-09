@@ -19,8 +19,13 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono"] }
 argon2 = { version = "0.5", features = ["std"] }
 sha2 = "0.10"
+ring = "0.17"
+base64 = "0.22"
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [dev-dependencies]
+# CI-2 (#649) provided tests: mint Ed25519 tokens and serve keys without a network.
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 
