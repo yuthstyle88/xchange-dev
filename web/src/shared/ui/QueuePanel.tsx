@@ -17,6 +17,7 @@ import { fill, locale, t } from '../i18n';
 import { useQueueStore } from '../queue/queue-store';
 import type { KioskQueueRow } from '../queue/wire';
 import { MoneyText } from './MoneyText';
+import './queue-panel.css';
 
 export interface QueuePanelProps {
   branch: string;
@@ -318,32 +319,32 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         </button>
       </nav>
 
-      <div role="status" aria-live="polite">
+      <div class="queue-message" role="status" aria-live="polite">
         {statusMessage()}
       </div>
 
       <Show
         when={displayedRows().length > 0}
-        fallback={<div>{t('queue.list.empty')}</div>}
+        fallback={<div class="queue-empty">{t('queue.list.empty')}</div>}
       >
         <div class="xc-queue-list">
           <For each={displayedRows()}>
             {(row) => (
               <article class="xc-queue-card">
                 <h3>{row.queue}</h3>
-                <div>{stateWord(row.status)}</div>
+                <div class="queue-state">{stateWord(row.status)}</div>
                 <div>
                   {sideText(row.type)} ·{' '}
                   <MoneyText value={row.foreign} currency={row.currency} /> →{' '}
                   <MoneyText value={row.thb} currency="THB" />
                 </div>
-                <div>
+                <div class="queue-refs">
                   {fill(t('queue.row.order'), {
                     orderNo: row.orderNo,
                     transactionNo: row.transactionNo ?? t('queue.row.unrecorded'),
                   })}
                 </div>
-                <dl>
+                <dl class="queue-times">
                   <dt>{t('queue.row.staff')}</dt>
                   <dd>{row.staff ? row.staff : t('queue.row.noStaff')}</dd>
                   <dt>{t('queue.row.startedAt')}</dt>
@@ -360,9 +361,10 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
                   <dd>{renderDuration(row)}</dd>
                 </dl>
 
-                <div>
+                <div class="queue-order-actions">
                   <Show when={row.canAccept}>
                     <button
+                      class="queue-primary"
                       type="button"
                       disabled={readError() !== null || claiming()}
                       onClick={() => void claim(row.id)}
@@ -372,6 +374,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
                   </Show>
                   <Show when={row.canContinue}>
                     <a
+                      class="queue-primary"
                       href={
                         readError() !== null
                           ? undefined
@@ -387,7 +390,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
                       (row.status === 'ACCEPTED' || row.status === 'ID_CHECKED')
                     }
                   >
-                    <span>
+                    <span class="queue-assigned">
                       {fill(t('queue.row.workingBy'), { staff: row.staff })}
                     </span>
                   </Show>

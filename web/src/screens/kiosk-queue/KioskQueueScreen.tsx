@@ -7,7 +7,7 @@ export function KioskQueueScreen(props: { branch: string }): JSX.Element {
   const t = screenT('kiosk-queue', screenI18n);
 
   return (
-    <div class="xc-content">
+    <div class="xc-content queue-page">
       <nav>
         <a href="/">{t('back')}</a>
       </nav>
