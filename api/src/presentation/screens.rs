@@ -213,6 +213,19 @@ impl ScreenTable {
             );
         }
 
+        if self.holds("/") {
+            cfg.service(
+                web::resource("/ui/admin")
+                    .route(web::get().to(redirect_review_admin))
+                    .default_service(web::to(pages::fallback)),
+            );
+            cfg.service(
+                web::resource("/ui/admin/")
+                    .route(web::get().to(redirect_review_admin))
+                    .default_service(web::to(pages::fallback)),
+            );
+        }
+
         let tbl = self.clone();
         cfg.service(
             web::resource("/ui")
@@ -235,4 +248,16 @@ impl ScreenTable {
                 .default_service(web::to(pages::fallback)),
         );
     }
+}
+
+async fn redirect_review_admin(req: HttpRequest) -> HttpResponse {
+    let q = req.query_string();
+    let target = if q.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/?{q}")
+    };
+    HttpResponse::PermanentRedirect()
+        .insert_header((actix_web::http::header::LOCATION, target))
+        .finish()
 }
