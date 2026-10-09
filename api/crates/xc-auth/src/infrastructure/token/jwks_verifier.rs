@@ -42,6 +42,7 @@ impl RefetchClock for SystemRefetchClock {
 struct CacheState {
     jwks: Option<Jwks>,
     last_fetch: Option<Duration>,
+    last_failed: bool,
 }
 
 #[derive(Deserialize)]
@@ -106,6 +107,7 @@ impl JwksTokenVerifier {
             cache: Arc::new(RwLock::new(CacheState {
                 jwks: None,
                 last_fetch: None,
+                last_failed: false,
             })),
             flight: Arc::new(futures::lock::Mutex::new(())),
         }
@@ -136,7 +138,11 @@ impl JwksTokenVerifier {
                 let now = self.clock.now();
                 if let Some(last) = guard.last_fetch {
                     if now.saturating_sub(last) < self.min_interval {
-                        return Err(TokenError::BadSignature);
+                        return if guard.last_failed {
+                            Err(TokenError::KeysUnavailable)
+                        } else {
+                            Err(TokenError::BadSignature)
+                        };
                     }
                 }
             }
@@ -144,7 +150,20 @@ impl JwksTokenVerifier {
 
         // Fetch keys from source
         let fetch_time = self.clock.now();
-        let fetched = self.source.fetch().await?;
+        let fetched = match self.source.fetch().await {
+            Ok(keys) => keys,
+            Err(e) => {
+                let mut guard = self
+                    .cache
+                    .write()
+                    .map_err(|_| TokenError::KeysUnavailable)?;
+                if guard.jwks.is_some() {
+                    guard.last_fetch = Some(fetch_time);
+                    guard.last_failed = true;
+                }
+                return Err(e);
+            }
+        };
         let maybe_key = find_valid_key(&fetched, kid).cloned();
 
         {
@@ -154,6 +173,7 @@ impl JwksTokenVerifier {
                 .map_err(|_| TokenError::KeysUnavailable)?;
             guard.jwks = Some(fetched);
             guard.last_fetch = Some(fetch_time);
+            guard.last_failed = false;
         }
 
         maybe_key.ok_or(TokenError::BadSignature)
