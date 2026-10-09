@@ -150,7 +150,7 @@
   color:#575960;
 }
 
-.xc-admin .xc-content.xc-content nav a span {
+.xc-admin .xc-content.xc-content nav a span[aria-hidden="true"] {
   font:23px Arial;
   width:23px;
   text-align:center;
@@ -193,7 +193,7 @@
   margin-left:236px;
 }
 
-.xc-admin .xc-shell-header, .xc-admin .xc-content.xc-content header {
+.xc-admin .xc-shell-header {
   height:83px;
   background:#fff;
   border-bottom:1px solid var(--line);
@@ -831,7 +831,7 @@
     padding:26px 24px;
   }
 
-  .xc-admin .xc-shell-header, .xc-admin .xc-content.xc-content header {
+  .xc-admin .xc-shell-header {
     padding-inline:24px;
   }
 
@@ -894,7 +894,7 @@
     font-size:13px;
   }
 
-  .xc-admin .xc-content.xc-content nav a span {
+  .xc-admin .xc-content.xc-content nav a span[aria-hidden="true"] {
     display:none;
   }
 
@@ -902,7 +902,7 @@
     margin:0;
   }
 
-  .xc-admin .xc-shell-header, .xc-admin .xc-content.xc-content header {
+  .xc-admin .xc-shell-header {
     height:62px;
     padding-inline:18px;
   }
@@ -1173,7 +1173,7 @@
     min-width:0;
   }
 
-  .xc-admin .xc-shell-header .eyebrow, .xc-admin .xc-content.xc-content header .eyebrow {
+  .xc-admin .xc-shell-header .eyebrow {
     font-size:9px;
     letter-spacing:.5px;
   }
@@ -1216,12 +1216,12 @@
   flex-wrap:wrap;
 }
 
-.xc-admin .xc-shell-header, .xc-admin .xc-content.xc-content header {
+.xc-admin .xc-shell-header {
   gap:16px;
 }
 
 @media(max-width:800px) {
-  .xc-admin .xc-shell-header, .xc-admin .xc-content.xc-content header {
+  .xc-admin .xc-shell-header {
     flex-wrap:wrap;
     height:auto;
     padding-top:14px;
@@ -1351,10 +1351,10 @@
   background-color: #eaecef;
 }
 
-.xc-admin .xc-content .admin-nav a span,
-.xc-admin .xc-content .nav-group a span,
-.xc-admin .xc-content .nav-guide a span,
-.xc-admin .xc-content .xc-workspace nav a span {
+.xc-admin .xc-content .admin-nav a span[aria-hidden="true"],
+.xc-admin .xc-content .nav-group a span[aria-hidden="true"],
+.xc-admin .xc-content .nav-guide a span[aria-hidden="true"],
+.xc-admin .xc-content .xc-workspace nav a span[aria-hidden="true"] {
   font-size: 19px;
   width: 20px;
   flex: none;
@@ -2202,8 +2202,8 @@
   .xc-admin .xc-content .nav-guide > a {
     display: block;
   }
-  .xc-admin .xc-content .xc-workspace nav a span,
-  .xc-admin .xc-content .admin-nav a span {
+  .xc-admin .xc-content .xc-workspace nav a span[aria-hidden="true"],
+  .xc-admin .xc-content .admin-nav a span[aria-hidden="true"] {
     display: inline-block;
   }
   .xc-admin .xc-content .xc-workspace nav a,
@@ -2423,6 +2423,36 @@
   .xc-admin .xc-content .payment-card .unit,
   .xc-admin .xc-content .xc-payment-card .unit {
     display: block;
+  }
+}
+
+/* Nav button override — LK closing (#706) */
+.xc-admin .xc-shell-nav button {
+  display: none;
+  font: inherit;
+  background: white;
+  border: 1px solid #d6d8df;
+  color: #363840;
+  min-height: 44px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .xc-admin .xc-shell-nav button {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .xc-admin .xc-shell-nav button {
+    font-size: 12px;
+    padding: 8px;
   }
 }
 
