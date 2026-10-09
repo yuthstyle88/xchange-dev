@@ -193,7 +193,13 @@ replace).
 | `Policy::allow(actor, EntryPath, action)` | `Authorizer::check(actor, Permission, Target)` (§3.5) | `xc-auth/src/domain/access/authorizer.rs` |
 | `Policy::branch` | `Grant.branch` (§3.5) | — |
 | `EntryPath` (16) | kept **only** as the route-to-permission table of §4.2 while compat routes live; each route names its `Permission` | `xc-auth/.../entry_path.rs` |
-| v3 view `INHERITS: (EntryPath, &str)` | `REQUIRES: Permission` | `api/src/presentation/http/v3/view.rs` and every view file |
+| v3 view / action / command `INHERITS: (EntryPath, &str)` | **kept** (amended 2026-10-10, lane controller's ruling (b) on #767): each file still declares `INHERITS`, and the route table of §4.2 resolves it to a `Permission` (`Policy::need(INHERITS)`). A file that answers anyone declares an explicit public marker instead | `api/src/presentation/http/v3/{view,action,command}.rs`; the per-file declarations are unchanged |
+
+**Why `INHERITS` stays rather than a per-file `REQUIRES: Permission`.** The answer is the same permission either way, because
+the route table is the single place a path·action becomes a `Permission`. Renaming the declaration in about 50 view and command
+files changes no behaviour and would collide with the tickets that own those files (#759, #651, #603).
+- **Guard (OR-4b, #767):** a test fails if any view, action or command file declares neither `INHERITS` nor the explicit public
+  marker, so a new route cannot skip the table.
 
 **The seam lands green.** OR-2 adds `domain/access/**` **beside** the old types and touches no file that uses them.
 - OR-3 switches the extractor (`extractors/actor.rs`) to `access::Actor`.
@@ -237,15 +243,26 @@ EXECUTIVE, SYSTEM's to ADMIN. Each compat path keeps its own row while compat ro
 | Kiosk `rates`, `quote`, `confirm`, `status`, `customerReceipt` | everyone | public | public | public | none |
 | DrawerPassport | OWN, FR, BE, MG | E, T, BM | `DrawerPassport` (v3-only) | same | none |
 | StaffBookings | FR, BE, MG | T, BM | `BookingsDesk` | T | **C9**: BM refused (§03 B02 user TELLER) |
+| OwnerRoute `/api/bookings`; StaffBookings `member`, `settings`, `registrations`, `approveRegistration` | OWN | E | `BookingsAdmin` (v3-only) | E | none. A v3-only row: the Blueprint's role table has no such route. Owner-only today, kept as it is; revisit with #555 and the RE work (amended 2026-10-10, ruling (c) on #766) |
+| OwnerRoute `/api/reference-rates` | OWN | E | `ReferenceRatesRead` (v3-only) | E | none. Same as the row above |
 | Custody `ops*` | per action | — | #582 (PR 590): `ShiftOperate`, `ShiftCloseCertify`, `CashManage`, `FinanceReconcile`, `VerificationReview`, `ApprovalsDecide`, `AttendanceClock`, `CustomerHoldPlace`, `CashTargetSet`, `BranchDayOperate` | #582 | #582's |
 
 **C1, the one change that comes from the user model rather than a table row.** Today the owner is refused on every
 staff path (StaffRpc, StaffFile, StaffUpload, StaffBookings), because the owner is not an employee (`ActorKind`).
 - The Blueprint has one `User` holding `UserRole`s (§07). There is no owner kind, so a staff path admits whoever holds
   one of its roles.
-- The owner's user holds ADMIN, so it now passes the staff-path rows that ADMIN (ex-SYSTEM) passes:
-  `CompatRead` on StaffRpc.
-- No other staff-path row allows ADMIN, so nothing else changes.
+- The owner's user holds **EXECUTIVE + ADMIN** organisation-wide (B3), and the check is per role, not per path. So on a
+  staff path it now passes every row that either role passes:
+  - `CompatRead` on StaffRpc, through ADMIN (ex-SYSTEM);
+  - `RatesDraft` on StaffRpc (`adminSaveRate`, `rateDraft`), through EXECUTIVE;
+  - `ProofUpload` on StaffUpload, through EXECUTIVE.
+- No other staff-path row allows EXECUTIVE or ADMIN, so nothing else changes.
+- Measured in #766's `api/crates/xc-auth/tests/fixtures/blueprint_policy_cases.json`: C1 tags the 18 v2 cases where the owner
+  asks on a staff path. Four are now allowed (StaffRpc `adminSnapshot`, `getConnectionStatus`, `adminSaveRate`; StaffUpload
+  `upload`). The other 14 stay refused, now with the role's refusal instead of the not-an-employee one. `rateDraft` has no
+  v2 case; RE-3's row covers it.
+  (Amended 2026-10-10: the earlier text named `CompatRead` only, which missed EXECUTIVE's rows; lane controller's ruling (a)
+  on #766.)
 
 ---
 
@@ -640,8 +657,8 @@ Each ticket owns disjoint files.
 | OR-3 | Identity sign-in BFF and sessions | `xc-auth/src/domain/identity/**`, `xc-auth/src/infrastructure/identity/**`, `xc-auth/src/application/session/**`, `api/src/presentation/http/auth.rs`, `api/src/presentation/extractors/actor.rs`, `web/src/screens/login/**` | OR-2; I-2 (#554, the token verifier) |
 | OR-4 | every route and view onto `Authorizer` (§4.2); the provided tests of §4.3 moved 1:1 (one commit per file, before any behaviour change); `api/tools/policy-map.mjs` + `blueprint_policy_cases.json` | `xc-auth/src/domain/policy/entities/policy.rs` (reduced to the route table), `entry_path.rs`, `api/src/presentation/http/v3/view.rs`, `action.rs`, the 19 call sites, the test files of §4.3 | OR-2, OR-3 (which supplies `access::Actor`). Split per area if the controller prefers; custody rows are #582's |
 | OR-5 | A04 branches and A05 users screens and their commands | `web/src/screens/admin/{branches,users}/**`, `http/v3/commands/{branch_save,user_invite,user_grant,user_revoke,user_disable}.rs`, `http/v3/views/{admin_branches_profile,admin_users}.rs` | OR-2, OR-4, PR 570 CM-1 |
-| OR-6 | service window per branch (§6) | `xc-shift/.../custody_machine.rs` (the three checks), `custody_time.rs`, and the kiosk's work-times reader | OR-1. **OR-6 merges before #582's CA-7** (PR 590 §5.1), which then moves these checks into `branch_day.rs` and carries `BranchHours` along |
-| OR-7 | drop password login and the old types; re-point every `legacy_employee_id` reader | migration 3; the old account code in `xc-auth`; `xc-auth/src/domain/policy/value_objects/{role.rs, actor.rs, actor_kind.rs}` (deleted); `xc-shift/src/infrastructure/shift/shift_repository.rs` (the `teller_id` lookup only: removes its legacy half, #582 CA-1) | OR-3 live, OR-4 merged, the first claim done, **#582 CA-1 merged** |
+| OR-6 | service window per branch (§6) | `xc-shift/.../custody_machine.rs` (the three checks), `custody_time.rs`, `custody_facts.rs`, the new `service_window.rs`, `CustodyPorts` (domain + `api/src/infrastructure/custody/custody_ports.rs`) and their fixture impls; **no kiosk file**: `xc-kiosk/.../work_times.rs` holds a request's start and finish times, not an hours rule (measured on `410524a`, #754) | OR-1. **OR-6 merges before #582's CA-7** (PR 590 §5.1), which then moves these checks into `branch_day.rs` and carries `BranchHours` along |
+| OR-7 | drop password login and the old types; re-point every `legacy_employee_id` reader | migration 3; the old account code in `xc-auth`; `xc-auth/src/domain/policy/value_objects/{role.rs, actor.rs, actor_kind.rs}` (deleted); `xc-shift/src/infrastructure/shift/shift_repository.rs` (the `teller_id` lookup only: removes its legacy half, #582 CA-1); **re-point the services that still take the old `Actor` for business behaviour** and remove the `legacy_actor` bridge (OR-4b keeps it as a named stopgap off every authorization path, ruling (a) on #767): xc-rate `rate_draft_service.rs`, `rate_publication.rs`, xc-approval, `payment_settings.rs`, custody, the save steps. Those files belong to other tickets (the rates lane, #582, CI-4), so OR-7 waits for them or is split per service when cut | OR-3 live, OR-4 merged, the first claim done, **#582 CA-1 merged** |
 
 **Up-front tests per ticket** (🧪), written by the ticket author:
 
