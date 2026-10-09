@@ -403,6 +403,7 @@ classDiagram
 | `PasswordField` | `web/src/shared/ui/PasswordField.tsx` | V0-A — the same component as #378: eye inside on the right, one border, never reads the value outside the form, conceals before submit; V1-i18n (#427) moves its eye's text and `aria-label` to `t()` |
 | `MoneyText` | `web/src/shared/ui/MoneyText.tsx` | V0-A — formats a decimal string, no arithmetic (W7) |
 | `AppShell` | `web/src/shared/ui/AppShell.tsx` | V0-A; V1-i18n (#427) adds `LangSwitch` to its header; #459 adds `ownsMain`; V0-B-session-end adds the ended-session notice and the content lock (§12.19.5) |
+| `AuthLayout`, `VersionFooter`, `auth.css` (the frame for signed-out pages and its styles) | `web/src/shared/ui/AuthLayout.tsx`, `web/src/shared/ui/VersionFooter.tsx`, `web/src/shared/ui/auth.css` | V1-auth-layout (§12.21); `AppShell` renders `VersionFooter` from then on |
 | `lang`, `setLang`, `locale`, `t` (shared keys only), `fill`, `errorText`, `collectScreens`, `translator`, `screenT` (a screen's typed `t` over its own table) | `web/src/shared/i18n/index.ts` | V1-i18n (#427) |
 | the shared `th` table (`field.*`, `form.*`, `shell.*`, `error.*` only) and its `Key` type | `web/src/shared/i18n/th.ts` | V1-i18n (#427); a later shared component's ticket adds its keys, a screen ticket never does |
 | the shared `en` table | `web/src/shared/i18n/en.ts` | as `th.ts` |
@@ -1956,3 +1957,130 @@ None. No table, column, constraint, default or status value is added or changed.
 `shift_balances` and `stock_movements` through two new `SELECT`s on existing indexes (§12.20.4); nothing is written, so
 there is nothing to backfill, the deploy order does not matter (the old binary never calls the new route), and a `down`
 loses nothing. The profit summary touches no table.
+
+### 12.21 Signed-out pages — `AuthLayout`, `VersionFooter` and the field look (V1-auth-layout)
+
+> decided-by: claude/608dff (lane controller) · 2026-10-09 · the owner's order of 2026-10-09: *"ปรับ ดีไชน์ ให้ เหมือน
+> หน้าlogin อื่น ทำเป็น component reuse"* · measured on `main` at `9f05f83` and in `xchange-v2-source@4d0bdbb`
+
+**Symptom.** v3's `/login` on staging shows a bare `<h1>` and an `EN` button at the top left, outside any card; inside a
+white card the labels sit inline beside small inputs, the show-password control is a separate text button, and the
+version line under it is in the browser's default serif.
+
+**Root cause.** The screen has no layout of its own to sit in, so it borrows the signed-in one and repaints a card by hand:
+
+1. `LoginScreen` renders inside `AppShell` (`web/src/screens/login/LoginScreen.tsx:84`) and copies the card's look as
+   inline styles (`LoginScreen.tsx:85-150`).
+2. `AppShell` is the signed-in frame: an unstyled `<header>` with the nav, the `<h1>`, `LangSwitch` and `AccountBar`
+   outside the content, the session lock, and an unstyled version `<footer>` (`web/src/shared/ui/AppShell.tsx:48-80`).
+   Nothing in it is meant for a page whose reader is not signed in.
+3. `TextField` and `PasswordField` carry no class and no style (`web/src/shared/ui/TextField.tsx:19-43`,
+   `web/src/shared/ui/PasswordField.tsx:42-75`), so the browser puts each label inline and draws the eye as a button
+   with its text beside the field.
+
+Every later signed-out page would repeat (1). The fix is one layout for signed-out pages, so the look lives in one file.
+
+**The look** is v2's login page, `xchange-v2-source@4d0bdbb:src/devices-public/login.html:1` (its `<style>` block):
+`body{font:16px/1.6 Tahoma,sans-serif;background:#eef2f5;color:#183044;margin:0}`,
+`main{max-width:420px;margin:8vh auto;background:white;padding:32px;border-radius:16px}`, `label{display:block;margin:16px 0}`,
+`input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}`,
+`button{background:#183044;color:white;border:0;border-radius:8px}`, `#message{color:#a5003c}`. Its order inside the card:
+the brand line `XCHANGE × T.K.`, the `<h1>`, the help line, the form, the `role="alert"` message. The password eye is the
+served pages' component (#378, `api/web/forms/src/password-field.ts` and `style.ts`): one border, an eye icon inside the
+field's right edge (`.xc-password` relative, `.xc-reveal` absolute, 44px wide, `#6b6b66`, brand colour when pressed).
+
+#### 12.21.1 Decisions
+
+- [required] `AuthLayout` is a frame for **signed-out** pages only. It has no `AccountBar`, no session notice and no
+  `fieldset.xc-lock`: nobody is signed in, so there is nothing to end. A signed-in screen keeps `AppShell`.
+- [required] Its DOM: one `<main class="xc-auth-card">` (the card, and the page's one `main` landmark). Inside it, first a
+  `<header>` holding the brand line, the `<h1>` title and `LangSwitch`; then the help line when given; then the children.
+  `VersionFooter` comes after the card, outside it. The `<h1>` is inside a `<header>` on purpose: the existing
+  `LoginScreen.test.tsx` finds the title as `header h1` and is not edited.
+- [required] `VersionFooter` is `AppShell`'s footer moved into its own file, with the same output byte for byte: a
+  `<footer>` holding, once `/health/ready` answers with all four of `version`, `build`, `channel`, `builtAt`,
+  `<div><span>v{version} · {build, first 7} · {channel}</span> <span>{builtAt}</span></div>`; nothing inside the footer
+  otherwise. `AppShell` renders `<VersionFooter />` where its footer was, so its tests do not change.
+- [required] The CSS is one file, `web/src/shared/ui/auth.css`, imported by `AuthLayout.tsx` (`import './auth.css'`).
+  That is the pattern screens already use (`screens/admin/main.tsx:7` imports `admin.css`, `StaffGuide.tsx:5`,
+  `ReceiptSample.tsx:7-8`): Vite puts a CSS import into the bundle of the entries that reach it and links it from their
+  built HTML, which the server serves as built (`api/src/presentation/screens.rs`). Only pages that use `AuthLayout` load
+  it. Every rule in it is scoped under `.xc-auth` (the layout's outer element), except `body:has(.xc-auth)` for the page
+  background and margin, so a screen that does not use the layout is unaffected even if the file were loaded.
+  Measured: `web/src/screens/admin/admin.css` styles no `.xc-*` class and no bare `label`, `input` or `button`.
+- [required] `TextField`'s wrapper gets `class="xc-field"`; `PasswordField`'s inner wrapper gets `class="xc-password"`
+  and its eye `class="xc-reveal"`, the input's next sibling as today. The eye keeps its text and `aria-label`
+  (`field.password.show` / `.hide`, pinned by `shared/i18n/retrofit.test.tsx:52-60`), with the text in a
+  `<span class="xc-reveal-text">`; under `.xc-auth` that span is visually hidden and the eye is drawn as an icon by CSS.
+  Outside `.xc-auth` (the admin employees form) nothing is restyled, and the eye looks as it does today.
+- [proposed] The card's look is the v2 rules above, translated under `.xc-auth`; the submit button is the form's
+  `button[type=submit]`. The brand line is `12px`, letter-spacing `1px`, `#6b8090` (what `LoginScreen.tsx:96-103` uses today).
+  The version footer is `13px`, centred under the card, in the page's text colour (#311's readable version line).
+  `LangSwitch` sits at the card's top-right corner. At 375px the card fills the width less a 16px gutter, and nothing
+  scrolls sideways.
+- [required] No new i18n keys. The brand line is a name, not translated (v2 shows it the same in both languages).
+  If a key is needed after all, it goes in the shared table under `shell.*` for the layout, or in the screen's own table, per W10.
+
+#### 12.21.2 Class diagram
+
+```mermaid
+classDiagram
+  class AuthLayout {
+    <<shared/ui/AuthLayout.tsx>>
+    +title: string
+    +help?: JSX.Element
+    +children?: JSX.Element
+    renders div.xc-auth, main.xc-auth-card, header, brand, h1, LangSwitch, VersionFooter
+  }
+  class VersionFooter {
+    <<shared/ui/VersionFooter.tsx>>
+    reads GET /health/ready once on mount
+    renders footer with v version, build 7, channel and builtAt
+  }
+  class AuthCss { <<shared/ui/auth.css>> .xc-auth scoped rules, body:has(.xc-auth) }
+  class AppShell { <<shared/ui/AppShell.tsx>> renders VersionFooter in place of its footer }
+  class LangSwitch { <<shared/i18n/LangSwitch.tsx, unchanged>> }
+  class TextField { <<shared/ui/TextField.tsx>> +wrapper class xc-field }
+  class PasswordField { <<shared/ui/PasswordField.tsx>> +wrapper class xc-password +eye class xc-reveal +span.xc-reveal-text }
+  class LoginScreen { <<screens/login/LoginScreen.tsx>> renders AuthLayout, no inline style }
+  AuthLayout --> VersionFooter
+  AuthLayout --> LangSwitch
+  AuthLayout ..> AuthCss : import
+  AppShell --> VersionFooter
+  LoginScreen --> AuthLayout
+  LoginScreen --> TextField
+  LoginScreen --> PasswordField
+  AuthCss ..> TextField : styles .xc-field under .xc-auth
+  AuthCss ..> PasswordField : styles .xc-password, .xc-reveal under .xc-auth
+```
+
+#### 12.21.3 Files, providers and users
+
+| Module | File | Provided by | Used by |
+|---|---|---|---|
+| `AuthLayout` | `web/src/shared/ui/AuthLayout.tsx` | V1-auth-layout | `LoginScreen` now. May be used later by other signed-out screens as they are cut over (the staff password change at `/staff`, kiosk sign-in, the first owner's setup); each of those is its own ticket |
+| `VersionFooter` | `web/src/shared/ui/VersionFooter.tsx` | V1-auth-layout (moved out of `AppShell`) | `AppShell`, `AuthLayout` |
+| the layout's and the fields' styles | `web/src/shared/ui/auth.css` | V1-auth-layout | imported by `AuthLayout.tsx` only |
+| `TextField` (class only) | `web/src/shared/ui/TextField.tsx` | V0-A; V1-auth-layout adds `class="xc-field"` | every form |
+| `PasswordField` (classes and text span only) | `web/src/shared/ui/PasswordField.tsx` | V0-A; V1-auth-layout adds the classes and `span.xc-reveal-text` | every form |
+| `AppShell` (footer only) | `web/src/shared/ui/AppShell.tsx` | V0-A; V1-auth-layout swaps its footer for `<VersionFooter />` | signed-in screens |
+| `LoginScreen` (layout only) | `web/src/screens/login/LoginScreen.tsx` | V1-login (#396); V1-auth-layout moves it onto `AuthLayout` | `main.tsx` |
+
+Fallback: none needed. All of it is one ticket, because the four shared files each change by a line or two and
+`LoginScreen` is the only user.
+
+#### 12.21.4 Tests written before implementation
+
+On the ticket's branch, by the controller: `AuthLayout.test.tsx` (the card holds the header, the brand line before
+the `<h1>`, `LangSwitch` and the children; the footer is outside the card; no `AccountBar`, no `me` read, no lock),
+`VersionFooter.test.tsx` (its `<footer>` is byte-identical to `AppShell`'s for the same `/health/ready` answer, a 503
+with identity and an unreadable answer), `LoginScreen.layout.test.tsx` (the screen is inside `main.xc-auth-card`, no
+header outside it, no inline `style`, labels are blocks above their inputs once `auth.css` is applied) and
+`PasswordField.eye.test.tsx` (the eye is the input's next sibling inside `.xc-password`, keeps its text and labels, and is
+positioned inside the field under `.xc-auth` only). The CSS is read from disk and applied in jsdom, as
+`screens/staff-guide/print.test.tsx` does, because vitest returns CSS imports empty.
+
+#### 12.21.5 Data migration
+
+None. No table, column, constraint, default or status value is added or changed; the change is web-only, and the
+server serves the new bundle as it serves the old one.
