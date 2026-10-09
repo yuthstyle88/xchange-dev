@@ -230,11 +230,42 @@ pub(crate) fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
 
 /// Who `/api/rpc` is answering: the owner session first, else the staff
 /// session. An employee whose first password is unchanged is nobody here.
+#[allow(clippy::collapsible_if)]
 async fn caller_of_rpc(
     accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
+    let session_token = crate::presentation::extractors::actor::cookie(
+        req,
+        crate::presentation::extractors::actor::SESSION_COOKIE,
+    );
+    if !session_token.is_empty() {
+        if let Some(session_svc) =
+            req.app_data::<web::Data<xc_auth::application::session::SessionService>>()
+        {
+            if let Ok(Some((user, roles))) =
+                session_svc.active_user_and_roles(&session_token, now).await
+            {
+                let access_actor = xc_auth::domain::access::Actor::new(
+                    &user.id,
+                    &user.organization_id,
+                    roles,
+                    None,
+                );
+                if let Some(legacy) =
+                    crate::presentation::extractors::actor::legacy_actor(&access_actor, now)
+                {
+                    return Ok(Some(RpcCaller {
+                        actor: legacy,
+                        username: user.id,
+                        name: user.name,
+                    }));
+                }
+                return Ok(None);
+            }
+        }
+    }
     let who = accounts
         .status(&cookie(req, OWNER_COOKIE), &cookie(req, STAFF_COOKIE), now)
         .await?;
@@ -243,12 +274,47 @@ async fn caller_of_rpc(
 
 /// Who `/api/staff/rpc` is answering: the staff session only — an owner
 /// session counts for nothing — and only once the first password is changed.
+#[allow(clippy::collapsible_if)]
 async fn caller_of_staff_rpc(
     accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> Result<RpcCaller, RpcFailure> {
     let route = RpcRoute::StaffRpc;
+    let session_token = crate::presentation::extractors::actor::cookie(
+        req,
+        crate::presentation::extractors::actor::SESSION_COOKIE,
+    );
+    if !session_token.is_empty() {
+        if let Some(session_svc) =
+            req.app_data::<web::Data<xc_auth::application::session::SessionService>>()
+        {
+            if let Ok(Some((user, roles))) =
+                session_svc.active_user_and_roles(&session_token, now).await
+            {
+                let access_actor = xc_auth::domain::access::Actor::new(
+                    &user.id,
+                    &user.organization_id,
+                    roles,
+                    None,
+                );
+                if let Some(legacy) =
+                    crate::presentation::extractors::actor::legacy_actor(&access_actor, now)
+                {
+                    if legacy.kind()
+                        == xc_auth::domain::policy::value_objects::actor_kind::ActorKind::Staff
+                    {
+                        return Ok(RpcCaller {
+                            actor: legacy,
+                            username: user.id,
+                            name: user.name,
+                        });
+                    }
+                }
+                return Err(RpcRefusal::not_signed_in(route).into());
+            }
+        }
+    }
     let employee = match accounts
         .employee_session(&cookie(req, STAFF_COOKIE), true, now)
         .await

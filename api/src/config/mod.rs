@@ -78,6 +78,8 @@ impl Default for DevicesSettings {
     }
 }
 
+pub use xc_auth::infrastructure::identity::IdentitySettings;
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
@@ -90,6 +92,8 @@ pub struct Settings {
     pub auth: AuthSettings,
     #[serde(default)]
     pub devices: DevicesSettings,
+    #[serde(default)]
+    pub identity: Option<IdentitySettings>,
 }
 
 impl Settings {
@@ -105,6 +109,40 @@ impl Settings {
         I: IntoIterator<Item = (String, String)>,
     {
         let env_map: HashMap<String, String> = env.into_iter().collect();
+
+        let identity_base_url = env_map.get("IDENTITY_BASE_URL");
+        let identity_client_id = env_map.get("IDENTITY_CLIENT_ID");
+        let identity_client_secret = env_map.get("IDENTITY_CLIENT_SECRET");
+        let identity_audience = env_map.get("IDENTITY_AUDIENCE");
+        let identity_issuer = env_map.get("IDENTITY_ISSUER");
+        let identity_api_key = env_map.get("IDENTITY_API_KEY");
+
+        let required = [
+            ("IDENTITY_BASE_URL", identity_base_url),
+            ("IDENTITY_CLIENT_ID", identity_client_id),
+            ("IDENTITY_CLIENT_SECRET", identity_client_secret),
+            ("IDENTITY_AUDIENCE", identity_audience),
+            ("IDENTITY_ISSUER", identity_issuer),
+        ];
+        let count = required.iter().filter(|(_, v)| v.is_some()).count();
+
+        let identity = if count == 5 {
+            let api_key = identity_api_key.cloned();
+            Some(IdentitySettings {
+                base_url: identity_base_url.unwrap().clone(),
+                client_id: identity_client_id.unwrap().clone(),
+                client_secret: identity_client_secret.unwrap().clone(),
+                audience: identity_audience.unwrap().clone(),
+                issuer: identity_issuer.unwrap().clone(),
+                api_key,
+            })
+        } else if count == 0 && identity_api_key.is_none() {
+            None
+        } else {
+            return Err(config::ConfigError::Message(
+                "IDENTITY_* variables set in part: IDENTITY_BASE_URL, IDENTITY_CLIENT_ID, IDENTITY_CLIENT_SECRET, IDENTITY_AUDIENCE, IDENTITY_ISSUER must all be set together".to_string()
+            ));
+        };
 
         let environment = env_map
             .get("APP_ENVIRONMENT")
@@ -144,7 +182,8 @@ impl Settings {
                 .source(Some(env_map)),
         );
 
-        let settings: Settings = builder.build()?.try_deserialize()?;
+        let mut settings: Settings = builder.build()?.try_deserialize()?;
+        settings.identity = identity;
         if settings.auth.purge_interval_secs == 0 {
             return Err(config::ConfigError::Message(
                 "auth.purge_interval_secs must be at least 1".to_string(),
@@ -167,6 +206,21 @@ impl Settings {
             )));
         }
         Ok(settings)
+    }
+
+    pub const MISSING_IDENTITY_API_KEY_NOTICE: &'static str =
+        "IDENTITY_API_KEY is not set; calls to identity may fail closed";
+
+    pub fn identity_api_key_notice(&self) -> Option<&'static str> {
+        if self
+            .identity
+            .as_ref()
+            .is_some_and(|id| id.api_key.is_none())
+        {
+            Some(Self::MISSING_IDENTITY_API_KEY_NOTICE)
+        } else {
+            None
+        }
     }
 }
 

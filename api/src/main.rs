@@ -24,6 +24,10 @@ async fn main() -> Result<(), anyhow::Error> {
             );
             pos_infra::telemetry::init_subscriber(subscriber);
 
+            if let Some(notice) = settings.identity_api_key_notice() {
+                tracing::warn!("{notice}");
+            }
+
             let application = Application::build(settings).await?;
             application.run_until_stopped().await?;
 
@@ -55,6 +59,24 @@ async fn main() -> Result<(), anyhow::Error> {
                         AppError::Domain(sentence) => eprintln!("{sentence}"),
                         other => eprintln!("{other}"),
                     }
+                    std::process::exit(1);
+                }
+            }
+        }
+        [_, cmd, flag, name] if cmd == "create-admin-invite" && flag == "--name" => {
+            let settings = Settings::load()?;
+            let pool = xchange::bootstrap::connect(&settings).await?;
+            let session_service =
+                xc_auth::application::session::SessionService::new(pool, None, None, None);
+            let now = chrono::Utc::now();
+
+            match session_service.create_first_admin_invite(name, now).await {
+                Ok(code) => {
+                    println!("{code}");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("{e}");
                     std::process::exit(1);
                 }
             }
