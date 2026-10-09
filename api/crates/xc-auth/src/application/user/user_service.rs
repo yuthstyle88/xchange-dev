@@ -12,6 +12,35 @@ use xc_kernel::ids::BranchId;
 use crate::domain::access::{Role, ScopeRule, ScopedRole};
 use crate::domain::user::{Invite, User, UserRepository, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InviteRefusal {
+    InviteInvalid,
+    AlreadyLinked,
+    UserNotFound,
+    UserDisabled,
+}
+
+impl InviteRefusal {
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::InviteInvalid => "รหัสเชิญไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุแล้ว",
+            Self::AlreadyLinked => "ผู้ใช้นี้ลงทะเบียนแล้ว",
+            Self::UserNotFound => "ไม่พบผู้ใช้งาน",
+            Self::UserDisabled => "บัญชีถูกระงับ",
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClaimError {
+    #[error("invite refused: {0:?}")]
+    Refused(InviteRefusal),
+    #[error(transparent)]
+    App(#[from] AppError),
+}
 
 fn generate_token() -> String {
     let mut bytes = [0u8; 32];
@@ -128,7 +157,7 @@ impl<R: UserRepository> UserService<R> {
         invite_code: &str,
         auth_subject: &str,
         now: DateTime<Utc>,
-    ) -> AppResult<User> {
+    ) -> Result<User, ClaimError> {
         let code_hash = sha256_hex(invite_code);
 
         // Spend the invite atomically as the FIRST statement in the claim transaction.
@@ -138,7 +167,7 @@ impl<R: UserRepository> UserService<R> {
             .repo
             .spend_invite(tx, &code_hash, now)
             .await?
-            .ok_or_else(|| AppError::Domain("รหัสเชิญไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุแล้ว".to_string()))?;
+            .ok_or(ClaimError::Refused(InviteRefusal::InviteInvalid))?;
 
         if self
             .repo
@@ -146,17 +175,17 @@ impl<R: UserRepository> UserService<R> {
             .await?
             .is_some()
         {
-            return Err(AppError::Domain("ผู้ใช้นี้ลงทะเบียนแล้ว".to_string()));
+            return Err(ClaimError::Refused(InviteRefusal::AlreadyLinked));
         }
 
         let mut user = self
             .repo
             .find_by_id(tx, &user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
+            .ok_or(ClaimError::Refused(InviteRefusal::UserNotFound))?;
 
         if user.status == UserStatus::Disabled {
-            return Err(AppError::Domain("บัญชีถูกระงับ".to_string()));
+            return Err(ClaimError::Refused(InviteRefusal::UserDisabled));
         }
 
         self.repo
