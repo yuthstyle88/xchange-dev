@@ -1,0 +1,190 @@
+/* shell.css — LK-1 (#627, #630): Signed-in v3 pages shell look */
+
+/* Reset default body margin only on pages rendering AppShell */
+body:has(.xc-shell) {
+  margin: 0;
+}
+
+/* Base container fallback */
+.xc-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* Header layout ported from v2 devices.css */
+.xc-shell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 5%;
+  background: white;
+  border-bottom: 1px solid var(--line, #e5e1e7);
+  color: var(--ink, #25232b);
+  font: 15px/1.65 -apple-system, BlinkMacSystemFont, 'Tahoma', sans-serif;
+  box-sizing: border-box;
+}
+
+/* Brand line */
+.xc-shell-brand {
+  font-weight: 850;
+  color: var(--ink, #25232b);
+  font-size: 23px;
+  letter-spacing: -1px;
+  text-decoration: none;
+}
+
+.xc-shell-brand span {
+  color: var(--brand, #a90045);
+}
+
+.xc-shell-brand small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted, #706a77);
+}
+
+/* Nav links */
+.xc-shell-nav,
+.xc-shell-nav nav {
+  display: flex;
+  gap: 20px;
+}
+
+.xc-shell-nav a {
+  color: var(--brand, #a90045);
+}
+
+.xc-shell-nav a:focus-visible {
+  outline: 3px solid #de7daa;
+  outline-offset: 2px;
+}
+
+/* Title */
+.xc-shell-title {
+  font-size: 30px;
+  line-height: 1.3;
+  margin: 0 0 12px;
+  box-sizing: border-box;
+}
+
+/* Main container */
+.xc-shell-main {
+  max-width: 1440px;
+  margin: auto;
+  padding: 32px 4%;
+  box-sizing: border-box;
+}
+
+/* Session alert / message */
+.xc-shell-alert {
+  padding: 12px 16px;
+  background: #fce4eb;
+  border: 1px solid #e7b7c8;
+  border-radius: 6px;
+  color: #851139;
+  box-sizing: border-box;
+}
+
+/* Version footer */
+.xc-shell-footer {
+  text-align: center;
+  padding: 30px;
+  color: var(--muted, #706a77);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+/* Account bar ported from v2 account-bar.js */
+.account-bar {
+  background: #29232d !important;
+  border-bottom: 3px solid #ab0044;
+  font: 14px/1.5 Arial, Tahoma, sans-serif;
+  padding: 12px 20px;
+  color: #fff;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.account-bar a {
+  color: #fff;
+  white-space: nowrap;
+  text-decoration: none !important;
+}
+
+.account-bar a:hover {
+  text-decoration: underline !important;
+}
+
+/* Account bar button from v2 account-bar.js.
+   v2 injects two style blocks: block 1 specifies padding: 8px 16px, but block 2
+   (injected later) specifies padding: 9px 16px. Because block 2 is injected last,
+   padding: 9px 16px wins at equal specificity in the cascade. */
+.account-bar button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid #eadbe1;
+  background: #fff;
+  color: #a5003c;
+  font: 600 14px/1.2 Arial, Tahoma, sans-serif;
+  white-space: nowrap;
+}
+
+.account-bar button:focus-visible {
+  outline: 3px solid #ffd88c;
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .account-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    scrollbar-width: none;
+  }
+  .account-bar > * {
+    flex: none;
+  }
+  .account-bar button {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 640px) {
+  .xc-shell-header {
+    align-items: flex-start;
+    gap: 15px;
+  }
+  .xc-shell-nav,
+  .xc-shell-nav nav {
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .xc-shell-main {
+    padding: 24px 16px;
+  }
+  .xc-shell-title {
+    font-size: 25px;
+  }
+}
+
+@media (pointer: coarse) {
+  .account-bar button {
+    min-height: 44px;
+  }
+}
