@@ -7,6 +7,7 @@ import { closeDialog, openDialog, setDialogLocked } from './Dialog';
 import { en, th } from './i18n';
 import { requestRefresh } from './refresh';
 import { toast } from './toast';
+import './parts.css';
 
 interface PendingRequest {
   api: ApiClient;

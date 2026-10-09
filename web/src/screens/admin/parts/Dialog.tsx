@@ -3,6 +3,7 @@
 import { createSignal, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { en, th } from './i18n';
+import './parts.css';
 
 interface DialogState {
   title: string;

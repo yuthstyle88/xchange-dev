@@ -1,0 +1,204 @@
+.xc-admin .xc-content .xc-payments {
+  display: block;
+}
+
+.xc-admin .xc-content .xc-payment-error {
+  padding: 24px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #a5003c;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .xc-payment-intro-eyebrow {
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.xc-admin .xc-content .xc-branch-notice {
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.xc-admin .xc-content .xc-payment-meta-text {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content .xc-payment-reload-btn {
+  background: white;
+  border: 1px solid #d6d8df;
+  color: #363840;
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .xc-payment-readonly {
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--soft);
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.xc-admin .xc-content .xc-payment-card-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.xc-admin .xc-content .xc-payment-enabled-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--brand);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .xc-payment-sell-label {
+  font-size: 13px;
+  display: block;
+}
+
+.xc-admin .xc-content .xc-payment-buy-label {
+  font-size: 13px;
+  display: block;
+}
+
+.xc-admin .xc-content .xc-payment-receive-only {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0 0 25px;
+}
+
+.xc-admin .xc-content .xc-payment-field-label {
+  display: block;
+  margin-top: 18px;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .xc-unit {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content .xc-payment-save-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 22px;
+}
+
+.xc-admin .xc-content .xc-payment-save-status {
+  flex: 1;
+}
+
+.xc-admin .xc-content .xc-payment-dirty-state {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.xc-admin .xc-content .xc-payment-save-note {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.xc-admin .xc-content .xc-payment-save-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.xc-admin .xc-content .xc-payment-discard-btn {
+  background: white;
+  border: 1px solid #d6d8df;
+  color: #363840;
+  border-radius: 7px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .xc-payment-save-btn {
+  background: var(--brand);
+  color: white;
+  border: 1px solid var(--brand);
+  border-radius: 7px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .xc-payment-save-btn:hover {
+  background: #870032;
+}
+
+.xc-admin .xc-content .xc-payment-footnote {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 18px;
+}
+
+.xc-admin .xc-content .xc-payment-history-details {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 8px;
+  margin: 20px 0;
+  padding: 0 20px;
+}
+
+.xc-admin .xc-content .xc-payment-history-details summary {
+  min-height: 58px;
+  padding: 17px 0;
+  cursor: pointer;
+  color: #5d4655;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content .xc-payment-history-details[open] summary {
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.xc-admin .xc-content .xc-payment-history-table {
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .xc-admin .xc-content .xc-payment-save-status {
+    flex-basis: 100%;
+  }
+  .xc-admin .xc-content .xc-payment-discard-btn,
+  .xc-admin .xc-content .xc-payment-save-btn {
+    flex: 1;
+  }
+}

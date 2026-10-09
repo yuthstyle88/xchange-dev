@@ -15,6 +15,7 @@ import { closeDialog, openDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
+import './rates.css';
 
 const t = screenT('admin.rates', table);
 

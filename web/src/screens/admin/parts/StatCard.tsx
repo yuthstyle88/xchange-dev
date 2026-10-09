@@ -2,6 +2,7 @@
 
 import type { JSX } from 'solid-js';
 import { formatMoney } from '../../../shared/ui/MoneyText';
+import './parts.css';
 
 export interface StatCardProps {
   label: string;

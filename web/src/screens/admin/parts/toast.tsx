@@ -1,6 +1,7 @@
 // V2-parts (#476): toast notification (ticket §7, design §12.2)
 
 import { createSignal, type JSX } from 'solid-js';
+import './parts.css';
 
 const [text, setText] = createSignal<string>('');
 let timer: ReturnType<typeof setTimeout> | undefined;
