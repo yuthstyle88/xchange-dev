@@ -51,14 +51,6 @@ function formatTime(d: Date): string {
   }).format(d);
 }
 
-const Shell = AppShell as unknown as (props: {
-  title: string;
-  nav?: JSX.Element;
-  children?: JSX.Element;
-  ownsMain?: boolean;
-  look?: 'devices' | 'kiosk' | 'admin';
-}) => JSX.Element;
-
 export function AdminShell(props: AdminShellProps): JSX.Element {
   const t = screenT('admin', { th, en });
 
@@ -404,7 +396,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   });
 
   return (
-    <Shell
+    <AppShell
       look="admin"
       title={t('pageTitle')}
       ownsMain={true}
@@ -419,7 +411,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </button>
       }
     >
-      <div class="admin-shell-container xc-admin">
+      <div class="admin-shell-container">
         {/* Sidebar */}
         <aside
           id="admin-sidebar"
@@ -705,6 +697,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       <QueueBar branch={currentBranch} branchLabel={currentBranchName} />
       <Dialog />
       <Toast />
-    </Shell>
+    </AppShell>
   );
 }
