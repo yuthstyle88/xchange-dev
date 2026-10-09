@@ -1,0 +1,323 @@
+/* LK-SA (#713) / CD-1: Admin cash screen look ported from v2 admin-html.ts and admin-workspace.css */
+
+/* v2 src/online/lib/admin-html.ts #cash-view */
+.xc-admin .xc-content .admin-cash-screen {
+  display: block;
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner */
+.xc-admin .xc-content .shift-banner {
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner neutral state */
+.xc-admin .xc-content .shift-banner-none {
+  border-left-color: var(--muted, #706a77);
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner active state */
+.xc-admin .xc-content .shift-banner-open {
+  border-left-color: var(--brand);
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner strong / h2 */
+.xc-admin .xc-content .banner-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner p */
+.xc-admin .xc-content .banner-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+/* v2 src/online/lib/admin-html.ts #reference-summary.stock-banner */
+.xc-admin .xc-content .reference-summary {
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+}
+
+/* v2 src/online/lib/admin-html.ts #reference-summary strong */
+.xc-admin .xc-content .ref-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* v2 src/online/lib/admin-html.ts #reference-summary p */
+.xc-admin .xc-content .ref-counts {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .stock-card {
+  margin-bottom: 24px;
+}
+
+/* v2 src/online/lib/admin-html.ts #stock-table table */
+.xc-admin .xc-content .stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* v2 src/online/lib/admin-html.ts .stock-banner p */
+.xc-admin .xc-content .stock-notes {
+  padding: 16px 20px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* v2 src/online/lib/admin-html.ts p.footnote */
+.xc-admin .xc-content .cash-footnote {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 16px 0;
+}
+
+/* v2 src/online/lib/admin-html.ts .card */
+.xc-admin .xc-content .history-details {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .movements-section {
+  padding: 20px;
+}
+
+/* v2 src/online/lib/admin-html.ts #movement-table table */
+.xc-admin .xc-content .movements-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .shifts-section {
+  padding: 20px;
+}
+
+/* v2 src/online/lib/admin-html.ts #shift-table table */
+.xc-admin .xc-content .shifts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* v2 src/online/public/bookings.js load-more / PR 718 */
+.xc-admin .xc-content .load-older-shifts {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog / .wide-dialog */
+.xc-admin .xc-content .cash-open-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* v2 src/online/lib/admin-html.ts .filters */
+.xc-admin .xc-content .search-currency-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* v2 src/online/lib/admin-html.ts .empty */
+.xc-admin .xc-content .search-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Layout helper: search results dropdown list (no direct v2 counterpart) */
+.xc-admin .xc-content .search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* v2 src/online/lib/admin-html.ts button.secondary */
+.xc-admin .xc-content .add-currency-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d6d8df;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+}
+
+/* v2 src/online/lib/admin-html.ts .count-grid */
+.xc-admin .xc-content .currency-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+/* v2 src/online/lib/admin-html.ts .count-grid label */
+.xc-admin .xc-content .currency-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* v2 src/online/lib/admin-html.ts .icon-button */
+.xc-admin .xc-content .remove-currency-btn {
+  background: #f3f4f6;
+  border: 1px solid #d6d8df;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog / .form-grid */
+.xc-admin .xc-content .cash-movement-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog / .wide-dialog */
+.xc-admin .xc-content .cash-close-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* v2 src/online/lib/admin-html.ts .count-grid */
+.xc-admin .xc-content .close-currencies-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+/* v2 src/online/lib/admin-html.ts .count-grid label */
+.xc-admin .xc-content .close-currency-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* v2 src/online/lib/admin-html.ts .dialog-note */
+.xc-admin .xc-content .expected-figure {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+/* v2 src/online/lib/admin-html.ts .dialog-note */
+.xc-admin .xc-content .counted-echo {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog / .wide-dialog */
+.xc-admin .xc-content .cash-example-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* v2 src/online/lib/admin-html.ts .count-grid */
+.xc-admin .xc-content .example-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+/* v2 src/online/lib/admin-html.ts .dialog-note */
+.xc-admin .xc-content .example-explanation {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 12px;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog */
+.xc-admin .xc-content .shift-detail-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* v2 src/online/lib/admin-html.ts .dialog-note */
+.xc-admin .xc-content .shift-detail-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+/* v2 src/online/lib/admin-html.ts dialog table */
+.xc-admin .xc-content .shift-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* v2 src/online/lib/admin-html.ts p.footnote */
+.xc-admin .xc-content .shift-detail-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .calc-panel {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .profit-summary {
+  display: block;
+}
+
+/* v2 src/online/lib/admin-html.ts section.card */
+.xc-admin .xc-content .shift-valuation {
+  display: block;
+}
