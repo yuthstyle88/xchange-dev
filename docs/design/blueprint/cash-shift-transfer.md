@@ -382,7 +382,7 @@ CA-1 to merge; this design's M3 is `20261030110000`.
    `ops_state.custodian_id` are **not touched**: the request model still runs until CA-10.
 2. *Backfill.* The `teller_id` fill above, and the face values. Count first:
    `SELECT count(*) FROM shifts s WHERE s.opened_by <> 'owner' AND NOT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id = s.opened_by);` (must be 0, else the migration `RAISE`s)
-   `SELECT count(*) FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL);` (must be 1, else `RAISE`)
+   `SELECT count(*) FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL);` (must be 1, else `RAISE`, **but only when some shift has `opened_by = 'owner'`**: on a fresh install the migrations run before the owner is created, `shifts` is empty, and the owner's `users` row comes later from the mirrored `create_owner`, PR 636; requiring it here would stop the first boot)
    The face values (A7): every note and coin in the current series of THB, USD, EUR, GBP, JPY, CNY and KRW, written
    out in the migration; the list is part of CA-1's review.
 3. *Order.* After OR-2's migration 2 (it reads `users`), and before OR-7's drop of `legacy_employee_id`
