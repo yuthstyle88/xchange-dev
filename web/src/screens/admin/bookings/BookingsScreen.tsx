@@ -18,6 +18,7 @@ import { openDialog, closeDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
 import { refreshTick } from '../parts/refresh';
 import { th, en } from './i18n';
+import './bookings.css';
 
 function formatMoney(value: string | null | undefined): string {
   if (!value) return '';

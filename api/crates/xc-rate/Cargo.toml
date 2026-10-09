@@ -17,6 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = { version = "0.10" }
 futures = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "rust_decimal"] }
@@ -24,3 +25,7 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 [dev-dependencies]
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "rust_decimal", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[lints.clippy]
+type_complexity = "allow"
+

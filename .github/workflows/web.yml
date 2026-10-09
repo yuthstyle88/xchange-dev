@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.pull_request.number) || format('web-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'web-main') || format('web-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 jobs:
   # A PR that only touches docs/** or *.md builds nothing (owner 2026-10-09; pilot
@@ -68,7 +68,8 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     # Node only, so the idle macOS pool, not the saturated Linux pool (#611; owner 2026-10-09).
-    runs-on: [self-hosted, macOS, ARM64]
+    # Runs on fast-mac to avoid Studio timeouts (#696 addendum 2).
+    runs-on: [self-hosted, macOS, ARM64, fast-mac]
     timeout-minutes: 10
     steps:
       - name: Refuse to report green when the run was cancelled

@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
@@ -9,7 +9,41 @@ use serde::Deserialize;
 
 use crate::domain::token::{Jwk, Jwks, JwksSource, TokenError, TokenVerifier, VerifiedToken};
 
+/// Default minimum interval between JWKS refetches (60 seconds).
+pub const DEFAULT_REFETCH_INTERVAL: Duration = Duration::from_secs(60);
+
 const CLOCK_LEEWAY_SECS: i64 = 60;
+
+/// Monotonic clock for measuring refetch intervals.
+pub trait RefetchClock: Send + Sync + 'static {
+    fn now(&self) -> Duration;
+}
+
+/// System monotonic clock backed by `Instant`.
+#[derive(Clone, Debug)]
+pub struct SystemRefetchClock {
+    epoch: Instant,
+}
+
+impl Default for SystemRefetchClock {
+    fn default() -> Self {
+        Self {
+            epoch: Instant::now(),
+        }
+    }
+}
+
+impl RefetchClock for SystemRefetchClock {
+    fn now(&self) -> Duration {
+        self.epoch.elapsed()
+    }
+}
+
+struct CacheState {
+    jwks: Option<Jwks>,
+    last_fetch: Option<Duration>,
+    last_failed: bool,
+}
 
 #[derive(Deserialize)]
 struct JwtHeader {
@@ -36,7 +70,10 @@ pub struct JwksTokenVerifier {
     source: Arc<dyn JwksSource>,
     issuer: String,
     audience: String,
-    cache: Arc<RwLock<Option<Jwks>>>,
+    min_interval: Duration,
+    clock: Arc<dyn RefetchClock>,
+    cache: Arc<RwLock<CacheState>>,
+    flight: Arc<futures::lock::Mutex<()>>,
 }
 
 impl JwksTokenVerifier {
@@ -45,11 +82,34 @@ impl JwksTokenVerifier {
         issuer: impl Into<String>,
         audience: impl Into<String>,
     ) -> Self {
+        Self::with_refetch(
+            source,
+            issuer,
+            audience,
+            DEFAULT_REFETCH_INTERVAL,
+            Arc::new(SystemRefetchClock::default()),
+        )
+    }
+
+    pub fn with_refetch(
+        source: Arc<dyn JwksSource>,
+        issuer: impl Into<String>,
+        audience: impl Into<String>,
+        min_interval: Duration,
+        clock: Arc<dyn RefetchClock>,
+    ) -> Self {
         Self {
             source,
             issuer: issuer.into(),
             audience: audience.into(),
-            cache: Arc::new(RwLock::new(None)),
+            min_interval,
+            clock,
+            cache: Arc::new(RwLock::new(CacheState {
+                jwks: None,
+                last_fetch: None,
+                last_failed: false,
+            })),
+            flight: Arc::new(futures::lock::Mutex::new(())),
         }
     }
 
@@ -57,15 +117,53 @@ impl JwksTokenVerifier {
         // Fast path: check cache under read lock
         {
             let guard = self.cache.read().map_err(|_| TokenError::KeysUnavailable)?;
-            if let Some(ref jwks) = *guard {
+            if let Some(ref jwks) = guard.jwks {
                 if let Some(key) = find_valid_key(jwks, kid) {
                     return Ok(key.clone());
                 }
             }
         }
 
-        // Cache miss or kid not found: fetch from source without holding lock
-        let fetched = self.source.fetch().await?;
+        // Single-flight lock: at most one refetch in flight at a time
+        let _flight_guard = self.flight.lock().await;
+
+        // Double check cache after acquiring flight lock
+        {
+            let guard = self.cache.read().map_err(|_| TokenError::KeysUnavailable)?;
+            if let Some(ref jwks) = guard.jwks {
+                if let Some(key) = find_valid_key(jwks, kid) {
+                    return Ok(key.clone());
+                }
+                // Cache is loaded, but kid is not present: check rate limit window
+                let now = self.clock.now();
+                if let Some(last) = guard.last_fetch {
+                    if now.saturating_sub(last) < self.min_interval {
+                        return if guard.last_failed {
+                            Err(TokenError::KeysUnavailable)
+                        } else {
+                            Err(TokenError::BadSignature)
+                        };
+                    }
+                }
+            }
+        }
+
+        // Fetch keys from source
+        let fetch_time = self.clock.now();
+        let fetched = match self.source.fetch().await {
+            Ok(keys) => keys,
+            Err(e) => {
+                let mut guard = self
+                    .cache
+                    .write()
+                    .map_err(|_| TokenError::KeysUnavailable)?;
+                if guard.jwks.is_some() {
+                    guard.last_fetch = Some(fetch_time);
+                    guard.last_failed = true;
+                }
+                return Err(e);
+            }
+        };
         let maybe_key = find_valid_key(&fetched, kid).cloned();
 
         {
@@ -73,7 +171,9 @@ impl JwksTokenVerifier {
                 .cache
                 .write()
                 .map_err(|_| TokenError::KeysUnavailable)?;
-            *guard = Some(fetched);
+            guard.jwks = Some(fetched);
+            guard.last_fetch = Some(fetch_time);
+            guard.last_failed = false;
         }
 
         maybe_key.ok_or(TokenError::BadSignature)

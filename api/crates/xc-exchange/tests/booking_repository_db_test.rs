@@ -457,6 +457,8 @@ async fn the_columns_are_the_designs() {
             col("token_hash", "text", "NO"),
             col("verified_at", TZ, "NO"),
             col("verified_by", "text", "NO"),
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     assert_eq!(
@@ -481,6 +483,9 @@ async fn the_columns_are_the_designs() {
             col("confirmed_by", "text", "YES"),
             col("submission_id", "text", "YES"),
             col("transaction_ref", "text", "YES"),
+            col("unit_size", "numeric", "NO"), // RU-1 (#595)
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     let sizes: Vec<Size> = sqlx::query_as(
@@ -498,7 +503,7 @@ async fn the_columns_are_the_designs() {
         vec![
             ("code".to_string(), Some(3), None, None),
             ("amount".to_string(), None, Some(20), Some(2)),
-            ("rate".to_string(), None, Some(14), Some(4)),
+            ("rate".to_string(), None, Some(20), Some(8)), // RU-1 (#595): rates at scale 8
         ]
     );
     let index: Option<String> = sqlx::query_scalar(

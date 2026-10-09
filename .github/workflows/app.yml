@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('app-pr-{0}', github.event.pull_request.number) || format('app-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('app-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'app-main') || format('app-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 jobs:
   # A light job decides whether the app needs building (same should-build.sh as before), so a PR

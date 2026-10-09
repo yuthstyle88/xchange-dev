@@ -7,6 +7,7 @@ import { closeDialog, openDialog } from './Dialog';
 import { en, th } from './i18n';
 import { pendingWrite } from './pending-write';
 import { toast } from './toast';
+import './parts.css';
 
 export interface NewTransactionButtonProps {
   api: ApiClient;

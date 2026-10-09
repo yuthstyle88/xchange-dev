@@ -95,6 +95,53 @@ impl BranchTx {
             .await
     }
 
+    /// Runs a closure inside a database transaction that holds the locks of two
+    /// branches in one total lock order (LG-0, #661).
+    ///
+    /// The transaction ensures both branches' rows in `branch_versions` are
+    /// created if absent, locks both `FOR UPDATE` in order, runs `f`,
+    /// increments both versions by 1, and commits.
+    ///
+    /// **Lock order: `MAIN` first, otherwise ascending byte order.**
+    /// The order is decided by the branch IDs, never by the argument order, so
+    /// opposite pairs never deadlock. When `a == b`, it behaves exactly as
+    /// [`BranchTx::run`], incrementing the version once.
+    ///
+    /// If `f` returns an error, the transaction is rolled back and the original
+    /// error is returned unchanged.
+    pub async fn run_pair<T, F>(&self, a: &BranchId, b: &BranchId, f: F) -> AppResult<T>
+    where
+        T: Send,
+        F: for<'a> FnOnce(
+                &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+            ) -> BoxFuture<'a, AppResult<T>>
+            + Send
+            + 'static,
+    {
+        if a == b {
+            return self.run(a, f).await;
+        }
+
+        let (first, second) = if a.as_str() == "MAIN" {
+            (a, b)
+        } else if b.as_str() == "MAIN" {
+            (b, a)
+        } else if a.as_str() < b.as_str() {
+            (a, b)
+        } else {
+            (b, a)
+        };
+
+        let second = second.clone();
+        self.run(first, move |tx| {
+            Box::pin(async move {
+                Self::lock_also(tx, &second).await?;
+                f(tx).await
+            })
+        })
+        .await
+    }
+
     /// Takes the lock of a second branch inside a transaction that
     /// [`BranchTx::run`] started for another one, for a write that depends on
     /// what both branches hold.

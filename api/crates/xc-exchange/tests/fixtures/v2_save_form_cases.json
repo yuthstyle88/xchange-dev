@@ -3370,7 +3370,7 @@
    "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง"
   },
   {
-   "name": "rate with five decimals",
+   "name": "rate with nine decimals",
    "form": {
     "name": "Somchai Jaidee",
     "passportNo": "AA1234567",
@@ -3382,7 +3382,7 @@
     "type": "BUY",
     "currency": "USD",
     "amount": "100",
-    "rate": "32.10001",
+    "rate": "32.100000001",
     "fee": "0",
     "bankFee": "0",
     "method": "Cash",
@@ -3670,7 +3670,7 @@
     "type": "BUY",
     "currency": "USD",
     "amount": "100",
-    "rate": "1.00001",
+    "rate": "1.000000001",
     "fee": "",
     "bankFee": "0",
     "method": "Cash",
@@ -4838,7 +4838,7 @@
    "v2Error": "จำนวนเงินหรือเรทไม่ถูกต้อง"
   },
   {
-   "name": "reference rate with five decimals",
+   "name": "reference rate with nine decimals",
    "form": {
     "name": "Somchai Jaidee",
     "passportNo": "AA1234567",
@@ -4865,7 +4865,7 @@
     "identityConfirmed": true,
     "passport": "11111111-1111-4111-8111-111111111111",
     "slip": null,
-    "referenceRate": "32.00001",
+    "referenceRate": "32.000000001",
     "customerId": "CX-00000001"
    },
    "v2Error": "ทศนิยมเกินกำหนด"

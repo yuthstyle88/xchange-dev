@@ -111,9 +111,14 @@ impl BranchService {
                     .await?;
 
                     Ok(Branch {
-                        id: BranchId::new(new_id),
+                        id: BranchId::new(&new_id),
                         name: trimmed_name,
                         request_id: Some(trimmed_req),
+                        code: Some(new_id),
+                        address: None,
+                        timezone: "Asia/Bangkok".to_string(),
+                        opening_hours: None,
+                        booking_enabled: false,
                     })
                 })
             })

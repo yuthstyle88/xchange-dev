@@ -397,6 +397,8 @@ async fn the_table_and_the_four_job_columns_are_as_designed() {
         ("drawer_target", "text", true),
         ("claim_window_start", "timestamp with time zone", true),
         ("claim_count", "integer", false),
+        // OR-1 (#550 D-1): every table carries the organisation.
+        ("organization_id", "uuid", false),
     ];
     let got: BTreeSet<(String, String, bool)> = agents.into_iter().collect();
     let want: BTreeSet<(String, String, bool)> = expected
@@ -419,8 +421,8 @@ async fn the_table_and_the_four_job_columns_are_as_designed() {
     }
     assert_eq!(
         jobs.len(),
-        14,
-        "ten columns of today and four new: {jobs:?}"
+        15,
+        "ten columns of today, four new and OR-1's organization_id: {jobs:?}"
     );
 
     // claim_count defaults to 0; leased_by refers to device_agents.
@@ -556,7 +558,8 @@ async fn existing_jobs_keep_everything_and_get_no_lease() {
     db.the_rest().await;
 
     let after: Vec<String> = sqlx::query_scalar(
-        "SELECT (to_jsonb(j) - 'lease_id' - 'leased_by' - 'lease_until' - 'outcome_reason')::text \
+        "SELECT (to_jsonb(j) - 'lease_id' - 'leased_by' - 'lease_until' - 'outcome_reason' \
+         - 'organization_id')::text \
          FROM device_jobs j ORDER BY branch_id, id",
     )
     .fetch_all(&db.pool)

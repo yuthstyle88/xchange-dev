@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use std::sync::Mutex;
 
 use xc_auth::domain::token::{Jwk, Jwks, JwksSource, TokenError, TokenVerifier, VerifiedToken};
-use xc_auth::infrastructure::token::JwksTokenVerifier;
+use xc_auth::infrastructure::token::{JwksTokenVerifier, SystemRefetchClock};
 
 const ISS: &str = "auth-service";
 const AUD: &str = "xchange";
@@ -110,8 +110,17 @@ impl JwksSource for FakeSource {
     }
 }
 
+/// Adjusted by #660 (ticket author, in its up-front commit): `new` now applies a 60 s refetch window, so these
+/// tests, which check verification and the per-token refetch, build the verifier with a zero window. The window
+/// itself is tested in `token_verifier_refetch_test.rs`.
 fn verifier(source: Arc<FakeSource>) -> JwksTokenVerifier {
-    JwksTokenVerifier::new(source, ISS, AUD)
+    JwksTokenVerifier::with_refetch(
+        source,
+        ISS,
+        AUD,
+        std::time::Duration::ZERO,
+        Arc::new(SystemRefetchClock::default()),
+    )
 }
 
 // ---- accepted --------------------------------------------------------------------------------

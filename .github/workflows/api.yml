@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || format('api-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'api-main') || format('api-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   # A light job decides whether the api needs building, so a PR that does not touch api/, web/
@@ -25,6 +29,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
+      test_args: ${{ steps.filter.outputs.test_args }}
+      runs_on: ${{ steps.pool.outputs.runs_on }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +39,9 @@ jobs:
 
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh
+
+      - name: Self-test api-test-plan
+        run: bash .github/scripts/api-test-plan.test.sh
 
       - name: Check changed files
         id: filter
@@ -60,27 +69,95 @@ jobs:
           fi
           echo "skip_build=$skip_build" >> "$GITHUB_OUTPUT"
 
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ -d "$HOME/.cargo/bin" ]; then
+              export PATH="$HOME/.cargo/bin:$PATH"
+            fi
+            CHANGED_FILE=$(mktemp)
+            METADATA_FILE=$(mktemp)
+            if git diff --name-only "$BASE...$HEAD" > "$CHANGED_FILE" 2>/dev/null && \
+               cargo metadata --format-version 1 --no-deps --manifest-path api/Cargo.toml > "$METADATA_FILE" 2>/dev/null; then
+              test_args=$(bash .github/scripts/api-test-plan.sh "$CHANGED_FILE" "$METADATA_FILE" 2>/dev/null || echo "--workspace")
+            else
+              test_args="--workspace"
+            fi
+            rm -f "$CHANGED_FILE" "$METADATA_FILE"
+          else
+            test_args="--workspace"
+          fi
+          test_args="${test_args:-}"
+          echo "test_args=$test_args" >> "$GITHUB_OUTPUT"
+          echo "skip_build=$skip_build test_args=$test_args"
+
+      - name: Select runner pool
+        id: pool
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request
+
+          LINUX_POOL = '["self-hosted","Linux","X64"]'
+          FAST_MAC_POOL = '["self-hosted","macOS","ARM64","fast-mac"]'
+
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+          output_file = os.environ.get("GITHUB_OUTPUT")
+
+          def write_output(val):
+              if output_file:
+                  with open(output_file, "a") as f:
+                      f.write(f"runs_on={val}\n")
+
+          def fetch_json(url):
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "User-Agent": "api-pool-select",
+                  }
+              )
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          try:
+              count = 0
+              seen_runs = set()
+              for status in ["queued", "in_progress"]:
+                  data = fetch_json(f"https://api.github.com/repos/{repo}/actions/runs?status={status}&per_page=30")
+                  for r in data.get("workflow_runs", []):
+                      run_id = r["id"]
+                      if run_id in seen_runs:
+                          continue
+                      seen_runs.add(run_id)
+                      jobs_url = r.get("jobs_url") or f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+                      jdata = fetch_json(jobs_url)
+                      for job in jdata.get("jobs", []):
+                          if job.get("name") == "api" and job.get("status") == "queued":
+                              labels = job.get("labels", [])
+                              if "Linux" in labels:
+                                  count += 1
+
+              if count >= 2:
+                  pool = FAST_MAC_POOL
+              else:
+                  pool = LINUX_POOL
+              print(f"Queued Linux api jobs: {count} -> pool: {pool}")
+              write_output(pool)
+          except Exception as e:
+              sys.stderr.write(f"Error selecting pool: {e}\nFalling back to Linux pool\n")
+              print(f"Queued Linux api jobs: unknown (error) -> pool: {LINUX_POOL}")
+              write_output(LINUX_POOL)
+          PY
+
   api:
     name: api
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.skip_build != 'true' }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: xchange_test
-        ports:
-          - 5432
-        options: >-
-          --tmpfs /var/lib/postgresql/data
-          --health-cmd "psql -h 127.0.0.1 -U postgres -d xchange_test -tAc 'SELECT 1'"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 30
     env:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
@@ -100,6 +177,40 @@ jobs:
 
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh
+
+      - name: Self-test api-test-plan
+        run: bash .github/scripts/api-test-plan.test.sh
+
+      - name: Start postgres (per run)
+        run: |
+          # Postgres >= 16 on the host (macOS Homebrew or Linux).
+          PGBIN=
+          for v in 17 16; do
+            if [ -x "/opt/homebrew/opt/postgresql@$v/bin/pg_ctl" ]; then PGBIN="/opt/homebrew/opt/postgresql@$v/bin"; break; fi
+            if [ -x "/usr/lib/postgresql/$v/bin/pg_ctl" ]; then PGBIN="/usr/lib/postgresql/$v/bin"; break; fi
+          done
+          if [ -z "$PGBIN" ] && command -v pg_ctl >/dev/null; then
+            major=$(pg_ctl --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+            if [ "$major" -ge 16 ]; then PGBIN=$(dirname "$(command -v pg_ctl)"); fi
+          fi
+          if [ -z "$PGBIN" ]; then
+            echo "::error::no postgres >= 16 on runner $RUNNER_NAME; install postgresql 16 or 17"
+            exit 1
+          fi
+          # Short path under /tmp: the unix socket path must stay under macOS's 104-byte limit.
+          PGROOT=$(mktemp -d /tmp/xcpg.XXXXXX)
+          PGPORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+          # --locale=C: byte-order collation, the same as the musl-based postgres:16-alpine image.
+          "$PGBIN/initdb" -D "$PGROOT/data" -U postgres --auth=trust --encoding=UTF8 --locale=C >/dev/null
+          "$PGBIN/pg_ctl" -D "$PGROOT/data" -l "$PGROOT/log" -w -t 60 start \
+            -o "-p $PGPORT -k $PGROOT -c listen_addresses=127.0.0.1 -c max_connections=300 -c fsync=off -c synchronous_commit=off -c full_page_writes=off"
+          "$PGBIN/createdb" -h 127.0.0.1 -p "$PGPORT" -U postgres xchange_test
+          "$PGBIN/psql" -h 127.0.0.1 -p "$PGPORT" -U postgres -d xchange_test -tAc 'SELECT version()'
+          {
+            echo "XC_PGBIN=$PGBIN"
+            echo "XC_PGROOT=$PGROOT"
+            echo "XC_PGPORT=$PGPORT"
+          } >> "$GITHUB_ENV"
 
       - name: Verify rustc 1.98.1
         working-directory: api
@@ -129,17 +240,36 @@ jobs:
         with:
           node-version: 24
 
-      - name: "Web screens: typecheck, test, build"
+      - name: "Web screens: build"
         run: |
           npm --prefix web ci --no-audit --no-fund
-          npm --prefix web run check
+          npm --prefix web run build
+
+      - name: Install cargo-nextest
+        working-directory: api
+        run: |
+          VERSION="0.9.137"
+          TOOL_CACHE="${RUNNER_TOOL_CACHE:-$HOME/.cache}"
+          ROOT="$TOOL_CACHE/xchange-cargo-nextest-$VERSION"
+          BIN="$ROOT/bin/cargo-nextest"
+          if [ ! -x "$BIN" ]; then
+            CARGO_TARGET_DIR="$ROOT/target" cargo install cargo-nextest --version "$VERSION" --locked --root "$ROOT"
+            rm -rf "$ROOT/target"
+          fi
+          echo "$ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Test
         working-directory: api
         env:
-          TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/xchange_test
+          TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
           XC_REQUIRE_WEB_DIST: 1
-        run: cargo test --workspace --no-fail-fast
+          TEST_ARGS: ${{ needs.changes.outputs.test_args }}
+        run: |
+          if [ -z "$TEST_ARGS" ]; then
+            echo "Skipping test step: test_args is empty (no Rust packages affected)"
+          else
+            cargo nextest run $TEST_ARGS --no-fail-fast
+          fi
 
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
       # api/static/xc-forms.js, so this fails when that file is not the build of its source.
@@ -167,3 +297,11 @@ jobs:
             rm -rf "$ROOT/target"
           fi
           "$BIN" check
+
+      - name: Stop postgres and remove its data
+        if: always()
+        run: |
+          if [ -n "${XC_PGROOT:-}" ] && [ -d "$XC_PGROOT" ]; then
+            "$XC_PGBIN/pg_ctl" -D "$XC_PGROOT/data" -m immediate stop || true
+            rm -rf "$XC_PGROOT"
+          fi

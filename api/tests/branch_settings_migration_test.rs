@@ -146,6 +146,8 @@ async fn the_columns_are_the_designs() {
             col("body", "jsonb", "NO"),
             col("updated_at", "timestamp with time zone", "NO"),
             col("updated_by", "text", "NO"),
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     assert_eq!(
@@ -158,6 +160,8 @@ async fn the_columns_are_the_designs() {
             col("at", "timestamp with time zone", "NO"),
             col("before", "jsonb", "NO"),
             col("after", "jsonb", "NO"),
+            // OR-1 (#550 D-1): every table carries the organisation.
+            col("organization_id", "uuid", "NO"),
         ]
     );
     db.finish().await;

@@ -72,14 +72,14 @@ sc('sell below buy', [save(1, 'USD', '32.6', '32.1')]);
 sc('sell below buy by one ten-thousandth', [save(1, 'USD', '32.1001', '32.1')]);
 sc('buy zero', [save(1, 'USD', '0', '32.1')]);
 sc('sell zero', [save(1, 'USD', '32.1', '0')]);
-sc('buy with five decimals', [save(1, 'USD', '32.12345', '33')]);
-sc('sell with five decimals', [save(1, 'USD', '32', '33.00001')]);
+sc('buy with nine decimals', [save(1, 'USD', '32.123456789', '33')]);
+sc('sell with nine decimals', [save(1, 'USD', '32', '33.000000001')]);
 sc('buy above the limit', [save(1, 'USD', '100000000.0001', '200000000')]);
 sc('buy empty', [save(1, 'USD', '', '32.1')]);
 sc('sell empty', [save(1, 'USD', '32.1', '')]);
 sc('buy not a number', [save(1, 'USD', 'abc', '32.1')]);
 sc('buy negative', [save(1, 'USD', '-1', '32.1')]);
-sc('both wrong: buy is judged first', [save(1, 'USD', '32.12345', '0')]);
+sc('both wrong: buy is judged first', [save(1, 'USD', '32.123456789', '0')]);
 
 // ── rates: refused by the code ──────────────────────────────────────────────
 sc('THB has no counter rate', [save(1, 'THB', '1', '1')]);
@@ -117,7 +117,7 @@ sc('partner name of 101 characters', [save(1, 'USD', '32.1', '32.6', '@current',
 sc('partner name of 50 emoji is 100 UTF-16 units', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: '😀'.repeat(50), partnerCost: '32' })]);
 sc('partner name of 51 emoji is 102 UTF-16 units', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: '😀'.repeat(51), partnerCost: '32' })]);
 sc('partner cost zero', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: 'P', partnerCost: '0' })]);
-sc('partner cost with five decimals', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: 'P', partnerCost: '32.00001' })]);
+sc('partner cost with nine decimals', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: 'P', partnerCost: '32.000000001' })]);
 sc('partner cost may exceed the sell rate', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: 'P', partnerCost: '99' })]);
 sc('a newer row without partner clears it', [save(1, 'USD', '32.1', '32.6', '@current', { partnerName: 'P', partnerCost: '32' }), save(2, 'USD', '32.2', '32.7')]);
 

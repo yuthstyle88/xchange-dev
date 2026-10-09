@@ -23,6 +23,7 @@ import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
 import { en, th } from './i18n';
 import { formatDate } from './text';
+import './payments.css';
 
 const t = screenT('admin.payments', { th, en });
 

@@ -14,7 +14,7 @@ const t = screenT('kiosk-currencies', screenI18n);
 
 render(
   () => (
-    <AppShell title={t('heading')}>
+    <AppShell title={t('heading')} look="kiosk">
       <KioskCurrenciesScreen api={api} branch={branch} />
     </AppShell>
   ),

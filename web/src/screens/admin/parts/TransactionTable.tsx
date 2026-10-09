@@ -7,6 +7,7 @@ import { formatMoney } from '../../../shared/ui/MoneyText';
 import { DataTable, type DataTableHeader } from './DataTable';
 import { en, th } from './i18n';
 import { methodName, statusName, typeName } from './transaction';
+import './parts.css';
 
 export interface TransactionTableProps {
   rows: TransactionRow[];

@@ -15,6 +15,7 @@ import { dockQueueCard } from '../../../shared/ui/QueueCard';
 import { QueuePanel } from '../../../shared/ui/QueuePanel';
 import { QueueSoundControls } from '../../../shared/ui/QueueSoundControls';
 import * as table from './i18n';
+import './queue.css';
 
 const t = screenT('admin.queue', table);
 

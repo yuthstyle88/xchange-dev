@@ -1,0 +1,114 @@
+/* LK-SD (#716): admin slips screen look ported from v2 admin-html.ts & slips.js */
+
+.xc-admin .xc-content .slips-screen {
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.xc-admin .xc-content .slips-screen .filter-controls {
+  padding: 20px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line, #e5e6ea);
+}
+
+.xc-admin .xc-content .slips-screen .filter-controls label {
+  flex: 1;
+  min-width: 200px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.xc-admin .xc-content .slips-screen .filter-controls select {
+  min-width: 180px;
+}
+
+.xc-admin .xc-content .slips-screen .summary-line {
+  padding: 12px 20px;
+  color: var(--muted, #676a73);
+  font-size: 13px;
+  min-height: 20px;
+}
+
+.xc-admin .xc-content .slips-screen .slips-error {
+  color: var(--brand, #a5003c);
+  font-size: 14px;
+  padding: 14px 20px;
+  background: var(--soft, #fbf0f4);
+  border-radius: 8px;
+  margin: 12px 20px;
+}
+
+.xc-admin .xc-content .slips-screen .empty-state {
+  padding: 45px 24px;
+  text-align: center;
+  color: var(--muted, #676a73);
+}
+
+.xc-admin .xc-content .slips-screen .empty-state p {
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.xc-admin .xc-content .slips-screen .empty-state p:first-child {
+  font-weight: 600;
+  color: var(--ink, #17181b);
+}
+
+.xc-admin .xc-content .slips-screen .data-table {
+  width: 100%;
+}
+
+.xc-admin .xc-content .slips-screen .link-button {
+  font-family: Arial, sans-serif;
+  color: var(--brand, #a5003c);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0;
+  min-height: 32px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.xc-admin .xc-content .slips-screen .pagination {
+  padding: 16px 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.xc-admin .xc-content .slips-screen .pagination button {
+  min-height: 36px;
+  padding: 6px 16px;
+  font-size: 13px;
+  background: white;
+  border: 1px solid var(--line, #e5e6ea);
+  color: var(--ink, #17181b);
+  border-radius: 7px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content .slips-screen .pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-admin .xc-content .slips-screen .page-indicator {
+  font-size: 14px;
+  color: var(--muted, #676a73);
+}
+
+@media (max-width: 720px) {
+  .xc-admin .xc-content .slips-screen .filter-controls {
+    padding: 14px;
+    gap: 10px;
+  }
+}

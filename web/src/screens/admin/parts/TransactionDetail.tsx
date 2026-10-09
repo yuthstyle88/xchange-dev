@@ -15,6 +15,7 @@ import { formatMoney } from '../../../shared/ui/MoneyText';
 import { en, th } from './i18n';
 import { methodName, statusName, typeName } from './transaction';
 import { formatBangkokTime } from './TransactionTable';
+import './parts.css';
 
 export interface TransactionDetailProps {
   api: ApiClient;

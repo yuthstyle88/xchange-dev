@@ -760,7 +760,7 @@ async function engineActions() {
   await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 0, sell: 32.6 }, 'a rate of zero');
   await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: -1, sell: 32.6 });
   await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 'abc', sell: 32.6 });
-  await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 32.12345, sell: 32.6 }, 'five decimals');
+  await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 32.123456789, sell: 32.6 }, 'nine decimals');
   await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 100000001, sell: 100000002 }, 'over 100,000,000');
   await x('adminSaveRate', { requestId: w.rq(), code: 'USD', buy: 32.6, sell: 32.1 }, 'sells for less than it buys');
   await x('adminSaveRate', { requestId: w.rq(), code: 'THB', buy: 1, sell: 1 }, 'the baht itself');
@@ -851,7 +851,7 @@ async function engineActions() {
   await x('saveTransaction', tx({ amount: 0 }));
   await x('saveTransaction', tx({ amount: 1.005 }), 'three decimals');
   await x('saveTransaction', tx({ amount: 100000001 }));
-  await x('saveTransaction', tx({ rate: 32.20001 }), 'five decimals');
+  await x('saveTransaction', tx({ rate: 32.200000001 }), 'nine decimals');
   await x('saveTransaction', tx({ fee: -1 }));
   await x('saveTransaction', tx({ method: 'Cheque' }));
   await x('saveTransaction', tx({ paidAt: 'yesterday' }));

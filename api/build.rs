@@ -69,6 +69,9 @@ mod screens;
 #[path = "build_support/views.rs"]
 mod views_gen;
 
+#[path = "build_support/commands.rs"]
+mod commands_gen;
+
 use std::path::Path;
 
 fn main() {
@@ -231,4 +234,51 @@ fn main() {
     std::fs::write(Path::new(&out_dir).join("v3_actions.rs"), actions_code)
         .expect("write v3_actions.rs");
     println!("cargo:rerun-if-changed=src/presentation/http/v3/actions");
+
+    // Generate v3 commands table (§6, §9 CM-1)
+    let commands_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/presentation/http/v3/commands");
+    let mut command_files = Vec::new();
+    if commands_dir.exists() {
+        for entry in std::fs::read_dir(&commands_dir).expect("read http/v3/commands") {
+            let path = entry.expect("command entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                command_files.push((name, content));
+            }
+        }
+    }
+    let command_refs: Vec<(&str, &str)> = command_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let command_table =
+        commands_gen::commands_table(&command_refs).expect("commands_table failed for commands");
+    let other_names = view_table
+        .iter()
+        .map(|v| v.module.as_str())
+        .chain(action_table.iter().map(|a| a.module.as_str()));
+    commands_gen::disjoint_names(&command_table, other_names)
+        .expect("commands must be disjoint from views and actions");
+    let mut commands_code = String::new();
+    for c in &command_table {
+        let file_path = commands_dir.join(&c.file);
+        commands_code.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n",
+            file_path.to_str().unwrap(),
+            c.module
+        ));
+    }
+    commands_code.push_str("pub const COMMANDS: &[ViewEntry] = &[\n");
+    for c in &command_table {
+        commands_code.push_str(&format!(
+            "    ViewEntry {{\n        name: {:?},\n        register: {}::register,\n        export_types: {}::export_types,\n    }},\n",
+            c.module, c.module, c.module
+        ));
+    }
+    commands_code.push_str("];\n");
+    std::fs::write(Path::new(&out_dir).join("v3_commands.rs"), commands_code)
+        .expect("write v3_commands.rs");
+    println!("cargo:rerun-if-changed=src/presentation/http/v3/commands");
 }

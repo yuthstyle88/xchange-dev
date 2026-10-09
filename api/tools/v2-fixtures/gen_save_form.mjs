@@ -174,7 +174,7 @@ no('amount not a number', { amount: 'abc' });
 no('amount negative', { amount: '-5' });
 no('no rate', { rate: '' });
 no('rate zero', { rate: '0' });
-no('rate with five decimals', { rate: '32.10001' });
+no('rate with nine decimals', { rate: '32.100000001' });
 no('no fee', { fee: '' });
 no('fee with three decimals', { fee: '1.001' });
 no('fee negative', { fee: '-1' });
@@ -185,7 +185,7 @@ no('bank fee with three decimals', { bankFee: '1.001' });
 no('no submission id and no amount: the submission id is judged first', { submissionId: '', amount: '' });
 no('no customer id and a bad type: the customer id is judged first', { customerId: '', type: 'XXXXX' });
 no('a bad amount and a bad rate: the amount is judged first', { amount: '1.001', rate: '0' });
-no('a bad rate and a bad fee: the rate is judged first', { rate: '1.00001', fee: '' });
+no('a bad rate and a bad fee: the rate is judged first', { rate: '1.000000001', fee: '' });
 no('a bad fee and no method: the fee is judged first', { fee: '1.001', method: '' });
 no('a fee with three decimals and no bank fee: the fee is judged first', { fee: '1.001', bankFee: '' });
 no('a bad bank fee and no method: the bank fee is judged first', { bankFee: '', method: '' });
@@ -225,7 +225,7 @@ no('a principal 1,597.29 baht above the limit', { type: 'SELL', amount: '9007199
 no('a principal beyond what v2 can count', { type: 'SELL', amount: '100000000', rate: '900719.9255' });
 no('the largest amount at the largest rate', { type: 'SELL', amount: '100000000', rate: '100000000' });
 no('reference rate zero', { referenceRate: '0' });
-no('reference rate with five decimals', { referenceRate: '32.00001' });
+no('reference rate with nine decimals', { referenceRate: '32.000000001' });
 no('reference rate not a number', { referenceRate: 'abc' });
 
 const sentences = [...new Set(cases.map((c) => c.v2Error).filter(Boolean))].sort();

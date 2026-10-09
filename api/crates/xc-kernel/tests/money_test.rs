@@ -123,7 +123,9 @@ fn rate_must_be_positive_plain_and_within_the_cap() {
     ] {
         assert_eq!(Rate::parse(text), Err(NumberError::Invalid), "{text:?}");
     }
-    for text in ["32.12345", "0.00001", "1.00001"] {
+    // RU-1 (ticket author's edit, design docs/design/blueprint/rates.md §9: Blueprint §05 rate
+    // scale 8): a ninth place is too many; up to eight now parse (rate_units_test.rs pins them).
+    for text in ["32.123456789", "0.000000001", "1.000000001"] {
         assert_eq!(
             Rate::parse(text),
             Err(NumberError::TooManyDecimals),

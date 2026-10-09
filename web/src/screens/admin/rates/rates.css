@@ -1,0 +1,181 @@
+.xc-admin .xc-content .admin-rates-screen {
+  display: block;
+}
+
+.xc-admin .xc-content .kiosk-currency-link-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  background: var(--soft);
+  border: 1px solid #edd4df;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 22px;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .kiosk-currency-link-bar p {
+  margin: 0;
+}
+
+.xc-admin .xc-content .kiosk-currency-link-bar a {
+  color: var(--brand);
+  font-weight: bold;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xc-admin .xc-content .rates-section {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.xc-admin .xc-content .section-header {
+  padding: 22px 24px 18px;
+}
+
+.xc-admin .xc-content .title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.xc-admin .xc-content .title-row h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.xc-admin .xc-content .live-note {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.xc-admin .xc-content .last-edited {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.xc-admin .xc-content .rates-table {
+  width: 100%;
+}
+
+.xc-admin .xc-content .code {
+  font-size: 17px;
+  font-weight: bold;
+  letter-spacing: 0.8px;
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+.xc-admin .xc-content .name {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.xc-admin .xc-content .bot-reference-section {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.xc-admin .xc-content .status-row {
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .loading {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.xc-admin .xc-content .bot-error {
+  color: #a5003c;
+  font-size: 13px;
+  margin: 0;
+}
+
+.xc-admin .xc-content .fetched {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.xc-admin .xc-content .comparison-table {
+  width: 100%;
+}
+
+.xc-admin .xc-content .edit-rate-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.xc-admin .xc-content .bot-reference-info {
+  background: var(--soft);
+  border: 1px solid #edd4df;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .bot-line {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.xc-admin .xc-content .no-bot {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.xc-admin .xc-content .save-notice {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 12px;
+}
+
+.xc-admin .xc-content .field {
+  margin-bottom: 16px;
+}
+
+.xc-admin .xc-content .field label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .form-error {
+  color: #a5003c;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.xc-admin .xc-content .rate-history-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .history-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}

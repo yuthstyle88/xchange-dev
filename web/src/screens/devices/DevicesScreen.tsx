@@ -26,6 +26,7 @@ import { deviceNotice } from './banner';
 import { eventsCsv } from './csv';
 import * as table from './i18n';
 import { kindLabel, statusLabel } from './labels';
+import './devices.css';
 
 if (typeof window !== 'undefined' && (import.meta as unknown as { env?: { MODE?: string } }).env?.MODE === 'test') {
   sharedSession().dispose();
@@ -378,6 +379,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   return (
     <AppShell
+      look="devices"
       title={t('heading')}
       nav={
         <nav>
@@ -441,7 +443,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
             <span class="tag">{t('printerTag')}</span>
             <h3>{t('printerName')}</h3>
             <p>{t('printerText')}</p>
-            <label>
+            <label class="check">
               <input
                 type="checkbox"
                 checked={overview()?.printerOnline ?? false}
@@ -495,12 +497,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                 {t('drawerClose')}
               </button>
             </div>
-            <p>{t('drawerNote')}</p>
+            <p class="note">{t('drawerNote')}</p>
           </div>
         </section>
 
         <section class="request-section">
-          <div>{t('requestEyebrow')}</div>
+          <div class="eyebrow">{t('requestEyebrow')}</div>
           <h2>{t('requestHeading')}</h2>
           <button type="button" onClick={handleRefresh} disabled={busy()}>
             {t('refresh')}
@@ -580,7 +582,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                 when={jobs().length > 0}
                 fallback={
                   <tr>
-                    <td colspan="5">{t('noJobs')}</td>
+                    <td colspan="5" class="empty">{t('noJobs')}</td>
                   </tr>
                 }
               >
@@ -633,7 +635,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         </section>
 
         <section class="events-section">
-          <div>{t('eventsEyebrow')}</div>
+          <div class="eyebrow">{t('eventsEyebrow')}</div>
           <h2>{t('eventsHeading')}</h2>
           <p>{t('eventsNote')}</p>
           <div class="events-controls">
@@ -663,7 +665,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                 when={displayedEvents().length > 0}
                 fallback={
                   <tr>
-                    <td colspan="5">{t('noEvents')}</td>
+                    <td colspan="5" class="empty">{t('noEvents')}</td>
                   </tr>
                 }
               >

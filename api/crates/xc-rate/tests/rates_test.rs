@@ -323,7 +323,10 @@ async fn a_request_refused_on_its_own_content_never_reaches_the_source() {
         (with(|c| c.request_id = "short".to_owned()), BAD_REQUEST_ID),
         (with(|c| c.code = String::new()), BAD_TEXT),
         (with(|c| c.buy = "0".to_owned()), BAD_NUMBER),
-        (with(|c| c.sell = "32.60001".to_owned()), TOO_MANY_DECIMALS),
+        (
+            with(|c| c.sell = "32.600000001".to_owned()),
+            TOO_MANY_DECIMALS,
+        ),
         (with(|c| c.sell = "32".to_owned()), SELL_BELOW_BUY),
         (with(|c| c.code = "THB".to_owned()), SELL_BELOW_BUY),
         (with(|c| c.partner_name = "P".to_owned()), PARTNER_PAIR),

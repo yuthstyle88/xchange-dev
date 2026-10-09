@@ -1408,7 +1408,7 @@ async fn create_payload_refusals_in_order() {
         // 6 expectedRate: Rate::parse of the number's text
         ("expectedRate", json!(0), BAD_NUMBER),
         ("expectedRate", json!(-36.25), BAD_NUMBER),
-        ("expectedRate", json!(36.12345), TOO_MANY_DECIMALS),
+        ("expectedRate", json!(36.123456789), TOO_MANY_DECIMALS),
     ];
     for (field, value, sentence) in cases {
         let payload = if value.is_null() {

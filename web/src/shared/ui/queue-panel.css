@@ -1,0 +1,313 @@
+/* Ported from xchange-v2-source@4d0bdbb:src/devices-public/queue-panel.css (LK-3, #632) */
+
+.queue-hub,
+.admin-queue-bar {
+  margin: 18px 28px 0;
+  padding: 18px 22px;
+  border: 1px solid #e7d7df;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 5px 20px #39152b08;
+  color: #2b2430;
+}
+
+.queue-hub-head,
+.queue-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.queue-hub h2,
+.queue-bar-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.queue-hub p,
+.queue-bar-status {
+  margin: 6px 0;
+  color: #716572;
+}
+
+.queue-hub .queue-primary,
+.admin-queue-bar .queue-bar-open-button {
+  margin-left: auto;
+}
+
+.queue-primary,
+.queue-bar-open-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #a5003c !important;
+  color: #fff !important;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.queue-live,
+.queue-workers-list {
+  font-size: 13px;
+  border-top: 1px solid #f0e7eb;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.queue-sound,
+.queue-sound-controls,
+.queue-sound-area {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.queue-sound .xc-queue-tools,
+.queue-sound-area .queue-sound-controls {
+  margin: 0;
+}
+
+.queue-sound small,
+.queue-sound span,
+.queue-sound-controls span {
+  font-size: 11px;
+  color: #776d75;
+}
+
+.queue-dialog {
+  width: min(880px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow: auto;
+  border: 0;
+  border-radius: 22px;
+  padding: 24px;
+  color: #302630;
+  background: #faf8fa;
+  box-shadow: 0 25px 90px #21051140;
+}
+
+.queue-dialog::backdrop {
+  background: #24172399;
+  backdrop-filter: blur(3px);
+}
+
+.queue-dialog-head,
+.queue-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  position: sticky;
+  top: -24px;
+  background: #faf8fa;
+  z-index: 1;
+  padding: 12px 0;
+}
+
+.queue-dialog-head h2,
+.queue-dialog-header h2 {
+  margin: 0;
+  font-size: 23px;
+}
+
+.queue-dialog button,
+.queue-page button,
+.xc-queue-panel button:not(.queue-primary),
+.queue-hub button:not(.queue-primary),
+.admin-queue-bar button:not(.queue-primary):not(.queue-bar-open-button) {
+  cursor: pointer;
+  border: 1px solid #e0d5db;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 16px;
+  font: inherit;
+  color: #6b2945;
+}
+
+.xc-queue-tabs,
+.queue-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.xc-queue-tabs button[aria-pressed=true],
+.queue-tabs button[aria-pressed=true] {
+  background: #a5003c;
+  color: #fff;
+  border-color: #a5003c;
+}
+
+.queue-message,
+.xc-queue-panel [role=status] {
+  font-size: 13px;
+  color: #776778;
+}
+
+.xc-queue-list,
+.queue-list {
+  display: grid;
+  gap: 14px;
+}
+
+.xc-queue-card,
+.queue-order {
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e8dee4;
+  border-radius: 16px;
+}
+
+.xc-queue-card h3,
+.queue-order h3 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.queue-state {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 30px;
+  background: #f8edf1;
+  color: #a5003c;
+}
+
+.queue-refs {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: #80727d;
+}
+
+.queue-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.queue-times dt {
+  font-size: 12px;
+  color: #847482;
+}
+
+.queue-times dd {
+  margin: 3px 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.queue-order-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.queue-assigned {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff5df;
+  color: #805918;
+  font-size: 14px;
+}
+
+.xc-queue-pager,
+.queue-pager {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.queue-empty {
+  padding: 32px;
+  text-align: center;
+  color: #847482;
+}
+
+.queue-toast,
+.admin-queue-toast {
+  position: fixed;
+  right: 22px;
+  top: 24px;
+  z-index: 1050;
+  padding: 18px;
+  background: #fff;
+  border: 2px solid #a5003c;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px #2b092d25;
+  max-width: 340px;
+}
+
+.queue-toast p,
+.admin-queue-toast .toast-text {
+  margin: 0 0 12px;
+}
+
+.queue-toast button,
+.admin-queue-toast button {
+  margin-right: 8px;
+}
+
+.queue-page {
+  max-width: 1000px;
+  margin: 32px auto;
+  padding: 20px;
+  font: 16px/1.6 Tahoma, Arial, sans-serif;
+  color: #302630;
+}
+
+.queue-dialog :focus-visible,
+.queue-hub :focus-visible,
+.admin-queue-bar :focus-visible {
+  outline: 3px solid #a5003c;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .queue-hub,
+  .admin-queue-bar {
+    margin: 12px;
+    padding: 16px;
+  }
+
+  .queue-hub .queue-primary,
+  .admin-queue-bar .queue-bar-open-button {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .queue-times {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-dialog {
+    padding: 16px;
+  }
+
+  .queue-dialog-head,
+  .queue-dialog-header {
+    top: -16px;
+  }
+
+  .queue-toast,
+  .admin-queue-toast {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+
+  .queue-sound small,
+  .queue-sound span,
+  .queue-sound-controls span {
+    display: none;
+  }
+}
