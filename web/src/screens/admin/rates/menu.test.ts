@@ -46,7 +46,18 @@ function texts(): TextsModule {
   return m!;
 }
 
-/** The rates menu's own fixed texts, v2's Thai verbatim (W6), each in the menu's table. */
+/**
+ * The rates menu's own fixed texts, v2's Thai verbatim (W6), each in the menu's table.
+ *
+ * Retired by #602 (RE-5), by its ticket author (claude/e5ab6c), as `docs/design/blueprint/rates.md`
+ * §9 lists (the direct save → publications): the texts of what D-3 and §3.3/§4.2 replace are no
+ * longer required in the table — the LIVE note "THB ต่อ 1 หน่วย" and the panel's "บาทต่อ 1 หน่วย"
+ * (JPY is per 100, §3.1 A1), the server spread header (`published_rates` carries no spread, W7), the
+ * LIVE edit dialog and its save button, title and BoT re-fetch notice (`adminSaveRate` is retired),
+ * the per-1 JPY note (the reference is shown in BoT's own unit, §4.2), the partner name/cost fields,
+ * column and margin (partner quotes become reference data entered after RE-7, §4.1), and the history's
+ * BoT-copy and partner columns (A03 reads publications). Every other text stays.
+ */
 const TEXTS = [
   // the menu record: label, heading (admin-workspace.js:18, :91; admin-html:73)
   'เรทและสกุลเงิน',
@@ -55,8 +66,6 @@ const TEXTS = [
   // the kiosk currency tool, admin-workspace.js:137-138
   'กำหนดสกุลเงินที่ลูกค้าเลือกได้ พร้อมเทียบเรทกสิกร',
   'จัดการสกุลเงินหน้าร้าน →',
-  // the rates section, admin-html:19 with the LIVE wording of :100
-  'เรทหน้าร้านจาก เซิร์ฟเวอร์ · THB ต่อ 1 หน่วยเงินต่างประเทศ',
   'EXCHANGE RATES',
   'เรทหน้าร้าน',
   'เรทที่ผู้ดูแลกำหนด',
@@ -64,25 +73,13 @@ const TEXTS = [
   'สกุลเงิน',
   'ร้านรับซื้อ',
   'ร้านขาย',
-  'ส่วนต่างเรท',
   'ยังไม่ตั้ง',
   'แก้ไขเรท',
-  // the LIVE edit dialog, admin-html:134
-  'ใช้กับรายการใหม่ของหน้าทำรายการ การแก้ไขจะบันทึกผู้แก้และเวลาใน เซิร์ฟเวอร์',
   'ยกเลิก',
-  'บันทึกเรทลง เซิร์ฟเวอร์',
   'เรทร้านขายต้องไม่น้อยกว่าเรทร้านรับซื้อ',
-  // the form's BOT lines and partner fields, rates-reference.js:5, :10
+  // the form's BOT line, rates-reference.js:5, :10
   'ยังไม่มีข้อมูลอ้างอิง',
-  ' · แปลงจากต่อ 100 เยนเป็นต่อ 1 เยนแล้ว',
-  'ระบบจะดึงและบันทึกเรท ธปท. ใหม่อีกครั้งตอนกดบันทึก หากดึงไม่ได้จะยังไม่ปรับเรทร้าน',
-  'ชื่อคู่ค้า',
-  'ไม่ระบุได้ หากยังไม่มีต้นทุนคู่ค้า',
-  'กรอกชื่อคู่ค้าและเรทต้นทุนให้ครบคู่',
   // the BOT panel, rates-reference.js:7
-  'BOT REFERENCE / PARTNER COST',
-  'เทียบเรท ธปท. และต้นทุนคู่ค้า',
-  'บาทต่อ 1 หน่วยเงินต่างประเทศ · ธปท. เผยแพร่เรทถัวเฉลี่ยรายวัน · ตรวจข้อมูลทุก 60 วินาทีขณะเปิดหน้านี้',
   'กำลังดึงข้อมูล ธปท.…',
   'โหลดเรท ธปท. ล่าสุด',
   'ประวัติการปรับเรท',
@@ -90,15 +87,9 @@ const TEXTS = [
   'คู่เงิน',
   'ร้านรับซื้อ / ขาย',
   'ธปท. ซื้อตั๋ว / โอน / ขาย',
-  'ต้นทุนจากคู่ค้า',
-  'ส่วนต่างขาย − ต้นทุน',
-  'ยังไม่ระบุ',
   // the history dialog, rates-reference.js:8
-  'ค่า ธปท. ที่เซิร์ฟเวอร์ดึงขณะบันทึกแต่ละครั้ง · รายการเก่าอาจยังไม่มีค่าอ้างอิง',
   'เวลา / ผู้แก้',
   'คู่เงิน / เรทร้าน',
-  'คู่ค้า / ต้นทุน',
-  'สำเนาเรท ธปท.',
 ] as const;
 
 /** The start of each of v2's sentences that carry a value (a code, a time, a figure). */
@@ -106,14 +97,11 @@ const TEMPLATES = [
   // admin-html:68
   'แก้ไขล่าสุด ',
   'แก้ไขเรท ',
-  // admin-html:134
-  'ตั้งเรทจริง ',
   // rates-reference.js:5, :7, :8, :10
   'ธปท. วันที่ ',
   'ดึงข้อมูล ',
   'ดึงข้อมูลล่าสุด ',
   'ประวัติการปรับเรท · ',
-  'เรทที่ร้านรับซื้อจากคู่ค้า (THB ต่อ 1 ',
 ] as const;
 
 describe('V2-rates: the menu record (#468 §7; design §12.3)', () => {

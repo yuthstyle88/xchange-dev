@@ -1,0 +1,33 @@
+export const th = {
+  label: 'คำขออนุมัติ',
+  eyebrow: 'APPROVALS',
+  title: 'คำขออนุมัติ',
+  subtitle: 'รายการคำขอที่รอการอนุมัติสำหรับสาขาที่เลือก',
+  approve: 'อนุมัติ',
+  reject: 'ปฏิเสธ',
+  decisionReason: 'เหตุผลการตัดสินใจ',
+  reasonRequired: 'ต้องระบุเหตุผลเมื่อปฏิเสธ',
+  sideBUY: 'รับซื้อ',
+  sideSELL: 'ขาย',
+  requestedBy: 'ผู้ขออนุมัติ: ',
+  empty: 'ไม่มีคำขอที่รออนุมัติ',
+  ratePublication: 'เผยแพร่เรท',
+  pending: 'รออนุมัติ',
+};
+
+export const en = {
+  label: 'Approvals',
+  eyebrow: 'APPROVALS',
+  title: 'Approvals',
+  subtitle: 'Pending approval requests for the selected branch',
+  approve: 'Approve',
+  reject: 'Reject',
+  decisionReason: 'Decision reason',
+  reasonRequired: 'Reason is required for rejection',
+  sideBUY: 'Buy',
+  sideSELL: 'Sell',
+  requestedBy: 'Requested by: ',
+  empty: 'No pending approval requests',
+  ratePublication: 'Rate Publication',
+  pending: 'Pending',
+};
