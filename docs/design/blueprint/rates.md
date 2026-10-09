@@ -508,6 +508,56 @@ A quote and its stored row keep the line id and the rate snapshot. A later publi
 
 ---
 
+### 4.9 The readers after RE-4, and how RE-4 is split (lane controller's ruling, 2026-10-09)
+
+RE-4 #601 was too big for one ticket. Its first up-front tests needed files far outside its scope, and turned 66
+existing tests red. It is split into five tickets. **RE-4a** (#601, narrowed) is migration 5 alone. **RE-4b…e** each
+switch one family of readers. The rules below are shared by all five, so that each ticket's tests pin the same
+contract.
+
+**Rules every reader follows**
+
+| # | Rule | Why |
+|---|---|---|
+| R1 | **Storage is per unit.** A row a reader writes stores the line's `rate` (scale 8, per `unit_size`), its `unit_size` and its `published_rate_line_id`. | §4.8: a quote and its row keep the line id and the rate snapshot |
+| R2 | **Every THB figure** is `ExchangeArithmetic::thb(quantity, rate, unit_size)`, HALF_UP once (§3.2). No reader divides or multiplies a rate by hand. | one arithmetic (§3.2) |
+| R3 | **The v2-compat wire stays per 1.** These surfaces keep v2's shape, and with it v2's per-1 rate: `adminSnapshot.rates[]`, `adminDeskConfig`, the kiosk JSON `rate`, and the v2 booking JSON. That rate is `rate ÷ unit_size`, exact, normalised, through **one** function, `CompatRate::per_one(rate, unit_size) -> Decimal` (`api/crates/xc-kernel/src/money/compat_rate.rs`, created by RE-4b). The kept v2 desk computes `amount × rate` per 1, so a per-100 JPY there would be 100× wrong. v3 views and every stored row speak per unit (R1). | the kept v2 pages until V4 (`xchange-v3-web.md` §7) |
+| R4 | **One check before a write.** A reader that quoted from a line, and later writes on that quote (kiosk confirm, booking confirm), refuses when the branch's current line for that (currency, side) is not the stored line id. It answers with its existing "the rate changed" refusal, and writes nothing. The v2 desk save has no line id on the wire. It is accepted only when the client's per-1 rate equals the current line's `per_one`; otherwise `RATE_MISMATCH`. The row then stores the current line. | §4.8 guards; v2's own "rate changed" sentences kept |
+| R5 | **Stale.** `StalePolicy::admits(side, thb)` uses the stale settings of the policy version **the line was published under** (`source_snapshot.policy_version_id`), the same rule as quotes (`quote-transaction.md` §4.3). A refusal is the reader's existing "no rate for this currency" answer. | §4.8 "of the policy version it was published under"; A7 |
+| R6 | **Booking confirm** compares the line stored at create with the current line (R4). It never re-locks a new line silently (`booking_machine.rs:84-97` today re-reads the rate). A moved line refuses confirm, and the customer books again. | a booking's price is the price the customer saw (§05) |
+| R7 | **Kiosk-vouched desk save.** A desk save that completes a kiosk request stores **the request's** line id and rate. The customer was quoted that at the kiosk, and the kiosk confirm already applied R4. It is not re-checked against a newer publication; the request's own validity governs. | one price per customer journey |
+| R8 | **`transaction_form.rs`** checks the principal limit and fees on R2's figure, not on `amount × per-1 rate`. | R2 |
+| R9 | **Admin and report readers** read each row's `unit_size` and go through R2. Rows with a NULL line id (before RE-4) show their own stored rate (§8 migration 5). | §8 migration 5 "Readers" |
+| R10 | **`adminSnapshot`** reads `PublishedRates::current` for `rates[]` (R3): `updated` = `published_at`; `requestId` `""`; `partnerName`/`partnerCost` from `source_snapshot.partner` (else `""`/null); `botReference` `""`; `rateHistory` stays on `rates` until RE-7 drops it, then `[]`. `adminSaveRate` still writes `rates` until RE-7, but its answer (`write_answer(snapshot)`) shows the publication, so a direct save is no longer visible in it. | D-3; v2 shape kept |
+
+**Open, for the owner (§10 O-6):** a **DEMO** save (`Mode::Demo`, "SAMPLE / DEMO — NOT A VALID RECEIPT") prices from
+what the teller typed today. Does it read the publication, or keep its typed rate?
+- **Recommendation: it keeps its typed rate.** It stores a NULL line id and the register's `unit_size`, and never
+  reads publications, because a demo moves no stock and no money.
+- RE-4c pins the LIVE path only until the owner answers.
+
+**Who owns which file (no two RE-4 tickets reserve the same one):**
+
+| Ticket | Readers | Files it reserves | Owns these signatures |
+|---|---|---|---|
+| RE-4a #601 | — | `api/migrations/20261010125000_published_rate_line_ids.sql` | the three columns |
+| RE-4b | kiosk quote and confirm, the kiosk JSON | `xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs`, `…/value_objects/{counter_facts,kiosk_quote,counter_view}.rs`, `…/repositories/{kiosk_ports,kiosk_repository}.rs`, `xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs`, `xc-kiosk/src/application/kiosk/customer.rs`, `api/src/infrastructure/kiosk/kiosk_ports.rs`, `xc-kernel/src/money/compat_rate.rs` (new) | `KioskPorts`, `KioskRepository`, `CompatRate` |
+| RE-4c | desk save, `transaction_form`, `adminSnapshot`/`adminDeskConfig` | `api/src/application/workflows/save_transaction.rs`, `xc-exchange/src/domain/exchange/repositories/transaction_repository.rs`, `xc-exchange/src/infrastructure/exchange/transaction_repository.rs`, `xc-exchange/src/domain/exchange/value_objects/transaction_form.rs`, `api/src/application/compat/{snapshot,v2_json}.rs` | `TransactionRepository` |
+| RE-4d | bookings | `xc-exchange/src/domain/booking/entities/booking_machine.rs`, `…/repositories/{booking_ports,booking_repository}.rs`, `xc-exchange/src/infrastructure/booking/booking_repository.rs`, `api/src/infrastructure/bookings/booking_ports.rs` | `BookingPorts` (`counter_rate_in` returns the line, not `Option<Rate>`), `BookingRepository` |
+| RE-4e | admin and report readers | `api/src/presentation/dto/v3/transaction_row.rs`, `api/src/presentation/http/v3/views/{admin_cash,admin_reports,admin_transactions,admin_slips,admin_overview,admin_customer_history}.rs`, `api/src/infrastructure/devices/device_service.rs`, `api/src/presentation/pages.rs` | — |
+
+- **CompatRate.** RE-4c and RE-4d consume it. If RE-4b has not merged, each declares the same one-line stub in its own
+  file, with a comment that it moves to `compat_rate.rs` (📐 fallback), and deletes the stub when it rebases.
+- **RE-6 #603 adds `published_both_sides_in` to `KioskRepository`**, a file RE-4b reserves. **RE-6 merges after RE-4b**
+  and adds its method on top.
+- **RE-4b…e start after RE-4a** (they write its columns). They run in parallel with each other.
+- **They deploy together with RE-4a, and only when §8's gate counts 0** (RE-4a's done criterion 3).
+- **v2 replay fixtures.** The ~53 replay steps that show an `adminSaveRate` rate in the next snapshot contradict D-3.
+  RE-4c's up-front test commit re-expects them, one commit per fixture group with the reason, so its implementer never
+  edits a provided test.
+
+---
+
 ## 5. Approvals and audit (#549)
 
 ### 5.1 Tables
@@ -1033,7 +1083,11 @@ Each ticket owns disjoint files. The order is by start dependency.
 | RE-1 | engine domain, tables and services | `xc-rate` `domain/{reference,policy,draft,publication}/**`, `application/{reference,draft,publication,approval}/**`, `infrastructure/{reference,policy,draft,publication}/**`; migration 4 | RU-1, AP-1 |
 | RE-2 | BoT adapter writes batches | `xc-rate/src/infrastructure/rate/bot_rate_source.rs` and its tests, `commands/rate_reference_fetch.rs` and `bootstrap/mod.rs` (`AppState::rate_source`, §4.2) | RU-1, RE-1 |
 | RE-3 | routes: the views and commands of §4.7, the policy rows of §6 | `api/src/presentation/http/v3/views/{published_rates,staff_published_rates,rate_drafts,rate_draft,rate_publications,rate_policy,approval_requests}.rs`, `http/v3/commands/**`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/.../policy.rs` | RE-1, CM-1 |
-| RE-4 | readers switch to `PublishedRates` and `ExchangeArithmetic` | `kiosk_machine.rs`, `kiosk_ports.rs`, `save_transaction.rs` (rate check and stored line), `booking_ports.rs`, `booking_machine.rs`, `snapshot.rs` (rates part), `transaction_row.rs`, `admin_cash.rs`, `admin_reports.rs`, `device_service.rs`, `pages.rs` (customer page), migration 5 | RE-3. **Deploys only after RE-5 is deployed** and the §8 migration 5 gate counts 0. Split per reader if the controller prefers; no file is shared with DK-A…DK-J |
+| RE-4a #601 | migration 5 alone (columns, stored-rate conversion, deploy gate) | migration 5 | RE-3. **Deploys only with RE-4b…e**, after RE-5 is deployed and the §8 gate counts 0 |
+| RE-4b | kiosk on the line (R1–R5), `CompatRate` | §4.9 table | RE-4a |
+| RE-4c | desk save, `transaction_form`, `adminSnapshot`/`adminDeskConfig` (R1–R5, R7, R8, R10); the v2 replay fixtures re-expected in its test commit | §4.9 table | RE-4a |
+| RE-4d | bookings (R1–R6) | §4.9 table | RE-4a |
+| RE-4e | admin and report readers (R2, R9) | §4.9 table | RE-4a |
 | RE-5 | admin screens A02, A03, A06 | `web/src/screens/admin/rates/**` (rebuilt), `web/src/screens/admin/approvals/**` (new), `web/src/shared/ui/rate.ts` | RE-3 |
 | RE-6 | kiosk-currencies screen and `configure` on publications | `web/src/screens/kiosk-currencies/**`, `xc-kiosk/src/application/kiosk/currencies.rs`, `views/kiosk_currencies.rs` | RE-3 |
 | RE-7 | retire the direct save | `xc-rate` `application/rate/service.rs` (`save_rate` removed), `rpc.rs` `adminSaveRate`, `Quote::compute` removed, migration 6, `publication/publish_service.rs` (partner read moves from `rates` to the `'PARTNER'` reference lines), `draft/rate_draft_service.rs` (AUTO lookup filtered to `reference_type = 'BOT'`), the tests that only pinned the old save | RE-4, RE-5, RE-6, DK-B #538 |
@@ -1114,11 +1168,26 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
   - every route's role row (OWNER, RATES, others refused; StaffRpc takes the staff session only);
   - `published_rates` answers 8-place strings with `unit_size`;
   - the version moves on publish.
-- **RE-4**
-  - a kiosk quote stores the line id;
-  - a publish between quote and confirm refuses confirm;
-  - the desk save's `RATE_MISMATCH` comes on a line-id mismatch;
-  - a JPY save at 23.5 per 100 for 1000 JPY gives principal 235.00.
+- **RE-4a**: migration 5 converts stored JPY/KRW rates × unit and adds the nullable line ids; the gate SQL on the
+  worked case.
+- **RE-4b**:
+  - a kiosk quote stores the line id, rate and unit;
+  - a publish between quote and confirm refuses confirm (R4);
+  - the kiosk JSON rate is per 1 (R3);
+  - BUY rounds HALF_UP once (R2).
+- **RE-4c**:
+  - a JPY save at 23.5 per 100 for 1000 JPY gives principal 235.00;
+  - `RATE_MISMATCH` when the client's per-1 rate is not the current line's (R4);
+  - the row stores the current line;
+  - a kiosk-vouched save stores the request's line (R7);
+  - `adminSnapshot.rates[]` is the publication per 1 (R10).
+- **RE-4d**:
+  - create stores the line;
+  - confirm refuses when the current line moved (R6);
+  - a JPY booking stores the rate per 100.
+- **RE-4e**:
+  - the transaction row, reports, cash and devices divide by each row's unit (R9);
+  - a NULL-line row shows its stored rate.
 - **RE-5 / RE-6** (screens):
   - draft → simulate → submit → publish;
   - MANUAL keeps its value under "adjust all";
@@ -1144,6 +1213,7 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 | O-3 | The approval matrix for reversal, campaign, cash variance and transfer | those areas' designs (#552, #560, #553), not this one |
 | O-4 | Moving the existing audit tables into `audit_events` | nothing now; a later cleanup |
 | O-5 | Roles beyond OWNER/RATES (Blueprint EXECUTIVE, RATE_MANAGER with assigned branches) | #550 (org and roles). `RatePublicationPolicy` is one file, so #550 changes it in one place |
+| O-6 | Does a DEMO desk save read the publication or keep its typed rate? Recommended: keep its typed rate, NULL line id, register `unit_size` (§4.9) | RE-4c's DEMO path only; LIVE is pinned |
 
 ---
 
