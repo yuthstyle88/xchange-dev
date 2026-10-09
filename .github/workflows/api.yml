@@ -175,8 +175,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
