@@ -96,17 +96,22 @@ Still open with the owner (§10): the BoT API's usage rights and its read schedu
 - **D-2. Foreign amounts follow the currency's minor unit** (§05). `currencies.minor_unit` comes from ISO 4217: JPY 0,
   KRW 0, USD 2, and so on. An amount with more places than its currency allows is refused (`TooManyDecimals`), never
   rounded.
-  - **Storage is `numeric(20,4)`** for every foreign amount, widened from `(20,2)` in migration 1:
-    - the exchange rows: `transactions.amount`, `kiosk_requests.foreign_amount`, `kiosk_requests.input_amount`
-      (foreign on a BUY by foreign amount, THB on a SELL by baht: `kiosk_machine.rs:48-57`), `bookings.amount`;
-    - **the till**, which is per currency: `shift_balances.opening/expected/counted/difference` and
-      `stock_movements.amount` (`20261007110000_shifts.sql:20-24`, `:35`). Every exchange moves `expected` for its
-      currency, so the till must hold what the exchange holds.
-
-    THB rows in those tables still carry 2 places, which the domain enforces. That is the Blueprint's own quantity type (§07
-    `QuoteLine.quantity DECIMAL(20,4)`, `Denomination.face_value DECIMAL(20,4)`), and it holds the 3-place minor units
-    of the seeded BHD, IQD, JOD, KWD, LYD, OMR and TND (`20261007100000_branches_rates.sql:62,105,109,116,124,145,174`).
-    The domain refuses more places than `minor_unit` allows. THB-only columns stay `(20,2)`.
+  - **Storage: new columns are `numeric(20,4)`; old columns are not widened here** (corrected for #595, measured).
+    - Every **new** column that holds a foreign quantity is `numeric(20,4)` from the start: §07
+      `QuoteLine.quantity DECIMAL(20,4)`, `Denomination.face_value DECIMAL(20,4)`, #551's `quote_lines` and
+      `transaction_lines`, and #582's cash tables. That holds the 3-place minor units of the seeded BHD, IQD, JOD, KWD,
+      LYD, OMR and TND (`20261007100000_branches_rates.sql:62,105,109,116,124,145,174`).
+    - The **old** columns stay `numeric(20,2)`: `transactions.amount`, `kiosk_requests.foreign_amount/input_amount`,
+      `bookings.amount`, `shift_balances.*` and `stock_movements.amount`. Their readers decode them at 2 places, so
+      widening them in migration 1 broke every shift open (`undecodable shift_balances.opening: 100000.0000`, the
+      workspace run against RU-1's implementation, #595). Each old column is retired with its reader, never widened in
+      place:
+      - `transactions.amount` → #551's `transaction_lines.quantity` (its cleanup drops the wide column);
+      - `kiosk_requests` amounts → #551 TX-7 (the kiosk quotes through `QuoteService`);
+      - `bookings.amount` → #555's booking design;
+      - `shift_balances`, `stock_movements` → #553's ledger.
+    - **Until then**, the old write paths parse amounts at 2 places (`TransactionForm`, the kiosk, bookings), so a
+      3-place amount is refused there, never rounded into a 2-place column.
   - **In the domain**, `ForeignAmount` (`xc-kernel/src/money/foreign_amount.rs`) is its own scale-4 decimal. It is not
     `Money`, which is fixed at scale 2 (`money.rs:44`, `:51`, `:69`), and it converts to `Money` only for THB.
   - **Custody's JSON amounts** are encoded as `Money` minor units (cents) today (`custody_repository.rs`
@@ -204,7 +209,10 @@ Stored rows keep what was true when they were written. `transactions`, `kiosk_re
 
 - **Scale.** `Rate::parse` accepts up to 8 places and stores scale 8 (`numeric(20,8)`). `RatePercent`
   (`api/crates/xc-kernel/src/money/rate_percent.rs`) is a signed decimal at scale 4 (`numeric(9,4)`).
-- **On the wire.** A rate is the 8-place string the database holds, e.g. `"23.50000000"`.
+- **`Rate`'s text.** `Rate::value()` and `Display` give **at least 4 and at most 8 places**: `"32.1000"`,
+  `"0.02152"`, `"23.50000000"` → `"23.5000"`. A rate with 4 places or fewer prints exactly as today, so v2's
+  strings, the save digest (`save_transaction.rs:83`) and the provided `rate_value_test.rs` stay as they are.
+- **On the wire.** A rate in a published-rates view is the 8-place string the database holds, e.g. `"23.50000000"`.
   - Desk (PR 536 D-12) and staff (PR 532 S10) treat it as opaque, and must.
   - One web formatter, `formatRate(text)` (`web/src/shared/ui/rate.ts`), shows at least 2 and at most 8 places with
     trailing zeros trimmed, followed by `/ <unit_size> <code>` when `unit_size > 1`. No screen formats a rate itself.
@@ -433,11 +441,14 @@ implemented by `PgPublishedRates` (`api/crates/xc-rate/src/infrastructure/public
 ```rust
 // Ports return BoxFuture, as the repo's ports do (`xc-rate/src/domain/rate/entities/rate_source.rs:14-16`), so they
 // are usable as `Arc<dyn …>`; the repo has no `async_trait`.
+// "In the caller's transaction" = the `sqlx::Transaction<'_, Postgres>` that `BranchTx::run` hands its closure
+// (`xc-kernel/src/branch_tx.rs:55-62`), as `xc-shift/src/domain/custody/repositories/custody_repository.rs:15-36` does.
+// A port never takes `BranchTx` itself: `BranchTx` opens a transaction of its own.
 pub trait PublishedRates: Send + Sync {
     /// The branch's current publication and its lines; None before the first publication.
     fn current<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<Option<Publication>>>;
     /// One line of the current publication for a side, in the caller's transaction.
-    fn line_in<'a>(&'a self, tx: &'a mut BranchTx, branch: &'a BranchId, code: CurrencyCode, side: Side)
+    fn line_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, branch: &'a BranchId, code: CurrencyCode, side: Side)
         -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
 }
 pub struct PublicationRef { pub id: PublicationId, pub version: i32 }
@@ -504,7 +515,7 @@ pub trait ApprovalSubject: Send + Sync {
     /// The current hash of the object; a decision is refused if it moved.
     fn version_hash<'a>(&'a self, object_id: &'a str) -> BoxFuture<'a, AppResult<String>>;
     /// What happens on APPROVED / REJECTED (e.g. the draft's status), in the caller's tx.
-    fn on_decided<'a>(&'a self, tx: &'a mut BranchTx, object_id: &'a str, outcome: Outcome)
+    fn on_decided<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, object_id: &'a str, outcome: Outcome)
         -> BoxFuture<'a, AppResult<()>>;
 }
 // api/crates/xc-approval/src/domain/policy.rs
@@ -518,11 +529,13 @@ pub trait ApprovalPolicy: Send + Sync {
 ```
 
 - **`ApprovalService`** (`api/crates/xc-approval/src/application/approval_service.rs`) provides
-  `request(subject, object_id, payload, by, key)`, `decide(request_id, who, outcome, reason, key)` and
-  two core methods for decisions written at submit:
-  - `decide_by_policy(request_id, policy_version)` writes the in-bound decision with
+  `request(tx, subject, object_id, payload, by, key)`, `decide(tx, request_id, who, outcome, reason, key)` and
+  two core methods for decisions written at submit. Every method takes the caller's transaction first (the same
+  `&mut Transaction<'_, Postgres>` as `on_decided`), and the caller commits, so a submit and its decision are one
+  transaction (§4.6):
+  - `decide_by_policy(tx, request_id, policy_version)` writes the in-bound decision with
     `approver_id = "policy:<version>"`;
-  - `decide_self(request_id, who, reason)` writes a proposer's own decision, only when the type's
+  - `decide_self(tx, request_id, who, reason)` writes a proposer's own decision, only when the type's
     `ApprovalPolicy::allows_self_decision(who)` is true (A5), with the audit row.
 
   It is generic over `Arc<dyn ApprovalSubject>` + `Arc<dyn ApprovalPolicy>`, held in a registry keyed by
@@ -766,38 +779,22 @@ edited: sqlx checksums them.
   'JPY'`, the same with `1000` for `KRW`, and the ISO 4217 minor units.
 - `CREATE TABLE denominations …` with one `ALL` row per currency.
 - Widen every rate column to `numeric(20,8)`: `rates.buy/sell/partner_cost`, `transactions.rate/reference_rate`,
-  `kiosk_requests.rate` and `bookings.rate`. Widen the foreign amounts to `numeric(20,4)` (D-2):
-  `transactions.amount`, `kiosk_requests.foreign_amount`, `kiosk_requests.input_amount`, `bookings.amount`,
-  `shift_balances.opening/expected/counted/difference` and `stock_movements.amount`. The CHECKs keep their meaning.
-- **First add** `unit_size numeric(20,4) NOT NULL DEFAULT 1` to `transactions`, `kiosk_requests` and `bookings`.
-  **Then** convert their rows:
-
-  ```sql
-  UPDATE <table> t SET rate = t.rate * c.unit_size, unit_size = c.unit_size
-    FROM currencies c WHERE c.code = t.<currency column> AND c.unit_size <> 1;
-  ```
-
-  `rates` has no `unit_size` column and gets none. Its `buy`, `sell` and `partner_cost` are multiplied by the
-  currency's `unit_size` in place, and RE-1's backfill copies `unit_size` from `currencies` into published line 1.
-
-  The currency column is `code` on `transactions` (`20261007190000_transactions.sql:15`), `bookings`
-  (`20261008130000_bookings.sql:22`) and `rates`, but `currency` on `kiosk_requests` (`20261007170000_kiosk.sql:12`).
-
-  `transactions.reference_rate` gets the same multiplication. Count before deploy:
-
-  ```sql
-  SELECT 'transactions', count(*) FROM transactions WHERE code IN ('JPY','KRW') UNION ALL
-  SELECT 'kiosk_requests', count(*) FROM kiosk_requests WHERE currency IN ('JPY','KRW') UNION ALL
-  SELECT 'bookings', count(*) FROM bookings WHERE code IN ('JPY','KRW') UNION ALL
-  SELECT 'rates', count(*) FROM rates WHERE code IN ('JPY','KRW');
-  ```
-
-  Stored principals do not change: `amount × (rate × u) ÷ u` is the same THB.
-- **Deploy order:** the migration runs at boot with the new binary (embedded, `sqlx::migrate!`). The old binary cannot
-  read a scale-8 JPY rate as per-1, so there is no mixed running. One binary at a time, as v3 has always deployed.
-- **`down` loses** `unit_size`, `minor_unit` and the denominations, and divides the converted rates back. Narrowing to
-  `(14,4)` and `(20,2)` truncates rates with more than 4 places and amounts with 3–4 places, including till balances
-  and stock movements, so `down` is written but lossy, and says so in a comment.
+  `kiosk_requests.rate` and `bookings.rate`. Their readers parse with `Rate::parse`, which takes up to 8 places, so they
+  read the wider columns unchanged. The CHECKs keep their meaning.
+- **No amount or till column is widened** (D-2, corrected for #595): their readers decode at 2 places, and each is
+  retired with its reader instead.
+- Add `unit_size numeric(20,4) NOT NULL DEFAULT 1` to `transactions`, `kiosk_requests` and `bookings`. **No row is
+  converted here.** Every existing and new row keeps `unit_size 1` and its per-1 rate, which is exactly what today's
+  readers compute with (`amount × rate`).
+  - **Why not convert here.** The readers switch to `ExchangeArithmetic` only in RE-4. If this migration multiplied JPY
+    and KRW rates by 100 and 1000 while the RE-3 binary still quotes `amount × rate`, every JPY and KRW quote would be
+    100× and 1000× too high until RE-4. Found while cutting the tickets.
+  - The conversion moves to migration 5, which ships with the readers that understand it.
+  - `rates` stays per-1 and gets no column; RE-1's backfill converts it into publication 1 (migration 4).
+- **Deploy order:** this migration ships with the RU-1 binary. The pre-RU-1 binary also works on the schema: the columns
+  are only wider, and `unit_size` has a default. So a rollback of the binary alone is safe.
+- **`down` loses** `unit_size`, `minor_unit` and the denominations. Narrowing the rate columns back to `(14,4)`
+  truncates rates with more than 4 places, so `down` is written but lossy, and says so in a comment.
 
 **2. `api/migrations/20261010110000_approvals.sql`** (AP-1)
 
@@ -814,12 +811,16 @@ edited: sqlx checksums them.
 - Creates the tables of §4.1 and `branches.current_publication_id`.
 - **Backfill.** For each branch with `rates` rows, the migration builds **publication version 1** from the newest
   row per (branch, code):
-  - lines are MANUAL with `source_snapshot = {"migrated_from": "rates", "rates_id": …, "reference": <rates.reference>}`;
+  - lines are MANUAL, with `buy_rate`/`sell_rate` = the `rates` row's per-1 value **× `currencies.unit_size`**, and
+    `unit_size` copied from `currencies` (JPY 23.5 per 1 → 2350 per 100 is wrong; 0.235 per 1 → 23.5 per 100 is right);
+  - `source_snapshot = {"migrated_from": "rates", "rates_id": …, "per_one": <the original values>, "reference": <rates.reference>}`;
   - `published_by` = that row's `updated_by`;
   - because `approved_request_id` is NOT NULL (§07), the migration also writes one `RATE_PUBLICATION` request per
     branch, with a decision `{approver_id: "migration", reason: "migrated_from_rates"}`, so the audit shows where
     version 1 came from;
-  - the branch pointer is set to it.
+  - the branch pointer is set to it;
+  - `published_at` = the migration's `now()`. Every `rates` row that fed it is older, which is what RE-4's deploy gate
+    (migration 5) counts from.
 
   Count first:
 
@@ -838,15 +839,96 @@ edited: sqlx checksums them.
 
 - Adds `published_rate_line_id uuid NULL REFERENCES published_rate_lines(id)` to `transactions`, `kiosk_requests` and
   `bookings`.
-- **Existing rows** get `NULL`. They were written before publications existed. Their rate, `unit_size` and principal
-  are already stored on the row (migration 1), so nothing reads the line id to show them.
+- **Converts the stored rates to per-`unit_size`**, in the same migration as the readers that use them (moved here from
+  migration 1):
+
+  ```sql
+  UPDATE <table> t SET rate = t.rate * c.unit_size, unit_size = c.unit_size
+    FROM currencies c WHERE c.code = t.<currency column> AND c.unit_size <> 1 AND t.unit_size = 1;
+  ```
+
+  - `transactions.reference_rate` gets the same multiplication.
+  - The currency column is `code` on `transactions` and `bookings`, and `currency` on `kiosk_requests`.
+  - Stored principals do not change, because `amount × (rate × u) ÷ u` is the same THB.
+  - Count before deploy:
+
+  ```sql
+  SELECT 'transactions', count(*) FROM transactions WHERE code IN ('JPY','KRW') AND unit_size = 1 UNION ALL
+  SELECT 'kiosk_requests', count(*) FROM kiosk_requests WHERE currency IN ('JPY','KRW') AND unit_size = 1 UNION ALL
+  SELECT 'bookings', count(*) FROM bookings WHERE code IN ('JPY','KRW') AND unit_size = 1;
+  ```
+- **Existing rows** get a `NULL` line id. They were written before publications existed. Their rate, `unit_size` and
+  principal are on the row, so nothing reads the line id to show them.
 - **Readers.** A `NULL` line id means "recorded before publications": the row shows its own stored rate. Only rows
   written after RE-4 carry a line id, and only those are checked against the current line (§4.8). There is no
   backfill: matching an old row to publication 1's line would claim a link that never existed.
-- **Deploy order.** It ships with the RE-4 binary. The RE-1 binary does not read the column, so it is unaffected.
-- **`down`** drops the three columns and loses only the links. The rates stay on the rows.
+- **Deploy order.** It ships **only** with the RE-4 binary, whose readers use `ExchangeArithmetic` with each row's
+  `unit_size`. A pre-RE-4 binary must not run after it, because it would read a converted JPY rate as per-1.
+- **Deploy gate: every rate saved directly in the window is what the current publication says.** From RE-1's deploy
+  (migration 4 builds publication 1) until RE-4's, the readers still read `rates`, and `adminSaveRate` and kiosk
+  `configure` keep appending to it. At RE-4's deploy the readers switch to the current publication. A rate saved directly
+  in that window would then silently change to whatever the current publication holds for that currency, or become
+  unavailable if it holds no line. Migration 5 does **not** publish those rows itself: a publication nobody approved
+  would bypass the Blueprint's draft → approve → publish (§4.6; owner, 2026-10-09, #564).
 
-**6. `api/migrations/20261010130000_drop_rates.sql`** (RE-7)
+  The gate decides **per (branch, code), against that currency's line** in the branch's current publication, not
+  against the publication's time. Before RE-4's binary and migration 5 deploy, this count must be **0**:
+
+  ```sql
+  -- per (branch, code): the newest direct-save row saved after the branch's first publication,
+  -- against that code's line in the branch's current publication
+  WITH latest AS (
+    SELECT DISTINCT ON (r.branch_id, r.code) r.branch_id, r.code, r.buy, r.sell, r.updated_at
+      FROM rates r ORDER BY r.branch_id, r.code, r.id DESC
+  ), first_pub AS (
+    SELECT branch_id, min(published_at) AS at FROM rate_publications GROUP BY branch_id
+  )
+  SELECT count(*)
+    FROM latest l
+    JOIN currencies c ON c.code = l.code
+    JOIN branches b ON b.id = l.branch_id
+    LEFT JOIN first_pub f ON f.branch_id = l.branch_id
+    LEFT JOIN published_rate_lines pl
+      ON pl.publication_id = b.current_publication_id
+     AND pl.currency_code = l.code AND pl.denomination_group = 'ALL'
+   WHERE (f.at IS NULL OR l.updated_at > f.at)                    -- saved inside the window
+     AND (pl.id IS NULL                                           -- no line: the currency would vanish
+          OR pl.buy_rate  IS DISTINCT FROM l.buy  * c.unit_size   -- the line says something else
+          OR pl.sell_rate IS DISTINCT FROM l.sell * c.unit_size);
+  ```
+
+  - **Why "after the first publication".** Rows saved before RE-1 are publication 1's source (migration 4 takes the
+    newest row per pair, × `unit_size`). A later approved publication that changes such a currency is a deliberate
+    change, not a revert, so those rows are not counted.
+  - **Why values, not times.** A `rates` row is per 1, and a line is per `unit_size` (migration 4's own conversion), so
+    `l.buy * c.unit_size` is the line's figure for the same rate. `IS DISTINCT FROM` counts a side the line leaves
+    NULL. A later publication of another currency clears nothing: only a line that says the same rate does.
+  - **Worked case** (the review's, PR 594 issuecomment of 04:20Z):
+    1. RE-1 deploys; publication 1 has JPY = X (`f.at` = its `published_at`).
+    2. At T1, staff save JPY = Y through `adminSaveRate`; the readers quote Y.
+    3. At T2, a RATE_MANAGER publishes version 2 through RE-5 to change USD. Its JPY line still holds X (carried or
+       AUTO), or has no JPY line at all.
+    4. The gate counts JPY: `T1 > f.at`, and the line is X ≠ Y, or missing. RE-4 does not deploy.
+    5. It clears in one of two ways, both measurable by the same count: publish Y through RE-5 (the line becomes Y),
+       or, if X was chosen on purpose, save X through `adminSaveRate` so the newest direct row agrees with the line.
+       Either way the price the customer sees does not change at RE-4's deploy.
+  - Drop the outer `count(*)` (select `l.*, pl.buy_rate, pl.sell_rate`) to list the pairs.
+  - **Between RE-5's deploy and RE-4's**, a publication made through RE-5 is not yet what the kiosk or the desk quotes
+    (they read `rates` until RE-4). Staff who change a rate in that window enter it in both places; the gate catches
+    what they miss.
+  - **This orders the releases: RE-5 merges and deploys before RE-4 deploys** (§9).
+- **Between RE-4 and RE-7**, the old direct save (`adminSaveRate`, kiosk `configure`) still writes per-1 rows to `rates`.
+  No reader uses them any more (they all read publications), and RE-7 removes that path. RE-5's screens are where
+  rates change from RE-4 on.
+- **`down`** drops the three columns, divides the converted rates back and sets `unit_size = 1` on those rows, so a
+  rolled-back row reads per-1 again. It loses only the links.
+
+**6. `api/migrations/20261030120000_drop_rates.sql`** (RE-7)
+
+- **Version: the cleanup block.** It retires the old model, so it is in the lane's cleanup block `20261030*`, after
+  every feature block (#564 issuecomment-6074383060; slot `20261030120000` assigned in issuecomment-6074437590).
+  Migrations 1–5 stay in this design's block `20261010*`. RE-7 already starts only after every reader of `rates` has
+  moved (§9: RE-4, RE-5, RE-6, DK-B #538), which is the cleanup rule's condition.
 
 - Drops `rates` (its history now lives in publication 1's `source_snapshot`).
 - Drops the kiosk `configure` rate path's leftovers, if any.
@@ -866,7 +948,7 @@ Each ticket owns disjoint files. The order is by start dependency.
 | RE-1 | engine domain, tables and services | `xc-rate` `domain/{reference,policy,draft,publication}/**`, `application/{reference,draft,publication,approval}/**`, `infrastructure/{reference,policy,draft,publication}/**`; migration 4 | RU-1, AP-1 |
 | RE-2 | BoT adapter writes batches | `xc-rate/src/infrastructure/rate/bot_rate_source.rs` and its tests | RU-1, RE-1 |
 | RE-3 | routes: the views and commands of §4.7, the policy rows of §6 | `api/src/presentation/http/v3/views/{published_rates,staff_published_rates,rate_drafts,rate_draft,rate_publications,rate_policy,approval_requests}.rs`, `http/v3/commands/**`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/.../policy.rs` | RE-1, CM-1 |
-| RE-4 | readers switch to `PublishedRates` and `ExchangeArithmetic` | `kiosk_machine.rs`, `kiosk_ports.rs`, `save_transaction.rs` (rate check and stored line), `booking_ports.rs`, `booking_machine.rs`, `snapshot.rs` (rates part), `transaction_row.rs`, `admin_cash.rs`, `admin_reports.rs`, `device_service.rs`, `pages.rs` (customer page), migration 5 | RE-3. Split per reader if the controller prefers; no file is shared with DK-A…DK-J |
+| RE-4 | readers switch to `PublishedRates` and `ExchangeArithmetic` | `kiosk_machine.rs`, `kiosk_ports.rs`, `save_transaction.rs` (rate check and stored line), `booking_ports.rs`, `booking_machine.rs`, `snapshot.rs` (rates part), `transaction_row.rs`, `admin_cash.rs`, `admin_reports.rs`, `device_service.rs`, `pages.rs` (customer page), migration 5 | RE-3. **Deploys only after RE-5 is deployed** and the §8 migration 5 gate counts 0. Split per reader if the controller prefers; no file is shared with DK-A…DK-J |
 | RE-5 | admin screens A02, A03, A06 | `web/src/screens/admin/rates/**` (rebuilt), `web/src/screens/admin/approvals/**` (new), `web/src/shared/ui/rate.ts` | RE-3 |
 | RE-6 | kiosk-currencies screen and `configure` on publications | `web/src/screens/kiosk-currencies/**`, `xc-kiosk/src/application/kiosk/currencies.rs`, `views/kiosk_currencies.rs` | RE-3 |
 | RE-7 | retire the direct save | `xc-rate` `application/rate/service.rs` (`save_rate` removed), `rpc.rs` `adminSaveRate`, `Quote::compute` removed, migration 6, the tests that only pinned the old save | RE-4, RE-5, RE-6, DK-B #538 |
@@ -878,9 +960,14 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 
 | Test | Owner | Ticket | Becomes |
 |---|---|---|---|
-| `xc-kernel/tests/rate_value_test.rs:36` | pins scale 4 | RU-1 | scale 8 |
-| `money_test.rs:95-133` | `TooManyDecimals` for `"32.12345"` | RU-1 | for 9 places |
-| `quote_test.rs` | v2 cases | RU-1 | unchanged for `compute`, plus a `per_unit` table |
+| `xc-kernel/tests/rate_value_test.rs` | value = Display, scale 4, for 4 rates of ≤ 4 places | RU-1 | **unchanged**: those rates still print 4 places (§3.3) |
+| `money_test.rs:126-132` (`rate_must_be_positive_plain_and_within_the_cap`) | `TooManyDecimals` for `"32.12345"`, `"0.00001"`, `"1.00001"` | RU-1 | those three now parse (≤ 8 places). `TooManyDecimals` moves to 9 places (`"0.000000001"`). The rest of the test is unchanged |
+| `quote_test.rs` + `fixtures/v2_quote_cases.json` | v2 cases; `"32.12345"` refused `TooManyDecimals` | RU-1 | the 5-place rate moves to 9 places (`"32.123456789"`), refused the same way; the generator `tools/v2-fixtures/gen_quote.mjs` with it |
+| `xc-exchange` `transaction_form_test.rs` + `fixtures/v2_save_form_cases.json` | "rate / reference rate with five decimals" refused | RU-1 | "… with nine decimals" (`gen_save_form.mjs` with it) |
+| `xc-rate` `rates_test.rs:326` + `fixtures/v2_rate_cases.json` | buy / sell / partner cost with five decimals; "both wrong: buy is judged first" | RU-1 | nine decimals (`gen_rates.mjs` with it) |
+| `api/tests/fixtures/rpc/engine_actions.json` n=12, n=91 | `adminSaveRate` buy and `saveTransaction` rate with five decimals → 400 | RU-1 | nine decimals (`gen_compat.mjs` with it) |
+| `xc-exchange` `booking_repository_db_test.rs` `the_columns_are_the_designs` | the `bookings` columns and sizes | RU-1 | plus `unit_size`; `rate` is `(20,8)` |
+| `xc-kiosk` `kiosk_work_times_test.rs` | 17 columns; old rows unchanged | RU-1 | 18 columns; the old-row comparison leaves out RU-1's `unit_size` |
 | `xc-rate/tests/bot_rate_source_test.rs:698` | JPY unit "100" | RE-2 | the adapter returns BoT's unit unchanged |
 | `rates_test.rs`, `api/tests/v3_admin_rates_view_test.rs` | the direct save | RE-7 / RE-5 | publications |
 | `xc-auth/tests/policy_test.rs:386,705` | `adminSaveRate == ["RATES"]` | RE-3 | the new rows of §6; `adminSaveRate` removed in RE-7 |
@@ -894,7 +981,8 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
   - `foreign_for_thb` truncates to minor unit 0 for JPY;
   - `ForeignAmount::parse("100.5", JPY)` is refused;
   - `Rate::parse` takes 8 places and refuses 9;
-  - migration 1 converts a JPY row ×100 and leaves the principal unchanged.
+  - migration 1 widens the rate columns and adds `unit_size`, and converts no stored rate (a per-1 JPY row reads back
+    unchanged).
 - **AP-1**
   - the proposer cannot decide;
   - one pending request per object;
