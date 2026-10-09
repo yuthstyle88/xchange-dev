@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.pull_request.number) || format('web-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'web-main') || format('web-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 jobs:
   # A PR that only touches docs/** or *.md builds nothing (owner 2026-10-09; pilot
