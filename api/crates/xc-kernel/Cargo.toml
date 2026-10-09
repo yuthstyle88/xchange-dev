@@ -17,6 +17,12 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 futures = "0.3"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres"] }
+aes-gcm = "0.10"
+base64 = "0.22"
+hkdf = "0.12"
+hmac = "0.12"
+rand = "0.8"
+sha2 = "0.10"
 
 [dev-dependencies]
 serde = { workspace = true }
