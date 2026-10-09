@@ -56,7 +56,7 @@
 - **D-2. Users and scoped roles replace owners and employees** (§07 `User`, `Role`, `UserRole`).
   - A user holds **any number** of `UserRole(role, organization_id, branch_id NULL, valid_from, valid_to)`.
   - `branch_id NULL` means the whole organisation, *"เมื่อมีสิทธิ"* (only for roles whose §02 scope allows it, §3.2).
-- **D-3. Ten roles: the Blueprint's nine minus PARTNER, plus VERIFICATION_REVIEWER** (§02, §15). Their scopes and
+- **D-3. Nine roles: the Blueprint's nine minus PARTNER, plus VERIFICATION_REVIEWER** (§02, §15). Their scopes and
   duties are §02's, word for word (§3.1). v3-only features keep the role rows they have today, translated through B1
   (§4.2).
 - **D-4. Permissions replace action strings, and the server checks organisation, branch scope and owner on every
@@ -186,7 +186,7 @@ replace).
 
 | Today | Becomes | File |
 |---|---|---|
-| `Role` (10 v3 variants) | `access::Role` (10 Blueprint variants, §3.1), **in a new file beside the old one** | `xc-auth/src/domain/access/role.rs` (new). The old `policy/value_objects/role.rs` stays until OR-7 |
+| `Role` (10 v3 variants) | `access::Role` (9 Blueprint variants, §3.1), **in a new file beside the old one** | `xc-auth/src/domain/access/role.rs` (new). The old `policy/value_objects/role.rs` stays until OR-7 |
 | `Actor { id, kind, role, branch_id }` | `access::Actor { user_id, organization_id, roles: Vec<ScopedRole>, customer_id: Option }`, also new | `xc-auth/src/domain/access/actor.rs` (new). The old `actor.rs` and `actor_kind.rs` stay until OR-7 |
 | `ActorKind {Owner, Staff}` | none in the new model; deleted with the old types in OR-7 | — |
 | `ScopedRole` | new: `{ role, branch: Option<BranchId>, valid_from, valid_to }` | `xc-auth/src/domain/access/scoped_role.rs` |
@@ -269,7 +269,7 @@ the cases C1–C9 name, no more and no fewer. Then `every_mapped_case_is_answere
 | `the_sentences_said_are_exactly_v2s_twenty_two` (:128) | same name | kept: the Thai refusal sentences are unchanged. `outOfScope` adds one (§10) |
 | `every_call_runs_on_the_branch_v2_ran_it_on` (:147) | `every_call_runs_on_the_branch_named_in_scope` | changed: a branch outside scope is **refused** (§02 *"Server ตรวจ … branch scope"*) |
 | `which_branch_an_employee_belongs_to_changes_no_answer` (:169) | same | kept |
-| `roles_are_spelled_as_v2_spells_them` (:189) | `roles_are_spelled_as_the_blueprint_spells_them` (the ten of §3.1) | changed (§02, §15; B1) |
+| `roles_are_spelled_as_v2_spells_them` (:189) | `roles_are_spelled_as_the_blueprint_spells_them` (the nine of §3.1) | changed (§02, §15; B1) |
 | `a_role_v2_does_not_have_is_no_role` (:214) | `a_role_the_blueprint_does_not_have_is_no_role` (`FRONT`, `OWNER`, `PARTNER` refused) | changed (§02; PARTNER is Broker-Platform's) |
 | `the_owner_has_no_branch_and_an_employee_always_has_one` (:235) | `scope_rules_hold` (§3.2: EXECUTIVE organisation-wide; TELLER and BRANCH_MANAGER exactly one branch) | changed (§07 UserRole, §02 scopes) |
 | `nobody_is_an_employee_with_the_owners_role` (:254) | — | **dropped**: §07 has no owner kind (one `User`). `scope_rules_hold` covers what remains |
@@ -409,7 +409,7 @@ classDiagram
   class User { <<xc-auth domain/user/user.rs>> id; organization_id; auth_subject?; status; version }
   class UserStatus { <<enum xc-auth domain/user/user_status.rs>> INVITED; ACTIVE; DISABLED }
   class Invite { <<xc-auth domain/user/invite.rs>> code_hash; expires_at; used_at? }
-  class Role { <<enum xc-auth domain/access/role.rs>> 10 Blueprint roles }
+  class Role { <<enum xc-auth domain/access/role.rs>> 9 Blueprint roles }
   class ScopedRole { <<xc-auth domain/access/scoped_role.rs>> role; branch?; valid_from; valid_to? }
   class ScopeRule { <<xc-auth domain/access/scope_rule.rs>> +check(role, branch, rows) }
   class Permission { <<enum xc-auth domain/access/permission.rs>> }
@@ -538,7 +538,15 @@ approved until the first install. The migrations below still run correctly on a 
   SELECT count(*) FROM owners;
   ```
 
-  An employee role outside §3.3's ten is refused by the migration (`RAISE`), not guessed.
+  An employee role outside §3.3's ten v3 roles is refused by the migration (`RAISE`), not guessed.
+  **An employee whose `branch_id` names no `branches` row** is refused the same way: `employees.branch_id` has no FK
+  today (§1), and `user_roles` has the composite FK of §8, so the backfill would fail on it with a raw FK error. The
+  migration counts them first and `RAISE`s with a clear message (they can only be test data, D6; fix or delete the
+  row, then run again):
+
+  ```sql
+  SELECT count(*) FROM employees e WHERE NOT EXISTS (SELECT 1 FROM branches b WHERE b.id = e.branch_id);   -- must be 0
+  ```
 - **`owners` / `employees` are not dropped here.** They are dropped with the password login (migration 3).
 - **The window between migration 2 and OR-7.**
   - **Who writes accounts:** until OR-5 (the A05 screen) is live, the existing `employees` route
@@ -554,7 +562,18 @@ approved until the first install. The migrations below still run correctly on a 
         `api/src/application/workflows/disable_employee.rs:74` → `AccountService::disable_employee_in`,
         `service.rs:531-542`);
       - `employees("disable")` → `disable_employee` (`account_repository.rs:338-342`), which wraps it.
+    - `create_owner` (`:428`): inserts the owner's `users` row (`INVITED`, `legacy_employee_id NULL`) with EXECUTIVE +
+      ADMIN, organisation-wide, in its transaction. On a fresh install the migrations run before the owner is
+      created, so without this the owner would have no `users` row, and #582 CA-1's `"owner"` lookup would find none
+      (found while writing OR-2's tests, #616);
     - `reset_employee_password` changes nothing in `users`: passwords are not part of the new model.
+    - **An unknown branch is refused before the insert.** `create_employee` checks that `branch_id` names a
+      `branches` row and refuses with the route's sentence (`NO_SUCH_BRANCH`,
+      `xc-rate/src/application/branch/service.rs:36`). Today only the route checks it
+      (`api/src/presentation/http/employees.rs:149-155`, `BranchService::require`); `AccountService::employees("create")`
+      checks only the format. With `user_roles`' composite FK, the check belongs at the writer, where every path meets
+      it. `[proposed]` how: a `SELECT 1 FROM branches` in the same transaction, so the FK violation never reaches the
+      caller as a database error.
 
     Mirroring in `AccountService::employees` would miss the route's disable, which does not pass through it.
     `users.legacy_employee_id` (nullable, dropped in migration 3) records the link.
@@ -610,7 +629,7 @@ Each ticket owns disjoint files.
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
 | OR-1 | organisation and branch profile; hours | `xc-auth/src/domain/organization/**`; `xc-rate/src/domain/branch/{entities/branch.rs, branch_hours.rs}`; `xc-rate/src/infrastructure/branch/branch_repository.rs`; migration 1 | this design |
-| OR-2 | users, scoped roles, permissions, `Authorizer`, the employees mirror | `xc-auth/src/domain/{user,access}/**` (all **new** files, beside the old types), `xc-auth/src/application/user/**`, `xc-auth/src/infrastructure/user/**`, `xc-auth/src/infrastructure/account/account_repository.rs` (the mirror only: `create_employee`, `disable_employee_in`); migration 2 | OR-1 |
+| OR-2 | users, scoped roles, permissions, `Authorizer`, the employees mirror | `xc-auth/src/domain/{user,access}/**` (all **new** files, beside the old types), `xc-auth/src/application/user/**`, `xc-auth/src/infrastructure/user/**`, `xc-auth/src/infrastructure/account/account_repository.rs` (the mirror only: `create_employee`, `disable_employee_in`, `create_owner`, and the unknown-branch check); migration 2 | OR-1 |
 | OR-3 | Identity sign-in BFF and sessions | `xc-auth/src/domain/identity/**`, `xc-auth/src/infrastructure/identity/**`, `xc-auth/src/application/session/**`, `api/src/presentation/http/auth.rs`, `api/src/presentation/extractors/actor.rs`, `web/src/screens/login/**` | OR-2; I-2 (#554, the token verifier) |
 | OR-4 | every route and view onto `Authorizer` (§4.2); the provided tests of §4.3 moved 1:1 (one commit per file, before any behaviour change); `api/tools/policy-map.mjs` + `blueprint_policy_cases.json` | `xc-auth/src/domain/policy/entities/policy.rs` (reduced to the route table), `entry_path.rs`, `api/src/presentation/http/v3/view.rs`, `action.rs`, the 19 call sites, the test files of §4.3 | OR-2, OR-3 (which supplies `access::Actor`). Split per area if the controller prefers; custody rows are #582's |
 | OR-5 | A04 branches and A05 users screens and their commands | `web/src/screens/admin/{branches,users}/**`, `http/v3/commands/{branch_save,user_invite,user_grant,user_revoke,user_disable}.rs`, `http/v3/views/{admin_branches_profile,admin_users}.rs` | OR-2, OR-4, PR 570 CM-1 |
@@ -637,7 +656,10 @@ Each ticket owns disjoint files.
   - the mirror: a create through the `employees` route leaves one `users` row (`INVITED`, `legacy_employee_id` = the
     new id) with its one role; a disable through the route (the `DisableEmployee` workflow) and one through
     `employees("disable")` each leave `users.status = 'DISABLED'`; a failed disable (holds cash) changes no `users`
-    row.
+    row;
+  - an owner created after migration 2 (`create_owner`) has one `users` row with EXECUTIVE + ADMIN, organisation-wide;
+  - a create naming a branch with no `branches` row is refused with `NO_SUCH_BRANCH` and writes no `employees`,
+    `users` or `user_roles` row; migration 2 `RAISE`s on a pre-existing employee whose branch has no row.
 - **OR-3:**
   - a JWT with a wrong `aud`, a wrong signature or an expired time is refused;
   - an Identity error code maps to its sentence, and an unknown code is 503;
