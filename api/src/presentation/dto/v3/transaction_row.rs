@@ -5,6 +5,7 @@ use pos_error::AppError;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 /// An exchange record as stored in the database / domain.
 #[derive(Debug, Clone)]
@@ -15,8 +16,9 @@ pub struct TransactionRecord {
     pub side: String,
     pub currency: String,
     pub amount: Decimal,
-    pub rate: Decimal,
-    pub reference_rate: Option<Decimal>,
+    pub rate: Rate,
+    pub reference_rate: Option<Rate>,
+    pub unit_size: UnitSize,
     pub fee: Decimal,
     pub bank_fee: Decimal,
     pub method: String,
@@ -40,6 +42,7 @@ pub struct TxSqlRow {
     pub amount: String,
     pub rate: String,
     pub reference_rate: Option<String>,
+    pub unit_size: String,
     pub fee: String,
     pub bank_fee: String,
     pub method: String,
@@ -71,14 +74,14 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
                 r.amount, r.document_ref
             ))
         })?;
-        let rate = r.rate.parse::<Decimal>().map_err(|e| {
+        let rate = Rate::parse(r.rate.trim()).map_err(|e| {
             AppError::Internal(format!(
                 "invalid rate {:?} in transaction {}: {e}",
                 r.rate, r.document_ref
             ))
         })?;
         let reference_rate = match r.reference_rate {
-            Some(ref s) if !s.trim().is_empty() => Some(s.parse::<Decimal>().map_err(|e| {
+            Some(ref s) if !s.trim().is_empty() => Some(Rate::parse(s.trim()).map_err(|e| {
                 AppError::Internal(format!(
                     "invalid reference_rate {:?} in transaction {}: {e}",
                     s, r.document_ref
@@ -86,6 +89,12 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
             })?),
             _ => None,
         };
+        let unit_size = UnitSize::parse(r.unit_size.trim()).map_err(|e| {
+            AppError::Internal(format!(
+                "invalid unit_size {:?} in transaction {}: {e}",
+                r.unit_size, r.document_ref
+            ))
+        })?;
         let fee = r.fee.parse::<Decimal>().map_err(|e| {
             AppError::Internal(format!(
                 "invalid fee {:?} in transaction {}: {e}",
@@ -108,6 +117,7 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
             amount,
             rate,
             reference_rate,
+            unit_size,
             fee,
             bank_fee,
             method: r.method,
@@ -161,10 +171,12 @@ impl TransactionRow {
     pub fn from_record(record: &TransactionRecord) -> Self {
         let is_buy = record.side == "BUY";
 
-        // principal = amount * rate, half up to satang (2 decimals)
-        let raw_principal = record.amount * record.rate;
-        let principal =
-            raw_principal.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+        // principal = amount * rate / unit_size, half up to satang (2 decimals) through ExchangeArithmetic::thb
+        let foreign = ForeignAmount::from_decimal(record.amount);
+        let principal = Decimal::from_i128_with_scale(
+            ExchangeArithmetic::thb(foreign, record.rate, record.unit_size).minor_i128(),
+            2,
+        );
 
         // settlement = principal - fee (BUY), principal + fee (SELL)
         let settlement = if is_buy {
@@ -176,9 +188,10 @@ impl TransactionRow {
         // reference fields
         let (ref_rate_str, ref_val_str, ref_spread_str, ref_pct_str) =
             if let Some(ref_rate) = record.reference_rate {
-                let raw_ref_val = record.amount * ref_rate;
-                let ref_val =
-                    raw_ref_val.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+                let ref_val = Decimal::from_i128_with_scale(
+                    ExchangeArithmetic::thb(foreign, ref_rate, record.unit_size).minor_i128(),
+                    2,
+                );
 
                 let spread = if is_buy {
                     ref_val - principal
@@ -202,7 +215,7 @@ impl TransactionRow {
                 };
 
                 (
-                    Some(format!("{:.4}", ref_rate)),
+                    Some(format!("{:.4}", ref_rate.value())),
                     Some(format!("{:.2}", ref_val)),
                     Some(spread_str),
                     Some(pct_str),
@@ -240,7 +253,7 @@ impl TransactionRow {
             r#type: record.side.clone(),
             currency: record.currency.trim().to_string(),
             amount: format!("{:.2}", record.amount),
-            rate: format!("{:.4}", record.rate),
+            rate: format!("{:.4}", record.rate.value()),
             principal: format!("{:.2}", principal),
             fee: format!("{:.2}", record.fee),
             bank_fee: format!("{:.2}", record.bank_fee),
@@ -277,6 +290,7 @@ mod tests {
             amount: "100.00".into(),
             rate: "32.1000".into(),
             reference_rate: Some("32.5000".into()),
+            unit_size: "1".into(),
             fee: "0.00".into(),
             bank_fee: "0.00".into(),
             method: "Cash".into(),
@@ -287,6 +301,31 @@ mod tests {
             notes: "".into(),
             shift_id: None,
             slip_key: None,
+        }
+    }
+
+    #[test]
+    fn bad_unit_size_fails_decode() {
+        let mut row = sample_sql_row();
+        row.unit_size = "broken_unit".into();
+        let err = TransactionRecord::try_from(row).unwrap_err();
+        match err {
+            AppError::Internal(msg) => {
+                assert!(msg.contains("invalid unit_size"), "{msg}");
+                assert!(msg.contains("broken_unit"), "{msg}");
+            }
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn zero_unit_size_fails_decode() {
+        let mut row = sample_sql_row();
+        row.unit_size = "0".into();
+        let err = TransactionRecord::try_from(row).unwrap_err();
+        match err {
+            AppError::Internal(msg) => assert!(msg.contains("invalid unit_size"), "{msg}"),
+            other => panic!("expected AppError::Internal, got {other:?}"),
         }
     }
 
@@ -304,7 +343,22 @@ mod tests {
     fn bad_rate_fails_decode() {
         let mut row = sample_sql_row();
         row.rate = "invalid_rate".into();
-        assert!(TransactionRecord::try_from(row).is_err());
+        let err = TransactionRecord::try_from(row).unwrap_err();
+        match err {
+            AppError::Internal(msg) => assert!(msg.contains("invalid rate"), "{msg}"),
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bad_reference_rate_fails_decode() {
+        let mut row = sample_sql_row();
+        row.reference_rate = Some("invalid_ref_rate".into());
+        let err = TransactionRecord::try_from(row).unwrap_err();
+        match err {
+            AppError::Internal(msg) => assert!(msg.contains("invalid reference_rate"), "{msg}"),
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
     }
 
     #[test]
@@ -326,7 +380,8 @@ mod tests {
         let row = sample_sql_row();
         let rec = TransactionRecord::try_from(row).expect("valid row decodes");
         assert_eq!(rec.amount, Decimal::from(100));
-        assert_eq!(rec.rate, Decimal::from_str_exact("32.1000").unwrap());
+        assert_eq!(rec.rate, Rate::parse("32.1000").unwrap());
+        assert_eq!(rec.unit_size, UnitSize::ONE);
     }
 }
 

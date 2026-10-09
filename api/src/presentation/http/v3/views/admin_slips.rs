@@ -90,6 +90,7 @@ impl PagedView for AdminSlipsPagedView {
             let mut builder = sqlx::QueryBuilder::new(
                 "SELECT t.document_ref, t.value_date, t.recorded_at, t.type, t.code::text AS code, \
                  t.amount::text AS amount, t.rate::text AS rate, t.reference_rate::text AS reference_rate, \
+                 t.unit_size::text AS unit_size, \
                  t.fee::text AS fee, t.bank_fee::text AS bank_fee, t.method, t.payment_ref, \
                  t.customer_id, t.customer_name, t.staff_id, t.notes, t.shift_id, \
                  f.file_key AS slip_key \

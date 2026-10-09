@@ -81,8 +81,85 @@ fn saved(reference: &str, cash: bool) -> SavedExchange {
     }
 }
 
+/// The `transactions` row the save writes before its device step (amended for #759, RE-4e:
+/// rates.md §4.9 R9 and the ticket author's ruling, the device service reads the stored row's
+/// `unit_size` by document number, and a missing row is an error). The rate is per 1, as the
+/// saved exchange carries it, so `unit_size` is 1; the principal is the baht HALF_UP to 2
+/// places. A customer and an open shift of the branch come with it. A row already there (the
+/// same document saved again) is kept.
+async fn the_saved_row(
+    pool: &sqlx::PgPool,
+    branch_id: &str,
+    document_ref: &str,
+    submission_id: &str,
+    currency: &str,
+    amount: &str,
+    rate: &str,
+) {
+    sqlx::query(
+        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
+         VALUES ('dev-customer-' || $1, $1, 'Somchai', 'DEV-' || $1, 'THA', 'LIVE', now()) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's customer");
+    // The shift's teller (`shifts.teller_id` is NOT NULL since #753).
+    sqlx::query(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, 'dev-teller', 'INVITED', 'test', 'dev-teller' FROM organizations \
+         WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("the saved row's teller");
+    sqlx::query(
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+         VALUES ('dev-shift-' || $1, $1, 'OPEN', now(), 'owner', 'dev-open-' || $1, \
+           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller')) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's shift");
+    sqlx::query(
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
+            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
+            unit_size, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
+            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by) \
+         VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, \
+            'Somchai', 'THA', 'BUY', $4, $5::numeric, $6::numeric, 1, \
+            round($5::numeric * $6::numeric, 2), 0, 0, 0, round($5::numeric * $6::numeric, 2), \
+            'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', '2026-10-06', now(), now(), \
+            'owner') \
+         ON CONFLICT (document_ref) DO NOTHING",
+    )
+    .bind(document_ref)
+    .bind(branch_id)
+    .bind(submission_id)
+    .bind(currency)
+    .bind(amount)
+    .bind(rate)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the saved row {document_ref}: {e}"));
+}
+
 /// `after_save_in` on a branch transaction of its own, as the save runs it.
 async fn after_save(db: &Devices, service: &DeviceService, branch_id: &str, s: SavedExchange) {
+    // #759 (RE-4e, R9): the save wrote its row before its device step.
+    the_saved_row(
+        &db.pool,
+        branch_id,
+        &s.document_ref,
+        &s.submission_id,
+        &s.currency,
+        &s.amount.to_string(),
+        &s.rate.to_string(),
+    )
+    .await;
     let b = branch(branch_id);
     let inner = b.clone();
     let service = service.clone();
@@ -516,6 +593,17 @@ async fn the_agent_is_read_on_the_transaction_already_held() {
     let b = branch(MAIN);
     let inner = b.clone();
     let s = saved(REF1, true);
+    // #759 (RE-4e, R9): the save wrote its row before its device step.
+    the_saved_row(
+        &db.pool,
+        MAIN,
+        &s.document_ref,
+        &s.submission_id,
+        &s.currency,
+        &s.amount.to_string(),
+        &s.rate.to_string(),
+    )
+    .await;
     let svc = service.clone();
     within(
         MUST_FINISH,

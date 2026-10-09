@@ -40,6 +40,8 @@
 
 mod common;
 mod compat_common;
+mod rates_re4_common;
+mod rates_re4e_publish;
 mod rpc_common;
 mod snapshot_common;
 
@@ -355,6 +357,8 @@ impl Room {
         .execute(&self.desk.db.pool)
         .await
         .expect("insert a counter rate");
+        // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
+        rates_re4e_publish::publish_newest_rates(&self.desk.db.pool, branch).await;
     }
 
     /// The owner opens a shift in `branch` through `/api/rpc`.

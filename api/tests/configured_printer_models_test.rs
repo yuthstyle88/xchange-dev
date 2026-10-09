@@ -9,6 +9,8 @@
 
 mod common;
 mod compat_common;
+mod rates_re4_common;
+mod rates_re4e_publish;
 mod rpc_common;
 mod snapshot_common;
 
@@ -108,6 +110,8 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .execute(&desk.db.pool)
     .await
     .expect("insert rate");
+    // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
+    rates_re4e_publish::publish_newest_rates(&desk.db.pool, MAIN).await;
 
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \

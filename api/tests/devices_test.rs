@@ -51,6 +51,80 @@ enum Answer {
     Overview(Value),
 }
 
+/// The `transactions` row the save writes before its device step (amended for #759, RE-4e:
+/// rates.md §4.9 R9 and the ticket author's ruling, the device service reads the stored row's
+/// `unit_size` by document number, and a missing row is an error). The rate is per 1, as the
+/// saved exchange carries it, so `unit_size` is 1; the principal is the baht HALF_UP to 2
+/// places. A customer and an open shift of the branch come with it. A row already there (the
+/// same document saved again) is kept.
+async fn the_saved_row(
+    pool: &sqlx::PgPool,
+    branch_id: &str,
+    document_ref: &str,
+    submission_id: &str,
+    currency: &str,
+    amount: &str,
+    rate: &str,
+) {
+    sqlx::query(
+        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
+         VALUES ('dev-customer-' || $1, $1, 'Somchai', 'DEV-' || $1, 'THA', 'LIVE', now()) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's customer");
+    // The shift's teller (`shifts.teller_id` is NOT NULL since #753).
+    sqlx::query(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, 'dev-teller', 'INVITED', 'test', 'dev-teller' FROM organizations \
+         WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("the saved row's teller");
+    sqlx::query(
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+         VALUES ('dev-shift-' || $1, $1, 'OPEN', now(), 'owner', 'dev-open-' || $1, \
+           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller')) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's shift");
+    sqlx::query(
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
+            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
+            unit_size, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
+            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by) \
+         VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, \
+            'Somchai', 'THA', 'BUY', $4, $5::numeric, $6::numeric, 1, \
+            round($5::numeric * $6::numeric, 2), 0, 0, 0, round($5::numeric * $6::numeric, 2), \
+            'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', '2026-10-06', now(), now(), \
+            'owner') \
+         ON CONFLICT (document_ref) DO NOTHING",
+    )
+    .bind(document_ref)
+    .bind(branch_id)
+    .bind(submission_id)
+    .bind(currency)
+    .bind(amount)
+    .bind(rate)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the saved row {document_ref}: {e}"));
+}
+
+async fn db_has_branch(db: &Devices, branch_id: &str) -> bool {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM branches WHERE id = $1)")
+        .bind(branch_id)
+        .fetch_one(&db.pool)
+        .await
+        .expect("look the branch up")
+}
+
 async fn call(db: &Devices, step: &Step) -> AppResult<Answer> {
     let b = branch(&step.branch);
     let now = instant(&step.now);
@@ -104,6 +178,19 @@ async fn call(db: &Devices, step: &Step) -> AppResult<Answer> {
             Ok(Answer::Nothing)
         }
         "afterSave" => {
+            // #759 (RE-4e, R9): the save wrote its row before this step.
+            if db_has_branch(db, &step.branch).await {
+                the_saved_row(
+                    &db.pool,
+                    &step.branch,
+                    &text(a, "documentRef"),
+                    &text(a, "submissionId"),
+                    &text(a, "currency"),
+                    &text(a, "amount"),
+                    &text(a, "rate"),
+                )
+                .await;
+            }
             let saved = SavedExchange {
                 cash: a["cash"].as_bool().expect("cash"),
                 submission_id: text(a, "submissionId"),
@@ -939,6 +1026,8 @@ async fn the_lines_of_a_save_live_and_die_with_the_callers_transaction() {
         slip_key: None,
     };
     let main = branch(MAIN);
+    // #759 (RE-4e, R9): the save wrote its row before its device step.
+    the_saved_row(&db.pool, MAIN, REF1, "sub-1", "USD", "100.50", "32.1234").await;
 
     // rolled back by the caller
     db.ids.give_one(&job_id(1));
@@ -990,10 +1079,11 @@ async fn the_lines_of_a_save_live_and_die_with_the_callers_transaction() {
     let events = db.events().await;
     assert_eq!(events.len(), 3);
     assert_eq!(events[0]["kind"], "COUNT_CONFIRMED");
-    // 100.50 × 32.1234 = 3228.4017 exactly; v2's doubles are not asked
+    // 100.50 × 32.1234 = 3228.4017, HALF_UP to 2 places: 3228.40 (amended for #759,
+    // rates.md §4.9 R2: the count line's baht is ExchangeArithmetic::thb); v2's doubles are not asked
     assert!(same_json(
         &events[0]["detail"],
-        &json!({"mode": "EMPLOYEE_CONFIRMATION", "currency": "USD", "foreignAmount": 100.5, "thb": 3228.4017})
+        &json!({"mode": "EMPLOYEE_CONFIRMATION", "currency": "USD", "foreignAmount": 100.5, "thb": 3228.40})
     ));
     assert_eq!(events[0]["at"], cut(at(2)));
     let jobs = db.jobs().await;

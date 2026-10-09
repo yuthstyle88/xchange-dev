@@ -15,7 +15,7 @@ use ts_rs::TS;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{fixed2, round_cents};
+use xc_kernel::money::{fixed2, round_cents, ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_reports::*;
@@ -62,6 +62,7 @@ struct TxSqlRow {
     amount: String,
     rate: String,
     reference_rate: Option<String>,
+    unit_size: String,
     principal: String,
     fee: String,
     bank_fee: String,
@@ -81,8 +82,9 @@ struct TxParsed {
     code: String,
     amount: Decimal,
     #[allow(dead_code)]
-    rate: Decimal,
-    reference_rate: Option<Decimal>,
+    rate: Rate,
+    reference_rate: Option<Rate>,
+    unit_size: UnitSize,
     principal: Decimal,
     fee: Decimal,
     bank_fee: Decimal,
@@ -108,11 +110,23 @@ impl TryFrom<TxSqlRow> for TxParsed {
             r.method
         };
         let amount = parse_money(&r.amount, "amount")?;
-        let rate = parse_money(&r.rate, "rate")?;
+        let rate = Rate::parse(r.rate.trim()).map_err(|e| {
+            AppError::Internal(format!("corrupt rate in transactions.rate ({}): {e}", r.rate))
+        })?;
         let reference_rate = match r.reference_rate {
-            Some(ref s) if !s.trim().is_empty() => Some(parse_money(s, "reference_rate")?),
+            Some(ref s) if !s.trim().is_empty() => Some(Rate::parse(s.trim()).map_err(|e| {
+                AppError::Internal(format!(
+                    "corrupt reference_rate in transactions.reference_rate ({s}): {e}"
+                ))
+            })?),
             _ => None,
         };
+        let unit_size = UnitSize::parse(r.unit_size.trim()).map_err(|e| {
+            AppError::Internal(format!(
+                "corrupt unit_size in transactions.unit_size ({}): {e}",
+                r.unit_size
+            ))
+        })?;
         let principal = parse_money(&r.principal, "principal")?;
         let fee = parse_money(&r.fee, "fee")?;
         let bank_fee = parse_money(&r.bank_fee, "bank_fee")?;
@@ -125,6 +139,7 @@ impl TryFrom<TxSqlRow> for TxParsed {
             amount,
             rate,
             reference_rate,
+            unit_size,
             principal,
             fee,
             bank_fee,
@@ -175,6 +190,7 @@ impl BranchView for AdminReportsBranchView {
                     amount::text AS amount, \
                     rate::text AS rate, \
                     reference_rate::text AS reference_rate, \
+                    unit_size::text AS unit_size, \
                     principal::text AS principal, \
                     fee::text AS fee, \
                     bank_fee::text AS bank_fee, \
@@ -281,9 +297,11 @@ impl BranchView for AdminReportsBranchView {
             for r in &parsed_rows {
                 if let Some(ref_rate) = r.reference_rate {
                     referenced += 1;
-                    let val_cents = round_cents(r.amount * ref_rate)
-                        .ok_or_else(|| AppError::Internal("reference value overflow".to_string()))?;
-                    let val = Decimal::from_i128_with_scale(val_cents, 2);
+                    let foreign = ForeignAmount::from_decimal(r.amount);
+                    let val = Decimal::from_i128_with_scale(
+                        ExchangeArithmetic::thb(foreign, ref_rate, r.unit_size).minor_i128(),
+                        2,
+                    );
                     let spread = if r.tx_type == "BUY" {
                         val - r.principal
                     } else {
@@ -525,6 +543,7 @@ mod tests {
             amount: "100.00".into(),
             rate: "30.0000".into(),
             reference_rate: Some("30.5000".into()),
+            unit_size: "1".into(),
             principal: "3000.00".into(),
             fee: "5.00".into(),
             bank_fee: "0.00".into(),
@@ -534,6 +553,33 @@ mod tests {
             staff_id: "dao".into(),
             value_date: "2026-10-06".into(),
             seq: 1,
+        }
+    }
+
+    #[test]
+    fn bad_unit_size_fails_decode() {
+        let mut row = sample_sql_row();
+        row.unit_size = "broken".into();
+        let res = TxParsed::try_from(row);
+        assert!(res.is_err(), "broken unit_size must return Err");
+        match res.unwrap_err() {
+            AppError::Internal(msg) => {
+                assert!(msg.contains("unit_size"), "{msg}");
+                assert!(msg.contains("broken"), "{msg}");
+            }
+            other => panic!("expected AppError::Internal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn zero_unit_size_fails_decode() {
+        let mut row = sample_sql_row();
+        row.unit_size = "0".into();
+        let res = TxParsed::try_from(row);
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            AppError::Internal(msg) => assert!(msg.contains("unit_size"), "{msg}"),
+            other => panic!("expected AppError::Internal, got {:?}", other),
         }
     }
 
