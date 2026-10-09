@@ -1,0 +1,13 @@
+# Nextest configuration for xchange
+# https://nexte.st/book/configuration.html
+
+[profile.default]
+# No retries: a retry turns a real race into a silent green (#568).
+retries = 0
+
+[test-groups]
+serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(xc-device-agent)'
+test-group = 'serial'

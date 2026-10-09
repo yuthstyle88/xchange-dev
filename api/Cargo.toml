@@ -64,4 +64,7 @@ path = "src/lib.rs"
 name = "xchange"
 path = "src/main.rs"
 
+[profile.dev.package.argon2]
+opt-level = 3
+
 

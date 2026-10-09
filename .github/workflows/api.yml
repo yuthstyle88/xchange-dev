@@ -134,12 +134,25 @@ jobs:
           npm --prefix web ci --no-audit --no-fund
           npm --prefix web run check
 
+      - name: Install cargo-nextest
+        working-directory: api
+        run: |
+          VERSION="0.9.137"
+          TOOL_CACHE="${RUNNER_TOOL_CACHE:-$HOME/.cache}"
+          ROOT="$TOOL_CACHE/xchange-cargo-nextest-$VERSION"
+          BIN="$ROOT/bin/cargo-nextest"
+          if [ ! -x "$BIN" ]; then
+            CARGO_TARGET_DIR="$ROOT/target" cargo install cargo-nextest --version "$VERSION" --locked --root "$ROOT"
+            rm -rf "$ROOT/target"
+          fi
+          echo "$ROOT/bin" >> "$GITHUB_PATH"
+
       - name: Test
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/xchange_test
           XC_REQUIRE_WEB_DIST: 1
-        run: cargo test --workspace --no-fail-fast
+        run: cargo nextest run --workspace --no-fail-fast
 
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
       # api/static/xc-forms.js, so this fails when that file is not the build of its source.
