@@ -296,11 +296,17 @@ impl BranchView for AdminReportsBranchView {
                 }
             }
 
-            let (value_str, spread_str, percent_opt) = if referenced == 0 || total_value.is_zero() {
+            let (value_str, spread_str, percent_opt) = if referenced == 0 {
                 (
                     format_money(total_value)?,
                     format_money(total_spread)?,
                     None,
+                )
+            } else if total_value.is_zero() {
+                (
+                    format_money(total_value)?,
+                    format_money(total_spread)?,
+                    Some("0.00".to_string()),
                 )
             } else {
                 let pct_exact = total_spread / total_value * Decimal::from(100);

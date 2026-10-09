@@ -446,7 +446,10 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                 when={(data()?.reference.referenced ?? 0) > 0}
                 fallback={t('noReferenceRate')}
               >
-                {formatMoney(data()?.reference.spread ?? '0.00')} THB ({data()?.reference.percent ?? '0.00'}%)
+                {formatMoney(data()?.reference.spread ?? '0.00')} THB
+                <Show when={data()?.reference.percent}>
+                  {' '}({data()?.reference.percent}%)
+                </Show>
               </Show>
             </div>
             <p style="margin: 4px 0 0 0; font-size: 0.9em; color: #666;">

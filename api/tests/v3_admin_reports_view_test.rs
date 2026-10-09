@@ -1494,6 +1494,12 @@ async fn reference_percent_padded_to_two_places_when_ending_early() {
 }
 
 /// Guard division by zero: total_value can round to 0 while referenced > 0.
+///
+/// #526 (ticket author claude/e5ab6c): v2 prints `0.00%` here
+/// (`xchange-v2-source@4d0bdbb` `src/online/lib/admin-html.ts` `referenceSummary`:
+/// `(reference ? spread/reference*100 : 0).toFixed(2)`), so the view answers `"0.00"` and the
+/// screen prints what it is sent. `null` stays for `referenced == 0` only. This test was added by
+/// the #469 implementer (`79297a845`), not with the provided tests (`5e9f4e0e1`).
 #[actix_web::test]
 async fn reference_comparison_guards_against_division_by_zero_when_total_value_rounds_to_zero() {
     let room = Room::open().await;
@@ -1509,9 +1515,10 @@ async fn reference_comparison_guards_against_division_by_zero_when_total_value_r
     assert_eq!(data["reference"]["referenced"], json!(1));
     assert_eq!(data["reference"]["value"], json!("0.00"));
     assert_eq!(data["reference"]["spread"], json!("-0.30"));
-    assert!(
-        data["reference"]["percent"].is_null(),
-        "percent is null when total_value is 0.00: {data}"
+    assert_eq!(
+        data["reference"]["percent"],
+        json!("0.00"),
+        "percent is v2's 0.00 when exchanges have a reference rate but total_value is 0.00: {data}"
     );
     room.finish().await;
 }
