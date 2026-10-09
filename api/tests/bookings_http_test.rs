@@ -48,9 +48,15 @@
 //! is ordered by a time two rows share.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! D-3, §4.8 and §4.9 R1/R4: the counter rate a booking is created and confirmed at is the line
+//! of the branch's current publication, no longer the newest `rates` row. `Room::open` publishes
+//! the same counter rates it writes to `rates` (all unit 1, so every rate here reads as before).
 
 mod common;
 mod compat_common;
+mod rates_re4_common;
 mod rpc_common;
 mod snapshot_common;
 
@@ -147,7 +153,8 @@ struct Room {
 }
 
 impl Room {
-    /// `MAIN` and `AIRPORT`, each with an OPEN shift and counter rates; the owner, one employee
+    /// `MAIN` and `AIRPORT`, each with an OPEN shift and counter rates (in `rates` and published,
+    /// RE-4d); the owner, one employee
     /// of every staff role in `MAIN`, and a FRONT of `AIRPORT`; three LIVE customers and a DEMO
     /// one. No `bookingRules` stored. The clock at [`NOW`].
     async fn open() -> Room {
@@ -174,6 +181,15 @@ impl Room {
         room.seed_rate(MAIN, "USD", "36.25", "36.75").await;
         room.seed_rate(MAIN, "EUR", "39.5", "40.1").await;
         room.seed_rate(AIRPORT, "USD", "36.1", "36.9").await;
+        // RE-4d: the counter is the current publication's line (rates D-3, §4.8)
+        let pool = room.desk.db.pool.clone();
+        rates_re4_common::publish(
+            &pool,
+            MAIN,
+            &[("USD", "36.25", "36.75"), ("EUR", "39.5", "40.1")],
+        )
+        .await;
+        rates_re4_common::publish(&pool, AIRPORT, &[("USD", "36.1", "36.9")]).await;
         for (id, branch, name) in [SOMCHAI, SUDA, AIR_CUSTOMER] {
             room.seed_customer(id, branch, name, "LIVE").await;
         }
@@ -1405,10 +1421,12 @@ async fn create_payload_refusals_in_order() {
         ("amount", json!(-1), BAD_NUMBER),
         ("amount", json!(100_000_001), BAD_NUMBER),
         ("amount", json!(1000.555), TOO_MANY_DECIMALS),
-        // 6 expectedRate: Rate::parse of the number's text
+        // 6 expectedRate: the number's text, a rate per 1. Amended for #758 (RE-4d, rates §4.9 R3
+        // and the ticket author's ruling 4): a per-1 rate carries up to 8 + log10(unit_size)
+        // places, 11 for KRW per 1000, so `TOO_MANY_DECIMALS` starts at 12 places, not 9.
         ("expectedRate", json!(0), BAD_NUMBER),
         ("expectedRate", json!(-36.25), BAD_NUMBER),
-        ("expectedRate", json!(36.123456789), TOO_MANY_DECIMALS),
+        ("expectedRate", json!(0.025123456789), TOO_MANY_DECIMALS),
     ];
     for (field, value, sentence) in cases {
         let payload = if value.is_null() {

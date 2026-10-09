@@ -68,6 +68,23 @@
 //! time is checked on distinct instants and, on equal ones, by an id the test chose.
 //!
 //! Needs `TEST_DATABASE_URL` (see `common/mod.rs`); nothing here skips.
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! §4.8 and §4.9 R1, R4, R6:
+//! - `BookingPorts::counter_rate_in(tx, branch, currency, side, amount: Option<Money>)` answers
+//!   the current published line (`Some(amount)` at create, whose THB R5 checks; `None` at confirm,
+//!   ruling 5 on #758): a `CounterLine` (its id, its rate per `unit_size`, its unit), no longer
+//!   a bare rate. Every rate the fake answers is a real `published_rate_lines` row of its own
+//!   (`Shop::set_rate`), because `bookings.published_rate_line_id` is a foreign key. Every line
+//!   here is unit 1, so the rates read as before.
+//! - A booking holds its `unit_size` and the line it was made at; `create` stores the line.
+//! - `confirm` compares the stored line with the current one and never re-locks a rate:
+//!   `confirm_locks_the_counter_rate_and_the_sent_expiry` became
+//!   `confirm_keeps_the_line_and_rate_of_create_and_sets_the_sent_expiry`, and
+//!   `confirm_refusals_write_nothing` puts its PENDING booking on MAIN's current EUR line and adds
+//!   a moved line at the same rate.
+//! - The commands' expected rate is the v2 wire's per-1 rate, a `Decimal` of up to 11 places
+//!   (R3 and the ticket author's ruling 4 on #758), no longer a `Rate` (`wire`).
 
 // `common` re-exports the customer types its own tests name; this file names none of them.
 #[allow(unused_imports)]
@@ -77,13 +94,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Duration, Utc};
 use common::{MAIN, NO_SUCH_BRANCH, TestDb, at, branch, millis, refusal};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
+use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};
+use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use xc_exchange::application::booking::list::{BookingList, BookingView};
 use xc_exchange::application::booking::service::BookingService;
@@ -95,7 +116,7 @@ use xc_exchange::domain::booking::entities::booking::Booking;
 use xc_exchange::domain::booking::entities::booking_steps::{LiveCustomer, RedeemStep};
 use xc_exchange::domain::booking::entities::member::Member;
 use xc_exchange::domain::booking::repositories::booking_ids::BookingIds;
-use xc_exchange::domain::booking::repositories::booking_ports::BookingPorts;
+use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
 use xc_exchange::domain::booking::repositories::booking_repository::BookingRepository;
 use xc_exchange::domain::booking::repositories::member_repository::MemberRepository;
 use xc_exchange::domain::booking::value_objects::booking_input::token_hash;
@@ -139,6 +160,11 @@ fn rate(text: &str) -> Rate {
     Rate::parse(text).expect("a rate")
 }
 
+/// A per-1 rate as the v2 wire carries it (RE-4d ruling 4: up to 11 places, not a `Rate`).
+fn wire(text: &str) -> Decimal {
+    Decimal::from_str(text).expect("a decimal")
+}
+
 fn code(text: &str) -> CurrencyCode {
     CurrencyCode::parse(text).expect("a currency")
 }
@@ -156,7 +182,7 @@ fn order(request_id: &str, expected: &str) -> CreateBooking {
         side: Side::Sell,
         currency: code("USD"),
         amount: money("1000.50"),
-        expected_rate: rate(expected),
+        expected_rate: wire(expected),
         customer_id: None,
     }
 }
@@ -170,7 +196,7 @@ fn member_order(request_id: &str, customer_id: &str, expected: &str) -> CreateBo
         side: Side::Buy,
         currency: code("EUR"),
         amount: money("250"),
-        expected_rate: rate(expected),
+        expected_rate: wire(expected),
         customer_id: Some(customer_id.to_string()),
     }
 }
@@ -187,6 +213,8 @@ fn confirmed(id: &str, branch_id: &str, created: i64) -> Booking {
         currency: code("USD"),
         amount: money("1000.50"),
         rate: rate("32.6"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: None,
         status: BookingStatus::Confirmed,
         created_at: at(created),
         created_by: "owner".to_string(),
@@ -210,6 +238,8 @@ fn pending(id: &str, branch_id: &str, member_id: &str, created: i64) -> Booking 
         currency: code("EUR"),
         amount: money("250"),
         rate: rate("35"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: None,
         status: BookingStatus::Pending,
         created_at: at(created),
         created_by: "FRONT-1".to_string(),
@@ -251,7 +281,7 @@ fn confirm_cmd(
     ConfirmBooking {
         id: id.to_string(),
         expires_at,
-        expected_rate: expected.map(rate),
+        expected_rate: expected.map(wire),
     }
 }
 
@@ -289,15 +319,24 @@ struct FakePorts {
     live: Mutex<HashMap<(String, String), String>>,
     rules: Mutex<HashMap<String, BookingRules>>,
     open_shifts: Mutex<HashSet<String>>,
-    counter: Mutex<HashMap<(String, CurrencyCode, Side), Rate>>,
+    counter: Mutex<HashMap<(String, CurrencyCode, Side), CounterLine>>,
 }
 
 impl FakePorts {
-    fn set_rate(&self, branch_id: &str, currency: &str, side: Side, to: &str) {
+    fn set_line(&self, branch_id: &str, currency: &str, side: Side, line: CounterLine) {
         self.counter
             .lock()
             .expect("lock")
-            .insert((branch_id.to_string(), code(currency), side), rate(to));
+            .insert((branch_id.to_string(), code(currency), side), line);
+    }
+
+    fn line(&self, branch_id: &str, currency: &str, side: Side) -> Uuid {
+        self.counter
+            .lock()
+            .expect("lock")
+            .get(&(branch_id.to_string(), code(currency), side))
+            .map(|l| l.line_id)
+            .unwrap_or_else(|| panic!("{branch_id} has a {currency} line"))
     }
 
     fn set_rules(&self, branch_id: &str, enabled: bool, minutes: u16) {
@@ -379,7 +418,8 @@ impl BookingPorts for FakePorts {
         branch_id: &'a BranchId,
         currency: &'a CurrencyCode,
         side: Side,
-    ) -> BoxFuture<'a, AppResult<Option<Rate>>> {
+        _amount: Option<Money>,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
         let found = self
             .counter
             .lock()
@@ -442,10 +482,15 @@ impl Shop {
             .expect("lock")
             .extend([MAIN.to_string(), AIRPORT.to_string()]);
         ports.set_rules(AIRPORT, true, 45);
-        ports.set_rate(MAIN, "USD", Side::Sell, "32.6");
-        ports.set_rate(MAIN, "EUR", Side::Buy, "35.1234");
-        ports.set_rate(AIRPORT, "USD", Side::Sell, "32.7");
-        ports.set_rate(AIRPORT, "EUR", Side::Buy, "36.5");
+        for (branch_id, currency, side, to) in [
+            (MAIN, "USD", Side::Sell, "32.6"),
+            (MAIN, "EUR", Side::Buy, "35.1234"),
+            (AIRPORT, "USD", Side::Sell, "32.7"),
+            (AIRPORT, "EUR", Side::Buy, "36.5"),
+        ] {
+            let line = publish_line(&db, branch_id, currency, to).await;
+            ports.set_line(branch_id, currency, side, line);
+        }
         let ports = Arc::new(ports);
 
         for (id, branch_id, mode) in [
@@ -479,6 +524,14 @@ impl Shop {
 
     async fn begin(&self) -> Transaction<'static, Postgres> {
         self.db.pool.begin().await.expect("begin a transaction")
+    }
+
+    /// A new current line of (`branch_id`, `currency`, `side`) at `to` per 1 (RE-4d): a real
+    /// `published_rate_lines` row, answered by the fake ports from now on.
+    async fn set_rate(&self, branch_id: &str, currency: &str, side: Side, to: &str) -> Uuid {
+        let line = publish_line(&self.db, branch_id, currency, to).await;
+        self.ports.set_line(branch_id, currency, side, line);
+        line.line_id
     }
 
     /// A booking stored by T15-b's repository, not by the service under test.
@@ -546,6 +599,62 @@ impl Shop {
 
     async fn finish(self) {
         self.db.finish().await;
+    }
+}
+
+/// One MANUAL line of `currency` at `to` per 1, buy and sell, in a publication of its own of
+/// `branch_id` (RE-4d: `bookings.published_rate_line_id` is a foreign key to it).
+async fn publish_line(db: &TestDb, branch_id: &str, currency: &str, to: &str) -> CounterLine {
+    let request = Uuid::new_v4().to_string();
+    let publication = Uuid::new_v4().to_string();
+    let line = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, \
+             object_version_hash, policy_version, proposed_payload, requested_by, requested_at, \
+             status, idempotency_key) \
+         SELECT $1::uuid, organization_id, 'RATE_PUBLICATION', id, $2, 'test', '1', \
+             '{}'::jsonb, 'test', now(), 'APPROVED', $3 \
+         FROM branches WHERE id = $4",
+    )
+    .bind(&request)
+    .bind(&publication)
+    .bind(format!("booking-service-{publication}"))
+    .bind(branch_id)
+    .execute(&db.pool)
+    .await
+    .expect("insert into approval_requests");
+    sqlx::query(
+        "INSERT INTO rate_publications (id, organization_id, branch_id, version, published_at, \
+             approved_request_id, draft_id, published_by) \
+         SELECT $1::uuid, b.organization_id, b.id, \
+             COALESCE((SELECT max(version) FROM rate_publications WHERE branch_id = b.id), 0) + 1, \
+             now(), $2::uuid, NULL, 'test' \
+         FROM branches b WHERE b.id = $3",
+    )
+    .bind(&publication)
+    .bind(&request)
+    .bind(branch_id)
+    .execute(&db.pool)
+    .await
+    .expect("insert into rate_publications");
+    sqlx::query(
+        "INSERT INTO published_rate_lines (id, organization_id, publication_id, currency_code, \
+             denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+         SELECT $1::uuid, organization_id, $2::uuid, $3, 'ALL', 1, $4::numeric, $4::numeric, \
+             '{}'::jsonb \
+         FROM rate_publications WHERE id = $2::uuid",
+    )
+    .bind(line.to_string())
+    .bind(&publication)
+    .bind(currency)
+    .bind(to)
+    .execute(&db.pool)
+    .await
+    .expect("insert into published_rate_lines");
+    CounterLine {
+        line_id: line,
+        rate: rate(to),
+        unit_size: UnitSize::ONE,
     }
 }
 
@@ -720,6 +829,12 @@ async fn create_confirms_a_non_member_booking_for_the_branch_minutes() {
     assert_eq!(made.currency, code("USD"));
     assert_eq!(made.amount, money("1000.50"));
     assert_eq!(made.rate, rate("32.6"), "the counter rate");
+    assert_eq!(
+        made.published_rate_line_id,
+        Some(shop.ports.line(MAIN, "USD", Side::Sell)),
+        "the line it was made at (RE-4d R1)"
+    );
+    assert_eq!(made.unit_size, UnitSize::ONE, "the line's unit (RE-4d R1)");
     assert_eq!(made.created_by, "FRONT-1", "the actor");
     assert_eq!(millis(made.created_at), millis(now));
     assert_eq!(
@@ -911,7 +1026,7 @@ async fn create_is_idempotent() {
 
     // Since then the counter moved and the branch stopped taking bookings: a repeat checks
     // nothing of that.
-    shop.ports.set_rate(MAIN, "USD", Side::Sell, "33.9");
+    shop.set_rate(MAIN, "USD", Side::Sell, "33.9").await;
     shop.ports.set_rules(MAIN, false, 30);
     shop.close_shift_in(MAIN);
     let again = s
@@ -1147,15 +1262,24 @@ async fn other_branch_is_not_found() {
 
 // ── confirm ──────────────────────────────────────────────────────────────────
 
-/// §5.6.3 `confirm`: PENDING → CONFIRMED at the counter rate now (not the rate at create), the
-/// expiry as sent, `confirmed_at`/`confirmed_by` set; one `BranchTx::run` of the branch.
+/// §5.6.3 `confirm`: PENDING → CONFIRMED, the expiry as sent, `confirmed_at`/`confirmed_by` set;
+/// one `BranchTx::run` of the branch.
+///
+/// Amended for #758 (RE-4d, rates §4.9 R6): this was `confirm_locks_the_counter_rate_and_the_sent_expiry`
+/// (made at 35, confirmed at the counter's 35.1234). R6: confirm compares the line stored at create
+/// with the current one and never re-locks, so the booking is made on MAIN's current EUR line at
+/// its 35.1234 and keeps that line, that rate and its unit.
 #[tokio::test]
-async fn confirm_locks_the_counter_rate_and_the_sent_expiry() {
+async fn confirm_keeps_the_line_and_rate_of_create_and_sets_the_sent_expiry() {
     let shop = Shop::open().await;
     let s = &shop.service;
     shop.seed_member(&member_row("MB-1", MAIN, "C-MAIN-1", SECRET_A, 0))
         .await;
-    shop.seed(&pending("BK-P", MAIN, "MB-1", 10)).await;
+    let eur = shop.ports.line(MAIN, "EUR", Side::Buy);
+    let mut made = pending("BK-P", MAIN, "MB-1", 10);
+    made.rate = rate("35.1234");
+    made.published_rate_line_id = Some(eur);
+    shop.seed(&made).await;
     let before = shop.versions().await;
     let expiry = at(100) + minutes(90);
 
@@ -1169,16 +1293,16 @@ async fn confirm_locks_the_counter_rate_and_the_sent_expiry() {
     .expect("confirm");
 
     let got = shop.stored(MAIN, "BK-P").await;
-    let mut want = pending("BK-P", MAIN, "MB-1", 10);
+    let mut want = made.clone();
     want.status = BookingStatus::Confirmed;
-    want.rate = rate("35.1234");
     want.expires_at = Some(expiry);
     want.confirmed_at = Some(at(100));
     want.confirmed_by = Some("MANAGER-1".to_string());
     assert_eq!(got.status, want.status);
     assert_eq!(
-        got.rate, want.rate,
-        "MAIN's counter rate now, not 35 from create"
+        (got.published_rate_line_id, got.rate, got.unit_size),
+        (Some(eur), rate("35.1234"), UnitSize::ONE),
+        "the line, the rate and the unit of create (R6)"
     );
     assert_eq!(got.expires_at.map(millis), want.expires_at.map(millis));
     assert_eq!(got.confirmed_at.map(millis), want.confirmed_at.map(millis));
@@ -1198,13 +1322,19 @@ async fn confirm_locks_the_counter_rate_and_the_sent_expiry() {
 
 /// §5.6.8 `double_confirm_writes_nothing`: a second confirm with the same expiry answers, writes
 /// nothing, and checks no rate even though the counter moved.
+///
+/// Amended for #758 (RE-4d, rates §4.9 R6): the PENDING booking is made on MAIN's current EUR line
+/// at its 35.1234, so the first confirm is taken; the move is a new line.
 #[tokio::test]
 async fn double_confirm_writes_nothing() {
     let shop = Shop::open().await;
     let s = &shop.service;
     shop.seed_member(&member_row("MB-1", MAIN, "C-MAIN-1", SECRET_A, 0))
         .await;
-    shop.seed(&pending("BK-P", MAIN, "MB-1", 10)).await;
+    let mut made = pending("BK-P", MAIN, "MB-1", 10);
+    made.rate = rate("35.1234");
+    made.published_rate_line_id = Some(shop.ports.line(MAIN, "EUR", Side::Buy));
+    shop.seed(&made).await;
     let expiry = at(100) + minutes(90);
 
     s.confirm(
@@ -1217,7 +1347,7 @@ async fn double_confirm_writes_nothing() {
     .expect("the first confirm");
     let first = shop.stored(MAIN, "BK-P").await;
 
-    shop.ports.set_rate(MAIN, "EUR", Side::Buy, "36.0");
+    shop.set_rate(MAIN, "EUR", Side::Buy, "36.0").await;
     s.confirm(
         &branch(MAIN),
         confirm_cmd("BK-P", Some(expiry), Some("35.1234")),
@@ -1235,13 +1365,19 @@ async fn double_confirm_writes_nothing() {
 }
 
 /// §5.6.3 `confirm` refusals 3, 5 and 6 reach the caller as their sentences and write nothing.
+///
+/// Amended for #758 (RE-4d, rates §4.9 R4/R6): the PENDING booking is made on MAIN's current EUR
+/// line at its 35.1234, so each row refuses for its own reason; and a new EUR line at the very
+/// same 35.1234 refuses as a moved rate.
 #[tokio::test]
 async fn confirm_refusals_write_nothing() {
     let shop = Shop::open().await;
     let s = &shop.service;
     shop.seed_member(&member_row("MB-1", MAIN, "C-MAIN-1", SECRET_A, 0))
         .await;
-    let waiting = pending("BK-P", MAIN, "MB-1", 10);
+    let mut waiting = pending("BK-P", MAIN, "MB-1", 10);
+    waiting.rate = rate("35.1234");
+    waiting.published_rate_line_id = Some(shop.ports.line(MAIN, "EUR", Side::Buy));
     let mut no_counter = pending("BK-P-GBP", MAIN, "MB-1", 11);
     no_counter.currency = code("GBP");
     let plain = confirmed("BK-C", MAIN, 20);
@@ -1291,6 +1427,16 @@ async fn confirm_refusals_write_nothing() {
         let got = s.confirm(&branch(MAIN), cmd, "FRONT-1", now).await;
         assert_eq!(refusal(got), want, "{why}");
     }
+    shop.set_rate(MAIN, "EUR", Side::Buy, "35.1234").await;
+    let got = s
+        .confirm(
+            &branch(MAIN),
+            confirm_cmd("BK-P", Some(now + minutes(60)), Some("35.1234")),
+            "FRONT-1",
+            now,
+        )
+        .await;
+    assert_eq!(refusal(got), RATE_MOVED, "another line at the same rate");
     assert_eq!(shop.stored(MAIN, "BK-P").await, waiting);
     assert_eq!(shop.stored(MAIN, "BK-P-GBP").await, no_counter);
     assert_eq!(shop.stored(MAIN, "BK-C").await, plain);

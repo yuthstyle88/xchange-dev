@@ -1,7 +1,8 @@
 //! Create booking command.
 
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Side};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateBooking {
@@ -11,7 +12,7 @@ pub struct CreateBooking {
     pub side: Side,
     pub currency: CurrencyCode,
     pub amount: Money,
-    pub expected_rate: Rate,
+    pub expected_rate: Decimal,
     pub customer_id: Option<String>,
 }
 

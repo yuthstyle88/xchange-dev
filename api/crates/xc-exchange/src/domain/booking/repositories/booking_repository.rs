@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Rate;
 
 use crate::domain::booking::entities::booking::Booking;
 use crate::domain::booking::entities::booking_steps::StoredRequest;
@@ -44,13 +43,11 @@ pub trait BookingRepository: Send + Sync {
         request_hash: &'a str,
     ) -> BoxFuture<'a, AppResult<()>>;
 
-    #[allow(clippy::too_many_arguments)]
     fn confirm_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
         id: &'a str,
-        rate: Rate,
         expires_at: DateTime<Utc>,
         at: DateTime<Utc>,
         by: &'a str,

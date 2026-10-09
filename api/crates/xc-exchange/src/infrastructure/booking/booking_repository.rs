@@ -4,8 +4,9 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::booking::entities::booking::Booking;
 use crate::domain::booking::entities::booking_steps::StoredRequest;
@@ -27,7 +28,8 @@ const LIST_BOOKINGS: &str = "\
     SELECT id, branch_id, request_id, request_hash, name, phone, member_id, \
            type, code::text AS code, amount::text AS amount, rate::text AS rate, status, \
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
-           submission_id, transaction_ref \
+           submission_id, transaction_ref, \
+           unit_size::text AS unit_size, published_rate_line_id \
     FROM bookings \
     WHERE branch_id = $1 \
     ORDER BY created_at DESC, id DESC \
@@ -37,7 +39,8 @@ const FIND_BOOKING: &str = "\
     SELECT id, branch_id, request_id, request_hash, name, phone, member_id, \
            type, code::text AS code, amount::text AS amount, rate::text AS rate, status, \
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
-           submission_id, transaction_ref \
+           submission_id, transaction_ref, \
+           unit_size::text AS unit_size, published_rate_line_id \
     FROM bookings \
     WHERE branch_id = $1 AND id = $2";
 
@@ -45,7 +48,8 @@ const FIND_REQUEST: &str = "\
     SELECT id, branch_id, request_id, request_hash, name, phone, member_id, \
            type, code::text AS code, amount::text AS amount, rate::text AS rate, status, \
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
-           submission_id, transaction_ref \
+           submission_id, transaction_ref, \
+           unit_size::text AS unit_size, published_rate_line_id \
     FROM bookings \
     WHERE branch_id = $1 AND request_id = $2";
 
@@ -53,16 +57,18 @@ const INSERT_BOOKING: &str = "\
     INSERT INTO bookings ( \
         id, branch_id, request_id, request_hash, name, phone, member_id, \
         type, code, amount, rate, status, created_at, created_by, \
-        expires_at, confirmed_at, confirmed_by, submission_id, transaction_ref \
+        expires_at, confirmed_at, confirmed_by, submission_id, transaction_ref, \
+        unit_size, published_rate_line_id \
     ) VALUES ( \
         $1, $2, $3, $4, $5, $6, $7, \
         $8, $9, $10::numeric, $11::numeric, $12, $13, $14, \
-        $15, $16, $17, $18, $19 \
+        $15, $16, $17, $18, $19, \
+        $20::numeric, $21 \
     )";
 
 const CONFIRM_BOOKING: &str = "\
     UPDATE bookings \
-    SET rate = $3::numeric, expires_at = $4, confirmed_at = $5, confirmed_by = $6, status = 'CONFIRMED' \
+    SET expires_at = $3, confirmed_at = $4, confirmed_by = $5, status = 'CONFIRMED' \
     WHERE branch_id = $1 AND id = $2 AND status = 'PENDING'";
 
 const CANCEL_BOOKING: &str = "\
@@ -99,6 +105,15 @@ fn map_booking(row: &sqlx::postgres::PgRow) -> AppResult<Booking> {
     let rate = Rate::parse(&rate_str)
         .map_err(|e| AppError::Internal(format!("invalid stored rate {rate_str}: {e}")))?;
 
+    let unit_size_str: String = row.try_get("unit_size").map_err(AppError::Database)?;
+    let unit_size = UnitSize::parse(&unit_size_str).map_err(|e| {
+        AppError::Internal(format!("invalid stored unit_size {unit_size_str}: {e}"))
+    })?;
+
+    let published_rate_line_id: Option<Uuid> = row
+        .try_get("published_rate_line_id")
+        .map_err(AppError::Database)?;
+
     let branch_str: String = row.try_get("branch_id").map_err(AppError::Database)?;
 
     Ok(Booking {
@@ -111,6 +126,8 @@ fn map_booking(row: &sqlx::postgres::PgRow) -> AppResult<Booking> {
         currency,
         amount,
         rate,
+        unit_size,
+        published_rate_line_id,
         status,
         created_at: row.try_get("created_at").map_err(AppError::Database)?,
         created_by: row.try_get("created_by").map_err(AppError::Database)?,
@@ -227,6 +244,8 @@ impl BookingRepository for PgBookingRepository {
                 .bind(booking.confirmed_by.as_deref())
                 .bind(booking.submission_id.as_deref())
                 .bind(booking.transaction_ref.as_deref())
+                .bind(booking.unit_size.to_string())
+                .bind(booking.published_rate_line_id)
                 .execute(&mut **tx)
                 .await
                 .map_err(AppError::Database)?;
@@ -239,7 +258,6 @@ impl BookingRepository for PgBookingRepository {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
         id: &'a str,
-        rate: Rate,
         expires_at: DateTime<Utc>,
         at: DateTime<Utc>,
         by: &'a str,
@@ -248,7 +266,6 @@ impl BookingRepository for PgBookingRepository {
             let res = sqlx::query(CONFIRM_BOOKING)
                 .bind(branch.as_str())
                 .bind(id)
-                .bind(rate.to_string())
                 .bind(expires_at)
                 .bind(at)
                 .bind(by)

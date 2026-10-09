@@ -13,10 +13,22 @@
 //!   check `:7029-7032`); row 1, a booking of another branch, is the service's.
 //!
 //! The machine is pure: no database, no clock of its own (`now` is given).
+//!
+//! Amended for #758 (RE-4d) by the ticket author (claude/e5ab6c), `docs/design/blueprint/rates.md`
+//! §4.9 R1, R4 and R6: the counter is the current published line (`CounterLine`: its id, its rate
+//! per `unit_size`, its unit), not a bare rate; a booking holds the line it was created at and its
+//! unit; confirm compares the stored line with the current one and never re-locks a rate. Every
+//! booking here is USD, unit 1, on line A, so the rates read as before. The commands' expected
+//! rate is the v2 wire's per-1 rate, a `Decimal` of up to 11 places (R3 and the ticket author's
+//! ruling 4 on #758), no longer a `Rate`.
+
+use std::str::FromStr;
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
+use rust_decimal::Decimal;
+use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use xc_exchange::domain::booking::commands::confirm_booking::ConfirmBooking;
 use xc_exchange::domain::booking::commands::create_booking::CreateBooking;
@@ -27,6 +39,7 @@ use xc_exchange::domain::booking::entities::booking_steps::{
     CancelStep, ConfirmStep, CreateFacts, RedeemStep,
 };
 use xc_exchange::domain::booking::entities::member::Member;
+use xc_exchange::domain::booking::repositories::booking_ports::CounterLine;
 use xc_exchange::domain::booking::value_objects::booking_error::BookingError;
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_exchange::domain::booking::value_objects::booking_status::BookingStatus;
@@ -53,6 +66,24 @@ fn now() -> DateTime<Utc> {
 
 fn rate(text: &str) -> Rate {
     Rate::parse(text).unwrap()
+}
+
+/// The USD line a booking was created at (A) and another, later one (B).
+const LINE_A: u128 = 0x0000_0000_0000_4000_8000_0000_0000_00a1;
+const LINE_B: u128 = 0x0000_0000_0000_4000_8000_0000_0000_00b2;
+
+/// The current USD line `id` at `r` per 1 (RE-4d: the counter is a published line).
+fn line(id: u128, r: &str) -> CounterLine {
+    CounterLine {
+        line_id: Uuid::from_u128(id),
+        rate: rate(r),
+        unit_size: UnitSize::ONE,
+    }
+}
+
+/// A per-1 rate as the v2 wire carries it (RE-4d ruling 4: up to 11 places, not a `Rate`).
+fn wire(text: &str) -> Decimal {
+    Decimal::from_str(text).unwrap()
 }
 
 fn money(text: &str) -> Money {
@@ -98,6 +129,8 @@ fn booking(
         currency: code("USD"),
         amount: money("100.00"),
         rate: rate("32.1000"),
+        unit_size: UnitSize::ONE,
+        published_rate_line_id: Some(Uuid::from_u128(LINE_A)),
         status,
         created_at: now() - Duration::hours(1),
         created_by: "owner".to_owned(),
@@ -139,13 +172,13 @@ fn create_cmd(customer: Option<&str>) -> CreateBooking {
         side: Side::Buy,
         currency: code("USD"),
         amount: money("100.00"),
-        expected_rate: rate("32.1"),
+        expected_rate: wire("32.1"),
         customer_id: customer.map(str::to_owned),
     }
 }
 
 /// Everything `create` needs is in place: rules on for 30 minutes, a shift open, the counter
-/// at the expected rate, and no member.
+/// at the expected rate (line A), and no member.
 fn facts() -> CreateFacts {
     CreateFacts {
         rules: BookingRules {
@@ -153,7 +186,7 @@ fn facts() -> CreateFacts {
             minutes: 30,
         },
         open_shift: true,
-        counter: Some(rate("32.1")),
+        counter: Some(line(LINE_A, "32.1")),
         member_id: None,
     }
 }
@@ -162,7 +195,7 @@ fn confirm_cmd(expires_at: Option<DateTime<Utc>>, expected: Option<&str>) -> Con
     ConfirmBooking {
         id: "BK-1".to_owned(),
         expires_at,
-        expected_rate: expected.map(rate),
+        expected_rate: expected.map(wire),
     }
 }
 
@@ -231,7 +264,7 @@ fn member_booking_waits() {
     ));
     assert_eq!(made.status, BookingStatus::Pending);
     assert_eq!(made.member_id.as_deref(), Some("MB-1"));
-    // the screen's ~rate: the counter rate now, locked only when the counter confirms
+    // RE-4d R6: the counter rate now, the price of the booking; confirm never re-locks it
     assert_eq!(made.rate, rate("32.1"));
     assert_eq!(made.expires_at, None);
 }
@@ -247,7 +280,7 @@ fn create_refusal_order() {
             minutes: 30,
         },
         open_shift: false,
-        counter: Some(rate("32.2")),
+        counter: Some(line(LINE_B, "32.2")),
         member_id: None,
     };
     assert_eq!(
@@ -258,7 +291,7 @@ fn create_refusal_order() {
     // 10 before 11
     let no_shift_and_moved = CreateFacts {
         open_shift: false,
-        counter: Some(rate("32.2")),
+        counter: Some(line(LINE_B, "32.2")),
         ..facts()
     };
     assert_eq!(
@@ -268,7 +301,7 @@ fn create_refusal_order() {
 
     // 11: the counter moved, or has no rate for the currency and side
     let moved = CreateFacts {
-        counter: Some(rate("32.2")),
+        counter: Some(line(LINE_B, "32.2")),
         ..facts()
     };
     assert_eq!(
@@ -316,7 +349,7 @@ fn create_refusal_order() {
     );
     let member_moved = CreateFacts {
         member_id: Some("MB-1".to_owned()),
-        counter: Some(rate("32.2")),
+        counter: Some(line(LINE_B, "32.2")),
         ..facts()
     };
     assert_eq!(
@@ -343,7 +376,7 @@ fn create_request_hash_follows_the_command() {
             ..create_cmd(None)
         },
         CreateBooking {
-            expected_rate: rate("32.2"),
+            expected_rate: wire("32.2"),
             ..create_cmd(None)
         },
         CreateBooking {
@@ -371,28 +404,25 @@ fn create_request_hash_follows_the_command() {
 
 // ── confirm ──────────────────────────────────────────────────────────────────
 
+/// Amended for #758 (RE-4d, rates §4.9 R6): this was `confirm_sets_the_counter_rate_and_the_sent_expiry`
+/// (made PENDING at 32.0, the counter now 32.1, confirm locked 32.1). R6: confirm never re-locks;
+/// a counter at another rate is another line and refuses (`confirm_rate_moved`). On the line it
+/// was made at, confirm takes the sent expiry and names no new rate.
 #[test]
-fn confirm_sets_the_counter_rate_and_the_sent_expiry() {
-    // made PENDING at 32.0; the counter is now 32.1 and the screen expects 32.1
+fn confirm_on_the_stored_line_sets_the_sent_expiry() {
+    // made PENDING at 32.0 on line A; line A is still current and the screen expects 32.0
     let pending = Booking {
         rate: rate("32.0"),
         ..booking(BookingStatus::Pending, Some("MB-1"), None)
     };
     let step = taken(BookingMachine::confirm(
         &pending,
-        &confirm_cmd(Some(tomorrow()), Some("32.1")),
-        Some(rate("32.1000")),
+        &confirm_cmd(Some(tomorrow()), Some("32.0")),
+        Some(line(LINE_A, "32.0000")),
         now(),
     ));
     match step {
-        ConfirmStep::Confirm {
-            rate: locked,
-            expires_at,
-            ..
-        } => {
-            assert_eq!(locked, rate("32.1"));
-            assert_eq!(expires_at, tomorrow());
-        }
+        ConfirmStep::Confirm { expires_at, .. } => assert_eq!(expires_at, tomorrow()),
         ConfirmStep::Unchanged { .. } => panic!("a PENDING member booking must be confirmed"),
     }
 }
@@ -410,7 +440,7 @@ fn confirm_needs_a_future_expiry() {
             refused(BookingMachine::confirm(
                 &pending,
                 &confirm_cmd(expires_at, Some("32.1")),
-                Some(rate("32.1")),
+                Some(line(LINE_A, "32.1")),
                 now(),
             )),
             says(EXPIRY_IN_FUTURE),
@@ -421,7 +451,7 @@ fn confirm_needs_a_future_expiry() {
         taken(BookingMachine::confirm(
             &pending,
             &confirm_cmd(Some(now() + Duration::milliseconds(1)), Some("32.1")),
-            Some(rate("32.1")),
+            Some(line(LINE_A, "32.1")),
             now(),
         )),
         ConfirmStep::Confirm { .. }
@@ -434,7 +464,7 @@ fn confirm_needs_a_future_expiry() {
         refused(BookingMachine::confirm(
             &at_its_instant,
             &confirm_cmd(Some(now()), Some("32.1")),
-            Some(rate("32.1")),
+            Some(line(LINE_A, "32.1")),
             now(),
         )),
         says(EXPIRY_IN_FUTURE)
@@ -444,12 +474,12 @@ fn confirm_needs_a_future_expiry() {
 #[test]
 fn double_confirm_same_expiry_is_unchanged() {
     let confirmed = booking(BookingStatus::Confirmed, Some("MB-1"), Some(tomorrow()));
-    // no rate check: the counter moved since, or has no rate, or the screen sent none
+    // no rate check: the counter moved since (line B), or has no line, or the screen sent none
     for (counter, expected) in [
-        (Some(rate("32.1")), Some("32.1")),
-        (Some(rate("33.0")), Some("32.1")),
+        (Some(line(LINE_A, "32.1")), Some("32.1")),
+        (Some(line(LINE_B, "33.0")), Some("32.1")),
         (None, Some("32.1")),
-        (Some(rate("32.1")), None),
+        (Some(line(LINE_A, "32.1")), None),
     ] {
         assert!(
             matches!(
@@ -469,7 +499,7 @@ fn double_confirm_same_expiry_is_unchanged() {
         taken(BookingMachine::confirm(
             &confirmed,
             &confirm_cmd(Some(tomorrow() + Duration::microseconds(400)), Some("32.1")),
-            Some(rate("32.1")),
+            Some(line(LINE_A, "32.1")),
             now(),
         )),
         ConfirmStep::Unchanged { .. }
@@ -480,7 +510,7 @@ fn double_confirm_same_expiry_is_unchanged() {
         taken(BookingMachine::confirm(
             &not_a_member,
             &confirm_cmd(Some(tomorrow()), Some("32.1")),
-            Some(rate("32.1")),
+            Some(line(LINE_A, "32.1")),
             now(),
         )),
         ConfirmStep::Unchanged { .. }
@@ -499,7 +529,7 @@ fn reconfirm_other_expiry_refused() {
             refused(BookingMachine::confirm(
                 &confirmed,
                 &confirm_cmd(Some(other), Some("32.1")),
-                Some(rate("32.1")),
+                Some(line(LINE_A, "32.1")),
                 now(),
             )),
             says(ONLY_PENDING_MEMBER),
@@ -535,7 +565,7 @@ fn only_a_pending_member_booking_is_confirmed() {
             refused(BookingMachine::confirm(
                 &b,
                 &confirm_cmd(expires, Some("32.1")),
-                Some(rate("32.1")),
+                Some(line(LINE_A, "32.1")),
                 now(),
             )),
             says(ONLY_PENDING_MEMBER),
@@ -544,20 +574,23 @@ fn only_a_pending_member_booking_is_confirmed() {
     }
 }
 
+/// Amended for #758 (RE-4d, rates §4.9 R4/R6): the counter is the current line. A moved counter is
+/// line B (at another rate, or at the very same rate); no line; or the screen sent no rate.
 #[test]
 fn confirm_rate_moved() {
     let pending = booking(BookingStatus::Pending, Some("MB-1"), None);
     for (counter, expected) in [
-        (Some("32.2"), Some("32.1")),
-        (Some("32.0999"), Some("32.1")),
+        (Some(line(LINE_B, "32.2")), Some("32.1")),
+        (Some(line(LINE_B, "32.0999")), Some("32.1")),
+        (Some(line(LINE_B, "32.1")), Some("32.1")),
         (None, Some("32.1")),
-        (Some("32.1"), None),
+        (Some(line(LINE_A, "32.1")), None),
     ] {
         assert_eq!(
             refused(BookingMachine::confirm(
                 &pending,
                 &confirm_cmd(Some(tomorrow()), expected),
-                counter.map(rate),
+                counter,
                 now(),
             )),
             says(RATE_MOVED),
@@ -570,7 +603,7 @@ fn confirm_rate_moved() {
         refused(BookingMachine::confirm(
             &cancelled,
             &confirm_cmd(Some(tomorrow()), Some("32.1")),
-            Some(rate("33.0")),
+            Some(line(LINE_B, "33.0")),
             now(),
         )),
         says(ONLY_PENDING_MEMBER)
@@ -674,7 +707,7 @@ fn expiry_is_inclusive_of_the_instant() {
         refused(BookingMachine::confirm(
             &b,
             &confirm_cmd(Some(tomorrow()), Some("32.1")),
-            Some(rate("32.1")),
+            Some(line(LINE_A, "32.1")),
             at,
         )),
         says(ONLY_PENDING_MEMBER)

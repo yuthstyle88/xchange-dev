@@ -1,16 +1,16 @@
 //! Booking state machine.
 
 use chrono::{DateTime, Duration, Utc};
-use xc_kernel::money::Rate;
 
 use crate::domain::booking::commands::confirm_booking::ConfirmBooking;
 use crate::domain::booking::commands::create_booking::CreateBooking;
 use crate::domain::booking::commands::redeem_booking::RedeemBooking;
-use crate::domain::booking::entities::booking::Booking;
+use crate::domain::booking::entities::booking::{Booking, CompatRate};
 use crate::domain::booking::entities::booking_steps::{
     CancelStep, ConfirmStep, CreateFacts, NewBooking, RedeemStep,
 };
 use crate::domain::booking::entities::member::Member;
+use crate::domain::booking::repositories::booking_ports::CounterLine;
 use crate::domain::booking::value_objects::booking_error::BookingError;
 use crate::domain::booking::value_objects::booking_status::BookingStatus;
 
@@ -38,22 +38,28 @@ impl BookingMachine {
         if !facts.open_shift {
             return Err(BookingError::NoShift);
         }
-        let counter_rate = match facts.counter {
-            Some(rate) if rate == cmd.expected_rate => rate,
+        let counter = match facts.counter {
+            Some(line) if CompatRate::per_one(line.rate, line.unit_size) == cmd.expected_rate => {
+                line
+            }
             _ => return Err(BookingError::RateMoved),
         };
 
         if cmd.customer_id.is_some() {
             Ok(NewBooking {
                 status: BookingStatus::Pending,
-                rate: counter_rate,
+                rate: counter.rate,
+                unit_size: counter.unit_size,
+                published_rate_line_id: Some(counter.line_id),
                 expires_at: None,
                 member_id: facts.member_id.clone(),
             })
         } else {
             Ok(NewBooking {
                 status: BookingStatus::Confirmed,
-                rate: counter_rate,
+                rate: counter.rate,
+                unit_size: counter.unit_size,
+                published_rate_line_id: Some(counter.line_id),
                 expires_at: Some(now + Duration::minutes(facts.rules.minutes as i64)),
                 member_id: None,
             })
@@ -66,11 +72,11 @@ impl BookingMachine {
     /// 3: expires_at is None or <= now -> ExpiryInFuture
     /// 4: double confirm (stored Confirmed, same expires_at to millisecond) -> Unchanged
     /// 5: not Pending, or no member -> OnlyPendingMember
-    /// 6: counter is None or does not equal expected_rate -> RateMoved
+    /// 6: counter is None, line moved, or expected_rate mismatch -> RateMoved
     pub fn confirm(
         booking: &Booking,
         cmd: &ConfirmBooking,
-        counter: Option<Rate>,
+        counter: Option<CounterLine>,
         now: DateTime<Utc>,
     ) -> Result<ConfirmStep, BookingError> {
         let sent_expiry = match cmd.expires_at {
@@ -90,13 +96,26 @@ impl BookingMachine {
             return Err(BookingError::OnlyPendingMember);
         }
 
-        let locked_rate = match (counter, cmd.expected_rate) {
-            (Some(c), Some(exp_r)) if c == exp_r => c,
+        let stored_line_id = match booking.published_rate_line_id {
+            Some(id) => id,
+            None => return Err(BookingError::RateMoved),
+        };
+
+        let current_line = match counter {
+            Some(line) if line.line_id == stored_line_id => line,
             _ => return Err(BookingError::RateMoved),
         };
 
+        let expected_rate = match cmd.expected_rate {
+            Some(exp) => exp,
+            None => return Err(BookingError::RateMoved),
+        };
+
+        if expected_rate != CompatRate::per_one(current_line.rate, current_line.unit_size) {
+            return Err(BookingError::RateMoved);
+        }
+
         Ok(ConfirmStep::Confirm {
-            rate: locked_rate,
             expires_at: sent_expiry,
         })
     }
@@ -151,7 +170,7 @@ impl BookingMachine {
             || cmd.side != booking.side
             || cmd.currency != booking.currency
             || cmd.amount != booking.amount
-            || cmd.rate != booking.rate
+            || cmd.rate.value() != CompatRate::per_one(booking.rate, booking.unit_size)
             || cmd.form_booking != booking.id
             || !cmd.customer_confirmed
         {

@@ -6,7 +6,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use rust_decimal::Decimal;
 use serde_json::{Number, Value, json};
 use xc_exchange::application::booking::list::{BookingList, BookingView};
-use xc_exchange::domain::booking::entities::booking::Booking;
+use xc_exchange::domain::booking::entities::booking::{Booking, CompatRate};
 use xc_exchange::domain::booking::entities::member::Member;
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::ids::BranchId;
@@ -31,7 +31,8 @@ pub fn booking_json(booking: &Booking, now: DateTime<Utc>) -> Value {
         Side::Sell => "SELL",
     };
     let amount_num = shortest_number(&booking.amount.to_string());
-    let rate_num = shortest_number(&booking.rate.value().to_string());
+    let per_one = CompatRate::per_one(booking.rate, booking.unit_size);
+    let rate_num = shortest_number(&per_one.to_string());
     let created_at = booking
         .created_at
         .to_rfc3339_opts(SecondsFormat::Millis, true);

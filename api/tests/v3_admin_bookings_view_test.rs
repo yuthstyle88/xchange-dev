@@ -45,9 +45,23 @@
 //! sessions made at the real sign-in doors (`rpc_common`); writes are the real routes.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`) for the view tests; nothing skips.
+//!
+//! Amended for #758 (RE-4d) by its ticket author (claude/e5ab6c), who owns this file for RE-4
+//! (ticket author's ruling 2 on #758), `docs/design/blueprint/rates.md` D-3, §4.8, §4.9 R3 and R6:
+//! - the counter rates both views show are the lines of the branch's current publication, per 1
+//!   through `CompatRate::per_one` (the screen sends them back as `/api/bookings`'
+//!   `expectedRate`, per 1 by R3), and `counterPrincipal` is `ExchangeArithmetic::thb` at the
+//!   line's rate and unit. `Room::set_rate` therefore also publishes the branch's lines with the
+//!   new one, and a per-1 rate prints exactly, at least 4 places (`"36.2500"`, `"0.2310"`);
+//! - `a_pending_row_carries_the_counter_rate_and_principal`: after the counter moves, confirm is
+//!   refused and the row keeps its create-time line (R6), where it was confirmed at the new rate;
+//! - `every_writer_of_the_views_tables_moves_the_version`: the counter rates' writer is a
+//!   publication through the rate routes, no longer `adminSaveRate` (D-3: a direct save is not
+//!   the counter rate).
 
 mod common;
 mod compat_common;
+mod rates_re4_common;
 mod rpc_common;
 mod snapshot_common;
 
@@ -74,6 +88,8 @@ use xchange::presentation::http::v3::VIEWS;
 const ORIGIN: &str = "http://desk.test";
 const ROUTE: &str = "/api/bookings";
 const RPC: &str = "/api/rpc";
+/// `BookingError::RateMoved` (T15-a), the refusal of a moved counter.
+const RATE_MOVED: &str = "เรทเปลี่ยน กรุณาโหลดใหม่";
 
 const MAIN: &str = "MAIN";
 const AIRPORT: &str = "AIRPORT";
@@ -197,6 +213,18 @@ fn names(rows: &[Value]) -> Vec<String> {
         .collect()
 }
 
+/// A MANUAL draft line of the rate routes (`v3_rate_engine_routes_test.rs` `manual_line`).
+fn manual_line(currency: &str, buy: &str, sell: &str) -> Value {
+    json!({
+        "currency": currency,
+        "buyMode": "MANUAL",
+        "sellMode": "MANUAL",
+        "manualBuy": buy,
+        "manualSell": sell,
+        "reason": "published by the RE-4d test",
+    })
+}
+
 fn row<'a>(rows: &'a [Value], id: &str) -> &'a Value {
     rows.iter()
         .find(|r| r["id"] == json!(id))
@@ -289,6 +317,9 @@ impl Room {
     }
 
     /// A counter-rate row behind the routes' back (test data, not a writer under test).
+    ///
+    /// Amended for #758 (RE-4d): also publishes the branch's current lines with this one (D-3:
+    /// the counter is the current publication), behind the routes' back too.
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
         sqlx::query(
             "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
@@ -303,6 +334,78 @@ impl Room {
         .execute(&self.desk.db.pool)
         .await
         .expect("insert into rates");
+        let pool = self.desk.db.pool.clone();
+        let mut lines = self.published(branch).await;
+        lines.retain(|(c, _, _)| c != code);
+        lines.push((code.to_owned(), buy.to_owned(), sell.to_owned()));
+        let lines: Vec<(&str, &str, &str)> = lines
+            .iter()
+            .map(|(c, b, s)| (c.as_str(), b.as_str(), s.as_str()))
+            .collect();
+        rates_re4_common::publish(&pool, branch, &lines).await;
+    }
+
+    /// `(currency, buy, sell)` of the branch's current publication.
+    async fn published(&self, branch: &str) -> Vec<(String, String, String)> {
+        sqlx::query_as(
+            "SELECT l.currency_code::text, l.buy_rate::text, l.sell_rate::text \
+             FROM branches b JOIN published_rate_lines l \
+               ON l.publication_id = b.current_publication_id \
+             WHERE b.id = $1",
+        )
+        .bind(branch)
+        .fetch_all(&self.desk.db.pool)
+        .await
+        .expect("the current lines")
+    }
+
+    /// The owner publishes the branch's current lines with `(code, buy, sell)` through the rate
+    /// routes (`POST /api/rate-drafts`, `…/submit`, `…/publish`), as the rates screen does.
+    async fn publish_through_routes(&self, branch: &str, code: &str, buy: &str, sell: &str) {
+        let mut lines: Vec<Value> = self
+            .published(branch)
+            .await
+            .into_iter()
+            .filter(|(c, _, _)| c != code)
+            .map(|(c, b, s)| manual_line(&c, &b, &s))
+            .collect();
+        lines.push(manual_line(code, buy, sell));
+        let draft = self
+            .command(
+                "/api/rate-drafts",
+                json!({ "branch": branch, "lines": lines }),
+            )
+            .await;
+        let id = draft["id"].as_str().expect("the draft's id").to_owned();
+        self.command(
+            &format!("/api/rate-drafts/{id}/submit"),
+            json!({ "branch": branch }),
+        )
+        .await;
+        let version: Option<i32> = sqlx::query_scalar(
+            "SELECT p.version FROM branches b JOIN rate_publications p \
+               ON p.id = b.current_publication_id WHERE b.id = $1",
+        )
+        .bind(branch)
+        .fetch_optional(&self.desk.db.pool)
+        .await
+        .expect("the current version");
+        self.command(
+            &format!("/api/rate-drafts/{id}/publish"),
+            json!({ "branch": branch, "expectedVersion": version }),
+        )
+        .await;
+    }
+
+    /// A v3 command as the owner, after the clock moves one second; its 200 body.
+    async fn command(&self, path: &str, body: Value) -> Value {
+        self.tick();
+        let call = Call::post(ORIGIN, path, body.to_string())
+            .header("idempotency-key", &request_id())
+            .cookie(&self.cookies["OWNER"]);
+        let answer = self.app.send(call).await;
+        assert_eq!(answer.status, 200, "{path} {body}: {:.400}", answer.text);
+        answer.json()
     }
 
     /// A booking row behind the routes' back, for the states no route makes at a chosen time.
@@ -804,6 +907,12 @@ async fn q_over_100_characters_is_refused_naming_q() {
 /// Design §12.14 (confirm figures): a PENDING row carries the branch's latest counter rate for
 /// its currency and side and the amount at that rate; its own `rate` stays the one stored. Every
 /// other row, and a PENDING row whose currency has no counter rate, carries `null`.
+///
+/// Amended for #758 (RE-4d, rates §4.9 R6): the counter is the current published line. This test
+/// confirmed the PENDING booking at the moved counter's 36.5 and expected the row locked at
+/// 36.5000. R6: confirm compares the line stored at create with the current one and never
+/// re-locks, so after the move confirm is refused, at the new rate and at the old one, and the
+/// row is unchanged: PENDING, 36.2500, on its create-time line.
 #[actix_web::test]
 async fn a_pending_row_carries_the_counter_rate_and_principal() {
     let room = Room::open().await;
@@ -814,6 +923,9 @@ async fn a_pending_row_carries_the_counter_rate_and_principal() {
     let walk = room
         .create_id(walk_in(MAIN, "Walk In", "081-234-5678"))
         .await;
+    let create_time_usd = rates_re4_common::line(&room.desk.db.pool, MAIN, "USD")
+        .await
+        .id;
 
     let rows = room.rows("branch=MAIN").await;
     assert_eq!(row(&rows, &buy)["status"], json!("PENDING"));
@@ -865,18 +977,112 @@ async fn a_pending_row_carries_the_counter_rate_and_principal() {
     assert_eq!(row(&rows, "BK-no-rate")["counterRate"], Value::Null);
     assert_eq!(row(&rows, "BK-no-rate")["counterPrincipal"], Value::Null);
 
-    // once confirmed, the row is CONFIRMED at the locked rate and carries no counter figures
+    // RE-4d R6: the counter moved since create, so confirm is refused at the new rate and at
+    // the old one, and nothing is written: the row keeps its rate and its create-time line
+    for expected in ["36.5", "36.25"] {
+        room.tick();
+        let call = Call::action(
+            ORIGIN,
+            ROUTE,
+            "confirm",
+            json!({ "branchId": MAIN, "id": buy,
+                    "expiresAt": stamp(room.now() + Duration::days(1)),
+                    "expectedRate": expected }),
+        )
+        .cookie(&room.cookies["OWNER"]);
+        room.app.send(call).await.assert_refused(
+            400,
+            RATE_MOVED,
+            &format!("confirm at {expected}"),
+        );
+    }
+    let rows = room.rows("branch=MAIN").await;
+    assert_eq!(row(&rows, &buy)["status"], json!("PENDING"));
+    assert_eq!(row(&rows, &buy)["rate"], json!("36.2500"));
+    assert_eq!(row(&rows, &buy)["counterRate"], json!("36.5000"));
+    let (stored_line,): (Option<String>,) =
+        sqlx::query_as("SELECT published_rate_line_id::text FROM bookings WHERE id = $1")
+            .bind(&buy)
+            .fetch_one(&room.desk.db.pool)
+            .await
+            .expect("the booking's line");
+    assert_eq!(
+        stored_line,
+        Some(create_time_usd),
+        "the line of create (R1, R6)"
+    );
+    room.finish().await;
+}
+
+/// Added for #758 (RE-4d) by its ticket author (claude/e5ab6c), rates D-3, §3.2 and §4.9 R2/R3
+/// (ticket author's ruling 2 on #758): both views' counter rates are the current publication's
+/// lines per 1, exactly, and `counterPrincipal` is `ExchangeArithmetic::thb` at the line's rate
+/// per its unit, HALF_UP once. The screen sends them back as `expectedRate` and create and confirm
+/// accept them. JPY is per 100 (RU-1): 23.1 / 23.5 print `"0.2310"` / `"0.2350"`; SELL 3 JPY is
+/// 3 × 23.5 ÷ 100 = 0.705 → `"0.71"` (banker's rounding gives 0.70). A direct save that was never
+/// published is not a counter rate.
+#[actix_web::test]
+async fn the_counter_rates_are_the_published_lines_per_1() {
+    let room = Room::open().await;
+    room.set_rate(MAIN, "JPY", "23.1", "23.5").await;
+    sqlx::query(
+        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
+         VALUES ('MAIN', 'GBP', 45.1, 46.2, now(), 'owner', $1)",
+    )
+    .bind(request_id())
+    .execute(&room.desk.db.pool)
+    .await
+    .expect("a direct save, not published");
+
+    let settings = room.settings(MAIN).await;
+    assert_eq!(
+        settings["counterRates"],
+        json!([
+            { "currency": "EUR", "buy": "39.5000", "sell": "40.1000" },
+            { "currency": "JPY", "buy": "0.2310", "sell": "0.2350" },
+            { "currency": "USD", "buy": "36.2500", "sell": "36.7500" },
+        ]),
+        "the published lines per 1; GBP was only saved directly"
+    );
+    let jpy_buy = settings["counterRates"][1]["buy"]
+        .as_str()
+        .expect("JPY's buy")
+        .to_owned();
+    let jpy_sell = settings["counterRates"][1]["sell"]
+        .as_str()
+        .expect("JPY's sell")
+        .to_owned();
+
+    room.issue_member(SOMCHAI.0, SECRET_A).await;
+    room.issue_member(SUDA.0, SECRET_B).await;
+    let buy = room
+        .pending(SOMCHAI.0, "BUY", "JPY", "1000", &jpy_buy)
+        .await;
+    let sell = room.pending(SUDA.0, "SELL", "JPY", "3", &jpy_sell).await;
+
+    let rows = room.rows("branch=MAIN").await;
+    assert_eq!(row(&rows, &buy)["counterRate"], json!("0.2310"));
+    assert_eq!(
+        row(&rows, &buy)["counterPrincipal"],
+        json!("231.00"),
+        "1000 × 23.1 ÷ 100"
+    );
+    assert_eq!(row(&rows, &sell)["counterRate"], json!("0.2350"));
+    assert_eq!(
+        row(&rows, &sell)["counterPrincipal"],
+        json!("0.71"),
+        "0.705 HALF_UP"
+    );
+
+    let counter = row(&rows, &buy)["counterRate"].clone();
     room.act(
         "confirm",
         json!({ "branchId": MAIN, "id": buy, "expiresAt": stamp(room.now() + Duration::days(1)),
-                "expectedRate": "36.5" }),
+                "expectedRate": counter }),
     )
     .await;
     let rows = room.rows("branch=MAIN").await;
     assert_eq!(row(&rows, &buy)["status"], json!("CONFIRMED"));
-    assert_eq!(row(&rows, &buy)["rate"], json!("36.5000"));
-    assert_eq!(row(&rows, &buy)["counterRate"], Value::Null);
-    assert_eq!(row(&rows, &buy)["counterPrincipal"], Value::Null);
     room.finish().await;
 }
 
@@ -975,7 +1181,7 @@ async fn settings_answers_rules_members_public_url_and_counter_rates() {
             { "currency": "EUR", "buy": "39.5000", "sell": "40.1000" },
             { "currency": "USD", "buy": "36.5000", "sell": "37.0000" },
         ]),
-        "the latest row of each currency"
+        "the current publication's line of each currency (RE-4d)"
     );
 
     let airport = room.settings(AIRPORT).await;
@@ -1070,26 +1276,14 @@ async fn every_writer_of_the_views_tables_moves_the_version() {
         json!({ "enabled": false, "minutes": 45 })
     );
 
-    // adminSaveRate (the counter rates)
+    // a publication (the counter rates). Amended for #758 (RE-4d, D-3): the counter rates are the
+    // current publication's lines, so their writer is a publish through the rate routes, no
+    // longer `adminSaveRate`
     let v = room.version(MAIN).await;
     unchanged(&room, v).await;
-    room.tick();
-    let answer = room
-        .app
-        .send(
-            Call::action(
-                ORIGIN,
-                RPC,
-                "adminSaveRate",
-                json!({ "branchId": MAIN, "requestId": request_id(), "code": "GBP", "buy": "45.1",
-                        "sell": "46.2", "previousUpdated": "", "partnerName": "",
-                        "partnerCost": null }),
-            )
-            .cookie(&room.cookies["OWNER"]),
-        )
+    room.publish_through_routes(MAIN, "GBP", "45.1", "46.2")
         .await;
-    assert_eq!(answer.status, 200, "adminSaveRate: {:.300}", answer.text);
-    let (_, settings) = changed(&room, v, "adminSaveRate").await;
+    let (_, settings) = changed(&room, v, "a publication").await;
     let gbp = settings["counterRates"]
         .as_array()
         .expect("the counter rates")
