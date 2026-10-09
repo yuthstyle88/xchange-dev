@@ -281,8 +281,26 @@ branches.current_publication_id uuid NULL FK rate_publications(id)
 - **Unavailable.** A side with `NULL` is unavailable: no quote is made on it (§05, *"หากไม่มีข้อมูลฝั่งที่ต้องใช้ ให้
   unavailable ห้ามเดา"*).
 - **Reasons.** A MANUAL side must carry a reason (§06, *"MANUAL ทุกการเปลี่ยนมีเหตุผล"*), as the last CHECK enforces.
-- **Partner cost.** `partner_name` / `partner_cost` (`rates` today) move to `source_snapshot.partner`, informational
-  as today.
+- **Partner cost.** v2's `rates.partner_name` / `partner_cost` is informational (the "partner cost" column beside the
+  BoT reference). It changes no price and no approval. It uses only Blueprint entities, no new column:
+  - **A partner's quote is reference data.** It is a `RateReferenceBatch` with `provider = <partner name>`, plus one
+    `RateReferenceLine` per currency with `reference_type = 'PARTNER'`, the partner's `unit_size`, and `buy` / `sell`
+    as the partner quoted them (NULL for a side it did not quote). It has a `source_date` and `fetched_at` like any
+    batch, and is never rewritten.
+  - **It is never an AUTO base.** The AUTO reference of a draft line is the newest line with `reference_type = 'BOT'`
+    for its currency (§4.2, A6). A `'PARTNER'` line is never picked for it.
+  - **At publish** `source_snapshot.partner` is copied from the newest `'PARTNER'` line for that currency (by the
+    batch's `fetched_at`): `{"provider", "reference_line_id", "unit_size", "buy", "sell", "source_date", "fetched_at"}`.
+    It is `null` when no partner line exists.
+  - **Until RE-7**, RE-1's publish reads partner from the newest `rates` row of the branch and currency
+    (`publish_service.rs`, the `SELECT partner_name, partner_cost FROM rates` query). RE-7 moves that read to the
+    `'PARTNER'` reference lines in the same PR that drops `rates`, so the drop and its last reader move together.
+    RE-7 also adds `reference_type = 'BOT'` to the draft service's AUTO reference lookup, which today takes the newest
+    line of any type (`rate_draft_service.rs`, the two `SELECT l.id FROM rate_reference_lines` queries).
+  - **Migration 4's backfill does not carry it.** Publication 1 is built from test data only: v2's data is test data
+    and v3 starts from an empty database (owner, 2026-10-06). No partner value worth keeping is lost.
+  - **Who enters a partner quote** (an admin page or a provider adapter) is a page-only follow-up after RE-7. Until
+    then no `'PARTNER'` line exists, and `source_snapshot.partner` is `null`.
 
 ### 4.2 References (§05)
 
@@ -298,8 +316,18 @@ branches.current_publication_id uuid NULL FK rate_publications(id)
   its AUTO side is unavailable and only MANUAL can price it. A batch missing any of the 6 is `PARTIAL`; the missing
   lines are absent, never guessed.
 - **When it is read.** On demand, when a draft asks for one, as today. The schedule waits on the owner (§10, O-1:
-  Blueprint §05 *"ความถี่ดึงข้อมูลและ cutoff ต้องตรวจแหล่ง ธปท. ก่อน build adapter"*). A new batch is written only when
-  the checksum differs from the newest batch's.
+  Blueprint §05 *"ความถี่ดึงข้อมูลและ cutoff ต้องตรวจแหล่ง ธปท. ก่อน build adapter"*). 
+- **Repeat fetches.** A fetch whose rows give the checksum of an existing batch from the same provider writes nothing
+  and returns that batch's id. `UNIQUE (provider, source_date, raw_checksum)` allows only one batch per content, and
+  BoT's rows carry their own date, so a new business day is a new checksum.
+  - **Known limit:** if a provider's rows went A → B → A within one source date, the third fetch returns A's id, and
+    B stays the newest batch by `fetched_at` until the next day's batch. BoT publishes once per business day, so
+    this is not expected. If it ever matters, it needs a schema change, not a code one.
+- **Where the source comes from.** `rateReferenceFetch` takes the `RateSource` from `AppState::rate_source`
+  (`BotRateSource::bot()` unless a test or deployment injects another, as `with_database_probe` does). A command's
+  `run` gets no `HttpRequest`, so the request-time `web::Data<Arc<dyn RateSource>>` that `kiosk.rs`, `rpc.rs` and
+  `reference_rates.rs` read cannot reach it. Moving those three onto `AppState::rate_source`, so that one seam
+  remains, is a follow-up.
 
 ### 4.3 Policy (§05, §07; A3)
 
@@ -983,7 +1011,10 @@ edited: sqlx checksums them.
 
 - Drops `rates` (its history now lives in publication 1's `source_snapshot`).
 - Drops the kiosk `configure` rate path's leftovers, if any.
-- **`down`** recreates an empty `rates`. The history is lost, except as snapshots.
+- **`down`** recreates an empty `rates`. The history is lost, except as snapshots. Partner cost needs no column:
+  it is reference data (§4.1 "Partner cost"), which this migration does not touch.
+- **Deploy order.** A pre-RE-7 binary still reads `rates` when publishing, so it must not run after migration 6. The
+  migration and the binary that stops reading `rates` ship together, as every migration here does (at boot).
 
 ---
 
@@ -998,12 +1029,12 @@ Each ticket owns disjoint files. The order is by start dependency.
 | CM-1 | the command seam and its idempotency store | `api/src/presentation/http/v3/command.rs`; `api/src/presentation/http/v3/commands/` (new dir; the generated table reads it); `api/build.rs` (the commands generation, after the views and actions blocks at `:155-190`); `api/build_support/commands.rs` (new, as `views.rs`); `api/src/presentation/http/v3/mod.rs` (`pub mod command;`, one `include!`, one loop in `configure_v3`, as `:18-27`); `api/src/infrastructure/idempotency/**` (new: `IdempotencyStore` port + `PgIdempotencyStore`); migration 3; `web/src/shared/api/client.ts` (`command(method, path, body, key)`); their tests | this design. **`http/v3/mod.rs` is also in DK-A #537** (`pub mod desk;`), so the queue serialises the two: CM-1 starts after #537 merges, or the controller orders the reverse |
 | CM-2 #704 | `Locks` and `CommandAction::locks()` (§6, #701): the endpoint opens `run` or `run_pair` from it | `api/src/presentation/http/v3/command.rs` (the trait's provided method, `Locks`, and the endpoint's choice of transaction); its tests | CM-1 #597 and LG-0 #661 merged; merges before cash CA-8 #624, the first two-branch command |
 | RE-1 | engine domain, tables and services | `xc-rate` `domain/{reference,policy,draft,publication}/**`, `application/{reference,draft,publication,approval}/**`, `infrastructure/{reference,policy,draft,publication}/**`; migration 4 | RU-1, AP-1 |
-| RE-2 | BoT adapter writes batches | `xc-rate/src/infrastructure/rate/bot_rate_source.rs` and its tests | RU-1, RE-1 |
+| RE-2 | BoT adapter writes batches | `xc-rate/src/infrastructure/rate/bot_rate_source.rs` and its tests, `commands/rate_reference_fetch.rs` and `bootstrap/mod.rs` (`AppState::rate_source`, §4.2) | RU-1, RE-1 |
 | RE-3 | routes: the views and commands of §4.7, the policy rows of §6 | `api/src/presentation/http/v3/views/{published_rates,staff_published_rates,rate_drafts,rate_draft,rate_publications,rate_policy,approval_requests}.rs`, `http/v3/commands/**`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/.../policy.rs` | RE-1, CM-1 |
 | RE-4 | readers switch to `PublishedRates` and `ExchangeArithmetic` | `kiosk_machine.rs`, `kiosk_ports.rs`, `save_transaction.rs` (rate check and stored line), `booking_ports.rs`, `booking_machine.rs`, `snapshot.rs` (rates part), `transaction_row.rs`, `admin_cash.rs`, `admin_reports.rs`, `device_service.rs`, `pages.rs` (customer page), migration 5 | RE-3. **Deploys only after RE-5 is deployed** and the §8 migration 5 gate counts 0. Split per reader if the controller prefers; no file is shared with DK-A…DK-J |
 | RE-5 | admin screens A02, A03, A06 | `web/src/screens/admin/rates/**` (rebuilt), `web/src/screens/admin/approvals/**` (new), `web/src/shared/ui/rate.ts` | RE-3 |
 | RE-6 | kiosk-currencies screen and `configure` on publications | `web/src/screens/kiosk-currencies/**`, `xc-kiosk/src/application/kiosk/currencies.rs`, `views/kiosk_currencies.rs` | RE-3 |
-| RE-7 | retire the direct save | `xc-rate` `application/rate/service.rs` (`save_rate` removed), `rpc.rs` `adminSaveRate`, `Quote::compute` removed, migration 6, the tests that only pinned the old save | RE-4, RE-5, RE-6, DK-B #538 |
+| RE-7 | retire the direct save | `xc-rate` `application/rate/service.rs` (`save_rate` removed), `rpc.rs` `adminSaveRate`, `Quote::compute` removed, migration 6, `publication/publish_service.rs` (partner read moves from `rates` to the `'PARTNER'` reference lines), `draft/rate_draft_service.rs` (AUTO lookup filtered to `reference_type = 'BOT'`), the tests that only pinned the old save | RE-4, RE-5, RE-6, DK-B #538 |
 
 Desk (PR 536) and staff (PR 532) name these types: `PublicationRef`, `PublishedSide` / `PublishedRateLineDto` (rate
 string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3, DK-B for RU-1, and S-8 for RE-3.
@@ -1073,7 +1104,10 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
   - JPY from BoT per 100 is stored with unit 100 and its value unchanged;
   - buy = buying transfer, sell = selling;
   - a missing currency gives a `PARTIAL` batch with no line;
-  - the same checksum writes no new batch.
+  - the same checksum writes no new batch;
+  - through the route `POST /api/rate-references/fetch`, with a fake source injected by `AppState::with_rate_source`:
+    the answered `batchId` exists in `rate_reference_batches` with one line per currency, and a repeat answers the
+    same id.
 - **RE-3**
   - every route's role row (OWNER, RATES, others refused; StaffRpc takes the staff session only);
   - `published_rates` answers 8-place strings with `unit_size`;
@@ -1092,7 +1126,10 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 - **RE-7**
   - `adminSaveRate` is gone (404/refused);
   - `rates` is absent;
-  - every reader still answers.
+  - every reader still answers;
+  - with no `rates` table present, a publish copies the newest `'PARTNER'` line of the currency into
+    `source_snapshot.partner`, and writes `null` when there is none;
+  - an AUTO line takes its base from the newest `'BOT'` line even when a newer `'PARTNER'` line exists.
 
 ---
 

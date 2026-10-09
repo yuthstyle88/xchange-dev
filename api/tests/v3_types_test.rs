@@ -113,14 +113,32 @@ fn the_committed_types_are_what_the_rust_dtos_generate() {
     }
 }
 
+/// The file a view or action owns. A `staff_<x>` entry whose twin `<x>` is also in the same
+/// table shares the twin's DTOs, so `<x>.ts` is its own file instead of `staff_<x>.ts`
+/// (`docs/design/xchange-v3-wave3-desk.md` §6, ticket #537: the preparer's amendment). An entry
+/// named `staff_<x>` with no twin keeps `staff_<x>.ts`.
+fn own_file(name: &str, table: &[&str]) -> String {
+    match name.strip_prefix("staff_") {
+        Some(twin) if table.contains(&twin) => format!("{twin}.ts"),
+        _ => format!("{name}.ts"),
+    }
+}
+
 #[test]
 fn each_view_writes_only_its_own_file_and_common() {
     assert!(!VIEWS.is_empty(), "the view table is empty");
+    let views: Vec<&str> = VIEWS.iter().map(|v| v.name).collect();
+    let actions: Vec<&str> = ACTIONS.iter().map(|a| a.name).collect();
     for view in VIEWS.iter().chain(ACTIONS) {
         let scratch = Scratch::new();
         (view.export_types)(&scratch.0).unwrap_or_else(|e| panic!("export {}: {e}", view.name));
         let files = ts_files(&scratch.0);
-        let own = format!("{}.ts", view.name);
+        let table = if views.contains(&view.name) {
+            &views
+        } else {
+            &actions
+        };
+        let own = own_file(view.name, table);
         assert!(
             files.contains(&own),
             "{}: writes {own}; wrote {files:?}",
@@ -134,6 +152,19 @@ fn each_view_writes_only_its_own_file_and_common() {
             );
         }
     }
+}
+
+#[test]
+fn a_staff_twin_owns_its_twins_file_and_a_lone_staff_entry_its_own() {
+    let table = ["desk_config", "staff_desk_config", "staff_floor"];
+    assert_eq!(own_file("desk_config", &table), "desk_config.ts");
+    assert_eq!(own_file("staff_desk_config", &table), "desk_config.ts");
+    assert_eq!(
+        own_file("staff_floor", &table),
+        "staff_floor.ts",
+        "no twin `floor`"
+    );
+    assert_eq!(own_file("me", &table), "me.ts");
 }
 
 #[test]

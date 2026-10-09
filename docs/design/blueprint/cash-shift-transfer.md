@@ -375,27 +375,37 @@ CA-1 to merge; this design's M3 is `20261030110000`.
 
 **M1. `api/migrations/20261012100000_cash.sql` (CA-1): create only.**
 1. *Existing rows.* Nothing existing changes meaning. `shifts` gains `teller_id`, filled for every existing row from
-   `opened_by`: an employee id maps to `users.id WHERE legacy_employee_id = opened_by`; the owner id (`"owner"`,
-   `actor.rs:26`) maps to the one `users` row migration 2 made from `owners` (EXECUTIVE + ADMIN, organisation-wide,
-   `legacy_employee_id IS NULL`). Then `SET NOT NULL`. The old `shifts_one_open_per_branch` index stays. The new
+   `opened_by` by the **opener resolution** below. Then `SET NOT NULL`.
+   *Opener resolution* (M1's fill and the binary's lookup alike; the first that matches wins):
+   1. a `users.id` (`users.id::text = opened_by`);
+   2. an `employees.id` → that employee's user (`users.legacy_employee_id = opened_by`);
+   3. an `employees.username` → the same user (`users.legacy_employee_id = employees.id WHERE employees.username =
+      opened_by`);
+   4. `"owner"` (`extractors/actor.rs:26`) or an `owners.username` → the one organisation-wide EXECUTIVE + ADMIN user
+      (`legacy_employee_id IS NULL`, migration 2 / the mirrored `create_owner`).
+   No match → M1 `RAISE`s naming the shift; the binary refuses with `tellerUnknown`. Forms 2–4 exist because
+   `shifts.opened_by` holds two shapes today: the custody path writes the employee id or `"owner"`
+   (`xc-shift/src/application/custody/service.rs:383`), and the compat `/api/rpc` path writes the caller's
+   **username** (`compat/rpc.rs:383`), which v2 prints as `staff` (`v2_json.rs:420`). Usernames are unique within each
+   table (`20261007150000_accounts.sql:3`, `:20`) and `create_owner` refuses an employee's username
+   (`account_repository.rs:521`), so forms 3 and 4 never both match. **OR-7 removes forms 2–4** with `employees` and
+   `owners`. The old `shifts_one_open_per_branch` index stays. The new
    tables start empty. `denominations` gains the face-value rows (A7). `custody_requests`, `custody_signatures` and
    `ops_state.custodian_id` are **not touched**: the request model still runs until CA-10.
 2. *Backfill.* The `teller_id` fill above, and the face values. Count first:
-   `SELECT count(*) FROM shifts s WHERE s.opened_by <> 'owner' AND NOT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id = s.opened_by);` (must be 0, else the migration `RAISE`s)
-   `SELECT count(*) FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL);` (must be 1, else `RAISE`, **but only when some shift has `opened_by = 'owner'`**: on a fresh install the migrations run before the owner is created, `shifts` is empty, and the owner's `users` row comes later from the mirrored `create_owner`, PR 636; requiring it here would stop the first boot)
+   `SELECT count(*) FROM shifts s WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id::text = s.opened_by OR u.legacy_employee_id = s.opened_by) AND NOT EXISTS (SELECT 1 FROM employees e JOIN users u ON u.legacy_employee_id = e.id WHERE e.username = s.opened_by) AND NOT (s.opened_by = 'owner' OR EXISTS (SELECT 1 FROM owners o WHERE o.username = s.opened_by));` (forms 1–4 of item 1; must be 0, else the migration `RAISE`s naming one. Types: `users.id` uuid, cast to text; `users.legacy_employee_id`, `employees.id`, `employees.username`, `owners.username` and `shifts.opened_by` all text, `20261007150000_accounts.sql`, `20261007110000_shifts.sql`, migration 2. Run against a migrated schema: it answers 0 on a schema with no orphan opener)
+   `SELECT count(*) FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL);` (must be 1, else `RAISE`, **but only when some shift's opener is form 4**, i.e. when `SELECT count(*) FROM shifts s WHERE s.opened_by = 'owner' OR EXISTS (SELECT 1 FROM owners o WHERE o.username = s.opened_by);` is not 0: on a fresh install the migrations run before the owner is created, `shifts` is empty, and the owner's `users` row comes later from the mirrored `create_owner`, PR 636; requiring it here would stop the first boot)
    The face values (A7): every note and coin in the current series of THB, USD, EUR, GBP, JPY, CNY and KRW, written
-   out in the migration; the list is part of CA-1's review.
+   out in the migration. The owner settled the edge values on 2026-10-09 (#617): EUR 500 and JPY 2,000 are seeded;
+   THB 1/5/10 satang, USD 0.50 and KRW 1/5 are not. CA-1's up-front test pins the list.
 3. *Order.* After OR-2's migration 2 (it reads `users`), and before OR-7's drop of `legacy_employee_id`
    (`20261030100000`, cleanup block), both by version and by merge order (§5.1). So M1 is plain SQL that reads
    `users.legacy_employee_id`. The binary of the same release writes `teller_id` on every
    shift it opens (`shift_repository.rs`). The opener id it receives changes form at PR 589's **OR-3** (the
    extractor then yields `access::Actor`, whose id is a `users.id`, and `"owner"` no longer arrives), not at OR-7.
-   So from CA-1 on, the lookup accepts **both forms** (PR 589 §9 migration 3 at `d980955`; PR 590
-   issuecomment-6074504097):
-   - `SELECT id FROM users WHERE id::text = $1 OR legacy_employee_id = $1`;
-   - `"owner"` resolves to migration 2's one organisation-wide EXECUTIVE + ADMIN user (`legacy_employee_id IS NULL`);
-   - no match → `tellerUnknown`, and the shift is not opened.
-   OR-7 later removes only the legacy half (and the `"owner"` case). The previous binary cannot insert a shift once
+   So from CA-1 on, the lookup is the four-form opener resolution of item 1 (PR 589 §9 migration 3 at `d980955`;
+   PR 590 issuecomment-6074504097; forms 3–4 added by the lane controller's ruling, 2026-10-09); no match →
+   `tellerUnknown`, and the shift is not opened. OR-7 later removes forms 2–4. The previous binary cannot insert a shift once
    the column is NOT NULL, so migration and binary deploy together, as every v3 release.
 4. *`down` loses* the new tables (empty until CA-3 writes them), the face-value rows and `teller_id`.
 

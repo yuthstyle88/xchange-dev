@@ -348,7 +348,7 @@ So:
 | `api/src/infrastructure/custody/custody_ports.rs` (`customer_known`, `:88`) | TX-8 (`quote-transaction.md:666`, `:59`, one ticket per file) | CI-4 first; that file's TX-8 ticket after it |
 | `api/src/presentation/http/v3/views/admin_customers.rs` (`:71`, `:99`; organisation-wide, `branch` = customers who transacted there) | TX-8 (`quote-transaction.md:666`) | CI-4 first; that file's TX-8 ticket after it |
 | `api/src/application/workflows/booking_save_step.rs` (its in-file test inserts a customer with `branch_id`, `passport_no`, `:208`) | none (`git grep booking_save_step -- docs/design` names no owner row) | — |
-| `api/src/presentation/http/rpc.rs` (`:361` `CustomerService::new(branch_tx)` gains the PII keys) and `api/src/bootstrap/mod.rs` (loads `/etc/xc-v3/pii.key`, U3) | `bootstrap/mod.rs`: LG-4 (`ledger-inventory.md:467`, one wiring line) | either order; different lines |
+| `api/src/bootstrap/mod.rs` (loads `/etc/xc-v3/pii.key`, U3, and calls `xc_customer::install_pii_keys(Arc<PiiKeys>)` once per process; `CustomerService::new(branch_tx)` and `rpc.rs:361` stay unchanged, because the shims keep `confirm_in`/`record_exchange_in`/`CustomerDetails::parse` without `self`; every test harness installs a test key) | `bootstrap/mod.rs`: LG-4 (`ledger-inventory.md:467`, one wiring line) | either order; different lines |
 
 **The provided tests.**
 - 20 of the 46 importers are tests. Other tests write `customers` by branch

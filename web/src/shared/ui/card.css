@@ -1,0 +1,448 @@
+/* Shared card & form-row styles — CD-0 (#726, design docs/design/xchange-v3-cards.md) */
+
+/* -------------------------------------------------------------------------
+   1. Admin look block (.xc-admin .xc-content)
+   ------------------------------------------------------------------------- */
+
+/* v2 admin-html.ts:1 .card, admin-workspace.css:24 .card */
+.xc-admin .xc-content .card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 22px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* v2 admin-html.ts:1 .dark-card, admin-workspace.css:24 .dark-card */
+.xc-admin .xc-content .card.dark-card,
+.xc-admin .xc-content .dark-card {
+  background: #2b2329;
+  color: white;
+  padding: 23px 25px;
+  border: 0;
+}
+
+/* v2 admin-html.ts:1 .dark-card .eyebrow */
+.xc-admin .xc-content .dark-card .eyebrow {
+  color: #c5a6b2;
+}
+
+/* v2 admin-html.ts:1 .dark-card h2 */
+.xc-admin .xc-content .dark-card [class~="card-title"],
+.xc-admin .xc-content .dark-card h2 {
+  font-size: 16px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+/* v2 admin-html.ts:1 .card-heading, admin-workspace.css:24 .card-heading */
+.xc-admin .xc-content .card-heading {
+  padding: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+/* v2 admin-html.ts:1 @media(max-width:600px) .card-heading */
+@media (max-width: 600px) {
+  .xc-admin .xc-content .card-heading {
+    padding: 19px 17px;
+    flex-wrap: wrap;
+  }
+}
+
+/* v2 admin-html.ts:1 .eyebrow, admin-workspace.css:22 #workspace-status .eyebrow */
+.xc-admin .xc-content .card-heading .eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-bottom: 3px;
+}
+
+/* v2 admin-html.ts:1 h2 */
+.xc-admin .xc-content [class~="card-title"],
+.xc-admin .xc-content .card-heading h2,
+.xc-admin .xc-content .card-heading h3 {
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* no v2 source for .card-body; default container flow */
+.xc-admin .xc-content .card-body {
+  display: block;
+}
+
+/* no v2 source for .card-body.flush; flush modifier for edge-to-edge tables */
+.xc-admin .xc-content .card-body.flush {
+  padding: 0;
+}
+
+/* v2 admin-html.ts:1 .dialog-actions */
+.xc-admin .xc-content [class~="card-actions"] {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+/* v2 admin-html.ts:1 .stats, admin-workspace.css:23 .stats */
+.xc-admin .xc-content .card-grid,
+.xc-admin .xc-content .stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+/* no v2 source for .cols-4; explicit column helper matching v2 default */
+.xc-admin .xc-content .card-grid.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* v2 admin-html.ts:1 #cash-stats */
+.xc-admin .xc-content .card-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* v2 admin-workspace.css:37 .payment-cards */
+.xc-admin .xc-content .card-grid.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* v2 admin-workspace.css:32 @media (max-width: 1220px) .stats */
+@media (max-width: 1220px) {
+  .xc-admin .xc-content .card-grid,
+  .xc-admin .xc-content .card-grid.cols-4,
+  .xc-admin .xc-content .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* v2 admin-workspace.css:37 @media (max-width: 1050px) .payment-cards */
+@media (max-width: 1050px) {
+  .xc-admin .xc-content .card-grid.cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v2 admin-workspace.css:34 @media (max-width: 600px) .stats */
+@media (max-width: 600px) {
+  .xc-admin .xc-content .card-grid,
+  .xc-admin .xc-content .card-grid.cols-4,
+  .xc-admin .xc-content .card-grid.cols-3,
+  .xc-admin .xc-content .card-grid.cols-2,
+  .xc-admin .xc-content .stats {
+    gap: 10px;
+  }
+}
+
+/* v2 admin-html.ts:1 .stat, admin-workspace.css:23 .stat */
+.xc-admin .xc-content .stat-card,
+.xc-admin .xc-content .stat {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  position: relative;
+}
+
+/* v2 admin-workspace.css:23 .stat:first-child */
+.xc-admin .xc-content .stat-card:first-child,
+.xc-admin .xc-content .stat:first-child {
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  padding-top: 20px;
+}
+
+/* v2 admin-workspace.css:34 @media (max-width: 600px) .stat */
+@media (max-width: 600px) {
+  .xc-admin .xc-content .stat-card,
+  .xc-admin .xc-content .stat {
+    padding: 16px;
+  }
+
+  .xc-admin .xc-content .stat-card:first-child,
+  .xc-admin .xc-content .stat:first-child {
+    padding-top: 16px;
+  }
+}
+
+/* v2 admin-html.ts:1 .stat-label, admin-workspace.css:23 .stat-label */
+.xc-admin .xc-content .stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* v2 admin-html.ts:1 .stat-number, admin-workspace.css:23 .stat-number */
+.xc-admin .xc-content .stat-value,
+.xc-admin .xc-content .stat-number {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 12px 0 6px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+/* v2 admin-html.ts:1 .stat-number span */
+.xc-admin .xc-content .stat-value .unit,
+.xc-admin .xc-content .stat-number span {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+/* v2 admin-html.ts:1 .stat small, admin-workspace.css:23 .stat small */
+.xc-admin .xc-content .stat-note,
+.xc-admin .xc-content .stat-card small,
+.xc-admin .xc-content .stat small {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  display: block;
+}
+
+/* v2 admin-workspace.css:31 @media (min-width: 1550px) .stat-number */
+@media (min-width: 1550px) {
+  .xc-admin .xc-content .stat-value,
+  .xc-admin .xc-content .stat-number {
+    font-size: 33px;
+  }
+}
+
+/* v2 admin-workspace.css:34 @media (max-width: 600px) .stat-number, .stat-label, .stat small */
+@media (max-width: 600px) {
+  .xc-admin .xc-content .stat-value,
+  .xc-admin .xc-content .stat-number {
+    font-size: 23px;
+  }
+
+  .xc-admin .xc-content .stat-label {
+    font-size: 12px;
+  }
+
+  .xc-admin .xc-content .stat-note,
+  .xc-admin .xc-content .stat-card small,
+  .xc-admin .xc-content .stat small {
+    font-size: 11px;
+  }
+}
+
+/* v2 admin-workspace.css:37 .payment-card>label, admin-html.ts:1 label */
+.xc-admin .xc-content .form-field {
+  display: block;
+  font-size: 13px;
+}
+
+/* v2 admin-html.ts:1 label */
+.xc-admin .xc-content .form-field .form-label {
+  display: block;
+  font-weight: 500;
+}
+
+/* v2 admin-html.ts:1 label input,label select, admin-workspace.css:37 .payment-card textarea */
+.xc-admin .xc-content .form-field > input,
+.xc-admin .xc-content .form-field > select,
+.xc-admin .xc-content .form-field > textarea {
+  display: block;
+  margin-top: 6px;
+}
+
+/* v2 admin-workspace.css:37 .payment-card-top p */
+.xc-admin .xc-content .form-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* v2 admin-workspace.css:37 .payment-card .unit, admin-html.ts:1 .unit */
+.xc-admin .xc-content .form-unit {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* v2 devices.css:1 .check */
+.xc-admin .xc-content .check-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* v2 admin-workspace.css:37 .payment-card input[type=checkbox] */
+.xc-admin .xc-content .check-field input[type="checkbox"] {
+  width: 19px;
+  height: 19px;
+  min-height: 19px;
+  accent-color: var(--brand);
+  margin: 0;
+}
+
+/* no v2 source for .check-text; container for stacked label and hint */
+.xc-admin .xc-content .check-field .check-text {
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* -------------------------------------------------------------------------
+   2. Devices look block (.xc-devices .xc-shell-main)
+   ------------------------------------------------------------------------- */
+
+/* v2 devices.css:1 .devices article, .panel */
+.xc-devices .xc-shell-main .card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* no v2 source: devices cards have no separate heading row */
+.xc-devices .xc-shell-main .card-heading {
+  padding: 0;
+}
+
+/* v2 devices.css:1 .eyebrow */
+.xc-devices .xc-shell-main .card-heading .eyebrow,
+.xc-devices .xc-shell-main .card .eyebrow {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 1.4px;
+  color: var(--brand);
+}
+
+/* v2 devices.css:1 h2 */
+.xc-devices .xc-shell-main [class~="card-title"],
+.xc-devices .xc-shell-main .card-heading h2,
+.xc-devices .xc-shell-main .card-heading h3 {
+  font-size: 19px;
+  margin: 8px 0;
+}
+
+/* no v2 source for .card-body on devices */
+.xc-devices .xc-shell-main .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* no v2 source for .card-body.flush on devices */
+.xc-devices .xc-shell-main .card-body.flush {
+  padding: 0;
+}
+
+/* v2 devices.css:1 .actions */
+.xc-devices .xc-shell-main [class~="card-actions"] {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-content: center;
+}
+
+/* v2 devices.css:1 .devices */
+.xc-devices .xc-shell-main .card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* no v2 source for .cols-4 on devices; matches v2 .devices */
+.xc-devices .xc-shell-main .card-grid.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* no v2 source for .cols-3 on devices */
+.xc-devices .xc-shell-main .card-grid.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* no v2 source for .cols-2 on devices */
+.xc-devices .xc-shell-main .card-grid.cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* v2 devices.css:1 @media (max-width: 1050px) .devices */
+@media (max-width: 1050px) {
+  .xc-devices .xc-shell-main .card-grid,
+  .xc-devices .xc-shell-main .card-grid.cols-4,
+  .xc-devices .xc-shell-main .card-grid.cols-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* v2 devices.css:1 @media (max-width: 700px) .devices */
+@media (max-width: 700px) {
+  .xc-devices .xc-shell-main .card-grid,
+  .xc-devices .xc-shell-main .card-grid.cols-4,
+  .xc-devices .xc-shell-main .card-grid.cols-3,
+  .xc-devices .xc-shell-main .card-grid.cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v2 devices.css:1 label */
+.xc-devices .xc-shell-main .form-field {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* v2 devices.css:1 label */
+.xc-devices .xc-shell-main .form-field .form-label {
+  display: block;
+}
+
+/* v2 devices.css:1 input:not([type=checkbox]),select */
+.xc-devices .xc-shell-main .form-field > input:not([type="checkbox"]),
+.xc-devices .xc-shell-main .form-field > select,
+.xc-devices .xc-shell-main .form-field > textarea {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #cdc7d1;
+  border-radius: 7px;
+  background: white;
+  color: var(--ink);
+  box-sizing: border-box;
+}
+
+/* v2 devices.css:1 .devices p */
+.xc-devices .xc-shell-main .form-hint {
+  display: block;
+  font-size: 13px;
+}
+
+/* no v2 source for .form-unit on devices */
+.xc-devices .xc-shell-main .form-unit {
+  display: block;
+  font-size: 12px;
+}
+
+/* v2 devices.css:1 .check */
+.xc-devices .xc-shell-main .check-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* no v2 source for .check-text on devices; container for stacked label and hint */
+.xc-devices .xc-shell-main .check-field .check-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* v2 devices.css:3 @media (pointer:coarse) input[type=checkbox] */
+@media (pointer: coarse) {
+  .xc-devices .xc-shell-main .check-field input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+}
