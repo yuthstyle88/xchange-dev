@@ -341,7 +341,7 @@ classDiagram
   NotificationDelivery --> Channel
   NotificationRepository <|.. PgNotificationRepository
   NotificationDeliveryHandler --> NotificationRepository
-  QueueDesk --> Notifications : call / recall
+  QueueDesk --> Notifications : call_next / call / recall
   CustomerRegister ..> SessionService
 ```
 
@@ -449,7 +449,7 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-7 | sign-in/up screens and the session claim | `web/pages/app-sign-in.html`, `web/pages/app-sign-up.html`, `web/src/screens/customer/sign-in/**`, the `claim_session_in` calls in OR-3's `session_service.rs` (two lines, after OR-3 merges), `web/src/screens/customer/_shell/**` | APP-4, APP-6, OR-3, CI-7, LN-1 |
 | APP-8 | C01 home screen | `web/pages/app-home.html`, `web/src/screens/customer/home/**` | APP-4, APP-5, APP-7 (shell) |
 | APP-9 | **not cut at launch** (owner C3: in-app only). If the owner later asks for a channel: one handler file per channel, endpoint table if push | `api/src/bootstrap/outbox_handlers/notification_<channel>.rs`, its migration if any, `xc-notify/src/application/delivery/**` | APP-3, OB-1, the owner asking for that channel |
-| APP-10 | the queue "called" notification: template + the `notify_in` call in `QueueDesk::call`/`recall` | `xc-notify/src/templates/queue_called.rs`, the call in `xc-queue/src/application/desk/queue_desk.rs` (two lines, after QU-3 merges) | APP-3, QU-3 |
+| APP-10 | the queue "called" notification: template + the `notify_in` call in `QueueDesk::call_next`/`call`/`recall` | `xc-notify/src/templates/queue_called.rs`, the port in `xc-queue/src/application/desk/queue_desk.rs` (a field, the builder `with_notifications`, and the call at three sites, after QU-3 merges) | APP-3, QU-3 |
 | APP-11 | C04 history screen and view `my_transactions` | `views/my_transactions.rs`, DTO/TS, `xc-auth/src/domain/policy/areas/customer_history.rs`, `web/pages/app-history.html`, `web/src/screens/customer/history/**` | APP-7, #551's receipt route with an owner check, APP-18 (the customer caller) |
 | APP-12 | C08 branches screen | `web/pages/app-branches.html`, `web/src/screens/customer/branches/**` | APP-5, APP-7 |
 | APP-13 | C09 journey screen (drafts + ticket; bookings when #555 lands) | `web/pages/app-journey.html`, `web/src/screens/customer/journey/**` | APP-4, APP-7, QU-7 |
