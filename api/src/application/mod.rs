@@ -4,5 +4,7 @@ pub mod compat;
 
 pub mod custody;
 pub mod custody_role;
+pub mod executive;
+pub mod finance;
 pub mod settings;
 pub mod workflows;
