@@ -49,9 +49,6 @@ jobs:
       - name: Self-test migration-order
         run: bash .github/scripts/migration-order.test.sh
 
-      - name: Self-test migration-slot
-        run: bash scripts/migration-slot.test.sh
-
       - name: Check changed files
         id: filter
         env:
@@ -199,8 +196,6 @@ jobs:
 
       - name: Check migration order
         if: github.event_name == 'pull_request'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: bash .github/scripts/migration-order.sh "origin/${{ github.base_ref }}" "${{ github.event.pull_request.head.sha }}"
 
       - name: Self-test should-build
