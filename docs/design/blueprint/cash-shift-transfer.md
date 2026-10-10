@@ -424,7 +424,8 @@ CA-1 to merge; this design's M3 is `20261030110000`.
    the column is NOT NULL, so migration and binary deploy together, as every v3 release.
 4. *`down` loses* the new tables (empty until CA-3 writes them), the face-value rows and `teller_id`.
 
-**M2. `api/migrations/20261012110000_shift_per_teller.sql` (CA-3): the marker and the two indexes (§4.1).**
+**M2. `api/migrations/20261031080000_shift_per_teller.sql` (CA-3): the marker and the two indexes (§4.1).**
+   *Version:* after every migration on main at the time of release (lane controller 2026-10-10; was `20261012110000`, which sorted before main's `20261030160000` and would have given fresh and existing databases different histories; the gate is #847).
 1. *Existing rows.* `ADD COLUMN opened_by_count uuid NULL REFERENCES cash_counts(id)`: every existing shift gets
    NULL, so it counts as v2-opened and stays under v2's rule. `DROP INDEX shifts_one_open_per_branch`; `CREATE UNIQUE
    INDEX shifts_one_open_per_teller ON shifts (teller_id) WHERE status = 'OPEN' AND opened_by_count IS NOT NULL` (A8)
@@ -467,7 +468,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 |---|---|---|---|
 | CA-1 | schema (§4.1) and `denominations` face values (A7): migration M1, create only | `api/migrations/20261012100000_cash.sql`; `xc-shift/src/infrastructure/shift/shift_repository.rs` (`teller_id` read/write only, with the two-form opener lookup of §8 M1 item 3) | this design, PR 570 RU-1, PR 589 OR-2. **Merges before PR 589 OR-7** (§8 M1) |
 | CA-2 | the crate skeleton and `PersonRules` | `api/crates/xc-cash/{Cargo.toml,src/lib.rs}`, workspace `Cargo.toml` (one line), `xc-cash/src/domain/person_rules.rs`, its tests | PR 589 OR-2 (permissions incl. the four new ones, `access::Actor`, `Authorizer`). Not OR-3: CA-2/CA-3 take `access::Actor` as a value; only CA-8's routes need OR-3's extractor (lane controller's ruling, 2026-10-09) |
-| CA-3 | counts and shifts per teller | `xc-cash/src/domain/count/**`, `xc-cash/src/application/count/**`, `xc-cash/src/domain/repository.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-shift/src/application/shift/service.rs` (`open_on_verified`, `close_on_verified`, `apply_delta_for_teller_in`), `xc-shift/src/infrastructure/shift/shift_repository.rs` (`opened_by_count` on insert; v2's per-branch reads on `opened_by_count IS NULL`), `xc-cash/src/domain/posting.rs`, `xc-cash/src/infrastructure/interim_postings.rs`, `api/migrations/20261012110000_shift_per_teller.sql` (§8 M2) | CA-1, CA-2 |
+| CA-3 | counts and shifts per teller | `xc-cash/src/domain/count/**`, `xc-cash/src/application/count/**`, `xc-cash/src/domain/repository.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-shift/src/application/shift/service.rs` (`open_on_verified`, `close_on_verified`, `apply_delta_for_teller_in`), `xc-shift/src/infrastructure/shift/shift_repository.rs` (`opened_by_count` on insert; v2's per-branch reads on `opened_by_count IS NULL`), `xc-cash/src/domain/posting.rs`, `xc-cash/src/infrastructure/interim_postings.rs`, `api/migrations/20261031080000_shift_per_teller.sql` (§8 M2) | CA-1, CA-2 |
 | CA-4 | hand-over | `xc-cash/src/domain/handover/**`, `xc-cash/src/application/handover/**` | CA-3 |
 | CA-5 | the transfer core, BRANCH kind, approval subject and policy | `xc-cash/src/domain/transfer/{cash_transfer.rs,ends.rs,transfer_policy.rs,kinds/branch.rs,kinds/mod.rs}`, `xc-cash/src/application/transfer/**`, `xc-cash/src/application/approval/**` | CA-3, PR 570 AP-1 |
 | CA-6 | safe and external kinds | `xc-cash/src/domain/transfer/kinds/{safe.rs,external.rs}` | CA-5 |
