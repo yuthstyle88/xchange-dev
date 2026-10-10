@@ -163,9 +163,12 @@ async fn a_command_is_judged_by_the_window_the_ports_answer_for_its_time() {
     let (d, ports) = ready_in_tokyo(&db).await;
 
     // 14:59 in Tokyo is 12:59 in Bangkok: inside the old rule, outside this branch's window
-    assert_eq!(
-        refusal(command_at(&d, "BE1", "opsStartService", tokyo("14:59")).await),
-        CustodyError::ServiceNotReady.to_string()
+    // #755: the sentence names the branch's own window; the exact text is pinned against
+    // the branch's real hours in `api/tests/service_not_ready_message_test.rs`
+    let refused = refusal(command_at(&d, "BE1", "opsStartService", tokyo("14:59")).await);
+    assert!(
+        refused.starts_with("เปิดบริการได้หลังเตรียมกะเสร็จ ระหว่าง "),
+        "{refused}"
     );
     let asked = ports.asked.lock().unwrap().clone();
     assert_eq!(

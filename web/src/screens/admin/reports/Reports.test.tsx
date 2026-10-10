@@ -57,7 +57,8 @@ const FOOTNOTE = 'รวมเฉพาะรายการสำเร็จ�
 const OLD_FOOTNOTE = 'นับเฉพาะรายการสำเร็จในช่วงวันที่ที่เลือก';
 const REFERENCE_NOTE =
   'ไม่รวมค่าบริการและค่าใช้จ่าย ส่วนต่างนี้ไม่ถูกบวกเข้าลิ้นชัก และสำหรับเงินที่รับซื้อไว้ยังไม่ใช่กำไรจากการขายต่อ';
-/** v2's LIVE export header, `admin-html:170`. */
+/** v2's LIVE export header, `admin-html:170`, with `Unit Size` after `Rate` (#868: the owner's
+ *  decision 2026-10-10; rates are per unit since #781, rates.md §4.9 R1). */
 const CSV_HEADERS = [
   'Branch ID',
   'Branch',
@@ -68,6 +69,7 @@ const CSV_HEADERS = [
   'Currency',
   'Amount',
   'Rate',
+  'Unit Size',
   'Principal THB',
   'Fee THB',
   'Bank Fee THB',
@@ -1056,13 +1058,13 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     ).toEqual([tx(199), tx(200), ...txs(300, 201).reverse()].map((r) => `"${r.id}"`));
     expect(lines[102]).toBe(
       quoted([
-        'MAIN', 'Silom #2', 'LIVE', tx(300).id, '2026-10-06', 'SELL', 'USD', '1500.50', '32.6000', '48916.30',
+        'MAIN', 'Silom #2', 'LIVE', tx(300).id, '2026-10-06', 'SELL', 'USD', '1500.50', '32.6000', '1', '48916.30',
         '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775',
       ]),
     );
     expect(lines[1]).toBe(
       quoted([
-        'MAIN', 'Silom #2', 'LIVE', tx(199).id, '2026-10-06', 'BUY', 'USD', '100.00', '30.0000', '3000.00',
+        'MAIN', 'Silom #2', 'LIVE', tx(199).id, '2026-10-06', 'BUY', 'USD', '100.00', '30.0000', '1', '3000.00',
         '5.00', '0.00', '2994.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '',
       ]),
     );

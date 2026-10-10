@@ -15,6 +15,7 @@ import type {
   RatesReferenceRow,
 } from '../../../shared/api/generated/rates_reference';
 import { locale, screenT } from '../../../shared/i18n';
+import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { formatRate } from '../../../shared/ui/rate';
 import type { AdminMenuProps } from '../menus';
 import { openDialog } from '../parts/Dialog';
@@ -558,6 +559,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <div class="rates-pill">{t('ratesPill')}</div>
           </div>
         </div>
+
+        <RateFreshness
+          stale={pubData()?.stale ?? false}
+          sourceDate={pubData()?.sourceDate}
+          publishedAt={pubData()?.publication?.publishedAt}
+        />
 
         <div class="table-scroll">
           <table class="rates-table">

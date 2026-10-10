@@ -84,116 +84,153 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
 
   return (
     <div class="transaction-detail">
-      {/* 1. Fields dl */}
-      <dl class="detail-fields">
-        <dt>{t('detailId')}</dt>
-        <dd>{props.row.id}</dd>
+      {/* 1. Dialog note on top */}
+      <p class="dialog-note">{t('liveNote')}</p>
 
-        <dt>{t('headerStatus')}</dt>
-        <dd>{statusName(props.row.status)}</dd>
+      {/* 2. Fields dl */}
+      <dl class="details">
+        <div>
+          <dt>{t('detailId')}</dt>
+          <dd>{props.row.id}</dd>
+        </div>
 
-        <dt>{t('headerCustomer')}</dt>
-        <dd>{props.row.customer}</dd>
+        <div>
+          <dt>{t('headerStatus')}</dt>
+          <dd>{statusName(props.row.status)}</dd>
+        </div>
 
-        <dt>{t('detailDateTime')}</dt>
-        <dd>
-          {props.row.date} {formatBangkokTime(props.row.created)}
-        </dd>
+        <div>
+          <dt>{t('headerCustomer')}</dt>
+          <dd>{props.row.customer}</dd>
+        </div>
 
-        <dt>{t('headerType')}</dt>
-        <dd>{typeName(props.row.type)}</dd>
+        <div>
+          <dt>{t('detailDateTime')}</dt>
+          <dd>
+            {props.row.date} {formatBangkokTime(props.row.created)}
+          </dd>
+        </div>
 
-        <dt>{t('headerAmount')}</dt>
-        <dd>
-          {formatMoney(props.row.amount)} {props.row.currency}
-        </dd>
+        <div>
+          <dt>{t('headerType')}</dt>
+          <dd>{typeName(props.row.type)}</dd>
+        </div>
 
-        <dt>{t('detailRate')}</dt>
-        <dd>{formatRate(props.row.rate, props.row.unitSize, props.row.currency)}</dd>
+        <div>
+          <dt>{t('headerAmount')}</dt>
+          <dd>
+            {formatMoney(props.row.amount)} {props.row.currency}
+          </dd>
+        </div>
 
-        <dt>{t('detailPrincipal')}</dt>
-        <dd>{formatMoney(props.row.principal)} THB</dd>
+        <div>
+          <dt>{t('detailRate')}</dt>
+          <dd>{formatRate(props.row.rate, props.row.unitSize, props.row.currency)}</dd>
+        </div>
 
-        <dt>{t('detailFee')}</dt>
-        <dd>{formatMoney(props.row.fee)} THB</dd>
+        <div>
+          <dt>{t('detailPrincipal')}</dt>
+          <dd>{formatMoney(props.row.principal)} THB</dd>
+        </div>
+
+        <div>
+          <dt>{t('detailFee')}</dt>
+          <dd>{formatMoney(props.row.fee)} THB</dd>
+        </div>
 
         {props.row.type === 'BUY' ? (
-          <>
+          <div>
             <dt>{t('detailSettlementBuy')}</dt>
             <dd>{formatMoney(props.row.settlement)} THB</dd>
-          </>
+          </div>
         ) : (
-          <>
+          <div>
             <dt>{t('detailSettlementSell')}</dt>
             <dd>{formatMoney(props.row.settlement)} THB</dd>
-          </>
+          </div>
         )}
 
-        <dt>{t('detailBankFee')}</dt>
-        <dd>{formatMoney(props.row.bankFee)} THB</dd>
+        <div>
+          <dt>{t('detailBankFee')}</dt>
+          <dd>{formatMoney(props.row.bankFee)} THB</dd>
+        </div>
 
-        <dt>{t('detailMethod')}</dt>
-        <dd>{methodName(props.row.method)}</dd>
+        <div>
+          <dt>{t('detailMethod')}</dt>
+          <dd>{methodName(props.row.method)}</dd>
+        </div>
 
-        <dt>{t('detailStaff')}</dt>
-        <dd>{props.row.staff}</dd>
+        <div>
+          <dt>{t('detailStaff')}</dt>
+          <dd>{props.row.staff}</dd>
+        </div>
 
-        <dt>{t('detailNotes')}</dt>
-        <dd>{props.row.notes ?? '—'}</dd>
+        <div>
+          <dt>{t('detailNotes')}</dt>
+          <dd>{props.row.notes ?? '—'}</dd>
+        </div>
 
         <Show when={props.row.referenceRate !== null}>
-          <dt>{t('detailRefRate')}</dt>
-          <dd>{formatRate(props.row.referenceRate!, props.row.unitSize, props.row.currency)}</dd>
+          <div>
+            <dt>{t('detailRefRate')}</dt>
+            <dd>{formatRate(props.row.referenceRate!, props.row.unitSize, props.row.currency)}</dd>
+          </div>
 
-          <dt>{t('detailRefValue')}</dt>
-          <dd>{formatMoney(props.row.referenceValue!)} THB</dd>
+          <div>
+            <dt>{t('detailRefValue')}</dt>
+            <dd>{formatMoney(props.row.referenceValue!)} THB</dd>
+          </div>
 
-          <dt>{t('detailRefSpread')}</dt>
-          <dd>
-            {formatMoney(props.row.referenceSpread!)} THB (
-            {props.row.referencePercent!}%)
-          </dd>
+          <div>
+            <dt>{t('detailRefSpread')}</dt>
+            <dd>
+              {formatMoney(props.row.referenceSpread!)} THB (
+              {props.row.referencePercent!}%)
+            </dd>
+          </div>
         </Show>
 
         <Show when={props.row.cancelReason !== null}>
-          <dt>{t('detailCancelReason')}</dt>
-          <dd>{props.row.cancelReason}</dd>
+          <div>
+            <dt>{t('detailCancelReason')}</dt>
+            <dd>{props.row.cancelReason}</dd>
+          </div>
         </Show>
       </dl>
 
-      {/* 2. LIVE note and buttons */}
-      <p class="live-note">{t('liveNote')}</p>
-
-      <div class="detail-actions">
+      {/* 3. Actions */}
+      <div class="dialog-actions">
         <Show when={props.row.status === 'COMPLETED'}>
-          <button type="button" disabled class="btn-cancel-disabled">
+          <button type="button" disabled class="danger">
             {t('realTransactionVerifyRefund')}
           </button>
         </Show>
-        <button type="button" onClick={props.onClose} class="btn-close">
+        <button type="button" onClick={props.onClose} class="secondary">
           {t('close')}
         </button>
       </div>
 
-      {/* 3. Slip section */}
+      {/* 4. Slip section */}
       <section class="slip-section">
         <h3>{t('slipSectionTitle')}</h3>
         <Show
           when={props.row.slipUrl}
           fallback={<p>{t('noSlipAttached')}</p>}
         >
-          <div class="slip-links">
-            <a
-              href={props.row.slipUrl!}
-              target="_blank"
-              rel="noopener"
-            >
-              {t('openSlip')}
-            </a>
-            <a href={`${props.row.slipUrl!}?download=1`}>
-              {t('download')}
-            </a>
-          </div>
+          <a
+            class="secondary"
+            href={props.row.slipUrl!}
+            target="_blank"
+            rel="noopener"
+          >
+            {t('openSlip')}
+          </a>{' '}
+          <a
+            class="text-button"
+            href={`${props.row.slipUrl!}?download=1`}
+          >
+            {t('download')}
+          </a>
         </Show>
       </section>
 

@@ -10,6 +10,10 @@ export const th = {
   refresh: 'รีเฟรช',
   staffLink: 'เปิดหน้าพนักงาน ↗',
 
+  filterBranch: 'แสดงสาขา',
+  filterAll: 'ทุกสาขา',
+  filterEmpty: 'ไม่มีบัญชีพนักงานในสาขานี้',
+
   headerAccountName: 'รหัสบัญชี / ชื่อ',
   headerRole: 'บทบาท',
   headerBranch: 'สาขา',
@@ -70,6 +74,10 @@ export const en = {
   add: 'Create Staff Account',
   refresh: 'Refresh',
   staffLink: 'Open Staff Screen ↗',
+
+  filterBranch: 'Show branch',
+  filterAll: 'All branches',
+  filterEmpty: 'No staff accounts in this branch',
 
   headerAccountName: 'Account / Name',
   headerRole: 'Role',

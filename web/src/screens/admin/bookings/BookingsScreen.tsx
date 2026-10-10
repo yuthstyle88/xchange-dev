@@ -17,6 +17,8 @@ import type {
 import { openDialog, closeDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
 import { refreshTick } from '../parts/refresh';
+import { Card } from '../../../shared/ui/Card';
+import { CheckField } from '../../../shared/ui/Field';
 import { th, en } from './i18n';
 import './bookings.css';
 
@@ -206,16 +208,16 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
 
     openDialog(t('dialogConfirmTitle'), () => (
       <div>
-        <div>
+        <p>
           {row.name} · {formatMoney(row.amount)} {row.currency}
-        </div>
-        <div>
+        </p>
+        <p>
           {t('rateToLock')}
-          {row.counterRate ?? t('rateNotSet')}
+          <strong>{row.counterRate ?? t('rateNotSet')}</strong>
           {t('principal')}
           {row.counterPrincipal ? formatMoney(row.counterPrincipal) : t('dash')}
           {t('thb')}
-        </div>
+        </p>
         <label>
           {t('expiryField')}
           <input
@@ -228,11 +230,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <Show when={dialogError()}>
           <p class="error">{dialogError()}</p>
         </Show>
-        <div class="actions">
-          <button type="button" onClick={() => closeDialog()}>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" onClick={() => closeDialog()}>
             {t('back')}
           </button>
-          <button type="button" onClick={confirmRate}>
+          <button type="button" class="primary" onClick={confirmRate}>
             {t('confirmLockRate')}
           </button>
         </div>
@@ -269,11 +271,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
           {row.id}
           {t('cancelConfirmSuffix')}
         </p>
-        <div class="actions">
-          <button type="button" onClick={() => closeDialog()}>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" onClick={() => closeDialog()}>
             {t('back')}
           </button>
-          <button type="button" onClick={cancelBooking}>
+          <button type="button" class="danger" onClick={cancelBooking}>
             {t('confirmCancel')}
           </button>
         </div>
@@ -332,20 +334,18 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
             onInput={(e) => setMins(e.currentTarget.value)}
           />
         </label>
-        <label>
-          {t('settingsOpenWhenShift')}
-          <input
-            type="checkbox"
-            checked={enb()}
-            onChange={(e) => setEnb(e.currentTarget.checked)}
-          />
-        </label>
+        <CheckField
+          class="bookings-check"
+          label={t('settingsOpenWhenShift')}
+          checked={enb()}
+          onChange={(checked) => setEnb(checked)}
+        />
         <p>{t('settingsMemberNote')}</p>
         <Show when={dialogError()}>
           <p class="error">{dialogError()}</p>
         </Show>
-        <div class="actions">
-          <button type="button" onClick={saveSettings}>
+        <div class="dialog-actions">
+          <button type="button" class="primary" onClick={saveSettings}>
             {t('save')}
           </button>
         </div>
@@ -492,50 +492,58 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <Show when={dialogError()}>
           <p class="error">{dialogError()}</p>
         </Show>
-        <div class="actions">
-          <button type="submit">{t('createButton')}</button>
+        <div class="dialog-actions">
+          <button type="submit" class="primary">{t('createButton')}</button>
         </div>
       </form>
     ));
   }
 
   return (
-    <div class="admin-bookings">
-      <div class="toolbar">
-        <Show when={settings()?.publicUrl}>
-          <a href={settings()!.publicUrl} target="_blank" rel="noopener">
-            {t('openPublicWeb')}
-          </a>
-        </Show>
-        <button type="button" onClick={handleManualRefresh}>
-          {t('refreshBookings')}
-        </button>
-        <button type="button" onClick={openSettingsDialog}>
-          {t('bookingSettings')}
-        </button>
-        <button type="button" onClick={openCreateDialog}>
-          {t('createButtonWithPlus')}
-        </button>
+    <Card class="admin-bookings">
+      <div class="bookings-top">
+        <div class="bookings-actions">
+          <Show when={settings()?.publicUrl}>
+            <a
+              class="primary"
+              href={settings()!.publicUrl}
+              target="_blank"
+              rel="noopener"
+            >
+              {t('openPublicWeb')}
+            </a>
+          </Show>
+          <button type="button" class="secondary" onClick={handleManualRefresh}>
+            {t('refreshBookings')}
+          </button>
+          <button type="button" class="secondary" onClick={openSettingsDialog}>
+            {t('bookingSettings')}
+          </button>
+          <button type="button" class="secondary" onClick={openCreateDialog}>
+            {t('createButtonWithPlus')}
+          </button>
+        </div>
+
+        <div class="info-line">
+          {t('infoPrefix')}
+          {settings() ? settings()!.rules.minutes : 30}
+          {t('infoMinutes')}
+          {settings()?.rules.enabled ? t('infoOpen') : t('infoClosed')}
+          {t('infoMembers')}
+          {settings() ? settings()!.memberCount : 0}
+          {t('infoPersons')}
+        </div>
+
         <label>
           {t('searchBookings')}
           <input
-            type="text"
+            type="search"
             placeholder={t('searchPlaceholder')}
             maxlength={100}
             value={searchTerm()}
             onInput={(e) => setSearchTerm(e.currentTarget.value)}
           />
         </label>
-      </div>
-
-      <div class="info-line">
-        {t('infoPrefix')}
-        {settings() ? settings()!.rules.minutes : 30}
-        {t('infoMinutes')}
-        {settings()?.rules.enabled ? t('infoOpen') : t('infoClosed')}
-        {t('infoMembers')}
-        {settings() ? settings()!.memberCount : 0}
-        {t('infoPersons')}
       </div>
 
       <Show when={loading()}>
@@ -545,75 +553,96 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <p class="error">{error()}</p>
       </Show>
       <Show when={!loading() && !error() && rows().length === 0}>
-        <p>{t('emptySearch')}</p>
+        <div class="empty">{t('emptySearch')}</div>
       </Show>
       <Show when={!loading() && !error() && rows().length > 0}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('thBookingCustomer')}</th>
-              <th>{t('thItem')}</th>
-              <th>{t('thRate')}</th>
-              <th>{t('thExpiry')}</th>
-              <th>{t('thStatus')}</th>
-              <th>{t('thActions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={rows()}>
-              {(row) => (
-                <tr>
-                  <td>
-                    <div>{row.id}</div>
-                    <div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('thBookingCustomer')}</th>
+                <th>{t('thItem')}</th>
+                <th class="num">{t('thRate')}</th>
+                <th>{t('thExpiry')}</th>
+                <th>{t('thStatus')}</th>
+                <th>{t('thActions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={rows()}>
+                {(row) => (
+                  <tr>
+                    <td>
+                      <strong>{row.id}</strong>
+                      <br />
                       {row.name} · {row.phone}
                       <Show when={row.member}>
-                        {' '}<span class="pill">{t('memberPill')}</span>
+                        <br />
+                        <span class="pill">{t('memberPill')}</span>
                       </Show>
-                    </div>
-                  </td>
-                  <td>
-                    {row.type === 'BUY' ? t('typeBuy') : t('typeSell')}{' '}
-                    {formatMoney(row.amount)} {row.currency}
-                  </td>
-                  <td>{row.rate}</td>
-                  <td>{formatExpiry(row.expiresAt, t, locale())}</td>
-                  <td>{getStatusText(row.status, t)}</td>
-                  <td>
-                    <Show when={row.status === 'PENDING'}>
-                      <button type="button" onClick={() => openConfirmDialog(row)}>
-                        {t('confirmRateAndTime')}
-                      </button>
-                      <button type="button" onClick={() => openCancelDialog(row)}>
-                        {t('cancel')}
-                      </button>
-                    </Show>
-                    <Show when={row.status === 'CONFIRMED'}>
-                      <a
-                        href={`/desk?branch=${props.branch()}&booking=${row.id}`}
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        {t('deskHandOff')}
-                      </a>
-                      <button type="button" onClick={() => openCancelDialog(row)}>
-                        {t('cancel')}
-                      </button>
-                    </Show>
-                  </td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+                    </td>
+                    <td>
+                      {row.type === 'BUY' ? t('typeBuy') : t('typeSell')}{' '}
+                      {formatMoney(row.amount)} {row.currency}
+                    </td>
+                    <td class="num">{row.rate}</td>
+                    <td>{formatExpiry(row.expiresAt, t, locale())}</td>
+                    <td>{getStatusText(row.status, t)}</td>
+                    <td>
+                      <Show when={row.status === 'PENDING'}>
+                        <button
+                          type="button"
+                          class="primary"
+                          onClick={() => openConfirmDialog(row)}
+                        >
+                          {t('confirmRateAndTime')}
+                        </button>
+                        {' '}
+                        <button
+                          type="button"
+                          class="text-button"
+                          onClick={() => openCancelDialog(row)}
+                        >
+                          {t('cancel')}
+                        </button>
+                      </Show>
+                      <Show when={row.status === 'CONFIRMED'}>
+                        <a
+                          class="primary"
+                          href={`/desk?branch=${props.branch()}&booking=${row.id}`}
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          {t('deskHandOff')}
+                        </a>
+                        {' '}
+                        <button
+                          type="button"
+                          class="text-button"
+                          onClick={() => openCancelDialog(row)}
+                        >
+                          {t('cancel')}
+                        </button>
+                      </Show>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
         <Show when={hasMore()}>
           <div class="load-more">
-            <button type="button" onClick={handleLoadMore}>
+            <button
+              type="button"
+              class="secondary"
+              onClick={handleLoadMore}
+            >
               {t('loadMore')}
             </button>
           </div>
         </Show>
       </Show>
-    </div>
+    </Card>
   );
 }

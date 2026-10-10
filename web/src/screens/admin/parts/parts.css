@@ -2,11 +2,6 @@
   width: 100%;
 }
 
-.xc-admin .xc-content .data-table-empty {
-  padding: 45px 24px;
-  text-align: center;
-  color: var(--muted);
-}
 
 .xc-admin .xc-content .empty-note {
   font-size: 13px;
@@ -83,68 +78,18 @@
   flex-direction: column;
 }
 
-.xc-admin .xc-content .detail-fields {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0 25px;
-  margin: 15px 0;
-  font-size: 14px;
-}
-
-.xc-admin .xc-content .detail-fields dt {
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  padding: 12px 0;
-}
-
-.xc-admin .xc-content .detail-fields dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-  border-bottom: 1px solid var(--line);
-  padding: 12px 0;
-}
-
+/* Rates.tsx uses .live-note */
 .xc-admin .xc-content .live-note {
   font-size: 13px;
   color: var(--muted);
   margin: 8px 0;
 }
 
-.xc-admin .xc-content .detail-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 22px;
-}
-
-.xc-admin .xc-content .btn-cancel-disabled {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
-  border-radius: 7px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.xc-admin .xc-content .btn-close {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
-  border-radius: 7px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
+/* v2 slips.js:18 style='margin-top:20px;padding-top:16px;border-top:1px solid #ddd' */
 .xc-admin .xc-content .slip-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid #ddd;
 }
 
 .xc-admin .xc-content .slip-section h3 {
@@ -152,21 +97,11 @@
   margin: 0 0 10px;
 }
 
-.xc-admin .xc-content .slip-links {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.xc-admin .xc-content .slip-links a {
-  color: var(--brand);
-  font-weight: 600;
-}
-
+/* v2 inline style border-top: 1px solid #ddd */
 .xc-admin .xc-content .receipt-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid #ddd;
 }
 
 .xc-admin .xc-content .receipt-section h3 {

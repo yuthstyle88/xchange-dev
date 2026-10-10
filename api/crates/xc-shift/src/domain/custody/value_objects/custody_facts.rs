@@ -12,6 +12,7 @@ pub struct OpenShift {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustodyFacts {
     pub service_window: ServiceWindow,
+    pub utc_offset_minutes: i32,
     pub open_shift: Option<OpenShift>,
     pub has_live_rate: bool,
     pub rates_updated: String,

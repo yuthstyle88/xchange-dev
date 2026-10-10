@@ -2,6 +2,8 @@
 
 use xc_kernel::money::CurrencyCode;
 
+use crate::domain::custody::value_objects::service_window::ServiceWindow;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CustodyError {
     #[error("บทบาทนี้ไม่มีสิทธิ์ทำรายการ")]
@@ -64,8 +66,11 @@ pub enum CustodyError {
     #[error("จำนวนเงินต้องไม่ติดลบ ไม่เกิน 100,000,000 และมีทศนิยมไม่เกิน 2 ตำแหน่ง")]
     AmountInvalid,
 
-    #[error("เปิดบริการได้หลังเตรียมกะเสร็จ ระหว่าง 11:00–22:50")]
-    ServiceNotReady,
+    #[error("{}", format_service_not_ready(window, *utc_offset_minutes))]
+    ServiceNotReady {
+        window: ServiceWindow,
+        utc_offset_minutes: i32,
+    },
 
     #[error("ยืนยันอุปกรณ์และเรทที่แสดงให้ตรงกับชุดเรทล่าสุด")]
     ServiceChecksIncomplete,
@@ -207,4 +212,31 @@ pub enum CustodyError {
 
     #[error("ต้องเป็น Front ผู้รับผิดชอบลิ้นชักที่ลงเวลาเข้าแล้ว")]
     SaveNotCustodian,
+}
+
+fn format_service_not_ready(window: &ServiceWindow, utc_offset_minutes: i32) -> String {
+    match window {
+        ServiceWindow::NotSet => "สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ".to_string(),
+        ServiceWindow::Closed => "วันนี้สาขาปิด".to_string(),
+        ServiceWindow::Open { open, close } => {
+            let open_millis = open.epoch_millis();
+            let close_millis = close.epoch_millis();
+            let last_start_millis = close_millis - 10 * 60 * 1000;
+
+            let open_local_sec = (open_millis + utc_offset_minutes as i64 * 60 * 1000) / 1000;
+            let open_min = (open_local_sec / 60).rem_euclid(1440);
+            let open_h = open_min / 60;
+            let open_m = open_min % 60;
+
+            let last_start_local_sec =
+                (last_start_millis + utc_offset_minutes as i64 * 60 * 1000) / 1000;
+            let last_start_min = (last_start_local_sec / 60).rem_euclid(1440);
+            let last_start_h = last_start_min / 60;
+            let last_start_m = last_start_min % 60;
+
+            format!(
+                "เปิดบริการได้หลังเตรียมกะเสร็จ ระหว่าง {open_h:02}:{open_m:02}–{last_start_h:02}:{last_start_m:02}"
+            )
+        }
+    }
 }

@@ -91,4 +91,8 @@ export const zh: Record<Key, string> = {
   'queue.sound.testMuted': '测试声音 · 请开启声音以接收排队提醒',
   'queue.sound.errPlayback': '无法播放声音，请检查扬声器与浏览器设置',
   'queue.store.error': '无法连接到排队服务 · 正在重试',
+  'rate.stale': '参考汇率已过期',
+  'rate.sourceDate': '参考日期 {date}',
+  'rate.noSourceDate': '无参考汇率',
+  'rate.publishedAt': '发布于 {at}',
 };

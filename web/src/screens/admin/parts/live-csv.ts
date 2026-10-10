@@ -1,0 +1,55 @@
+import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+
+export const LIVE_CSV_HEADERS: string[] = [
+  'Branch ID',
+  'Branch',
+  'Mode',
+  'Document Ref',
+  'Date',
+  'Type',
+  'Currency',
+  'Amount',
+  'Rate',
+  'Unit Size',
+  'Principal THB',
+  'Fee THB',
+  'Bank Fee THB',
+  'Settlement THB',
+  'Method',
+  'Status',
+  'Shift ID',
+  'Reference Rate',
+  'Reference Value THB',
+  'Reference Spread THB',
+  'Reference Spread %',
+];
+
+export function liveCsvRow(
+  branchId: string,
+  branchName: string,
+  r: TransactionRow,
+): string[] {
+  return [
+    branchId,
+    branchName,
+    'LIVE',
+    r.id,
+    r.date,
+    r.type,
+    r.currency,
+    r.amount,
+    r.rate,
+    r.unitSize,
+    r.principal,
+    r.fee,
+    r.bankFee,
+    r.settlement,
+    r.method,
+    r.status,
+    r.shiftId ?? '',
+    r.referenceRate ?? '',
+    r.referenceValue ?? '',
+    r.referenceSpread ?? '',
+    r.referencePercent ?? '',
+  ];
+}

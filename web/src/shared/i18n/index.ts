@@ -16,7 +16,7 @@ export type Locale = (typeof LOCALE)[Lang];
 export type Params = Record<string, string | number>;
 
 const STORAGE_KEY = 'xc.lang';
-const SHARED_PREFIXES = ['field', 'form', 'shell', 'error', 'queue'];
+const SHARED_PREFIXES = ['field', 'form', 'shell', 'error', 'queue', 'rate'];
 const SEGMENT_REGEX = /^[a-z][a-z0-9-]*$/;
 
 function readStorage(): Lang {

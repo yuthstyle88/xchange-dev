@@ -11,6 +11,11 @@ body:has(.xc-shell) {
   box-sizing: border-box;
 }
 
+/* Banner slot (above header) */
+.xc-shell-banner {
+  box-sizing: border-box;
+}
+
 /* Header layout ported from v2 devices.css */
 .xc-shell-header {
   display: flex;
@@ -96,6 +101,19 @@ body:has(.xc-shell) {
 
 .xc-shell-header .xc-shell-title {
   margin: 0;
+}
+
+/* v2 devices.html:3 — the header holds only the brand and the nav; the page title is the body heading */
+.xc-devices .xc-shell-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Main container */

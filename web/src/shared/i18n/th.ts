@@ -89,6 +89,10 @@ export const th = {
   'queue.sound.testMuted': 'เสียงทดสอบ · กดเปิดเสียงเพื่อรับแจ้งเตือนคิว',
   'queue.sound.errPlayback': 'เล่นเสียงไม่ได้ กรุณาตรวจลำโพงและเบราว์เซอร์',
   'queue.store.error': 'เชื่อมต่อคิวไม่ได้ · กำลังลองใหม่',
+  'rate.stale': 'เรทอ้างอิงเก่า',
+  'rate.sourceDate': 'อ้างอิงวันที่ {date}',
+  'rate.noSourceDate': 'ไม่มีเรทอ้างอิง',
+  'rate.publishedAt': 'ประกาศเมื่อ {at}',
 } as const;
 
 export type Key = keyof typeof th;

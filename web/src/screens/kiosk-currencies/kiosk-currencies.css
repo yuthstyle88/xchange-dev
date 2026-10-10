@@ -44,6 +44,7 @@
 .xc-kiosk .xc-shell-main .quote h2,
 .xc-kiosk .xc-shell-main .quote h3 {
   font-size: 27px;
+  margin: 0.83em 0;
 }
 
 .xc-kiosk .xc-shell-main .quote > p {
@@ -55,6 +56,29 @@
   font-size: 17px;
   font-weight: 600;
   margin: 12px 0 8px;
+}
+
+/* v2 kiosk-currencies.html:1,:3: <label>text<input></label> — no gap, input inherits the label's 17px/600 */
+.xc-kiosk .xc-shell-main label[for="kiosk-search"],
+.xc-kiosk .xc-shell-main .quote .xc-field > label {
+  margin-bottom: 0;
+}
+
+.xc-kiosk .xc-shell-main #kiosk-search,
+.xc-kiosk .xc-shell-main .quote .xc-field > input {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* v2 <p id="message" role="status"> (kiosk-currencies.html:1): browser p margins */
+.xc-kiosk .xc-shell-main div[role="status"] {
+  margin: 1em 0;
+}
+
+/* v2 <p role="status"> after the save button (kiosk-currencies.html:3) */
+.xc-kiosk .xc-shell-main .quote > span[role="status"] {
+  display: block;
+  margin: 1em 0;
 }
 
 .xc-kiosk .xc-shell-main .rate-side {
@@ -121,7 +145,12 @@
   outline-offset: 4px;
 }
 
+/* v2 kiosk.css:1 .quote div{…} on the box (kbank-reference.js:9 keeps padding 14px) */
 .xc-kiosk .xc-shell-main .kbank-box {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #eee;
   margin-top: 18px;
   padding: 14px;
   background: #eef8f0;
@@ -129,10 +158,31 @@
   overflow: auto;
 }
 
+/* v2 <table style="width:100%"> as the flex item */
+.xc-kiosk .xc-shell-main .kbank-box .kbank-table {
+  width: 100%;
+}
+
+/* v2 <caption> (kbank-reference.js:12-14), 14px from the table's font-size */
 .xc-kiosk .xc-shell-main .kbank-box h4 {
+  font-size: 14px;
+  margin: 0 0 10px;
   text-align: left;
   font-weight: 700;
-  margin-bottom: 10px;
+}
+
+/* v2 <small> (kbank-reference.js:29) */
+.xc-kiosk .xc-shell-main .kbank-box > p {
+  font-size: smaller;
+  margin: 0;
+}
+
+@media (max-width: 650px) {
+  /* v2 kiosk.css:1 @media(max-width:650px) .quote div{flex-direction:column;gap:3px} */
+  .xc-kiosk .xc-shell-main .kbank-box {
+    flex-direction: column;
+    gap: 3px;
+  }
 }
 
 .xc-kiosk .xc-shell-main .kbank-box table {
@@ -151,22 +201,31 @@
   white-space: nowrap;
 }
 
+/* v2 h2 at kiosk.css:1 plus browser h2 margins */
+.xc-kiosk .xc-shell-main #bank-reference > h3 {
+  font-size: 27px;
+  margin: 0.83em 0;
+}
+
 .xc-kiosk .xc-shell-main #bank-reference .warning {
   background: #fff4db;
   padding: 14px;
   border-radius: 10px;
 }
 
-.xc-kiosk .xc-shell-main #bank-reference table {
-  display: block;
+/* v2 kbank-reference.js:50, :70: scroll box wrapping comparison table */
+.xc-kiosk .xc-shell-main #bank-reference .bank-compare {
   overflow: auto;
   max-height: 480px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+}
+
+.xc-kiosk .xc-shell-main #bank-reference table {
   width: 100%;
   border-collapse: collapse;
   font-size: 15px;
   white-space: nowrap;
-  border: 1px solid #ddd;
-  border-radius: 12px;
 }
 
 .xc-kiosk .xc-shell-main #bank-reference th {

@@ -120,9 +120,11 @@ fn the_service_starts_from_opening_until_ten_minutes_before_closing_in_the_branc
     let d = Desk::ready();
     let w = ten_to_eight();
     for hhmm in ["09:59", "19:50", "19:51", "19:59", "20:00", "23:00"] {
-        assert_eq!(
-            start_at(&d, w, tokyo(hhmm)).map(|t| t.state.phase),
-            Err(E::ServiceNotReady),
+        assert!(
+            matches!(
+                start_at(&d, w, tokyo(hhmm)).map(|t| t.state.phase),
+                Err(E::ServiceNotReady { .. })
+            ),
             "a start at {hhmm} Tokyo is outside [10:00, 19:50)"
         );
     }
@@ -182,14 +184,14 @@ fn a_window_across_midnight_is_read_as_one_window() {
         close: tokyo_on(8, "02:00"),
     };
     let ready = Desk::ready();
-    assert_eq!(
+    assert!(matches!(
         start_at(&ready, w, tokyo_on(7, "17:59")).map(|t| t.state.phase),
-        Err(E::ServiceNotReady)
-    );
-    assert_eq!(
+        Err(E::ServiceNotReady { .. })
+    ));
+    assert!(matches!(
         start_at(&ready, w, tokyo_on(8, "01:50")).map(|t| t.state.phase),
-        Err(E::ServiceNotReady)
-    );
+        Err(E::ServiceNotReady { .. })
+    ));
     let mut d = opened(w, tokyo_on(8, "01:49"));
     let draft = draft_at(&mut d, w, tokyo_on(8, "01:49"));
     assert_eq!(gate(&d, &save(None), w, tokyo_on(8, "01:30")), Ok(()));
@@ -218,9 +220,11 @@ fn whole_day() -> Vec<CustodyTime> {
 fn a_branch_whose_hours_are_not_set_never_opens_the_service() {
     let ready = Desk::ready();
     for now in whole_day() {
-        assert_eq!(
-            start_at(&ready, ServiceWindow::NotSet, now).map(|t| t.state.phase),
-            Err(E::ServiceNotReady),
+        assert!(
+            matches!(
+                start_at(&ready, ServiceWindow::NotSet, now).map(|t| t.state.phase),
+                Err(E::ServiceNotReady { .. })
+            ),
             "no hours set: no start at {now:?}"
         );
     }
@@ -252,9 +256,11 @@ fn a_closed_day_never_opens_the_service() {
     let mut d = opened(w, tokyo("12:00"));
     let draft = draft_at(&mut d, w, tokyo("12:05"));
     for now in whole_day() {
-        assert_eq!(
-            start_at(&ready, ServiceWindow::Closed, now).map(|t| t.state.phase),
-            Err(E::ServiceNotReady),
+        assert!(
+            matches!(
+                start_at(&ready, ServiceWindow::Closed, now).map(|t| t.state.phase),
+                Err(E::ServiceNotReady { .. })
+            ),
             "a closed day: no start at {now:?}"
         );
         assert_eq!(
@@ -282,22 +288,22 @@ fn the_old_bangkok_hours_are_one_window_among_others() {
         close: bkk("23:00"),
     };
     let ready = Desk::ready();
-    assert_eq!(
+    assert!(matches!(
         start_at(&ready, w, bkk("10:59")).map(|t| t.state.phase),
-        Err(E::ServiceNotReady)
-    );
-    assert_eq!(
+        Err(E::ServiceNotReady { .. })
+    ));
+    assert!(matches!(
         start_at(&ready, w, bkk("22:50")).map(|t| t.state.phase),
-        Err(E::ServiceNotReady)
-    );
+        Err(E::ServiceNotReady { .. })
+    ));
     assert!(start_at(&ready, w, bkk("22:49")).is_ok());
     // … and the same instants are outside a Tokyo 10:00–20:00 window of that day
     let tokyo_6 = ServiceWindow::Open {
         open: tokyo_on(6, "10:00"),
         close: tokyo_on(6, "20:00"),
     };
-    assert_eq!(
+    assert!(matches!(
         start_at(&ready, tokyo_6, bkk("22:49")).map(|t| t.state.phase),
-        Err(E::ServiceNotReady)
-    );
+        Err(E::ServiceNotReady { .. })
+    ));
 }

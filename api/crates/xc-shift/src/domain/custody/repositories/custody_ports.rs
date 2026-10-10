@@ -53,4 +53,13 @@ pub trait CustodyPorts: Send + Sync + 'static {
         branch: &'a BranchId,
         now: CustodyTime,
     ) -> BoxFuture<'a, AppResult<ServiceWindow>>;
+
+    fn utc_offset_minutes<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+        _at: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<i32>> {
+        Box::pin(async { Ok(420) })
+    }
 }

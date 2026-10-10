@@ -382,6 +382,11 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     <AppShell
       look="devices"
       title={t('heading')}
+      banner={
+        <Show when={overview()} keyed>
+          {(ov) => <div class="banner">{deviceNotice(ov).banner}</div>}
+        </Show>
+      }
       nav={
         <>
           <a class="xc-shell-brand" href="/devices">XCHANGE <span>× T.K.</span><small>DEVICES</small></a>
@@ -393,10 +398,6 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       }
     >
       <div>
-        <Show when={overview()} keyed>
-          {(ov) => <div class="banner">{deviceNotice(ov).banner}</div>}
-        </Show>
-
         <section>
           <div class="heading">
             <div>

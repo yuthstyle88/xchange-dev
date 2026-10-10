@@ -41,6 +41,12 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const [employeesError, setEmployeesError] = createSignal<string | null>(null);
   const [operations, setOperations] = createSignal<AdminOperationsData | null>(null);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
+  const [selectedBranch, setSelectedBranch] = createSignal('');
+
+  const filteredEmployees = () => {
+    const picked = selectedBranch();
+    return picked ? employees().filter((e) => e.branchId === picked) : employees();
+  };
 
   let initialized = false;
   let lastBranch = '';
@@ -396,6 +402,19 @@ export function Employees(props: AdminMenuProps): JSX.Element {
             <button type="button" class="secondary" onClick={() => readEmployees()}>
               {t('refresh')}
             </button>{' '}
+            <label class="employees-filter">
+              <span>{t('filterBranch')}</span>{' '}
+              <select
+                aria-label={t('filterBranch')}
+                value={selectedBranch()}
+                onChange={(e) => setSelectedBranch(e.currentTarget.value)}
+              >
+                <option value="">{t('filterAll')}</option>
+                <For each={branches()}>
+                  {(b) => <option value={b.id}>{branchName(b.id)}</option>}
+                </For>
+              </select>
+            </label>{' '}
             <a href="/staff" target="_blank" rel="noopener">
               {t('staffLink')}
             </a>
@@ -418,45 +437,56 @@ export function Employees(props: AdminMenuProps): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              <For each={employees()}>
-                {(e) => {
-                  const statusText = () => {
-                    if (!e.active) return t('disabled');
-                    if (e.mustChange) return t('mustChange');
-                    return t('active');
-                  };
-
-                  return (
+              <Show
+                when={filteredEmployees().length > 0}
+                fallback={
+                  <Show when={!employeesError()}>
                     <tr>
-                      <td>
-                        <div>{e.username}</div>
-                        <div class="cell-sub">{e.name}</div>
-                      </td>
-                      <td>{e.role}</td>
-                      <td>{branchName(e.branchId)}</td>
-                      <td>{statusText()}</td>
-                      <td>
-                        <Show when={e.active}>
-                          <button
-                            type="button"
-                            class="secondary"
-                            onClick={() => openResetDialog(e)}
-                          >
-                            {t('reset')}
-                          </button>{' '}
-                          <button
-                            type="button"
-                            class="danger"
-                            onClick={() => handleDisable(e)}
-                          >
-                            {t('disable')}
-                          </button>
-                        </Show>
-                      </td>
+                      <td colspan="5">{t('filterEmpty')}</td>
                     </tr>
-                  );
-                }}
-              </For>
+                  </Show>
+                }
+              >
+                <For each={filteredEmployees()}>
+                  {(e) => {
+                    const statusText = () => {
+                      if (!e.active) return t('disabled');
+                      if (e.mustChange) return t('mustChange');
+                      return t('active');
+                    };
+
+                    return (
+                      <tr>
+                        <td>
+                          <div>{e.username}</div>
+                          <div class="cell-sub">{e.name}</div>
+                        </td>
+                        <td>{e.role}</td>
+                        <td>{branchName(e.branchId)}</td>
+                        <td>{statusText()}</td>
+                        <td>
+                          <Show when={e.active}>
+                            <button
+                              type="button"
+                              class="secondary"
+                              onClick={() => openResetDialog(e)}
+                            >
+                              {t('reset')}
+                            </button>{' '}
+                            <button
+                              type="button"
+                              class="danger"
+                              onClick={() => handleDisable(e)}
+                            >
+                              {t('disable')}
+                            </button>
+                          </Show>
+                        </td>
+                      </tr>
+                    );
+                  }}
+                </For>
+              </Show>
             </tbody>
           </table>
         </div>

@@ -343,7 +343,7 @@ classDiagram
   class PasswordField
   class TextField
   class MoneyText { +value: string +currency: string }
-  class AppShell { +title +nav +ownsMain +footer(version) +locks its content while ended() }
+  class AppShell { +title +nav +banner +ownsMain +footer(version) +locks its content while ended() }
   class I18n {
     <<module index.ts>>
     +lang: Accessor~Lang~
