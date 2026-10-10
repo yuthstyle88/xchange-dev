@@ -519,6 +519,10 @@ O(1) "unchanged" answer.
 
 ## 7. The system entry path
 
+> **Superseded (owner, 2026-10-10, #563 issuecomment-6095061095).** FD-3 #974 checks `X-System-Token` inside its own
+> route file, registered with one line. There is no `EntryPath::System`, no `Actor::Service`, no area row and no
+> system-route seam. The text below is kept as the record of what was replaced.
+
 - `EntryPath::System` is a new variant in `entry_path.rs`, added once by the seam ticket PL-0 (§11.1).
 - The policy row is `brokerExchangeFeed`, on `System`, for the actor `Actor::Service("broker")`.
   - It lives in FD-3's own area-rows file, `xc-auth/src/domain/policy/areas/broker_feed.rs` (§11.1).
@@ -646,12 +650,12 @@ the reversal (`20261016*`, #552) and customer identity (`20261019*`, #554), whic
 - **`down`** drops the table. Undelivered events are lost; a capture whose event was lost keeps `pushed_at` set and is
   not re-sent. `down` says so in a comment.
 
-**2. `api/migrations/20261013110000_referral_attributions.sql`** (RF-1)
+**2. `api/migrations/20261013110000_referral_attributions.sql`** (RA-1)
 
 - Creates `referral_attributions` (§4.1).
 - **Existing rows:** none in the new table. No existing table changes.
 - **Backfill:** none. v2's referrals are not carried into v3 (O-1), and v3 has never recorded a code.
-- **Deploy order:** it ships with the RF-1 binary.
+- **Deploy order:** it ships with the RA-1 binary.
 - **`down`** drops the table and loses every capture and its `broker_outcome`. Broker keeps its own attributions.
 
 **3. `api/migrations/20261013120000_broker_exchange_feed.sql`** (FD-1)
@@ -717,39 +721,80 @@ Each ticket owns disjoint files. The order is by start dependency.
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
 | OB-1 | outbox core (destination-neutral) | new crate `api/crates/xc-outbox/**`; migration 1; `api/Cargo.toml` workspace member line | this design; AP-1 (`Redactor`) or a stub per §8.1 |
-| PL-0 | the registration seams (§11.1), once | `xc-auth/.../entry_path.rs` (`System`), `xc-auth/.../actor_kind.rs` + `actor.rs` (`Service(name)`), `xc-auth/.../entities/policy.rs` (the area-rows lookup and the `System` arm), `xc-auth/src/domain/policy/areas/mod.rs` (new), `xc-auth/build.rs` (new), `api/build.rs` (two scan blocks), `api/build_support/registrations.rs` (new), `api/src/presentation/http/v3/mod.rs` (`pub mod system;` + one loop), `api/src/presentation/http/v3/system/mod.rs` (new), `api/src/bootstrap/mod.rs` (the worker spawn), `api/src/bootstrap/outbox_handlers/mod.rs` (new) | OB-1 |
-| RF-1 | capture domain, table and service | new crate `api/crates/xc-referral/` **`domain/{referral_code,capture,capture_repository}.rs`, `application/capture_service.rs`, `infrastructure/capture_repository.rs`**, `lib.rs`, `Cargo.toml`; migration 2 | OB-1 |
-| RF-2 | the Broker attribution handler | `xc-referral/src/infrastructure/broker_attribution_handler.rs`; `api/src/bootstrap/outbox_handlers/broker_attribution.rs` (its registration file) | RF-1, PL-0 |
-| RF-3 | routes: attach, supersede, view | `http/v3/commands/{attach_referral,supersede_referral}.rs`, `http/v3/views/referral_attributions.rs`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/src/domain/policy/areas/referral.rs` (its 3 rows) | RF-1, CM-1, PL-0 |
-| FD-1 | feed domain, table, writer and reader | `xc-referral/src/domain/{feed_value,customer_keys,feed_reader,feed_cursor}.rs`, `application/feed_writer.rs`, `infrastructure/{feed_reader,booking_member_keys}.rs`; migration 3 | RF-1 (crate exists) |
-| FD-2 | the save step | `api/src/application/workflows/broker_feed_save_step.rs`; one line in `api/src/application/compat/actions/save.rs:52-71` | FD-1 |
-| FD-3 | system token and the endpoint | `api/src/presentation/http/v3/system/{token,broker_exchanges}.rs`, `http/v3/view.rs:331-353` (the `System` branch), `xc-auth/src/domain/policy/areas/broker_feed.rs` (its one row) | FD-1, PL-0 |
+| PL-0a #910 | the outbox-handler seam (§11.1 row 2) and the worker spawn | `api/build_support/outbox_handlers.rs`, `api/build.rs` (one block), `api/src/bootstrap/{mod.rs, outbox_handlers/mod.rs}` | OB-1 |
+| PL-0b | the policy-rows seam on `Policy::need` (§11.1 row 1, rebuilt 2026-10-10) | `xc-auth/build.rs` (new), `xc-auth/src/domain/policy/areas/mod.rs` (new), `xc-auth/src/domain/policy/entities/policy.rs` (the `AREA_ROWS` lookup at the top of `Policy::need` only) | `policy.rs` free: PR 876 (merged) and #874 |
+| RA-1 #979 | capture domain, table and service | new crate `api/crates/xc-referral/` **`domain/{referral_code,capture,capture_repository}.rs`, `application/capture_service.rs`, `infrastructure/capture_repository.rs`**, `lib.rs`, `Cargo.toml`; migration 2 | OB-1 |
+| RA-2 #980 | the Broker attribution handler | `xc-referral/src/infrastructure/broker_attribution_handler.rs`; `api/src/bootstrap/outbox_handlers/broker_attribution.rs` (its registration file) | RA-1 #979, PL-0a #910 |
+| RA-3 #981 | routes: attach, supersede, view | `http/v3/commands/{attach_referral,supersede_referral}.rs`, `http/v3/views/referral_attributions.rs`, the matching `dto/v3/*.rs` and generated TS, `xc-auth/src/domain/policy/areas/referral.rs` (its 3 rows) | RA-1 #979, CM-1, PL-0b #1014 |
+| FD-1 #972 | feed domain, table, writer and reader; **the `xc-referral` crate shell** (RA-1 #979 was not cut first) | `xc-referral/` (`Cargo.toml`, `lib.rs`), `xc-referral/src/domain/{feed_value,customer_keys,feed_reader,feed_cursor}.rs`, `application/feed_writer.rs`, `infrastructure/{feed_reader,booking_member_keys}.rs`; migration 3 | — |
+| FD-2 #973 | the save step | `api/src/application/workflows/broker_feed_save_step.rs`; one line in `api/src/application/compat/actions/save.rs:52-71` | FD-1 |
+| FD-3 #974 | system token and the endpoint, **checked inside the route** (owner, 2026-10-10, §7) | `api/src/presentation/http/v3/system/**` (`token.rs`, `broker_exchanges.rs`, `mod.rs`); one registration line in `http/v3/mod.rs`. **No** `view.rs` branch, **no** area row, **no** `EntryPath::System` | FD-1 #972 |
 
-### 11.1 Registration seams instead of shared files (lane controller's ruling, 2026-10-09)
+### 11.1 Registration seams instead of shared files (lane controller's ruling, 2026-10-09; rebuilt 2026-10-10)
 
-`policy.rs`, `bootstrap/mod.rs` and `http/v3/mod.rs` are hotspots. `policy.rs` is also owned by PR 589's OR-4, and
-`http/v3/mod.rs` and `build.rs` by rates' CM-1. So no ticket here edits them except **PL-0, once**. PL-0 adds three
-seams, each of which turns "register a thing" into "add a file":
+**Why a seam.** Every area that adds a route also adds its permission row. Without a seam, they all edit one file.
+- Measured 2026-10-10T08:2xZ: **10 open tickets reserve `api/crates/xc-auth/src/domain/policy/entities/policy.rs`**:
+  #874, #926, #945, #981, #993, #994, #995, #997, #1003, #1012. (Re-run: `gh issue list --state open --json body` and match the path line.)
+- The queue locks a reserved file for one ticket at a time, so these 10 would run one after another.
+- By the fleet's 🧩 rule, one file that most tickets must touch means the design is unfinished. The seam turns "add a row to `policy.rs`" into "add your own file".
 
-| Seam | Mechanism | After PL-0, a new area adds |
-|---|---|---|
-| **Policy rows per area** | `xc-auth/build.rs` scans `src/domain/policy/areas/*.rs`. Each file has `pub const ROWS: &[AreaRow]`, where `AreaRow { path: EntryPath, action: &str, roles: &[RoleMatch] }`. `Policy::allow` checks the generated `AREA_ROWS` first and falls back to today's match. The `System` arm of the match denies everything, so a `System` action exists only as an area row | `areas/<area>.rs` |
-| **Outbox handlers** | `api/build.rs` scans `src/bootstrap/outbox_handlers/*.rs`. Each file has `pub fn handler(state: &AppState) -> Option<Arc<dyn OutboxHandler>>`, where `None` means not configured. Bootstrap builds `OutboxRegistry` from the generated list and spawns `OutboxWorker` | `outbox_handlers/<destination>.rs` |
-| **System routes** | `api/build.rs` scans `src/presentation/http/v3/system/*.rs` (except `mod.rs` and `token.rs`). Each route file has `pub fn register(cfg, state)`, and `configure_v3` loops over the generated list | `system/<route>.rs` |
+**What changed on 2026-10-10.**
+- The 2026-10-09 version of this section was written for `Policy::allow` and a `roles` list, before OR-4.
+- On `main` (`59c10a29`), routes are checked by `Policy::need(path, action) -> Option<Need>` (`policy.rs:524`), then `Policy::authorize`. OR-4b #767 moves every v3 route onto it.
+- So the rows now carry a `Need`, not roles.
+- The system-route seam and `EntryPath::System` are dropped (§7, the owner's FD-3 ruling).
 
-These are the same mechanism as v3's views table: `build.rs:155-190` scans `http/v3/views/` and generates `VIEWS`.
+| Seam | Mechanism | A new area adds | Ticket |
+|---|---|---|---|
+| **Policy rows per area** | see "The policy-rows seam" below | `xc-auth/src/domain/policy/areas/<area>.rs` | PL-0b |
+| **Outbox handlers** | `api/build.rs` scans `src/bootstrap/outbox_handlers/*.rs`. Each file has `pub fn handler(state: &AppState) -> Option<Arc<dyn OutboxHandler>>`, where `None` means not configured. Bootstrap builds `OutboxRegistry` from the generated list and spawns `OutboxWorker` | `outbox_handlers/<destination>.rs` | PL-0a #910 |
+| ~~System routes~~ | dropped 2026-10-10. A machine or public route outside `/api/v3/views` registers with one line in `http/v3/mod.rs` (FD-3 #974, APP-5 #995) | — | — |
 
-**PL-0 still collides once**, with OR-4 (`policy.rs`) and with CM-1 (`build.rs`, `http/v3/mod.rs`). The controller
-orders the three. I recommend PL-0 first: it is the smallest, and it means OR-4 and every later area add files instead
-of editing `policy.rs`.
+**The policy-rows seam (PL-0b)** [required: names, files, behaviour]
+```rust
+// api/crates/xc-auth/src/domain/policy/areas/mod.rs  (new)
+pub struct AreaRow { pub path: EntryPath, pub action: &'static str, pub need: Need }
+// generated by api/crates/xc-auth/build.rs from areas/*.rs (mod.rs excluded):
+//   one `#[path] pub mod <area>;` per file, and
+pub static AREA_ROWS: &[&[AreaRow]] = &[/* <area>::ROWS, … in file-name order */];
+// each area file, e.g. areas/referral.rs:
+pub const ROWS: &[AreaRow] = &[
+    AreaRow { path: EntryPath::Rpc, action: "attachReferral", need: Need::Permission(Permission::ReferralAttach) },
+];
+```
+- **`Policy::need(path, action)` consults `AREA_ROWS` first.** The first row with the same `(path, action)` answers `Some(row.need)`. Otherwise today's match answers, unchanged. `Policy::authorize` and its path-level refusal sentences do not change.
+- **A file without `pub const ROWS: &[AreaRow]`, or whose name is not a module name, fails the build** (`xc-auth/build.rs`, the same rule as `api/build_support/views.rs`).
+- **Duplicates and shadowing fail the required `api` check through a test, not the compiler.** A build script cannot evaluate `EntryPath` values without parsing Rust, so `xc-auth/tests/area_rows_test.rs` asserts two things:
+  1. no `(path, action)` appears twice across `AREA_ROWS`;
+  2. no area row's `(path, action)` is already answered by today's match, so an area file can only **add** a row, never silently override one.
 
-**Up-front tests for PL-0:**
-- an `areas/` file with one row allows that action and nothing else;
-- removing it denies the action;
-- today's policy tests (`xc-auth/tests/policy_test.rs`) stay green unchanged;
-- a handler file returning `None` registers nothing;
-- two handlers with one `event_type` fail the boot;
-- a `system/` route file is served.
+  To make (2) testable, the old match moves behind `fn need_table(path, action)` in the same file, and `need` calls it.
+- **Two PRs that each add the same `(path, action)` in different area files** are each green alone. The fleet's merge rule catches the pair: `git merge-base --is-ancestor origin/main <head>` must hold before merge. `xchange`'s `main` has `strict: false` (measured 2026-10-10), so GitHub does not force it, and the rule is the guard. The second PR therefore re-runs on a base that contains the first one's file, and `area_rows_test` fails there.
+- **`Need` stays where it is** (`entities/policy.rs:499`). Area files import it.
+
+**After PL-0b merges, each area owns its file** (the tickets' file scopes are re-pointed then):
+
+| Ticket | Area file |
+|---|---|
+| LG-3b #926 | `areas/cash_limits.rs` |
+| OR-5a #945 | `areas/org_admin.rs` |
+| RA-3 #981 | `areas/referral.rs` |
+| APP-3 #993 | `areas/notifications.rs` |
+| APP-4 #994 | `areas/customer_app.rs` |
+| APP-5 #995 | `areas/public_branches.rs` |
+| APP-6 #997 | `areas/assistant.rs` |
+| APP-11 #1003 | `areas/customer_history.rs` |
+| receipt route #1012 | `areas/receipts.rs` |
+
+#874 changes rows that already exist in `policy.rs` (`allow_rpc`'s staff arm and `role_permissions.rs`). It stays as it is, and PL-0b starts after it.
+
+**Up-front tests for PL-0b** (written by the ticket author before dispatch):
+- an `areas/` file with one row makes `Policy::need` answer that row for that `(path, action)`, and nothing else;
+- removing the file makes it answer `None` again;
+- two files with one `(path, action)` fail `area_rows_test`;
+- a row that `need_table` already answers fails `area_rows_test`;
+- an area file with no `ROWS`, or a non-module file name, fails the build (the generator's pure-function tests, as `api/tests/v3_views_generator_test.rs`);
+- every existing policy test (`xc-auth/tests/policy_*`) stays green and unedited.
 
 **Not here, and in which design:**
 - the `referralCode` fields on booking, customer-app and desk commands (#555, #558, #551);
@@ -774,7 +819,7 @@ of editing `policy.rs`.
   - backoff is 5, 10, 20 … seconds, capped at 600;
   - a row older than 7 days turns `EXPIRED` and calls `on_final`;
   - an event with no handler stays `PENDING`.
-- **RF-1**
+- **RA-1**
   - two ACTIVE captures on one transaction: the second is refused `AlreadyCaptured`, enforced by the index too;
   - the same code twice is a repeat, not an error;
   - supersede without a reason is refused;
@@ -783,14 +828,14 @@ of editing `policy.rs`.
   - a capture without a sub writes none, and `on_customer_sub_known` writes one per waiting capture, once;
   - `link_transaction_in` moves the booking's capture and keeps one row;
   - `ReferralCode::parse` refuses empty, too long and bad characters.
-- **RF-2**, against a fake Broker:
+- **RA-2**, against a fake Broker:
   - each answer row of §5.4 maps to its outcome;
   - 401 and 503 retry;
   - the body is `{code, product:"xchange-fx", customerSub, phone?}` exactly;
   - `phone` is absent when the source is not verified;
   - the token is never in a log line;
   - no handler is registered when the env is unset.
-- **RF-3**
+- **RA-3**
   - each route's role row (OWNER; others refused);
   - a missing `Idempotency-Key` is 400;
   - the view masks `customer_sub`.
