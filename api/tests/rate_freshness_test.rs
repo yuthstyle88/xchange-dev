@@ -350,11 +350,13 @@ fn source(path: &str) -> String {
 }
 
 /// Neither view nor `line_in` computes staleness itself: each calls `Freshness`, and none reads the age keys.
+/// `staff_published_rates.rs` is not listed: it reads through `published_rates_data`, the `published_rates` view's
+/// loader, and `staff_published_rates_one_loader_test.rs` guards that (amended by claude/5edf7bb5 for the one-loader
+/// ticket).
 #[test]
 fn the_views_and_the_quote_path_call_the_one_rule() {
     for path in [
         "src/presentation/http/v3/views/published_rates.rs",
-        "src/presentation/http/v3/views/staff_published_rates.rs",
         "crates/xc-rate/src/infrastructure/publication/published_rates.rs",
     ] {
         let text = source(path);
@@ -371,15 +373,12 @@ fn the_views_and_the_quote_path_call_the_one_rule() {
 /// §4.10: Both published_rates and staff_published_rates views fold both Buy and Sell sides of each published line.
 #[test]
 fn the_published_rates_views_fold_both_buy_and_sell_sides() {
-    for path in [
-        "src/presentation/http/v3/views/published_rates.rs",
-        "src/presentation/http/v3/views/staff_published_rates.rs",
-    ] {
-        let text = source(path);
-        assert!(
-            text.contains("Freshness::of_side(&snapshot, Side::Buy, now)")
-                && text.contains("Freshness::of_side(&snapshot, Side::Sell, now)"),
-            "{path} folds both Side::Buy and Side::Sell of each published line"
-        );
-    }
+    // the staff view folds through the same loader (see above)
+    let path = "src/presentation/http/v3/views/published_rates.rs";
+    let text = source(path);
+    assert!(
+        text.contains("Freshness::of_side(&snapshot, Side::Buy, now)")
+            && text.contains("Freshness::of_side(&snapshot, Side::Sell, now)"),
+        "{path} folds both Side::Buy and Side::Sell of each published line"
+    );
 }
