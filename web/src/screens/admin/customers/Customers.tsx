@@ -84,9 +84,9 @@ function MemberForm(props: MemberFormProps): JSX.Element {
             <Field label={t('memberCode')}>
               <input type="text" readOnly value={res.memberCode} />
             </Field>
-            <p class="note">{t('memberCardNote')}</p>
+            <p class="dialog-note">{t('memberCardNote')}</p>
             <CardActions>
-              <button type="button" onClick={closeDialog}>
+              <button type="button" class="secondary" onClick={closeDialog}>
                 {t('close')}
               </button>
             </CardActions>
@@ -132,11 +132,11 @@ function MemberForm(props: MemberFormProps): JSX.Element {
 
       <p class="reissue-note">{t('memberReissue')}</p>
 
-      <div class="actions">
-        <button type="button" onClick={closeDialog}>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" onClick={closeDialog}>
           {t('memberBack')}
         </button>
-        <button type="submit" disabled={submitting()}>
+        <button type="submit" class="primary" disabled={submitting()}>
           {t('memberSubmit')}
         </button>
       </div>
@@ -248,35 +248,41 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
   }
 
   return (
-    <div class="customer-history">
-      <div class="history-header">
-        <p class="branch-status">
-          {t('branchPrefix')} {props.branchName} · {t('allPeriods')}
-        </p>
+    <>
+      <p class="dialog-note">
+        {t('branchPrefix')} {props.branchName} · {t('allPeriods')}
+      </p>
 
-        <button type="button" class="btn-member" onClick={openMember}>
-          {t('memberButton')}
-        </button>
-      </div>
-
-      <dl class="customer-details">
-        <dt>{t('detailCustomerId')}</dt>
-        <dd>{props.customer.id}</dd>
-        <dt>{t('detailName')}</dt>
-        <dd>{props.customer.name}</dd>
-        <dt>{t('detailNationality')}</dt>
-        <dd>{props.customer.nationality || '—'}</dd>
-        <dt>{t('detailCreated')}</dt>
-        <dd>{formatBangkokDateTime(props.customer.created)}</dd>
-        <dt>{t('detailCompleted')}</dt>
-        <dd>
-          {props.customer.completed} {t('itemsUnit')}
-        </dd>
-        <dt>{t('detailVolume')}</dt>
-        <dd>{formatMoney(props.customer.volume)} THB</dd>
+      <dl class="details">
+        <div>
+          <dt>{t('detailCustomerId')}</dt>
+          <dd>{props.customer.id}</dd>
+        </div>
+        <div>
+          <dt>{t('detailName')}</dt>
+          <dd>{props.customer.name}</dd>
+        </div>
+        <div>
+          <dt>{t('detailNationality')}</dt>
+          <dd>{props.customer.nationality || '—'}</dd>
+        </div>
+        <div>
+          <dt>{t('detailCreated')}</dt>
+          <dd>{formatBangkokDateTime(props.customer.created)}</dd>
+        </div>
+        <div>
+          <dt>{t('detailCompleted')}</dt>
+          <dd>
+            {props.customer.completed} {t('itemsUnit')}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('detailVolume')}</dt>
+          <dd>{formatMoney(props.customer.volume)} THB</dd>
+        </div>
       </dl>
 
-      <p class="volume-note">{t('volumeNote')}</p>
+      <p class="dialog-note">{t('volumeNote')}</p>
 
       <div class="search-bar">
         <label>
@@ -299,58 +305,64 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
         when={historyRows().length > 0}
         fallback={
           <Show when={!historyError()}>
-            <div class="empty-text">{t('historyEmpty')}</div>
+            <div class="empty">{t('historyEmpty')}</div>
           </Show>
         }
       >
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>{t('thDateTime')}</th>
-              <th>{t('thTxId')}</th>
-              <th>{t('thType')}</th>
-              <th class="num">{t('thAmount')}</th>
-              <th class="num">{t('thValue')}</th>
-              <th>{t('thStatus')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={historyRows()}>
-              {(row) => (
-                <tr>
-                  <td>{formatBangkokDateTime(row.created)}</td>
-                  <td>
-                    <button type="button" class="btn-link" onClick={() => openDetail(row)}>
-                      {row.id}
-                    </button>
-                  </td>
-                  <td>{typeWord(row.type)}</td>
-                  <td class="num">
-                    {formatMoney(row.amount)} {row.currency}
-                  </td>
-                  <td class="num">{row.principal}</td>
-                  <td>{statusWord(row.status)}</td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>{t('thDateTime')}</th>
+                <th>{t('thTxId')}</th>
+                <th>{t('thType')}</th>
+                <th class="num">{t('thAmount')}</th>
+                <th class="num">{t('thValue')}</th>
+                <th>{t('thStatus')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={historyRows()}>
+                {(row) => (
+                  <tr>
+                    <td>{formatBangkokDateTime(row.created)}</td>
+                    <td>
+                      <button type="button" class="ref" onClick={() => openDetail(row)}>
+                        {row.id}
+                      </button>
+                    </td>
+                    <td>{typeWord(row.type)}</td>
+                    <td class="num">
+                      {formatMoney(row.amount)} {row.currency}
+                    </td>
+                    <td class="num">{row.principal}</td>
+                    <td>{statusWord(row.status)}</td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
 
         <Show when={hasMore()}>
           <div class="load-older-container">
-            <button type="button" class="btn-load-older" onClick={loadOlder}>
+            <button type="button" class="secondary" onClick={loadOlder}>
               {t('loadOlder')}
             </button>
           </div>
         </Show>
       </Show>
 
-      <div class="actions">
-        <button type="button" onClick={closeDialog}>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" onClick={closeDialog}>
           {t('close')}
         </button>
       </div>
-    </div>
+
+      <button type="button" class="primary" onClick={openMember}>
+        {t('memberButton')}
+      </button>
+    </>
   );
 }
 
@@ -631,134 +643,141 @@ export function Customers(props: AdminMenuProps): JSX.Element {
         aria-labelledby="tab-customers"
         hidden={activeTab() !== 'customers'}
       >
-        <div class="search-section">
-          <label>
-            {t('search')}
-            <input
-              type="search"
-              maxLength={100}
-              placeholder={t('placeholder')}
-              value={search()}
-              onInput={(e) => onSearchChange(e.currentTarget.value)}
-            />
-          </label>
-        </div>
+        <Card>
+          <div class="search-section">
+            <label>
+              {t('search')}
+              <input
+                type="search"
+                maxLength={100}
+                placeholder={t('placeholder')}
+                value={search()}
+                onInput={(e) => onSearchChange(e.currentTarget.value)}
+              />
+            </label>
 
-        <Show when={shouldShowSummary()}>
-          <div role="status" class="summary-status">
-            {t('branchPrefix')} {branchName()} · {t('customersCount')}{' '}
-            {search().trim() ? totalCount() : rows().length} {t('personUnit')} · {t('foundCount')}{' '}
-            {rows().length} {t('personUnit')} · {t('allPeriods')}
+            <Show when={shouldShowSummary()}>
+              <div role="status" class="summary-status">
+                {t('branchPrefix')} {branchName()} · {t('customersCount')}{' '}
+                {search().trim() ? totalCount() : rows().length} {t('personUnit')} · {t('foundCount')}{' '}
+                {rows().length} {t('personUnit')} · {t('allPeriods')}
+              </div>
+            </Show>
           </div>
-        </Show>
 
-        <Show when={!hasLoadedOnce() && loading()}>
-          <div class="waiting-text">{t('waiting')}</div>
-        </Show>
-
-        <Show when={refusalError()}>
-          {(err) => (
-            <div class="error-container">
-              <div class="not-loaded">{t('notLoaded')}</div>
-              <div class="waiting-text">{t('waiting')}</div>
-              <div class="refusal-message">{errorText(err().code, err().message)}</div>
-            </div>
-          )}
-        </Show>
-
-        <Show when={hasLoadedOnce() && !refusalError()}>
-          <Show
-            when={rows().length > 0}
-            fallback={
-              <Show
-                when={search().trim().length > 0}
-                fallback={
-                  <div class="empty-state">
-                    <p class="empty-title">{t('emptyBranch')}</p>
-                    <p class="empty-note">{t('emptyBranchNote')}</p>
-                  </div>
-                }
-              >
-                <div class="empty-state">
-                  <p class="empty-title">{t('noMatch')}</p>
-                  <p class="empty-note">{t('noMatchNote')}</p>
-                </div>
-              </Show>
-            }
-          >
-            <table class="customers-table">
-              <thead>
-                <tr>
-                  <th>{t('thCustomerId')}</th>
-                  <th>{t('thName')}</th>
-                  <th>{t('thNationality')}</th>
-                  <th class="num">{t('thCompleted')}</th>
-                  <th class="num">{t('thTotalVolume')}</th>
-                  <th>{t('thLastActivity')}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={rows()}>
-                  {(row) => (
-                    <tr>
-                      <td>
-                        <button
-                          type="button"
-                          class="btn-link"
-                          onClick={() => openCustomerHistory(row)}
-                        >
-                          {row.id}
-                        </button>
-                      </td>
-                      <td>
-                        {row.name}
-                        <Show when={row.member}>
-                          <span class="member-pill"> {t('member')}</span>
-                        </Show>
-                      </td>
-                      <td>{row.nationality || '—'}</td>
-                      <td class="num">{row.completed}</td>
-                      <td class="num">{row.volume === '0.00' ? '0.00' : formatMoney(row.volume)}</td>
-                      <td>
-                        {row.lastAt ? formatBangkokDateTime(row.lastAt) : t('noActivity')}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          class="btn-history"
-                          onClick={() => openCustomerHistory(row)}
-                        >
-                          {t('showHistory')}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-
-            <div class="pagination">
-              <span class="page-info">
-                {t('page')} {page()}
-              </span>
-              <button
-                type="button"
-                disabled={page() <= 1}
-                onClick={prevPage}
-              >
-                {t('prev')}
-              </button>
-              <button
-                type="button"
-                disabled={!hasMore()}
-                onClick={nextPage}
-              >
-                {t('next')}
-              </button>
-            </div>
+          <Show when={!hasLoadedOnce() && loading()}>
+            <div class="waiting-text">{t('waiting')}</div>
           </Show>
-        </Show>
+
+          <Show when={refusalError()}>
+            {(err) => (
+              <div class="empty">
+                <strong>{t('notLoaded')}</strong>
+                <p class="waiting-text">{t('waiting')}</p>
+                <p class="refusal-message">{errorText(err().code, err().message)}</p>
+              </div>
+            )}
+          </Show>
+
+          <Show when={hasLoadedOnce() && !refusalError()}>
+            <Show
+              when={rows().length > 0}
+              fallback={
+                <Show
+                  when={search().trim().length > 0}
+                  fallback={
+                    <div class="empty">
+                      <strong>{t('emptyBranch')}</strong>
+                      <p>{t('emptyBranchNote')}</p>
+                    </div>
+                  }
+                >
+                  <div class="empty">
+                    <strong>{t('noMatch')}</strong>
+                    <p>{t('noMatchNote')}</p>
+                  </div>
+                </Show>
+              }
+            >
+              <div class="table-scroll">
+                <table class="customers-table">
+                  <thead>
+                    <tr>
+                      <th>{t('thCustomerId')}</th>
+                      <th>{t('thName')}</th>
+                      <th>{t('thNationality')}</th>
+                      <th class="num">{t('thCompleted')}</th>
+                      <th class="num">{t('thTotalVolume')}</th>
+                      <th>{t('thLastActivity')}</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={rows()}>
+                      {(row) => (
+                        <tr>
+                          <td>
+                            <button
+                              type="button"
+                              class="ref"
+                              onClick={() => openCustomerHistory(row)}
+                            >
+                              {row.id}
+                            </button>
+                          </td>
+                          <td>
+                            {row.name}
+                            <Show when={row.member}>
+                              <br />
+                              <span class="pill">{t('member')}</span>
+                            </Show>
+                          </td>
+                          <td>{row.nationality || '—'}</td>
+                          <td class="num">{row.completed}</td>
+                          <td class="num">{row.volume === '0.00' ? '0.00' : formatMoney(row.volume)}</td>
+                          <td>
+                            {row.lastAt ? formatBangkokDateTime(row.lastAt) : t('noActivity')}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              class="secondary"
+                              onClick={() => openCustomerHistory(row)}
+                            >
+                              {t('showHistory')}
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="pagination">
+                <button
+                  type="button"
+                  class="secondary"
+                  disabled={page() <= 1}
+                  onClick={prevPage}
+                >
+                  {t('prev')}
+                </button>
+                <span>
+                  {t('page')} {page()}
+                </span>
+                <button
+                  type="button"
+                  class="secondary"
+                  disabled={!hasMore()}
+                  onClick={nextPage}
+                >
+                  {t('next')}
+                </button>
+              </div>
+            </Show>
+          </Show>
+        </Card>
       </div>
 
       <div
@@ -767,54 +786,60 @@ export function Customers(props: AdminMenuProps): JSX.Element {
         aria-labelledby="tab-registrations"
         hidden={activeTab() !== 'registrations'}
       >
-        <h2>{t('regHeading')}</h2>
-        <p>{t('regIntro')}</p>
+        <Card class="registrations-card">
+          <div class="reg-top-section">
+            <h2>{t('regHeading')}</h2>
+            <p>{t('regIntro')}</p>
 
-        <div class="reg-search-bar">
-          <input
-            type="search"
-            maxLength={100}
-            placeholder={t('regPlaceholder')}
-            value={regSearch()}
-            onInput={(e) => setRegSearch(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') doRegSearch();
-            }}
-          />
-          <button type="button" onClick={doRegSearch}>
-            {t('regSearch')}
-          </button>
-          <button type="button" onClick={doRegReload}>
-            {t('regRefresh')}
-          </button>
-        </div>
+            <div class="reg-search-bar">
+              <input
+                type="search"
+                maxLength={100}
+                placeholder={t('regPlaceholder')}
+                value={regSearch()}
+                onInput={(e) => setRegSearch(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') doRegSearch();
+                }}
+              />
+              <button type="button" class="secondary" onClick={doRegSearch}>
+                {t('regSearch')}
+              </button>
+              <button type="button" class="secondary" onClick={doRegReload}>
+                {t('regRefresh')}
+              </button>
+            </div>
+          </div>
 
-        <Show
-          when={!regRefusal()}
-          fallback={<div class="error-banner">{regRefusal()}</div>}
-        >
-          <div class="reg-empty">{t('regEmpty')}</div>
-        </Show>
-
-        <div class="pagination">
-          <span class="page-info">
-            {t('page')} {regPage() + 1}
-          </span>
-          <button
-            type="button"
-            disabled={regPage() === 0}
-            onClick={regPrev}
+          <Show
+            when={!regRefusal()}
+            fallback={<div class="error-banner">{regRefusal()}</div>}
           >
-            {t('prev')}
-          </button>
-          <button
-            type="button"
-            disabled={!regHasMore()}
-            onClick={regNext}
-          >
-            {t('next')}
-          </button>
-        </div>
+            <p class="reg-empty">{t('regEmpty')}</p>
+          </Show>
+
+          <div class="pagination reg-pagination">
+            <button
+              type="button"
+              class="secondary"
+              disabled={regPage() === 0}
+              onClick={regPrev}
+            >
+              {t('prev')}
+            </button>
+            <span>
+              {t('page')} {regPage() + 1}
+            </span>
+            <button
+              type="button"
+              class="secondary"
+              disabled={!regHasMore()}
+              onClick={regNext}
+            >
+              {t('next')}
+            </button>
+          </div>
+        </Card>
       </div>
     </div>
   );
