@@ -6,5 +6,6 @@ abstract final class KioskColors {
   static const muted = Color(0xFF67646C);
   static const line = Color(0xFFE7E2E6);
   static const soft = Color(0xFFFFF2F6);
-  static const stage = Color(0xFFF6F3F5);
+  static const stage = Color(0xFFF7F7F9);
+  static const text = Color(0xFF212126);
 }
