@@ -13,7 +13,8 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Offset, Utc};
+use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
@@ -173,9 +174,16 @@ impl CustodyPorts for PgCustodyPorts {
                 None => return Ok(ServiceWindow::Closed),
             };
 
-            let now_date = now_utc.date_naive();
+            let tz: Tz = match timezone.parse() {
+                Ok(t) => t,
+                Err(_) => return Ok(ServiceWindow::Closed),
+            };
+
+            let now_local = now_utc.with_timezone(&tz);
+            let local_today = now_local.date_naive();
+
             for offset in [-2, -1, 0, 1] {
-                if let Some(date) = now_date.checked_add_signed(chrono::Duration::days(offset))
+                if let Some(date) = local_today.checked_add_signed(chrono::Duration::days(offset))
                     && let HoursWindow::Open { open, close } = hours.window(date)
                     && open <= now_utc
                     && now_utc < close
@@ -187,7 +195,50 @@ impl CustodyPorts for PgCustodyPorts {
                 }
             }
 
+            if let HoursWindow::Open { open, close } = hours.window(local_today) {
+                return Ok(ServiceWindow::Open {
+                    open: CustodyTime::from_epoch_millis(open.timestamp_millis()),
+                    close: CustodyTime::from_epoch_millis(close.timestamp_millis()),
+                });
+            }
+
             Ok(ServiceWindow::Closed)
+        })
+    }
+
+    fn utc_offset_minutes<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        at: CustodyTime,
+    ) -> Answer<'a, i32> {
+        Box::pin(async move {
+            let row: Option<(String,)> =
+                sqlx::query_as("SELECT timezone FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+            let timezone = match row {
+                Some((tz,)) => tz,
+                None => return Ok(0),
+            };
+
+            let tz: Tz = match timezone.parse() {
+                Ok(t) => t,
+                Err(_) => return Ok(0),
+            };
+
+            let at_millis = at.epoch_millis();
+            let at_utc = match DateTime::<Utc>::from_timestamp_millis(at_millis) {
+                Some(dt) => dt,
+                None => return Ok(0),
+            };
+
+            let at_local = at_utc.with_timezone(&tz);
+            let offset_secs = at_local.offset().fix().local_minus_utc();
+            Ok(offset_secs / 60)
         })
     }
 }

@@ -246,6 +246,7 @@ fn role_name(role: CustodyRole) -> &'static str {
 pub fn facts(f: &Facts, new_id: &str) -> CustodyFacts {
     CustodyFacts {
         service_window: v2_hours(),
+        utc_offset_minutes: 420,
         open_shift: f.open_shift.as_ref().map(|s| OpenShift {
             id: s.id.clone(),
             expected: balances(&s.expected),
@@ -635,6 +636,7 @@ impl Desk {
     pub fn facts(&self) -> CustodyFacts {
         CustodyFacts {
             service_window: v2_hours(),
+            utc_offset_minutes: 420,
             open_shift: self.shift.clone(),
             has_live_rate: self.has_live_rate,
             rates_updated: self.rates_updated.clone(),

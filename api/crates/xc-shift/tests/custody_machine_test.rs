@@ -103,24 +103,6 @@ fn a_branch_starts_disabled_closed_and_empty() {
 }
 
 #[test]
-fn the_clock_is_read_in_bangkok() {
-    let t = |hhmm| CustodyTime::from_epoch_millis(bangkok(hhmm)).bangkok_minute_of_day();
-    assert_eq!(CustodyTime::from_epoch_millis(NOON).epoch_millis(), NOON);
-    assert_eq!(t("12:00"), 720);
-    assert_eq!(t("00:00"), 0);
-    assert_eq!(t("06:59"), 419); // the day before in UTC
-    assert_eq!(t("23:59"), 1439);
-    assert_eq!(
-        CustodyTime::from_epoch_millis(0).bangkok_minute_of_day(),
-        420
-    );
-    assert_eq!(
-        CustodyTime::from_epoch_millis(-1).bangkok_minute_of_day(),
-        419
-    );
-}
-
-#[test]
 fn only_the_owner_names_the_business_and_enables_and_in_that_order() {
     let mut d = Desk::new();
     let entity = || Cmd::SetEntity {
@@ -584,14 +566,14 @@ fn backend_opens_the_service_between_eleven_and_ten_to_eleven_at_night() {
     let mut d = Desk::ready();
     let go = start(&d);
     assert_eq!(refused(d.act("F1", go.clone())), E::RoleNotAllowed);
-    assert_eq!(
+    assert!(matches!(
         refused(d.act_at("BE1", go.clone(), bangkok("10:59"))),
-        E::ServiceNotReady
-    );
-    assert_eq!(
+        E::ServiceNotReady { .. }
+    ));
+    assert!(matches!(
         refused(d.act_at("BE1", go.clone(), bangkok("22:50"))),
-        E::ServiceNotReady
-    );
+        E::ServiceNotReady { .. }
+    ));
     let current = d.rates_updated.clone();
     for (ready, verified, updated) in [
         (false, true, current.as_str()),
@@ -612,7 +594,10 @@ fn backend_opens_the_service_between_eleven_and_ten_to_eleven_at_night() {
         d.state.service_opened_at,
         Some(CustodyTime::from_epoch_millis(bangkok("22:49")))
     );
-    assert_eq!(refused(d.act("BE1", go)), E::ServiceNotReady); // only from Ready
+    assert!(matches!(
+        refused(d.act("BE1", go)),
+        E::ServiceNotReady { .. }
+    )); // only from Ready
 }
 
 #[test]

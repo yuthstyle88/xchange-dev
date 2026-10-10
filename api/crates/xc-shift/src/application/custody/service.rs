@@ -243,8 +243,13 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         let now_trunc = truncate_millis(now);
         let custody_now = CustodyTime::from_epoch_millis(now_trunc.timestamp_millis());
         let service_window = self.ports.service_window(tx, branch, custody_now).await?;
+        let utc_offset_minutes = self
+            .ports
+            .utc_offset_minutes(tx, branch, custody_now)
+            .await?;
         let facts = CustodyFacts {
             service_window,
+            utc_offset_minutes,
             open_shift,
             has_live_rate: outside.has_live_rate,
             rates_updated: outside.rates_updated,
@@ -370,8 +375,13 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         let new_id = uuid::Uuid::new_v4().to_string();
 
         let service_window = self.ports.service_window(tx, branch, custody_now).await?;
+        let utc_offset_minutes = self
+            .ports
+            .utc_offset_minutes(tx, branch, custody_now)
+            .await?;
         let facts = CustodyFacts {
             service_window,
+            utc_offset_minutes,
             open_shift,
             has_live_rate: outside.has_live_rate,
             rates_updated: outside.rates_updated,

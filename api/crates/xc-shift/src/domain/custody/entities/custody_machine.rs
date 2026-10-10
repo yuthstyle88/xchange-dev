@@ -804,7 +804,10 @@ impl CustodyMachine {
                     || state.phase != Phase::Ready
                     || !facts.service_window.allows_start(now)
                 {
-                    return Err(CustodyError::ServiceNotReady);
+                    return Err(CustodyError::ServiceNotReady {
+                        window: facts.service_window,
+                        utc_offset_minutes: facts.utc_offset_minutes,
+                    });
                 }
                 if !*equipment_ready || !*rates_verified || rate_updated != &facts.rates_updated {
                     return Err(CustodyError::ServiceChecksIncomplete);
