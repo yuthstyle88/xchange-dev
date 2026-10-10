@@ -44,3 +44,15 @@
   font-weight: 500;
 }
 
+.xc-admin .xc-content .bookings-check {
+  align-items: stretch;
+}
+
+.xc-admin .xc-content .bookings-check input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  margin: 6px 0 0;
+  accent-color: auto;
+}
+
