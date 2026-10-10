@@ -19,6 +19,7 @@ xc-approval = { path = "crates/xc-approval" }
 xc-customer = { path = "crates/xc-customer" }
 xc-referral = { path = "crates/xc-referral" }
 xc-outbox = { path = "crates/xc-outbox" }
+xc-cash = { path = "crates/xc-cash" }
 
 [package]
 name = "xchange"
@@ -44,6 +45,7 @@ xc-approval = { workspace = true }
 xc-customer = { workspace = true }
 xc-referral = { workspace = true }
 xc-outbox = { workspace = true }
+xc-cash = { workspace = true }
 subtle = "2"
 rust_decimal = { workspace = true }
 serde = { workspace = true }

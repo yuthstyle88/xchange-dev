@@ -12,6 +12,7 @@ publish = false
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-kernel = { workspace = true }
+xc-approval = { workspace = true }
 xc-auth = { workspace = true }
 xc-shift = { workspace = true }
 rust_decimal = { workspace = true }
