@@ -58,16 +58,16 @@ fn undecodable(table: &str, column: &str, value: &str) -> AppError {
     AppError::Internal(format!("undecodable {table}.{column}: {value}"))
 }
 
-fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Result<Money, AppError> {
+pub(crate) fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Result<Money, AppError> {
     let trimmed = s.trim();
     if trimmed.starts_with('-') {
         return Err(undecodable(table, column, s));
     }
     let d = Decimal::from_str(trimmed).map_err(|_| undecodable(table, column, s))?;
-    if d < Decimal::ZERO || d.scale() > 2 {
+    if d < Decimal::ZERO || d.normalize().scale() > 2 {
         return Err(undecodable(table, column, s));
     }
-    let mut d = d;
+    let mut d = d.normalize();
     d.rescale(2);
     let minor = d.mantissa();
     MoneyDelta::from_minor(minor)
@@ -329,7 +329,7 @@ impl ShiftRepository for PgShiftRepository {
     async fn active(&self, branch: &BranchId) -> AppResult<Option<Shift>> {
         let row: Option<ShiftRow> = sqlx::query_as(
             "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND status = 'OPEN'",
+             FROM shifts WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL",
         )
         .bind(branch.as_str())
         .fetch_optional(&self.pool)
@@ -561,7 +561,7 @@ impl ShiftRepository for PgShiftRepository {
     ) -> AppResult<Option<Shift>> {
         let row: Option<ShiftRow> = sqlx::query_as(
             "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND status = 'OPEN'",
+             FROM shifts WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL",
         )
         .bind(branch.as_str())
         .fetch_optional(&mut **tx)

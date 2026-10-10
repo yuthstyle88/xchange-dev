@@ -1,0 +1,35 @@
+[package]
+name = "xc-cash"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Cash bounded context for xchange"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+xc-kernel = { workspace = true }
+xc-auth = { workspace = true }
+xc-shift = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = "0.4"
+futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "rust_decimal", "uuid", "macros"] }
+
+[dev-dependencies]
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+xc-auth = { workspace = true }
+xc-kernel = { workspace = true }
+xc-shift = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = "0.4"
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "json", "rust_decimal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
