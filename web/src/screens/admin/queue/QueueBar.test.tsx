@@ -23,6 +23,14 @@
 // "Shown" means connected, with no `hidden` on it or an ancestor, no inline `display: none`, and,
 // for a `<dialog>`, its `open` set (jsdom has no `showModal()`; set the attribute, or call
 // `showModal()` only where it exists). A part not rendered at all is not shown either.
+//
+// Retired by #786 (web design §12.18.12, lane controller ruling B): admin shows the shared floating
+// `QueueCard` and no in-page bar. Removed: Q1–Q3 and Q5 (the bar's title, status, worker lines
+// and sound controls) and Q4 (docking the card). The dialog is now opened through the card's
+// `/kiosk-queue.html` link (QF3), so the tests below click such a link where they clicked the
+// bar's button, and the assertions on that button (`disabled`, focus on close) and on the bar's
+// status line are gone. Their replacements are in QueueBar.widget.test.tsx and
+// ../../../shared/ui/QueueCard.float.test.tsx.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -180,34 +188,23 @@ function shown(el: Element | null | undefined): boolean {
   return true;
 }
 
-function bar(): HTMLElement {
-  const el = document.querySelector<HTMLElement>('[aria-label="คิวลูกค้าและผู้ทำรายการ"]');
-  expect(el, 'the bar is labelled คิวลูกค้าและผู้ทำรายการ').not.toBeNull();
-  return el!;
-}
-
-function within(root: Element, text: string): HTMLElement | undefined {
-  return [...root.querySelectorAll<HTMLElement>('*')].find(
-    (n) => n.textContent?.trim() === text && [...n.children].every((c) => c.textContent?.trim() !== text),
-  );
-}
-
 function button(root: ParentNode, name: string): HTMLButtonElement | undefined {
   return [...root.querySelectorAll<HTMLButtonElement>('button')].find(
     (b) => (b.getAttribute('aria-label') ?? b.textContent?.trim()) === name,
   );
 }
 
-function openButton(): HTMLButtonElement {
-  const b = button(bar(), 'เปิดคิว / รับเรื่อง →');
-  expect(b, 'the bar has the button เปิดคิว / รับเรื่อง →').toBeDefined();
-  return b!;
-}
-
-function statusText(): string {
-  const s = bar().querySelector('[role="status"]');
-  expect(s, "the bar's status line has role=status").not.toBeNull();
-  return s!.textContent?.trim() ?? '';
+/** Clicks a link to the queue page, as the card's `เปิดคิว / รับเรื่อง →` is (QF3). */
+function openQueue(branch = 'B1'): MouseEvent {
+  const a = document.createElement('a');
+  a.href = `/kiosk-queue.html?branch=${branch}`;
+  a.target = '_blank';
+  a.textContent = 'เปิดคิว / รับเรื่อง →';
+  document.body.append(a);
+  const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+  a.dispatchEvent(ev);
+  a.remove();
+  return ev;
 }
 
 function dialog(): HTMLElement | undefined {
@@ -227,9 +224,11 @@ function dialogName(): string {
 }
 
 function toast(): HTMLElement | undefined {
+  const isToast = (n: Element) =>
+    /^มีคิวลูกค้ารอ \d+ รายการ · /.test(n.textContent?.trim() ?? '') && button(n, 'ดูคิว') !== undefined;
+  // the innermost match, so a wrapper that only starts with the toast's text is not taken for it
   return [...document.querySelectorAll<HTMLElement>('*')].find(
-    (n) => n !== bar() && !bar().contains(n) && /^มีคิวลูกค้ารอ \d+ รายการ · /.test(n.textContent?.trim() ?? '') &&
-      button(n, 'ดูคิว') !== undefined,
+    (n) => isToast(n) && [...n.children].every((c) => !isToast(c)),
   );
 }
 
@@ -308,61 +307,11 @@ describe('texts (W6, W10)', () => {
 // ── the bar ──────────────────────────────────────────────────────────────────
 
 describe('the bar (admin-queue.js:6, :12-16)', () => {
-  it('Q1: before any answer it says กำลังตรวจคิว… under the title คิวลูกค้าหน้าร้าน', async () => {
-    await mount();
-    expect(within(bar(), 'คิวลูกค้าหน้าร้าน'), 'title').toBeDefined();
-    expect(statusText()).toBe('กำลังตรวจคิว…');
-    expect(shown(openButton())).toBe(true);
-  });
-
-  it('Q2: an answer prints the counts, the branch name and every worker line', async () => {
-    await mount();
-    const started = '2026-10-09T02:15:00.000Z';
-    answer('B1', {
-      count: 3,
-      workingCount: 2,
-      latest: 'K9',
-      working: [
-        { id: 'K1', queue: 'Q-012', staff: 'nok', startedAt: started, status: 'ACCEPTED' },
-        { id: 'K2', queue: 'Q-013', staff: 'som', startedAt: null, status: 'ID_CHECKED' },
-      ],
-    });
-    await flush();
-    expect(statusText()).toBe('รอรับเรื่อง 3 · กำลังทำรายการ 2 · Silom');
-    expect(within(bar(), 'คิวลูกค้า · Silom'), 'title follows the answer').toBeDefined();
-    const stamp = new Date(started).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-    const one = within(bar(), `nok กำลังทำรายการ Q-012 · เริ่ม ${stamp}`);
-    const two = within(bar(), 'som กำลังทำรายการ Q-013 · เริ่ม ยังไม่มีข้อมูล');
-    expect(shown(one), 'first worker line').toBe(true);
-    expect(shown(two), 'a worker with no start time reads ยังไม่มีข้อมูล').toBe(true);
-  });
-
-  it('Q3: with nobody working, no worker line is shown', async () => {
-    await mount();
-    answer('B1', { count: 1, latest: 'K1' });
-    await flush();
-    expect([...bar().querySelectorAll('*')].some((n) => shown(n) && /กำลังทำรายการ \S+ · เริ่ม/.test(n.textContent ?? ''))).toBe(false);
-  });
-
-  it('Q4: the bar docks the queue card while mounted and undocks on unmount', async () => {
-    const { dispose } = await mount();
-    expect(fake.docks).toBe(1);
-    expect(fake.undocks).toBe(0);
-    dispose();
-    expect(fake.undocks).toBe(1);
-  });
-
-  it('Q5: the sound controls render inside the bar', async () => {
-    await mount();
-    const controls = bar().querySelector('[data-fake="sound-controls"]');
-    expect(shown(controls)).toBe(true);
-  });
-
   it('Q6: the bar never calls fetch itself', async () => {
     await mount();
     answer('B1', { count: 2, latest: 'K1' });
     await flush();
-    openButton().click();
+    openQueue();
     await flush();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -371,12 +320,12 @@ describe('the bar (admin-queue.js:6, :12-16)', () => {
 // ── the dialog ───────────────────────────────────────────────────────────────
 
 describe('the dialog (admin-queue.js:7-9)', () => {
-  it('Q7: the button opens the dialog named by the picked branch and mounts the panel for it', async () => {
+  it('Q7: the queue link opens the dialog named by the picked branch and mounts the panel for it', async () => {
     await mount('B1', 'สาขาสีลม');
     answer('B1', { count: 1, latest: 'K1' });
     await flush();
     expect(shown(dialog())).toBe(false);
-    openButton().click();
+    openQueue();
     await flush();
     expect(shown(dialog())).toBe(true);
     expect(dialogName()).toBe('คิวลูกค้า · สาขาสีลม');
@@ -386,11 +335,11 @@ describe('the dialog (admin-queue.js:7-9)', () => {
     expect(shown(dialog()!.querySelector('[data-fake="queue-panel"]'))).toBe(true);
   });
 
-  it('Q8: ปิด × closes the dialog, unmounts the panel and returns focus to the button', async () => {
+  it('Q8: ปิด × closes the dialog and unmounts the panel', async () => {
     await mount();
     answer('B1', { count: 1, latest: 'K1' });
     await flush();
-    openButton().click();
+    openQueue();
     await flush();
     const close = button(dialog()!, 'ปิด ×');
     expect(close, 'the dialog has ปิด ×').toBeDefined();
@@ -398,7 +347,6 @@ describe('the dialog (admin-queue.js:7-9)', () => {
     await flush();
     expect(shown(dialog())).toBe(false);
     expect(livePanels().filter((p) => p.shown)).toHaveLength(0);
-    expect(document.activeElement).toBe(openButton());
   });
 
   it('Q9: a click on a link to /kiosk-queue.html opens the dialog instead of navigating', async () => {
@@ -476,7 +424,7 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
     await mount();
     answer('B1', { count: 0 });
     await flush();
-    openButton().click();
+    openQueue();
     await flush();
     answer('B1', { count: 1, latest: 'K3' });
     await flush();
@@ -498,7 +446,7 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
 // ── errors and the session ───────────────────────────────────────────────────
 
 describe('errors (admin-queue.js:19, account-bar.js lock)', () => {
-  it('Q16: offline prints v2\'s sentence, hides workers and toast, disables the button; an answer re-enables it', async () => {
+  it('Q16: offline hides the toast', async () => {
     await mount();
     answer('B1', {
       count: 1,
@@ -509,30 +457,19 @@ describe('errors (admin-queue.js:19, account-bar.js lock)', () => {
     await flush();
     store('B1').setError({ kind: 'offline' });
     await flush();
-    expect(statusText()).toBe('เชื่อมต่อคิวไม่ได้ · กำลังลองใหม่');
-    expect(shown(within(bar(), 'nok กำลังทำรายการ Q-1 · เริ่ม ยังไม่มีข้อมูล'))).toBe(false);
     expect(shown(toast())).toBe(false);
-    expect(openButton().disabled).toBe(true);
-
-    answer('B1', { count: 1, latest: 'K1' });
-    await flush();
-    expect(openButton().disabled).toBe(false);
   });
 
-  it('Q17: a session end closes the dialog and keeps the button disabled after later answers', async () => {
+  it('Q17: a session end closes the dialog', async () => {
     await mount();
     answer('B1', { count: 1, latest: 'K1' });
     await flush();
-    openButton().click();
+    openQueue();
     await flush();
     expect(shown(dialog())).toBe(true);
     store('B1').setError({ kind: 'ended', reason: 'expired' });
     await flush();
     expect(shown(dialog())).toBe(false);
-    expect(openButton().disabled).toBe(true);
-    answer('B1', { count: 2, latest: 'K2' });
-    await flush();
-    expect(openButton().disabled, 'locked stays locked (v2 `locked=true`)').toBe(true);
   });
 });
 
@@ -547,7 +484,7 @@ describe('branch change (admin-queue.js:14, :20, :22)', () => {
     expect(fake.queueBranchCalls.at(-1)).toBe('B2');
   });
 
-  it('Q19: a change resets the bar until the new branch answers, and closes the dialog', async () => {
+  it('Q19: a change closes the dialog and hides the toast; once the new branch answers the dialog opens for it', async () => {
     const { setBranch, setBranchLabel } = await mount('B1', 'สาขาสีลม');
     answer('B1', {
       count: 1,
@@ -556,23 +493,18 @@ describe('branch change (admin-queue.js:14, :20, :22)', () => {
       working: [{ id: 'K1', queue: 'Q-1', staff: 'nok', startedAt: null, status: 'ACCEPTED' }],
     });
     await flush();
-    openButton().click();
+    openQueue();
     await flush();
 
     setBranchLabel('สาขาสยาม');
     setBranch('B2');
     await flush();
-    expect(statusText()).toBe('กำลังตรวจคิวสาขา…');
-    expect(shown(within(bar(), 'nok กำลังทำรายการ Q-1 · เริ่ม ยังไม่มีข้อมูล'))).toBe(false);
     expect(shown(toast())).toBe(false);
-    expect(openButton().disabled).toBe(true);
     expect(shown(dialog())).toBe(false);
 
     answer('B2', { branchName: 'Siam', count: 0 });
     await flush();
-    expect(statusText()).toBe('รอรับเรื่อง 0 · กำลังทำรายการ 0 · Siam');
-    expect(openButton().disabled).toBe(false);
-    openButton().click();
+    openQueue('B2');
     await flush();
     expect(dialogName()).toBe('คิวลูกค้า · สาขาสยาม');
     expect(livePanels().at(-1)).toMatchObject({ branch: 'B2', shown: true });

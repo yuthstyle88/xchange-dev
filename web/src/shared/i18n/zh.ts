@@ -78,6 +78,8 @@ export const zh: Record<Key, string> = {
   'queue.card.endedExpired': '会话已过期，请重新登录',
   'queue.card.endedSwitched': '账户已在其他窗口中切换，请在操作前重新登录',
   'queue.card.signInAgain': '重新登录 →',
+  'queue.card.workerLine': '{staff} 正在办理 {queue} · 开始 {time}',
+  'queue.card.noData': '暂无数据',
   'queue.sound.enable': '开启声音提示',
   'queue.sound.test': '测试声音',
   'queue.sound.hintInitial': '首次请点击开启声音以允许浏览器播放音频',

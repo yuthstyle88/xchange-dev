@@ -76,6 +76,8 @@ export const th = {
   'queue.card.endedExpired': 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่',
   'queue.card.endedSwitched': 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ',
   'queue.card.signInAgain': 'เข้าสู่ระบบอีกครั้ง →',
+  'queue.card.workerLine': '{staff} กำลังทำรายการ {queue} · เริ่ม {time}',
+  'queue.card.noData': 'ยังไม่มีข้อมูล',
   'queue.sound.enable': 'เปิดเสียงแจ้งเตือน',
   'queue.sound.test': 'ทดสอบเสียง',
   'queue.sound.hintInitial': 'กดเปิดเสียงครั้งแรกเพื่อให้เบราว์เซอร์อนุญาต',

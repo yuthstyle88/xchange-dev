@@ -1,10 +1,11 @@
-import { createEffect, createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { t } from '../i18n';
+import { locale, t } from '../i18n';
 import { queueBranch, useQueueStore } from '../queue/queue-store';
 import { announce, soundOn } from '../queue/queue-sound';
 import type { SessionStore } from '../session/session';
 import { QueueSoundControls } from './QueueSoundControls';
+import './queue-card.css';
 
 const [dockCount, setDockCount] = createSignal(0);
 
@@ -131,15 +132,27 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
     return r ? CLAIMING_ROLES.includes(r) : false;
   };
 
+  const showWorkers = () => {
+    if (store().error()?.kind === 'offline') return false;
+    const s = store().state();
+    if (!s || s.working.length === 0) return false;
+    return true;
+  };
+
   return (
     <Show when={props.session.me() && dockCount() === 0}>
       <Portal>
-        <aside aria-label={t('queue.card.aria')} classList={{ waiting: isWaiting() }}>
+        <aside
+          aria-label={t('queue.card.aria')}
+          class="queue-card"
+          classList={{ waiting: isWaiting(), minimized: isFolded() }}
+        >
           <div class="queue-card-top">
-            <span>{badgeText()}</span>
-            <span>{titleText()}</span>
+            <span class="queue-card-badge">{badgeText()}</span>
+            <span class="queue-card-title">{titleText()}</span>
             <button
               type="button"
+              class="queue-card-toggle"
               aria-label={t('queue.card.foldAria')}
               aria-expanded={isFolded() ? 'false' : 'true'}
               onClick={toggleFold}
@@ -147,21 +160,45 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
               {isFolded() ? '+' : '−'}
             </button>
           </div>
-          <div role="status" aria-live="polite">
+          <div role="status" aria-live="polite" class="queue-card-status">
             {statusText()}
           </div>
-          <div hidden={isFolded()}>
+          <div hidden={isFolded()} class="queue-card-body">
             <Show when={isEnded()}>
-              <a href="/login">{t('queue.card.signInAgain')}</a>
+              <a href="/login" class="queue-card-action">{t('queue.card.signInAgain')}</a>
             </Show>
             <Show when={!isEnded() && canClaim()}>
               <a
                 href={`/kiosk-queue.html?branch=${encodeURIComponent(queueBranch())}`}
                 target="_blank"
                 rel="noopener noreferrer"
+                class="queue-card-action"
               >
                 {t('queue.card.openQueue')}
               </a>
+            </Show>
+            <Show when={showWorkers()}>
+              <div class="queue-card-workers">
+                <For each={store().state()?.working ?? []}>
+                  {(w) => {
+                    const stamp = () =>
+                      w.startedAt
+                        ? new Date(w.startedAt).toLocaleString(locale(), {
+                            timeZone: 'Asia/Bangkok',
+                          })
+                        : t('queue.card.noData');
+                    return (
+                      <div class="queue-card-worker">
+                        {t('queue.card.workerLine', {
+                          staff: w.staff,
+                          queue: w.queue,
+                          time: stamp(),
+                        })}
+                      </div>
+                    );
+                  }}
+                </For>
+              </div>
             </Show>
             <QueueSoundControls />
           </div>

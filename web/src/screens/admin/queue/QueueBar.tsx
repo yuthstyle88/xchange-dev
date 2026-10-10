@@ -3,17 +3,14 @@
 import {
   createEffect,
   createSignal,
-  For,
   onCleanup,
   Show,
   type Accessor,
   type JSX,
 } from 'solid-js';
-import { locale, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
 import { setQueueBranch, useQueueStore } from '../../../shared/queue/queue-store';
-import { dockQueueCard } from '../../../shared/ui/QueueCard';
 import { QueuePanel } from '../../../shared/ui/QueuePanel';
-import { QueueSoundControls } from '../../../shared/ui/QueueSoundControls';
 import * as table from './i18n';
 import './queue.css';
 
@@ -27,7 +24,7 @@ export function QueueBar(props: {
   const state = () => store().state();
   const error = () => store().error();
 
-  let openButtonRef: HTMLButtonElement | undefined;
+  let opener: HTMLElement | undefined;
   let dialogRef: HTMLDialogElement | undefined;
 
   const [dialogOpen, setDialogOpen] = createSignal(false);
@@ -62,12 +59,6 @@ export function QueueBar(props: {
   let prevBranch = props.branch();
   const [branchAwaitingAnswer, setBranchAwaitingAnswer] = createSignal(false);
 
-  // Dock queue card while mounted
-  const undock = dockQueueCard();
-  onCleanup(() => {
-    undock();
-  });
-
   // Intercept /kiosk-queue.html links
   const handleDocumentClick = (e: MouseEvent) => {
     const target = e.target as Element | null;
@@ -82,6 +73,7 @@ export function QueueBar(props: {
     ) {
       e.preventDefault();
       if (!buttonDisabled()) {
+        opener = link;
         setDialogOpen(true);
       }
     }
@@ -158,90 +150,8 @@ export function QueueBar(props: {
     return false;
   };
 
-  const statusText = () => {
-    if (error()?.kind === 'offline') {
-      return t('offline');
-    }
-    if (branchAwaitingAnswer()) {
-      return t('checkingBranch');
-    }
-    const s = state();
-    if (!s) {
-      return t('checkingInitial');
-    }
-    return t('status', {
-      waiting: s.count,
-      working: s.workingCount,
-      branch: s.branchName,
-    });
-  };
-
-  const barTitle = () => {
-    if (branchAwaitingAnswer()) {
-      return t('titleInitial');
-    }
-    const s = state();
-    if (!s) {
-      return t('titleInitial');
-    }
-    return t('titleWithBranch', { branch: s.branchName });
-  };
-
-  const showWorkers = () => {
-    if (error()?.kind === 'offline') return false;
-    if (branchAwaitingAnswer()) return false;
-    const s = state();
-    if (!s || s.working.length === 0) return false;
-    return true;
-  };
-
   return (
     <>
-      <aside class="admin-queue-bar" aria-label={t('barAria')}>
-        <div class="queue-bar-main">
-          <h3 class="queue-bar-title">{barTitle()}</h3>
-          <div role="status" class="queue-bar-status">
-            {statusText()}
-          </div>
-          <button
-            type="button"
-            ref={openButtonRef}
-            class="queue-bar-open-button"
-            disabled={buttonDisabled()}
-            onClick={() => setDialogOpen(true)}
-          >
-            {t('openQueue')}
-          </button>
-          <div class="queue-sound-area">
-            <QueueSoundControls />
-          </div>
-        </div>
-
-        <Show when={showWorkers()}>
-          <div class="queue-workers-list">
-            <For each={state()?.working ?? []}>
-              {(w) => {
-                const stamp = () =>
-                  w.startedAt
-                    ? new Date(w.startedAt).toLocaleString(locale(), {
-                        timeZone: 'Asia/Bangkok',
-                      })
-                    : t('noData');
-                return (
-                  <div class="queue-worker-line">
-                    {t('workerLine', {
-                      staff: w.staff,
-                      queue: w.queue,
-                      time: stamp(),
-                    })}
-                  </div>
-                );
-              }}
-            </For>
-          </div>
-        </Show>
-      </aside>
-
       <Show
         when={toastVisible() && !branchAwaitingAnswer() && error()?.kind !== 'offline'}
       >
@@ -250,7 +160,8 @@ export function QueueBar(props: {
           <button
             type="button"
             class="toast-view-button"
-            onClick={() => {
+            onClick={(e) => {
+              opener = e.currentTarget;
               setToastVisible(false);
               setDialogOpen(true);
             }}
@@ -273,7 +184,7 @@ export function QueueBar(props: {
         class="queue-dialog"
         onCancel={() => {
           setDialogOpen(false);
-          openButtonRef?.focus();
+          opener?.focus();
         }}
       >
         <div class="queue-dialog-header">
@@ -285,7 +196,7 @@ export function QueueBar(props: {
             class="queue-dialog-close"
             onClick={() => {
               setDialogOpen(false);
-              openButtonRef?.focus();
+              opener?.focus();
             }}
           >
             {t('closeDialog')}

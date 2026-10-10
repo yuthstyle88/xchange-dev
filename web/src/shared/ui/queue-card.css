@@ -1,0 +1,208 @@
+/* LK-QC (#786, web design §12.18.12): shared floating queue card look ported from v2 */
+
+/* v2 src/devices-public/account-bar.js @2212 */
+.queue-card {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #e8dfe4;
+  border-radius: 20px;
+  box-shadow: 0 10px 38px #30202b22;
+  color: #27212a;
+  font: 14px/1.5 Arial, Tahoma, sans-serif;
+}
+
+.queue-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.queue-card-badge {
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #f3f1f4;
+  color: #766a74;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.queue-card-title,
+.queue-card strong {
+  display: block;
+  font-size: 15px;
+}
+
+.queue-card-status {
+  color: #706671;
+  font-size: 13px;
+}
+
+.queue-card.waiting {
+  border-color: #ab0044;
+}
+
+.queue-card.waiting .queue-card-badge {
+  background: #ab0044;
+  color: white;
+}
+
+.queue-card-action {
+  display: block;
+  text-align: center;
+  padding: 11px 14px;
+  margin-top: 14px;
+  border-radius: 11px;
+  background: #ab0044;
+  color: white !important;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.queue-card .queue-sound-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  /* v3: flex-wrap allows child span hint to wrap to its own row (in v2, small was a sibling) */
+  flex-wrap: wrap;
+}
+
+.queue-card .queue-sound-controls button {
+  flex: 1;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid #e6dfe4;
+  background: #faf8fa;
+  color: #6b3550;
+  border-radius: 9px;
+  font: 12px Arial, Tahoma, sans-serif;
+  cursor: pointer;
+}
+
+.queue-card .queue-sound-controls span,
+.queue-card small {
+  display: block;
+  /* v3: flex-basis: 100% forces the hint span onto its own row within .queue-sound-controls */
+  flex-basis: 100%;
+  color: #827781;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.queue-card.minimized .queue-sound-controls,
+.queue-card.minimized small,
+.queue-card.minimized .queue-card-action,
+.queue-card.minimized .queue-card-body {
+  display: none;
+}
+
+.queue-card .queue-card-toggle {
+  border: 0;
+  background: none;
+  color: #786d76;
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 8px;
+}
+
+.queue-card :focus-visible {
+  outline: 3px solid #ab0044;
+  outline-offset: 3px;
+}
+
+/* v2 src/devices-public/account-bar.js @3685 */
+@media (max-width: 600px) {
+  .queue-card {
+    right: 12px;
+    bottom: 12px;
+    width: 290px;
+  }
+}
+
+/* v2 src/devices-public/account-bar.js @4526 */
+@media (max-width: 700px) {
+  .queue-card {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    padding: 10px 14px;
+  }
+
+  .queue-card-badge {
+    min-width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+
+  .queue-card-action {
+    padding: 9px 12px;
+    margin-top: 8px;
+  }
+}
+
+/* v2 src/devices-public/admin-workspace.css:29 */
+body:has(.xc-admin) .queue-card {
+  width: 295px;
+  border-radius: 10px;
+  box-shadow: 0 5px 24px #28142114;
+  z-index: 25;
+  padding: 14px;
+}
+
+body:has(.xc-admin) .queue-card-badge {
+  border-radius: 6px;
+}
+
+body:has(.xc-admin) .queue-card-action {
+  border-radius: 6px;
+}
+
+body:has(.xc-admin) .queue-card.minimized {
+  width: 280px;
+}
+
+body:has(.xc-admin) .queue-card .queue-sound-controls button {
+  border-radius: 5px;
+}
+
+/* v2 src/devices-public/admin-workspace.css:34 */
+@media (max-width: 600px) {
+  body:has(.xc-admin) .queue-card {
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    width: auto;
+    max-width: none;
+  }
+
+  body:has(.xc-admin) .queue-card.minimized {
+    left: auto;
+    width: 260px;
+  }
+}
+
+/* QF8: workers list in expanded card, ported from old admin bar .queue-workers-list / .queue-worker-line (queue.css) */
+.queue-card-workers {
+  font-size: 13px;
+  border-top: 1px solid #f0e7eb;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.queue-card-worker {
+  padding: 4px 0;
+  color: #716572;
+  font-size: 13px;
+}
