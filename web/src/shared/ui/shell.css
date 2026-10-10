@@ -158,6 +158,23 @@ body:has(.xc-shell) {
   align-items: center;
 }
 
+/* v2 account-bar.js:12 put the bar first in <body> (`document.body.prepend(bar)`): a strip
+   across the full page width above the header. v3 renders it inside <header> (the lock tests pin
+   `header .account-bar`), so as a plain flex item it sat in the header's corner as a dark box.
+   Lay it out as the header's first, full-bleed row instead. The header pads 5% of the shell's
+   width on each side, which is 5/90 of the header's content box — the box these percentages
+   resolve against — so the bar's width and negative margins are divided by 0.9 to reach both edges. */
+.xc-shell-header {
+  flex-wrap: wrap;
+}
+
+.xc-shell-header > .account-bar {
+  order: -1;
+  box-sizing: border-box;
+  width: calc(100% / 0.9);
+  margin: -20px calc(-5% / 0.9) 20px;
+}
+
 .account-bar a {
   color: #fff;
   white-space: nowrap;
@@ -216,6 +233,9 @@ body:has(.xc-shell) {
   .xc-shell-header {
     align-items: flex-start;
     gap: 15px;
+  }
+  .xc-shell-header > .account-bar {
+    margin-bottom: 5px;
   }
   .xc-shell-nav,
   .xc-shell-nav nav {
