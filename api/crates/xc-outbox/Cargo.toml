@@ -17,7 +17,7 @@ futures = "0.3"
 sha2 = "0.10"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "macros"] }
 tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
