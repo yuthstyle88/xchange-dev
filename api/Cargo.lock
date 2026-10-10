@@ -4112,6 +4112,7 @@ dependencies = [
  "xc-exchange",
  "xc-kernel",
  "xc-kiosk",
+ "xc-outbox",
  "xc-rate",
  "xc-shift",
 ]
