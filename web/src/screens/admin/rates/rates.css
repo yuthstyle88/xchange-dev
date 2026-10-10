@@ -225,3 +225,52 @@
   padding: 3px 9px;
   border-radius: 5px;
 }
+
+/* rates-reference.js:7 div[style="padding:20px"] */
+.xc-admin .xc-content .admin-rates-screen .bot-reference-section .section-header {
+  padding: 20px;
+}
+
+/* rates-reference.js:7 stacked heading, subtitle, status, buttons */
+.xc-admin .xc-content .admin-rates-screen .bot-reference-section .title-row {
+  display: block;
+}
+
+/* rates-reference.js:7 button gap is one space char (4px) */
+.xc-admin .xc-content .admin-rates-screen .bot-reference-section .title-row .dialog-actions {
+  gap: 4px;
+}
+
+/* rates-reference.js:7 plain p subtitle */
+.xc-admin .xc-content .admin-rates-screen .bot-reference-section .subtitle {
+  font-size: inherit;
+  color: var(--ink);
+  margin-top: 0;
+}
+
+/* rates-reference.js:7 plain p status */
+.xc-admin .xc-content .admin-rates-screen .status-row {
+  margin: 0;
+  font-size: inherit;
+}
+
+/* rates-reference.js:7 plain p loading / fetched / error */
+.xc-admin .xc-content .admin-rates-screen .status-row .loading,
+.xc-admin .xc-content .admin-rates-screen .status-row .fetched,
+.xc-admin .xc-content .admin-rates-screen .status-row .bot-error {
+  font-size: inherit;
+  color: var(--ink);
+}
+
+/* admin-html.ts:3 @media(max-width:720px) .card-heading */
+@media (max-width: 720px) {
+  .xc-admin .xc-content .admin-rates-screen .rates-section .title-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* admin-html.ts:3 .card-heading .eyebrow */
+.xc-admin .xc-content .admin-rates-screen .rates-section .section-header .eyebrow {
+  margin-bottom: 3px;
+}
+

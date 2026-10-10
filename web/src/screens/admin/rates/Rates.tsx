@@ -547,6 +547,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         </Show>
       </div>
 
+      <div class="section-note">
+        <p>{t('ratesLiveNote')}</p>
+      </div>
+
       {/* Published Rates Section */}
       <div class="rates-section">
         <div class="section-header">
@@ -554,7 +558,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <div>
               <div class="eyebrow">{t('ratesEyebrow')}</div>
               <h2>{t('ratesTitle')}</h2>
-              <div class="live-note">{t('ratesLiveNote')}</div>
             </div>
             <div class="rates-pill">{t('ratesPill')}</div>
           </div>
@@ -598,6 +601,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <div class="eyebrow">{t('botEyebrow')}</div>
               <h2>{t('botTitle')}</h2>
               <div class="subtitle">{t('botSubtitle')}</div>
+              <div class="status-row">
+                <Show when={refLoading()}>
+                  <p class="loading">{t('botLoading')}</p>
+                </Show>
+                <Show when={!refLoading() && refData()?.fetchedAt}>
+                  <p class="fetched">
+                    {t('botLastFetchedPrefix')}{formatTime(refData()!.fetchedAt)}
+                  </p>
+                </Show>
+                <Show when={refError()}>
+                  <p class="bot-error">{refError()}</p>
+                </Show>
+              </div>
             </div>
             <div class="dialog-actions">
               <button
@@ -615,19 +631,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 {t('rateHistoryButton')}
               </button>
             </div>
-          </div>
-          <div class="status-row">
-            <Show when={refLoading()}>
-              <p class="loading">{t('botLoading')}</p>
-            </Show>
-            <Show when={!refLoading() && refData()?.fetchedAt}>
-              <p class="fetched">
-                {t('botLastFetchedPrefix')}{formatTime(refData()!.fetchedAt)}
-              </p>
-            </Show>
-            <Show when={refError()}>
-              <p class="bot-error">{refError()}</p>
-            </Show>
           </div>
         </div>
 
