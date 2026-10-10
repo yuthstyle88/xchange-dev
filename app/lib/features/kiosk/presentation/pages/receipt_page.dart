@@ -35,61 +35,94 @@ class ReceiptPage extends ConsumerWidget {
     final id = s.identity!;
     final image = s.receiptImage!;
     final bytes = decode(image);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          l.text('receiptTitle'),
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          l.text(
-            id.status == KioskStatus.completed ? 'stCOMPLETED' : 'stID_CHECKED',
+    return _DoneCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l.text('receiptTitle'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
           ),
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 20, color: KioskColors.muted),
-        ),
-        const SizedBox(height: 8),
-        Center(child: QueueNumber(id.queue)),
-        const SizedBox(height: 12),
-        if (bytes != null)
+          const SizedBox(height: 6),
+          Text(
+            l.text(
+              id.status == KioskStatus.completed
+                  ? 'stCOMPLETED'
+                  : 'stID_CHECKED',
+            ),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          Center(child: QueueNumber(id.queue)),
+          const SizedBox(height: 16),
+          if (bytes != null)
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Image.memory(
+                  bytes,
+                  gaplessPlayback: true,
+                  semanticLabel: 'Exchange receipt',
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
-              child: Image.memory(
-                bytes,
-                gaplessPlayback: true,
-                semanticLabel: 'Exchange receipt',
+              child: PrimaryButton(
+                key: const Key('save-receipt'),
+                label: l.text('saveImage'),
+                onPressed: () async {
+                  // Read before the await: the page may be gone when it fails.
+                  final actions = ref.read(deviceActionsProvider);
+                  final kiosk = ref.read(kioskControllerProvider.notifier);
+                  try {
+                    await actions.saveImage(image, filename(id));
+                  } on DeviceActionException {
+                    kiosk.reportError('errGeneric');
+                  }
+                },
               ),
             ),
           ),
-        const SizedBox(height: 16),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: PrimaryButton(
-              key: const Key('save-receipt'),
-              label: l.text('saveImage'),
-              onPressed: () async {
-                // Read before the await: the page may be gone when it fails.
-                final actions = ref.read(deviceActionsProvider);
-                final kiosk = ref.read(kioskControllerProvider.notifier);
-                try {
-                  await actions.saveImage(image, filename(id));
-                } on DeviceActionException {
-                  kiosk.reportError('errGeneric');
-                }
-              },
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        OrderProgress(l10n: l, status: id.status),
-        const SizedBox(height: 16),
-        IdentityBlock(l10n: l, identity: id),
-      ],
+          const SizedBox(height: 20),
+          OrderProgress(l10n: l, status: id.status),
+          const SizedBox(height: 16),
+          IdentityBlock(l10n: l, identity: id),
+        ],
+      ),
     );
   }
+}
+
+class _DoneCard extends StatelessWidget {
+  const _DoneCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 880),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(30),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: KioskColors.line),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0628202B),
+              offset: Offset(0, 12),
+              blurRadius: 40,
+            ),
+          ],
+        ),
+        child: child,
+      ),
+    ),
+  );
 }
