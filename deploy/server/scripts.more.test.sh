@@ -174,10 +174,28 @@ esac
 printf '200'
 STUB
 
-for s in useradd systemctl journalctl ss createdb dropdb; do
+for s in useradd systemctl journalctl ss createdb dropdb pg_dump; do
   write_stub "$s" <<STUB
 #!/usr/bin/env bash
 printf '$s %s\n' "\$*" >>"\${XC_TEST_LOG:?}/calls.log"
+out="" take=0
+for a in "\$@"; do
+  if [ "\$take" = 1 ]; then
+    out="\$a"
+    take=0
+    continue
+  fi
+  case "\$a" in
+    -f) take=1 ;;
+    --file=*) out="\${a#--file=}" ;;
+    -f*) out="\${a#-f}" ;;
+  esac
+done
+if [ -n "\$out" ] && [ "\$out" != "-" ]; then
+  printf -- '-- stub %s\n' '$s' >"\$out"
+elif [ '$s' = "pg_dump" ]; then
+  printf -- '-- stub pg_dump\n'
+fi
 exit 0
 STUB
 done
