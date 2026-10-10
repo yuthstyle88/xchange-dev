@@ -8,18 +8,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.xc-admin .xc-content .reports-screen .link-button {
-  font-family: Arial, sans-serif;
-  color: var(--brand, #a5003c);
-  font-weight: 600;
-  font-size: 13px;
-  padding: 0;
-  min-height: 32px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-
 .xc-admin .xc-content .reports-screen .small {
   display: block;
 }
