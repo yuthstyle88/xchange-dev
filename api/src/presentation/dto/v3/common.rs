@@ -127,6 +127,16 @@ fn is_valid_yyyy_mm_dd(s: &str) -> bool {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
 }
 
+/// Rate freshness facts (§4.10, RF-1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "common.ts")]
+pub struct RateFreshnessDto {
+    pub stale: bool,
+    pub source_date: Option<String>,
+    pub published_at: Option<String>,
+}
+
 /// Exports shared v3 types to `common.ts` in `dir`.
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
@@ -137,5 +147,6 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     Me::export_all(&cfg)?;
     NoFilter::export_all(&cfg)?;
     Period::export_all(&cfg)?;
+    RateFreshnessDto::export_all(&cfg)?;
     Ok(())
 }

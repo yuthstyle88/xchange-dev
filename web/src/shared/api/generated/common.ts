@@ -26,6 +26,11 @@ export type Period = { from: string, to: string, };
 export type Rate = string;
 
 /**
+ * Rate freshness facts (§4.10, RF-1).
+ */
+export type RateFreshnessDto = { stale: boolean, sourceDate: string | null, publishedAt: string | null, };
+
+/**
  * Refusal envelope.
  */
 export type V3ErrorBody = { error: V3ErrorDetail, };
