@@ -383,11 +383,13 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       look="devices"
       title={t('heading')}
       nav={
-        <nav>
-          <a href="/devices">XCHANGE × T.K. DEVICES</a>
-          <a href={`/?branch=${effectiveBranch()}`}>{t('adminLink')}</a>
-          <a href={`/desk?branch=${effectiveBranch()}`}>{t('deskLink')}</a>
-        </nav>
+        <>
+          <a class="xc-shell-brand" href="/devices">XCHANGE <span>× T.K.</span><small>DEVICES</small></a>
+          <nav>
+            <a href={`/?branch=${effectiveBranch()}`}>{t('adminLink')}</a>
+            <a href={`/desk?branch=${effectiveBranch()}`}>{t('deskLink')}</a>
+          </nav>
+        </>
       }
     >
       <div>
@@ -396,23 +398,27 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         </Show>
 
         <section>
-          <div class="eyebrow">{t('eyebrow')}</div>
-          <h2>{t('heading')}</h2>
-          <p>{t('intro')}</p>
+          <div class="heading">
+            <div>
+              <div class="eyebrow">{t('eyebrow')}</div>
+              <h2>{t('heading')}</h2>
+              <p>{t('intro')}</p>
+            </div>
 
-          <div class="branch-select">
-            <label>
-              {t('branch')}
-              <select
-                value={overview()?.branchId ?? selectedBranch()}
-                onChange={handleBranchChange}
-                disabled={busy()}
-              >
-                <For each={overview()?.branches ?? []}>
-                  {(b) => <option value={b.id}>{b.name}</option>}
-                </For>
-              </select>
-            </label>
+            <div class="branch-select">
+              <label>
+                {t('branch')}
+                <select
+                  value={overview()?.branchId ?? selectedBranch()}
+                  onChange={handleBranchChange}
+                  disabled={busy()}
+                >
+                  <For each={overview()?.branches ?? []}>
+                    {(b) => <option value={b.id}>{b.name}</option>}
+                  </For>
+                </select>
+              </label>
+            </div>
           </div>
 
           <div id="message" role="status" aria-live="polite">
@@ -500,47 +506,51 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         </CardGrid>
 
         <section class="request-section">
-          <div class="eyebrow">{t('requestEyebrow')}</div>
-          <h2>{t('requestHeading')}</h2>
-          <button type="button" onClick={handleRefresh} disabled={busy()}>
-            {t('refresh')}
-          </button>
-
-          <div class="picker-group">
-            <label>
-              {t('transaction')}
-              <select
-                ref={selectRef}
-                value={selectedTx()}
-                onInput={(e) => setSelectedTx(e.currentTarget.value)}
-                onChange={(e) => setSelectedTx(e.currentTarget.value)}
-                disabled={busy()}
-              >
-                <Show
-                  when={transactions() !== undefined}
-                  fallback={<option value="">{t('noTransactions')}</option>}
-                >
-                  <option value="">{t('choose')}</option>
-                  <For each={transactions()}>
-                    {(item) => (
-                      <option value={item.id}>
-                        {item.id} · {item.type} {formatMoney(item.amount)} {item.currency}
-                      </option>
-                    )}
-                  </For>
-                </Show>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={handleLoadMoreTransactions}
-              disabled={busy()}
-            >
-              {t('loadMore')}
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">{t('requestEyebrow')}</div>
+              <h2>{t('requestHeading')}</h2>
+            </div>
+            <button type="button" onClick={handleRefresh} disabled={busy()}>
+              {t('refresh')}
             </button>
           </div>
 
-          <div class="reason-group">
+          <div class="request-grid">
+            <div class="picker-group">
+              <label>
+                {t('transaction')}
+                <select
+                  ref={selectRef}
+                  value={selectedTx()}
+                  onInput={(e) => setSelectedTx(e.currentTarget.value)}
+                  onChange={(e) => setSelectedTx(e.currentTarget.value)}
+                  disabled={busy()}
+                >
+                  <Show
+                    when={transactions() !== undefined}
+                    fallback={<option value="">{t('noTransactions')}</option>}
+                  >
+                    <option value="">{t('choose')}</option>
+                    <For each={transactions()}>
+                      {(item) => (
+                        <option value={item.id}>
+                          {item.id} · {item.type} {formatMoney(item.amount)} {item.currency}
+                        </option>
+                      )}
+                    </For>
+                  </Show>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={handleLoadMoreTransactions}
+                disabled={busy()}
+              >
+                {t('loadMore')}
+              </button>
+            </div>
+
             <label>
               {t('reason')}
               <input
@@ -552,9 +562,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                 disabled={busy()}
               />
             </label>
-          </div>
 
-          <div class="request-actions">
             <button type="button" onClick={handlePrint} disabled={busy()}>
               {t('print')}
             </button>
@@ -562,129 +570,136 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               {t('drawer')}
             </button>
           </div>
-        </section>
 
-        <section class="jobs-section">
-          <table class="jobs-table">
-            <thead>
-              <tr>
-                <th>{t('colJobTime')}</th>
-                <th>{t('colJobKind')}</th>
-                <th>{t('colJobActor')}</th>
-                <th>{t('colJobStatus')}</th>
-                <th>{t('colJobActions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Show
-                when={jobs().length > 0}
-                fallback={
-                  <tr>
-                    <td colspan="5" class="empty">{t('noJobs')}</td>
-                  </tr>
-                }
-              >
-                <For each={jobs()}>
-                  {(j) => (
+          <div class="table-wrap">
+            <table class="jobs-table">
+              <thead>
+                <tr>
+                  <th>{t('colJobTime')}</th>
+                  <th>{t('colJobKind')}</th>
+                  <th>{t('colJobActor')}</th>
+                  <th>{t('colJobStatus')}</th>
+                  <th>{t('colJobActions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <Show
+                  when={jobs().length > 0}
+                  fallback={
                     <tr>
-                      <td data-label={t('colJobTime')}>
-                        {formatTimestamp(j.created, locale())} <small>{j.id}</small>
-                      </td>
-                      <td data-label={t('colJobKind')}>
-                        {kindLabel(j.kind)} <small>{j.ref || t('noRef')}</small>
-                      </td>
-                      <td data-label={t('colJobActor')}>{j.actor}</td>
-                      <td data-label={t('colJobStatus')}>{statusLabel(j.status)}</td>
-                      <td data-label={t('colJobActions')}>
-                        <Show when={j.status === 'QUEUED'}>
-                          <button
-                            type="button"
-                            onClick={() => handleProcess(j.id)}
-                            disabled={busy()}
-                          >
-                            {t('process')}
-                          </button>
-                        </Show>
-                        <Show when={j.status === 'FAILED'}>
-                          <button
-                            type="button"
-                            onClick={() => handleRetry(j.id)}
-                            disabled={busy()}
-                          >
-                            {t('retry')}
-                          </button>
-                        </Show>
-                        <Show when={j.kind === 'PRINT_RECEIPT'}>
-                          <a
-                            href={`/devices/receipt?branch=${effectiveBranch()}&ref=${j.ref}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {t('receipt')}
-                          </a>
-                        </Show>
-                      </td>
+                      <td colspan="5" class="empty">{t('noJobs')}</td>
                     </tr>
-                  )}
-                </For>
-              </Show>
-            </tbody>
-          </table>
+                  }
+                >
+                  <For each={jobs()}>
+                    {(j) => (
+                      <tr>
+                        <td data-label={t('colJobTime')}>
+                          {formatTimestamp(j.created, locale())} <small>{j.id}</small>
+                        </td>
+                        <td data-label={t('colJobKind')}>
+                          {kindLabel(j.kind)} <small>{j.ref || t('noRef')}</small>
+                        </td>
+                        <td data-label={t('colJobActor')}>{j.actor}</td>
+                        <td data-label={t('colJobStatus')}>{statusLabel(j.status)}</td>
+                        <td data-label={t('colJobActions')}>
+                          <Show when={j.status === 'QUEUED'}>
+                            <button
+                              type="button"
+                              onClick={() => handleProcess(j.id)}
+                              disabled={busy()}
+                            >
+                              {t('process')}
+                            </button>
+                          </Show>
+                          <Show when={j.status === 'FAILED'}>
+                            <button
+                              type="button"
+                              onClick={() => handleRetry(j.id)}
+                              disabled={busy()}
+                            >
+                              {t('retry')}
+                            </button>
+                          </Show>
+                          <Show when={j.kind === 'PRINT_RECEIPT'}>
+                            {' '}
+                            <a
+                              href={`/devices/receipt?branch=${effectiveBranch()}&ref=${j.ref}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {t('receipt')}
+                            </a>
+                          </Show>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </Show>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section class="events-section">
-          <div class="eyebrow">{t('eventsEyebrow')}</div>
-          <h2>{t('eventsHeading')}</h2>
-          <p>{t('eventsNote')}</p>
-          <div class="events-controls">
-            <button type="button" onClick={handleExportCsv} disabled={busy()}>
-              {t('exportCsv')}
-            </button>
-            <button
-              type="button"
-              onClick={handleLoadMoreEvents}
-              disabled={busy()}
-            >
-              {t('loadMore')}
-            </button>
-          </div>
-          <table class="events-table">
-            <thead>
-              <tr>
-                <th>{t('colTime')}</th>
-                <th>{t('colActor')}</th>
-                <th>{t('colEvent')}</th>
-                <th>{t('colRef')}</th>
-                <th>{t('colDetail')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Show
-                when={displayedEvents().length > 0}
-                fallback={
-                  <tr>
-                    <td colspan="5" class="empty">{t('noEvents')}</td>
-                  </tr>
-                }
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">{t('eventsEyebrow')}</div>
+              <h2>{t('eventsHeading')}</h2>
+            </div>
+            <div class="events-controls">
+              <button
+                type="button"
+                onClick={handleLoadMoreEvents}
+                disabled={busy()}
               >
-                <For each={displayedEvents()}>
-                  {(ev) => (
+                {t('loadMore')}
+              </button>
+              <button type="button" onClick={handleExportCsv} disabled={busy()}>
+                {t('exportCsv')}
+              </button>
+            </div>
+          </div>
+          <p>{t('eventsNote')}</p>
+          <div class="table-wrap">
+            <table class="events-table">
+              <thead>
+                <tr>
+                  <th>{t('colTime')}</th>
+                  <th>{t('colActor')}</th>
+                  <th>{t('colEvent')}</th>
+                  <th>{t('colRef')}</th>
+                  <th>{t('colDetail')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <Show
+                  when={displayedEvents().length > 0}
+                  fallback={
                     <tr>
-                      <td data-label={t('colTime')}>{formatTimestamp(ev.at, locale())}</td>
-                      <td data-label={t('colActor')}>{ev.actor}</td>
-                      <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
-                      <td data-label={t('colRef')}>
-                        <small>{ev.ref || '—'}</small>
-                      </td>
-                      <td data-label={t('colDetail')}>
-                        <code>{ev.detail}</code>
-                      </td>
+                      <td colspan="5" class="empty">{t('noEvents')}</td>
                     </tr>
-                  )}
-                </For>
-              </Show>
-            </tbody>
-          </table>
+                  }
+                >
+                  <For each={displayedEvents()}>
+                    {(ev) => (
+                      <tr>
+                        <td data-label={t('colTime')}>{formatTimestamp(ev.at, locale())}</td>
+                        <td data-label={t('colActor')}>{ev.actor}</td>
+                        <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
+                        <td data-label={t('colRef')}>
+                          <small>{ev.ref || '—'}</small>
+                        </td>
+                        <td data-label={t('colDetail')}>
+                          <code>{ev.detail}</code>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </Show>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <footer>
