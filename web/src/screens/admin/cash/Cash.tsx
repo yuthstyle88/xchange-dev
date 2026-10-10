@@ -328,10 +328,10 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         </div>
 
         <div class="dialog-actions">
-          <button type="button" onClick={closeDialog}>
+          <button type="button" class="secondary" onClick={closeDialog}>
             {t('cancel')}
           </button>
-          <button type="submit">{t('confirmOpenShift')}</button>
+          <button type="submit" class="primary">{t('confirmOpenShift')}</button>
         </div>
       </form>
     ));
@@ -413,7 +413,10 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         </Show>
 
         <div class="dialog-actions">
-          <button type="submit">{t('saveMovement')}</button>
+          <button type="button" class="secondary" onClick={closeDialog}>
+            {t('cancel')}
+          </button>
+          <button type="submit" class="primary">{t('saveMovement')}</button>
         </div>
       </form>
     ));
@@ -508,10 +511,10 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         </div>
 
         <div class="dialog-actions">
-          <button type="button" onClick={closeDialog}>
+          <button type="button" class="secondary" onClick={closeDialog}>
             {t('backToCount')}
           </button>
-          <button type="submit">{t('confirmCloseShift')}</button>
+          <button type="submit" class="primary">{t('confirmCloseShift')}</button>
         </div>
       </form>
     ));
@@ -547,7 +550,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         <p class="example-explanation">{t('exampleExplanation')}</p>
 
         <div class="dialog-actions">
-          <button type="button" onClick={closeDialog}>
+          <button type="button" class="primary" onClick={closeDialog}>
             {t('understood')}
           </button>
         </div>
@@ -712,7 +715,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                         </td>
                         <td class="num">{formatMoney(row.opening)}</td>
                         <td class="num">{formatMoney(row.net)}</td>
-                        <td class="num">
+                        <td class={+row.expected < 0 ? 'num negative' : 'num'}>
                           <strong>{formatMoney(row.expected)}</strong>
                         </td>
                       </tr>
