@@ -449,6 +449,7 @@ for `rate_reference_lines`.
 | F9 | per-branch switch: `BranchPriceSource`, Pg impl, `branchPriceSourceSet`, BoT publish refused on board branches | F2 |
 | F11 | every list reader outside the kiosk shows the first tier (R-10) + a source guard test (§9.4) | F6 |
 | F10 | `RateFeedLoop`: timer, advisory lock, one fetch per tick, publish per switched-on branch | F4, F5, **F6** (the `line_in` guard, §4 item 3), F9 |
+| F12 | BoT reference rates from the official BoT API: `BotApiRateSource` + `FallbackRateSource` (the website scraper stays as fallback), config `APP_BOT__API_TOKEN` / `APP_BOT__API_BASE` (§8, decisions B-1…B-4); ticket #1066 | F1 |
 
 Each ticket comes with its behaviour table and the failing tests its author writes first (🧪). None is released before this
 design is reviewed and merged (📐).
@@ -784,4 +785,69 @@ Behaviour:
 
 ### 10.4 No database change
 The view reads existing tables only. No data-migration section is needed.
+
+## 12. Conformance with the Blueprint (amendment, 2026-10-11)
+
+> written-by: claude/c954feda · assigned by the lane controller claude/5edf7bb5 on the owner's item C (2026-10-11) ·
+> measured on `main` `50b352a` · sources: `docs/blueprint/XC-Desk-Blueprint-Data-Model-v2.html` §05, §06, §19 and
+> `docs/design/xchange-system-blueprint-v3.html` §12
+
+**How to read it.** *Conforms* = this design does what the Blueprint row says. *Differs* = it does something else; the
+cell cites the owner's ruling on #986 that allows it (R-1…R-10, all decided — R-4/R-5 confirmed again on 2026-10-11,
+https://github.com/108-Plaza/xchange/issues/986#issuecomment-6101147707), or says **no ruling**. *Open* = neither the
+Blueprint nor a ruling settles it yet. Rows apply to a branch priced from the board (`price_source = 'RATE_BOARD'`, F9); a
+`BOT_DRAFT` branch keeps the existing rate engine unchanged (`rates.md`), which this design does not touch.
+
+### 12.1 Blueprint v2 §05 — Rate Engine and publication
+| v2 §05 row | Blueprint says | This design | Verdict |
+|---|---|---|---|
+| BUY / SELL | BUY = the shop buys foreign currency, SELL = the shop sells | the board's two sides map to `buy_rate` / `sell_rate` unchanged (§3.3) | Conforms |
+| Unit | THB per `unit_size`; amount × rate ÷ `unit_size` | board rows arrive per 1 and are converted once at publish, `ref × unit_size ÷ ref.unit_size` (§3.1, §3.3; F5 test `rates_are_converted_to_the_currency_unit_size`) | Conforms |
+| Reference base | separate buy/sell reference with source, effective date, fetched_at, source unit; a missing side → unavailable, never guessed | `base_buy` / `base_sell` kept per row; `source_published_at` apart from `fetched_at`; unit 1 recorded; a missing/hidden/paused side is `NULL` → unavailable (§3.1) | Conforms |
+| Proposal formula | `auto = base × (1 + adjust_pct/100)` | the board's shop price is used **as received**, no `adjust_pct` (§3.3) | Differs — **R-2** |
+| Manual override | per side AUTO/MANUAL, reason, preview | no per-side override on a board branch; to set prices by hand the owner switches the branch back to BoT drafts (F9 `switch_back`, §3.5) | Differs — **R-2** (board price is the price), **R-7** (per-branch switch) |
+| Validation | rate > 0; buy ≤ sell after rounding; complete reference; out-of-bound → approval; all or nothing | rate > 0 and buy ≤ sell: provider parse (§3.7) + `published_rate_lines` CHECK; bands checked, overlap/gap refused (§3.8); all or nothing: one transaction per publication (§3.3). **No out-of-bound guard or approval** | rate/sides/atomicity: Conforms · guard→approval: Differs — **R-5** |
+| Precision | DECIMAL; rate scale 8; THB 2 places HALF_UP once at the end | `numeric(20,8)` rates; `ExchangeArithmetic::thb` HALF_UP once (§1) | Conforms |
+| Version | publications immutable; pointer moved atomically; a quote cites the rate line and snapshot; a new publication never edits an old snapshot | each board batch → a new publication + pointer move in one transaction (§3.3 step 4); quotes store the tier line id (F6) | Conforms |
+| Refresh / stale | fetch frequency and cutoff checked against the source; source date and last fetched shown apart; stale → policy limits or stops quotes; never called real time | v3's own timer ~1 min (R-8, §3.6); freshness from the board's announcement time, the branch's stale policy carried on each line (§3.3 step 5, F5) | Conforms — frequency fixed by **R-8**, unreachable board by **R-9** |
+| MVP scope | per branch and currency; denomination groups; start with `ALL` | per branch (R-7); groups created by owner/admin (R-3, F3); **value tiers per group** (R-4) — v2 has no value tiers | groups: Conforms (**R-3** replaces v2 §19 A4) · tiers: Differs — **R-4** |
+
+### 12.2 Blueprint v2 §06 — the rate workflow
+| v2 §06 | Blueprint says | This design | Verdict |
+|---|---|---|---|
+| Rate states | DRAFT → PENDING_APPROVAL → APPROVED → PUBLISHED → SUPERSEDED; approval bound to version/hash | a board publication has no draft and no human approval: the approval core opens `RATE_FEED_PUBLICATION` and the SYSTEM actor self-decides in the same transaction, bound to the batch checksum (§3.3 step 3) | Differs — **R-5** (no second approval, still audited) |
+
+### 12.3 Blueprint v2 §19 — the owner's rate decisions of 9 October
+| §19 row | Decision | This design | Verdict |
+|---|---|---|---|
+| A1 unit_size | JPY 100, KRW 1000, others 1; scale 8 | used as is (§3.1) | Conforms |
+| A2 who approves a publication | policy in bound; EXECUTIVE out of bound | board publications: SYSTEM self-decision, OWNER cannot decide them (`RateFeedPublicationPolicy`) | Differs — **R-5** |
+| A3 guards and reference age are owner data | `RatePolicyVersion` | guards: not applied to board prices (R-2, R-5); reference age: the branch's current policy is carried on every board line (F5) | guards: Differs — **R-2**, **R-5** · age: Conforms |
+| A4 banknote group `ALL` only | replaced by R-3 on 10 Oct | owner/admin groups (F3, F3w) | Conforms (**R-3**) |
+| A5 owner draft out of bound publishes at once | `decide_self` | unchanged on BoT-draft branches; F9 refuses a BoT publish on a board branch | Conforms |
+| A6 BoT base: buy = buying transfer, sell = selling | separate adapter | unchanged; the board is a second, separate source (§2, §8) | Conforms — board source by **R-1** |
+| A7 stale: LIMIT with `stale_limit_thb`, or STOP | `StalePolicy` | applies to board lines through the carried policy (F5); an unreachable board is left to it | Conforms — **R-9** |
+
+### 12.4 Blueprint v3 §12 — delivery plan and decision points
+| v3 §12 | Blueprint says | This design | Verdict |
+|---|---|---|---|
+| P0 | compare the real schema/API with the Blueprint; rounding/conflict policy; contract, unit scale, precision, meaning of pause | the board's API, credential and payload are **Q-4**, isolated in `RateBoardPayload` (§2, §7); unit scale and precision as §12.1; pause = every board-priced side `NULL` (**R-6**) | API contract: **Open (Q-4)** · pause: Conforms (**R-6**) · rounding/conflict: as v2 §05, **no ruling** specific to the board |
+| P1 | move refresh/sheet sync to a server scheduler with lock, retry, run log, failure alert | that is the board system's own refresh; v3's side is F10 (§3.6): lock, one fetch per tick, every failure logged. **No failure alert** is designed | lock/log: Conforms · alert: **no ruling** (gap, see 12.5) |
+| P2 | UAT Telegram → price → branch screen | the board system's flow; v3's screens show the first tier (**R-10**) | Not v3's part · screens: **R-10** |
+| P3 | Rate API adapter + snapshot in the XC quote; auditable; transaction ledger apart from publication | adapter F4 (Q-4); snapshot on every published line (F5); quotes cite the tier line (F6); the ledger is untouched | Conforms (adapter waits for **Q-4**) |
+| Decision 1 | rate precision/rounding and THB amount | v2 §05 precision and HALF_UP | Conforms to v2 · **no ruling** for the board |
+| Decision 2 | threshold for override conflict, buy and sell | no override on a board branch | **R-2** |
+| Decision 3 | how long stale is allowed | the branch's stale policy (A7) | **R-9** |
+| Decision 4 | which level each branch screen shows; scope of pause | screens show the first tier; pause stops the whole board's prices | **R-10**, **R-6** |
+| Decision 5 | multi-currency / THB-input tier | tier picked on the base value of the foreign amount (§3.4); a THB-input kiosk SELL reprices until the tier settles (§9.3) | tiers: **R-4** · THB-input rule: **no ruling** (designer's rule, §9.3) |
+| Decision 6 | quote TTL; service auth | quote TTL as v2 §19 T1 (300 s, admin-settable); the credential to the board is **Q-4** | TTL: Conforms · auth: **Open (Q-4)** |
+| Decision 7 | retention of audit/events; how scheduler failures are reported | audit through `audit_events` (existing retention); failed ticks logged only | **no ruling** |
+
+### 12.5 What has no ruling yet
+| # | Gap | Where it lands |
+|---|---|---|
+| G-1 | Q-4: the board's API, credential, payload, how a pause looks | F4, F10 — the owner's question to the board team |
+| G-2 | an alert when the feed fails repeatedly (v3 §12 P1, decision 7) | not designed; a log line per failed tick only |
+| G-3 | the THB-input tier rule at the kiosk (v3 decision 5) | designer's rule in §9.3; the owner may override |
+| G-4 | rounding/conflict policy specific to board prices (v3 P0, decision 1) | v2 §05 applies as is |
 
