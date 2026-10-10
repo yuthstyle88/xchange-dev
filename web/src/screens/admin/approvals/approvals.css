@@ -5,11 +5,9 @@
   display: block;
 }
 
-/* no v2 source: queue stack */
+/* v2 admin-html.ts:1 .card{margin-bottom:22px}: v2 stacks cards in block flow, spaced by the card's own margin */
 .xc-admin .xc-content .approvals-queue {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: block;
 }
 
 /* v2 admin-workspace.css:23 .stat (padded card) */
