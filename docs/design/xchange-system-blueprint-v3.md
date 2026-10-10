@@ -39,7 +39,6 @@ These are the document's own caveats, not new ones:
 
 ## How it relates to this repository's designs
 
-Nothing here has been mapped to v3's own rate design ([`blueprint/rates.md`](blueprint/rates.md)) yet.
-Where the two overlap, examples include tiers, rounding, "per 1" storage (`rate_thb_per_1` compared with
-v3's per-1 rates) and published lines compared with board revisions. Comparing them is open work, not a
-decision recorded here.
+This page does not compare the blueprint with v3's own rate design ([`blueprint/rates.md`](blueprint/rates.md)).
+That comparison, and the owner's rulings on it, are in
+[`blueprint-v3-rates-mapping.md`](blueprint-v3-rates-mapping.md).
