@@ -1282,7 +1282,20 @@ impl<'f> Replay<'f> {
             answer.assert_refused(step.status.unwrap_or(400), sentence, &label);
             return;
         }
-        let actual = answer.json();
+        // RF-5 (#877): a key v3 adds by decision (snapshot_common::V3_ADDED_KEYS), shape-checked, then left out.
+        // The action is the one the route read, whatever form the body took (a byte-order mark, a body too
+        // long to write down and recorded only by how it begins).
+        let action = action_of(step).or_else(|| {
+            let sent = step.raw.as_deref().or(step.raw_start.as_deref())?;
+            let (_, rest) = sent.split_once("\"action\":\"")?;
+            rest.split_once('"').map(|(action, _)| action.to_string())
+        });
+        let actual = crate::snapshot_common::without_v3_added_keys(
+            step.route.as_deref(),
+            action.as_deref(),
+            &answer.json(),
+            &label,
+        );
         // amended for #757 (RE-4c): rates[] is the publication (D-3, §4.9 R10)
         let mut expected = self
             .as_published(step, &actual, &without_dropped_keys(step.json()))

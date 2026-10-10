@@ -6,10 +6,12 @@ use std::sync::Arc;
 use actix_web::error::PayloadError;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, web};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
+use sqlx::Row;
+use uuid::Uuid;
 use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
@@ -29,6 +31,7 @@ use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use xc_kiosk::domain::kiosk::value_objects::queue_page::QueuePage;
 use xc_rate::application::rate::service::RateService;
+use xc_rate::domain::publication::freshness::Freshness;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
@@ -37,6 +40,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
+use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
     accounts, authorize, callers, identity_session, password_session, refuse, same_origin,
 };
@@ -164,6 +168,57 @@ fn saved_response() -> HttpResponse {
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .content_type("application/json")
         .body(r#"{"saved":true}"#)
+}
+
+async fn publication_freshness(
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+) -> Result<RateFreshnessDto, AppError> {
+    let pub_row = sqlx::query(
+        "SELECT rp.id, rp.published_at \
+         FROM branches b \
+         JOIN rate_publications rp ON rp.id = b.current_publication_id \
+         WHERE b.id = $1",
+    )
+    .bind(branch.as_str())
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let Some(r) = pub_row else {
+        return Ok(RateFreshnessDto {
+            stale: false,
+            source_date: None,
+            published_at: None,
+        });
+    };
+
+    let pub_id: Uuid = r.get(0);
+    let published_at: DateTime<Utc> = r.get(1);
+
+    let raw_lines =
+        sqlx::query("SELECT source_snapshot FROM published_rate_lines WHERE publication_id = $1")
+            .bind(pub_id)
+            .fetch_all(pool)
+            .await
+            .map_err(AppError::Database)?;
+
+    let now = Utc::now();
+    let mut freshnesses = Vec::with_capacity(raw_lines.len() * 2);
+    for row in raw_lines {
+        let source_snapshot: Value = row.get(0);
+        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Buy, now));
+        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Sell, now));
+    }
+
+    let pub_freshness = Freshness::of_publication(freshnesses);
+    Ok(RateFreshnessDto {
+        stale: pub_freshness.stale,
+        source_date: pub_freshness
+            .source_date
+            .map(|d| d.format("%Y-%m-%d").to_string()),
+        published_at: Some(published_at.to_rfc3339()),
+    })
 }
 
 fn handle_service_error(err: AppError) -> HttpResponse {
@@ -326,10 +381,16 @@ async fn handle_kiosk(
 
     match action {
         KioskAction::Rates => match service.public_rates(&branch).await {
-            Ok(public_rates) => match dto_kiosk::rates_json(&public_rates) {
-                Ok(json) => json_response(json),
-                Err(err) => handle_service_error(err),
-            },
+            Ok(public_rates) => {
+                let freshness = match publication_freshness(pool, &branch).await {
+                    Ok(f) => f,
+                    Err(err) => return handle_service_error(err),
+                };
+                match dto_kiosk::rates_json(&public_rates, &freshness) {
+                    Ok(json) => json_response(json),
+                    Err(err) => handle_service_error(err),
+                }
+            }
             Err(err) => handle_service_error(err),
         },
         KioskAction::Quote => {

@@ -184,7 +184,11 @@
    "transfer": "Bank transfer",
    "callAgent": "If transfer, call agent",
    "receiptTitle": "Your receipt",
-   "saveImage": "Save image"
+   "saveImage": "Save image",
+   "rateStale": "Reference out of date",
+   "rateSourceDate": "Reference date {date}",
+   "rateNoSourceDate": "No reference",
+   "ratePublishedAt": "Published {at}"
   },
   "th": {
    "lang": "ภาษา",
@@ -259,7 +263,11 @@
    "transfer": "โอนธนาคาร",
    "callAgent": "หากโอนเงิน กรุณาติดต่อพนักงาน",
    "receiptTitle": "ใบเสร็จของคุณ",
-   "saveImage": "บันทึกเป็นรูปภาพ"
+   "saveImage": "บันทึกเป็นรูปภาพ",
+   "rateStale": "เรทอ้างอิงเก่า",
+   "rateSourceDate": "อ้างอิงวันที่ {date}",
+   "rateNoSourceDate": "ไม่มีเรทอ้างอิง",
+   "ratePublishedAt": "ประกาศเมื่อ {at}"
   },
   "zh": {
    "lang": "语言",
