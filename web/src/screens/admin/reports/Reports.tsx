@@ -433,7 +433,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
               </Show>
             </strong>
             <p>
-              {data()?.reference.referenced ?? 0} {t('referenceCounts', {
+              {t('referenceCounts', {
                 referenced: data()?.reference.referenced ?? 0,
                 unreferenced: data()?.reference.unreferenced ?? 0,
                 note: t('referenceNote'),
@@ -509,42 +509,47 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             </strong>
           </p>
 
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('employeeLabel')}</th>
-                  <th class="num">{t('colAll')}</th>
-                  <th class="num">{t('colCompleted')}</th>
-                  <th class="num">{t('colPending')}</th>
-                  <th class="num">{t('colCancelled')}</th>
-                  <th class="num">{t('colReceivedThb')}</th>
-                  <th class="num">{t('colPaidThb')}</th>
-                  <th class="num">{t('colNetThb')}</th>
-                  <th class="num">{t('colServiceFee')}</th>
-                  <th class="num">{t('colBankFee')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={shownEmployees()}>
-                  {(g: ReportEmployeeGroup) => (
-                    <tr>
-                      <td>{g.staff}</td>
-                      <td class="num">{String(g.count)}</td>
-                      <td class="num">{String(g.completed)}</td>
-                      <td class="num">{String(g.pending)}</td>
-                      <td class="num">{String(g.cancelled)}</td>
-                      <td class="num">{formatMoney(g.received)}</td>
-                      <td class="num">{formatMoney(g.paid)}</td>
-                      <td class="num">{formatMoney(g.net)}</td>
-                      <td class="num">{formatMoney(g.fees)}</td>
-                      <td class="num">{formatMoney(g.bankFees)}</td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
+          <Show
+            when={shownEmployees().length > 0}
+            fallback={<DataTable headers={[]} rowCount={0} />}
+          >
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('employeeLabel')}</th>
+                    <th class="num">{t('colAll')}</th>
+                    <th class="num">{t('colCompleted')}</th>
+                    <th class="num">{t('colPending')}</th>
+                    <th class="num">{t('colCancelled')}</th>
+                    <th class="num">{t('colReceivedThb')}</th>
+                    <th class="num">{t('colPaidThb')}</th>
+                    <th class="num">{t('colNetThb')}</th>
+                    <th class="num">{t('colServiceFee')}</th>
+                    <th class="num">{t('colBankFee')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={shownEmployees()}>
+                    {(g: ReportEmployeeGroup) => (
+                      <tr>
+                        <td>{g.staff}</td>
+                        <td class="num">{String(g.count)}</td>
+                        <td class="num">{String(g.completed)}</td>
+                        <td class="num">{String(g.pending)}</td>
+                        <td class="num">{String(g.cancelled)}</td>
+                        <td class="num">{formatMoney(g.received)}</td>
+                        <td class="num">{formatMoney(g.paid)}</td>
+                        <td class="num">{formatMoney(g.net)}</td>
+                        <td class="num">{formatMoney(g.fees)}</td>
+                        <td class="num">{formatMoney(g.bankFees)}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
 
           <For each={shownEmployees()}>
             {(g: ReportEmployeeGroup) => (
@@ -562,112 +567,127 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                 </summary>
 
                 <h3>{t('methodsHeading')}</h3>
-                <div class="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('colChannel')}</th>
-                        <th class="num">{t('colCompleted')}</th>
-                        <th class="num">{t('colReceivedThb')}</th>
-                        <th class="num">{t('colPaidThb')}</th>
-                        <th class="num">{t('colNetThb')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={g.methods}>
-                        {(m) => (
-                          <tr>
-                            <td>{employeeMethodName(m.method)}</td>
-                            <td class="num">{String(m.count)}</td>
-                            <td class="num">{formatMoney(m.received)}</td>
-                            <td class="num">{formatMoney(m.paid)}</td>
-                            <td class="num">{formatMoney(m.net)}</td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
+                <Show
+                  when={g.methods.length > 0}
+                  fallback={<DataTable headers={[]} rowCount={0} />}
+                >
+                  <div class="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{t('colChannel')}</th>
+                          <th class="num">{t('colCompleted')}</th>
+                          <th class="num">{t('colReceivedThb')}</th>
+                          <th class="num">{t('colPaidThb')}</th>
+                          <th class="num">{t('colNetThb')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={g.methods}>
+                          {(m) => (
+                            <tr>
+                              <td>{employeeMethodName(m.method)}</td>
+                              <td class="num">{String(m.count)}</td>
+                              <td class="num">{formatMoney(m.received)}</td>
+                              <td class="num">{formatMoney(m.paid)}</td>
+                              <td class="num">{formatMoney(m.net)}</td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </table>
+                  </div>
+                </Show>
 
                 <h3>{t('employeeCurrenciesHeading')}</h3>
-                <div class="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('colCurrency')}</th>
-                        <th class="num">{t('colUnitsReceived')}</th>
-                        <th class="num">{t('colUnitsPaid')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={g.currencies}>
-                        {(c) => (
-                          <tr>
-                            <td>{c.currency}</td>
-                            <td class="num">{formatMoney(c.received)}</td>
-                            <td class="num">{formatMoney(c.paid)}</td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
+                <Show
+                  when={g.currencies.length > 0}
+                  fallback={<DataTable headers={[]} rowCount={0} />}
+                >
+                  <div class="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{t('colCurrency')}</th>
+                          <th class="num">{t('colUnitsReceived')}</th>
+                          <th class="num">{t('colUnitsPaid')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={g.currencies}>
+                          {(c) => (
+                            <tr>
+                              <td>{c.currency}</td>
+                              <td class="num">{formatMoney(c.received)}</td>
+                              <td class="num">{formatMoney(c.paid)}</td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </table>
+                  </div>
+                </Show>
 
                 <h3>{t('transactionsHeading')}</h3>
-                <div class="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('colTxTime')}</th>
-                        <th>{t('colStatus')}</th>
-                        <th>{t('colChannel')}</th>
-                        <th>{t('colType')}</th>
-                        <th class="num">{t('colAmount')}</th>
-                        <th class="num">{t('colReceivedThb')}</th>
-                        <th class="num">{t('colPaidThb')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={employeeTxMap()[g.staff] ?? []}>
-                        {(row: TransactionRow) => (
-                          <tr>
-                            <td>
-                              <div>
-                                <button
-                                  type="button"
-                                  class="ref link-button"
-                                  data-employee-ref={row.id}
-                                  onClick={() => openTxDetail(row)}
-                                >
-                                  {row.id}
-                                </button>
-                              </div>
-                              <div class="small">
-                                {row.date} {formatBangkokTime(row.created)}
-                              </div>
-                            </td>
-                            <td>{statusName(row.status)}</td>
-                            <td>{employeeMethodName(row.method)}</td>
-                            <td>{typeName(row.type)}</td>
-                            <td class="num">
-                              {formatMoney(row.amount)} {row.currency}
-                            </td>
-                            <td class="num">
-                              {row.status === 'COMPLETED' && row.type === 'SELL'
-                                ? formatMoney(row.settlement)
-                                : '—'}
-                            </td>
-                            <td class="num">
-                              {row.status === 'COMPLETED' && row.type === 'BUY'
-                                ? formatMoney(row.settlement)
-                                : '—'}
-                            </td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
+                <Show
+                  when={(employeeTxMap()[g.staff] ?? []).length > 0}
+                  fallback={<DataTable headers={[]} rowCount={0} />}
+                >
+                  <div class="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{t('colTxTime')}</th>
+                          <th>{t('colStatus')}</th>
+                          <th>{t('colChannel')}</th>
+                          <th>{t('colType')}</th>
+                          <th class="num">{t('colAmount')}</th>
+                          <th class="num">{t('colReceivedThb')}</th>
+                          <th class="num">{t('colPaidThb')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={employeeTxMap()[g.staff] ?? []}>
+                          {(row: TransactionRow) => (
+                            <tr>
+                              <td>
+                                <div>
+                                  <button
+                                    type="button"
+                                    class="ref link-button"
+                                    data-employee-ref={row.id}
+                                    onClick={() => openTxDetail(row)}
+                                  >
+                                    {row.id}
+                                  </button>
+                                </div>
+                                <div class="small">
+                                  {row.date} {formatBangkokTime(row.created)}
+                                </div>
+                              </td>
+                              <td>{statusName(row.status)}</td>
+                              <td>{employeeMethodName(row.method)}</td>
+                              <td>{typeName(row.type)}</td>
+                              <td class="num">
+                                {formatMoney(row.amount)} {row.currency}
+                              </td>
+                              <td class="num">
+                                {row.status === 'COMPLETED' && row.type === 'SELL'
+                                  ? formatMoney(row.settlement)
+                                  : '—'}
+                              </td>
+                              <td class="num">
+                                {row.status === 'COMPLETED' && row.type === 'BUY'
+                                  ? formatMoney(row.settlement)
+                                  : '—'}
+                              </td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </table>
+                  </div>
+                </Show>
               </details>
             )}
           </For>
