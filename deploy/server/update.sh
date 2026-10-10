@@ -12,9 +12,21 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 [ "$(id -u)" -ne 0 ] || die "run as a sudo-capable user, not as root"
-need sudo systemctl curl sha256sum stat sed psql
+need sudo systemctl curl sha256sum stat sed psql pg_dump
 adopt_installed_settings
 check_names
+
+# api/src/bootstrap/mod.rs:177: the binary hard-codes /etc/xc-v3/pii.key, which
+# matches $ETC_DIR/pii.key under the documented defaults (SERVICE_NAME=xc-v3).
+PII_KEY_FILE="$ETC_DIR/pii.key"
+
+if ! sudo test -f "$PII_KEY_FILE"; then
+  die "PII key file missing: $PII_KEY_FILE (run install.sh or generate with: { printf 'k1:'; openssl rand -base64 32; } | sudo install -o root -g $SERVICE_USER -m 640 /dev/stdin $PII_KEY_FILE)"
+fi
+if ! sudo -u "$SERVICE_USER" test -r "$PII_KEY_FILE"; then
+  die "PII key file $PII_KEY_FILE is not readable by service user $SERVICE_USER"
+fi
+
 check_stage xchange configuration/base.yaml
 if [ ! -f "$HERE/xc-v3.service" ] || [ ! -f "$HERE/smoke.sh" ]; then
   die "xc-v3.service and smoke.sh must sit next to this script"
@@ -23,6 +35,85 @@ if ! { sudo test -f "$UNIT_FILE" && sudo test -f "$ENV_FILE" && sudo test -x "$B
   die "$SERVICE_NAME is not installed here (run install.sh first)"
 fi
 sudo test -d "$UPLOADS_DIR" || die "uploads directory missing: $UPLOADS_DIR (run install.sh; it creates it)"
+
+if [ ! -d "$STAGE/migrations" ]; then
+  die "stage carries no migrations/ directory (rehearsal requires migrations)"
+fi
+
+shopt -s nullglob
+MIGRATION_FILES=("$STAGE"/migrations/*.sql)
+shopt -u nullglob
+for f in "${MIGRATION_FILES[@]}"; do
+  listed_in_sums "migrations/$(basename "$f")" ||
+    die "SHA256SUMS does not list migrations/$(basename "$f")"
+done
+
+PHASE=check
+BIN_SAVED=0
+CONFIG_SAVED=0
+SCRATCH_DB=""
+
+drop_scratch() {
+  if [ -n "${SCRATCH_DB:-}" ]; then
+    local db="$SCRATCH_DB"
+    SCRATCH_DB=""
+    pg -c "DROP DATABASE IF EXISTS \"$db\";" >/dev/null 2>&1 || true
+  fi
+}
+
+on_exit() {
+  local rc=$?
+  drop_scratch
+  if [ "$rc" -ne 0 ] && [ "$PHASE" = swap ]; then
+    {
+      echo
+      echo "ERROR: the update stopped midway (exit $rc). $SERVICE_NAME is STOPPED."
+      if [ "$BIN_SAVED" = 0 ] && [ "$CONFIG_SAVED" = 0 ]; then
+        echo "Nothing was replaced yet. Start the service as it was:"
+        echo "  sudo systemctl start $SERVICE_NAME"
+      else
+        echo "A replacement was begun and may be incomplete. Put back what was saved and start:"
+        print_rollback "$BIN_SAVED" "$CONFIG_SAVED" "${SET_DIR:-}"
+      fi
+    } >&2
+  fi
+}
+trap on_exit EXIT
+
+# Rehearse pending migrations against a temporary scratch database
+say "rehearsing pending migrations against scratch database..."
+SCRATCH_DB="${DB_NAME}_rehearsal"
+
+# 1. Drop if exists, then create scratch database
+drop_scratch
+SCRATCH_DB="${DB_NAME}_rehearsal"
+pg -c "CREATE DATABASE \"$SCRATCH_DB\";"
+
+# 2. Dump live database into scratch database (plain format, never pg_restore)
+(cd / && sudo -u postgres pg_dump "$DB_NAME") | pg -d "$SCRATCH_DB"
+
+# 3. Query applied migrations from scratch database
+APPLIED_VERSIONS="$(pg -d "$SCRATCH_DB" -Atc "SELECT version FROM _sqlx_migrations WHERE success = true")"
+
+# 4. Apply each pending migration in version order
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  fname="$(basename "$f")"
+  version="${fname%%_*}"
+  if echo "$APPLIED_VERSIONS" | grep -qx "$version"; then
+    continue
+  fi
+  say "rehearsing migration: $fname"
+  if ! err_out="$(pg -d "$SCRATCH_DB" --single-transaction -f - < "$f" 2>&1)"; then
+    echo "ERROR: migration rehearsal failed on file: $fname" >&2
+    printf '%s\n' "$err_out" >&2
+    drop_scratch
+    die "migration rehearsal refused by $fname"
+  fi
+done < <(printf '%s\n' "${MIGRATION_FILES[@]}" | LC_ALL=C sort)
+
+# 5. Drop scratch database explicitly before backup
+drop_scratch
 
 BEFORE="$(applied_migrations)"
 
@@ -75,27 +166,6 @@ fi
 
 # From the stop until the start, a failure must not leave the service down
 # without a word: say what state it is in and how to bring it back.
-PHASE=check
-BIN_SAVED=0
-CONFIG_SAVED=0
-on_exit() {
-  local rc=$?
-  if [ "$rc" -ne 0 ] && [ "$PHASE" = swap ]; then
-    {
-      echo
-      echo "ERROR: the update stopped midway (exit $rc). $SERVICE_NAME is STOPPED."
-      if [ "$BIN_SAVED" = 0 ] && [ "$CONFIG_SAVED" = 0 ]; then
-        echo "Nothing was replaced yet. Start the service as it was:"
-        echo "  sudo systemctl start $SERVICE_NAME"
-      else
-        echo "A replacement was begun and may be incomplete. Put back what was saved and start:"
-        print_rollback "$BIN_SAVED" "$CONFIG_SAVED" "${SET_DIR:-}"
-      fi
-    } >&2
-  fi
-}
-trap on_exit EXIT
-
 PHASE=swap
 sudo systemctl stop "$SERVICE_NAME.service"
 replace_binary

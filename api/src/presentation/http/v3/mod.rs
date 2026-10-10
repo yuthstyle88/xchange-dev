@@ -7,6 +7,7 @@ pub mod desk;
 pub mod error;
 pub mod export_gate;
 pub mod org_view;
+pub mod system;
 pub mod view;
 
 use actix_web::web;
@@ -33,4 +34,5 @@ pub fn configure_v3(cfg: &mut web::ServiceConfig, state: &AppState) {
     for c in COMMANDS {
         (c.register)(cfg, state);
     }
+    system::broker_exchanges::register(cfg, state);
 }

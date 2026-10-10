@@ -4058,9 +4058,12 @@ dependencies = [
  "futures",
  "pos-error",
  "rust_decimal",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",
+ "xc-approval",
+ "xc-outbox",
 ]
 
 [[package]]
@@ -4101,6 +4104,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "subtle",
  "thiserror",
  "tokio",
  "tracing",
@@ -4112,7 +4116,9 @@ dependencies = [
  "xc-exchange",
  "xc-kernel",
  "xc-kiosk",
+ "xc-outbox",
  "xc-rate",
+ "xc-referral",
  "xc-shift",
 ]
 

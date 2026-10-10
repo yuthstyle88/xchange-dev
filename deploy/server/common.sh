@@ -15,6 +15,8 @@ APP_ENVIRONMENT="${APP_ENVIRONMENT:-staging}"
 # Binary, configuration/ and web/ live here (root-owned, read-only to the service).
 INSTALL_DIR="${INSTALL_DIR:-/opt/$SERVICE_NAME}"
 # The env file lives here (root:<service group>, 750; the file 640).
+# The override is a test seam. On a host it must stay /etc/xc-v3, because
+# the binary reads /etc/xc-v3/pii.key (api/src/bootstrap/mod.rs:177, #1084).
 ETC_DIR="${ETC_DIR:-/etc/$SERVICE_NAME}"
 # Uploaded files; the only directory the service may write.
 UPLOADS_DIR="${UPLOADS_DIR:-/var/lib/$SERVICE_NAME/uploads}"

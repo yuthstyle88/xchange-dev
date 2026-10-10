@@ -4,6 +4,35 @@
 
 const MASK: &str = "***";
 
+fn is_digit(c: char) -> bool {
+    matches!(c, '0'..='9' | '๐'..='๙' | '０'..='９')
+}
+
+fn is_local_part_char(c: char) -> bool {
+    c.is_alphabetic()
+        || ('\u{0e01}'..='\u{0e4e}').contains(&c)
+        || is_digit(c)
+        || c == '.'
+        || c == '_'
+        || c == '%'
+        || c == '+'
+        || c == '-'
+}
+
+fn is_domain_char(c: char) -> bool {
+    c.is_alphanumeric()
+        || ('\u{0e01}'..='\u{0e4e}').contains(&c)
+        || c == '.'
+        || c == '-'
+        || c == '_'
+}
+
+struct DigitRun {
+    start: usize,
+    end: usize,
+    count: usize,
+}
+
 /// Masks phone numbers, e-mail addresses, passport-like and national-id-like tokens, card-like digit
 /// runs and OTP-like 4–8 digit codes. Text holding none of these is returned unchanged.
 pub fn redact_text(text: &str) -> String {
@@ -15,85 +44,139 @@ pub fn redact_text(text: &str) -> String {
     let n = chars.len();
     let mut spans: Vec<(usize, usize)> = Vec::new();
 
-    // 1. Detect emails containing '@'
+    // 1. Detect emails containing '@' (with optional single space on each side)
     for (idx, &(_, ch)) in chars.iter().enumerate() {
         if ch == '@' {
-            let mut start_idx = idx;
-            while start_idx > 0 {
-                let prev_ch = chars[start_idx - 1].1;
-                if prev_ch.is_ascii_alphanumeric()
-                    || prev_ch == '.'
-                    || prev_ch == '_'
-                    || prev_ch == '%'
-                    || prev_ch == '+'
-                    || prev_ch == '-'
-                {
-                    start_idx -= 1;
-                } else {
-                    break;
+            let local_end = if idx > 0 && chars[idx - 1].1 == ' ' {
+                if idx >= 2 && chars[idx - 2].1 == ' ' {
+                    continue;
                 }
+                idx - 1
+            } else {
+                idx
+            };
+
+            let mut local_start = local_end;
+            while local_start > 0 && is_local_part_char(chars[local_start - 1].1) {
+                local_start -= 1;
             }
-            let mut end_idx = idx + 1;
-            while end_idx < n {
-                let next_ch = chars[end_idx].1;
-                if next_ch.is_ascii_alphanumeric()
-                    || next_ch == '.'
-                    || next_ch == '-'
-                    || next_ch == '_'
-                {
-                    end_idx += 1;
-                } else {
-                    break;
+
+            if local_start == local_end {
+                continue;
+            }
+
+            let domain_start = if idx + 1 < n && chars[idx + 1].1 == ' ' {
+                if idx + 2 < n && chars[idx + 2].1 == ' ' {
+                    continue;
                 }
+                idx + 2
+            } else {
+                idx + 1
+            };
+
+            if domain_start >= n {
+                continue;
             }
-            while end_idx > idx + 1 && (chars[end_idx - 1].1 == '.' || chars[end_idx - 1].1 == '-')
+
+            let mut domain_end = domain_start;
+            while domain_end < n && is_domain_char(chars[domain_end].1) {
+                domain_end += 1;
+            }
+
+            while domain_end > domain_start
+                && (chars[domain_end - 1].1 == '.'
+                    || chars[domain_end - 1].1 == '-'
+                    || chars[domain_end - 1].1 == '_')
             {
-                end_idx -= 1;
+                domain_end -= 1;
             }
-            if start_idx < idx && end_idx > idx + 1 {
-                let byte_start = chars[start_idx].0;
-                let byte_end = if end_idx < n {
-                    chars[end_idx].0
-                } else {
-                    text.len()
-                };
-                spans.push((byte_start, byte_end));
+
+            if domain_end <= domain_start {
+                continue;
+            }
+
+            let domain_slice = &chars[domain_start..domain_end];
+            if let Some(last_dot_rel_idx) = domain_slice.iter().rposition(|&(_, c)| c == '.') {
+                if last_dot_rel_idx > 0 {
+                    let tld = &domain_slice[last_dot_rel_idx + 1..];
+                    if tld.len() >= 2
+                        && tld.iter().all(|&(_, c)| {
+                            c.is_alphabetic() || ('\u{0e01}'..='\u{0e4e}').contains(&c)
+                        })
+                    {
+                        let byte_start = chars[local_start].0;
+                        let byte_end = if domain_end < n {
+                            chars[domain_end].0
+                        } else {
+                            text.len()
+                        };
+                        spans.push((byte_start, byte_end));
+                    }
+                }
             }
         }
     }
 
-    // 2. Detect digit runs of 4 or more digits, including leading '+' or letters (like AA1234567)
+    // 2. Detect digit groups: digit runs joined by a single '-' or a single space
+    let mut runs: Vec<DigitRun> = Vec::new();
     let mut i = 0;
     while i < n {
-        if chars[i].1.is_ascii_digit() {
-            let digit_start_idx = i;
-            while i < n && chars[i].1.is_ascii_digit() {
+        if is_digit(chars[i].1) {
+            let start = i;
+            while i < n && is_digit(chars[i].1) {
                 i += 1;
             }
-            let digit_end_idx = i;
-            let digit_count = digit_end_idx - digit_start_idx;
-            if digit_count >= 4 {
-                let mut span_start_idx = digit_start_idx;
-                if digit_start_idx > 0 && chars[digit_start_idx - 1].1 == '+' {
-                    span_start_idx = digit_start_idx - 1;
-                } else if digit_start_idx > 0 && chars[digit_start_idx - 1].1.is_ascii_alphabetic()
-                {
-                    let mut letter_idx = digit_start_idx - 1;
-                    while letter_idx > 0 && chars[letter_idx - 1].1.is_ascii_alphabetic() {
-                        letter_idx -= 1;
-                    }
-                    span_start_idx = letter_idx;
-                }
-                let byte_start = chars[span_start_idx].0;
-                let byte_end = if digit_end_idx < n {
-                    chars[digit_end_idx].0
-                } else {
-                    text.len()
-                };
-                spans.push((byte_start, byte_end));
-            }
+            runs.push(DigitRun {
+                start,
+                end: i,
+                count: i - start,
+            });
         } else {
             i += 1;
+        }
+    }
+
+    let mut run_groups: Vec<Vec<DigitRun>> = Vec::new();
+    for run in runs {
+        if let Some(current_group) = run_groups.last_mut() {
+            let last_run = current_group.last().unwrap();
+            if run.start == last_run.end + 1 {
+                let joiner = chars[last_run.end].1;
+                if joiner == '-' || joiner == ' ' {
+                    current_group.push(run);
+                    continue;
+                }
+            }
+        }
+        run_groups.push(vec![run]);
+    }
+
+    for group in run_groups {
+        let total_digits: usize = group.iter().map(|r| r.count).sum();
+        let max_run_digits: usize = group.iter().map(|r| r.count).max().unwrap_or(0);
+        if max_run_digits >= 4 || total_digits >= 6 {
+            let first_run = group.first().unwrap();
+            let last_run = group.last().unwrap();
+            let mut span_start_idx = first_run.start;
+            let span_end_idx = last_run.end;
+
+            if span_start_idx > 0 && chars[span_start_idx - 1].1 == '+' {
+                span_start_idx -= 1;
+            } else if span_start_idx > 0 && chars[span_start_idx - 1].1.is_ascii_alphabetic() {
+                let mut letter_idx = span_start_idx - 1;
+                while letter_idx > 0 && chars[letter_idx - 1].1.is_ascii_alphabetic() {
+                    letter_idx -= 1;
+                }
+                span_start_idx = letter_idx;
+            }
+
+            let byte_start = chars[span_start_idx].0;
+            let byte_end = if span_end_idx < n {
+                chars[span_end_idx].0
+            } else {
+                text.len()
+            };
+            spans.push((byte_start, byte_end));
         }
     }
 

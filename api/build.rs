@@ -72,6 +72,9 @@ mod views_gen;
 #[path = "build_support/commands.rs"]
 mod commands_gen;
 
+#[path = "build_support/outbox_handlers.rs"]
+mod outbox_handlers_gen;
+
 use std::path::Path;
 
 fn main() {
@@ -281,4 +284,44 @@ fn main() {
     std::fs::write(Path::new(&out_dir).join("v3_commands.rs"), commands_code)
         .expect("write v3_commands.rs");
     println!("cargo:rerun-if-changed=src/presentation/http/v3/commands");
+
+    // Generate outbox handlers table (PL-0a, #910)
+    let handlers_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bootstrap/outbox_handlers");
+    let mut handler_files = Vec::new();
+    if handlers_dir.exists() {
+        for entry in std::fs::read_dir(&handlers_dir).expect("read bootstrap/outbox_handlers") {
+            let path = entry.expect("outbox handler entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                handler_files.push((name, content));
+            }
+        }
+    }
+    let handler_refs: Vec<(&str, &str)> = handler_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let handler_table = outbox_handlers_gen::outbox_handlers_table(&handler_refs)
+        .expect("outbox_handlers_table failed");
+    let mut handlers_code = String::new();
+    for h in &handler_table {
+        let file_path = handlers_dir.join(&h.file);
+        handlers_code.push_str(&format!(
+            "#[path = {:?}]\nmod {};\n",
+            file_path.to_str().unwrap(),
+            h.module
+        ));
+    }
+    handlers_code.push_str("pub const OUTBOX_HANDLERS: &[HandlerFn] = &[\n");
+    for h in &handler_table {
+        handlers_code.push_str(&format!("    {}::handler,\n", h.module));
+    }
+    handlers_code.push_str("];\n");
+    std::fs::write(
+        Path::new(&out_dir).join("outbox_handlers.rs"),
+        handlers_code,
+    )
+    .expect("write outbox_handlers.rs");
+    println!("cargo:rerun-if-changed=src/bootstrap/outbox_handlers");
 }

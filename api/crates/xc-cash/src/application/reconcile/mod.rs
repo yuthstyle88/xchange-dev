@@ -4,6 +4,8 @@
 //!
 //! Scaffold written by the ticket author: `run` is `todo!()`; the implementer fills it.
 
+pub mod positions;
+
 use std::sync::Arc;
 
 use chrono::NaiveDate;
@@ -66,7 +68,7 @@ impl Reconcile {
 
     /// The five checks of design §6. Each check ticket (LG-7.1–7.5) adds its one line here.
     pub fn standard() -> Self {
-        Self::new(Vec::new())
+        Self::new(vec![Arc::new(positions::PositionsCheck)])
     }
 
     /// Runs every check in one `REPEATABLE READ READ ONLY` transaction, ended with a rollback.

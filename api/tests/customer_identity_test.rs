@@ -161,17 +161,24 @@ impl Db {
             .expect("the organisation")
     }
 
-    /// Every stored byte of the customer tables, as text, for "no plain value anywhere" checks.
-    async fn stored_text(&self) -> String {
+    /// Non-bytea columns of the customer tables as JSON text, for plain-value checks.
+    async fn stored_plain_text(&self) -> String {
         let rows: Vec<String> = sqlx::query_scalar(
-            "SELECT row_to_json(c)::text FROM customers c \
-             UNION ALL SELECT row_to_json(i)::text FROM customer_identities i \
-             UNION ALL SELECT encode(i.encrypted_value, 'escape') FROM customer_identities i",
+            "SELECT to_jsonb(c)::text FROM customers c \
+             UNION ALL SELECT (to_jsonb(i) - 'encrypted_value' - 'lookup_hash')::text FROM customer_identities i",
         )
         .fetch_all(&self.pool)
         .await
         .expect("read the customer tables");
         rows.join("\n")
+    }
+
+    /// The raw ciphertext bytes of the identity values.
+    async fn stored_cipher_bytes(&self) -> Vec<Vec<u8>> {
+        sqlx::query_scalar("SELECT encrypted_value FROM customer_identities")
+            .fetch_all(&self.pool)
+            .await
+            .expect("read encrypted_value")
     }
 
     async fn actor(&self, role: Role) -> Actor {
@@ -379,12 +386,23 @@ async fn the_passport_is_stored_only_encrypted_and_hashed() {
         )
         .await
         .expect("reserve");
-    let stored = db.stored_text().await;
+    let stored = db.stored_plain_text().await;
     for plain in ["AA1234567", "1234567", "4567", "1990-01-02", "2031-06-11"] {
         assert!(
             !stored.contains(plain),
             "{plain} is not stored in plain: {stored}"
         );
+    }
+    let ciphers = db.stored_cipher_bytes().await;
+    assert!(!ciphers.is_empty(), "expected stored cipher bytes");
+    for cipher in &ciphers {
+        for full_val in ["AA1234567", "1990-01-02", "2031-06-11"] {
+            let needle = full_val.as_bytes();
+            assert!(
+                !cipher.windows(needle.len()).any(|w| w == needle),
+                "{full_val} found inside encrypted_value bytes"
+            );
+        }
     }
     assert_eq!(
         db.count("SELECT count(*) FROM customer_identities WHERE length(lookup_hash) = 32 AND key_id <> ''")

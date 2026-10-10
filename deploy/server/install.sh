@@ -25,6 +25,10 @@ check_stage xchange configuration/base.yaml extract-v2-pages.mjs
 FIRST_INSTALL=0
 sudo test -f "$UNIT_FILE" || FIRST_INSTALL=1
 
+# api/src/bootstrap/mod.rs:177: the binary hard-codes /etc/xc-v3/pii.key, which
+# matches $ETC_DIR/pii.key under the documented defaults (SERVICE_NAME=xc-v3).
+PII_KEY_FILE="$ETC_DIR/pii.key"
+
 # 0. judge every directory before anything is created: a run that refuses
 #    must leave nothing behind — not even the service user.
 judge_dir "$INSTALL_DIR" root root 755
@@ -52,6 +56,18 @@ ensure_dir "$UPLOADS_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
 # an existing parent the service user cannot enter would lock the service
 # out of its uploads; this script does not change such a directory, so say so
 warn_if_unreachable "$SERVICE_USER" "$UPLOADS_DIR"
+
+# 2b. the PII encryption key file, created once; never printed or put on a command line.
+#     api/src/bootstrap/mod.rs:177 reads /etc/xc-v3/pii.key
+if sudo test -f "$PII_KEY_FILE"; then
+  say "keeping existing pii key: $PII_KEY_FILE"
+else
+  {
+    printf 'k1:'
+    openssl rand -base64 32
+  } | sudo install -o root -g "$SERVICE_USER" -m 640 /dev/stdin "$PII_KEY_FILE"
+  say "pii key written: $PII_KEY_FILE (root:$SERVICE_USER 640)"
+fi
 
 # 3. the env file, written once; the database password is generated here and
 #    goes from openssl into the file without touching a command line or the screen

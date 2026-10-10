@@ -101,6 +101,28 @@
 #   U5d  (BK-ENC) a set without the .age uploads archive: no stop
 #   U5e  (BK-ENC) a set whose dump lacks the age header is refused even if the
 #        uploads archive has it (mutant E10)
+# Since #1084 every update case is an installed host whose /etc/xc-v3 holds a
+# pii.key (a placeholder of 32 zero bytes, never a real key) and whose stage
+# carries migrations/ (one already applied, one pending); psql, pg_dump,
+# createdb and dropdb share a fake cluster (one file per database) and log
+# every operation as a "pgop" line, so what touched which database is known.
+# Cases K1-K3 are the PII key file (#1084), R1-R3 the migration rehearsal:
+#   K1   install.sh on a clean host writes $ETC_DIR/pii.key: one k1: line of
+#        base64 of 32 bytes, root:<service group> 640, and the key never shows
+#        on stdout, stderr or any command line the stubs saw
+#   K2   install.sh run again keeps an existing key byte for byte, and says so
+#   K3   update.sh without the key refuses before anything: no systemctl at
+#        all (so no backup and no stop), no pg_dump, nothing replaced; the
+#        message names the file and how to create it
+#   R1   a pending migration that refuses on a copy of the live database stops
+#        update.sh before the backup: the failing file and its error printed,
+#        later migrations not tried, the scratch database dropped, the live
+#        database never written
+#   R2   a clean set is rehearsed on a scratch copy loaded from a dump of the
+#        live database (only the pending migration, before the backup), the
+#        scratch is dropped and the update goes on
+#   R3   a stage without migrations/ cannot be rehearsed: refused before the
+#        backup
 # Cases SM1/SM2 are smoke.sh reading the `ui` field /health/ready gained in
 # V0-A (docs/design/xchange-v3-web.md §3.2), with curl stubbed:
 #   SM1  ui "missing", or no ui field at all: exit 1, a FAIL line naming ui
@@ -1585,22 +1607,225 @@ esac
 exit 0
 STUB
 
-# psql: the migration count answers the lines of $XC_TEST_MIGRATIONS in
-# turn, the last one repeating; anything else prints nothing.
+# psql: a fake cluster (#1084). Databases are files in $XC_TEST_PG/db; every
+# operation appends one "pgop <what> <db> ..." line to calls.log and pg.log.
+#   -c on _sqlx_migrations: count( answers the lines of $XC_TEST_MIGRATIONS
+#      in turn, the last one repeating (as before #1084); max( the highest
+#      line of $XC_TEST_APPLIED; anything else lists $XC_TEST_APPLIED
+#   -c CREATE DATABASE / DROP DATABASE [IF EXISTS]: as createdb / dropdb
+#   -c naming pg_database and a quoted name: 1 when that database exists
+#   -c anything else: prints nothing
+#   no -c: the SQL from -f (- = stdin) or stdin goes into the database:
+#      "pgop load <db> dump:<src>" for a stub dump, else "pgop apply <db>
+#      <v...>" with every "xc-test-migration: <v>" it holds; SQL holding
+#      XC_TEST_REFUSE fails as psql does on a RAISE EXCEPTION (exit 3)
+# A database that does not exist fails as psql does (exit 2). Nothing it
+# reads is ever written to a log.
 write_ustub psql <<'STUB'
 #!/usr/bin/env bash
 printf 'psql %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
-case "$*" in
-  *_sqlx_migrations*)
-    f="${XC_TEST_MIGRATIONS:?}"
-    head -n 1 "$f"
-    if [ "$(wc -l <"$f")" -gt 1 ]; then
-      tail -n +2 "$f" >"$f.next"
-      mv "$f.next" "$f"
-    fi
+cl="${XC_TEST_PG:?}/db"
+op() { printf 'pgop %s\n' "$*" | tee -a "$XC_TEST_LOG/pg.log" >>"$XC_TEST_LOG/calls.log"; }
+db="" sql="" file="" take=""
+for a in "$@"; do
+  if [ -n "$take" ]; then
+    case "$take" in d) db="$a" ;; c) sql="$a" ;; f) file="$a" ;; esac
+    take=""
+    continue
+  fi
+  case "$a" in
+    --dbname=*) db="${a#--dbname=}" ;;
+    --command=*) sql="${a#--command=}" ;;
+    --file=*) file="${a#--file=}" ;;
+    --dbname) take=d ;;
+    --command) take=c ;;
+    --file) take=f ;;
+    --set | --variable | --username | --host | --port | --output | --log-file) take=x ;;
+    --*) ;;
+    -?*)
+      s="${a#-}"
+      while [ -n "$s" ]; do
+        ch="${s:0:1}"
+        s="${s:1}"
+        case "$ch" in
+          d | c | f | v | U | h | p | P | o | L | T | F | R)
+            if [ -n "$s" ]; then
+              case "$ch" in d) db="$s" ;; c) sql="$s" ;; f) file="$s" ;; esac
+            else
+              take="$ch"
+            fi
+            s=""
+            ;;
+        esac
+      done
+      ;;
+    *) [ -z "$db" ] && db="$a" ;;
+  esac
+done
+db="${db:-postgres}"
+missing() {
+  echo "psql: error: connection to server failed: FATAL:  database \"$1\" does not exist" >&2
+  exit 2
+}
+if [ -n "$sql" ]; then
+  [ -e "$cl/$db" ] || missing "$db"
+  lc="$(printf '%s' "$sql" | tr '[:upper:]' '[:lower:]')"
+  case "$lc" in
+    *_sqlx_migrations*)
+      op "query $db _sqlx_migrations"
+      case "$lc" in
+        *"count("*)
+          f="${XC_TEST_MIGRATIONS:?}"
+          head -n 1 "$f"
+          if [ "$(wc -l <"$f")" -gt 1 ]; then
+            tail -n +2 "$f" >"$f.next"
+            mv "$f.next" "$f"
+          fi
+          ;;
+        *"max("*) sort -n "${XC_TEST_APPLIED:?}" | tail -n 1 ;;
+        *) sort -n "${XC_TEST_APPLIED:?}" ;;
+      esac
+      ;;
+    *"create database"*)
+      name="$(printf '%s' "$lc" | sed -E 's/.*create database +"?([a-z0-9_]+)"?.*/\1/')"
+      if [ -e "$cl/$name" ]; then
+        echo "ERROR:  database \"$name\" already exists" >&2
+        exit 1
+      fi
+      : >"$cl/$name"
+      op "create $name"
+      ;;
+    *"drop database"*)
+      name="$(printf '%s' "$lc" | sed -E 's/.*drop database +(if exists +)?"?([a-z0-9_]+)"?.*/\2/')"
+      if [ ! -e "$cl/$name" ]; then
+        case "$lc" in *"if exists"*) exit 0 ;; esac
+        echo "ERROR:  database \"$name\" does not exist" >&2
+        exit 1
+      fi
+      rm -f "$cl/$name"
+      op "drop $name"
+      ;;
+    *pg_database*)
+      name="$(printf '%s' "$sql" | sed -nE "s/.*'([A-Za-z0-9_]+)'.*/\1/p")"
+      [ -n "$name" ] && [ -e "$cl/$name" ] && echo 1
+      ;;
+  esac
+  exit 0
+fi
+if [ -n "$file" ] && [ "$file" != - ]; then
+  content="$(cat "$file")"
+else
+  content="$(cat)"
+fi
+[ -e "$cl/$db" ] || missing "$db"
+case "$content" in
+  *"xc-test stub plain dump of "*)
+    src="$(printf '%s\n' "$content" | sed -nE 's/.*xc-test stub plain dump of ([^ ]+).*/\1/p' | head -n 1)"
+    op "load $db dump:$src"
+    ;;
+  *)
+    marks="$(printf '%s\n' "$content" | sed -nE 's/.*xc-test-migration: ([0-9]+).*/\1/p' | tr '\n' ' ')"
+    op "apply $db ${marks:--}"
+    ;;
+esac
+case "$content" in
+  *XC_TEST_REFUSE*)
+    echo "psql:${file:-<stdin>}:4: ERROR:  recreate the test database first (U4)" >&2
+    echo "CONTEXT:  PL/pgSQL function inline_code_block line 3 at RAISE" >&2
+    exit 3
     ;;
 esac
 exit 0
+STUB
+
+# pg_dump: a plain dump of the named database ("-- xc-test stub plain dump
+# of <db>") to -f/--file or stdout; "pgop dump <db>". A database that does not
+# exist fails.
+write_ustub pg_dump <<'STUB'
+#!/usr/bin/env bash
+printf 'pg_dump %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+cl="${XC_TEST_PG:?}/db"
+db="" out="" take=""
+for a in "$@"; do
+  if [ -n "$take" ]; then
+    case "$take" in d) db="$a" ;; f) out="$a" ;; esac
+    take=""
+    continue
+  fi
+  case "$a" in
+    --dbname=*) db="${a#--dbname=}" ;;
+    --file=*) out="${a#--file=}" ;;
+    -d | --dbname) take=d ;;
+    -f | --file) take=f ;;
+    -F | -h | -p | -U | -n | -N | -t | -T | -E | -j | -Z | --format | --host | --port | --username | --schema | --exclude-schema | --table | --exclude-table | --encoding | --jobs | --compress) take=x ;;
+    -d?*) db="${a#-d}" ;;
+    -f?*) out="${a#-f}" ;;
+    -*) ;;
+    *) [ -z "$db" ] && db="$a" ;;
+  esac
+done
+if [ -z "$db" ] || [ ! -e "$cl/$db" ]; then
+  echo "pg_dump: error: connection to server failed: FATAL:  database \"$db\" does not exist" >&2
+  exit 1
+fi
+printf 'pgop dump %s\n' "$db" | tee -a "$XC_TEST_LOG/pg.log" >>"$XC_TEST_LOG/calls.log"
+if [ -n "$out" ] && [ "$out" != - ]; then
+  printf -- '-- xc-test stub plain dump of %s\n' "$db" >"$out"
+else
+  printf -- '-- xc-test stub plain dump of %s\n' "$db"
+fi
+exit 0
+STUB
+
+# createdb / dropdb: on the same fake cluster; "pgop create|drop <db>".
+write_ustub createdb <<'STUB'
+#!/usr/bin/env bash
+printf 'createdb %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+cl="${XC_TEST_PG:?}/db"
+name="" take=""
+for a in "$@"; do
+  if [ -n "$take" ]; then
+    take=""
+    continue
+  fi
+  case "$a" in
+    -O | -T | -E | -l | -h | -p | -U | -D | -S | --owner | --template | --encoding | --locale | --host | --port | --username | --tablespace | --strategy | --lc-collate | --lc-ctype) take=x ;;
+    -*) ;;
+    *) [ -z "$name" ] && name="$a" ;;
+  esac
+done
+if [ -z "$name" ] || [ -e "$cl/$name" ]; then
+  echo "createdb: error: database creation failed: ERROR:  database \"$name\" already exists" >&2
+  exit 1
+fi
+: >"$cl/$name"
+printf 'pgop create %s\n' "$name" | tee -a "$XC_TEST_LOG/pg.log" >>"$XC_TEST_LOG/calls.log"
+STUB
+
+write_ustub dropdb <<'STUB'
+#!/usr/bin/env bash
+printf 'dropdb %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+cl="${XC_TEST_PG:?}/db"
+name="" take="" ife=0
+for a in "$@"; do
+  if [ -n "$take" ]; then
+    take=""
+    continue
+  fi
+  case "$a" in
+    --if-exists) ife=1 ;;
+    -h | -p | -U | --host | --port | --username | --maintenance-db) take=x ;;
+    -*) ;;
+    *) [ -z "$name" ] && name="$a" ;;
+  esac
+done
+if [ -z "$name" ] || [ ! -e "$cl/$name" ]; then
+  [ "$ife" = 1 ] && exit 0
+  echo "dropdb: error: database removal failed: ERROR:  database \"$name\" does not exist" >&2
+  exit 1
+fi
+rm -f "$cl/$name"
+printf 'pgop drop %s\n' "$name" | tee -a "$XC_TEST_LOG/pg.log" >>"$XC_TEST_LOG/calls.log"
 STUB
 
 # curl: the smoke check's four requests answer 200, /health/ready with a body
@@ -1630,6 +1855,10 @@ STUB
 # ---- helpers ----------------------------------------------------------------
 U_OLD_SET=20261006T000000Z
 U_NEW_SET=20261007T140000Z
+# base64 of 32 zero bytes: the shape of a key line, not a key
+U_KEY_PLACEHOLDER=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+U_MIG_APPLIED=20261001000000
+U_MIG_PENDING=20261002000000
 
 # u_case <dir> — an installed xc-v3 under <dir>: the binary and
 # configuration, the env file (naming the uploads and the backup directory),
@@ -1655,6 +1884,36 @@ u_case() {
   make_set "$c/backups" "$U_OLD_SET"
   make_stage "$c/stage"
   printf '9\n10\n' >"$c/migrations"
+  # #1084: the PII key (a placeholder, never a real key), a stage carrying
+  # one applied and one pending migration, and the fake cluster
+  printf 'k1:%s\n' "$U_KEY_PLACEHOLDER" >"$c/etc/xc-v3/pii.key"
+  chmod 640 "$c/etc/xc-v3/pii.key"
+  mkdir -p "$c/stage/migrations" "$c/pg/db"
+  stage_migration "$c" "$U_MIG_APPLIED" first
+  stage_migration "$c" "$U_MIG_PENDING" second
+  relist_stage "$c"
+  printf '%s\n' "$U_MIG_APPLIED" >"$c/applied"
+  : >"$c/pg/db/postgres"
+  : >"$c/pg/db/xc_v3"
+}
+
+# stage_migration <case dir> <version> <name> [refuse] — a staged migration
+# carrying its version as a marker; with "refuse" it fails when applied.
+stage_migration() {
+  {
+    printf -- '-- xc-test-migration: %s\n' "$2"
+    [ "${4:-}" = refuse ] && printf -- '-- XC_TEST_REFUSE\n'
+    printf 'SELECT 1;\n'
+  } >"$1/stage/migrations/$2_$3.sql"
+}
+
+# relist_stage <case dir> — SHA256SUMS lists every staged file again
+relist_stage() {
+  (
+    cd "$1/stage"
+    shopt -s nullglob
+    sha256sum xchange configuration/*.yaml migrations/*.sql >SHA256SUMS
+  )
 }
 
 # run_update <case dir> [NAME=value...] — the repository's update.sh against
@@ -1665,6 +1924,7 @@ run_update() {
   set +e
   OUT="$(env PATH="$U_STUBS:$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_TEST_SYSTEMD="$c/systemd" \
     XC_TEST_MIGRATIONS="$c/migrations" XC_STUB_BACKUP_SET="$c/backups/$U_NEW_SET" \
+    XC_TEST_PG="$c/pg" XC_TEST_APPLIED="$c/applied" \
     STAGE="$c/stage" INSTALL_DIR="$c/opt/xc-v3" ETC_DIR="$c/etc/xc-v3" \
     UPLOADS_DIR="$c/var/lib/xc-v3/uploads" SMOKE_WAIT_SECS=0 \
     "$@" bash "$HERE/update.sh" </dev/null 2>&1)"
@@ -1829,6 +2089,288 @@ ck "nothing was replaced" u_untouched "$u5e"
 ck "the message says the dump is not age-encrypted" grep -qs 'backup dump is not age-encrypted' "$LOGS/u5e.out"
 ck "the message names the dump" grep -qsF -- "$u5e/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age" "$LOGS/u5e.out"
 report U5e "a set whose dump lacks the age header is refused even if the archive is encrypted"
+
+# ---- stubs of the install cases (#1084; first on PATH, before the update stubs)
+# A full install.sh run needs the owners it set to be read back, so that a
+# second run judges its own directories as the first run left them:
+#   sudo  as the update stub (no privilege, -u dropped, /etc/systemd/system/
+#         mapped into $XC_TEST_SYSTEMD), and every owner it is asked to set —
+#         chown <o>:<g>, chgrp <g>, install -o <o> -g <g> — recorded per path
+#         in $XC_TEST_OWNERS instead of applied
+#   stat  -c '%U %G %a' answers the recorded owner and group (root root when
+#         none was recorded) and the real mode; anything else is the real stat
+#   node  the pages extractor: writes one page into the output directory
+I_STUBS="$ROOT/istubs"
+mkdir -m 700 "$I_STUBS"
+write_istub() {
+  cat >"$I_STUBS/$1"
+  chmod 755 "$I_STUBS/$1"
+}
+
+write_istub sudo <<'STUB'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >>"${XC_TEST_LOG:?}/calls.log"
+rec="${XC_TEST_OWNERS:?}"
+map() {
+  case "$1" in
+    /etc/systemd/system/*) printf '%s' "${XC_TEST_SYSTEMD:?}/${1#/etc/systemd/system/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+args=()
+for a in "$@"; do args+=("$(map "$a")"); done
+set -- "${args[@]}"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -u) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+cmd="$1"
+shift
+case "$cmd" in
+  chown | chgrp)
+    who=""
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;
+        *)
+          if [ -z "$who" ]; then
+            who="$a"
+          else
+            if [ "$cmd" = chown ]; then
+              printf '%s\t%s %s\n' "$a" "${who%%:*}" "${who#*:}" >>"$rec"
+            else
+              printf '%s\troot %s\n' "$a" "$who" >>"$rec"
+            fi
+          fi
+          ;;
+      esac
+    done
+    exit 0
+    ;;
+  install)
+    o=root g=root skip="" argv=()
+    for a in "$@"; do
+      if [ -n "$skip" ]; then
+        case "$skip" in o) o="$a" ;; g) g="$a" ;; esac
+        skip=""
+        continue
+      fi
+      case "$a" in
+        -o) skip=o ;;
+        -g) skip=g ;;
+        *) argv+=("$a") ;;
+      esac
+    done
+    install "${argv[@]}" || exit
+    printf '%s\t%s %s\n' "${argv[-1]}" "$o" "$g" >>"$rec"
+    exit 0
+    ;;
+esac
+exec "$cmd" "$@"
+STUB
+
+write_istub stat <<'STUB'
+#!/usr/bin/env bash
+real=/usr/bin/stat
+[ -x "$real" ] || real=/bin/stat
+if [ "$#" = 3 ] && [ "$1" = -c ] && [ "$2" = '%U %G %a' ]; then
+  mode="$("$real" -c '%a' "$3")" || exit
+  og="$(awk -F'\t' -v p="$3" '$1 == p { v = $2 } END { print v }' "${XC_TEST_OWNERS:?}")"
+  printf '%s %s\n' "${og:-root root}" "$mode"
+  exit 0
+fi
+exec "$real" "$@"
+STUB
+
+write_istub node <<'STUB'
+#!/usr/bin/env bash
+mkdir -p "$3"
+printf '<!doctype html>\n' >"$3/index.html"
+STUB
+
+K_SERVICE=xc1084n
+K_USER=xc1084u
+
+# k_case <dir> — a clean host: nothing installed, a stage with the extractor,
+# a v2 bundle directory, a cluster holding only postgres
+k_case() {
+  local c="$1"
+  mkdir -p "$c/log" "$c/systemd" "$c/v2bundle" "$c/pg/db"
+  : >"$c/owners"
+  : >"$c/applied"
+  : >"$c/pg/db/postgres"
+  printf '0\n' >"$c/migrations"
+  make_stage "$c/stage" extract-v2-pages.mjs
+}
+
+# run_install <case dir> [NAME=value...] — the repository's install.sh
+# against the case. OUT/RC.
+run_install() {
+  local c="$1"
+  shift
+  set +e
+  OUT="$(env PATH="$I_STUBS:$U_STUBS:$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" \
+    XC_TEST_SYSTEMD="$c/systemd" XC_TEST_OWNERS="$c/owners" XC_TEST_PG="$c/pg" \
+    XC_TEST_MIGRATIONS="$c/migrations" XC_TEST_APPLIED="$c/applied" \
+    SERVICE_NAME="$K_SERVICE" SERVICE_USER="$K_USER" STAGE="$c/stage" \
+    INSTALL_DIR="$c/opt/$K_SERVICE" ETC_DIR="$c/etc/$K_SERVICE" \
+    UPLOADS_DIR="$c/var/lib/$K_SERVICE/uploads" V2_BUNDLE_DIR="$c/v2bundle" \
+    SMOKE_WAIT_SECS=0 "$@" bash "$HERE/install.sh" </dev/null 2>&1)"
+  RC=$?
+  set -e
+}
+
+# owner_of <case dir> <path> — the owner and group last recorded for <path>
+owner_of() { awk -F'\t' -v p="$2" '$1 == p { v = $2 } END { print v }' "$1/owners"; }
+
+# key_lines <file> — the lines that are neither blank nor a # comment
+key_lines() { grep -Ev '^[[:space:]]*(#|$)' "$1" 2>/dev/null || true; }
+
+# is_key_line <line> — k1: and the base64 of exactly 32 bytes
+is_key_line() {
+  printf '%s\n' "$1" | grep -Eqx 'k1:[A-Za-z0-9+/]{43}=' &&
+    [ "$(printf '%s' "${1#k1:}" | base64 -d 2>/dev/null | wc -c | tr -d ' ')" = 32 ]
+}
+
+# not_shown <secret> <file...> — the secret is in none of the files
+not_shown() {
+  local s="$1"
+  shift
+  [ -n "$s" ] && ! grep -rqsF -- "$s" "$@"
+}
+
+# ---- K1: a first install writes the PII key ---------------------------------
+k1="$ROOT/k1"
+k_case "$k1"
+run_install "$k1"
+printf '%s\n' "$OUT" >"$LOGS/k1.out"
+K1_KEY="$k1/etc/$K_SERVICE/pii.key"
+K1_LINE="$(key_lines "$K1_KEY")"
+ck "install.sh exited 0" test "$RC" -eq 0
+ck "the key file exists" test -f "$K1_KEY"
+ckeq "one key line" 1 "$(printf '%s' "$K1_LINE" | grep -c . || true)"
+ck "the line is k1: and base64 of 32 bytes" is_key_line "$K1_LINE"
+ckeq "mode 640" 640 "$(stat -c '%a' "$K1_KEY" 2>/dev/null || echo missing)"
+ckeq "owned root:<service group>" "root $K_USER" "$(owner_of "$k1" "$K1_KEY")"
+ck "the key is not on stdout or stderr" not_shown "${K1_LINE#k1:}" "$LOGS/k1.out"
+ck "the key is on no command line or log the stubs saw" not_shown "${K1_LINE#k1:}" "$k1/log"
+report K1 "a first install writes pii.key: one k1: line of 32 random bytes, root:<group> 640, never shown"
+
+# ---- K2: an existing key is never overwritten -------------------------------
+k2="$ROOT/k2"
+k_case "$k2"
+run_install "$k2"
+printf '%s\n' "$OUT" >"$LOGS/k2-first.out"
+K2_KEY="$k2/etc/$K_SERVICE/pii.key"
+# the owner's key, rotated once (placeholders: 32 bytes of 0x01 and of 0x02)
+printf '%s\n' "# rotated" "k1:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=" \
+  "k2:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=" >"$K2_KEY"
+chmod 640 "$K2_KEY"
+printf '%s\troot %s\n' "$K2_KEY" "$K_USER" >>"$k2/owners"
+cp -p "$K2_KEY" "$k2/key.before"
+run_install "$k2"
+printf '%s\n' "$OUT" >"$LOGS/k2.out"
+ck "the second install.sh exited 0" test "$RC" -eq 0
+ck "the key file is byte-identical" cmp -s "$k2/key.before" "$K2_KEY"
+ckeq "its mode is unchanged" 640 "$(stat -c '%a' "$K2_KEY" 2>/dev/null || echo missing)"
+ck "the output names the key file it kept" grep -qsF -- "$K2_KEY" "$LOGS/k2.out"
+report K2 "install.sh run again keeps an existing pii.key byte for byte and says so"
+
+# ---- K3: update.sh without the key refuses before anything ------------------
+k3="$ROOT/k3"
+u_case "$k3"
+rm -f "$k3/etc/xc-v3/pii.key"
+run_update "$k3"
+printf '%s\n' "$OUT" >"$LOGS/k3.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "no systemctl call at all: no backup, no stop, no restart" test ! -s "$k3/log/systemctl.log"
+ck "no pg_dump" absent '^pg_dump' "$k3/log/calls.log"
+ck "no database created" absent '^pgop create' "$k3/log/calls.log"
+ck "nothing was replaced" u_untouched "$k3"
+ck "the message names the key file" grep -qsF -- "$k3/etc/xc-v3/pii.key" "$LOGS/k3.out"
+ck "the message says how to create it" grep -Eqs 'install\.sh|openssl' "$LOGS/k3.out"
+report K3 "update.sh without pii.key refuses before the backup and before any swap"
+
+# ---- R1..R3: the migration rehearsal (#1084) --------------------------------
+U_LIVE=xc_v3
+
+# scratch_of <case dir> — the first database the run created, other than live
+scratch_of() {
+  sed -nE 's/^pgop create ([^ ]+)$/\1/p' "$1/log/pg.log" 2>/dev/null | grep -vx "$U_LIVE" | head -n 1 || true
+}
+
+# dbs_left <case dir> — the databases the cluster holds, sorted, one line
+dbs_left() { find "$1/pg/db" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | tr '\n' ' '; }
+
+# live_untouched <case dir> — nothing was loaded into, applied to, created
+# as or dropped from the live database
+live_untouched() { absent "^pgop (apply|load|create|drop) $U_LIVE( |\$)" "$1/log/pg.log"; }
+
+# applied_to <case dir> <db> <version> — ERE of that migration going into <db>
+applied_to() { printf '^pgop apply %s (.* )?%s( |$)' "$2" "$3"; }
+
+# ---- R1: a refusing migration stops the update before the backup ------------
+r1="$ROOT/r1"
+u_case "$r1"
+R1_REFUSE=20261019100000
+R1_LATER=20261020000000
+stage_migration "$r1" "$R1_REFUSE" customers_org refuse
+stage_migration "$r1" "$R1_LATER" after_it
+relist_stage "$r1"
+run_update "$r1"
+printf '%s\n' "$OUT" >"$LOGS/r1.out"
+R1_S="$(scratch_of "$r1")"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "the backup unit was never started" absent "$U_BACKUP_START" "$r1/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$r1"
+ck "nothing was replaced" u_untouched "$r1"
+ck "a scratch database was created" test -n "$R1_S"
+ck "the scratch was loaded from a dump of the live database" grep -Eqs "^pgop load ${R1_S:-none} dump:$U_LIVE\$" "$r1/log/pg.log"
+ck "the refusing migration was tried on the scratch" grep -Eqs "$(applied_to "$r1" "${R1_S:-none}" "$R1_REFUSE")" "$r1/log/pg.log"
+ck "the pending migrations ran in version order" u_before "$r1" "$(applied_to "$r1" "${R1_S:-none}" "$U_MIG_PENDING")" "$(applied_to "$r1" "${R1_S:-none}" "$R1_REFUSE")"
+ck "nothing after the refusing one was tried" absent "^pgop apply .* $R1_LATER( |\$)" "$r1/log/pg.log"
+ck "the output names the refusing file" grep -qsF -- "${R1_REFUSE}_customers_org.sql" "$LOGS/r1.out"
+ck "the output carries the error" grep -qsF -- 'recreate the test database first (U4)' "$LOGS/r1.out"
+ck "the scratch was dropped" grep -Eqs "^pgop drop ${R1_S:-none}\$" "$r1/log/pg.log"
+ckeq "the cluster holds only what it held" "postgres $U_LIVE " "$(dbs_left "$r1")"
+ck "the live database was never written" live_untouched "$r1"
+report R1 "a migration that refuses on a copy of the live database stops update.sh before the backup"
+
+# ---- R2: a clean set is rehearsed, then the update goes on -------------------
+r2="$ROOT/r2"
+u_case "$r2"
+run_update "$r2"
+printf '%s\n' "$OUT" >"$LOGS/r2.out"
+R2_S="$(scratch_of "$r2")"
+ck "update.sh exited 0" test "$RC" -eq 0
+ck "a scratch database was created" test -n "$R2_S"
+ck "the scratch was loaded from a dump of the live database before the migration" \
+  u_before "$r2" "^pgop load ${R2_S:-none} dump:$U_LIVE\$" "$(applied_to "$r2" "${R2_S:-none}" "$U_MIG_PENDING")"
+ck "the pending migration was rehearsed before the backup" \
+  u_before "$r2" "$(applied_to "$r2" "${R2_S:-none}" "$U_MIG_PENDING")" "$U_BACKUP_START"
+ck "the applied migration was not run again" absent "^pgop apply .* $U_MIG_APPLIED( |\$)" "$r2/log/pg.log"
+ck "the scratch was dropped before the backup" u_before "$r2" "^pgop drop ${R2_S:-none}\$" "$U_BACKUP_START"
+ckeq "the cluster holds only what it held" "postgres $U_LIVE " "$(dbs_left "$r2")"
+ck "the live database was never written" live_untouched "$r2"
+ckeq "the new binary is installed" "$(cat "$r2/stage/xchange")" "$(cat "$r2/opt/xc-v3/xchange" 2>/dev/null || echo missing)"
+report R2 "a clean set is rehearsed on a scratch copy before the backup, the scratch dropped, the update done"
+
+# ---- R3: a stage without migrations/ is refused --------------------------------
+r3="$ROOT/r3"
+u_case "$r3"
+rm -rf "$r3/stage/migrations"
+relist_stage "$r3"
+run_update "$r3"
+printf '%s\n' "$OUT" >"$LOGS/r3.out"
+ck "update.sh exited non-zero" test "$RC" -ne 0
+ck "the backup unit was never started" absent "$U_BACKUP_START" "$r3/log/calls.log"
+ck "xc-v3 was never stopped" u_no_stop "$r3"
+ck "nothing was replaced" u_untouched "$r3"
+ck "the message names the missing migrations/" grep -qs 'migrations/' "$LOGS/r3.out"
+report R3 "a stage that carries no migrations/ cannot be rehearsed and is refused"
 
 # ---- SM1/SM2: smoke.sh fails a server whose screens were not built (V0-A) ---
 # docs/design/xchange-v3-web.md §3.2: a server built without `web/dist` answers

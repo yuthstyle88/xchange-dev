@@ -82,11 +82,12 @@ rm -rf "$STAGE" && install -d -m 700 "$STAGE"
 
 cp target/release/xchange            "$STAGE/"
 cp -R configuration                  "$STAGE/configuration"
+cp -R migrations                     "$STAGE/migrations"
 cp tools/extract-v2-pages.mjs        "$STAGE/"
 cp ../deploy/server/{common.sh,install.sh,update.sh,smoke.sh,xc-v3.service} "$STAGE/"
 git rev-parse HEAD                 > "$STAGE/BUILD"
 
-( cd "$STAGE" && sha256sum xchange configuration/*.yaml extract-v2-pages.mjs \
+( cd "$STAGE" && sha256sum xchange configuration/*.yaml migrations/*.sql extract-v2-pages.mjs \
     common.sh install.sh update.sh smoke.sh xc-v3.service BUILD > SHA256SUMS )
 cat "$STAGE/SHA256SUMS"
 ```

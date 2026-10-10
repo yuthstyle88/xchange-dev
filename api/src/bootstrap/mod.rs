@@ -1,5 +1,7 @@
 //! Bootstrap and server initialization.
 
+pub mod outbox_handlers;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -13,6 +15,8 @@ use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::repositories::account_repository::Purged;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_outbox::application::worker::OutboxWorker;
+use xc_outbox::infrastructure::pg_store::PgOutboxStore;
 
 use crate::config::Settings;
 
@@ -163,12 +167,14 @@ pub struct Application {
     port: u16,
     server: actix_web::dev::Server,
     purge: tokio::task::JoinHandle<()>,
+    outbox: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for Application {
-    /// The purge timer lives as long as the server it belongs to.
+    /// The purge timer and outbox worker live as long as the server they belong to.
     fn drop(&mut self) {
         self.purge.abort();
+        self.outbox.abort();
     }
 }
 
@@ -209,7 +215,14 @@ impl Application {
             },
         ));
 
-        let state = AppState::new(Arc::new(settings), pool);
+        let state = AppState::new(Arc::new(settings), pool.clone());
+
+        let registry = outbox_handlers::registry(&state)?;
+        registry.verify_against(&pool).await?;
+        let outbox = tokio::spawn(
+            OutboxWorker::new(Arc::new(PgOutboxStore::new(pool)), Arc::new(registry)).run_forever(),
+        );
+
         let server = actix_web::HttpServer::new(move || {
             actix_web::App::new().configure(|cfg| configure(cfg, state.clone()))
         })
@@ -222,6 +235,7 @@ impl Application {
             port,
             server,
             purge,
+            outbox,
         })
     }
 
