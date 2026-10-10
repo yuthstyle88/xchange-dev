@@ -211,7 +211,7 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
       <Show when={error()}>
         <div class="empty" role="alert">
-          <strong>{t('notLoaded')}</strong>
+          {t('notLoaded')}
           <p>{error()}</p>
         </div>
       </Show>
@@ -288,23 +288,25 @@ export function Slips(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <div class="pagination">
-        <button
-          type="button"
-          class="secondary"
-          onClick={handlePrev}
-          disabled={page() <= 1}
-        >
-          {t('prev')}
-        </button>
-        <span class="page-indicator">{t('page', { page: page() })}</span>
-        <button
-          type="button"
-          class="secondary"
-          onClick={handleNext}
-          disabled={rows().length < 50}
-        >
-          {t('next')}
-        </button>
+        <Show when={loaded() && !error()}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={handlePrev}
+            disabled={page() <= 1}
+          >
+            {t('prev')}
+          </button>
+          <span class="page-indicator">{t('page', { page: page() })}</span>
+          <button
+            type="button"
+            class="secondary"
+            onClick={handleNext}
+            disabled={rows().length < 50}
+          >
+            {t('next')}
+          </button>
+        </Show>
       </div>
     </Card>
   );
