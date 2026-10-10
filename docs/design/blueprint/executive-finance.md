@@ -185,7 +185,7 @@ F01 is **one branch and one business day** at a time, for FINANCE within its bra
 | เงินนับจริง | each verified count of the day: counted, expected, difference per currency; who counted, who verified | `cash_counts`, `cash_count_totals` | CA-3 (#619) |
 | transfer | the day's transfers by state; in transit; short receipts (`qty_received ≠ qty_sent`) | `cash_transfers`, `cash_transfer_lines` | CA-5 (#621) |
 | exceptions | the branch's open exceptions | `cash_exceptions` | now (v2 shape); CA-10 for the new shape |
-| integrity | LG-7's five reconcile checks for the branch | `xc-cash/src/application/reconcile.rs` (LG-7) | LG-7 |
+| integrity | LG-7's five reconcile checks for the branch | `xc-cash/src/application/reconcile/` (`Reconcile::run`, ledger design §6.1) | LG-7.0–7.5 |
 | payout | **not here.** Payout belongs to Broker-Platform (#564); F01 links to Broker's finance screen when one exists | — | — |
 
 ### 5.2 Actions
@@ -365,7 +365,7 @@ classDiagram
   class CertificationRepository { <<api/src/infrastructure/finance/certification_repository.rs>> }
   class ReconciliationCertify { <<api/src/presentation/http/v3/commands/reconciliation_certify.rs>> }
   class ExportGate { <<api/src/presentation/http/v3/export_gate.rs>> check(actor, view, filter) }
-  class Reconcile { <<LG-7 xc-cash/src/application/reconcile.rs>> }
+  class Reconcile { <<LG-7 xc-cash/src/application/reconcile/mod.rs>> }
   class SheetParts { <<api/src/application/finance/sheet_parts.rs (FN-2)>> counts(); transfers(); integrity(); reversals_pending() }
   class BookingFacts { <<api/src/infrastructure/executive/booking_facts.rs (EX-8)>> }
   class BranchAlertSettingsView { <<api/src/presentation/http/v3/views/branch_alert_settings.rs (EX-5)>> }

@@ -369,7 +369,7 @@ Owned by **LG-2**, with the rest of the port's final shape (§10).
 
 ## 6. Reconciliation (the checks the design promises)
 
-`api/crates/xc-cash/src/application/reconcile.rs`, run by a test and by an admin view:
+`api/crates/xc-cash/src/application/reconcile/` (§6.1), run by a test and by F01's integrity row:
 1. every posting balances per currency (`GROUP BY posting_id, currency HAVING sum(quantity_signed) <> 0` is empty);
 2. every `inventory_positions` row equals the sum of its movements (quantity and cost);
 3. per branch and foreign currency: Σ of the balances of that branch's own `DRAWER`, `SAFE` and `IN_TRANSIT` accounts
@@ -381,6 +381,54 @@ Owned by **LG-2**, with the rest of the port's final shape (§10).
 
 A failure is a defect, never "corrected" by an update: it is reported, and an `ADJUSTMENT` posting is the only fix,
 by FINANCE.
+
+### 6.1 Shape: one core, one file per check (LG-7, added 2026-10-10)
+
+The five checks are five variants of one job, so they share one core and each lives in its own file (♻️). The
+first two lines of this section's old text named a single `reconcile.rs`; the module path `application::reconcile`
+is unchanged.
+
+```rust
+// api/crates/xc-cash/src/application/reconcile/mod.rs   (LG-7.0)
+pub struct ReconcileScope { pub organization_id: String, pub branch: Option<BranchId>, pub period: Option<(NaiveDate, NaiveDate)> }
+pub struct Offender { pub key: String, pub detail: String }     // key: posting id, or "<branch>:<currency>", …
+pub struct CheckResult { pub id: u8, pub ok: bool, pub offenders: Vec<Offender> }
+pub struct Report { pub checks: Vec<CheckResult> }            // in id order
+pub trait ReconcileCheck: Send + Sync {
+    fn id(&self) -> u8;                                          // 1..=5, the numbers of §6
+    fn run_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, scope: &'a ReconcileScope)
+        -> BoxFuture<'a, AppResult<Vec<Offender>>>;
+}
+pub struct Reconcile { /* Vec<Arc<dyn ReconcileCheck>> */ }
+impl Reconcile {
+    pub fn new(checks: Vec<Arc<dyn ReconcileCheck>>) -> Self;
+    pub fn standard() -> Self;                                   // the five, one line each
+    pub async fn run(&self, pool: &PgPool, scope: &ReconcileScope) -> AppResult<Report>;
+}
+// api/crates/xc-cash/src/application/reconcile/{balanced, positions, places, margin, valuation}.rs   (LG-7.1–7.5)
+```
+
+- **One snapshot.** `run` opens one `REPEATABLE READ READ ONLY` transaction and runs every check in it, so check 3
+  cannot see a posting without its position movement. It writes nothing.
+- **Each check is one SQL statement**, a `pub const QUERY: &str` in its file, that returns the offender rows (empty =
+  passed). LG-6.m's migration precheck runs the same five statements; a migration cannot import Rust, so it carries a
+  copy, frozen at the version it ships.
+- **What ties the copy to the constants (LG-6.m #1047).** The precheck runs the five copies as five separate
+  statements, and on the first one that returns a row it `RAISE`s `'reconcile check <id> failed'`. LG-6.m's test seeds
+  six databases: one clean, and one per check with a single hand-broken row that only that check catches (the same
+  cases as LG-7.1–7.5's tests). On each, it runs both the migration precheck and `Reconcile::standard().run`, and it
+  asserts the same outcome per check: the clean seed passes both, and seed *k* fails the precheck naming check *k*
+  while `run` reports check *k*, and only check *k*, as failed. A copy that drifts from its `QUERY` disagrees on at
+  least one seed, so the test goes red.
+- **Registration.** Each check's ticket adds its `pub mod` line and its one line in `standard()`. Those one-line
+  registrations are not reserved (lane controller's rule on #564), so the five check tickets touch disjoint files.
+- **Ordering and errors.** `Report.checks` is in id order whatever order `standard()` lists them. A check whose query
+  fails fails `run` with `AppError::Database`; a failed check is `ok: false` with its offenders, never an error.
+- **Who shows it.** No separate admin view: F01's integrity row (`executive-finance.md` §5, FN-2) reads
+  `Reconcile::run` for the branch behind `FinanceReconcile`. The old `views/cash_reconcile.rs` line of §10 is dropped.
+- **The org-wide run** (`branch: None`) has no screen of its own: it is the reconcile job's own output and LG-6.m's
+  precheck (lane controller's ruling on PR 1053, 2026-10-10: only this design and #927 had asked for a separate view;
+  no Blueprint item or owner decision did). An org-wide screen, if the owner asks for one, is a new ticket.
 
 ---
 
@@ -422,7 +470,11 @@ classDiagram
   class NegativeStockSubject { <<xc-cash application/ledger_approval/negative_stock.rs>> }
   class CountDifferenceSubject { <<xc-cash application/ledger_approval/count_difference.rs>> }
   class CountDifferenceGate { <<xc-cash application/ledger_approval/count_difference.rs>> +check_in() }
-  class Reconcile { <<xc-cash application/reconcile.rs>> +run() Report }
+  class Reconcile { <<xc-cash application/reconcile/mod.rs (LG-7.0)>> +run(pool, scope) Report +standard() }
+  class ReconcileCheck { <<trait xc-cash application/reconcile/mod.rs>> +id() +run_in(tx, scope) Offender[] }
+  class ReconcileChecks { <<reconcile/balanced, positions, places, margin, valuation (LG-7.1-7.5)>> +QUERY }
+  class Report { <<xc-cash application/reconcile/mod.rs>> +checks CheckResult[] }
+  class CheckResult { <<xc-cash application/reconcile/mod.rs>> +id u8 +ok bool +offenders Offender[] }
   class CompleteExchange { <<xc-exchange application/transaction/complete.rs (#551 TX-5)>> }
   class CashCountService { <<xc-cash application/count (#582 CA-3)>> }
   class ApprovalService { <<xc-approval AP-1>> }
@@ -444,8 +496,10 @@ classDiagram
   CountDifferenceGate --> ApprovalService
   NegativeStockSubject ..|> ApprovalSubject
   CountDifferenceSubject ..|> ApprovalSubject
-  Reconcile --> LedgerRepository
-  Reconcile --> InventoryRepository
+  Reconcile --> ReconcileCheck
+  Reconcile --> Report : run
+  Report --> CheckResult
+  ReconcileChecks ..|> ReconcileCheck
   PgLedgerShiftBalances ..|> ShiftBalances
   ShiftBalancesReaders --> ShiftBalances : shift_balances
 ```
@@ -520,8 +574,13 @@ database with rows.
 | LG-6.r4 | `ShiftRepository`'s balances read `ShiftBalances`; `ShiftService`'s `shift_balances` writes removed (§4.2.1) | `xc-shift/src/infrastructure/shift/shift_repository.rs`, `xc-shift/src/application/shift/service.rs`, `xc-shift/src/domain/shift/repositories/shift_repository.rs` | LG-6.0, CA-1's opener lookup (#1025) |
 | LG-6.r5 | `ops_state.safe` neither read nor written; whoever still shows the safe after CA-10 (today `compat/v2_json.rs:493` and `CustodyPages`' floor facts) reads `CashPostings::expected_in(Safe(branch))` from `api`, because `xc-shift` cannot call `xc-cash` | `xc-shift/src/infrastructure/custody/{custody_pages.rs, custody_repository.rs}`, `xc-shift/src/domain/custody/{state.rs, repositories/custody_pages.rs}`, `api/src/application/compat/v2_json.rs` | LG-4, CA-10 (re-measured after it) |
 | LG-6.r6 | the `stock_movements` readers (`admin_cash_movements`, `ShiftRepository`'s movement methods and their callers) list `cash_transfers` (ruling A, §4.2.1) | `views/admin_cash_movements.rs`, `xc-shift` shift repository's movement methods, `compat/snapshot.rs`, `v3/actions/shift_valuation.rs`, `compat/abandon_request.rs` | LG-4, CA-10, CA-5 |
-| LG-6.m | migration 3 (§9) | the migration only | every LG-6.r child; `git grep` finds no reader |
-| LG-7 | reconciliation (§6) and its admin view | `xc-cash/src/application/reconcile.rs`, `views/cash_reconcile.rs` | LG-2 |
+| LG-6.m | migration 3 (§9); its precheck is tied to LG-7's `QUERY` constants (§6.1) | the migration only | every LG-6.r child; LG-7.1–7.5; `git grep` finds no reader |
+| LG-7.0 | the reconcile core (§6.1): `ReconcileCheck`, `Reconcile`, `Report` | `xc-cash/src/application/reconcile/mod.rs` | CA-3 (the crate) |
+| LG-7.1 | check 1, balanced postings | `reconcile/balanced.rs` | LG-7.0, LG-1 |
+| LG-7.2 | check 2, positions = movements | `reconcile/positions.rs` | LG-7.0, LG-1 |
+| LG-7.3 | check 3, cash places = positions | `reconcile/places.rs` | LG-7.0, LG-2 (its transfer cases post through the port) |
+| LG-7.4 | check 4, margin = sales − cost | `reconcile/margin.rs` | LG-7.0, TX-2 (`transaction_lines`) |
+| LG-7.5 | check 5, valuations sum to zero | `reconcile/valuation.rs` | LG-7.0, LG-1 |
 
 ### 10.1 Up-front tests (🧪)
 
