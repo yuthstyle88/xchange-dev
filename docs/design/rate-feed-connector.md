@@ -440,7 +440,7 @@ for `rate_reference_lines`.
 | F1 | `ReferenceProvider` extracted; `BotProvider` holds today's BoT parsing; the writer takes a provider. **Pure move: every existing reference test passes unchanged** | this design merged |
 | F2 | migration §4 + `TierTable`/`TierBand`/`TierCode` with the band-edge tests | this design |
 | F3 | denomination groups: trait, Pg impl, service, admin commands (API) | F2 |
-| F3w | admin screen for groups and mappings | F3 |
+| F3w | `admin_denomination_groups` view + the admin screen for groups and mappings (§10) | F3 |
 | F4 | `RateBoardSource` + `RateBoardProvider` + `RateBoardPayload` | F1, F2, **Q-4** |
 | F5 | `FeedPublisher` + `RATE_FEED_PUBLICATION` subject/policy | F1, F2, F3 |
 | F6 | `PublishedRates::line_for` + `LineSelector` + tier pick; `QuoteRequestLine.denomination_group`; `quote_in` step 3 | F2 |
@@ -734,4 +734,54 @@ several rows per currency on a tiered publication (§9.4).
 
 ### 9.5 No database change
 Nothing here adds or changes a table, column or constraint. No data-migration section is needed.
+
+## 10. The admin screen for banknote groups (F3w, amendment 2026-10-11)
+
+> designed-by: claude/c954feda · measured on `main` `32a8a8b` · owner's order *"เปิดใบ F3w แล้วจ่ายงานเลย"*
+
+### 10.1 What is missing
+F3 merged the three commands (`api/src/presentation/http/v3/commands/denomination_groups.rs`:
+`denominationGroupCreate` POST `/api/denomination-groups`, `denominationGroupMap` POST
+`/api/denomination-groups/map`, `denominationGroupRemove` POST `/api/denomination-groups/remove`), but **no view reads the
+groups**, so a screen has nothing to show. §2's F3w row named only the screen; this section adds the view.
+
+### 10.2 The view `admin_denomination_groups`
+| Piece | File | Kind |
+|---|---|---|
+| view `AdminDenominationGroupsView` (`BranchView`, `NAME = "admin_denomination_groups"`, `INHERITS = (EntryPath::Rpc, "rateDraft")` — the same row as the three commands, `VERSIONED = false`, `Filter = NoFilter`) | `api/src/presentation/http/v3/views/admin_denomination_groups.rs` (new) | `[required]` |
+| DTOs | `api/src/presentation/dto/v3/admin_denomination_groups.rs` (new; `build.rs` generates the DTO module list, no `mod.rs` edit) | `[required]` |
+| generated TS | `web/src/shared/api/generated/admin_denomination_groups.ts` (written by `XC_UPDATE_GENERATED=1 cargo test --test v3_types_test`) | `[required]` |
+
+```text
+AdminDenominationGroupsData { provider: String /* "RATE_BOARD" */, currencies: Vec<GroupCurrencyDto> }
+GroupCurrencyDto  { currency: String, groups: Vec<GroupDto> }          // currency order: code ascending
+GroupDto          { group: String, instrumentKey: Option<String>,      // group order: 'ALL' first, then ascending
+                    removable: bool }
+```
+- **Currencies:** every currency that has a `denominations` row (each seeded currency has its `'ALL'` row).
+- **`instrumentKey`:** the `denomination_group_sources` row for provider `RATE_BOARD`, else `null`.
+- **`removable`:** the same three refusals `DenominationGroupService::remove_group` applies — not `'ALL'`, no
+  `face_value IS NOT NULL` row in the group, and no current publication of any branch prices it — so the screen offers
+  "remove" exactly when the command would accept it. The service stays the authority; the flag is for display.
+- A new view needs no `mod.rs` edit: `api/build.rs` (`:161`) generates the view table, as it does the command and DTO tables.
+
+### 10.3 The screen `web/src/screens/admin/denomination-groups/`
+| File | Kind |
+|---|---|
+| `menu.ts` — `id: 'denomination-groups'` (the folder name, `menus.ts` `collectMenus`), `roles: ['OWNER']`, `group: 'money'`, `dated: false` | `[required]` |
+| `DenominationGroups.tsx`, `i18n.ts` (`th`, `en`, namespace `admin.denomination-groups.*`), `denomination-groups.css` | `[proposed]` names, `[required]` folder |
+
+Behaviour:
+- Reads `admin_denomination_groups` for the picked branch; a `<select>` picks one currency; its groups are listed.
+- **Add a group:** an input (upper-case letters, digits, `_`, 1–32 — the same rule as `GroupCode::new`; checked before
+  sending) and a button → `ApiClient.command('POST', '/api/denomination-groups', { currency, group, branch }, key)`.
+- **Map a group:** each group row has an input for the board key and a save button →
+  `command('POST', '/api/denomination-groups/map', { currency, group, provider: 'RATE_BOARD', instrumentKey, branch }, key)`.
+  An empty or blank key is not sent.
+- **Remove a group:** shown only when `removable`; → `command('POST', '/api/denomination-groups/remove', { currency, group, branch }, key)`.
+- Each write carries its own non-empty idempotency key, then re-reads the view. A refusal shows the server's `message`.
+- Only the owner sees the menu (`roles: ['OWNER']`), matching the commands' OWNER-only service check.
+
+### 10.4 No database change
+The view reads existing tables only. No data-migration section is needed.
 
