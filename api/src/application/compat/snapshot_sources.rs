@@ -20,7 +20,7 @@ use std::pin::Pin;
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Money, Rate, Side};
+use xc_kernel::money::{Money, Rate, Side, UnitSize};
 use xc_kernel::payment::PaymentRules;
 
 use crate::application::compat::v2_json::People;
@@ -44,6 +44,7 @@ pub struct SnapshotTransaction {
     pub currency: String,
     pub amount: Money,
     pub rate: Rate,
+    pub unit_size: UnitSize,
     pub reference_rate: Option<Rate>,
     pub fee: Money,
     pub bank_fee: Money,

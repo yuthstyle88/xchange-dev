@@ -3887,6 +3887,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-cash"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "pos-infra",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "xc-auth",
+ "xc-kernel",
+ "xc-shift",
+]
+
+[[package]]
 name = "xc-customer"
 version = "0.1.0"
 dependencies = [
@@ -4012,6 +4032,19 @@ dependencies = [
  "xc-approval",
  "xc-auth",
  "xc-kernel",
+]
+
+[[package]]
+name = "xc-referral"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "rust_decimal",
+ "sqlx",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

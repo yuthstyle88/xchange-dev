@@ -14,6 +14,9 @@
 //! calling the service the dispatcher will call, with the step's `at` as `now`.
 #![allow(dead_code)]
 
+#[path = "../rates_re4c_common/mod.rs"]
+pub mod rates_re4c_common;
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
@@ -36,7 +39,7 @@ use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::customer::value_objects::customer_details::CustomerDetails;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side, UnitSize};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
@@ -694,6 +697,9 @@ pub fn transaction_of(recorded: &Value, method: &str) -> SnapshotTransaction {
         currency: text_of(recorded, "currency"),
         amount: money_of(&recorded["amount"]),
         rate: rate_of(&recorded["rate"]),
+        // amended for #757 (RE-4c, rates.md §4.9 R9, ruling of 2026-10-10): the row's own
+        // unit; v2 recorded every rate per 1, so the row is stored per 1 unit
+        unit_size: UnitSize::parse("1").expect("a unit"),
         reference_rate: recorded
             .get("referenceRate")
             .filter(|v| !v.is_null())
@@ -842,13 +848,21 @@ impl<'f> Replay<'f> {
             "adminDeskConfig" if on_rpc => self.compare_desk(step).await,
             // the staff path's view of the two reads is T11s's
             "adminSnapshot" | "adminDeskConfig" => {}
+            // Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): the answer of the direct save
+            // shows the publication, without the rate just saved; the harness then publishes
+            // what the step saved, as the owner would, so later steps see it.
             "adminSaveRate" => {
-                self.save_rate(step).await;
-                self.compare_write(step, None).await;
+                let saved = self.save_rate(step).await;
+                self.compare_write(step, None, Some(saved.as_str())).await;
+                rates_re4c_common::publish_newest_rates(
+                    &self.shop.db.pool,
+                    branch_of(self.fixture, step).as_str(),
+                )
+                .await;
             }
             "adminCreateBranch" => {
                 let created = self.create_branch(step).await;
-                self.compare_write(step, Some(created)).await;
+                self.compare_write(step, Some(created), None).await;
             }
             "adminOpenShift" => {
                 let cmd = OpenShift::from_payload(&self.payload(step)).expect("a recorded opening");
@@ -863,7 +877,7 @@ impl<'f> Replay<'f> {
                     )
                     .await
                     .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
-                self.compare_write(step, None).await;
+                self.compare_write(step, None, None).await;
             }
             "adminMoveStock" => {
                 let cmd =
@@ -878,7 +892,7 @@ impl<'f> Replay<'f> {
                     )
                     .await
                     .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
-                self.compare_write(step, None).await;
+                self.compare_write(step, None, None).await;
             }
             "adminCloseShift" => {
                 let cmd = CloseShift::from_payload(&self.payload(step)).expect("a recorded close");
@@ -892,7 +906,7 @@ impl<'f> Replay<'f> {
                     )
                     .await
                     .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
-                self.compare_write(step, None).await;
+                self.compare_write(step, None, None).await;
             }
             "adminAbandonRequest" => {
                 let resolution = AbandonRequest::new(self.shop.db.branch_tx())
@@ -910,7 +924,7 @@ impl<'f> Replay<'f> {
                     "{}",
                     self.label(step)
                 );
-                self.compare_write(step, None).await;
+                self.compare_write(step, None, None).await;
             }
             "reserveCustomer" => self.reserve(step).await,
             "saveTransaction" => self.feed_save(step).await,
@@ -944,7 +958,8 @@ impl<'f> Replay<'f> {
         );
     }
 
-    async fn save_rate(&mut self, step: &Step) {
+    /// The direct save of a recorded step; answers the code saved.
+    async fn save_rate(&mut self, step: &Step) -> String {
         let payload = self.payload(step);
         let code = text_of(&payload, "code");
         self.shop
@@ -952,7 +967,7 @@ impl<'f> Replay<'f> {
             .answer_next(recorded_reference(step, &code));
         let cmd = SaveRate {
             request_id: text_of(&payload, "requestId"),
-            code,
+            code: code.clone(),
             buy: number_text(&payload, "buy").expect("buy"),
             sell: number_text(&payload, "sell").expect("sell"),
             partner_name: optional_text(&payload, "partnerName").unwrap_or_default(),
@@ -969,6 +984,7 @@ impl<'f> Replay<'f> {
             )
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
+        code
     }
 
     async fn create_branch(&mut self, step: &Step) -> BranchId {
@@ -1090,7 +1106,15 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)))
             .to_value();
-        let recorded = self.decided_customers(step, without_dropped_keys(step.json()));
+        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10)
+        let recorded = rates_re4c_common::as_published(
+            &self.shop.db.pool,
+            branch_of(self.fixture, step).as_str(),
+            &without_dropped_keys(step.json()),
+            None,
+        )
+        .await;
+        let recorded = self.decided_customers(step, recorded);
         self.ids.learn(&recorded, &actual);
         assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.snapshots += 1;
@@ -1104,8 +1128,16 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)))
             .to_value();
-        self.ids.learn(step.json(), &actual);
-        assert_same(&self.ids.to_actual(step.json()), &actual, &self.label(step));
+        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10, R3)
+        let recorded = rates_re4c_common::as_published(
+            &self.shop.db.pool,
+            branch_of(self.fixture, step).as_str(),
+            step.json(),
+            None,
+        )
+        .await;
+        self.ids.learn(&recorded, &actual);
+        assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.desks += 1;
     }
 
@@ -1116,7 +1148,16 @@ impl<'f> Replay<'f> {
     /// of both sides: `requestResolution` (the dispatcher adds what the abandon
     /// workflow answered) and, on the staff path, the two links the staff view
     /// rewrites.
-    async fn compare_write(&mut self, step: &Step, answered_for: Option<BranchId>) {
+    ///
+    /// Amended for #757 (RE-4c, D-3, §4.9 R10): `rates` is held to the publication of the
+    /// branch (`rates_re4c_common::as_published`); `saved` is the code an `adminSaveRate` step
+    /// saved, which the answer does not show.
+    async fn compare_write(
+        &mut self,
+        step: &Step,
+        answered_for: Option<BranchId>,
+        saved: Option<&str>,
+    ) {
         let here = answered_for.unwrap_or_else(|| branch_of(self.fixture, step));
         let snapshot = self
             .shop
@@ -1125,10 +1166,14 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
         let mut actual = write_answer(&snapshot).to_value();
-        let mut recorded = self.decided_customers(
-            step,
-            without_keys(&without_dropped_keys(step.json()), &["requestResolution"]),
-        );
+        let recorded = rates_re4c_common::as_published(
+            &self.shop.db.pool,
+            here.as_str(),
+            &without_keys(&without_dropped_keys(step.json()), &["requestResolution"]),
+            saved,
+        )
+        .await;
+        let mut recorded = self.decided_customers(step, recorded);
         if step.path() == Some("/api/staff/rpc") {
             recorded = without_keys(&recorded, &["sheetUrl", "deskUrl"]);
             actual = without_keys(&actual, &["sheetUrl", "deskUrl"]);

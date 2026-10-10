@@ -526,8 +526,28 @@ fn actor_single_branch(actor: &Who) -> Option<BranchId> {
 }
 
 impl Policy {
-    /// The row of the route table for `action` on `path` (§4.2); `None` = no row.
-    pub fn need(path: EntryPath, action: &Action) -> Option<Need> {
+    /// `need` over the given area rows (PL-0b #1014): the first area row with the same
+    /// `(path, action)` answers its `need`; otherwise `need_table` answers. `need` is
+    /// `need_with(AREA_ROWS, …)`.
+    pub fn need_with(
+        areas: &[&[crate::domain::policy::areas::AreaRow]],
+        path: EntryPath,
+        action: &Action,
+    ) -> Option<Need> {
+        let act = action.as_str();
+        for area in areas {
+            for row in *area {
+                if row.path == path && row.action == act {
+                    return Some(row.need);
+                }
+            }
+        }
+        Self::need_table(path, action)
+    }
+
+    /// The route table itself (§4.2), without the area rows. PL-0b moves today's `need` match
+    /// here unchanged.
+    pub fn need_table(path: EntryPath, action: &Action) -> Option<Need> {
         let act = action.as_str();
         match path {
             EntryPath::Rpc => match act {
@@ -613,6 +633,11 @@ impl Policy {
                 _ => None,
             },
         }
+    }
+
+    /// The row of the route table for `action` on `path` (§4.2); `None` = no row.
+    pub fn need(path: EntryPath, action: &Action) -> Option<Need> {
+        Self::need_with(crate::domain::policy::areas::AREA_ROWS, path, action)
     }
 
     /// Whether `actor` may ask for `action` on `path`, naming `named`, at `now`; and on which branch

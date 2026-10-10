@@ -446,8 +446,9 @@ async fn m1_leaves_the_request_model_untouched() {
 
 #[tokio::test]
 async fn m1_keeps_the_per_branch_open_shift_index() {
-    // The index swap is CA-3's M2, not M1.
-    let db = Db::fresh().await;
+    // The index swap is CA-3's M2, not M1. CA-3 (#619): read the schema as M1 leaves it, since M2 now follows it.
+    let db = Db::before_m1().await;
+    db.m1().await.expect("M1 applies");
     assert_eq!(
         db.count(
             "SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() \

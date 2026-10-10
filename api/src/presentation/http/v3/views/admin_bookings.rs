@@ -13,12 +13,12 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_exchange::domain::booking::entities::booking::{Booking, CompatRate};
+use xc_exchange::domain::booking::entities::booking::Booking;
 use xc_exchange::domain::booking::value_objects::booking_status::BookingStatus;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
+    CompatRate, CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
 };
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
@@ -174,7 +174,8 @@ impl PagedView for AdminBookingsPagedView {
                         match side_str.as_str() {
                             "BUY" => {
                                 if let Some(buy_rate) = buy_opt {
-                                    let per_one = CompatRate::per_one(buy_rate, unit_size);
+                                    let per_one = CompatRate::per_one(buy_rate, unit_size)
+                                        .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
                                     let cr = format_per_one_rate(per_one);
                                     let cp = ExchangeArithmetic::thb(
                                         ForeignAmount::from_decimal(amount),
@@ -189,7 +190,8 @@ impl PagedView for AdminBookingsPagedView {
                             }
                             "SELL" => {
                                 if let Some(sell_rate) = sell_opt {
-                                    let per_one = CompatRate::per_one(sell_rate, unit_size);
+                                    let per_one = CompatRate::per_one(sell_rate, unit_size)
+                                        .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
                                     let cr = format_per_one_rate(per_one);
                                     let cp = ExchangeArithmetic::thb(
                                         ForeignAmount::from_decimal(amount),
@@ -309,12 +311,22 @@ impl BranchView for AdminBookingSettingsBranchView {
                     .transpose()
                     .map_err(|e| AppError::Internal(format!("invalid sell_rate: {e}")))?;
 
-                let buy_str = buy
-                    .map(|b| format_per_one_rate(CompatRate::per_one(b, unit_size)))
-                    .unwrap_or_default();
-                let sell_str = sell
-                    .map(|s| format_per_one_rate(CompatRate::per_one(s, unit_size)))
-                    .unwrap_or_default();
+                let buy_str = match buy {
+                    Some(b) => {
+                        let per_one = CompatRate::per_one(b, unit_size)
+                            .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
+                        format_per_one_rate(per_one)
+                    }
+                    None => String::new(),
+                };
+                let sell_str = match sell {
+                    Some(s) => {
+                        let per_one = CompatRate::per_one(s, unit_size)
+                            .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
+                        format_per_one_rate(per_one)
+                    }
+                    None => String::new(),
+                };
 
                 counter_rates.push(AdminBookingCounterRate {
                     currency: code.trim().to_string(),

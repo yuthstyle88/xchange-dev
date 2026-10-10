@@ -209,7 +209,8 @@ fn redeem_cmd() -> RedeemBooking {
         currency: code("USD"),
         // the same amount and rate written another way: compared as numbers, not text
         amount: money("100"),
-        rate: rate("32.1"),
+        // amended for #757 (RE-4c, rates.md §4.9 R7): the form's rate is the exact per-1 Decimal
+        rate: Decimal::from_str("32.1").expect("a decimal"),
         form_booking: "BK-1".to_owned(),
         customer_id: "C-1".to_owned(),
         customer_confirmed: true,
@@ -853,7 +854,8 @@ fn redeem_form_must_match_the_booking() {
         (
             "rate",
             RedeemBooking {
-                rate: rate("32.1001"),
+                // amended for #757 (RE-4c, rates.md §4.9 R7): the form's rate is the exact per-1 Decimal
+                rate: Decimal::from_str("32.1001").expect("a decimal"),
                 ..redeem_cmd()
             },
         ),

@@ -320,7 +320,8 @@ fn redeem_compares_the_desks_rate_per_1() {
         side: Side::Buy,
         currency: code("JPY"),
         amount: money("1000"),
-        rate: rate(r),
+        // amended for #757 (RE-4c, rates.md §4.9 R7): the form's rate is the exact per-1 Decimal
+        rate: Decimal::from_str(r).expect("a decimal"),
         form_booking: "BK-1".to_owned(),
         customer_id: "C-1".to_owned(),
         customer_confirmed: true,

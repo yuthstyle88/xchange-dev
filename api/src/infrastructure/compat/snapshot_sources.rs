@@ -14,6 +14,8 @@
 use chrono::Utc;
 use pos_error::AppError;
 use serde_json::json;
+use sqlx::PgPool;
+use std::collections::HashMap;
 use xc_auth::application::account::service::{AccountService, EmployeesAnswer};
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -22,6 +24,7 @@ use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::UnitSize;
 use xc_kernel::payment::PaymentRules;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 
@@ -39,6 +42,7 @@ const READER: &str = "snapshot";
 /// `SnapshotSources` over the services on main.
 #[derive(Clone)]
 pub struct ServiceSnapshotSources {
+    pool: PgPool,
     transactions: TransactionService,
     accounts: AccountService<PgAccountRepository>,
     payment_settings: PaymentSettingsService,
@@ -55,8 +59,9 @@ impl ServiceSnapshotSources {
         let store = BranchSettingStore::new(pool.clone());
         let branches = PgBranchRepository::new(pool.clone());
         let payment_settings = PaymentSettingsService::new(branch_tx, store, branches);
-        let members = PgMemberRepository::new(pool);
+        let members = PgMemberRepository::new(pool.clone());
         Self {
+            pool,
             transactions,
             accounts,
             payment_settings,
@@ -69,7 +74,7 @@ impl ServiceSnapshotSources {
 /// recorded as `staff` — the dispatcher sets it to the caller's username before
 /// it saves, as v2's routes do — and the method is the stored one: the builder
 /// prints the old `SCB Transfer` as `Bank Transfer`.
-fn snapshot_transaction(saved: Transaction) -> SnapshotTransaction {
+fn snapshot_transaction(saved: Transaction, unit_size: UnitSize) -> SnapshotTransaction {
     SnapshotTransaction {
         document_ref: saved.document_ref,
         recorded_at: saved.recorded_at,
@@ -78,6 +83,7 @@ fn snapshot_transaction(saved: Transaction) -> SnapshotTransaction {
         currency: saved.currency,
         amount: saved.amount,
         rate: saved.rate,
+        unit_size,
         reference_rate: saved.reference_rate,
         fee: saved.fee,
         bank_fee: saved.bank_fee,
@@ -99,7 +105,34 @@ impl SnapshotSources for ServiceSnapshotSources {
     ) -> SourceFuture<'a, Vec<SnapshotTransaction>> {
         Box::pin(async move {
             let saved = self.transactions.list(branch, Mode::Live).await?;
-            Ok(saved.into_iter().map(snapshot_transaction).collect())
+            if saved.is_empty() {
+                return Ok(Vec::new());
+            }
+            let unit_rows: Vec<(String, rust_decimal::Decimal)> = sqlx::query_as(
+                "SELECT document_ref, unit_size FROM transactions WHERE branch_id = $1 AND mode = 'LIVE'",
+            )
+            .bind(branch.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+            let mut unit_map: HashMap<String, UnitSize> = HashMap::with_capacity(unit_rows.len());
+            for (doc, u) in unit_rows {
+                let us = UnitSize::from_decimal(u).map_err(|e| {
+                    AppError::Internal(format!("invalid unit_size for transaction {doc}: {e}"))
+                })?;
+                unit_map.insert(doc, us);
+            }
+            let mut result = Vec::with_capacity(saved.len());
+            for s in saved {
+                let unit_size = unit_map.get(&s.document_ref).copied().ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "missing unit_size for transaction {}",
+                        s.document_ref
+                    ))
+                })?;
+                result.push(snapshot_transaction(s, unit_size));
+            }
+            Ok(result)
         })
     }
 

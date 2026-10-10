@@ -335,7 +335,10 @@ async fn execute_action(
     let actor_id = actor.map_or("owner", |a| a.id());
     match action {
         BookingAction::List => match booking_service.list(branch, now).await {
-            Ok(list) => answer(200, list_json(branch, &list, now), true),
+            Ok(list) => match list_json(branch, &list, now) {
+                Ok(val) => answer(200, val, true),
+                Err(_) => server_error(),
+            },
             Err(AppError::Domain(sentence)) => refuse(400, &sentence),
             Err(AppError::Database(_)) | Err(AppError::Internal(_)) => server_error(),
             Err(_) => server_error(),
@@ -346,7 +349,10 @@ async fn execute_action(
                 Err(_) => return refuse(400, FILL_IN),
             };
             match booking_service.get(branch, &id).await {
-                Ok(view) => answer(200, booking_view_json(&view, now), true),
+                Ok(view) => match booking_view_json(&view, now) {
+                    Ok(val) => answer(200, val, true),
+                    Err(_) => server_error(),
+                },
                 Err(AppError::Domain(sentence)) => refuse(400, &sentence),
                 Err(AppError::Database(_)) | Err(AppError::Internal(_)) => server_error(),
                 Err(_) => server_error(),
@@ -416,14 +422,17 @@ async fn execute_action(
             };
 
             match booking_service.create(branch, cmd, actor_id, now).await {
-                Ok(booking) => answer(
-                    200,
-                    json!({
-                        "saved": true,
-                        "booking": booking_json(&booking, now),
-                    }),
-                    true,
-                ),
+                Ok(booking) => match booking_json(&booking, now) {
+                    Ok(b) => answer(
+                        200,
+                        json!({
+                            "saved": true,
+                            "booking": b,
+                        }),
+                        true,
+                    ),
+                    Err(_) => server_error(),
+                },
                 Err(AppError::Domain(sentence)) => refuse(400, &sentence),
                 Err(AppError::Database(_)) | Err(AppError::Internal(_)) => server_error(),
                 Err(_) => server_error(),

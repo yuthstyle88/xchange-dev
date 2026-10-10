@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -13,14 +14,17 @@ use xc_exchange::domain::exchange::entities::receipt::receipt_html;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::document_ref::DocumentRef;
 use xc_exchange::domain::exchange::value_objects::transaction_form::{
-    FILE_MISSING, TransactionForm,
+    FILE_MISSING, TOO_MANY_DECIMALS, TransactionForm,
 };
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Side};
+use xc_kernel::money::{
+    CompatRate, CurrencyCode, ExchangeArithmetic, ForeignAmount, Rate, Side, UnitSize,
+};
 use xc_rate::application::branch::service::BranchService;
-use xc_rate::application::rate::service::RateService;
+use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
@@ -258,6 +262,71 @@ impl SaveTransactionWorkflow {
                         .transactions
                         .find_submission_in(tx, &branch, mode, &form.submission_id)
                         .await?;
+
+                    let mut stored_line_id: Option<uuid::Uuid> = None;
+                    let mut stored_rate: Rate = form.rate;
+                    let mut stored_unit_size: UnitSize = UnitSize::ONE;
+
+                    if prior.is_none()
+                        && let Some((extras, booking, _)) = &stepped
+                    {
+                            if let Some(req_id) =
+                                extras.kiosk_request_id.as_deref().filter(|s| !s.is_empty())
+                            {
+                                let row: Option<(Decimal, Decimal, Option<uuid::Uuid>)> =
+                                    sqlx::query_as(
+                                        "SELECT rate, unit_size, published_rate_line_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+                                    )
+                                    .bind(branch.as_str())
+                                    .bind(req_id)
+                                    .fetch_optional(&mut **tx)
+                                    .await
+                                    .map_err(AppError::Database)?;
+
+                                if let Some((req_rate, req_unit, req_line_id)) = row {
+                                    let unit_size = UnitSize::from_decimal(req_unit)
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    let req_rate_vo = Rate::parse(&req_rate.normalize().to_string())
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    let req_per_one = CompatRate::per_one(req_rate_vo, unit_size)
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    if form.client_rate != req_per_one {
+                                        return refuse(RATE_MISMATCH);
+                                    }
+                                    stored_line_id = req_line_id;
+                                    stored_rate = req_rate_vo;
+                                    stored_unit_size = unit_size;
+                                }
+                            }
+
+                            if let Some(claim) = booking {
+                                let row: Option<(Decimal, Decimal, Option<uuid::Uuid>)> =
+                                    sqlx::query_as(
+                                        "SELECT rate, unit_size, published_rate_line_id FROM bookings WHERE branch_id = $1 AND id = $2",
+                                    )
+                                    .bind(branch.as_str())
+                                    .bind(&claim.booking_id)
+                                    .fetch_optional(&mut **tx)
+                                    .await
+                                    .map_err(AppError::Database)?;
+
+                                if let Some((bk_rate, bk_unit, bk_line_id)) = row {
+                                    let unit_size = UnitSize::from_decimal(bk_unit)
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    let bk_rate_vo = Rate::parse(&bk_rate.normalize().to_string())
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    let bk_per_one = CompatRate::per_one(bk_rate_vo, unit_size)
+                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                                    if bk_line_id.is_some() && form.client_rate != bk_per_one {
+                                        return refuse(RATE_MISMATCH);
+                                    }
+                                    stored_line_id = bk_line_id;
+                                    stored_rate = bk_rate_vo;
+                                    stored_unit_size = unit_size;
+                                }
+                            }
+                    }
+
                     if let Some((extras, booking, actor)) = &stepped {
                         let ctx = SaveContext {
                             branch: &branch,
@@ -301,32 +370,60 @@ impl SaveTransactionWorkflow {
                             return Err(ShiftError::NoOpenShift.into());
                         }
                         let code = CurrencyCode::parse(&form.currency).ok();
-                        let vouched = stepped.as_ref().is_some_and(|(extras, booking, actor)| {
-                            let ctx = SaveContext {
-                                branch: &branch,
-                                form: &form,
-                                extras,
-                                booking: booking.as_ref(),
-                                actor,
-                                now,
-                                prior: None,
-                            };
-                            this.steps.iter().any(|s| s.vouches_for_rate(&ctx))
-                        });
+                        let vouched = stored_line_id.is_some()
+                            || stepped.as_ref().is_some_and(|(extras, booking, actor)| {
+                                let ctx = SaveContext {
+                                    branch: &branch,
+                                    form: &form,
+                                    extras,
+                                    booking: booking.as_ref(),
+                                    actor,
+                                    now,
+                                    prior: None,
+                                };
+                                this.steps.iter().any(|s| s.vouches_for_rate(&ctx))
+                            });
                         if !vouched {
-                            let counter = match code {
-                                Some(code) if !code.is_thb() => {
-                                    RateService::rate_in(tx, &branch, code).await?
-                                }
-                                _ => None,
-                            };
-                            let (Some(_), Some((buy, sell))) = (code, counter) else {
+                            let Some(code) = code else {
                                 return refuse(RATE_MISMATCH);
                             };
-                            let current = if form.side == Side::Buy { buy } else { sell };
-                            if current != form.rate {
+                            if code.is_thb() {
                                 return refuse(RATE_MISMATCH);
                             }
+                            let published_rates =
+                                PgPublishedRates::new(this.shifts.branch_tx().pool().clone());
+                            let published_side = published_rates
+                                .line_in(tx, &branch, code, form.side)
+                                .await?;
+                            let Some(side) = published_side else {
+                                return refuse(RATE_MISMATCH);
+                            };
+
+                            let per_one = CompatRate::per_one(side.rate, side.unit_size)
+                                .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                            if form.client_rate != per_one {
+                                return refuse(RATE_MISMATCH);
+                            }
+
+                            if side.stale {
+                                let stale_policy =
+                                    published_rates.stale_policy_in(tx, &side).await?;
+                                let foreign = ForeignAmount::from_decimal(
+                                    Decimal::from_i128_with_scale(
+                                        form.amount.minor_i128(),
+                                        2,
+                                    ),
+                                );
+                                let thb_amount =
+                                    ExchangeArithmetic::thb(foreign, side.rate, side.unit_size);
+                                if stale_policy.admits(&side, thb_amount).is_err() {
+                                    return refuse(RATE_MISMATCH);
+                                }
+                            }
+
+                            stored_line_id = Some(side.line_id.as_uuid());
+                            stored_rate = side.rate;
+                            stored_unit_size = side.unit_size;
                         }
                         let Some(code) = code else {
                             return refuse(RATE_MISMATCH);
@@ -341,6 +438,15 @@ impl SaveTransactionWorkflow {
                         .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
                         shift_id = Some(this.shifts.apply_delta_in(tx, &branch, &delta).await?);
                     }
+
+                    let stored_reference_rate = if let Some(client_ref) = form.client_reference_rate {
+                        let per_unit_ref = client_ref * stored_unit_size.value();
+                        let parsed = Rate::parse(&per_unit_ref.normalize().to_string())
+                            .map_err(|_| AppError::Domain(TOO_MANY_DECIMALS.to_owned()))?;
+                        Some(parsed)
+                    } else {
+                        form.reference_rate
+                    };
 
                     let number = this
                         .transactions
@@ -364,8 +470,8 @@ impl SaveTransactionWorkflow {
                         side: form.side,
                         currency: form.currency.clone(),
                         amount: form.amount,
-                        rate: form.rate,
-                        reference_rate: form.reference_rate,
+                        rate: stored_rate,
+                        reference_rate: stored_reference_rate,
                         principal: form.quote.principal,
                         fee: form.fee,
                         bank_fee: form.bank_fee,
@@ -388,6 +494,26 @@ impl SaveTransactionWorkflow {
                     this.transactions
                         .record_in(tx, &saved, &payload_hash)
                         .await?;
+                    if let Some(line_id) = stored_line_id {
+                        sqlx::query(
+                            "UPDATE transactions SET published_rate_line_id = $1, unit_size = $2::numeric WHERE document_ref = $3",
+                        )
+                        .bind(line_id)
+                        .bind(stored_unit_size.value())
+                        .bind(&document_ref)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+                    } else if stored_unit_size != UnitSize::ONE {
+                        sqlx::query(
+                            "UPDATE transactions SET unit_size = $1::numeric WHERE document_ref = $2",
+                        )
+                        .bind(stored_unit_size.value())
+                        .bind(&document_ref)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+                    }
                     CustomerService::record_exchange_in(
                         tx,
                         &branch,

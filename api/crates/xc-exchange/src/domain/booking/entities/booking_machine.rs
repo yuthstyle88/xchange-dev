@@ -2,10 +2,12 @@
 
 use chrono::{DateTime, Duration, Utc};
 
+use xc_kernel::money::CompatRate;
+
 use crate::domain::booking::commands::confirm_booking::ConfirmBooking;
 use crate::domain::booking::commands::create_booking::CreateBooking;
 use crate::domain::booking::commands::redeem_booking::RedeemBooking;
-use crate::domain::booking::entities::booking::{Booking, CompatRate};
+use crate::domain::booking::entities::booking::Booking;
 use crate::domain::booking::entities::booking_steps::{
     CancelStep, ConfirmStep, CreateFacts, NewBooking, RedeemStep,
 };
@@ -39,7 +41,10 @@ impl BookingMachine {
             return Err(BookingError::NoShift);
         }
         let counter = match facts.counter {
-            Some(line) if CompatRate::per_one(line.rate, line.unit_size) == cmd.expected_rate => {
+            Some(line)
+                if CompatRate::per_one(line.rate, line.unit_size).ok()
+                    == Some(cmd.expected_rate) =>
+            {
                 line
             }
             _ => return Err(BookingError::RateMoved),
@@ -111,7 +116,9 @@ impl BookingMachine {
             None => return Err(BookingError::RateMoved),
         };
 
-        if expected_rate != CompatRate::per_one(current_line.rate, current_line.unit_size) {
+        if CompatRate::per_one(current_line.rate, current_line.unit_size).ok()
+            != Some(expected_rate)
+        {
             return Err(BookingError::RateMoved);
         }
 
@@ -170,7 +177,7 @@ impl BookingMachine {
             || cmd.side != booking.side
             || cmd.currency != booking.currency
             || cmd.amount != booking.amount
-            || cmd.rate.value() != CompatRate::per_one(booking.rate, booking.unit_size)
+            || CompatRate::per_one(booking.rate, booking.unit_size).ok() != Some(cmd.rate)
             || cmd.form_booking != booking.id
             || !cmd.customer_confirmed
         {

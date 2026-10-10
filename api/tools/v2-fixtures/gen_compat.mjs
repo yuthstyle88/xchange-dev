@@ -851,7 +851,7 @@ async function engineActions() {
   await x('saveTransaction', tx({ amount: 0 }));
   await x('saveTransaction', tx({ amount: 1.005 }), 'three decimals');
   await x('saveTransaction', tx({ amount: 100000001 }));
-  await x('saveTransaction', tx({ rate: 32.200000001 }), 'nine decimals');
+  await x('saveTransaction', tx({ rate: 32.200000000001 }), 'twelve decimals');
   await x('saveTransaction', tx({ fee: -1 }));
   await x('saveTransaction', tx({ method: 'Cheque' }));
   await x('saveTransaction', tx({ paidAt: 'yesterday' }));

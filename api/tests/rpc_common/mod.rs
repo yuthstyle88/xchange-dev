@@ -64,7 +64,9 @@ use xchange::presentation::http::rpc::RpcClock;
 
 use crate::common::settings;
 use crate::compat_common::{Fixture, IdMap, Person, Step};
-use crate::snapshot_common::{TestDb, assert_same, recorded_reference, time, without_dropped_keys};
+use crate::snapshot_common::{
+    TestDb, assert_same, rates_re4c_common, recorded_reference, time, without_dropped_keys,
+};
 
 pub const MAIN: &str = "MAIN";
 pub const OWNER_PASSWORD: &str = "owner-password-01";
@@ -959,7 +961,7 @@ impl<'f> Replay<'f> {
 
         match rule {
             Rule::Replay => {
-                self.hold_to_recorded(step, &answer);
+                self.hold_to_recorded(step, &answer).await;
                 self.tally.replayed.push(step.n);
             }
             Rule::Differs { status, sentence } => {
@@ -991,6 +993,8 @@ impl<'f> Replay<'f> {
                 }
                 assert_eq!(answer.status, 200, "{label}: {:.300}", answer.text);
                 let actual = answer.json();
+                // amended for #757 (RE-4c): rates[] is the publication (D-3, §4.9 R10)
+                let expected = self.as_published(step, &actual, &expected).await;
                 self.ids.learn(&expected, &actual);
                 assert_same(&self.ids.to_actual(&expected), &actual, &label);
                 self.tally.differences.push(step.n);
@@ -1012,7 +1016,36 @@ impl<'f> Replay<'f> {
             }
             Rule::Excluded(_) => unreachable!("handled above"),
         }
+        // Amended for #757 (RE-4c, rates.md D-3): the counter rate is the current publication,
+        // which a direct save no longer changes. An accepted `adminSaveRate` is followed by the
+        // publication of what it saved, as the owner would publish it, so the steps after it
+        // (saves at that rate, snapshots showing it) keep v2's meaning. The kiosk page's
+        // `configure` is published by `kiosk_http_common`'s replay (#756 RE-4b).
+        let direct_save = action_of(step).as_deref() == Some("adminSaveRate");
+        if direct_save && answer.status == 200 {
+            rates_re4c_common::publish_newest_rates(
+                &self.desk.db.pool,
+                self.branch_of(step).as_str(),
+            )
+            .await;
+        }
         self.answers.insert(step.n, answer);
+    }
+
+    /// A recorded answer re-expected for #757 (RE-4c): `rates` as the branch's current
+    /// publication shows them (`rates_re4c_common::as_published`). Only the v2 snapshot shapes
+    /// (`adminSnapshot`, `adminDeskConfig`, the six write answers) are, and they name their
+    /// branch; any other answer (the kiosk's `rates`, RE-4b's) is left as recorded. An
+    /// `adminSaveRate` answer does not show the rate it saved (D-3, R10).
+    async fn as_published(&self, step: &Step, actual: &Value, expected: &Value) -> Value {
+        let Some(branch) = actual.get("branchId").and_then(Value::as_str) else {
+            return expected.clone();
+        };
+        let saved = (action_of(step).as_deref() == Some("adminSaveRate"))
+            .then(|| step.payload.as_ref().map(|p| text_of(p, "code")))
+            .flatten();
+        rates_re4c_common::as_published(&self.desk.db.pool, branch, expected, saved.as_deref())
+            .await
     }
 
     /// What the Bank of Thailand answers during this step: the reference v2
@@ -1034,7 +1067,7 @@ impl<'f> Replay<'f> {
     }
 
     /// Status, headers and body against what v2 answered.
-    pub fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) {
+    pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) {
         let label = self.label(step);
         assert_eq!(
             Some(answer.status),
@@ -1068,7 +1101,10 @@ impl<'f> Replay<'f> {
             return;
         }
         let actual = answer.json();
-        let mut expected = without_dropped_keys(step.json());
+        // amended for #757 (RE-4c): rates[] is the publication (D-3, §4.9 R10)
+        let mut expected = self
+            .as_published(step, &actual, &without_dropped_keys(step.json()))
+            .await;
         // CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (COMPANY_CUSTOMERS)
         if let Some(list) = crate::compat_common::company_customers(self.fixture, step.n) {
             expected = crate::compat_common::with_customers_of(

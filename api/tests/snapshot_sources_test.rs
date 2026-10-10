@@ -24,7 +24,7 @@ use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
-use xc_kernel::money::{Rate, Side};
+use xc_kernel::money::{Rate, Side, UnitSize};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_shift::application::custody::service::CustodyService;
@@ -164,6 +164,8 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
                 currency: "USD".to_owned(),
                 amount: money("100"),
                 rate: Rate::parse("32.1").unwrap(),
+                // amended for #757 (RE-4c, R9): the row's own unit, as stored
+                unit_size: UnitSize::parse("1").unwrap(),
                 reference_rate: None,
                 fee: money("0"),
                 bank_fee: money("0"),
@@ -184,6 +186,8 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
                 currency: "USD".to_owned(),
                 amount: money("250.5"),
                 rate: Rate::parse("33").unwrap(),
+                // amended for #757 (RE-4c, R9): the row's own unit, as stored
+                unit_size: UnitSize::parse("1").unwrap(),
                 reference_rate: Some(Rate::parse("32.95").unwrap()),
                 fee: money("10"),
                 bank_fee: money("1.5"),

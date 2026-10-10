@@ -489,6 +489,11 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
         )
         .await
         .expect("a rate at the airport");
+    // Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): `rates[]` is the branch's current
+    // publication, which a direct save no longer changes; each branch publishes what it saved.
+    for here in [MAIN, airport.as_str()] {
+        snapshot_common::rates_re4c_common::publish_newest_rates(&shop.db.pool, here).await;
+    }
     let opening =
         json!({"requestId": "00000000-0000-4000-8000-0000000b0004", "opening": {"THB": 20000}});
     snapshot_common::seed_opener(&shop.db.pool, "be2").await;
@@ -721,8 +726,14 @@ async fn a_transaction_is_printed_field_for_field_in_v2s_order() {
             side: xc_kernel::money::Side::Sell,
             currency: "JPY".to_string(),
             amount: xc_kernel::money::Money::parse("1000.50").expect("money"),
-            rate: xc_kernel::money::Rate::parse("0.2105").expect("rate"),
-            reference_rate: Some(xc_kernel::money::Rate::parse("0.2199").expect("rate")),
+            // amended for #757 (RE-4c, rates.md §4.9 R1/R3): a JPY row stores its rate per
+            // 100 (21.05); the snapshot prints v2's per-1 rate, 0.2105
+            rate: xc_kernel::money::Rate::parse("21.05").expect("rate"),
+            // amended for #757 (RE-4c, R9, ruling of 2026-10-10): the row's own unit
+            unit_size: xc_kernel::money::UnitSize::parse("100").expect("a unit"),
+            // amended for #757 (RE-4c, rates.md §4.9 R3, ruling of 2026-10-10): the reference is
+            // stored per 100 too (21.99) and printed per 1, 0.2199
+            reference_rate: Some(xc_kernel::money::Rate::parse("21.99").expect("rate")),
             fee: xc_kernel::money::Money::parse("25.50").expect("money"),
             bank_fee: xc_kernel::money::Money::parse("5.00").expect("money"),
             method: "PromptPay".to_string(),

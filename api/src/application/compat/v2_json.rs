@@ -202,7 +202,7 @@ fn stored_number_text(n: &serde_json::Number) -> String {
 
 /// Plain decimal text (`"1000.50"`, `"-0.50"`, `"32.1000"`) as JavaScript prints
 /// the number: no trailing zero, no trailing point.
-fn shortest(decimal: &str) -> String {
+pub fn shortest(decimal: &str) -> String {
     if !decimal.contains('.') {
         return decimal.to_string();
     }

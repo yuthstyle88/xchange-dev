@@ -57,13 +57,15 @@ fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> 
     let time_str = bkk_time.format("%d/%m/%Y %H:%M").to_string();
     let value_date_str = form.value_date.format("%Y-%m-%d").to_string();
 
+    let booked_rate = format_booked_rate(form.client_rate);
+
     let rows: [(&str, &str, &str); 19] = [
         (" receipt-number", "Receipt No", document_ref),
         ("", "Type", side_str),
         (" passenger", "Customer", &form.customer.name),
         ("", "Currency", &form.currency),
         ("", "Amount", &form.amount.to_string()),
-        ("", "Booked Rate", &form.rate.to_string()),
+        ("", "Booked Rate", &booked_rate),
         ("", "Branch", branch_name),
         ("", "Document Ref", document_ref),
         ("", "Customer ID", &form.customer_id),
@@ -122,4 +124,16 @@ fn escape_html(s: &str) -> String {
         }
     }
     out
+}
+
+fn format_booked_rate(d: rust_decimal::Decimal) -> String {
+    let norm = d.normalize();
+    let scale = norm.scale();
+    if scale < 4 {
+        let mut rescaled = norm;
+        rescaled.rescale(4);
+        rescaled.to_string()
+    } else {
+        norm.to_string()
+    }
 }
