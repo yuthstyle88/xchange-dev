@@ -2,3 +2,26 @@
 .xc-admin .xc-content .card.employees-card {
   padding: 20px;
 }
+
+.xc-admin .xc-content.xc-content .card.employees-card header > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.xc-admin .xc-content.xc-content .card.employees-card header label.employees-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.xc-admin .xc-content.xc-content .card.employees-card header label.employees-filter select {
+  width: auto;
+  min-width: 140px;
+  display: inline-block;
+  margin-top: 0;
+}
+
