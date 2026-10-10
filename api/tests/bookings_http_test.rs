@@ -101,8 +101,12 @@ const BAD_MEMBER_CODE: &str = "รหัสสมาชิกไม่ถูก�
 const BAD_RULES: &str = "กำหนดเวลา 5\u{2013}1440 นาที";
 const NO_REGISTRATION: &str = "ไม่พบการลงทะเบียนของสาขานี้";
 
-/// The counter roles (owner 2026-10-08).
-const COUNTER: [&str; 3] = ["FRONT", "BACKEND", "MANAGER"];
+/// The counter roles (owner 2026-10-08). OR-4b (#767, design §4.2 C9): `BookingsDesk` is TELLER's,
+/// and B1 makes FRONT a TELLER, so the counter is FRONT.
+const COUNTER: [&str; 1] = ["FRONT"];
+/// BACKEND and MANAGER: counter roles in v3, BRANCH_MANAGER under B1, refused the desk bookings by
+/// C9 (§03 B02: the user of the desk bookings is TELLER).
+const EX_COUNTER: [&str; 2] = ["BACKEND", "MANAGER"];
 /// Every other staff role.
 const NOT_COUNTER: [&str; 6] = [
     "RATES",
@@ -467,7 +471,11 @@ async fn owner_route_refusal_order() {
     }
 
     // 1. an employee of any role → 403, before the Origin check; no Cache-Control
-    for role in COUNTER.iter().chain(NOT_COUNTER.iter()) {
+    for role in COUNTER
+        .iter()
+        .chain(EX_COUNTER.iter())
+        .chain(NOT_COUNTER.iter())
+    {
         for call in [
             Call::post(ORIGIN, OWNER_ROUTE, body("list", &json!({}))),
             no_marker(Call::post(ORIGIN, OWNER_ROUTE, "not json")),
@@ -685,8 +693,23 @@ async fn staff_route_refusal_order() {
         EMPLOYEE_AUTH_REQUIRED,
     )
     .await;
-    for role in NOT_COUNTER {
+    // C9: the ex-counter roles are refused here with the other roles
+    for role in NOT_COUNTER.iter().chain(EX_COUNTER.iter()) {
         for action in ["list", "get", "create", "member"] {
+            room.refused(
+                STAFF_ROUTE,
+                Some(role),
+                action,
+                json!({}),
+                400,
+                ROLE_NOT_ALLOWED,
+            )
+            .await;
+        }
+    }
+    // C9: an ex-counter role is refused by role before the name is read
+    for role in EX_COUNTER {
+        for action in OWNER_ACTIONS.into_iter().chain(["nope", "List", ""]) {
             room.refused(
                 STAFF_ROUTE,
                 Some(role),
@@ -720,6 +743,8 @@ async fn staff_route_refusal_order() {
 }
 
 /// §5.6.8: `/api/staff/bookings` with only an owner's session → 401 `EMPLOYEE_AUTH_REQUIRED`.
+/// OR-4b (#767, design §4.2 C1): a staff path admits whoever holds its role; the owner's user
+/// (EXECUTIVE + ADMIN) holds no `BookingsDesk`, so it is refused by role (400) instead.
 #[actix_web::test]
 async fn staff_route_refuses_an_owner_session() {
     let room = Room::open().await;
@@ -729,8 +754,8 @@ async fn staff_route_refuses_an_owner_session() {
             Some("OWNER"),
             action,
             json!({ "branchId": MAIN }),
-            401,
-            EMPLOYEE_AUTH_REQUIRED,
+            400,
+            ROLE_NOT_ALLOWED,
         )
         .await;
     }
@@ -880,13 +905,14 @@ async fn every_refusal_is_json() {
             EMPLOYEE_AUTH_REQUIRED,
             true,
         ),
+        // C1: the owner's user is refused by role on a staff path
         (
             STAFF_ROUTE,
             Some("OWNER"),
             "list",
             json!({}),
-            401,
-            EMPLOYEE_AUTH_REQUIRED,
+            400,
+            ROLE_NOT_ALLOWED,
             true,
         ),
         (
@@ -934,9 +960,10 @@ async fn every_refusal_is_json() {
             INCOMPLETE,
             true,
         ),
+        // C9: the counter is FRONT
         (
             STAFF_ROUTE,
-            Some("BACKEND"),
+            Some("FRONT"),
             "confirm",
             json!({ "id": id, "expiresAt": "tomorrow" }),
             400,
@@ -945,7 +972,7 @@ async fn every_refusal_is_json() {
         ),
         (
             STAFF_ROUTE,
-            Some("MANAGER"),
+            Some("FRONT"),
             "cancel",
             json!({ "id": 5 }),
             400,
@@ -1010,6 +1037,18 @@ async fn list_default_rules_shape() {
     });
     assert_eq!(room.list(OWNER_ROUTE, "OWNER", None).await, empty);
     assert_eq!(room.list(OWNER_ROUTE, "OWNER", Some(AIRPORT)).await, empty);
+    // C9: an ex-counter role is refused the list
+    for role in EX_COUNTER {
+        room.refused(
+            STAFF_ROUTE,
+            Some(role),
+            "list",
+            json!({}),
+            400,
+            ROLE_NOT_ALLOWED,
+        )
+        .await;
+    }
     for role in COUNTER {
         assert_eq!(room.list(STAFF_ROUTE, role, None).await, empty, "{role}");
     }
@@ -1433,7 +1472,8 @@ async fn create_payload_refusals_in_order() {
         } else {
             with(&good, field, value)
         };
-        for (route, who) in [(OWNER_ROUTE, "OWNER"), (STAFF_ROUTE, "MANAGER")] {
+        // C9: the counter is FRONT
+        for (route, who) in [(OWNER_ROUTE, "OWNER"), (STAFF_ROUTE, "FRONT")] {
             room.refused(route, Some(who), "create", payload.clone(), 400, sentence)
                 .await;
         }
@@ -1512,7 +1552,8 @@ async fn get_answers_the_booking_and_customer_id() {
         )
         .await;
 
-    for (route, who) in [(OWNER_ROUTE, "OWNER"), (STAFF_ROUTE, "BACKEND")] {
+    // C9: the counter is FRONT
+    for (route, who) in [(OWNER_ROUTE, "OWNER"), (STAFF_ROUTE, "FRONT")] {
         let got = room
             .get(route, who, MAIN, walk["id"].as_str().expect("id"))
             .await;
@@ -1703,7 +1744,8 @@ async fn cancel_answers_saved() {
         .create(OWNER_ROUTE, "OWNER", walk_in("req-cancel-1"))
         .await;
     let id = walk["id"].as_str().expect("id").to_string();
-    for (route, who) in [(STAFF_ROUTE, "MANAGER"), (OWNER_ROUTE, "OWNER")] {
+    // C9: the counter is FRONT
+    for (route, who) in [(STAFF_ROUTE, "FRONT"), (OWNER_ROUTE, "OWNER")] {
         let saved = room
             .ok(route, who, "cancel", json!({ "branchId": MAIN, "id": id }))
             .await;
@@ -1904,6 +1946,20 @@ async fn registrations_are_empty() {
 async fn counter_roles_run_the_five_actions() {
     let room = Room::open().await;
     room.issue_member(SOMCHAI.0, SECRET_A).await;
+    // C9: an ex-counter role runs none of the five
+    for role in EX_COUNTER {
+        for action in ["list", "get", "create", "confirm", "cancel"] {
+            room.refused(
+                STAFF_ROUTE,
+                Some(role),
+                action,
+                json!({}),
+                400,
+                ROLE_NOT_ALLOWED,
+            )
+            .await;
+        }
+    }
     for role in COUNTER {
         let walk = room
             .create(STAFF_ROUTE, role, walk_in(&format!("req-{role}-walk")))
@@ -2043,7 +2099,8 @@ async fn staff_cannot_read_another_branch() {
 
     for (route, who, branch, id) in [
         (STAFF_ROUTE, "FRONT", AIRPORT, &air_id),
-        (STAFF_ROUTE, "BACKEND", MAIN, &air_id),
+        // C9: the counter is FRONT
+        (STAFF_ROUTE, "FRONT", MAIN, &air_id),
         (STAFF_ROUTE, "AIRPORT_FRONT", MAIN, &main_id),
         (OWNER_ROUTE, "OWNER", MAIN, &air_id),
         (OWNER_ROUTE, "OWNER", AIRPORT, &main_id),
@@ -2245,6 +2302,18 @@ async fn staff_desk_get() {
         .create(OWNER_ROUTE, "OWNER", walk_in("req-desk-2"))
         .await;
 
+    // C9: an ex-counter role gets no booking
+    for role in EX_COUNTER {
+        room.refused(
+            STAFF_ROUTE,
+            Some(role),
+            "get",
+            json!({ "branchId": MAIN, "id": id }),
+            400,
+            ROLE_NOT_ALLOWED,
+        )
+        .await;
+    }
     for role in COUNTER {
         let answer = room
             .post(

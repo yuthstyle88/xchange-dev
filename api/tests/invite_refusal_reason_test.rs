@@ -9,9 +9,6 @@
 //!   sent as `{"error": {"code": "inviteRefused", "reason": "<value>", "message": ...}}`;
 //!   `code` stays `inviteRefused` (HTTP 400) for all four.
 //!
-//! It also pins that `POST /api/auth/register` answers a taken phone with the code `alreadyRegistered`, which the
-//! invite step maps to its own sentence (lane controller's ruling on #763, 2026-10-10).
-//!
 //! Each of the four refusal paths is driven through `POST /api/auth/invite/claim` with OR-3's harness
 //! (`identity_signin_common`: Identity faked over real HTTP, fixed Ed25519 tokens).
 //!
@@ -227,51 +224,6 @@ async fn an_invite_for_a_disabled_user_is_user_disabled() {
         (None, "DISABLED".to_owned()),
         "nothing bound"
     );
-    assert_eq!(all_sessions(&desk.pool).await, 0);
-    desk.drop_schema().await;
-}
-
-// ── register: a phone that already has an account ─────────────────────────
-
-/// The invite step's "create one" tells "this phone already has an account" apart from every other register
-/// refusal by the BFF's **code** `alreadyRegistered` (409), mapped from Identity's error code, never from
-/// Identity's HTTP status (`http_identity_client.rs` `username_taken | email_taken | phone_taken`,
-/// `identity_client.rs:95`). OR-3 pins that mapping on `/api/auth/login` only; this pins it on
-/// `/api/auth/register`, the route the screen calls.
-#[actix_web::test]
-async fn register_for_a_taken_phone_answers_already_registered_by_code() {
-    let (desk, identity, app) = setup().await;
-    for (identity_status, identity_code) in [
-        (409, "phone_taken"),
-        (409, "email_taken"),
-        (409, "username_taken"),
-        // Same code, another status: the code decides.
-        (400, "phone_taken"),
-    ] {
-        identity.answer(
-            "/auth/register",
-            identity_status,
-            &json!({ "error": identity_code }).to_string(),
-        );
-        let reply = app
-            .send(Req::post(
-                "/api/auth/register",
-                json!({ "phone": "+66812345678", "password": "pw-from-the-browser-01" }),
-            ))
-            .await;
-        assert_eq!(
-            reply.status, 409,
-            "{identity_status} {identity_code}: {}",
-            reply.text
-        );
-        assert_eq!(
-            reply.json()["error"]["code"],
-            json!("alreadyRegistered"),
-            "{identity_status} {identity_code}: {}",
-            reply.text
-        );
-        assert!(reply.sets_no_session(), "{identity_code}");
-    }
     assert_eq!(all_sessions(&desk.pool).await, 0);
     desk.drop_schema().await;
 }

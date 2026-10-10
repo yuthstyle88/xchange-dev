@@ -225,10 +225,12 @@ async fn the_custody_day_is_answered_as_v2_answered_it() {
         LAST,
         "every step of the day is accounted for"
     );
-    // 134 − 9 of the owner's door − 15 uploads − 3 saves − 3 differences
+    // OR-4b (#767, C3): #19, the owner's adminMoveStock, is refused by role
+    assert_eq!(tally.blueprint, vec![19]);
+    // 134 − 9 of the owner's door − 15 uploads − 3 saves − 3 differences − 1 refused by role
     assert_eq!(
         tally.replayed.len(),
-        LAST - 9 - 15 - saves_in_the_gap.len() - 3
+        LAST - 9 - 15 - saves_in_the_gap.len() - 3 - 1
     );
     let held_to_v2: Vec<usize> = custody_steps
         .iter()

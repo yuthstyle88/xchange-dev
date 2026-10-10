@@ -53,7 +53,6 @@ use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -496,6 +495,49 @@ fn ids(rows: &Value, key: &str) -> Vec<String> {
 
 // ── who may read ─────────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 /// Nobody signed in: each view answers the policy's refusal as a v3 refusal (§8).
 #[actix_web::test]
 async fn nobody_signed_in_is_asked_to_sign_in_by_every_view() {
@@ -534,7 +576,8 @@ async fn every_view_answers_exactly_whom_the_devices_snapshot_row_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in &callers {
-        let policy = Policy::allow(actor.as_ref(), EntryPath::Devices, &Action::new("snapshot"));
+        // OR-4b (#767): the route table's rule, naming B9 (D-4: an employee of MAIN is refused)
+        let policy = blueprint_rule(actor.as_ref(), EntryPath::Devices, "snapshot", Some(B9));
         let branch = Policy::branch(actor.as_ref(), Some(&named));
         for view in VIEW_NAMES {
             let answer = room.get(who, &path(view, "branch=B9")).await;
@@ -565,12 +608,18 @@ async fn every_view_answers_exactly_whom_the_devices_snapshot_row_allows() {
             }
         }
     }
+    // D-4: the owner, alone or beside an employee, reads all four of B9; nobody and the nine
+    // employees of MAIN are refused all four
     assert_eq!(
         allowed,
-        4 * 19,
-        "every signed-in caller reads all four views"
+        4 * 10,
+        "the owner, alone or not, reads all four views"
     );
-    assert_eq!(refused, 4, "nobody is refused by all four");
+    assert_eq!(
+        refused,
+        4 * 10,
+        "nobody and every employee of MAIN are refused all four"
+    );
     room.finish().await;
 }
 
@@ -584,17 +633,26 @@ async fn a_staff_member_naming_another_branch_is_answered_for_their_own() {
     room.open_shift(B9, json!({ "THB": 100000 })).await;
     let b9_exchange = room.save(B9, "BUY", "1", "0", "LIVE").await;
 
-    let devices = room.data("FRONT", &path("devices", "branch=B9")).await;
+    // OR-4b (D-4): naming B9 is refused; naming MAIN, FRONT is answered for MAIN
+    for view in VIEW_NAMES {
+        assert_out_of_scope(
+            &room.get("FRONT", &path(view, "branch=B9")).await,
+            &format!("FRONT naming B9 on {view}"),
+        );
+    }
+    let devices = room.data("FRONT", &path("devices", "branch=MAIN")).await;
     assert_eq!(devices["branchId"], json!(MAIN), "FRONT works in MAIN");
     assert_eq!(
         devices["completedCount"],
         json!(0),
         "B9's exchange is not MAIN's"
     );
-    let jobs = room.data("FRONT", &path("device_jobs", "branch=B9")).await;
+    let jobs = room
+        .data("FRONT", &path("device_jobs", "branch=MAIN"))
+        .await;
     assert_eq!(ids(&jobs, "id"), vec![main_job.clone()], "MAIN's job only");
     let events = room
-        .data("FRONT", &path("device_events", "branch=B9"))
+        .data("FRONT", &path("device_events", "branch=MAIN"))
         .await;
     let mains: Vec<String> = sqlx::query_scalar(
         "SELECT e.seq::text FROM device_events e WHERE e.branch_id = 'MAIN' ORDER BY e.seq DESC",
@@ -605,7 +663,7 @@ async fn a_staff_member_naming_another_branch_is_answered_for_their_own() {
     assert!(!mains.is_empty(), "the queue wrote a line in MAIN");
     assert_eq!(ids(&events, "seq"), mains, "MAIN's lines only");
     let picker = room
-        .data("FRONT", &path("device_transactions", "branch=B9"))
+        .data("FRONT", &path("device_transactions", "branch=MAIN"))
         .await;
     assert_eq!(picker, json!([]), "MAIN has no exchange");
 
@@ -617,10 +675,10 @@ async fn a_staff_member_naming_another_branch_is_answered_for_their_own() {
         .await;
     assert_eq!(ids(&owners, "id"), vec![b9_exchange]);
 
-    // and FRONT's since is compared with MAIN's version
+    // and FRONT's since is compared with MAIN's version (D-4: naming MAIN)
     let v = room.version(MAIN).await;
     let body = room
-        .view("FRONT", &path("devices", &format!("branch=B9&since={v}")))
+        .view("FRONT", &path("devices", &format!("branch=MAIN&since={v}")))
         .await;
     is_unchanged(&body, v, "FRONT's since is MAIN's version");
     room.finish().await;
@@ -881,8 +939,9 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
 
     let v = room.version(MAIN).await;
     let shift = room.open_shift_id(MAIN).await;
+    // OR-4b (#767, design §4.2 C3): CashManage is BRANCH_MANAGER's and FINANCE's; FINANCE moves it
     room.ok(
-        "OWNER",
+        "FINANCE",
         RPC,
         "adminMoveStock",
         json!({ "branchId": MAIN, "requestId": request_id(), "shiftId": shift,

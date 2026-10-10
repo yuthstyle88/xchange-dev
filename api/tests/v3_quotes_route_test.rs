@@ -58,7 +58,6 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ts_rs::TS;
-use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -247,6 +246,37 @@ async fn refused(db: &TestDb, a: &Answer, code: &str, status: StatusCode, what: 
 }
 
 // ------------------------------------------------------------ the answer
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
 
 #[actix_web::test]
 async fn the_answer_has_every_field_with_money_as_strings_and_is_the_stored_quote() {
@@ -506,7 +536,15 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
     let save = Action::new("saveTransaction");
     let mut written = 0;
     for who in &callers {
-        let allowed = Policy::allow(actor_on_rpc(who).as_ref(), EntryPath::Rpc, &save).is_ok();
+        // OR-4b (#767, design §4.2 C2): the route table's rule; ExchangeTransact is TELLER's, so the
+        // owner's user is refused
+        let allowed = blueprint_rule(
+            actor_on_rpc(who).as_ref(),
+            EntryPath::Rpc,
+            save.as_str(),
+            None,
+        )
+        .is_ok();
         let a = ask(&db, who, &body("JPY", "BUY", "1000", None)).await;
         if allowed {
             assert_eq!(a.status, StatusCode::OK, "{who:?} may ask: body {}", a.text);
@@ -534,10 +572,8 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
             "{who:?}: only allowed callers store a quote"
         );
     }
-    assert!(
-        written >= 2,
-        "the owner and FRONT are allowed (today's row), got {written}"
-    );
+    // C2: FRONT (TELLER) alone is allowed
+    assert_eq!(written, 1, "FRONT is allowed, got {written}");
     db.finish().await;
 }
 
@@ -590,9 +626,11 @@ async fn the_owner_naming_a_branch_is_quoted_on_that_branchs_line() {
     db.branch("XC-B01").await;
     db.publish("MAIN", &[JPY]).await;
     let b01 = db.publish("XC-B01", &[B01_JPY]).await;
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so a TELLER (v2's FRONT) of
+    // XC-B01 asks where v2's owner did, naming XC-B01
     let a = ask(
         &db,
-        "owner",
+        "staff:FRONT:XC-B01",
         &on("XC-B01", body("JPY", "BUY", "1000", None)),
     )
     .await;
@@ -621,10 +659,11 @@ async fn a_branch_id_in_the_body_is_not_the_quotes_branch() {
     db.branch("XC-B01").await;
     let main = db.publish("MAIN", &[JPY]).await;
     db.publish("XC-B01", &[B01_JPY]).await;
-    // the owner names no `branch`: the seam runs on MAIN whatever `branchId` says
+    // MAIN's FRONT names no `branch`: the seam runs on MAIN whatever `branchId` says. OR-4b
+    // (#767, C2): FRONT (TELLER) asks where v2's owner did
     let mut b = body("JPY", "BUY", "1000", None);
     b["branchId"] = json!("XC-B01");
-    let a = ask(&db, "owner", &b).await;
+    let a = ask(&db, FRONT, &b).await;
     assert_eq!(a.status, StatusCode::OK, "body {}", a.text);
     assert_eq!(
         a.body["lines"][0]["thbAmount"],

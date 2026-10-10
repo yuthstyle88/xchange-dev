@@ -346,12 +346,14 @@ impl Room {
         id
     }
 
-    /// The owner moves stock into the open shift of `branch`; the request id.
+    /// FINANCE moves stock into the open shift of `branch` (a branch of FINANCE's: `MAIN`); the
+    /// request id. OR-4b (#767, design §4.2 C3): v2's owner moved it; CashManage is
+    /// BRANCH_MANAGER's and FINANCE's.
     async fn move_stock(&self, branch: &str) -> String {
         let shift = self.open_shift_id(branch).await;
         let id = request_id();
         self.ok(
-            "OWNER",
+            "FINANCE",
             "adminMoveStock",
             json!({ "branchId": branch, "requestId": id, "shiftId": shift,
                     "currency": "USD", "direction": "IN", "amount": 10, "reason": "from the safe" }),
@@ -510,6 +512,18 @@ fn assert_refused_naming(answer: &Answer, field: &str, what: &str) {
 
 // ── transaction_documents ────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 #[actix_web::test]
 async fn transaction_documents_answers_exactly_whom_the_documents_route_allows() {
     let room = Room::open().await;
@@ -606,12 +620,21 @@ async fn transaction_documents_answers_staff_from_their_own_branch() {
     let main = room.save(MAIN, false).await;
     let nine = room.save(B9, false).await;
 
-    // FRONT works in MAIN: naming B9 changes nothing
+    // FRONT works in MAIN. OR-4b (D-4): naming B9 is refused; naming MAIN reads MAIN
+    assert_out_of_scope(
+        &room
+            .get(
+                "FRONT",
+                &view_path(DOCUMENTS, &format!("branch=B9&ref={}", main.document_ref)),
+            )
+            .await,
+        "FRONT naming B9",
+    );
     let data = room
         .data(
             "FRONT",
             DOCUMENTS,
-            &format!("branch=B9&ref={}", main.document_ref),
+            &format!("branch=MAIN&ref={}", main.document_ref),
         )
         .await;
     assert_eq!(
@@ -874,10 +897,15 @@ async fn admin_request_status_answers_staff_for_their_own_branch() {
         json!({ "applied": false }),
         "a rate of B9 is not MAIN's"
     );
+    // OR-4b (D-4): FRONT works in MAIN; naming B9 is refused, naming MAIN reads MAIN
+    assert_out_of_scope(
+        &room.get("FRONT", &view_path(REQUEST_STATUS, &q(B9))).await,
+        "FRONT naming B9",
+    );
     assert_eq!(
-        room.data("FRONT", REQUEST_STATUS, &q(B9)).await,
+        room.data("FRONT", REQUEST_STATUS, &q(MAIN)).await,
         json!({ "applied": false }),
-        "FRONT works in MAIN whatever it names"
+        "FRONT works in MAIN"
     );
     room.finish().await;
 }
@@ -961,8 +989,15 @@ async fn admin_shift_state_is_per_branch_and_staff_read_their_own() {
         json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
         "no branch named: MAIN"
     );
+    // OR-4b (D-4): FRONT works in MAIN; naming B9 is refused, naming MAIN reads MAIN
+    assert_out_of_scope(
+        &room
+            .get("FRONT", &view_path(SHIFT_STATE, "branch=B9"))
+            .await,
+        "FRONT naming B9",
+    );
     assert_eq!(
-        room.data("FRONT", SHIFT_STATE, "branch=B9").await,
+        room.data("FRONT", SHIFT_STATE, "branch=MAIN").await,
         json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
         "FRONT works in MAIN"
     );

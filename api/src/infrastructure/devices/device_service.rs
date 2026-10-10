@@ -12,7 +12,6 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
@@ -543,18 +542,15 @@ impl DeviceService {
             .await
     }
 
-    /// Sets how the branch's printer is reached. Owner only.
+    /// Sets how the branch's printer is reached.
     pub async fn set_printer(
         &self,
         branch: &BranchId,
         kind: PrinterKind,
-        actor: &Actor,
+        _actor: &Actor,
         _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;
-        if actor.kind() != ActorKind::Owner {
-            return refuse("เฉพาะเจ้าของระบบเท่านั้น");
-        }
         match &kind {
             PrinterKind::Network(host, port) => {
                 if host.trim().is_empty() || *port == 0 {
@@ -585,19 +581,16 @@ impl DeviceService {
             .await
     }
 
-    /// Sets which printer model the branch uses and whether a drawer is connected. Owner only.
+    /// Sets which printer model the branch uses and whether a drawer is connected.
     pub async fn set_drawer(
         &self,
         branch: &BranchId,
         model: &str,
         has_drawer: bool,
-        actor: &Actor,
+        _actor: &Actor,
         _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;
-        if actor.kind() != ActorKind::Owner {
-            return refuse("เฉพาะเจ้าของระบบเท่านั้น");
-        }
         if self.printer_models.get(model).is_none() {
             return refuse(BAD_PRINTER);
         }

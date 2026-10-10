@@ -37,6 +37,8 @@ use serde_json::{Value, json};
 const ORIGIN: &str = "http://desk.test";
 const ROUTE: &str = "/api/drawer-passport";
 const ROLE_REFUSED: &str = "บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก";
+/// OR-4a's one new sentence (§10 `outOfScope`).
+const OUT_OF_SCOPE: &str = "สาขานี้อยู่นอกขอบเขตของบัญชีนี้";
 /// The roles v2 lets ask (`passport-drawer.mjs:15` of the 10-06 bundle).
 const DESK_ROLES: [&str; 4] = ["OWNER", "FRONT", "BACKEND", "MANAGER"];
 
@@ -119,6 +121,13 @@ impl Room {
     }
 }
 
+/// OR-4b (D-4): v2 let an employee through who names a branch other than their own (`MAIN`).
+fn names_another_branch(case: &Value) -> bool {
+    let who = case["who"].as_str().unwrap_or("OWNER");
+    let named = case["body"]["branchId"].as_str().unwrap_or("");
+    who != "OWNER" && !named.is_empty() && named != "MAIN" && case["status"] == json!(200)
+}
+
 fn label(case: &Value) -> String {
     format!(
         "row {} ({}) as {}",
@@ -152,15 +161,24 @@ async fn every_recorded_answer_of_the_switched_off_drawer() {
         let answer = room
             .ask(case["who"].as_str(), &case["headers"], body_of(case))
             .await;
+        // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): an employee v2 let through naming a
+        // branch other than their own (row 5) is refused as out of scope
+        let (status, expected) = if names_another_branch(case) {
+            (403, json!({ "error": OUT_OF_SCOPE }))
+        } else {
+            (
+                case["status"].as_u64().expect("a status") as u16,
+                case["answer"].clone(),
+            )
+        };
         assert_eq!(
-            answer.status,
-            case["status"].as_u64().expect("a status") as u16,
+            answer.status, status,
             "{what}: status: {:.300}",
             answer.text
         );
         let body: Value = serde_json::from_str(&answer.text)
             .unwrap_or_else(|e| panic!("{what}: the body is JSON ({e}): {:.300}", answer.text));
-        assert_eq!(body, case["answer"], "{what}: body");
+        assert_eq!(body, expected, "{what}: body");
         if let Some(cache) = case["cacheControl"].as_str() {
             assert_eq!(answer.header("cache-control"), Some(cache), "{what}");
         }
@@ -185,6 +203,9 @@ async fn only_the_four_desk_roles_reach_the_switch() {
                 (400, json!({ "error": ROLE_REFUSED }))
             } else if who == "OWNER" && branch != "MAIN" {
                 (400, json!({ "error": "สาขาไม่ถูกต้อง" }))
+            } else if branch != "MAIN" {
+                // OR-4b (#767, D-4): an employee naming another branch is out of scope
+                (403, json!({ "error": OUT_OF_SCOPE }))
             } else {
                 (
                     200,
@@ -260,7 +281,9 @@ fn demo_save(customer: &str, passport: &str, submission: &str) -> Value {
 #[actix_web::test]
 async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
     let room = Room::open().await;
-    let owner = &room.cookies["OWNER"];
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's; FRONT (TELLER under B1) reserves,
+    // uploads and saves
+    let teller = &room.cookies["FRONT"];
     let customer = ok(
         &room.app,
         Call::action(
@@ -273,7 +296,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
                 "passportExpiry": "2031-06-11", "mode": "DEMO",
             }),
         )
-        .cookie(owner),
+        .cookie(teller),
         "the customer",
     )
     .await["customerId"]
@@ -284,7 +307,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
         &room.app,
         Call::post(ORIGIN, "/api/upload?branch=MAIN", PNG)
             .header("content-type", "image/png")
-            .cookie(owner),
+            .cookie(teller),
         "the passport",
     )
     .await["uploadKey"]
@@ -301,7 +324,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
             "saveTransaction",
             demo_save(&customer, &passport, "00000000-0000-4000-8000-0000000d0001"),
         )
-        .cookie(owner),
+        .cookie(teller),
         "the save without drawerOrderId",
     )
     .await;
@@ -309,7 +332,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
     payload["drawerOrderId"] = json!("5e5e0001-0000-4000-8000-0000000000bb");
     let with = ok(
         &room.app,
-        Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(owner),
+        Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(teller),
         "the save with drawerOrderId",
     )
     .await;
@@ -331,12 +354,12 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
     bad["passport"] = json!({ "uploadKey": 7 });
     let refused_plain = room
         .app
-        .send(Call::action(ORIGIN, RPC, "saveTransaction", bad.clone()).cookie(owner))
+        .send(Call::action(ORIGIN, RPC, "saveTransaction", bad.clone()).cookie(teller))
         .await;
     bad["drawerOrderId"] = json!("5e5e0001-0000-4000-8000-0000000000cc");
     let refused_with = room
         .app
-        .send(Call::action(ORIGIN, RPC, "saveTransaction", bad).cookie(owner))
+        .send(Call::action(ORIGIN, RPC, "saveTransaction", bad).cookie(teller))
         .await;
     assert_eq!(refused_plain.status, 400, "{:.300}", refused_plain.text);
     assert_eq!(refused_with.status, refused_plain.status);

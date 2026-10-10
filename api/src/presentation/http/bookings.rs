@@ -139,16 +139,26 @@ async fn owner_bookings(
     let now = current_time(&req);
 
     // 1. Session and policy check (no Cache-Control)
-    let actor = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
-        let sessions = reader.sessions(&req).await;
-        sessions.owner.or(sessions.staff)
+    let callers = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
+        reader.callers(&req).await
     } else {
-        None
+        pages::Callers {
+            owner: None,
+            staff: None,
+            user: None,
+            staff_user: None,
+        }
     };
 
     let action_dummy = Action::new("/api/bookings");
-    match Policy::allow(actor.as_ref(), EntryPath::OwnerRoute, &action_dummy) {
-        Ok(()) => {}
+    match Policy::authorize(
+        callers.user.as_ref(),
+        EntryPath::OwnerRoute,
+        &action_dummy,
+        None,
+        now,
+    ) {
+        Ok(_) => {}
         Err(PolicyError::SignIn) => {
             return answer(401, json!({ "error": SIGN_IN }), false);
         }
@@ -222,12 +232,12 @@ async fn owner_bookings(
         Err(_) => return server_error(),
     }
 
-    // 8. Execute action
+    let actor = callers.owner.as_ref().or(callers.staff.as_ref());
     execute_action(
         action,
         &branch,
         &payload,
-        actor.as_ref(),
+        actor,
         now,
         &booking_service,
         &rules_service,
@@ -275,25 +285,28 @@ async fn staff_bookings(
     };
 
     // 4. Session and policy check
-    let actor = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
-        let sessions = reader.sessions(&req).await;
-        sessions.staff.or(sessions.owner)
+    let callers = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
+        reader.callers(&req).await
     } else {
-        None
+        pages::Callers {
+            owner: None,
+            staff: None,
+            user: None,
+            staff_user: None,
+        }
     };
 
     let action_str = body.get("action").and_then(|a| a.as_str()).unwrap_or("");
     let action = Action::new(action_str);
 
-    if let Err(refusal) = Policy::allow(actor.as_ref(), EntryPath::StaffBookings, &action) {
-        return refuse(refusal.status(), &refusal.to_string());
-    }
+    let actor_user = callers.staff_user.as_ref().or(callers.user.as_ref());
+    let grant = match Policy::authorize(actor_user, EntryPath::StaffBookings, &action, None, now) {
+        Ok(grant) => grant,
+        Err(refusal) => return refuse(refusal.status(), &refusal.to_string()),
+    };
 
     // 5. Branch: the employee's own branch
-    let branch = actor
-        .as_ref()
-        .and_then(|a| a.branch_id().cloned())
-        .unwrap_or_else(|| BranchId::new("MAIN"));
+    let branch = grant.branch;
 
     // 6. Branch existence check
     match booking_service.branch_exists(&branch).await {
@@ -315,7 +328,7 @@ async fn staff_bookings(
         booking_action,
         &branch,
         &payload,
-        actor.as_ref(),
+        callers.staff.as_ref(),
         now,
         &booking_service,
         &rules_service,

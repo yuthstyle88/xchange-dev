@@ -46,10 +46,6 @@ const NEOCAL_KICK: [u8; 7] = [0x1B, 0x40, 0x1B, 0x70, 0x00, 0x19, 0xFA];
 /// `ESC @` then `ESC p 1 40 120`: a model that pulses the other pin.
 const OTHER_KICK: [u8; 7] = [0x1B, 0x40, 0x1B, 0x70, 0x01, 0x28, 0x78];
 
-/// The v2 sentence for an action only the owner may take (R2), as
-/// `set_printer` answers it (`device_service.rs:386-387`).
-const OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้น";
-
 /// `queue`'s answer to a drawer request where the branch has no drawer.
 const NO_DRAWER: &str = "สาขานี้ไม่มีลิ้นชัก";
 
@@ -711,8 +707,11 @@ async fn an_unknown_model_is_refused_and_nothing_is_stored() {
 
 #[tokio::test]
 async fn only_the_owner_sets_the_drawer() {
+    // OR-4b (#767, design §4.2 C5): who may set the drawer is the route table's alone
+    // (`Policy::need(Devices, setDrawer)` = SystemSettings: EXECUTIVE and ADMIN), asked by the
+    // route (`devices_set_printer_test.rs`); the service no longer judges the caller's role, so
+    // each role's call reaches the setting
     let db = Devices::start().await;
-    let before = db.stored().await;
 
     for role in [
         Role::Front,
@@ -727,12 +726,8 @@ async fn only_the_owner_sets_the_drawer() {
             .service
             .set_drawer(&branch(MAIN), NEOCAL, false, &staff(role), at(1))
             .await;
-        assert_eq!(refusal(answer), OWNER_ONLY, "{role:?}");
+        assert!(answer.is_ok(), "{role:?}: {answer:?}");
     }
-    assert!(
-        db.stored().await.same_as(&before),
-        "a refusal stores nothing"
-    );
 
     db.finish().await;
 }

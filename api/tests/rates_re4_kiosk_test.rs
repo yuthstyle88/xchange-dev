@@ -373,7 +373,8 @@ fn listed(body: &Value, text: &str) -> Vec<(String, Decimal, Decimal)> {
 /// 0.231 / 0.235; the stored row keeps 23.5 per 100 (R1).
 #[actix_web::test]
 async fn the_kiosk_json_rate_is_per_one() {
-    let counter = Counter::open(&[]).await;
+    let fr1 = kiosk_http_common::person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(&[fr1]).await;
     let pool = counter.desk.db.pool.clone();
     publish(
         &pool,
@@ -421,10 +422,10 @@ async fn the_kiosk_json_rate_is_per_one() {
     assert_eq!(number(&item["thb"], "list thb"), d("2350"), "{item}");
 
     let accepted = counter
-        .ask(Some("owner"), "accept", json!({ "id": id }))
+        .ask(Some("FR1"), "accept", json!({ "id": id }))
         .await;
     assert_eq!(accepted.status, 200, "{}", accepted.text);
-    let got = counter.ask(Some("owner"), "get", json!({ "id": id })).await;
+    let got = counter.ask(Some("FR1"), "get", json!({ "id": id })).await;
     assert_eq!(got.status, 200, "{}", got.text);
     assert_eq!(
         number(&got.json()["rate"], "get rate"),

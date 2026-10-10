@@ -54,7 +54,6 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -471,6 +470,49 @@ fn callers() -> Vec<(String, Option<Actor>)> {
 
 // ── who may read ─────────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 /// §8: nobody signed in gets the `manage` row's refusal, as a v3 refusal.
 #[actix_web::test]
 async fn nobody_signed_in_gets_the_kiosk_manage_refusal() {
@@ -521,7 +563,8 @@ async fn the_view_answers_exactly_whom_the_kiosk_manage_row_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(actor.as_ref(), EntryPath::Kiosk, &Action::new("manage"));
+        // OR-4b (#767): the route table's rule, naming B9 (D-4: RATES of MAIN is refused)
+        let policy = blueprint_rule(actor.as_ref(), EntryPath::Kiosk, "manage", Some(B9));
         let answer = room.get(&who, &path("branch=B9")).await;
         let what = format!("as {who:?}");
         match &policy {
@@ -553,13 +596,14 @@ async fn the_view_answers_exactly_whom_the_kiosk_manage_row_allows() {
             }
         }
     }
+    // D-4: RATES of MAIN naming B9 is refused too
     assert_eq!(
-        allowed, 11,
-        "the owner, RATES, and the owner beside each of the nine roles"
+        allowed, 10,
+        "the owner, and the owner beside each of the nine roles"
     );
     assert_eq!(
-        refused, 10,
-        "nobody, the eight other roles, the must-change employee"
+        refused, 11,
+        "nobody, the nine roles, the must-change employee"
     );
     room.finish().await;
 }
@@ -578,7 +622,12 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
     room.set_rate_with_partner(B9, "SGD", "25.9", "26.6", "SuperRich", Some("25.5"))
         .await;
 
-    let rates = room.data("RATES", "branch=B9").await;
+    // OR-4b (D-4): RATES naming B9 is refused; naming MAIN they read MAIN's
+    assert_out_of_scope(
+        &room.get("RATES", &path("branch=B9")).await,
+        "RATES naming B9",
+    );
+    let rates = room.data("RATES", "branch=MAIN").await;
     let usd = currency(&rates, "USD");
     assert_eq!(usd["buy"], json!("32.10000000"), "RATES works in MAIN");
     assert_eq!(usd["sell"], json!("33.00000000"));
@@ -676,7 +725,7 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
         v,
         "a write in B9 leaves MAIN's version"
     );
-    let body = room.view("RATES", &format!("branch=B9&since={v}")).await;
+    let body = room.view("RATES", &format!("branch=MAIN&since={v}")).await;
     is_unchanged(&body, v, "RATES's since is MAIN's version");
     room.finish().await;
 }

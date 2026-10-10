@@ -35,7 +35,6 @@ use compat_common::Person;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -303,6 +302,49 @@ fn assert_operations_match(data: &Value, operations: &Value, what: &str) {
 
 // ── admin_employees: who may read (W8, ticket §8) ───────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 #[actix_web::test]
 async fn admin_employees_asks_nobody_signed_in_to_sign_in() {
     let room = Room::open().await;
@@ -325,7 +367,8 @@ async fn admin_employees_answers_exactly_whom_the_owner_route_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(actor.as_ref(), EntryPath::OwnerRoute, &Action::new("list"));
+        // OR-4b (#767): the route table's rule (C4: UsersManage is ADMIN's, so SYSTEM reads it)
+        let policy = blueprint_rule(actor.as_ref(), EntryPath::OwnerRoute, "list", Some(MAIN));
         let answer = room.get(&who, &path(STAFF_VIEW, "branch=MAIN")).await;
         let what = format!("{STAFF_VIEW} as {who:?}");
         match &policy {
@@ -356,11 +399,16 @@ async fn admin_employees_answers_exactly_whom_the_owner_route_allows() {
             }
         }
     }
-    assert_eq!(allowed, 1 + Role::STAFF.len(), "the owner, alone or not");
+    // C4: and SYSTEM, which B1 makes ADMIN
+    assert_eq!(
+        allowed,
+        1 + Role::STAFF.len() + 1,
+        "the owner, alone or not, and SYSTEM"
+    );
     assert_eq!(
         refused,
-        1 + Role::STAFF.len(),
-        "nobody, and every staff role"
+        1 + Role::STAFF.len() - 1,
+        "nobody, and every staff role but SYSTEM"
     );
     room.finish().await;
 }
@@ -523,11 +571,8 @@ async fn admin_operations_answers_exactly_whom_the_admin_snapshot_row_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(
-            actor.as_ref(),
-            EntryPath::Rpc,
-            &Action::new("adminSnapshot"),
-        );
+        // OR-4b (#767): the route table's rule, naming A1 (D-4: an employee of MAIN is refused)
+        let policy = blueprint_rule(actor.as_ref(), EntryPath::Rpc, "adminSnapshot", Some("A1"));
         let answer = room.get(&who, &path(OPS_VIEW, "branch=A1")).await;
         let what = format!("{OPS_VIEW} as {who:?}");
         match &policy {
@@ -549,7 +594,8 @@ async fn admin_operations_answers_exactly_whom_the_admin_snapshot_row_allows() {
             }
         }
     }
-    assert!(allowed >= 2, "the owner and at least one employee read it");
+    // D-4: the owner reads it, alone or beside an employee; every employee of MAIN is refused A1
+    assert_eq!(allowed, 1 + Role::STAFF.len(), "the owner, alone or not");
     assert!(refused >= 1, "nobody signed in is refused");
     room.finish().await;
 }
@@ -607,7 +653,11 @@ async fn admin_operations_answers_the_named_branch_and_staff_their_own() {
     let main = room.view(OPS_VIEW, "OWNER", "branch=MAIN").await;
     assert_eq!(main["data"]["entity"], Value::Null, "MAIN has none: {main}");
 
-    for query in ["", "branch=MAIN", "branch=Z9", "branch=A1"] {
+    // OR-4b (D-4): staff of A1 naming another branch are refused; naming none or A1 they read A1's
+    for query in ["branch=MAIN", "branch=Z9"] {
+        assert_out_of_scope(&room.get("FRONT_A1", &path(OPS_VIEW, query)).await, query);
+    }
+    for query in ["", "branch=A1"] {
         let staff = room.view(OPS_VIEW, "FRONT_A1", query).await;
         assert_eq!(staff["data"], a1["data"], "FRONT of A1 with {query:?}");
         assert_eq!(

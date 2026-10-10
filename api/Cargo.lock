@@ -3901,6 +3901,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "xc-approval",
  "xc-auth",
  "xc-kernel",
  "xc-shift",
@@ -4024,6 +4025,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "xc-auth",
  "xc-kernel",
 ]
 
@@ -4112,6 +4114,7 @@ dependencies = [
  "uuid",
  "xc-approval",
  "xc-auth",
+ "xc-cash",
  "xc-customer",
  "xc-exchange",
  "xc-kernel",

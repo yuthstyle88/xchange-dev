@@ -310,7 +310,19 @@ impl Room {
         let desk = Desk::open().await;
         desk.db.seed_branch(B9, "Nine").await;
         let app = rpc_app!(desk);
-        let people = one_of_each_role();
+        let mut people = one_of_each_role();
+        // OR-4b (#767, design §4.2 C3): CashManage is BRANCH_MANAGER's and FINANCE's, so stock in
+        // B9 is moved by a FINANCE of B9
+        let mut finance_b9 = people
+            .iter()
+            .find(|p| p.key == "FINANCE")
+            .expect("FINANCE")
+            .clone();
+        finance_b9.key = "FINANCE_B9".to_string();
+        finance_b9.id = "00000000-0000-4000-8000-0000000000b9".to_string();
+        finance_b9.username = "financeb9".to_string();
+        finance_b9.branch_id = Some(B9.to_string());
+        people.push(finance_b9);
         desk.employ(&people).await;
         let cookies = sign_in(&app, ORIGIN, &people).await;
         let t0 = snapshot_common::time("2026-10-06T05:00:00.000Z");
@@ -502,7 +514,8 @@ impl Room {
             .await
     }
 
-    /// The owner moves stock in the open shift of `branch`; the new movement's id.
+    /// FINANCE of `branch` moves stock in its open shift; the new movement's id. OR-4b (C3): v2's
+    /// owner moved it; CashManage is BRANCH_MANAGER's and FINANCE's.
     async fn move_stock(
         &self,
         branch: &str,
@@ -513,8 +526,13 @@ impl Room {
     ) -> String {
         let shift = self.open_shift_id(branch).await;
         let req = request_id();
+        let mover = if branch == MAIN {
+            "FINANCE"
+        } else {
+            "FINANCE_B9"
+        };
         self.ok(
-            "OWNER",
+            mover,
             "adminMoveStock",
             json!({ "branchId": branch, "requestId": req, "shiftId": shift,
                     "currency": currency, "direction": direction, "amount": amount,
@@ -652,6 +670,49 @@ fn callers() -> Vec<(String, Option<Actor>)> {
 
 // ── who may read it, who may write ───────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 /// Ticket §8: the three views answer whoever `adminSnapshot` admits on `Rpc` (W8, §4.4), and the
 /// writes keep v2's rows — open / close BACKEND and MANAGER, move FINANCE (`policy.rs:83-86`): a
 /// FRONT caller's open and close and a BACKEND caller's move get the policy's refusal, unchanged.
@@ -695,17 +756,18 @@ async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writ
     }
 
     // the writes: the role rows of v2's actions, unchanged (W8)
+    // OR-4b (#767, C3): BACKEND (BRANCH_MANAGER) moves stock now; FRONT (TELLER) does not
     for (who, action) in [
         ("FRONT", "adminOpenShift"),
         ("FRONT", "adminCloseShift"),
-        ("BACKEND", "adminMoveStock"),
+        ("FRONT", "adminMoveStock"),
     ] {
         let actor = Actor::staff(
             "employee",
             Role::parse(who).expect("a role"),
             BranchId::new(MAIN),
         );
-        let refusal = Policy::allow(actor.as_ref(), EntryPath::Rpc, &Action::new(action))
+        let refusal = blueprint_rule(actor.as_ref(), EntryPath::Rpc, action, Some(MAIN))
             .expect_err("the policy refuses this pair");
         let answer = room
             .post(
@@ -1090,8 +1152,9 @@ async fn the_movements_page_is_newest_recorded_first_across_shifts_with_keyset_p
     room.desk.clock.set(room.t0 - Duration::days(3));
     let req = request_id();
     let answer = room
+        // OR-4b (C3): FINANCE moves stock
         .post_now(
-            "OWNER",
+            "FINANCE",
             "adminMoveStock",
             json!({ "branchId": MAIN, "requestId": req, "shiftId": second_shift,
                     "currency": "USD", "direction": "IN", "amount": "1", "reason": "ย้อนเวลา" }),
@@ -1304,11 +1367,20 @@ async fn the_owner_reads_the_branch_named_and_staff_their_own() {
         vec![nine.clone()]
     );
 
+    // OR-4b (D-4): an employee of MAIN naming B9 is refused; naming MAIN they read MAIN
+    for who in ["FRONT", "FINANCE"] {
+        for view in [CASH, MOVEMENTS, SHIFTS] {
+            assert_out_of_scope(
+                &room.get(who, &view_path(view, "branch=B9")).await,
+                &format!("{who} naming B9 on {view}"),
+            );
+        }
+    }
     for (who, query) in [
         ("OWNER", "branch=MAIN"),
         ("OWNER", ""),
-        ("FRONT", "branch=B9"),
-        ("FINANCE", "branch=B9"),
+        ("FRONT", "branch=MAIN"),
+        ("FINANCE", "branch=MAIN"),
     ] {
         let cash = room.data(CASH, who, query).await;
         assert_eq!(

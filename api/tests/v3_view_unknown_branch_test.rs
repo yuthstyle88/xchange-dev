@@ -487,6 +487,18 @@ fn is_changed(a: &Answer, version: i64, what: &str) {
 
 // ------------------------------------------------------------ a branch view
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn is_out_of_scope(a: &Answer, what: &str) {
+    assert_eq!(a.status.as_u16(), 403, "{what}: status; body {}", a.body);
+    assert_eq!(
+        a.body["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{what}: {}",
+        a.body
+    );
+}
+
 #[actix_web::test]
 async fn a_branch_view_refuses_an_unknown_branch_without_loading() {
     let db = TestDb::start().await;
@@ -699,22 +711,35 @@ async fn a_staff_caller_naming_an_unknown_branch_is_answered_for_their_own() {
     let views = Views::new();
     db.write(B01).await;
     let staff = format!("staff:FRONT:{B01}");
+    // OR-4b (D-4): naming XC-GONE is refused and nothing is loaded; naming its own branch, it is
+    // answered for it
+    for view in ["test-ub-count", "test-ub-paged", "test-ub-own"] {
+        let refused = get(
+            &db,
+            &views,
+            &staff,
+            &format!("/api/v3/views/{view}?branch={GONE}"),
+        )
+        .await;
+        is_out_of_scope(&refused, view);
+    }
+    assert_eq!(views.loads(), 0, "a refused view loads nothing");
 
     let a = get(
         &db,
         &views,
         &staff,
-        &format!("/api/v3/views/test-ub-count?branch={GONE}"),
+        &format!("/api/v3/views/test-ub-count?branch={B01}"),
     )
     .await;
-    is_changed(&a, 1, "FRONT of XC-B01 naming XC-GONE");
+    is_changed(&a, 1, "FRONT of XC-B01 naming its own");
     assert_eq!(a.body["data"]["branch"], B01);
 
     let b = get(
         &db,
         &views,
         &staff,
-        &format!("/api/v3/views/test-ub-count?branch={GONE}&since=1"),
+        &format!("/api/v3/views/test-ub-count?branch={B01}&since=1"),
     )
     .await;
     is_unchanged(&b, 1, "since of XC-B01");
@@ -723,23 +748,23 @@ async fn a_staff_caller_naming_an_unknown_branch_is_answered_for_their_own() {
         &db,
         &views,
         &staff,
-        &format!("/api/v3/views/test-ub-paged?branch={GONE}"),
+        &format!("/api/v3/views/test-ub-paged?branch={B01}"),
     )
     .await;
-    is_changed(&p, 1, "paged: FRONT of XC-B01 naming XC-GONE");
+    is_changed(&p, 1, "paged: FRONT of XC-B01 naming its own");
     assert_eq!(p.body["data"], json!([{ "branch": B01 }]));
 
     let o = get(
         &db,
         &views,
         &staff,
-        &format!("/api/v3/views/test-ub-own?branch={GONE}&since={OWN_VERSION}"),
+        &format!("/api/v3/views/test-ub-own?branch={B01}&since={OWN_VERSION}"),
     )
     .await;
     is_unchanged(
         &o,
         OWN_VERSION,
-        "own version: FRONT of XC-B01 naming XC-GONE",
+        "own version: FRONT of XC-B01 naming its own",
     );
     assert_eq!(views.loads(), 1);
     db.finish().await;

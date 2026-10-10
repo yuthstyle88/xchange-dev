@@ -135,12 +135,4 @@ pub trait IdentityClient: Send + Sync + 'static {
         code: &'a str,
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>>;
-
-    fn register<'a>(
-        &'a self,
-        phone: &'a str,
-        password: &'a str,
-        email: Option<&'a str>,
-        client_ip: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<IdentityRegisterResponse, IdentityError>>;
 }

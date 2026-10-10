@@ -343,7 +343,7 @@ sequenceDiagram
 ```
 
 - **The routes v3 forwards.** Identity's `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/otp/request` and
-  `/auth/otp/verify`, plus `/auth/register` for a person with no Identity account
+  `/auth/otp/verify`
   (`108-platform-services` `crates/auth/src/api/mod.rs:84-103`). The browser never sees the client secret.
 - **Errors** are mapped by Identity's error code, never by HTTP status, because Identity reuses 401/404/403 for both
   user and caller faults. Unknown codes, caller-side codes, an unreadable body and 5xx all become `503` with a log line.

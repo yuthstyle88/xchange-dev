@@ -82,4 +82,13 @@ pub trait QueueRepository: Send + Sync {
         tx: &'a mut Transaction<'_, Postgres>,
         event: &'a QueueEvent,
     ) -> BoxFuture<'a, AppResult<()>>;
+
+    /// QU-A2 (design Q6, Q11): the branch's first WAITING ticket in `CallOrder` (BOOKING first,
+    /// then the lowest sequence), locked `FOR UPDATE SKIP LOCKED`, so a ticket another
+    /// transaction holds is passed over. `None` when nothing is waiting or unlocked.
+    fn lock_next_waiting_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<Option<QueueTicket>>>;
 }

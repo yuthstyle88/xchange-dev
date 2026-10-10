@@ -42,15 +42,25 @@ fn policy_refusal_response(err: &PolicyError) -> HttpResponse {
 
 async fn handler(req: HttpRequest) -> HttpResponse {
     // 1 & 2: Session and policy check
-    let actor = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
-        let sessions = reader.sessions(&req).await;
-        sessions.owner.or(sessions.staff)
+    let callers = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
+        reader.callers(&req).await
     } else {
-        None
+        pages::Callers {
+            owner: None,
+            staff: None,
+            user: None,
+            staff_user: None,
+        }
     };
 
     let action = Action::new("/api/reference-rates");
-    if let Err(refusal) = Policy::allow(actor.as_ref(), EntryPath::OwnerRoute, &action) {
+    if let Err(refusal) = Policy::authorize(
+        callers.user.as_ref(),
+        EntryPath::OwnerRoute,
+        &action,
+        None,
+        chrono::Utc::now(),
+    ) {
         return policy_refusal_response(&refusal);
     }
 

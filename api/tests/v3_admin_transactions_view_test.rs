@@ -658,6 +658,18 @@ impl Room {
 
 // ── who may read it (W8) ─────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 /// §4.4: the view asks `Policy::allow(actor, Rpc, adminSnapshot)` and nothing else, so every
 /// caller kind gets exactly what that pair gives: 200 with data, or the policy's refusal.
 #[actix_web::test]
@@ -728,9 +740,14 @@ async fn each_branch_lists_its_own_exchanges_and_staff_read_their_own_branch() {
             .is_ok()
         })
         .collect();
+    // OR-4b (D-4): an employee naming B9 is refused; naming MAIN they read MAIN
     for key in &allowed_staff {
-        let named = ids(&room.data_as(key, &format!("branch={B9}")).await);
-        assert_eq!(named, main, "{key} naming {B9} is answered for {MAIN}");
+        assert_out_of_scope(
+            &room.get(key, &path(&format!("branch={B9}"))).await,
+            &format!("{key} naming {B9}"),
+        );
+        let named = ids(&room.data_as(key, &format!("branch={MAIN}")).await);
+        assert_eq!(named, main, "{key} naming {MAIN} is answered for {MAIN}");
     }
     room.finish().await;
 }

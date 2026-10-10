@@ -606,6 +606,18 @@ fn object_of_len(len: usize, extra: &str) -> Vec<u8> {
 
 // ------------------------------------------------------------ the answer
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn is_out_of_scope(a: &Answer, what: &str) {
+    assert_eq!(a.status.as_u16(), 403, "{what}: status; body {}", a.body);
+    assert_eq!(
+        a.body["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{what}: {}",
+        a.body
+    );
+}
+
 #[actix_web::test]
 async fn an_accepted_call_answers_the_dto_itself_as_no_store_json() {
     let db = TestDb::start().await;
@@ -653,10 +665,11 @@ async fn a_call_never_moves_any_branch_version() {
             Call::json("owner", ECHO, json!({ "amount": "1" })),
             Call::json("owner", ECHO, json!({ "amount": "1", "branch": "XC-B01" })),
             Call::json("owner", ECHO, json!({ "amount": "1", "branch": "XC-NEW" })),
+            // OR-4b (D-4): staff name their own branch (another is refused, below)
             Call::json(
                 "staff:FRONT:XC-B01",
                 ECHO,
-                json!({ "amount": "1", "branch": "XC-B02" }),
+                json!({ "amount": "1", "branch": "XC-B01" }),
             ),
             Call::json("staff:FRONT:XC-B02", DESK_CONFIG, json!({ "amount": "1" })),
             Call::json(
@@ -683,6 +696,19 @@ async fn a_call_never_moves_any_branch_version() {
             assert_ne!(a.status, StatusCode::OK, "{amount}: refused");
         }
     }
+    // OR-4b (D-4): a staff caller naming another branch is refused before compute, and moves no
+    // version either
+    let a = send(
+        &db,
+        &actions,
+        Call::json(
+            "staff:FRONT:XC-B01",
+            ECHO,
+            json!({ "amount": "1", "branch": "XC-B02" }),
+        ),
+    )
+    .await;
+    is_out_of_scope(&a, "FRONT of XC-B01 naming XC-B02");
     assert_eq!(answered, 18);
     assert_eq!(actions.calls(), 27, "every call above reached compute");
 
@@ -980,6 +1006,8 @@ async fn an_ill_formed_branch_is_an_invalid_request_on_the_field_branch() {
 async fn a_staff_caller_naming_another_branch_computes_on_their_own() {
     let db = TestDb::start().await;
     let actions = Actions::new();
+    // OR-4b (D-4): naming another branch (known, unknown or MAIN) is refused before compute;
+    // naming none or its own, it computes on its own
     for (what, body) in [
         (
             "naming XC-B02",
@@ -990,7 +1018,16 @@ async fn a_staff_caller_naming_another_branch_computes_on_their_own() {
             json!({ "amount": "2", "branch": "XC-NOPE" }),
         ),
         ("naming MAIN", json!({ "amount": "2", "branch": "MAIN" })),
+    ] {
+        let a = send(&db, &actions, Call::json("staff:FRONT:XC-B01", ECHO, body)).await;
+        is_out_of_scope(&a, &format!("FRONT of XC-B01 {what}"));
+    }
+    for (what, body) in [
         ("naming none", json!({ "amount": "2" })),
+        (
+            "naming its own",
+            json!({ "amount": "2", "branch": "XC-B01" }),
+        ),
     ] {
         let a = send(&db, &actions, Call::json("staff:FRONT:XC-B01", ECHO, body)).await;
         is_answer(
@@ -999,7 +1036,7 @@ async fn a_staff_caller_naming_another_branch_computes_on_their_own() {
             &format!("FRONT of XC-B01 {what}"),
         );
     }
-    assert_eq!(actions.calls(), 4);
+    assert_eq!(actions.calls(), 2);
     db.finish().await;
 }
 
@@ -1223,7 +1260,8 @@ async fn the_checks_run_in_the_designs_order() {
         "unknown branch, bad request",
     );
 
-    // Policy::branch before require_branch: staff naming an unknown branch reach 6
+    // the grant's branch before require_branch. OR-4b (D-4): staff naming an unknown branch are
+    // refused as out of scope there, before 6
     let a = send(
         &db,
         &actions,
@@ -1234,7 +1272,7 @@ async fn the_checks_run_in_the_designs_order() {
         ),
     )
     .await;
-    is_invalid_request(&a, None, "staff naming an unknown branch, bad request");
+    is_out_of_scope(&a, "staff naming an unknown branch, bad request");
 
     assert_eq!(actions.calls(), 0, "no refused request reached compute");
 

@@ -1364,11 +1364,12 @@ async fn the_desk_hand_off_moves_the_version_and_the_row_reads_used() {
     payload["onlineBookingId"] = json!("BK-hand");
     payload["booking"] = json!("BK-hand");
     payload["onlineBookingCustomerConfirmed"] = json!(true);
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's; the day's FRONT, FR1, saves
+    // with files of their own upload
+    let payload = replay.uploads_as("FR1", &payload).await;
     let answer = replay
         .app
-        .send(
-            Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies["owner"]),
-        )
+        .send(Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies["FR1"]))
         .await;
     assert_eq!(answer.status, 200, "the save: {:.300}", answer.text);
     let document = answer.json()["documentRef"]

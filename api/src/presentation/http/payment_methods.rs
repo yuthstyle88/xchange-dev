@@ -6,8 +6,6 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use serde_json::Value;
-use xc_auth::domain::account::entities::session::SignedIn;
-use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -18,9 +16,7 @@ use crate::application::settings::payment_input::{parse_methods, parse_version};
 use crate::application::settings::payment_settings::{PaymentSaveError, PaymentSettingsService};
 use crate::bootstrap::AppState;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
-use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin,
-};
+use crate::presentation::extractors::actor::{accounts, authorize, callers, same_origin};
 use crate::presentation::http::rpc::RpcClock;
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
@@ -61,36 +57,18 @@ async fn handle(
     body: Result<web::Bytes, actix_web::Error>,
     service: web::Data<PaymentSettingsService>,
 ) -> HttpResponse {
-    let Some(accounts) = accounts(&req) else {
+    let Some(_accounts) = accounts(&req) else {
         return refuse(500, DB_ERROR);
     };
+
+    let callers = callers(&req).await;
+    if callers.user.is_none() {
+        return refuse(401, "กรุณาเข้าสู่ระบบ");
+    }
 
     let now = req
         .app_data::<web::Data<dyn RpcClock>>()
         .map_or_else(Utc::now, |clock| clock.now());
-
-    // Row 1: Nobody signed in
-    let signed_in = match accounts
-        .status(
-            &cookie(&req, OWNER_COOKIE),
-            &cookie(&req, STAFF_COOKIE),
-            now,
-        )
-        .await
-    {
-        Ok(Some(s)) => s,
-        Ok(None) => return refuse(401, "กรุณาเข้าสู่ระบบ"),
-        Err(_) => return refuse(500, DB_ERROR),
-    };
-
-    let Some(actor) = actor_of(&signed_in) else {
-        return refuse(401, "กรุณาเข้าสู่ระบบ");
-    };
-
-    let username = match &signed_in {
-        SignedIn::Owner(o) => o.username.clone(),
-        SignedIn::Employee(e) => e.username.clone(),
-    };
 
     // Row 2: Origin / X-Xchange-Request
     if !same_origin(&req) {
@@ -138,26 +116,49 @@ async fn handle(
         None => &Value::Null,
     };
 
-    // Row 5: Branch validation
     let named = match payload.get("branchId") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => (!s.is_empty()).then(|| BranchId::new(s)),
         _ => Some(BranchId::new("")),
     };
-    let branch = Policy::branch(Some(&actor), named.as_ref());
+
+    // D-4 Scope Check for employee:
+    // If an employee names a branch outside their scope (e.g. malformed or another branch),
+    // they get 403 outOfScope before the shape and existence checks (ruling 5).
+    if callers.owner.is_none() {
+        let out_of_scope = match (&callers.staff, &named) {
+            (Some(staff), Some(named_b)) => Some(named_b) != staff.branch_id(),
+            _ => false,
+        };
+        if out_of_scope {
+            return refuse(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้");
+        }
+    }
+
+    // Row 5: Branch validation
+    let branch = named.clone().unwrap_or_else(|| BranchId::new("MAIN"));
     if !BranchId::is_well_formed(branch.as_str()) {
         return refuse(400, "สาขาไม่ถูกต้อง");
     }
 
-    // Row 6 & 7: Action and Policy check
+    // Row 6: Action check
     let action_str = body_val
         .get("action")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let action = Action::new(action_str);
-    if let Err(policy_err) = Policy::allow(Some(&actor), EntryPath::PaymentMethods, &action) {
-        return refuse(policy_err.status(), &policy_err.to_string());
+    if action_str != "list" && action_str != "save" {
+        return refuse(400, "คำขอไม่ถูกต้อง");
     }
+
+    // Row 7: Policy check
+    let action = Action::new(action_str);
+    let (grant, callers) =
+        match authorize(&req, EntryPath::PaymentMethods, &action, named.as_ref()).await {
+            Ok(pair) => pair,
+            Err(refusal) => return refusal,
+        };
+
+    let branch = grant.branch;
 
     // Row 8: Branch must exist
     match service.branch_exists(&branch).await {
@@ -166,9 +167,21 @@ async fn handle(
         Err(_) => return refuse(500, DB_ERROR),
     }
 
+    let dummy_owner = xc_auth::domain::policy::value_objects::actor::Actor::owner("owner");
+    let actor = callers
+        .owner
+        .as_ref()
+        .or(callers.staff.as_ref())
+        .unwrap_or(&dummy_owner);
+    let username = callers
+        .user
+        .as_ref()
+        .map(|u| u.user_id.as_str())
+        .unwrap_or("owner");
+
     // Process list / save
     if action_str == "list" {
-        match service.view(&branch, &actor).await {
+        match service.view(&branch, actor).await {
             Ok(view) => ok(serde_json::to_value(view).unwrap()),
             Err(_) => refuse(500, DB_ERROR),
         }
@@ -189,7 +202,7 @@ async fn handle(
         };
 
         match service
-            .save(&branch, expected_version, rules, &username, now)
+            .save(&branch, expected_version, rules, username, now)
             .await
         {
             Ok(view) => ok(serde_json::to_value(view).unwrap()),

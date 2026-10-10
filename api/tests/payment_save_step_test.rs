@@ -27,6 +27,9 @@ use snapshot_common::time;
 
 const ORIGIN: &str = "http://desk.test";
 const FILE: &str = "rpc/engine_actions.json";
+/// Who saves at the desk: the day's FRONT, FR1. v2's owner saved; the Blueprint's
+/// `ExchangeTransact` is TELLER's only (OR-4b #767, design §4.2 C2), and B1 makes FRONT a TELLER.
+const TELLER: &str = "FR1";
 const UNAVAILABLE: &str = "Payment method unavailable. Please contact staff.";
 
 /// `engine_actions.json`: #119 a LIVE BUY by cash refused by the engine (its notes are too
@@ -108,12 +111,11 @@ async fn owner_switches(replay: &Replay<'_>, version: i64, methods: Value) {
 }
 
 async fn save(replay: &Replay<'_>, who: &str, route: &str, payload: &Value) -> Answer {
+    // OR-4b (C2): a save attaches its saver's own files; the teller uploads the owner's again
+    let payload = replay.uploads_as(who, payload).await;
     replay
         .app
-        .send(
-            Call::action(ORIGIN, route, "saveTransaction", payload.clone())
-                .cookie(&replay.cookies[who]),
-        )
+        .send(Call::action(ORIGIN, route, "saveTransaction", payload).cookie(&replay.cookies[who]))
         .await
 }
 
@@ -153,7 +155,7 @@ async fn a_first_live_save_on_a_channel_switched_off_is_refused_and_nothing_is_k
     let before = kept(&replay).await;
 
     let payload = payload_of(&replay, LIVE_SELL_PROMPTPAY);
-    save(&replay, "owner", RPC, &payload).await.assert_refused(
+    save(&replay, TELLER, RPC, &payload).await.assert_refused(
         400,
         UNAVAILABLE,
         "LIVE SELL by PromptPay, PromptPay off",
@@ -164,7 +166,7 @@ async fn a_first_live_save_on_a_channel_switched_off_is_refused_and_nothing_is_k
 
     // on again: the very same request is saved, under the number v2 gave it
     owner_switches(&replay, 1, defaults()).await;
-    let saved = save(&replay, "owner", RPC, &payload).await;
+    let saved = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(saved.status, 200, "{:.300}", saved.text);
     assert_eq!(saved.json()["documentRef"], json!(SECOND_OF_THE_DAY));
     replay.finish().await;
@@ -178,7 +180,7 @@ async fn the_direction_of_the_save_is_the_one_checked() {
     let replay = day_up_to(&fixture, LIVE_BUY_CASH - 1).await;
     owner_switches(&replay, 0, with("Cash", json!({ "buy": false }))).await;
     let payload = payload_of(&replay, LIVE_BUY_CASH);
-    save(&replay, "owner", RPC, &payload).await.assert_refused(
+    save(&replay, TELLER, RPC, &payload).await.assert_refused(
         400,
         UNAVAILABLE,
         "LIVE BUY by cash, cash pays no baht out",
@@ -186,7 +188,7 @@ async fn the_direction_of_the_save_is_the_one_checked() {
 
     // Cash still takes baht in
     owner_switches(&replay, 1, with("Cash", json!({ "sell": false }))).await;
-    let saved = save(&replay, "owner", RPC, &payload).await;
+    let saved = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(saved.status, 200, "{:.300}", saved.text);
     replay.finish().await;
 }
@@ -196,13 +198,17 @@ async fn the_direction_of_the_save_is_the_one_checked() {
 #[actix_web::test]
 async fn a_repeat_of_a_saved_submission_is_not_checked() {
     let fixture = Fixture::load(FILE);
-    let replay = day_up_to(&fixture, LIVE_SELL_PROMPTPAY).await;
+    // OR-4b (#767, C2): the teller makes the save v2's owner made at this step (a save attaches its
+    // saver's own files, so only the saver repeats it), then repeats it
+    let replay = day_up_to(&fixture, LIVE_SELL_PROMPTPAY - 1).await;
+    let payload = payload_of(&replay, LIVE_SELL_PROMPTPAY);
+    let first = save(&replay, TELLER, RPC, &payload).await;
+    assert_eq!(first.status, 200, "{:.300}", first.text);
     let before = kept(&replay).await;
     assert!(documents(&before).contains(&SECOND_OF_THE_DAY.to_string()));
 
     owner_switches(&replay, 0, with("PromptPay", json!({ "enabled": false }))).await;
-    let payload = payload_of(&replay, LIVE_SELL_PROMPTPAY);
-    let again = save(&replay, "owner", RPC, &payload).await;
+    let again = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(again.status, 200, "{:.300}", again.text);
     assert_eq!(again.json()["documentRef"], json!(SECOND_OF_THE_DAY));
     assert_eq!(kept(&replay).await, before, "nothing changed");
@@ -217,7 +223,7 @@ async fn a_demo_save_is_not_checked() {
     owner_switches(&replay, 0, with("Cash", json!({ "buy": false }))).await;
     let payload = payload_of(&replay, DEMO_BUY_CASH);
     assert_eq!(payload["mode"], json!("DEMO"));
-    let saved = save(&replay, "owner", RPC, &payload).await;
+    let saved = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(saved.status, 200, "{:.300}", saved.text);
     assert_eq!(saved.json()["mode"], json!("DEMO"));
     replay.finish().await;
@@ -233,21 +239,21 @@ async fn scb_transfer_is_read_as_bank_transfer() {
     payload["account"] = json!("SCB 000");
 
     owner_switches(&replay, 0, with("Bank Transfer", json!({ "sell": false }))).await;
-    save(&replay, "owner", RPC, &payload).await.assert_refused(
+    save(&replay, TELLER, RPC, &payload).await.assert_refused(
         400,
         UNAVAILABLE,
         "SCB Transfer, Bank Transfer takes no baht in",
     );
     let mut bank = payload.clone();
     bank["method"] = json!("Bank Transfer");
-    save(&replay, "owner", RPC, &bank).await.assert_refused(
+    save(&replay, TELLER, RPC, &bank).await.assert_refused(
         400,
         UNAVAILABLE,
         "Bank Transfer, off for SELL",
     );
 
     owner_switches(&replay, 1, with("PromptPay", json!({ "enabled": false }))).await;
-    let saved = save(&replay, "owner", RPC, &payload).await;
+    let saved = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(saved.status, 200, "{:.300}", saved.text);
     replay.finish().await;
 }
@@ -263,7 +269,7 @@ async fn the_engines_own_refusals_come_first() {
     assert_ne!(sentence, UNAVAILABLE);
     owner_switches(&replay, 0, with("Cash", json!({ "buy": false }))).await;
     let payload = payload_of(&replay, ENGINE_REFUSES);
-    let answer = save(&replay, "owner", RPC, &payload).await;
+    let answer = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(answer.status, 400, "{:.300}", answer.text);
     assert_eq!(answer.error(), sentence);
     replay.finish().await;

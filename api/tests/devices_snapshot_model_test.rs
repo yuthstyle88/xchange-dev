@@ -33,6 +33,8 @@ use std::collections::BTreeSet;
 use rpc_common::{App, Call, Cookies, Desk, MAIN, RPC, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 
+/// OR-4a's one new sentence (§10 `outOfScope`).
+const OUT_OF_SCOPE: &str = "สาขานี้อยู่นอกขอบเขตของบัญชีนี้";
 const ORIGIN: &str = "http://desk.test";
 const DEVICES: &str = "/api/devices";
 
@@ -163,8 +165,18 @@ async fn every_staff_role_is_given_the_admin_snapshot_of_its_own_branch() {
         .await;
 
     for (role, username) in room.usernames.iter().filter(|(role, _)| role != "OWNER") {
+        // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): naming another branch is refused;
+        // the employee's own branch is answered
+        let outside = room
+            .app
+            .send(
+                Call::action(ORIGIN, DEVICES, "snapshot", json!({ "branchId": "B404" }))
+                    .cookie(&room.cookies[role.as_str()]),
+            )
+            .await;
+        outside.assert_refused(403, OUT_OF_SCOPE, &format!("{role} names B404"));
         let snapshot = room
-            .ok(role, DEVICES, "snapshot", json!({ "branchId": "B404" }))
+            .ok(role, DEVICES, "snapshot", json!({ "branchId": MAIN }))
             .await;
         let admin = room.ok(role, RPC, "adminSnapshot", json!({})).await;
         assert_eq!(

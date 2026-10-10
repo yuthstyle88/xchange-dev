@@ -77,6 +77,7 @@ fn request(side: Side, quantity: &str) -> QuoteRequest {
             currency: CurrencyCode::parse("USD").expect("USD"),
             shop_side: side,
             quantity: ForeignAmount::from_decimal(Decimal::from_str(quantity).expect("a quantity")),
+            denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
             fee_thb: None,
         }],
     }

@@ -98,11 +98,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
             .route(web::post().to(v3_otp_verify)),
     );
     cfg.service(
-        web::resource("/api/auth/register")
-            .app_data(body())
-            .route(web::post().to(v3_register)),
-    );
-    cfg.service(
         web::resource("/api/auth/session")
             .app_data(body())
             .route(web::post().to(v3_session)),
@@ -377,42 +372,6 @@ async fn v3_otp_verify(
             resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
                 .json(json!({ "user": tail.user }))
         }
-        Err(err) => handle_session_error(err),
-    }
-}
-
-async fn v3_register(
-    req: HttpRequest,
-    bytes: web::Bytes,
-    session: web::Data<SessionService>,
-) -> HttpResponse {
-    if !same_origin(&req) {
-        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
-    }
-    if !session.is_configured() {
-        tracing::error!(
-            path = "/api/auth/register",
-            status = 0,
-            code = "not_configured",
-            "Identity is not configured"
-        );
-        return refusal_response(503, "identityUnavailable", UNAVAILABLE_MESSAGE);
-    }
-    let body: Value = match serde_json::from_slice(&bytes) {
-        Ok(v) => v,
-        Err(_) => return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"),
-    };
-    let phone = body.get("phone").and_then(|v| v.as_str()).unwrap_or("");
-    let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("");
-    let email = body.get("email").and_then(|v| v.as_str());
-    if phone.is_empty() || password.is_empty() {
-        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
-    }
-    let ip = client_address(&req);
-    match session.register(phone, password, email, Some(ip)).await {
-        Ok(_) => HttpResponse::Created()
-            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-            .json(json!({ "registered": true })),
         Err(err) => handle_session_error(err),
     }
 }

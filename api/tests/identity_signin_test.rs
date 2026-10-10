@@ -446,7 +446,6 @@ async fn without_identity_settings_the_routes_that_need_identity_are_503() {
         "/api/auth/login",
         "/api/auth/otp/request",
         "/api/auth/otp/verify",
-        "/api/auth/register",
         "/api/auth/invite/claim",
     ] {
         let reply = app.send(Req::post(path, json!({}))).await;
@@ -853,34 +852,6 @@ async fn otp_request_is_forwarded_and_a_verified_otp_signs_in() {
         json!({ "challengeId": "c0ffee00-0000-4000-8000-000000000001", "code": "123456",
                 "registerIfAbsent": false })
     );
-    desk.drop_schema().await;
-}
-
-/// Register is forwarded with the phone (Identity requires one, design §5.2) and never signs in.
-#[actix_web::test]
-async fn register_is_forwarded_and_does_not_sign_in() {
-    let (desk, identity, app) = setup().await;
-    identity.answer(
-        "/auth/register",
-        201,
-        &json!({ "identityId": SUB_B }).to_string(),
-    );
-    let reply = app
-        .send(Req::post(
-            "/api/auth/register",
-            json!({ "phone": "+66812345678", "password": "pw-from-the-browser-01" }),
-        ))
-        .await;
-    assert_eq!(reply.status, 201, "{}", reply.text);
-    assert_eq!(reply.json(), json!({ "registered": true }));
-    assert!(reply.sets_no_session());
-    let sent = identity.received("/auth/register");
-    assert_eq!(
-        sent[0].json(),
-        json!({ "phone": "+66812345678", "password": "pw-from-the-browser-01" })
-    );
-    assert_eq!(sent[0].header("x-client-id"), Some(CLIENT_ID));
-    assert_eq!(all_sessions(&desk.pool).await, 0);
     desk.drop_schema().await;
 }
 

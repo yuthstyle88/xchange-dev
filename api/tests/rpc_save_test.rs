@@ -135,9 +135,11 @@ async fn a_save_completes_the_draft_it_names() {
 
 /// The owner in a branch of their own making: the branch, the customer and the
 /// passport of a DEMO exchange there (a DEMO save needs no rate and no shift,
-/// `engine_actions.json` #125). Answers the branch's id.
-async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
-    let owner = &replay.cookies["owner"];
+/// `engine_actions.json` #125). Answers the branch's id, and (OR-4b #767, C2) the key of the
+/// branch's TELLER, who reserves the customer and saves: the owner's user no longer does.
+async fn a_second_branch(replay: &mut Replay<'_>) -> (String, String, String, String) {
+    let owner = replay.cookies["owner"].clone();
+    let owner = &owner;
     let made = replay
         .app
         .send(
@@ -156,6 +158,7 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
         .expect("the branch's id")
         .to_string();
     assert_ne!(branch, MAIN);
+    let teller = replay.employ_teller(&branch).await;
 
     let reserved = replay
         .app
@@ -170,7 +173,8 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
                     "passportExpiry": "2031-06-11", "mode": "DEMO",
                 }),
             )
-            .cookie(owner),
+            // OR-4b (C2): ExchangeTransact is TELLER's
+            .cookie(&replay.cookies[&teller]),
         )
         .await;
     assert_eq!(reserved.status, 200, "the customer: {:.300}", reserved.text);
@@ -182,9 +186,10 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
     let uploaded = replay
         .app
         .send(
-            Call::post(ORIGIN, &format!("/api/upload?branch={branch}"), PNG)
+            // OR-4b (C2): the teller who saves uploads the passport (a save attaches its saver's)
+            Call::post(ORIGIN, "/api/staff/upload", PNG)
                 .header("content-type", "image/png")
-                .cookie(owner),
+                .cookie(&replay.cookies[&teller]),
         )
         .await;
     assert_eq!(uploaded.status, 200, "the passport: {:.300}", uploaded.text);
@@ -192,7 +197,7 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
         .as_str()
         .expect("the passport's key")
         .to_string();
-    (branch, customer, passport)
+    (branch, customer, passport, teller)
 }
 
 /// A DEMO exchange of `engine_actions.json` #125, in `branch`.
@@ -218,8 +223,8 @@ async fn the_links_of_a_save_name_its_own_branch() {
     let fixture = Fixture::load(ENGINE_FILE);
     let desk = Desk::open().await;
     let app = rpc_app!(desk);
-    let replay = Replay::start(desk, app, &fixture).await;
-    let (branch, customer, passport) = a_second_branch(&replay).await;
+    let mut replay = Replay::start(desk, app, &fixture).await;
+    let (branch, customer, passport, teller) = a_second_branch(&mut replay).await;
 
     let answer = replay
         .app
@@ -235,7 +240,8 @@ async fn the_links_of_a_save_name_its_own_branch() {
                     "00000000-0000-4000-8000-0000000c0002",
                 ),
             )
-            .cookie(&replay.cookies["owner"]),
+            // OR-4b (C2): the branch's TELLER saves
+            .cookie(&replay.cookies[&teller]),
         )
         .await;
     assert_eq!(answer.status, 200, "the save: {:.300}", answer.text);
@@ -264,8 +270,8 @@ async fn a_save_naming_a_kiosk_request_nobody_made_is_refused() {
     let fixture = Fixture::load(ENGINE_FILE);
     let desk = Desk::open().await;
     let app = rpc_app!(desk);
-    let replay = Replay::start(desk, app, &fixture).await;
-    let (branch, customer, passport) = a_second_branch(&replay).await;
+    let mut replay = Replay::start(desk, app, &fixture).await;
+    let (branch, customer, passport, teller) = a_second_branch(&mut replay).await;
 
     let mut payload = demo_save(
         &branch,
@@ -277,7 +283,8 @@ async fn a_save_naming_a_kiosk_request_nobody_made_is_refused() {
     let answer = replay
         .app
         .send(
-            Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies["owner"]),
+            // OR-4b (C2): the branch's TELLER saves
+            Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies[&teller]),
         )
         .await;
     answer.assert_refused(400, KIOSK_NOT_READY, "a request nobody made");

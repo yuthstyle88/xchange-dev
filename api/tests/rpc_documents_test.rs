@@ -28,12 +28,10 @@ mod snapshot_common;
 use compat_common::{Fixture, Person};
 use rpc_common::{
     Answer, Call, Desk, EMPLOYEE_AUTH_REQUIRED, INVALID_REQUEST, MAIN, ROLE_NOT_ALLOWED_RPC, RPC,
-    Replay, SERVER_ERROR, STAFF_RPC, one_of_each_role, sign_in, text_with_ids,
+    Replay, SERVER_ERROR, STAFF_RPC, one_of_each_role, route_rule, sign_in, text_with_ids,
 };
 use serde_json::{Map, Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -252,7 +250,10 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
                 )
                 .await;
             let label = format!("documents on {path} as {}", person.key);
-            match Policy::allow(Some(&actor), entry, &Action::new("documents")) {
+            // OR-4b (#767): the route table's rule (`route_rule`); the staff route reads the staff
+            // session only, so the owner's is nobody there
+            let caller = (path == RPC || person.key != "OWNER").then_some(&actor);
+            match route_rule(caller, entry, "documents") {
                 Err(refusal) => {
                     answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
                 }

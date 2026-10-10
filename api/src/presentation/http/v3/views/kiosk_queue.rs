@@ -9,6 +9,7 @@ use chrono::Utc;
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
+use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -75,8 +76,15 @@ impl PagedView for KioskQueuePagedView {
                 )
                 .await?;
 
-            let can_claim =
-                Policy::allow(Some(&who), EntryPath::Kiosk, &Action::new("accept")).is_ok();
+            let user = actor_from_v3(&who, "XC", now);
+            let can_claim = Policy::authorize(
+                Some(&user),
+                EntryPath::Kiosk,
+                &Action::new("accept"),
+                Some(&branch),
+                now,
+            )
+            .is_ok();
 
             let names = usernames(
                 &db,

@@ -702,6 +702,18 @@ fn period_check_refuses_a_date_that_is_not_a_calendar_yyyy_mm_dd_naming_its_side
 
 // ------------------------------------------------------------ F1: no answer changes
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn is_out_of_scope(a: &Answer, what: &str) {
+    assert_eq!(a.status.as_u16(), 403, "{what}: status; body {}", a.body);
+    assert_eq!(
+        a.body["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{what}: {}",
+        a.body
+    );
+}
+
 #[actix_web::test]
 async fn a_view_without_a_filter_answers_the_same_whatever_extra_keys_it_is_sent() {
     let db = TestDb::start().await;
@@ -1109,11 +1121,20 @@ async fn a_staff_caller_naming_another_branch_with_a_filter_gets_their_own_branc
     for _ in 0..3 {
         db.write("XC-B02").await;
     }
+    // OR-4b (D-4): naming XC-B02 is refused; naming its own branch, it is answered for it
+    for uri in [
+        "/api/v3/views/test-filtered?branch=XC-B02&q=a&from=2026-10-01",
+        "/api/v3/views/test-filtered-paged?branch=XC-B02&minAmount=4&limit=7",
+        "/api/v3/views/test-filtered?branch=XC-B02&q=a&since=1",
+    ] {
+        let refused = get(&db, &views, "staff:FRONT:XC-B01", uri).await;
+        is_out_of_scope(&refused, uri);
+    }
     let a = get(
         &db,
         &views,
         "staff:FRONT:XC-B01",
-        "/api/v3/views/test-filtered?branch=XC-B02&q=a&from=2026-10-01",
+        "/api/v3/views/test-filtered?branch=XC-B01&q=a&from=2026-10-01",
     )
     .await;
     is_changed(&a, 1, "FRONT of XC-B01 naming XC-B02, filtered");
@@ -1123,7 +1144,7 @@ async fn a_staff_caller_naming_another_branch_with_a_filter_gets_their_own_branc
         &db,
         &views,
         "staff:FRONT:XC-B01",
-        "/api/v3/views/test-filtered-paged?branch=XC-B02&minAmount=4&limit=7",
+        "/api/v3/views/test-filtered-paged?branch=XC-B01&minAmount=4&limit=7",
     )
     .await;
     is_changed(&b, 1, "paged, FRONT of XC-B01 naming XC-B02, filtered");
@@ -1131,7 +1152,7 @@ async fn a_staff_caller_naming_another_branch_with_a_filter_gets_their_own_branc
         &db,
         &views,
         "staff:FRONT:XC-B01",
-        "/api/v3/views/test-filtered?branch=XC-B02&q=a&since=1",
+        "/api/v3/views/test-filtered?branch=XC-B01&q=a&since=1",
     )
     .await;
     is_unchanged(&c, 1, "since compared with XC-B01's version");

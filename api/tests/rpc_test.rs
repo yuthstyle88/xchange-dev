@@ -36,12 +36,10 @@ use rpc_common::{
     Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY, Family,
     INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, ROLE_NOT_ALLOWED_RPC, ROLE_NOT_ALLOWED_STAFF,
     RPC, Replay, Rule, SERVER_ERROR, SIGN_IN, STAFF_RPC, USE_CUSTODY, V2_HEADERS_FAULT,
-    one_of_each_role, sign_in,
+    one_of_each_role, route_rule, sign_in,
 };
 use serde_json::{Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -477,8 +475,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 184);
-    // CI-4 (#651): #124 and its save #125 are SameCustomerAs (DEMO shares the LIVE customer)
-    assert_eq!(replay.tally.differences, vec![124, 125, 159]);
+    assert_eq!(replay.tally.differences, vec![159]);
     assert_eq!(numbers(&replay.tally.excluded), vec![82, 83, 109]);
     let saves: Vec<usize> = (84..=108).chain(110..=123).chain([125, 144]).collect();
     let documents = [127, 128];
@@ -496,12 +493,27 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     if NO_FAMILY_WIRED {
         assert_eq!(part_two.len(), 43);
     }
-    // 184 − 3 uploads − 43 of part two − 3 differences (#159, and CI-4's #124
-    // and #125); a step of a wired family is held to v2 instead
-    assert_eq!(replay.tally.replayed.len(), 135 + (43 - part_two.len()));
+    // OR-4b (#767): the owner's saveTransaction and reserveCustomer (C2: TELLER's) and
+    // adminMoveStock (C3: BRANCH_MANAGER's and FINANCE's) on /api/rpc are refused by role
+    let owners_c2_c3: Vec<usize> = [38]
+        .into_iter()
+        .chain(47..=65)
+        .chain(68..=79)
+        .chain(84..=108)
+        .chain(110..=125)
+        .chain([144])
+        .collect();
+    assert_eq!(replay.tally.blueprint, owners_c2_c3);
+    // 184 − 3 uploads − 43 of part two − 1 difference; a step of a wired
+    // family is held to v2 instead; less the 74 the Blueprint refuses (C2, C3)
+    assert_eq!(
+        replay.tally.replayed.len(),
+        137 + (43 - part_two.len()) - owners_c2_c3.len()
+    );
     // the three uploads, and — while the save is not wired — the four accepted
     // saves (one of them sent twice)
-    let mut applied_behind = vec![82, 83, 109];
+    // and (OR-4b, C2, C3) the ten steps v2 accepted of the owner's refused ones
+    let mut applied_behind = vec![63, 64, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124, 125];
     if !Family::Save.wired() {
         applied_behind.extend([120, 121, 123, 125]);
     }
@@ -512,7 +524,10 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         let Some(action) = &step.action else { continue };
         if PART_ONE.contains(&action.as_str()) {
             assert!(
-                replay.tally.replayed.contains(&step.n) || [124, 159].contains(&step.n),
+                replay.tally.replayed.contains(&step.n)
+                    || step.n == 159
+                    // OR-4b: held to the Blueprint's refusal instead (C2, C3)
+                    || replay.tally.blueprint.contains(&step.n),
                 "engine_actions#{} ({action}) was not compared",
                 step.n
             );
@@ -579,7 +594,9 @@ async fn rates_json_is_answered_as_v2_answered_it() {
 async fn shift_json_is_answered_as_v2_answered_it() {
     let (fixture, views, tally) = replay_whole("snapshot/shift.json").await;
     assert_eq!(fixture.steps().len(), 59);
-    assert_eq!(tally.replayed.len(), 59);
+    // OR-4b (#767, C3): the owner's two adminMoveStock are refused by role, applied behind
+    assert_eq!(tally.blueprint, vec![10, 45]);
+    assert_eq!(tally.replayed.len(), 57);
     assert_eq!(views.len(), 52);
     assert!(views.iter().all(|n| tally.replayed.contains(n)));
 }
@@ -602,7 +619,9 @@ async fn branches_json_is_answered_as_v2_answered_it() {
     assert_eq!(fixture.steps().len(), 39);
     // CI-4 (#651): #10 is SameCustomerAs (K1, a customer per company)
     assert_eq!(replay.tally.differences, vec![3, 10]);
-    assert_eq!(replay.tally.replayed.len(), 37);
+    // OR-4b (#767, C2): the owner's reserveCustomer is refused by role, applied behind
+    assert_eq!(replay.tally.blueprint, vec![9]);
+    assert_eq!(replay.tally.replayed.len(), 36);
     let views: Vec<usize> = fixture
         .steps()
         .iter()
@@ -799,6 +818,7 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
     ];
 
     let mut accepted = 0;
+    let mut blueprint_refusals = 0;
     let mut gate_refusals = 0;
     let mut use_case_refusals = 0;
     for action in PART_ONE {
@@ -817,6 +837,22 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
             );
             for role in &record.accepted_from {
                 let answer = ask(&app, &cookies, path, action, role).await;
+                // OR-4b (#767): v2 accepted the owner here; the Blueprint refuses (C2, C3)
+                let person = people.iter().find(|p| &p.key == role).expect("a person");
+                let entry = if path == RPC {
+                    EntryPath::Rpc
+                } else {
+                    EntryPath::StaffRpc
+                };
+                if let Err(refusal) = route_rule(Some(&actor_of(person)), entry, action) {
+                    answer.assert_refused(
+                        refusal.status(),
+                        &refusal.to_string(),
+                        &format!("{action} on {path} as {role}: C2, C3"),
+                    );
+                    blueprint_refusals += 1;
+                    continue;
+                }
                 assert!(
                     !is_gate_refusal(&answer),
                     "{action} on {path}: v2 accepted {role}, v3 answers {} {:.200}",
@@ -862,8 +898,14 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
         }
     }
     assert_eq!(
-        (accepted, gate_refusals, use_case_refusals),
-        (47, 17, 49),
+        (
+            accepted,
+            blueprint_refusals,
+            gate_refusals,
+            use_case_refusals
+        ),
+        // OR-4b (#767): of v2's 47 acceptances, the owner's on the three C2/C3 actions are refused
+        (45, 2, 17, 49),
         "what the index holds for the ten actions"
     );
 
@@ -875,7 +917,11 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
             for action in PART_ONE {
                 let answer = ask(&app, &cookies, path, action, &person.key).await;
                 let label = format!("{action} on {path} as {}", person.key);
-                match Policy::allow(Some(&actor), entry, &Action::new(action)) {
+                // OR-4b (#767): the gate is the route table's rule (`route_rule`). The staff route
+                // reads the staff session only: an owner's session is nobody there (C1 admits the
+                // owner's user on a staff path only through a session of that path)
+                let caller = (path == RPC || !person.is_owner()).then_some(&actor);
+                match route_rule(caller, entry, action) {
                     Ok(()) => assert!(
                         !is_gate_refusal(&answer),
                         "{label}: Policy allows, the route answers {} {:.200}",
@@ -951,7 +997,9 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             assert_eq!(answer.json()["branchId"], MAIN, "{path} {payload}");
         }
     }
-    // a write lands in the branch named, and nowhere else
+    // a write lands in the branch named, and nowhere else. OR-4b (#767, C2): the owner's
+    // reserveCustomer is refused by role and lands nowhere; the owner's write that names a branch
+    // is the shift (#582's custody row, still the owner's)
     let saved = app
         .send(
             Call::action(
@@ -964,12 +1012,51 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .cookie(&cookies["OWNER"]),
         )
         .await;
+    saved.assert_refused(
+        400,
+        ROLE_NOT_ALLOWED_RPC,
+        "the owner's reserveCustomer (C2)",
+    );
+    let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
+    assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(0));
+    // the teller (C2's role) reserves the same customer, on the teller's own branch
+    let saved = app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "reserveCustomer",
+                json!({ "branchId": "B-two", "name": "A Customer", "passportNo": "P7000001",
+                        "nationality": "DEU", "mode": "LIVE" }),
+            )
+            .cookie(&cookies["FRONT"]),
+        )
+        .await;
     assert_eq!(saved.status, 200, "{}", saved.text);
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
     assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(1));
     let main = snapshot(RPC, "OWNER", json!({})).await;
     // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
     assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));
+    let opened = app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "adminOpenShift",
+                json!({ "branchId": "B-two", "requestId": "00000000-0000-4000-8000-0000000c0002",
+                        "opening": { "THB": 1 } }),
+            )
+            .cookie(&cookies["OWNER"]),
+        )
+        .await;
+    assert_eq!(opened.status, 200, "{}", opened.text);
+    assert_eq!(opened.json()["branchId"], "B-two");
+    let branches: Vec<String> = sqlx::query_scalar("SELECT branch_id FROM shifts")
+        .fetch_all(&desk.db.pool)
+        .await
+        .expect("the shifts");
+    assert_eq!(branches, vec!["B-two".to_string()]);
     desk.finish().await;
 }
 
@@ -991,10 +1078,11 @@ async fn while_custody_is_on_the_three_shift_actions_are_refused() {
     let desk = Desk::open().await;
     let app = rpc_app!(desk);
     let mut replay = Replay::start(desk, app, &fixture).await;
-    // custody off: the same request gets as far as the shift (`rpc/engine_actions.json` #38)
+    // custody off: the same request gets as far as the shift (`rpc/engine_actions.json` #38).
+    // OR-4b (#767, C3): CashManage is FINANCE's and BRANCH_MANAGER's, so FINANCE's FI1 asks
     let off = shift_call(
         &replay,
-        "owner",
+        "FI1",
         "adminMoveStock",
         fixture.step(19).payload.clone().unwrap(),
     )
@@ -1010,7 +1098,9 @@ async fn while_custody_is_on_the_three_shift_actions_are_refused() {
         );
         replay.step(fixture.step(n)).await;
     }
-    assert_eq!(replay.tally.replayed, vec![18, 19, 20, 21]);
+    // OR-4b (#767, C3): #19, the owner's adminMoveStock, is refused by role before custody
+    assert_eq!(replay.tally.replayed, vec![18, 20, 21]);
+    assert_eq!(replay.tally.blueprint, vec![19]);
     let shifts: i64 = sqlx::query_scalar("SELECT count(*) FROM shifts")
         .fetch_one(&replay.desk.db.pool)
         .await
@@ -1019,7 +1109,13 @@ async fn while_custody_is_on_the_three_shift_actions_are_refused() {
 
     // v2 checks custody before it reads the payload
     for action in ["adminOpenShift", "adminMoveStock", "adminCloseShift"] {
-        shift_call(&replay, "owner", action, json!({}))
+        // OR-4b (#767, C3): adminMoveStock is FINANCE's FI1's, the shift the owner's (#582)
+        let who = if action == "adminMoveStock" {
+            "FI1"
+        } else {
+            "owner"
+        };
+        shift_call(&replay, who, action, json!({}))
             .await
             .assert_refused(400, USE_CUSTODY, &format!("{action} with nothing in it"));
     }

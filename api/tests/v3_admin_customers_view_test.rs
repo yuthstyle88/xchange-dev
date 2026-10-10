@@ -629,12 +629,40 @@ fn both_views_are_in_the_generated_view_table() {
     }
 }
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 #[actix_web::test]
 async fn admin_customers_answers_exactly_whom_the_snapshot_row_allows() {
     let room = Room::open().await;
     room.save(MAIN, &Who::new("Somchai Jaidee"), Ex::usd())
         .await;
     answers_exactly_whom_the_snapshot_row_allows(&room, &view_path(CUSTOMERS, "limit=50")).await;
+    // FRONT works in MAIN. OR-4b (D-4): naming B9 is refused; naming MAIN is answered (restored
+    // from the retired `only_the_live_customers_of_the_branch_…`, controller ruling on #767)
+    assert_out_of_scope(
+        &room
+            .get("FRONT", &view_path(CUSTOMERS, "branch=B9&limit=50"))
+            .await,
+        "FRONT naming B9",
+    );
+    let answer = room
+        .get("FRONT", &view_path(CUSTOMERS, "branch=MAIN&limit=50"))
+        .await;
+    assert_eq!(
+        answer.status, 200,
+        "FRONT naming MAIN: {:.300}",
+        answer.text
+    );
     room.finish().await;
 }
 
@@ -1125,17 +1153,24 @@ async fn history_is_read_from_the_callers_branch_and_an_unknown_customer_has_non
             .is_empty(),
         "B9's customer has no exchange in MAIN"
     );
-    // FRONT works in MAIN: naming B9 changes nothing
+    // FRONT works in MAIN. OR-4b (D-4): naming B9 is refused; naming MAIN reads MAIN
+    assert_out_of_scope(
+        &room
+            .get("FRONT", &view_path(HISTORY, &q(B9, &nine.customer_id)))
+            .await,
+        "FRONT naming B9",
+    );
     assert!(
-        room.ids("FRONT", HISTORY, &q(B9, &nine.customer_id))
+        room.ids("FRONT", HISTORY, &q(MAIN, &nine.customer_id))
             .await
             .is_empty(),
         "FRONT is answered from MAIN"
     );
     assert_eq!(
-        room.ids("FRONT", HISTORY, &q(B9, &main.customer_id)).await,
+        room.ids("FRONT", HISTORY, &q(MAIN, &main.customer_id))
+            .await,
         vec![main.id.clone()],
-        "FRONT naming B9 reads MAIN's customer"
+        "FRONT naming MAIN reads MAIN's customer"
     );
     assert!(
         room.history("CX-99999999", "").await.is_empty(),

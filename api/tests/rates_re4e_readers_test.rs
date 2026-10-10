@@ -107,7 +107,7 @@ use std::sync::Arc;
 
 use actix_web::http::Method;
 use chrono::Utc;
-use kiosk_http_common::Counter;
+use kiosk_http_common::{Counter, as_who, person};
 use pos_error::{AppError, AppResult};
 use rates_re4_common::{d, line, publish};
 use rpc_common::{Answer, Call};
@@ -983,7 +983,9 @@ async fn the_count_line_is_baht_to_two_places_half_up() {
 /// direct save) and in a publication (23.5 / 25 per 100), so either save path prices it.
 #[actix_web::test]
 async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
-    let counter = Counter::open(&[]).await;
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's; FRONT (TELLER under B1) saves
+    let teller = person("FR1", "FRONT", 1);
+    let counter = Counter::open(std::slice::from_ref(&teller)).await;
     let pool = counter.desk.db.pool.clone();
     counter
         .owner_rpc(
@@ -1013,8 +1015,9 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
         .desk
         .files
         .upload(
+            // C2: the teller who saves uploads the passport (a save attaches its saver's files)
             &BranchId::new(MAIN),
-            "owner",
+            &teller.id,
             "image/jpeg",
             JPEG,
             Utc::now(),
@@ -1022,10 +1025,11 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
         .await
         .expect("upload a passport");
     let submission = "00000000-0000-4000-8000-0000000e0002";
-    let answer = counter
-        .owner_rpc(
-            "saveTransaction",
-            json!({
+    let call = Call::action(
+        &counter.origin,
+        "/api/rpc",
+        "saveTransaction",
+        json!({
                 "branchId": MAIN, "submissionId": submission, "customerId": "cust-re4e",
                 "name": "Somchai Jaidee", "passportNo": "AA1234567", "nationality": "THA",
                 "birthDate": "", "passportExpiry": "", "mode": "LIVE", "type": "BUY",
@@ -1035,9 +1039,15 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
                 "paidAt": "2026-10-06T05:30:00.000Z", "paymentConfirmed": true,
                 "identityConfirmed": true, "countConfirmed": true,
                 "passport": { "uploadKey": passport },
-            }),
-        )
+        }),
+    );
+    // C2: FRONT saves
+    let answer = counter
+        .app
+        .send(as_who(call, &counter.cookies, "FR1"))
         .await;
+    assert_eq!(answer.status, 200, "saveTransaction: {}", answer.text);
+    let answer = answer.json();
     assert_eq!(answer["saved"], json!(true), "{answer}");
     let (line_thb, principal): (String, String) = sqlx::query_as(
         "SELECT e.detail->>'thb', t.principal::text FROM device_events e \

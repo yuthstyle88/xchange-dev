@@ -475,6 +475,18 @@ fn admin_slips_is_in_the_generated_view_table() {
     );
 }
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 #[actix_web::test]
 async fn admin_slips_answers_exactly_whom_the_snapshot_row_allows() {
     let room = Room::open().await;
@@ -628,8 +640,12 @@ async fn admin_slips_answers_staff_from_their_own_branch_and_the_owner_from_the_
     let main = room.save(Spec::slip(MAIN)).await;
     let nine = room.save(Spec::slip(B9)).await;
 
-    // FRONT works in MAIN: naming B9 changes nothing
-    let ids = room.ids("FRONT", "branch=B9&limit=50").await;
+    // FRONT works in MAIN. OR-4b (D-4): naming B9 is refused; naming MAIN reads MAIN
+    assert_out_of_scope(
+        &room.get("FRONT", &view_path("branch=B9&limit=50")).await,
+        "FRONT naming B9",
+    );
+    let ids = room.ids("FRONT", "branch=MAIN&limit=50").await;
     assert_eq!(ids, vec![main.id.clone()], "FRONT is answered from MAIN");
     let ids = room.ids("OWNER", "branch=B9&limit=50").await;
     assert_eq!(ids, vec![nine.id.clone()], "the owner naming B9");

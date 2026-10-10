@@ -17,6 +17,8 @@ use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 
+use xc_rate::domain::currency::denomination_groups::GroupCode;
+
 use crate::application::workflows::exchange::quote::{
     QuoteRequest, QuoteRequestLine, QuoteService,
 };
@@ -35,6 +37,8 @@ pub struct QuotesCommandInputLine {
     pub shop_side: String,
     pub quantity: String,
     pub fee_thb: Option<String>,
+    #[serde(default)]
+    pub denomination_group: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -166,6 +170,18 @@ impl CommandAction for QuotesCommand {
             _ => None,
         };
 
+        let denomination_group = match raw_line.denomination_group.as_deref() {
+            Some(s) if !s.trim().is_empty() => GroupCode::new(s).map_err(|_| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("denominationGroup"),
+                    "invalid denomination group",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?,
+            _ => GroupCode::all(),
+        };
+
         let req = QuoteRequest {
             branch_id: branch.clone(),
             customer_id: input.customer_id,
@@ -175,6 +191,7 @@ impl CommandAction for QuotesCommand {
                 shop_side: side,
                 quantity,
                 fee_thb,
+                denomination_group,
             }],
         };
 

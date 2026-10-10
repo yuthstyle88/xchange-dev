@@ -668,6 +668,37 @@ fn owner_submit(id: &str, amount: &str, key: &str, run: usize) -> Value {
 
 // ------------------------------------------------------------ the key
 
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 /// §6: a missing `Idempotency-Key` is `400 validationFailed`, field
 /// `idempotencyKey`; `run` is not called and nothing is stored.
 #[actix_web::test]
@@ -849,7 +880,8 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
             .await;
             let what = format!("{method} {uri} as {who:?}");
             let actor = actor_on(path, &who);
-            match Policy::allow(actor.as_ref(), path, &Action::new(action)) {
+            // OR-4b (#767): the route table's rule (C4: SYSTEM, ADMIN under B1, saves employees)
+            match blueprint_rule(actor.as_ref(), path, action, None) {
                 Ok(()) => {
                     allowed += 1;
                     let actor = actor.expect("allowed means signed in");

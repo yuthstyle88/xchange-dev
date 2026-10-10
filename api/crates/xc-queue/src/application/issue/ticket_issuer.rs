@@ -12,6 +12,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::{IssuedTicket, QueueTicketSource, QueueTickets};
 
+use crate::application::status::status_service::StatusService;
 use crate::domain::repository::QueueRepository;
 use crate::domain::ticket::display_number::DisplayNumber;
 use crate::domain::ticket::issue_source::IssueSource;
@@ -23,6 +24,7 @@ use crate::domain::ticket::queue_ticket::{QueueTicket, TicketStatus};
 pub struct TicketIssuer {
     branch_tx: BranchTx,
     repo: Arc<dyn QueueRepository>,
+    status: StatusService,
 }
 
 fn source_matches_ticket(source: &IssueSource, ticket: &QueueTicket) -> bool {
@@ -39,7 +41,12 @@ fn source_matches_ticket(source: &IssueSource, ticket: &QueueTicket) -> bool {
 
 impl TicketIssuer {
     pub fn new(branch_tx: BranchTx, repo: Arc<dyn QueueRepository>) -> Self {
-        Self { branch_tx, repo }
+        let status = StatusService::new(branch_tx.clone(), repo.clone());
+        Self {
+            branch_tx,
+            repo,
+            status,
+        }
     }
 
     /// Issues a ticket in a branch transaction of its own (the desk's walk-in, QU-B's route).
@@ -190,6 +197,7 @@ impl TicketIssuer {
         };
 
         self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
 
         Ok(ticket)
     }

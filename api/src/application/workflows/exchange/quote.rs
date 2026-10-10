@@ -13,7 +13,8 @@ use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Side};
-use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
+use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::application::workflows::save_step::SaveActor;
@@ -24,6 +25,7 @@ pub struct QuoteRequestLine {
     pub shop_side: Side,
     pub quantity: ForeignAmount,
     pub fee_thb: Option<Money>,
+    pub denomination_group: GroupCode,
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +102,16 @@ impl QuoteService {
         // Step 3: Fetch published rate line
         let published_side = self
             .published_rates
-            .line_in(tx, &req.branch_id, line_req.currency, line_req.shop_side)
+            .line_for(
+                tx,
+                &req.branch_id,
+                LineSelector {
+                    code: line_req.currency,
+                    side: line_req.shop_side,
+                    group: line_req.denomination_group.clone(),
+                    quantity: Some(line_req.quantity),
+                },
+            )
             .await?;
 
         let published_side = match published_side {
@@ -180,7 +191,7 @@ impl QuoteService {
             published_rate_line_id: published_side.line_id.as_uuid(),
             shop_side: line_req.shop_side,
             currency: line_req.currency,
-            denomination_group: "ALL".to_string(),
+            denomination_group: line_req.denomination_group.to_string(),
             quantity: line_req.quantity,
             unit_size: published_side.unit_size,
             base_rate: published_side.rate,

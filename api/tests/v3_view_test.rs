@@ -445,6 +445,18 @@ fn is_refusal(a: &Answer, status: u16, message: &str, what: &str) {
 
 // ------------------------------------------------------------ the version
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn is_out_of_scope(a: &Answer, what: &str) {
+    assert_eq!(a.status.as_u16(), 403, "{what}: status; body {}", a.body);
+    assert_eq!(
+        a.body["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{what}: {}",
+        a.body
+    );
+}
+
 #[actix_web::test]
 async fn branch_versions_reads_the_row_branch_tx_writes() {
     let db = TestDb::start().await;
@@ -588,14 +600,23 @@ async fn a_staff_caller_naming_another_branch_is_answered_for_their_own() {
     for _ in 0..3 {
         db.write("XC-B02").await;
     }
-    let a = get(
+    // OR-4b (D-4): naming XC-B02 is refused; naming its own branch, it is answered for it
+    let refused = get(
         &db,
         &views,
         "staff:FRONT:XC-B01",
         "/api/v3/views/test-count?branch=XC-B02",
     )
     .await;
-    is_changed(&a, 1, "FRONT of XC-B01 naming XC-B02");
+    is_out_of_scope(&refused, "FRONT of XC-B01 naming XC-B02");
+    let a = get(
+        &db,
+        &views,
+        "staff:FRONT:XC-B01",
+        "/api/v3/views/test-count?branch=XC-B01",
+    )
+    .await;
+    is_changed(&a, 1, "FRONT of XC-B01 naming XC-B01");
     assert_eq!(a.body["data"]["branch"], "XC-B01");
     assert_eq!(a.body["data"]["who"], "employee-7");
 
@@ -604,7 +625,7 @@ async fn a_staff_caller_naming_another_branch_is_answered_for_their_own() {
         &db,
         &views,
         "staff:FRONT:XC-B01",
-        "/api/v3/views/test-count?branch=XC-B02&since=1",
+        "/api/v3/views/test-count?branch=XC-B01&since=1",
     )
     .await;
     is_unchanged(&b, 1, "since of XC-B01");
@@ -795,11 +816,20 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
     let named = get(&db, &views, "owner", "/api/v3/views/me?branch=XC-B02").await;
     assert_eq!(named.body["data"]["branch"], "XC-B02");
 
-    let staff = get(
+    // OR-4b (D-4): naming XC-B02 is refused; naming its own branch, it is answered
+    let elsewhere = get(
         &db,
         &views,
         "staff:RATES:XC-B01",
         "/api/v3/views/me?branch=XC-B02",
+    )
+    .await;
+    is_out_of_scope(&elsewhere, "me as RATES staff naming XC-B02");
+    let staff = get(
+        &db,
+        &views,
+        "staff:RATES:XC-B01",
+        "/api/v3/views/me?branch=XC-B01",
     )
     .await;
     let staff_version = staff.body["version"].as_i64().unwrap_or(0);

@@ -444,16 +444,18 @@ for `rate_reference_lines`.
 | F4 | `RateBoardSource` + `RateBoardProvider` + `RateBoardPayload` | F1, F2, **Q-4** |
 | F5 | `FeedPublisher` + `RATE_FEED_PUBLICATION` subject/policy | F1, F2, F3 |
 | F6 | `PublishedRates::line_for` + `LineSelector` + tier pick; `QuoteRequestLine.denomination_group`; `quote_in` step 3 | F2 |
-| F7 | kiosk onto `line_for` with the requested quantity (`kiosk_ports.rs:415`) | F6 |
-| F8 | bookings onto `line_for` (`booking_ports.rs:110`) | F6 |
+| F7 | kiosk prices at the tier of the amount; payment check by line id; kiosk lists show the first tier (§9.3, §9.4) | F6, F8 (`line_by_id`) |
+| F8 | bookings: `counter_rate_in` through `line_for` with the booked amount; confirm checks the stored line with `PublishedRates::line_by_id` (§9.2) | F6 |
 | F9 | per-branch switch: `BranchPriceSource`, Pg impl, `branchPriceSourceSet`, BoT publish refused on board branches | F2 |
+| F11 | every list reader outside the kiosk shows the first tier (R-10) + a source guard test (§9.4) | F6 |
 | F10 | `RateFeedLoop`: timer, advisory lock, one fetch per tick, publish per switched-on branch | F4, F5, **F6** (the `line_in` guard, §4 item 3), F9 |
 
 Each ticket comes with its behaviour table and the failing tests its author writes first (🧪). None is released before this
 design is reviewed and merged (📐).
 
-**🔴 Release gate: switching a branch onto the board.** No branch is set to `'RATE_BOARD'` (F9's command) until **F6, F7 and F8 are merged and deployed**.
+**🔴 Release gate: switching a branch onto the board.** No branch is set to `'RATE_BOARD'` (F9's command) until **F6, F7, F8 and F11 are merged and deployed**.
 - Before F7/F8, the kiosk (`kiosk_ports.rs:415`) and bookings (`booking_ports.rs:110`) read through `line_in`, which answers `None` on a tiered publication (§3.4). On that branch they would show "unavailable" for every currency.
+- Before F7/F11, the list readers of §9.4 show several rows per currency on a tiered publication.
 - **Enforcement:** the gate is checked by whoever switches a branch, at the time of switching. The code does not know what is deployed. F9's ticket repeats this gate in its done criteria and in the command's description.
 
 ## 7. Must ask — not decided here
@@ -652,3 +654,84 @@ and `rpc.rs:371`. Those paths reach only `RateService::current`/`rate_in` or the
 
 Nothing here adds or changes a table, column, constraint or value: batches are still `provider = 'BOT'`,
 `reference_type = 'BOT'`, rows in the same shape. No data-migration section is needed.
+
+## 9. Screens, the kiosk and bookings on a tiered publication (amendment, 2026-10-10)
+
+> designed-by: claude/c954feda · measured on `main` `9970162` + F6 (PR 1123, head `503ce3d`)
+
+### 9.0 Decided
+| # | Ruling | What it fixes |
+|---|---|---|
+| R-10 | owner, 2026-10-10, on #986: *"แสดงราคาขั้นแรก (แนะนำ)"* | every screen that **lists** prices shows a tiered currency at its **first tier**: the line of `(currency, group)` whose `tier_lower_exclusive_thb` is NULL. The price of a transaction is still picked by `line_for` with its quantity (R-4) |
+
+Why this needed a ruling: §5 left "showing tiers on screens" undesigned, and §6's F7/F8 only moved the three `line_in`
+callers. Measured at the sha above, more readers select the `'ALL'` group's lines with **no tier filter** and so get
+several rows per currency on a tiered publication (§9.4).
+
+### 9.1 The one rule every list reader uses
+- **First tier = `tier_lower_exclusive_thb IS NULL`.** An untiered line (`value_tier = 'ALL'`) also has it NULL, so the
+  same predicate selects exactly one line per `(currency, group)` in both cases. F5 refuses a batch whose bands do not
+  start open-below (`feed_publisher.rs` band check), so a published tiered `(currency, group)` has exactly one such line.
+- A list reader adds `AND l.tier_lower_exclusive_thb IS NULL` next to its `denomination_group = 'ALL'`. No new type.
+
+### 9.2 `PublishedRates::line_by_id` and bookings (F8)
+- **New port method** (`domain/publication/published_rates.rs`, impl in `infrastructure/publication/published_rates.rs`):
+  `line_by_id(tx, branch, line_id: PublishedRateLineId, side) -> AppResult<Option<PublishedSide>>` — the line **if it
+  belongs to the branch's current publication** and that side is priced; otherwise `None`.
+- **Why a new method:** a booking (and a kiosk request) already chose its line when it was created. Checking it later must
+  not pick the tier again: confirming a booking passes no amount today, and passing one would also switch on the stale
+  check that confirm deliberately skips (`rates_re4_bookings_test::a_line_that_goes_stale_between_create_and_confirm_still_confirms`).
+- **Bookings:**
+  - `PgBookingPorts::counter_rate_in` reads through `line_for` (group `ALL`, quantity = the booked amount). With no amount,
+    a tiered line is unavailable; an untiered line answers as before.
+  - `BookingPorts` gains `stored_line_in(tx, branch, code, side, line_id: Uuid) -> Option<CounterLine>` with a **default
+    body** (ask `counter_rate_in` with no amount and keep the line only if its id matches), so existing fakes compile
+    unchanged. `PgBookingPorts` overrides it with `line_by_id`.
+  - `change.rs` (confirm) calls `stored_line_in` with the booking's `published_rate_line_id` (none → `None` → `RateMoved`,
+    as today).
+
+### 9.3 The kiosk prices at the tier (F7)
+- **Today:** `KioskMachine::quote` prices the kiosk request from `CounterFacts.line` (the counter view's line), and the
+  application then asks `QuoteService::quote_in` for the exchange quote. On a tiered publication the counter view's line is
+  the first tier (R-10) while `quote_in` picks the tier of the amount, so the two would disagree.
+- **Rule:** the kiosk request is priced at **the line `line_for` picks for the request's foreign amount** — the same line
+  `quote_in` will pick, so the kiosk price and the quote always agree.
+- **New port method** `KioskPorts::tier_line_in(tx, branch, currency, side, foreign: ForeignAmount)
+  -> AppResult<Option<CounterLine>>` (in `xc-kiosk`'s `kiosk_ports.rs`), with a **default body returning `Ok(None)`**
+  ("no tier information: keep the counter line"), so existing fakes compile unchanged. `PgKioskPorts` implements it with
+  `line_for`.
+- **Algorithm** (in `xc-kiosk/src/application/kiosk/customer.rs`, the quote step):
+  1. Price with the counter line, as today → `foreign`.
+  2. `tier_line_in(foreign)`. `None` → done (untiered, or a fake). The same line id → done.
+  3. A different line → replace `CounterFacts.line` with it and price again → new `foreign`; repeat from 2.
+  4. Stop after as many rounds as there are tiers (4); still moving → refuse `AmountOrCurrencyInvalid`.
+  - **BUY** (amount in foreign) converges in one round: the foreign amount does not depend on the rate.
+  - **SELL** (amount in THB) converges because a higher tier sells cheaper, so the same THB buys more foreign and stays
+    in the higher tier. Step 4 is the guard if a board ever publishes non-monotone tiers.
+- **Payment check:** `PgKioskPorts::check_stale_in` reads the quoted line with `line_by_id` (§9.2) instead of `line_in`,
+  then applies the stale policy as today.
+
+### 9.4 List readers and who fixes them
+| Reader (at the sha above) | Ticket |
+|---|---|
+| `src/infrastructure/kiosk/kiosk_ports.rs:248`, `:297` (`counter`, `counter_in`) | F7 |
+| `crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs:673` (`published_both_sides_in`) | F7 |
+| `src/presentation/http/v3/views/kiosk_currencies.rs:166` | F7 |
+| `src/presentation/http/v3/views/admin_bookings.rs:101`, `:292` | F11 |
+| `src/presentation/http/v3/views/published_rates.rs:95` | F11 |
+| `src/presentation/http/v3/views/staff_published_rates.rs:95` | F11 |
+| `src/application/compat/snapshot.rs:364` | F11 |
+| `src/application/workflows/save_transaction.rs:396` (`line_in`, a price read, not a list) | F11: move onto `line_for` with the line's quantity |
+
+- Three of these (`kiosk_currencies.rs:166`, `published_rates.rs:95`, `staff_published_rates.rs:95`) do not filter the
+  group at all and list every group's lines. Listing groups other than `'ALL'` is not decided here; those readers keep
+  listing what they list today and only add the first-tier predicate.
+- **Guard (F11):** a source test that fails when a SQL string under `api/src` or `api/crates/*/src` reads
+  `published_rate_lines` and mentions neither `tier_lower_exclusive_thb` nor `value_tier`, except an allow-list of
+  readers that work per line or pick the tier themselves (`xc-rate`'s `infrastructure/publication/published_rates.rs`,
+  `feed_publisher.rs`, `denomination_group_service.rs`, `publish_service.rs`, and line-by-id reads). A new list reader
+  then cannot forget R-10.
+
+### 9.5 No database change
+Nothing here adds or changes a table, column or constraint. No data-migration section is needed.
+

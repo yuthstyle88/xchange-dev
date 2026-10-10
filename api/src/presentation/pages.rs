@@ -24,11 +24,56 @@ pub struct Sessions {
     pub staff: Option<Actor>,
 }
 
+/// The callers one request carries, including their mapped Blueprint actors.
+#[derive(Clone, Debug)]
+pub struct Callers {
+    pub owner: Option<Actor>,
+    pub staff: Option<Actor>,
+    pub user: Option<xc_auth::domain::access::Actor>,
+    pub staff_user: Option<xc_auth::domain::access::Actor>,
+}
+
 /// Reads the sessions of a request. Declared here until ticket T4c, which
 /// implements it in `presentation/extractors/actor.rs`; it may move there then.
 pub trait SessionReader: Send + Sync {
     fn sessions<'a>(&'a self, req: &'a HttpRequest)
     -> Pin<Box<dyn Future<Output = Sessions> + 'a>>;
+
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move {
+            let s = self.sessions(req).await;
+            let epoch = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+            let org = "XC";
+            let staff_user = s
+                .staff
+                .as_ref()
+                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch));
+            let user = s
+                .owner
+                .as_ref()
+                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch))
+                .or_else(|| staff_user.clone());
+            Callers {
+                owner: s.owner,
+                staff: s.staff,
+                user,
+                staff_user,
+            }
+        })
+    }
+}
+
+pub async fn get_callers(req: &HttpRequest) -> Callers {
+    if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
+        reader.callers(req).await
+    } else {
+        Callers {
+            owner: None,
+            staff: None,
+            user: None,
+            staff_user: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

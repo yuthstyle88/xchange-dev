@@ -167,6 +167,26 @@ fn assert_answered_as_recorded(answer: &Answer, refusal: Option<&(String, u16)>,
     }
 }
 
+/// OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's. The owner's user
+/// is refused the queue's work, and — holding no QueueOperate — is answered a name the kiosk does
+/// not know as any other role without it is (`Staff access required.`).
+fn as_the_blueprint_answers(
+    actor: &str,
+    action: &str,
+    recorded: Option<&(String, u16)>,
+) -> Option<(String, u16)> {
+    let staff = || Some(("Staff access required.".to_string(), 400));
+    if actor == "OWNER" {
+        if ["accept", "get", "identityChecked", "publishReceipt"].contains(&action) {
+            return staff();
+        }
+        if recorded.is_some_and(|(sentence, _)| sentence == "Unknown kiosk action.") {
+            return staff();
+        }
+    }
+    recorded.cloned()
+}
+
 // ── 1. every caller, every name of the recording ─────────────────────────────
 
 #[actix_web::test]
@@ -174,9 +194,11 @@ async fn every_caller_gets_v2s_answer_to_every_kiosk_name() {
     let room = Room::open().await;
     for row in recorded() {
         let answer = room.ask(&row.actor, &row.action).await;
+        // C8 for the owner's user
+        let expected = as_the_blueprint_answers(&row.actor, &row.action, row.refusal.as_ref());
         assert_answered_as_recorded(
             &answer,
-            row.refusal.as_ref(),
+            expected.as_ref(),
             &format!("{:?} by {}", row.action, row.actor),
         );
     }
@@ -235,7 +257,9 @@ async fn a_name_the_kiosk_does_not_answer_is_refused_by_what_the_caller_is() {
     let mut callers: Vec<String> = vec!["ANON".to_string()];
     callers.extend(one_of_each_role().into_iter().map(|p| p.key));
     for who in &callers {
-        let want = unknown_name_answer(&rows, who);
+        // C8 for the owner's user
+        let want = as_the_blueprint_answers(who, "", Some(&unknown_name_answer(&rows, who)))
+            .expect("a refusal");
         for name in names {
             let answer = room.ask(who, name).await;
             assert_answered_as_recorded(&answer, Some(&want), &format!("{name:?} by {who}"));

@@ -323,4 +323,52 @@ impl QueueRepository for PgQueueRepository {
             Ok(())
         })
     }
+
+    fn lock_next_waiting_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<Option<QueueTicket>>> {
+        Box::pin(async move {
+            let row = sqlx::query(
+                r#"
+                SELECT
+                    id::text AS id,
+                    organization_id::text AS organization_id,
+                    branch_id,
+                    service_date,
+                    service_type,
+                    sequence,
+                    display_number,
+                    status,
+                    customer_id,
+                    booking_id,
+                    kiosk_request_id,
+                    counter_teller_id::text AS counter_teller_id,
+                    issued_at,
+                    called_at,
+                    served_at,
+                    completed_at,
+                    ended_reason,
+                    idempotency_key
+                FROM queue_tickets
+                WHERE branch_id = $1 AND status = 'WAITING'
+                ORDER BY
+                    CASE service_type
+                        WHEN 'BOOKING' THEN 0
+                        WHEN 'WALK_IN' THEN 1
+                        ELSE 2
+                    END,
+                    sequence ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(branch.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+
+            row.as_ref().map(map_ticket_row).transpose()
+        })
+    }
 }

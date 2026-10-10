@@ -52,8 +52,6 @@ use serde_json::{Map, Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -430,6 +428,37 @@ fn pairs<'a>(keys: &[&'a str]) -> Vec<(&'a str, &'a str)> {
 
 // ------------------------------------------------------------ discovery and reach
 
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 /// §12.20.3 *Discovery*: the action is one file in `http/v3/actions/`, listed
 /// in the generated `ACTIONS`, and `configure_v3` routes it — `POST` only.
 #[actix_web::test]
@@ -517,10 +546,13 @@ async fn whoever_the_policy_allows_for_admin_snapshot_gets_the_same_summary() {
         let what = format!("as {who:?}, naming a branch: {named}");
         let s = sessions_of(who);
         let actor = s.owner.or(s.staff);
-        match Policy::allow(
+        // OR-4b (#767): the route table's rule, naming XC-B02 where the body does (D-4: staff of
+        // XC-B01 are refused it)
+        match blueprint_rule(
             actor.as_ref(),
             EntryPath::Rpc,
-            &Action::new("adminSnapshot"),
+            "adminSnapshot",
+            named.then_some("XC-B02"),
         ) {
             Ok(()) => {
                 allowed += 1;

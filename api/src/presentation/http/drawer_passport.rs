@@ -5,8 +5,6 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use serde_json::Value;
-use xc_auth::domain::account::entities::session::SignedIn;
-use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -17,9 +15,7 @@ use crate::application::workflows::passport_drawer::{
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::passport_drawer_device::passport_drawer_device;
 use crate::presentation::dto::drawer_passport::{PassportDrawerAnswer, PassportDrawerInput};
-use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, failure, same_origin,
-};
+use crate::presentation::extractors::actor::{authorize, callers, failure, same_origin};
 use crate::presentation::http::rpc::RpcClock;
 use crate::presentation::pages;
 
@@ -67,38 +63,14 @@ async fn handle_drawer_passport(
     body: Result<web::Bytes, actix_web::Error>,
     workflow: web::Data<PassportDrawerWorkflow>,
 ) -> HttpResponse {
-    // 1. Sessions: nobody signed in (incl. employee who must change password)
-    let Some(accounts) = accounts(&req) else {
-        return refuse(500, "เซิร์ฟเวอร์ขัดข้อง");
-    };
+    let callers = callers(&req).await;
+    if callers.user.is_none() {
+        return refuse_401("กรุณาเข้าสู่ระบบ");
+    }
 
     let now = req
         .app_data::<web::Data<dyn RpcClock>>()
         .map_or_else(Utc::now, |c| c.now());
-
-    let signed_in = match accounts
-        .status(
-            &cookie(&req, OWNER_COOKIE),
-            &cookie(&req, STAFF_COOKIE),
-            now,
-        )
-        .await
-    {
-        Ok(Some(s)) => s,
-        Ok(None) => return refuse_401("กรุณาเข้าสู่ระบบ"),
-        Err(_) => return refuse(500, "เซิร์ฟเวอร์ขัดข้อง"),
-    };
-
-    if let SignedIn::Employee(ref emp) = signed_in
-        && emp.must_change
-    {
-        return refuse_401("กรุณาเข้าสู่ระบบ");
-    }
-
-    let actor = actor_of(&signed_in);
-    if actor.is_none() {
-        return refuse_401("กรุณาเข้าสู่ระบบ");
-    }
 
     // 2. Origin: Origin / X-Xchange-Request
     if !same_origin(&req) {
@@ -124,30 +96,41 @@ async fn handle_drawer_passport(
         return refuse(400, "คำขอไม่ถูกต้อง");
     }
 
-    // 4. Policy::allow: role not OWNER/FRONT/BACKEND/MANAGER
-    let empty_action = Action::new("");
-    if let Err(err) = Policy::allow(actor.as_ref(), EntryPath::DrawerPassport, &empty_action) {
-        return refuse(err.status(), &err.to_string());
-    }
-
-    // 5. Policy::branch: staff forced onto their own branch, owner uses named (default MAIN)
+    // 4 & 5. Named branch & Policy::authorize
     let named_str = match body_val.get("branchId").and_then(Value::as_str) {
         Some(s) if !s.is_empty() => s,
         _ => "MAIN",
     };
     let named_branch = BranchId::new(named_str);
-    let branch = Policy::branch(actor.as_ref(), Some(&named_branch));
+
+    let empty_action = Action::new("");
+    let (grant, callers) = match authorize(
+        &req,
+        EntryPath::DrawerPassport,
+        &empty_action,
+        Some(&named_branch),
+    )
+    .await
+    {
+        Ok(pair) => pair,
+        Err(refusal) => return refusal,
+    };
 
     // 6. Shape: branch shape check
+    let branch = grant.branch;
     if !BranchId::is_well_formed(branch.as_str()) {
         return refuse(400, "สาขาไม่ถูกต้อง");
     }
 
     // 7. Workflow
     let input = PassportDrawerInput::from_value(&body_val);
-    let actor_ref = actor.as_ref().unwrap();
+    let actor_id = callers
+        .user
+        .as_ref()
+        .map(|u| u.user_id.as_str())
+        .unwrap_or("");
 
-    match workflow.enter(&branch, &input, actor_ref.id(), now).await {
+    match workflow.enter(&branch, &input, actor_id, now).await {
         Ok(reply) => HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .content_type("application/json")

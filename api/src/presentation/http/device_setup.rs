@@ -4,8 +4,6 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use serde_json::json;
-use xc_auth::domain::account::entities::session::SignedIn;
-use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -14,8 +12,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::device_agents::agent_admin::AgentAdmin;
 use crate::presentation::dto::device_setup::{list_response_json, pairing_code_json};
 use crate::presentation::extractors::actor::{
-    BAD_REQUEST, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, answer, cookie, failure,
-    payload_of, read, refuse, server_error,
+    BAD_REQUEST, answer, authorize, callers, failure, payload_of, read, refuse, server_error,
 };
 use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::http::rpc::RpcClock;
@@ -63,18 +60,8 @@ fn redirect_origin(req: &HttpRequest) -> String {
 }
 
 async fn device_agents_page_handler(req: HttpRequest) -> HttpResponse {
-    let Some(accounts) = accounts(&req) else {
-        return server_error();
-    };
-
-    let now = req
-        .app_data::<web::Data<dyn RpcClock>>()
-        .map_or_else(Utc::now, |c| c.now());
-
-    let is_owner = matches!(
-        accounts.status(&cookie(&req, OWNER_COOKIE), "", now).await,
-        Ok(Some(SignedIn::Owner(_)))
-    );
+    let callers = callers(&req).await;
+    let is_owner = callers.owner.is_some();
 
     if !is_owner {
         let origin = redirect_origin(&req);
@@ -93,9 +80,6 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
     let Some(admin) = req.app_data::<web::Data<AgentAdmin>>() else {
         return server_error();
     };
-    let Some(accounts) = accounts(&req) else {
-        return server_error();
-    };
 
     let now = req
         .app_data::<web::Data<dyn RpcClock>>()
@@ -108,35 +92,21 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
     let action = body["action"].as_str().unwrap_or("");
     let payload = payload_of(&body);
 
-    let who = match accounts
-        .status(
-            &cookie(&req, OWNER_COOKIE),
-            &cookie(&req, STAFF_COOKIE),
-            now,
-        )
-        .await
-    {
-        Ok(who) => who,
-        Err(e) => return failure(e),
-    };
-    let actor = who.as_ref().and_then(actor_of);
-
-    if let Err(refusal) =
-        Policy::allow(actor.as_ref(), EntryPath::DeviceSetup, &Action::new(action))
-    {
-        return answer(
-            refusal.status(),
-            json!({ "error": refusal.to_string() }),
-            true,
-        );
-    }
-    let Some(actor) = actor else {
-        return server_error();
-    };
+    let (_grant, callers) =
+        match authorize(&req, EntryPath::DeviceSetup, &Action::new(action), None).await {
+            Ok(ok) => ok,
+            Err(resp) => return resp,
+        };
 
     if !same_origin(&req) {
         return refuse(400, ORIGIN_REJECTED);
     }
+
+    let actor_id = callers
+        .user
+        .as_ref()
+        .map(|u| u.user_id.as_str())
+        .unwrap_or("");
 
     match action {
         "list" => match admin.list(now).await {
@@ -149,7 +119,7 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            match admin.add(branch_id, name, actor.id(), now).await {
+            match admin.add(branch_id, name, actor_id, now).await {
                 Ok(added) => answer(200, pairing_code_json(&added), true),
                 Err(e) => failure(e),
             }
@@ -159,7 +129,7 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
                 .get("agentId")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            match admin.new_code(agent_id, actor.id(), now).await {
+            match admin.new_code(agent_id, actor_id, now).await {
                 Ok(renewed) => answer(200, pairing_code_json(&renewed), true),
                 Err(e) => failure(e),
             }
@@ -169,7 +139,7 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
                 .get("agentId")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            match admin.revoke(agent_id, actor.id(), now).await {
+            match admin.revoke(agent_id, actor_id, now).await {
                 Ok(()) => answer(200, json!({ "saved": true }), true),
                 Err(e) => failure(e),
             }

@@ -37,6 +37,7 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::infrastructure::devices::device_repository::{DeviceRepository, NewEvent};
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 
 /// Type alias for box future without external crate dependency.
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -453,6 +454,7 @@ impl KioskPorts for PgKioskPorts {
                     shop_side: side,
                     quantity,
                     fee_thb: None,
+                    denomination_group: GroupCode::all(),
                 }],
             };
             let who = SaveActor {

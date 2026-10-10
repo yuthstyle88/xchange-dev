@@ -9,6 +9,7 @@ use pos_infra::transactions::Transactor;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -103,8 +104,8 @@ async fn handle_command<C: CommandAction>(
     payload: web::Payload,
     command: Arc<C>,
 ) -> HttpResponse {
-    // Step 1: Sign-in and Policy::allow(actor, INHERITS)
-    let who = match authenticate_and_authorize(&req, C::INHERITS).await {
+    // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
+    let (who, user) = match authenticate_and_authorize(&req, C::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -218,7 +219,19 @@ async fn handle_command<C: CommandAction>(
         }
     };
 
-    let branch = Policy::branch(Some(&who), named_branch.as_ref());
+    let now = chrono::Utc::now();
+    let action_vo = Action::new(C::INHERITS.1);
+    let grant = match Policy::authorize(
+        Some(&user),
+        C::INHERITS.0,
+        &action_vo,
+        named_branch.as_ref(),
+        now,
+    ) {
+        Ok(g) => g,
+        Err(e) => return V3Error::from(e).error_response(),
+    };
+    let branch = grant.branch;
     if let Err(e) = require_branch(&req, &branch).await {
         return e.error_response();
     }

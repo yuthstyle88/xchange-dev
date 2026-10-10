@@ -7,10 +7,12 @@ use std::fmt;
 use std::str::FromStr;
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Rate, Side, UnitSize};
 
+use crate::domain::currency::denomination_groups::GroupCode;
 use crate::domain::policy::stale_policy::StalePolicy;
 use crate::domain::publication::publication::{Publication, PublicationId};
+use crate::domain::publication::value_tier::TierCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PublicationRef {
@@ -45,6 +47,14 @@ impl FromStr for PublishedRateLineId {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineSelector {
+    pub code: CurrencyCode,
+    pub side: Side,
+    pub group: GroupCode,
+    pub quantity: Option<ForeignAmount>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PublishedSide {
     pub line_id: PublishedRateLineId,
@@ -53,6 +63,7 @@ pub struct PublishedSide {
     pub publication: PublicationRef,
     pub stale: bool,
     pub source_date: Option<chrono::NaiveDate>,
+    pub value_tier: TierCode,
 }
 
 pub trait PublishedRates: Send + Sync {
@@ -67,6 +78,14 @@ pub trait PublishedRates: Send + Sync {
         branch: &'a BranchId,
         code: CurrencyCode,
         side: Side,
+    ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
+
+    /// One line of the current publication for a selector (currency, side, group, quantity), in the caller's transaction.
+    fn line_for<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        sel: LineSelector,
     ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
 
     /// The stale policy the line was published under (R5).

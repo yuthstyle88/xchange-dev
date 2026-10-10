@@ -34,8 +34,6 @@ use actix_web::http::Method;
 use compat_common::Person;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -210,6 +208,49 @@ impl Room {
 
 // ── who may read (W8) ────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 #[actix_web::test]
 async fn nobody_signed_in_is_asked_to_sign_in() {
     let room = Room::open().await;
@@ -245,11 +286,8 @@ async fn the_view_answers_exactly_whom_the_admin_snapshot_row_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in &callers {
-        let policy = Policy::allow(
-            actor.as_ref(),
-            EntryPath::Rpc,
-            &Action::new("adminSnapshot"),
-        );
+        // OR-4b (#767): the route table's rule, naming Z9 (D-4: an employee of MAIN is refused)
+        let policy = blueprint_rule(actor.as_ref(), EntryPath::Rpc, "adminSnapshot", Some("Z9"));
         let answer = room.get(who, &path("branch=Z9")).await;
         let what = format!("{VIEW} as {who:?}");
         match &policy {
@@ -357,19 +395,29 @@ async fn a_branch_made_by_a_request_is_listed_without_its_request_id() {
 #[actix_web::test]
 async fn staff_get_only_their_own_branch_whatever_they_name() {
     let room = Room::open().await;
+    // OR-4b (D-4): naming no branch or their own, an employee gets their own; naming another, they
+    // are refused
     for query in ["", "branch=MAIN", "branch=Z9", "branch=A1"] {
-        let body = room.view("FRONT_A1", query).await;
-        assert_eq!(
-            body["data"],
-            json!({ "branches": rows(&[("A1", "Alpha")]) }),
-            "FRONT of A1 with {query:?}"
-        );
-        let body = room.view("FRONT", query).await;
-        assert_eq!(
-            body["data"],
-            json!({ "branches": rows(&[(MAIN, MAIN_NAME)]) }),
-            "FRONT of MAIN with {query:?}"
-        );
+        if query.is_empty() || query == "branch=A1" {
+            let body = room.view("FRONT_A1", query).await;
+            assert_eq!(
+                body["data"],
+                json!({ "branches": rows(&[("A1", "Alpha")]) }),
+                "FRONT of A1 with {query:?}"
+            );
+        } else {
+            assert_out_of_scope(&room.get("FRONT_A1", &path(query)).await, query);
+        }
+        if query.is_empty() || query == "branch=MAIN" {
+            let body = room.view("FRONT", query).await;
+            assert_eq!(
+                body["data"],
+                json!({ "branches": rows(&[(MAIN, MAIN_NAME)]) }),
+                "FRONT of MAIN with {query:?}"
+            );
+        } else {
+            assert_out_of_scope(&room.get("FRONT", &path(query)).await, query);
+        }
     }
     room.finish().await;
 }
