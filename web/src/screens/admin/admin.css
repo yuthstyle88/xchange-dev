@@ -240,7 +240,7 @@
 
 .xc-admin .xc-content.xc-content main, .xc-admin .xc-content .admin-main {
   max-width:1640px;
-  margin:auto;
+  margin:0 auto;
   padding:32px 38px;
 }
 
