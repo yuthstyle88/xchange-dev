@@ -91,4 +91,8 @@ export const en: Record<Key, string> = {
   'queue.sound.testMuted': 'Test sound · Enable sound to receive alerts',
   'queue.sound.errPlayback': 'Cannot play sound. Check speakers and browser.',
   'queue.store.error': 'Cannot connect to queue · Retrying',
+  'rate.stale': 'Reference out of date',
+  'rate.sourceDate': 'Reference date {date}',
+  'rate.noSourceDate': 'No reference',
+  'rate.publishedAt': 'Published {at}',
 };
