@@ -101,6 +101,7 @@ fn line(currency: &str, side: Side, quantity: &str, fee: Option<&str>) -> QuoteR
         currency: code(currency),
         shop_side: side,
         quantity: ForeignAmount::from_decimal(dec(quantity)),
+        denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
         fee_thb: fee.map(money),
     }
 }
