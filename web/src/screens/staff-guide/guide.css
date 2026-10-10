@@ -29,3 +29,48 @@ a {
     display: none;
   }
 }
+
+/* v2 staff-guide.html:1 body margin */
+html body:has(.xc-shell) {
+  margin: 40px auto;
+}
+
+/* v2 staff-guide.html:1 header in plain flow */
+.xc-shell .xc-shell-header {
+  display: block;
+  padding: 0;
+  background: transparent;
+  border-bottom: 0;
+  font: inherit;
+  color: inherit;
+}
+
+/* v2 staff-guide.html:1 nav line */
+.xc-shell .xc-shell-nav,
+.xc-shell .xc-shell-nav nav {
+  display: block;
+  font-size: inherit;
+}
+
+/* v2 staff-guide.html:1 title */
+.xc-shell .xc-shell-header .xc-shell-title {
+  font-size: 2em;
+  line-height: inherit;
+  margin: 0.67em 0;
+}
+
+/* v2 staff-guide.html:1 nav link colour */
+.xc-shell .xc-shell-nav a {
+  color: #a5003c;
+}
+
+/* v2 staff-guide.html:1 browser default print button */
+.xc-shell .xc-shell-nav button {
+  all: revert;
+}
+
+/* v2 staff-guide.html:1 section width */
+.xc-shell .xc-shell-main {
+  max-width: none;
+  padding: 0;
+}
