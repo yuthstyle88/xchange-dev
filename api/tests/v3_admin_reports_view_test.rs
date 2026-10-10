@@ -549,6 +549,18 @@ fn period_wide(data: &Value) -> Value {
 
 // ── who may read it ──────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 #[actix_web::test]
 async fn admin_reports_answers_exactly_whom_the_snapshot_row_allows() {
     let room = Room::open().await;
@@ -1185,10 +1197,15 @@ async fn the_owner_reads_the_branch_named_and_staff_their_own() {
     assert_eq!(data["stats"]["received"], json!("400.00"), "{data}");
     assert_eq!(names(&data["byEmployee"]), vec!["nine"], "{data}");
 
+    // OR-4b (D-4): an employee naming B9 is refused; naming MAIN they read MAIN
+    assert_out_of_scope(
+        &room.get("FRONT", &view_path("branch=B9")).await,
+        "FRONT naming B9",
+    );
     for (who, query) in [
         ("OWNER", "branch=MAIN"),
         ("OWNER", ""),
-        ("FRONT", "branch=B9"),
+        ("FRONT", "branch=MAIN"),
     ] {
         let data = room.data(who, query).await;
         assert_eq!(

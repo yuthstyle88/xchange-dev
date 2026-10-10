@@ -10,6 +10,7 @@ use xc_auth::application::account::service::EmployeesAnswer;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -19,8 +20,8 @@ use crate::application::workflows::disable_employee::{DisableEmployee, DisableOu
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
-    BAD_REQUEST, OWNER_COOKIE, OWNER_ID, STAFF_COOKIE, accounts, actor_of, answer, cookie, failure,
-    payload_of, read, refuse, same_origin, server_error,
+    BAD_REQUEST, OWNER_ID, accounts, answer, failure, password_session, payload_of, read, refuse,
+    same_origin, server_error,
 };
 use crate::presentation::http::auth::employee_json;
 use crate::presentation::pages;
@@ -66,22 +67,20 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         return server_error();
     };
     let now = || SystemTime::now().into();
-    let who = match accounts
-        .status(
-            &cookie(&req, OWNER_COOKIE),
-            &cookie(&req, STAFF_COOKIE),
-            now(),
-        )
-        .await
-    {
-        Ok(who) => who,
-        Err(e) => return failure(e),
-    };
-    let actor = who.as_ref().and_then(actor_of);
-    if let Err(refusal) = Policy::allow(
-        actor.as_ref(),
+
+    // A database failure reading the password session is v2's 500 sentence, before the rule.
+    if let Err(e) = password_session(accounts, &req, now()).await {
+        return failure(e);
+    }
+
+    let callers = pages::get_callers(&req).await;
+    let action = Action::new("employees");
+    if let Err(refusal) = Policy::authorize(
+        callers.user.as_ref(),
         EntryPath::OwnerRoute,
-        &Action::new("employees"),
+        &action,
+        None,
+        chrono::Utc::now(),
     ) {
         return answer(
             refusal.status(),
@@ -89,9 +88,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
             false,
         );
     }
-    let Some(actor) = actor else {
-        return server_error();
-    };
+
     if !same_origin(&req) {
         return refuse(400, "ORIGIN_REJECTED");
     }
@@ -102,6 +99,17 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let payload = payload_of(&body);
     let action = body["action"].as_str().unwrap_or("");
     let custody = req.app_data::<web::Data<dyn EmployeeCustody>>();
+    let actor_id = callers
+        .user
+        .as_ref()
+        .map(|u| u.user_id.as_str())
+        .unwrap_or(OWNER_ID);
+    let dummy_owner = Actor::owner(actor_id);
+    let actor = callers
+        .owner
+        .as_ref()
+        .or(callers.staff.as_ref())
+        .unwrap_or(&dummy_owner);
 
     match action {
         "disable" => {
@@ -159,7 +167,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         "entity" => {
             return match custody {
                 None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.set_entity(&payload, &actor).await {
+                Some(custody) => match custody.set_entity(&payload, actor).await {
                     Ok(body) => answer(200, body, false),
                     Err(e) => failure(e),
                 },
@@ -181,7 +189,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
             }
             return match custody {
                 None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.enable(&payload, &actor).await {
+                Some(custody) => match custody.enable(&payload, actor).await {
                     Ok(body) => answer(200, body, false),
                     Err(e) => failure(e),
                 },

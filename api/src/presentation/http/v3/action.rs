@@ -7,6 +7,7 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use serde_json::Value;
 use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -66,8 +67,8 @@ async fn handle_compute<A: ComputeAction>(
     payload: web::Payload,
     action: Arc<A>,
 ) -> HttpResponse {
-    // Step 1: Sign-in and Policy::allow(actor, INHERITS)
-    let who = match authenticate_and_authorize(&req, A::INHERITS).await {
+    // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
+    let (who, user) = match authenticate_and_authorize(&req, A::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -150,8 +151,20 @@ async fn handle_compute<A: ComputeAction>(
         }
     };
 
-    // Step 5: Policy::branch then require_branch
-    let branch = Policy::branch(Some(&who), named_branch.as_ref());
+    // Step 5: Policy::authorize then require_branch
+    let now = chrono::Utc::now();
+    let action_vo = Action::new(A::INHERITS.1);
+    let grant = match Policy::authorize(
+        Some(&user),
+        A::INHERITS.0,
+        &action_vo,
+        named_branch.as_ref(),
+        now,
+    ) {
+        Ok(g) => g,
+        Err(e) => return V3Error::from(e).error_response(),
+    };
+    let branch = grant.branch;
     if let Err(e) = require_branch(&req, &branch).await {
         return e.error_response();
     }

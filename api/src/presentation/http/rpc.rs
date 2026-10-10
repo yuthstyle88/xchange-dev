@@ -69,10 +69,11 @@ use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
-    Accounts, OWNER_COOKIE, STAFF_COOKIE, accounts, actor_of, cookie, same_origin, server_error,
-    staff_actor,
+    Accounts, accounts, actor_of, identity_session, legacy_actor, password_session, same_origin,
+    server_error, staff_actor, staff_password_session,
 };
 use crate::presentation::pages;
+use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 
 /// The most bytes a body of 120,000 UTF-16 units can be: three per unit, and a
 /// byte-order mark that is not counted. Anything longer is over v2's limit
@@ -178,8 +179,50 @@ async fn answer(
         }
     };
 
-    // v2 judges the name before it looks at the payload
-    CompatRpc::allow(route, request.action(), &caller)?;
+    let callers = crate::presentation::extractors::actor::callers(req).await;
+    let auth_user = match route {
+        RpcRoute::Rpc => callers.user.as_ref(),
+        RpcRoute::StaffRpc => callers.staff_user.as_ref(),
+    };
+
+    let blueprint_session = identity_session(req, now).await.is_some();
+
+    let named = if !blueprint_session
+        && caller.actor.kind()
+            == xc_auth::domain::policy::value_objects::actor_kind::ActorKind::Staff
+    {
+        None
+    } else {
+        match request.payload() {
+            Ok(p) => match p.get("branchId") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(serde_json::Value::String(s)) => {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(xc_kernel::ids::BranchId::new(s))
+                    }
+                }
+                Some(serde_json::Value::Number(n)) if n.as_i64() == Some(0) => None,
+                _ => Some(xc_kernel::ids::BranchId::new("")),
+            },
+            Err(_) => None,
+        }
+    };
+
+    let grant = CompatRpc::authorize(
+        route,
+        request.action(),
+        auth_user,
+        named.as_ref(),
+        Some(&caller.actor),
+        now,
+    )?;
+
+    if !xc_kernel::ids::BranchId::is_well_formed(grant.branch.as_str()) {
+        return Err(RpcRefusal::refused(crate::application::compat::rpc::BAD_BRANCH).into());
+    }
+
     let (action, payload) = request.into_parts()?;
 
     let source = rate_source(req);
@@ -188,7 +231,7 @@ async fn answer(
         .ok_or_else(|| not_wired("the rpc actions"))?;
     compat_rpc(&state.db, source, accounts.get_ref().clone())
         .with_actions(actions.get_ref().clone())
-        .dispatch(route, &action, payload, &caller, now)
+        .dispatch(route, &action, payload, &caller, &grant.branch, now)
         .await
 }
 
@@ -228,97 +271,52 @@ pub(crate) fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
     })
 }
 
-/// Who `/api/rpc` is answering: the owner session first, else the staff
-/// session. An employee whose first password is unchanged is nobody here.
-#[allow(clippy::collapsible_if)]
-async fn caller_of_rpc(
+/// Who `/api/rpc` is answering: the Blueprint session first, else the owner
+/// session, else the staff session. An employee whose first password is
+/// unchanged is nobody here.
+///
+/// The caller's `actor` is the v2 actor the downstream services still take
+/// (ruling (a) on #767: `legacy_actor` for a Blueprint session, stopgap until
+/// OR-7). Who may ask is decided on `Callers` (`answer`), never on it.
+pub(crate) async fn caller_of_rpc(
     accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
-    let session_token = crate::presentation::extractors::actor::cookie(
-        req,
-        crate::presentation::extractors::actor::SESSION_COOKIE,
-    );
-    if !session_token.is_empty() {
-        if let Some(session_svc) =
-            req.app_data::<web::Data<xc_auth::application::session::SessionService>>()
-        {
-            if let Ok(Some((user, roles))) =
-                session_svc.active_user_and_roles(&session_token, now).await
-            {
-                let access_actor = xc_auth::domain::access::Actor::new(
-                    &user.id,
-                    &user.organization_id,
-                    roles,
-                    None,
-                );
-                if let Some(legacy) =
-                    crate::presentation::extractors::actor::legacy_actor(&access_actor, now)
-                {
-                    return Ok(Some(RpcCaller {
-                        actor: legacy,
-                        username: user.id,
-                        name: user.name,
-                    }));
-                }
-                return Ok(None);
-            }
-        }
+    if let Some((user, roles)) = identity_session(req, now).await {
+        let access_actor =
+            xc_auth::domain::access::Actor::new(&user.id, &user.organization_id, roles, None);
+        return Ok(legacy_actor(&access_actor, now).map(|actor| RpcCaller {
+            actor,
+            username: user.id,
+            name: user.name,
+        }));
     }
-    let who = accounts
-        .status(&cookie(req, OWNER_COOKIE), &cookie(req, STAFF_COOKIE), now)
-        .await?;
+    let who = password_session(accounts, req, now).await?;
     Ok(who.as_ref().and_then(caller_of))
 }
 
 /// Who `/api/staff/rpc` is answering: the staff session only — an owner
 /// session counts for nothing — and only once the first password is changed.
-#[allow(clippy::collapsible_if)]
 async fn caller_of_staff_rpc(
     accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> Result<RpcCaller, RpcFailure> {
     let route = RpcRoute::StaffRpc;
-    let session_token = crate::presentation::extractors::actor::cookie(
-        req,
-        crate::presentation::extractors::actor::SESSION_COOKIE,
-    );
-    if !session_token.is_empty() {
-        if let Some(session_svc) =
-            req.app_data::<web::Data<xc_auth::application::session::SessionService>>()
-        {
-            if let Ok(Some((user, roles))) =
-                session_svc.active_user_and_roles(&session_token, now).await
-            {
-                let access_actor = xc_auth::domain::access::Actor::new(
-                    &user.id,
-                    &user.organization_id,
-                    roles,
-                    None,
-                );
-                if let Some(legacy) =
-                    crate::presentation::extractors::actor::legacy_actor(&access_actor, now)
-                {
-                    if legacy.kind()
-                        == xc_auth::domain::policy::value_objects::actor_kind::ActorKind::Staff
-                    {
-                        return Ok(RpcCaller {
-                            actor: legacy,
-                            username: user.id,
-                            name: user.name,
-                        });
-                    }
-                }
-                return Err(RpcRefusal::not_signed_in(route).into());
-            }
-        }
+    if let Some((user, roles)) = identity_session(req, now).await {
+        let access_actor =
+            xc_auth::domain::access::Actor::new(&user.id, &user.organization_id, roles, None);
+        return match legacy_actor(&access_actor, now) {
+            Some(actor) if actor.kind() == ActorKind::Staff => Ok(RpcCaller {
+                actor,
+                username: user.id,
+                name: user.name,
+            }),
+            _ => Err(RpcRefusal::not_signed_in(route).into()),
+        };
     }
-    let employee = match accounts
-        .employee_session(&cookie(req, STAFF_COOKIE), true, now)
-        .await
-    {
+    let employee = match staff_password_session(accounts, req, true, now).await {
         Ok(employee) => employee,
         Err(AppError::Unauthenticated) => return Err(RpcRefusal::not_signed_in(route).into()),
         Err(other) => return Err(other.into()),

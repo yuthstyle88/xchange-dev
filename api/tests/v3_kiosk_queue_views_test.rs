@@ -586,6 +586,18 @@ fn the_day(room: &Room) -> Vec<Row> {
 
 // ── who may read ─────────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 /// §8: nobody signed in — and an employee who must change the first password, who is nobody
 /// on this path — gets the `kioskStaff` refusal from both views, whatever the query.
 #[actix_web::test]
@@ -1180,9 +1192,18 @@ async fn staff_naming_another_branch_are_answered_for_their_own() {
         Row::waiting(0x63, 3).branch(B9),
     ])
     .await;
+    // OR-4b (D-4): staff of MAIN naming B9 are refused; naming MAIN they read MAIN's
+    for who in ["FRONT", "RATES"] {
+        for view in [QUEUE, NOTES] {
+            assert_out_of_scope(
+                &room.get(who, &path(view, "branch=B9")).await,
+                &format!("{who} naming B9 on {view}"),
+            );
+        }
+    }
     for (who, query, want, branch) in [
-        ("FRONT", "branch=B9", vec![rid(0x61)], MAIN),
-        ("RATES", "branch=B9", vec![rid(0x61)], MAIN),
+        ("FRONT", "branch=MAIN", vec![rid(0x61)], MAIN),
+        ("RATES", "branch=MAIN", vec![rid(0x61)], MAIN),
         ("FRONT", "", vec![rid(0x61)], MAIN),
         ("owner", "branch=B9", vec![rid(0x63), rid(0x62)], B9),
         ("owner", "", vec![rid(0x61)], MAIN),

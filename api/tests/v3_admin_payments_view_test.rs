@@ -39,8 +39,6 @@ use pos_infra::transactions::Transactor;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -313,6 +311,49 @@ fn callers() -> Vec<(String, Option<Actor>)> {
 
 // ── who may read (W8, design §4.4) ───────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
+/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
+/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+fn blueprint_rule(
+    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
+    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    action: &str,
+    named: Option<&str>,
+) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
+    if Policy::need(path, &act) == Some(Need::Custody) {
+        // #582's rows stay on the v2 rule
+        return Policy::allow(actor, path, &act);
+    }
+    let user = actor.map(|a| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            a,
+            "XC",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    Policy::authorize(
+        user.as_ref(),
+        path,
+        &act,
+        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        chrono::Utc::now(),
+    )
+    .map(|_| ())
+}
+
 #[actix_web::test]
 async fn admin_payments_asks_nobody_signed_in_to_sign_in() {
     let room = Room::open().await;
@@ -336,10 +377,12 @@ async fn admin_payments_answers_every_caller_what_the_payment_methods_list_answe
     room.save(AIRPORT, v, &rows("airport")).await;
     let mut allowed = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(
+        // OR-4b (#767): the route table's rule, naming AIRPORT (D-4: an employee of MAIN is refused)
+        let policy = blueprint_rule(
             actor.as_ref(),
             EntryPath::PaymentMethods,
-            &Action::new("list"),
+            "list",
+            Some(AIRPORT),
         );
         let answer = room.get(&who, &path("branch=AIRPORT")).await;
         let what = format!("{VIEW} as {who:?}");
@@ -377,10 +420,11 @@ async fn admin_payments_answers_every_caller_what_the_payment_methods_list_answe
             }
         }
     }
+    // D-4: an employee of MAIN naming AIRPORT is refused; the owner, alone or not, reads it
     assert_eq!(
         allowed,
-        1 + 2 * Role::STAFF.len(),
-        "every signed-in caller reads it (any employee reads their own branch, §5.5.2)"
+        1 + Role::STAFF.len(),
+        "the owner, alone or beside an employee, reads AIRPORT"
     );
     room.finish().await;
 }
@@ -465,7 +509,13 @@ async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for
         assert_eq!(main["data"]["methods"], rows("main"), "{query:?}");
     }
 
-    for query in ["", "branch=MAIN", "branch=AIRPORT"] {
+    // OR-4b (D-4): staff of AIRPORT naming MAIN are refused; naming none or AIRPORT they read
+    // AIRPORT's
+    assert_out_of_scope(
+        &room.get("AIRPORT_FRONT", &path("branch=MAIN")).await,
+        "MAIN",
+    );
+    for query in ["", "branch=AIRPORT"] {
         let staff = room.view("AIRPORT_FRONT", query).await;
         assert_eq!(staff["data"]["branchId"], json!(AIRPORT), "{query:?}");
         assert_eq!(
@@ -482,7 +532,7 @@ async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for
         );
         assert_eq!(
             staff["data"],
-            expected_data(&room.list("AIRPORT_FRONT", Some(MAIN)).await),
+            expected_data(&room.list("AIRPORT_FRONT", Some(AIRPORT)).await),
             "{query:?}"
         );
     }

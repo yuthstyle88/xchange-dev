@@ -41,9 +41,6 @@ const KICK: [u8; 7] = [0x1B, 0x40, 0x1B, 0x70, 0x00, 0x19, 0xFA];
 /// `network_printer::send` gives up after 5 s to connect and 10 s to write.
 const SEND_BOUND: Duration = Duration::from_secs(20);
 
-/// The v2 sentence for an action only the owner may take (R2).
-const OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้น";
-
 fn printer(online: bool, kind: PrinterKind) -> PrinterSettings {
     PrinterSettings { online, kind }
 }
@@ -415,8 +412,11 @@ fn staff(role: Role) -> Actor {
 
 #[tokio::test]
 async fn only_the_owner_sets_the_printer() {
+    // OR-4b (#767, design §4.2 C5): who may set the printer is the route table's alone
+    // (`Policy::need(Devices, setPrinter)` = SystemSettings: EXECUTIVE and ADMIN), asked by the
+    // route (`devices_set_printer_test.rs`); the service no longer judges the caller's role, so
+    // each role's call reaches the setting
     let db = Devices::start().await;
-    let before = db.settings().await;
 
     for role in [
         Role::Front,
@@ -436,9 +436,8 @@ async fn only_the_owner_sets_the_printer() {
                 at(1),
             )
             .await;
-        assert_eq!(refusal(answer), OWNER_ONLY, "{role:?}");
+        assert!(answer.is_ok(), "{role:?}: {answer:?}");
     }
-    assert_eq!(db.settings().await, before, "a refusal stores nothing");
 
     db.finish().await;
 }

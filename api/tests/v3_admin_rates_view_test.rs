@@ -417,6 +417,18 @@ fn rate_of<'a>(data: &'a Value, code: &str) -> &'a Value {
 
 // ── who may read them ────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 #[actix_web::test]
 async fn both_views_answer_exactly_whom_the_snapshot_row_allows() {
     let room = Room::open().await;
@@ -667,11 +679,20 @@ async fn the_owner_reads_the_branch_named_and_staff_their_own() {
 
     let nine = room.rates("OWNER", "branch=B9").await;
     assert_eq!(rate_of(&nine, "USD")["buy"], json!("30.0000"), "{nine}");
+    // OR-4b (D-4): an employee naming B9 is refused; naming MAIN they read MAIN
+    for who in ["RATES", "FRONT"] {
+        for view in [RATES, HISTORY] {
+            assert_out_of_scope(
+                &room.get(who, &view_path(view, "branch=B9")).await,
+                &format!("{who} naming B9 on {view}"),
+            );
+        }
+    }
     for (who, query) in [
         ("OWNER", "branch=MAIN"),
         ("OWNER", ""),
-        ("RATES", "branch=B9"),
-        ("FRONT", "branch=B9"),
+        ("RATES", "branch=MAIN"),
+        ("FRONT", "branch=MAIN"),
     ] {
         let data = room.rates(who, query).await;
         assert_eq!(

@@ -473,7 +473,9 @@ async fn every_staff_role_is_refused_both_settings_and_nothing_is_stored() {
         ),
     ];
     let mut checked = 0;
-    for who in staff_keys() {
+    // OR-4b (#767, design §4.2 C5): SystemSettings is ADMIN's too (§02 ADMIN "ตั้งค่าระบบ"), and B1
+    // makes SYSTEM an ADMIN; SYSTEM is asked below
+    for who in staff_keys().into_iter().filter(|k| k != "SYSTEM") {
         for (action, payload) in &calls {
             let answer = room.ask(&who, action, payload.clone()).await;
             refused(
@@ -485,8 +487,17 @@ async fn every_staff_role_is_refused_both_settings_and_nothing_is_stored() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 18, "nine staff roles, two actions");
+    assert_eq!(checked, 16, "eight staff roles, two actions");
     assert_eq!(room.settings().await, before, "a refusal stores nothing");
+    // C5: SYSTEM sets both
+    for (action, payload) in &calls {
+        let answer = room.ask("SYSTEM", action, payload.clone()).await;
+        assert_eq!(
+            answer.status, 200,
+            "{action} as SYSTEM (C5): {:.300}",
+            answer.text
+        );
+    }
     room.finish().await;
 }
 

@@ -44,7 +44,8 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Map, Value};
 use xc_auth::application::account::service::AccountService;
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::authorizer::Grant;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
@@ -76,7 +77,7 @@ use crate::application::compat::v2_json::V2Json;
 /// The branch of an owner who names none.
 const MAIN: &str = "MAIN";
 /// `payload.branchId` that is not a branch id at all.
-const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
+pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
 
 /// The order of the keys the staff view adds to a snapshot (`employees`, then
 /// `employee`) and of the keys inside them, as v2 prints them.
@@ -199,18 +200,39 @@ impl CompatRpc {
         &self.snapshots
     }
 
-    /// Whether `caller` may ask for `action` on `route`: `Policy::allow` with
+    /// Whether `user` may ask for `action` on `route`: `Policy::authorize` with
     /// the route's entry path, the refusal in the route's own sentence.
     ///
     /// The route layer calls this between `RpcRequest::parse` and
     /// `RpcRequest::payload`: v2 judges the name before it looks at the
-    /// payload. [`Self::dispatch`] asks again, so it is safe on its own.
-    pub fn allow(route: RpcRoute, action: &str, caller: &RpcCaller) -> Result<(), RpcRefusal> {
+    /// payload.
+    pub fn authorize(
+        route: RpcRoute,
+        action: &str,
+        user: Option<&xc_auth::domain::access::Actor>,
+        named: Option<&BranchId>,
+        legacy: Option<&Actor>,
+        now: DateTime<Utc>,
+    ) -> Result<Grant, RpcRefusal> {
         let path = match route {
             RpcRoute::Rpc => EntryPath::Rpc,
             RpcRoute::StaffRpc => EntryPath::StaffRpc,
         };
-        Policy::allow(Some(&caller.actor), path, &Action::new(action)).map_err(policy_refusal)
+        let action_vo = Action::new(action);
+        let need = Policy::need(path, &action_vo);
+        if need == Some(Need::Custody) {
+            Policy::allow(legacy, path, &action_vo).map_err(policy_refusal)?;
+            let branch = legacy
+                .and_then(|a| a.branch_id())
+                .cloned()
+                .or_else(|| named.cloned())
+                .unwrap_or_else(|| BranchId::new(MAIN));
+            return Ok(Grant {
+                branch,
+                roles_used: vec![],
+            });
+        }
+        Policy::authorize(user, path, &action_vo, named, now).map_err(policy_refusal)
     }
 
     /// Runs `action` for `caller` and gives back what the screen is answered:
@@ -228,9 +250,12 @@ impl CompatRpc {
         action: &str,
         payload: Map<String, Value>,
         caller: &RpcCaller,
+        branch: &BranchId,
         now: DateTime<Utc>,
     ) -> Result<V2Json, RpcFailure> {
-        Self::allow(route, action, caller)?;
+        if !BranchId::is_well_formed(branch.as_str()) {
+            return Err(RpcRefusal::refused(BAD_BRANCH).into());
+        }
         // a name of part two: its family's, when one is registered for it
         let family = if is_part_one(action) {
             None
@@ -241,8 +266,7 @@ impl CompatRpc {
             }
         };
 
-        let branch = branch_of(caller, &payload)?;
-        self.services.branches.require(&branch).await?;
+        self.services.branches.require(branch).await?;
         let who = caller.username.as_str();
 
         if let Some(family) = family {
@@ -251,7 +275,7 @@ impl CompatRpc {
                 action,
                 payload,
                 caller,
-                branch: &branch,
+                branch,
                 now,
             };
             let answer = family.run(call).await.map_err(|err| match err {
@@ -264,15 +288,15 @@ impl CompatRpc {
         }
 
         let answer = match action {
-            "adminSnapshot" => self.snapshots.admin_snapshot(&branch, who, now).await?,
-            "adminDeskConfig" => self.snapshots.desk_config(&branch).await?,
+            "adminSnapshot" => self.snapshots.admin_snapshot(branch, who, now).await?,
+            "adminDeskConfig" => self.snapshots.desk_config(branch).await?,
             "getConnectionStatus" => connection_status(),
             "adminSaveRate" => {
                 self.services
                     .rates
-                    .save_rate(&branch, save_rate_command(&payload), who, now)
+                    .save_rate(branch, save_rate_command(&payload), who, now)
                     .await?;
-                self.written(&branch, who, now).await?
+                self.written(branch, who, now).await?
             }
             "adminCreateBranch" => {
                 let command = CreateBranch {
@@ -285,17 +309,17 @@ impl CompatRpc {
                 self.written(&created.id, who, now).await?
             }
             "adminOpenShift" | "adminMoveStock" | "adminCloseShift" => {
-                self.shift_action(action, &branch, Value::Object(payload), who, now)
+                self.shift_action(action, branch, Value::Object(payload), who, now)
                     .await?;
-                self.written(&branch, who, now).await?
+                self.written(branch, who, now).await?
             }
             "adminAbandonRequest" => {
                 let resolution = self
                     .services
                     .abandon
-                    .abandon(&branch, &Value::Object(payload), who, now)
+                    .abandon(branch, &Value::Object(payload), who, now)
                     .await?;
-                let mut answer = self.written(&branch, who, now).await?;
+                let mut answer = self.written(branch, who, now).await?;
                 if let V2Json::Object(pairs) = &mut answer {
                     pairs.push((
                         "requestResolution".to_string(),
@@ -308,7 +332,7 @@ impl CompatRpc {
                 let reservation = self
                     .services
                     .customers
-                    .reserve(&branch, reserve_command(&payload), now)
+                    .reserve(branch, reserve_command(&payload), now)
                     .await?;
                 V2Json::object(vec![
                     ("customerId", V2Json::text(reservation.customer_id)),
@@ -485,26 +509,6 @@ fn policy_refusal(refusal: PolicyError) -> RpcRefusal {
         sentence: refusal.to_string(),
         no_store: true,
     }
-}
-
-/// The branch a request is answered for (`Policy::branch`): an employee's own,
-/// whatever the payload names; for the owner v2's
-/// `payload.branchId || "MAIN"`, which must look like a branch id.
-fn branch_of(caller: &RpcCaller, payload: &Map<String, Value>) -> Result<BranchId, RpcRefusal> {
-    if caller.is_staff() {
-        return Ok(Policy::branch(Some(&caller.actor), None));
-    }
-    let named = match payload.get("branchId") {
-        Some(value) if js_truthy(value) => js_text(Some(value)),
-        _ => MAIN.to_string(),
-    };
-    if !BranchId::is_well_formed(&named) {
-        return Err(RpcRefusal::refused(BAD_BRANCH));
-    }
-    Ok(Policy::branch(
-        Some(&caller.actor),
-        Some(&BranchId::new(named)),
-    ))
 }
 
 /// v2's `getConnectionStatus`: the desk asks it once at load and goes on only

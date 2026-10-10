@@ -10,13 +10,11 @@ use chrono::Utc;
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
-use xc_auth::domain::account::entities::employee::Employee;
-use xc_auth::domain::account::entities::owner::Owner;
 use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
@@ -40,11 +38,12 @@ use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::extractors::actor::{
-    OWNER_COOKIE, OWNER_ID, STAFF_COOKIE, accounts, cookie, refuse, same_origin, staff_actor,
+    accounts, authorize, callers, identity_session, password_session, refuse, same_origin,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
 use crate::presentation::pages;
+use crate::presentation::pages::Callers;
 
 /// The ids the kiosk route makes for a new request. Looked up as `web::Data<dyn KioskIds>`, so a
 /// test can register its own after the route table (ticket #172; contract of
@@ -79,10 +78,27 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         );
 }
 
-enum Caller {
-    Customer,
-    Owner(Owner),
-    Employee(Employee),
+fn kiosk_actor_from_callers(callers: &Callers) -> KioskActor {
+    if callers.owner.is_some() {
+        KioskActor::Staff {
+            username: "owner".to_string(),
+            role: KioskRole::Owner,
+        }
+    } else if let Some(staff) = &callers.staff {
+        let role = match staff.role() {
+            Role::Front => KioskRole::Front,
+            Role::Backend => KioskRole::Backend,
+            Role::Manager => KioskRole::Manager,
+            Role::Rates => KioskRole::Rates,
+            _ => KioskRole::Other,
+        };
+        KioskActor::Staff {
+            username: staff.id().to_string(),
+            role,
+        }
+    } else {
+        KioskActor::Customer
+    }
 }
 
 fn kiosk_server_error() -> HttpResponse {
@@ -93,8 +109,11 @@ fn kiosk_server_error() -> HttpResponse {
 }
 
 /// Whether the caller may claim a request: the policy's answer for `accept`.
-fn claims_requests(actor: Option<&Actor>) -> bool {
-    Policy::allow(actor, EntryPath::Kiosk, &Action::new("accept")).is_ok()
+fn claims_requests(
+    actor: Option<&xc_auth::domain::access::Actor>,
+    now: chrono::DateTime<Utc>,
+) -> bool {
+    Policy::authorize(actor, EntryPath::Kiosk, &Action::new("accept"), None, now).is_ok()
 }
 
 /// The usernames of the given holder ids, read in one query. A holder is stored by id;
@@ -206,12 +225,7 @@ async fn handle_kiosk(
     let Some(accounts_service) = accounts(&req) else {
         return kiosk_server_error();
     };
-    let owner_cookie = cookie(&req, OWNER_COOKIE);
-    let staff_cookie = cookie(&req, STAFF_COOKIE);
-    let who = match accounts_service
-        .status(&owner_cookie, &staff_cookie, now)
-        .await
-    {
+    let who = match password_session(accounts_service, &req, now).await {
         Ok(w) => w,
         Err(err) => {
             tracing::error!(error = %err, "status failed");
@@ -219,39 +233,14 @@ async fn handle_kiosk(
         }
     };
 
-    // A first-password session never reaches here: `AccountService::status` answers `None` for
-    // it, which is where the must-change rule lives.
-    let policy_actor = match &who {
-        Some(SignedIn::Owner(_)) => Some(Actor::owner(OWNER_ID)),
-        Some(SignedIn::Employee(emp)) => staff_actor(emp),
-        None => None,
-    };
-
-    let (kiosk_actor, caller) = match who {
-        Some(SignedIn::Owner(owner)) => (
-            KioskActor::Staff {
-                username: "owner".to_string(),
-                role: KioskRole::Owner,
-            },
-            Caller::Owner(owner),
-        ),
-        Some(SignedIn::Employee(emp)) => {
-            let role = match emp.role.as_str() {
-                "FRONT" => KioskRole::Front,
-                "BACKEND" => KioskRole::Backend,
-                "MANAGER" => KioskRole::Manager,
-                "RATES" => KioskRole::Rates,
-                _ => KioskRole::Other,
-            };
-            (
-                KioskActor::Staff {
-                    username: emp.id.clone(),
-                    role,
-                },
-                Caller::Employee(emp),
-            )
-        }
-        None => (KioskActor::Customer, Caller::Customer),
+    let empty_payload = json!({});
+    let payload = match body_val.as_object() {
+        Some(obj) => match obj.get("payload") {
+            None => &empty_payload,
+            Some(Value::Object(_)) => obj.get("payload").unwrap(),
+            Some(_) => return refuse(400, "Invalid request."),
+        },
+        None => &empty_payload,
     };
 
     let action_str = body_val
@@ -260,10 +249,44 @@ async fn handle_kiosk(
         .and_then(Value::as_str)
         .unwrap_or("");
 
-    let policy_action = Action::new(action_str);
-    if let Err(err) = Policy::allow(policy_actor.as_ref(), EntryPath::Kiosk, &policy_action) {
-        return refuse(err.status(), &err.to_string());
+    let action_vo = Action::new(action_str);
+
+    let callers_peek = callers(&req).await;
+    let named_branch = match payload.get("branchId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => {
+            if s.is_empty() {
+                None
+            } else {
+                Some(BranchId::new(s))
+            }
+        }
+        Some(Value::Number(n)) if n.as_i64() == Some(0) => None,
+        _ => Some(BranchId::new("")),
+    };
+
+    // D-4 for a Blueprint session (`__Host-xc_session`): the named branch is authorised. Only a
+    // password-session employee keeps v2's own-branch answer, as on `/api/rpc` (`rpc.rs`), which
+    // the provided tests pin; `callers.staff` is set for both, so it cannot decide this alone.
+    let blueprint_session = identity_session(&req, now).await.is_some();
+    let named = if !blueprint_session && callers_peek.staff.is_some() {
+        None
+    } else {
+        named_branch
+    };
+
+    let (grant, callers) = match authorize(&req, EntryPath::Kiosk, &action_vo, named.as_ref()).await
+    {
+        Ok(pair) => pair,
+        Err(refusal) => return refusal,
+    };
+
+    let branch = grant.branch;
+    if !BranchId::is_well_formed(branch.as_str()) {
+        return refuse(400, "Invalid branch.");
     }
+
+    let kiosk_actor = kiosk_actor_from_callers(&callers);
 
     let action = match action_str {
         "rates" => KioskAction::Rates,
@@ -280,34 +303,6 @@ async fn handle_kiosk(
         "manage" => KioskAction::Manage,
         "configure" => KioskAction::Configure,
         _ => return kiosk_server_error(),
-    };
-
-    let empty_payload = json!({});
-    let payload = match body_val.as_object() {
-        Some(obj) => match obj.get("payload") {
-            None => &empty_payload,
-            Some(Value::Object(_)) => obj.get("payload").unwrap(),
-            Some(_) => return refuse(400, "Invalid request."),
-        },
-        None => &empty_payload,
-    };
-
-    let branch = match &caller {
-        Caller::Employee(emp) => BranchId::new(emp.branch_id.clone()),
-        Caller::Owner(_) | Caller::Customer => match payload.get("branchId") {
-            None | Some(Value::Null) => BranchId::new("MAIN"),
-            Some(Value::String(s)) => {
-                if s.is_empty() {
-                    BranchId::new("MAIN")
-                } else if BranchId::is_well_formed(s) {
-                    BranchId::new(s)
-                } else {
-                    return refuse(400, "Invalid branch.");
-                }
-            }
-            Some(Value::Number(n)) if n.as_i64() == Some(0) => BranchId::new("MAIN"),
-            _ => return refuse(400, "Invalid branch."),
-        },
     };
 
     let pool = &state.db;
@@ -425,20 +420,50 @@ async fn handle_kiosk(
         }
         KioskAction::Notifications => match service.notifications(&branch, &kiosk_actor).await {
             Ok(notifications) => {
-                let emp_info = match &caller {
-                    Caller::Owner(owner) => dto_kiosk::EmployeeInfo {
+                let emp_info = match who {
+                    Some(SignedIn::Owner(owner)) => dto_kiosk::EmployeeInfo {
                         id: "owner".to_string(),
                         username: owner.username.clone(),
                         name: owner.name.clone(),
                         role: "OWNER".to_string(),
                     },
-                    Caller::Employee(emp) => dto_kiosk::EmployeeInfo {
+                    Some(SignedIn::Employee(emp)) => dto_kiosk::EmployeeInfo {
                         id: emp.id.clone(),
                         username: emp.username.clone(),
                         name: emp.name.clone(),
                         role: emp.role.clone(),
                     },
-                    Caller::Customer => unreachable!(),
+                    None => {
+                        if callers.owner.is_some() {
+                            dto_kiosk::EmployeeInfo {
+                                id: "owner".to_string(),
+                                username: "owner".to_string(),
+                                name: "Owner".to_string(),
+                                role: "OWNER".to_string(),
+                            }
+                        } else if let Some(staff) = &callers.staff {
+                            let role_name = match staff.role() {
+                                Role::Front => "FRONT",
+                                Role::Backend => "BACKEND",
+                                Role::Manager => "MANAGER",
+                                Role::Rates => "RATES",
+                                Role::Finance => "FINANCE",
+                                Role::Monitor => "MONITOR",
+                                Role::System => "SYSTEM",
+                                Role::Documents => "DOCUMENTS",
+                                Role::DocumentReview => "DOCUMENT_REVIEW",
+                                Role::Owner => "OWNER",
+                            };
+                            dto_kiosk::EmployeeInfo {
+                                id: staff.id().to_string(),
+                                username: staff.id().to_string(),
+                                name: staff.id().to_string(),
+                                role: role_name.to_string(),
+                            }
+                        } else {
+                            return kiosk_server_error();
+                        }
+                    }
                 };
                 let names =
                     usernames(pool, notifications.working.iter().map(|w| w.staff.as_str())).await;
@@ -486,7 +511,7 @@ async fn handle_kiosk(
                     };
                     let list_caller = dto_kiosk::ListCaller {
                         id: caller_id,
-                        claims: claims_requests(policy_actor.as_ref()),
+                        claims: claims_requests(callers.user.as_ref(), now),
                     };
                     match dto_kiosk::list_json(
                         &branch,

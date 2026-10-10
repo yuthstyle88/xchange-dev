@@ -37,6 +37,9 @@ use snapshot_common::time;
 
 const ORIGIN: &str = "http://desk.test";
 const FILE: &str = "rpc/engine_actions.json";
+/// Who saves at the desk: the day's FRONT, FR1. v2's owner saved; the Blueprint's
+/// `ExchangeTransact` is TELLER's only (OR-4b #767, design §4.2 C2), and B1 makes FRONT a TELLER.
+const TELLER: &str = "FR1";
 
 const NOT_FOUND_HERE: &str = "ไม่พบการจองของสาขานี้";
 const USED_BY_ANOTHER: &str = "การจองนี้ถูกใช้ทำรายการแล้ว";
@@ -183,12 +186,11 @@ async fn customer_with(replay: &Replay<'_>, passport: &str) -> String {
 }
 
 async fn save(replay: &Replay<'_>, who: &str, route: &str, payload: &Value) -> Answer {
+    // OR-4b (C2): a save attaches its saver's own files; the teller uploads the owner's again
+    let payload = replay.uploads_as(who, payload).await;
     replay
         .app
-        .send(
-            Call::action(ORIGIN, route, "saveTransaction", payload.clone())
-                .cookie(&replay.cookies[who]),
-        )
+        .send(Call::action(ORIGIN, route, "saveTransaction", payload).cookie(&replay.cookies[who]))
         .await
 }
 
@@ -266,7 +268,7 @@ async fn booked_rate_skips_counter_check() {
     let mut payload = claiming(&payload_of(&replay, LIVE_BUY), "BK-rate");
     payload["rate"] = json!(32.1);
 
-    let answer = save(&replay, "owner", RPC, &payload).await;
+    let answer = save(&replay, TELLER, RPC, &payload).await;
     let document = saved_ref(&answer, "a booking at 32.1, the counter at 32.2");
     let after = kept(&replay).await;
     assert_eq!(
@@ -310,7 +312,7 @@ async fn no_claim_keeps_rate_check() {
     ] {
         refused_and_kept(
             &replay,
-            "owner",
+            TELLER,
             RPC,
             payload,
             RATE_MISMATCH,
@@ -331,7 +333,7 @@ async fn second_submission_refused() {
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
     book(&replay, "BK-once", json!({})).await;
     let first = claiming(&payload_of(&replay, LIVE_BUY), "BK-once");
-    let document = saved_ref(&save(&replay, "owner", RPC, &first).await, "the first save");
+    let document = saved_ref(&save(&replay, TELLER, RPC, &first).await, "the first save");
     let submission = first["submissionId"].as_str().expect("a submission");
     assert_eq!(
         booking_row(&replay, "BK-once").await,
@@ -343,7 +345,7 @@ async fn second_submission_refused() {
     second["notes"] = json!("another exchange");
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &second,
         USED_BY_ANOTHER,
@@ -364,13 +366,13 @@ async fn repeat_passes() {
     let mut payload = claiming(&payload_of(&replay, LIVE_BUY), "BK-repeat");
     payload["rate"] = json!(32.1);
     let document = saved_ref(
-        &save(&replay, "owner", RPC, &payload).await,
+        &save(&replay, TELLER, RPC, &payload).await,
         "the first save",
     );
     let submission = payload["submissionId"].as_str().expect("a submission");
     let before = kept(&replay).await;
 
-    let again = save(&replay, "owner", RPC, &payload).await;
+    let again = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(
         saved_ref(&again, "the repeat"),
         document,
@@ -403,7 +405,7 @@ async fn member_customer_must_match() {
 
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &claiming(&payload, "BK-theirs"),
         MEMBER_MISMATCH,
@@ -414,7 +416,7 @@ async fn member_customer_must_match() {
 
     let mine = claiming(&payload, "BK-ours");
     let document = saved_ref(
-        &save(&replay, "owner", RPC, &mine).await,
+        &save(&replay, TELLER, RPC, &mine).await,
         "the member's own booking",
     );
     let submission = mine["submissionId"].as_str().expect("a submission");
@@ -479,7 +481,7 @@ async fn cancelled_or_expired_refused() {
     ] {
         refused_and_kept(
             &replay,
-            "owner",
+            TELLER,
             RPC,
             &claiming(&payload, id),
             NOT_USABLE,
@@ -506,7 +508,7 @@ async fn unknown_or_other_branch_booking_refused() {
 
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &claiming(&payload, "BK-elsewhere"),
         NOT_FOUND_HERE,
@@ -518,7 +520,7 @@ async fn unknown_or_other_branch_booking_refused() {
     nowhere["onlineBookingId"] = json!("BK-nowhere");
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &nowhere,
         NOT_FOUND_HERE,
@@ -572,7 +574,7 @@ async fn form_must_match_the_booking() {
     for (payload, label) in &cases {
         refused_and_kept(
             &replay,
-            "owner",
+            TELLER,
             RPC,
             payload,
             FORM_MISMATCH,
@@ -583,7 +585,7 @@ async fn form_must_match_the_booking() {
     }
 
     let document = saved_ref(
-        &save(&replay, "owner", RPC, &good).await,
+        &save(&replay, TELLER, RPC, &good).await,
         "the matching form",
     );
     let submission = good["submissionId"].as_str().expect("a submission");
@@ -605,7 +607,7 @@ async fn demo_save_cannot_use_a_booking() {
     payload["rate"] = json!(32.2);
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &payload,
         FORM_MISMATCH,
@@ -628,7 +630,7 @@ async fn refusal_order() {
     book(&replay, "BK-theirs", json!({ "memberId": theirs })).await;
     book(&replay, "BK-once", json!({})).await;
     let first = claiming(&payload, "BK-once");
-    saved_ref(&save(&replay, "owner", RPC, &first).await, "BK-once used");
+    saved_ref(&save(&replay, TELLER, RPC, &first).await, "BK-once used");
 
     let wrong_amount = |id: &str| {
         let mut p = claiming(&payload, id);
@@ -653,16 +655,7 @@ async fn refusal_order() {
             "the form before the member (4 before 5)",
         ),
     ] {
-        refused_and_kept(
-            &replay,
-            "owner",
-            RPC,
-            &wrong_amount(id),
-            sentence,
-            id,
-            label,
-        )
-        .await;
+        refused_and_kept(&replay, TELLER, RPC, &wrong_amount(id), sentence, id, label).await;
     }
     replay.finish().await;
 }
@@ -677,13 +670,13 @@ async fn a_save_refused_after_the_check_keeps_the_booking() {
     book(&replay, "BK-kept", json!({})).await;
     let walk_in = payload_of(&replay, LIVE_BUY);
     saved_ref(
-        &save(&replay, "owner", RPC, &walk_in).await,
+        &save(&replay, TELLER, RPC, &walk_in).await,
         "the walk-in save",
     );
 
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &claiming(&walk_in, "BK-kept"),
         CHANGED,
@@ -696,7 +689,7 @@ async fn a_save_refused_after_the_check_keeps_the_booking() {
     let mut fresh = claiming(&walk_in, "BK-kept");
     fresh["submissionId"] = json!(FRESH_A);
     let document = saved_ref(
-        &save(&replay, "owner", RPC, &fresh).await,
+        &save(&replay, TELLER, RPC, &fresh).await,
         "a new submission with the booking",
     );
     assert_eq!(
@@ -751,7 +744,7 @@ async fn two_saves_at_once_use_the_booking_once() {
             .len();
 
         let (first, second) = tokio::join!(
-            save(&replay, "owner", RPC, &a),
+            save(&replay, TELLER, RPC, &a),
             save(&replay, "FR1", STAFF_RPC, &b)
         );
         let (won, lost, winner) = match (first.status, second.status) {
@@ -854,7 +847,7 @@ async fn a_bad_form_with_a_bad_booking_answers_the_form() {
     payload["onlineBookingId"] = json!("BK-nowhere");
     refused_and_kept(
         &replay,
-        "owner",
+        TELLER,
         RPC,
         &payload,
         &sentence,

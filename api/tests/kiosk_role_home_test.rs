@@ -104,9 +104,15 @@ fn the_kiosk_machine_keeps_no_role_table() {
 #[test]
 fn the_kiosk_route_asks_policy_on_the_kiosk_path() {
     let route = code_of(&api_dir().join("src/presentation/http/kiosk.rs"));
+    // OR-4b (#767, design §4.2): the route asks the route table's rule, `Policy::authorize` (directly
+    // or through the extractor's `authorize` helper), and no longer the v2 rule
     assert!(
-        route.contains("Policy::allow(") && route.contains("EntryPath::Kiosk"),
-        "the kiosk route asks Policy::allow on EntryPath::Kiosk"
+        route.contains("authorize(") && route.contains("EntryPath::Kiosk"),
+        "the kiosk route asks authorize on EntryPath::Kiosk"
+    );
+    assert!(
+        !route.contains("Policy::allow("),
+        "the kiosk route no longer asks the v2 rule"
     );
     assert!(
         !route.contains("fn unknown_action_error"),

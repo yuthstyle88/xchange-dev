@@ -7,15 +7,14 @@ use pos_error::AppError;
 use serde_json::json;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::{FileService, MAX_UPLOAD_BYTES, StoredFile};
 use crate::presentation::extractors::origin::same_origin;
-use crate::presentation::pages::{self, SessionReader, Sessions};
+use crate::presentation::pages;
 
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
@@ -48,16 +47,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
             .route(web::get().to(staff_file))
             .default_service(web::to(pages::fallback)),
     );
-}
-
-async fn sessions(req: &HttpRequest) -> Sessions {
-    match req.app_data::<web::Data<dyn SessionReader>>() {
-        Some(reader) => reader.sessions(req).await,
-        None => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
 }
 
 fn redirect_origin(req: &HttpRequest) -> String {
@@ -131,7 +120,7 @@ async fn read_upload(payload: web::Payload) -> Vec<u8> {
 async fn store(
     req: &HttpRequest,
     branch: &BranchId,
-    actor: &Actor,
+    actor_id: &str,
     bytes: &[u8],
     no_store_on_refusal: bool,
 ) -> HttpResponse {
@@ -139,7 +128,7 @@ async fn store(
         return server_error(&AppError::Internal("no FileService".into()));
     };
     match files
-        .upload(branch, actor.id(), mime_of(req), bytes, Utc::now())
+        .upload(branch, actor_id, mime_of(req), bytes, Utc::now())
         .await
     {
         Ok(key) => json_answer(200, json!({ "uploadKey": key }), true),
@@ -149,42 +138,64 @@ async fn store(
 }
 
 async fn upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
-    let Sessions { owner, staff } = sessions(&req).await;
-    let actor = owner.or(staff);
-    let allowed = Policy::allow(actor.as_ref(), EntryPath::Upload, &Action::new("upload"));
-    let Some(actor) = actor else {
+    let callers = pages::get_callers(&req).await;
+    let now = Utc::now();
+    let is_staff =
+        callers.owner.is_none() && (callers.staff.is_some() || callers.staff_user.is_some());
+
+    if callers.user.is_none() {
+        let allowed = Policy::authorize(None, EntryPath::Upload, &Action::new("upload"), None, now);
         return match allowed {
             Err(refusal) => refuse(refusal.status(), &refusal.to_string(), false),
-            Ok(()) => refuse(401, "กรุณาเข้าสู่ระบบ", false),
+            Ok(_) => refuse(401, "กรุณาเข้าสู่ระบบ", false),
         };
-    };
-    match actor.kind() {
-        ActorKind::Owner => {
-            if !same_origin(&req) {
-                return refuse(400, ORIGIN_REJECTED, false);
-            }
-            if let Err(refusal) = allowed {
-                return refuse(refusal.status(), &refusal.to_string(), false);
-            }
-            let branch = query(&req, "branch")
-                .filter(|b| !b.is_empty())
-                .unwrap_or_else(|| "MAIN".to_owned());
-            let bytes = read_upload(payload).await;
-            store(&req, &BranchId::new(branch), &actor, &bytes, false).await
+    }
+
+    if is_staff {
+        if !same_origin(&req) {
+            return refuse(400, BAD_REQUEST, true);
         }
-        ActorKind::Staff => {
-            if !same_origin(&req) {
-                return refuse(400, BAD_REQUEST, true);
-            }
-            if let Err(refusal) = allowed {
-                return refuse(refusal.status(), &refusal.to_string(), true);
-            }
-            let Some(branch) = actor.branch_id().cloned() else {
-                return refuse(400, BAD_REQUEST, true);
-            };
-            let bytes = read_upload(payload).await;
-            store(&req, &branch, &actor, &bytes, true).await
+        let grant = match Policy::authorize(
+            callers.user.as_ref(),
+            EntryPath::Upload,
+            &Action::new("upload"),
+            None,
+            now,
+        ) {
+            Ok(g) => g,
+            Err(refusal) => return refuse(refusal.status(), &refusal.to_string(), true),
+        };
+        let bytes = read_upload(payload).await;
+        let actor_id = callers
+            .user
+            .as_ref()
+            .map(|u| u.user_id.as_str())
+            .unwrap_or("");
+        store(&req, &grant.branch, actor_id, &bytes, true).await
+    } else {
+        if !same_origin(&req) {
+            return refuse(400, ORIGIN_REJECTED, false);
         }
+        let branch = query(&req, "branch")
+            .filter(|b| !b.is_empty())
+            .map(BranchId::new);
+        let grant = match Policy::authorize(
+            callers.user.as_ref(),
+            EntryPath::Upload,
+            &Action::new("upload"),
+            branch.as_ref(),
+            now,
+        ) {
+            Ok(g) => g,
+            Err(refusal) => return refuse(refusal.status(), &refusal.to_string(), false),
+        };
+        let bytes = read_upload(payload).await;
+        let actor_id = callers
+            .user
+            .as_ref()
+            .map(|u| u.user_id.as_str())
+            .unwrap_or("");
+        store(&req, &grant.branch, actor_id, &bytes, false).await
     }
 }
 
@@ -192,19 +203,25 @@ async fn staff_upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
     if !same_origin(&req) {
         return refuse(400, BAD_REQUEST, true);
     }
-    let staff = sessions(&req).await.staff;
-    if let Err(refusal) = Policy::allow(
-        staff.as_ref(),
+    let callers = pages::get_callers(&req).await;
+    let now = Utc::now();
+    let grant = match Policy::authorize(
+        callers.staff_user.as_ref(),
         EntryPath::StaffUpload,
         &Action::new("upload"),
+        None,
+        now,
     ) {
-        return refuse(refusal.status(), &refusal.to_string(), true);
-    }
-    let Some((actor, branch)) = staff.and_then(|a| a.branch_id().cloned().map(|b| (a, b))) else {
-        return refuse(401, "EMPLOYEE_AUTH_REQUIRED", true);
+        Ok(grant) => grant,
+        Err(refusal) => return refuse(refusal.status(), &refusal.to_string(), true),
     };
     let bytes = read_upload(payload).await;
-    store(&req, &branch, &actor, &bytes, true).await
+    let actor_id = callers
+        .staff_user
+        .as_ref()
+        .map(|u| u.user_id.as_str())
+        .unwrap_or("");
+    store(&req, &grant.branch, actor_id, &bytes, true).await
 }
 
 fn ending(mime: &str) -> &'static str {
@@ -233,17 +250,35 @@ fn page_file(stored: StoredFile, disposition: Option<String>) -> HttpResponse {
 
 async fn file(req: HttpRequest, path: web::Path<String>) -> HttpResponse {
     let key = path.into_inner();
-    let Sessions { owner, staff } = sessions(&req).await;
-    let Some(actor) = owner.or(staff) else {
-        return HttpResponse::SeeOther()
-            .insert_header((header::LOCATION, format!("{}/login", redirect_origin(&req))))
-            .finish();
+    let callers = pages::get_callers(&req).await;
+    let now = Utc::now();
+    let grant = match Policy::authorize(
+        callers.user.as_ref(),
+        EntryPath::File,
+        &Action::new("file"),
+        None,
+        now,
+    ) {
+        Ok(grant) => grant,
+        Err(PolicyError::SignIn) => {
+            return HttpResponse::SeeOther()
+                .insert_header((header::LOCATION, format!("{}/login", redirect_origin(&req))))
+                .finish();
+        }
+        Err(_) => return not_found(),
     };
     let Some(files) = req.app_data::<web::Data<FileService>>() else {
         return server_error(&AppError::Internal("no FileService".into()));
     };
-    match actor.kind() {
-        ActorKind::Owner => match files.open_owned(&key, actor.id()).await {
+    let is_owner = callers.owner.is_some()
+        || (callers.user.is_some() && callers.staff.is_none() && callers.staff_user.is_none());
+    if is_owner {
+        let actor_id = callers
+            .user
+            .as_ref()
+            .map(|u| u.user_id.as_str())
+            .unwrap_or("");
+        match files.open_owned(&key, actor_id).await {
             Ok(Some(stored)) => {
                 let disposition = if query(&req, "download").as_deref() == Some("1") {
                     format!("attachment; filename=\"{key}.{}\"", ending(&stored.mime))
@@ -254,19 +289,12 @@ async fn file(req: HttpRequest, path: web::Path<String>) -> HttpResponse {
             }
             Ok(None) => not_found(),
             Err(e) => server_error(&e),
-        },
-        ActorKind::Staff => {
-            if Policy::allow(Some(&actor), EntryPath::File, &Action::new("file")).is_err() {
-                return not_found();
-            }
-            let Some(branch) = actor.branch_id() else {
-                return not_found();
-            };
-            match files.open_in_branch(&key, branch).await {
-                Ok(Some(stored)) => page_file(stored, None),
-                Ok(None) => not_found(),
-                Err(e) => server_error(&e),
-            }
+        }
+    } else {
+        match files.open_in_branch(&key, &grant.branch).await {
+            Ok(Some(stored)) => page_file(stored, None),
+            Ok(None) => not_found(),
+            Err(e) => server_error(&e),
         }
     }
 }
@@ -281,18 +309,22 @@ fn door_refusal(status: u16, sentence: &str) -> HttpResponse {
 
 async fn staff_file(req: HttpRequest, path: web::Path<String>) -> HttpResponse {
     let key = path.into_inner();
-    let staff = sessions(&req).await.staff;
-    if let Err(refusal) = Policy::allow(staff.as_ref(), EntryPath::StaffFile, &Action::new("file"))
-    {
-        return door_refusal(refusal.status(), &refusal.to_string());
-    }
-    let Some(branch) = staff.as_ref().and_then(|a| a.branch_id()) else {
-        return door_refusal(401, "EMPLOYEE_AUTH_REQUIRED");
+    let callers = pages::get_callers(&req).await;
+    let now = Utc::now();
+    let grant = match Policy::authorize(
+        callers.staff_user.as_ref(),
+        EntryPath::StaffFile,
+        &Action::new("file"),
+        None,
+        now,
+    ) {
+        Ok(grant) => grant,
+        Err(refusal) => return door_refusal(refusal.status(), &refusal.to_string()),
     };
     let Some(files) = req.app_data::<web::Data<FileService>>() else {
         return server_error(&AppError::Internal("no FileService".into()));
     };
-    match files.open_in_branch(&key, branch).await {
+    match files.open_in_branch(&key, &grant.branch).await {
         Ok(Some(stored)) => {
             let disposition = if stored.mime == "text/html" {
                 "attachment; filename=\"receipt.html\""

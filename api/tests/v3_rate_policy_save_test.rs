@@ -387,6 +387,18 @@ fn assert_refused_as_outside_the_role(a: &Answer, what: &str) {
 
 // ------------------------------------------------------------ tests
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn is_out_of_scope(a: &Answer, what: &str) {
+    assert_eq!(a.status.as_u16(), 403, "{what}: status; body {}", a.body);
+    assert_eq!(
+        a.body["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{what}: {}",
+        a.body
+    );
+}
+
 #[actix_web::test]
 async fn rates_may_change_the_percents_and_the_save_is_a_new_version_bound_to_the_one_it_replaces()
 {
@@ -605,9 +617,10 @@ async fn a_rates_member_of_another_branch_cannot_save_this_branchs_policy() {
     let b01_before = db.versions_of(B01).await;
     let body = percents_only(&b01, "0.75", "0.75", "naming XC-B01 from XC-B09");
 
-    // XC-B09 has no frame: the save runs on the caller's own branch and finds nothing to keep
+    // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): naming XC-B01, a branch outside the
+    // member's scope, is refused as out of scope, whether XC-B09 is framed or not
     let a = save(&db, RATES_OF_B09, B01, body.clone()).await;
-    assert_refused_as_outside_the_role(&a, "RATES of XC-B09 naming XC-B01, XC-B09 unframed");
+    is_out_of_scope(&a, "RATES of XC-B09 naming XC-B01, XC-B09 unframed");
     assert_eq!(db.versions_of(B01).await, b01_before, "XC-B01 untouched");
     assert!(db.versions_of(B09).await.is_empty(), "XC-B09 untouched");
 
@@ -618,7 +631,7 @@ async fn a_rates_member_of_another_branch_cannot_save_this_branchs_policy() {
     assert_eq!(o.status, StatusCode::OK, "OWNER frames XC-B09: {}", o.text);
     let b09_before = db.versions_of(B09).await;
     let a = save(&db, RATES_OF_B09, B01, body).await;
-    assert_refused_as_outside_the_role(&a, "RATES of XC-B09 naming XC-B01, XC-B09 framed");
+    is_out_of_scope(&a, "RATES of XC-B09 naming XC-B01, XC-B09 framed");
     assert_eq!(db.versions_of(B01).await, b01_before, "XC-B01 untouched");
     assert_eq!(db.versions_of(B09).await, b09_before, "XC-B09 untouched");
     db.finish().await;

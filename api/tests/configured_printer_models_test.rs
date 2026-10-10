@@ -80,7 +80,13 @@ async fn setup_app_and_state(desk: &Desk) -> (App, AppState, Cookies) {
         |t| t.to_request(),
     );
 
-    let people: Vec<_> = one_of_each_role().into_iter().take(1).collect();
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so FRONT (TELLER under B1) is
+    // employed and signed in beside the owner, and saves
+    let people: Vec<_> = one_of_each_role()
+        .into_iter()
+        .filter(|p| p.key == "OWNER" || p.key == "FRONT")
+        .collect();
+    desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
 
     (app, state, cookies)
@@ -140,10 +146,15 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .expect("insert customer");
     snapshot_common::seed_passport_identity(&desk.db.pool, "cust-1", "AA1234567", "THA").await;
 
+    // C2: the teller who saves uploads the passport (a save attaches its saver's own files)
+    let front = one_of_each_role()
+        .into_iter()
+        .find(|p| p.key == "FRONT")
+        .expect("FRONT");
     desk.files
         .upload(
             &BranchId::new(MAIN),
-            "owner",
+            &front.id,
             "image/jpeg",
             JPEG,
             Utc::now(),
@@ -209,7 +220,6 @@ async fn configured_printer_model_is_accepted_by_devices_route() {
 async fn configured_printer_model_used_by_rpc_save_action_and_queues_pulse_job() {
     let desk = Desk::open().await;
     let (app, state, cookies) = setup_app_and_state(&desk).await;
-    let owner = &cookies["OWNER"];
 
     // Ensure SaveAction was registered
     let actions = registered_actions(&state);
@@ -267,7 +277,8 @@ async fn configured_printer_model_used_by_rpc_save_action_and_queues_pulse_job()
     });
 
     let answer = app
-        .send(Call::action(ORIGIN, RPC, "saveTransaction", save_payload).cookie(owner))
+        // C2: FRONT saves
+        .send(Call::action(ORIGIN, RPC, "saveTransaction", save_payload).cookie(&cookies["FRONT"]))
         .await;
 
     assert_eq!(

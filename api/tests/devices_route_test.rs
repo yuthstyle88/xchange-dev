@@ -37,6 +37,8 @@ const NO_SUCH_JOB: &str = "ไม่พบงาน";
 const BAD_STATE: &str = "สถานะไม่ถูกต้อง";
 const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
+/// OR-4a's one new sentence (§10 `outOfScope`).
+const OUT_OF_SCOPE: &str = "สาขานี้อยู่นอกขอบเขตของบัญชีนี้";
 
 /// The keys of a job in an answer: v2's row (`gen_devices.mjs`) without its `request_hash`.
 const JOB_KEYS: [&str; 9] = [
@@ -83,12 +85,20 @@ fn recorded_roles() -> Value {
 }
 
 fn allowed(roles: &Value, action: &str) -> BTreeSet<String> {
-    roles[action]
+    let mut may: BTreeSet<String> = roles[action]
         .as_array()
         .unwrap_or_else(|| panic!("the fixture lists the roles of {action}"))
         .iter()
         .map(|r| r.as_str().expect("a role name").to_string())
-        .collect()
+        .collect();
+    // OR-4b (#767, design §4.2 C7): B1 merges BACKEND and MANAGER into BRANCH_MANAGER, so MANAGER
+    // gains what BACKEND may on the device steps
+    if may.contains("BACKEND")
+        && ["process", "retry", "drawerObservation", "printerOnline"].contains(&action)
+    {
+        may.insert("MANAGER".to_string());
+    }
+    may
 }
 
 /// A request id the service accepts: 36 characters of `0-9 a-f -`.
@@ -494,17 +504,33 @@ async fn an_unknown_action_is_a_bad_request() {
 #[actix_web::test]
 async fn the_branch_is_the_policys() {
     let room = Room::open().await;
-    let job = room
-        .ok(
+    // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): a staff member naming a branch outside
+    // their scope is refused; naming their own, they work on it
+    let outside = room
+        .ask(
             "FRONT",
             "queue",
             json!({ "kind": "DRAWER_REQUEST", "ref": "", "requestId": request_id(1),
                     "reason": "เติมเงินทอน", "branchId": "B404" }),
         )
         .await;
+    refused(
+        &outside,
+        403,
+        OUT_OF_SCOPE,
+        "a staff member names another branch",
+    );
+    let job = room
+        .ok(
+            "FRONT",
+            "queue",
+            json!({ "kind": "DRAWER_REQUEST", "ref": "", "requestId": request_id(1),
+                    "reason": "เติมเงินทอน", "branchId": "MAIN" }),
+        )
+        .await;
     assert_eq!(
         job["branch_id"], "MAIN",
-        "a staff member works on their own branch, whatever they name"
+        "a staff member works on their own branch"
     );
 
     let unknown = room

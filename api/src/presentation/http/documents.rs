@@ -20,7 +20,7 @@ use crate::application::compat::staff_view::rewrite_urls;
 use crate::application::workflows::documents::{Documents, DocumentsLookup, PASSPORT, RECEIPT};
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::{BAD_BRANCH, FileService};
-use crate::presentation::pages::{self, SessionReader, Sessions};
+use crate::presentation::pages;
 
 const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
 
@@ -46,16 +46,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
             .route(web::get().to(staff_documents))
             .default_service(web::to(pages::fallback)),
     );
-}
-
-async fn sessions(req: &HttpRequest) -> Sessions {
-    match req.app_data::<web::Data<dyn SessionReader>>() {
-        Some(reader) => reader.sessions(req).await,
-        None => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
 }
 
 fn own_origin(req: &HttpRequest) -> String {
@@ -158,26 +148,31 @@ fn owners_page(found: &Documents, branch: &str) -> String {
 }
 
 async fn documents(req: HttpRequest) -> HttpResponse {
-    let Sessions { owner, staff } = sessions(&req).await;
-    let Some(actor) = owner.or(staff) else {
-        return redirect(&req, 303, "/login");
+    let callers = pages::get_callers(&req).await;
+    let now = chrono::Utc::now();
+    let is_staff =
+        callers.owner.is_none() && (callers.staff.is_some() || callers.staff_user.is_some());
+    let named_branch = if is_staff {
+        None
+    } else {
+        query(&req, "branch")
+            .filter(|b| !b.is_empty())
+            .map(BranchId::new)
     };
-    if Policy::allow(
-        Some(&actor),
+
+    let grant = match Policy::authorize(
+        callers.user.as_ref(),
         EntryPath::UserRoute,
         &Action::new("documents"),
-    )
-    .is_err()
-    {
-        return redirect(&req, 303, "/login");
-    }
-    // an employee's branch is their own, whatever the request names
-    let branch = match actor.branch_id() {
-        Some(own) => own.as_str().to_owned(),
-        None => query(&req, "branch")
-            .filter(|b| !b.is_empty())
-            .unwrap_or_else(|| "MAIN".to_owned()),
+        named_branch.as_ref(),
+        now,
+    ) {
+        Ok(g) => g,
+        Err(_) => return redirect(&req, 303, "/login"),
     };
+
+    let branch = grant.branch.as_str().to_owned();
+
     // v2's `execute` refuses a name that cannot be a branch id before anything runs
     if !pages::is_valid_branch(&branch) {
         return HttpResponse::NotFound()
@@ -188,10 +183,7 @@ async fn documents(req: HttpRequest) -> HttpResponse {
         return server_error(&AppError::Internal("no DocumentsLookup".into()));
     };
     let reference = query(&req, "ref").unwrap_or_default();
-    match lookup
-        .find(&BranchId::new(branch.clone()), &reference)
-        .await
-    {
+    match lookup.find(&grant.branch, &reference).await {
         Ok(found) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
             .insert_header((header::CACHE_CONTROL, "no-store"))
@@ -232,24 +224,23 @@ fn staff_page(found: &Documents) -> String {
 }
 
 async fn staff_documents(req: HttpRequest) -> HttpResponse {
-    let staff = sessions(&req).await.staff;
-    if Policy::allow(
-        staff.as_ref(),
+    let callers = pages::get_callers(&req).await;
+    let now = chrono::Utc::now();
+    let grant = match Policy::authorize(
+        callers.staff_user.as_ref(),
         EntryPath::StaffRpc,
         &Action::new("documents"),
-    )
-    .is_err()
-    {
-        return redirect(&req, 302, "/staff");
-    }
-    let Some(branch) = staff.as_ref().and_then(|a| a.branch_id()) else {
-        return redirect(&req, 302, "/staff");
+        None,
+        now,
+    ) {
+        Ok(grant) => grant,
+        Err(_) => return redirect(&req, 302, "/staff"),
     };
     let Some(lookup) = req.app_data::<web::Data<DocumentsLookup>>() else {
         return redirect(&req, 302, "/staff");
     };
     let reference = query(&req, "ref").unwrap_or_default();
-    match lookup.find(branch, &reference).await {
+    match lookup.find(&grant.branch, &reference).await {
         Ok(found) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
             .insert_header((header::CACHE_CONTROL, "private, no-store"))

@@ -9,14 +9,18 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use pos_error::AppError;
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::Grant;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::account::entities::session::SignedIn;
+use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_kernel::ids::BranchId;
 
-use crate::presentation::pages::{SessionReader, Sessions};
+use crate::presentation::pages::{Callers, SessionReader, Sessions};
 
 pub type Accounts = AccountService<PgAccountRepository>;
 
@@ -131,7 +135,8 @@ use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 
 /// Maps an `access::Actor` to a v2 `Actor`.
 ///
-/// stopgap, removed by OR-4.
+/// stopgap, removed by OR-7 (#767 ruling (a)): it builds the v2 actor the downstream services still
+/// take; only the custody rows, which keep the v2 rule (#582), authorise with it.
 pub fn legacy_actor(actor: &xc_auth::domain::access::Actor, now: DateTime<Utc>) -> Option<Actor> {
     let valid_roles: Vec<&ScopedRole> = actor
         .roles
@@ -194,10 +199,7 @@ pub struct AccountSessionReader {
 
 impl SessionReader for AccountSessionReader {
     #[allow(clippy::collapsible_if)]
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let session_token = cookie(req, SESSION_COOKIE);
             if !session_token.is_empty() {
@@ -213,25 +215,25 @@ impl SessionReader for AccountSessionReader {
                             roles,
                             None,
                         );
-                        if let Some(legacy) = legacy_actor(&access_actor, now_utc) {
-                            match legacy.kind() {
-                                ActorKind::Owner => {
-                                    return Sessions {
-                                        owner: Some(legacy),
-                                        staff: None,
-                                    };
-                                }
-                                ActorKind::Staff => {
-                                    return Sessions {
-                                        owner: None,
-                                        staff: Some(legacy),
-                                    };
-                                }
-                            }
-                        }
-                        return Sessions {
-                            owner: None,
-                            staff: None,
+                        let legacy = legacy_actor(&access_actor, now_utc);
+                        let (owner, staff) = match legacy.as_ref().map(|l| l.kind()) {
+                            Some(ActorKind::Owner) => (legacy.clone(), None),
+                            Some(ActorKind::Staff) => (None, legacy.clone()),
+                            None => (None, None),
+                        };
+                        let staff_user = if legacy
+                            .as_ref()
+                            .is_some_and(|l| l.kind() == ActorKind::Staff)
+                        {
+                            Some(access_actor.clone())
+                        } else {
+                            None
+                        };
+                        return Callers {
+                            owner,
+                            staff,
+                            user: Some(access_actor),
+                            staff_user,
                         };
                     }
                 }
@@ -253,8 +255,121 @@ impl SessionReader for AccountSessionReader {
                 Ok(Some(who @ SignedIn::Employee(_))) => actor_of(&who),
                 _ => None,
             };
-            Sessions { owner, staff }
+            let epoch = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+            let org = "XC";
+            let staff_user = staff
+                .as_ref()
+                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch));
+            let user = owner
+                .as_ref()
+                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch))
+                .or_else(|| staff_user.clone());
+            Callers {
+                owner,
+                staff,
+                user,
+                staff_user,
+            }
         })
+    }
+
+    fn sessions<'a>(
+        &'a self,
+        req: &'a HttpRequest,
+    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+        Box::pin(async move {
+            let c = self.callers(req).await;
+            Sessions {
+                owner: c.owner,
+                staff: c.staff,
+            }
+        })
+    }
+}
+
+/// The password session a request carries: the owner cookie's first, else the staff cookie's.
+/// Routes read v2 sessions only through this and [`staff_password_session`] (OR-4b #767), so no
+/// route names a cookie.
+pub async fn password_session(
+    accounts: &Accounts,
+    req: &HttpRequest,
+    now: DateTime<Utc>,
+) -> pos_error::AppResult<Option<SignedIn>> {
+    accounts
+        .status(&cookie(req, OWNER_COOKIE), &cookie(req, STAFF_COOKIE), now)
+        .await
+}
+
+/// The staff password session alone (an owner cookie counts for nothing), as
+/// `AccountService::employee_session` answers it.
+pub async fn staff_password_session(
+    accounts: &Accounts,
+    req: &HttpRequest,
+    allow_must_change: bool,
+    now: DateTime<Utc>,
+) -> pos_error::AppResult<Employee> {
+    accounts
+        .employee_session(&cookie(req, STAFF_COOKIE), allow_must_change, now)
+        .await
+}
+
+/// The Blueprint session (`__Host-xc_session`) a request carries: its user and roles, or `None`
+/// when there is no such cookie or it is not an active session.
+pub async fn identity_session(
+    req: &HttpRequest,
+    now: DateTime<Utc>,
+) -> Option<(xc_auth::domain::user::User, Vec<ScopedRole>)> {
+    let token = cookie(req, SESSION_COOKIE);
+    if token.is_empty() {
+        return None;
+    }
+    let sessions = req.app_data::<web::Data<SessionService>>()?;
+    sessions
+        .active_user_and_roles(&token, now)
+        .await
+        .ok()
+        .flatten()
+}
+
+pub async fn callers(req: &HttpRequest) -> Callers {
+    if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
+        reader.callers(req).await
+    } else {
+        Callers {
+            owner: None,
+            staff: None,
+            user: None,
+            staff_user: None,
+        }
+    }
+}
+
+pub fn is_staff_path(path: EntryPath) -> bool {
+    matches!(
+        path,
+        EntryPath::StaffRpc
+            | EntryPath::StaffDesk
+            | EntryPath::StaffFile
+            | EntryPath::StaffUpload
+            | EntryPath::StaffBookings
+    )
+}
+
+pub async fn authorize(
+    req: &HttpRequest,
+    path: EntryPath,
+    action: &Action,
+    named: Option<&BranchId>,
+) -> Result<(Grant, Callers), HttpResponse> {
+    let callers = callers(req).await;
+    let actor = if is_staff_path(path) {
+        callers.staff_user.as_ref()
+    } else {
+        callers.user.as_ref()
+    };
+    match Policy::authorize(actor, path, action, named, Utc::now()) {
+        Ok(grant) => Ok((grant, callers)),
+        Err(e) => Err(refuse(e.status(), &e.to_string())),
     }
 }
 

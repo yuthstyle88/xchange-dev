@@ -461,13 +461,24 @@ async fn the_switch_decides_row_7_per_branch() {
         "row 7 comes before row 8",
     );
 
+    // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): a MAIN manager naming B2 is refused as
+    // out of scope; naming MAIN, they ask for MAIN
     let staff_elsewhere = room
         .ask("MANAGER", ask_body("B2", &order(2), false, "LIVE"))
         .await;
+    assert_eq!(staff_elsewhere.status, 403, "{:.300}", staff_elsewhere.text);
+    assert_eq!(
+        staff_elsewhere.json(),
+        json!({ "error": "สาขานี้อยู่นอกขอบเขตของบัญชีนี้" }),
+        "a MAIN manager naming B2"
+    );
+    let staff_home = room
+        .ask("MANAGER", ask_body("MAIN", &order(2), false, "LIVE"))
+        .await;
     assert_answer(
-        &staff_elsewhere,
+        &staff_home,
         &state_body("DISABLED"),
-        "a MAIN manager naming B2 asks for MAIN",
+        "a MAIN manager naming MAIN asks for MAIN",
     );
 
     let test_mode = room

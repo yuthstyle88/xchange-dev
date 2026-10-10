@@ -1087,11 +1087,6 @@ async fn an_unknown_shift_or_a_shift_of_another_branch_is_not_found() {
             json!({ "shiftId": b01 }),
         ),
         (
-            "staff of XC-B02 naming XC-B01's shift and branch",
-            "staff:MANAGER:XC-B02",
-            json!({ "shiftId": b01, "branch": "XC-B01", "rates": { "USD": "34.5" } }),
-        ),
-        (
             "staff of XC-B01 naming XC-B02's shift",
             "staff:FRONT:XC-B01",
             json!({ "shiftId": b02, "rates": { "USD": "30" } }),
@@ -1101,6 +1096,22 @@ async fn an_unknown_shift_or_a_shift_of_another_branch_is_not_found() {
         let a = post(&db, who, body).await;
         is_refused(&a, 404, "notFound", Some("shiftId"), NOT_FOUND, what);
     }
+    // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): staff naming another branch are refused
+    // that branch before the shift is looked for
+    let a = post(
+        &db,
+        "staff:MANAGER:XC-B02",
+        json!({ "shiftId": b01, "branch": "XC-B01", "rates": { "USD": "34.5" } }),
+    )
+    .await;
+    is_refused(
+        &a,
+        403,
+        "outOfScope",
+        None,
+        "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+        "staff of XC-B02 naming XC-B01's shift and branch",
+    );
 
     // the same shifts, asked for on their own branch, answer
     let a = post(&db, "staff:FRONT:XC-B02", json!({ "shiftId": b02 })).await;

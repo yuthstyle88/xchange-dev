@@ -46,6 +46,8 @@ const SIGN_IN: &str = "กรุณาเข้าสู่ระบบ";
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขา";
+/// OR-4a's one new sentence (§10 `outOfScope`).
+const OUT_OF_SCOPE: &str = "สาขานี้อยู่นอกขอบเขตของบัญชีนี้";
 const NO_BUY_HERE: &str = "การจ่ายเงินบาทให้ลูกค้ารองรับเงินสดและโอนธนาคาร";
 const ONE_PER_DIRECTION: &str = "ต้องเหลือช่องทางรับเงินและจ่ายเงินบาทอย่างน้อยประเภทละ 1 ช่องทาง";
 const STALE: &str = "มีผู้แก้ไขการตั้งค่านี้แล้ว กรุณาโหลดล่าสุดก่อนบันทึก";
@@ -336,6 +338,10 @@ async fn every_recorded_step_is_answered_as_v2_answered_it() {
         never_cached(&answer, &label);
         let (status, expected) = if step.row == Some(8) {
             (400, json!({ "error": NO_SUCH_BRANCH }))
+        } else if names_another_branch(step) {
+            // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): an employee v2 let through
+            // naming a branch other than their own (#5, #6) is refused as out of scope
+            (403, json!({ "error": OUT_OF_SCOPE }))
         } else {
             (step.status, step.answer.clone())
         };
@@ -343,6 +349,24 @@ async fn every_recorded_step_is_answered_as_v2_answered_it() {
         assert_eq!(answer.json(), expected, "{label}");
     }
     room.finish().await;
+}
+
+/// OR-4b (D-4): an employee's step v2 accepted that names a branch other than their own
+/// (`AIRPORT_FRONT`'s is `AIRPORT`, everybody else's `MAIN`).
+fn names_another_branch(step: &Step) -> bool {
+    let Some(who) = step.sent_as.as_deref().filter(|w| *w != "OWNER") else {
+        return false;
+    };
+    let own = if who.starts_with("AIRPORT") {
+        AIRPORT
+    } else {
+        "MAIN"
+    };
+    let named = serde_json::from_str::<Value>(&step.text())
+        .ok()
+        .and_then(|b| b["payload"]["branchId"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    step.status == 200 && !named.is_empty() && named != own
 }
 
 // ── what the owner asked for, said once each ─────────────────────────────────
@@ -359,19 +383,32 @@ async fn an_employee_reads_only_their_own_branch() {
         200
     );
 
-    for named in [
-        None,
-        Some("MAIN"),
-        Some(AIRPORT),
-        Some("NOWHERE"),
-        Some("bad branch!"),
+    // OR-4b (#767, D-4, §02 "Server ตรวจ … branch scope"): naming no branch or their own, an
+    // employee reads their own; naming any other (even a malformed one) is refused as out of scope
+    for named in [None, Some("MAIN"), Some(AIRPORT)] {
+        if named != Some("MAIN") {
+            let airport = room.list("AIRPORT_FRONT", named).await;
+            assert_eq!(airport["branchId"], json!(AIRPORT), "named {named:?}");
+            assert_eq!(airport["methods"], airport_rows, "named {named:?}");
+        }
+        if named != Some(AIRPORT) {
+            let main = room.list("FRONT", named).await;
+            assert_eq!(main["branchId"], json!("MAIN"), "named {named:?}");
+            assert_eq!(main["methods"], main_rows, "named {named:?}");
+        }
+    }
+    for (who, named) in [
+        ("AIRPORT_FRONT", "MAIN"),
+        ("FRONT", AIRPORT),
+        ("AIRPORT_FRONT", "NOWHERE"),
+        ("FRONT", "NOWHERE"),
+        ("AIRPORT_FRONT", "bad branch!"),
+        ("FRONT", "bad branch!"),
     ] {
-        let airport = room.list("AIRPORT_FRONT", named).await;
-        assert_eq!(airport["branchId"], json!(AIRPORT), "named {named:?}");
-        assert_eq!(airport["methods"], airport_rows, "named {named:?}");
-        let main = room.list("FRONT", named).await;
-        assert_eq!(main["branchId"], json!("MAIN"), "named {named:?}");
-        assert_eq!(main["methods"], main_rows, "named {named:?}");
+        let body = json!({ "action": "list", "payload": { "branchId": named } });
+        room.send(Some(who), &body.to_string())
+            .await
+            .assert_refused(403, OUT_OF_SCOPE, &format!("{who} naming {named}"));
     }
     room.finish().await;
 }
@@ -404,7 +441,12 @@ async fn only_the_owner_sees_the_history() {
 async fn only_the_owner_saves_and_a_refused_save_changes_nothing() {
     let room = Room::everyone().await;
     let rows = with(&defaults(), "Cash", json!({ "sell": false }));
-    for person in one_of_each_role().iter().filter(|p| !p.is_owner()) {
+    // OR-4b (#767, design §4.2 C5): SystemSettings is ADMIN's too, and B1 makes SYSTEM an ADMIN;
+    // SYSTEM saves below
+    for person in one_of_each_role()
+        .iter()
+        .filter(|p| !p.is_owner() && p.key != "SYSTEM")
+    {
         room.save(&person.key, "MAIN", 0, &rows)
             .await
             .assert_refused(403, OWNER_ONLY, &person.key);
@@ -413,6 +455,8 @@ async fn only_the_owner_saves_and_a_refused_save_changes_nothing() {
     assert_eq!(after["version"], json!(0));
     assert_eq!(after["methods"], defaults());
     assert_eq!(after["history"], json!([]));
+    let saved = room.save("SYSTEM", "MAIN", 0, &rows).await;
+    assert_eq!(saved.status, 200, "SYSTEM saves (C5): {:.300}", saved.text);
     room.finish().await;
 }
 

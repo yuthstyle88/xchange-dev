@@ -97,8 +97,34 @@ fn decided_by_603(name: &str) -> (Vec<(usize, Rule)>, Vec<usize>) {
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
     // role, the holder's repeat `accept`), so each step is replayed as recorded.
-    let _ = name;
-    Vec::new()
+    // OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's, so the owner's
+    // `list` offers no request to accept or continue.
+    let fixture = Fixture::load(name);
+    fixture
+        .steps()
+        .iter()
+        .filter(|s| {
+            s.path() == Some("/api/kiosk")
+                && s.action.as_deref() == Some("list")
+                && s.status == Some(200)
+                && fixture.sender(s).is_some_and(|p| p.is_owner())
+        })
+        .map(|s| (s.n, Rule::RecordedWith(not_offered_the_queue_work)))
+        .collect()
+}
+
+/// C8: the owner's user holds no QueueOperate, so no row of the owner's `list` can be accepted or
+/// continued.
+fn not_offered_the_queue_work(answer: &mut Value) {
+    if let Some(rows) = answer["requests"].as_array_mut() {
+        for row in rows {
+            for key in ["canAccept", "canContinue"] {
+                if row.get(key).is_some() {
+                    row[key] = json!(false);
+                }
+            }
+        }
+    }
 }
 
 async fn replayed(name: &str) -> (Fixture, usize) {
@@ -438,10 +464,11 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         .ask(Some("FR2"), "get", json!({ "id": id }))
         .await
         .assert_refused(400, ACCEPT_FIRST, "another employee");
+    // OR-4b (#767, design §4.2 C8): the owner's user does not work the queue at all
     counter
         .ask(Some("owner"), "get", json!({ "id": id }))
         .await
-        .assert_refused(400, ACCEPT_FIRST, "the owner");
+        .assert_refused(400, "Staff access required.", "the owner");
     counter
         .ask(Some("FR2"), "accept", json!({ "id": id }))
         .await
@@ -470,11 +497,41 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     let second = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0002")
         .await;
-    let accepted = counter
+    // OR-4b (#767, design §4.2 C8): the owner's user no longer accepts; a request the owner holds
+    // (as v2 let the owner take one) is taken behind the routes, by the kiosk service as v2's
+    // owner
+    counter
         .ask(Some("owner"), "accept", json!({ "id": second }))
-        .await;
-    assert_eq!(accepted.status, 200, "{}", accepted.text);
-    let list = counter.ask(Some("owner"), "list", json!({})).await;
+        .await
+        .assert_refused(400, "Staff access required.", "the owner accepts");
+    let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
+        counter.hands.audit.clone();
+    let source: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =
+        counter.desk.bank.clone();
+    let service = xc_kiosk::application::kiosk::service::KioskService::new(
+        counter.desk.db.branch_tx(),
+        std::sync::Arc::new(
+            xchange::infrastructure::kiosk::kiosk_ports::PgKioskPorts::new(
+                counter.desk.db.pool.clone(),
+                audit,
+                source,
+            ),
+        ),
+    );
+    let owner = xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor::Staff {
+        username: "owner".to_string(),
+        role: xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole::Owner,
+    };
+    service
+        .accept(
+            &xc_kernel::ids::BranchId::new("MAIN"),
+            &owner,
+            &second,
+            chrono::Utc::now(),
+        )
+        .await
+        .expect("the owner takes the request behind the routes");
+    let list = counter.ask(Some("FR2"), "list", json!({})).await;
     assert_eq!(
         list.json()["requests"][0]["staff"],
         "owner",

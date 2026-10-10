@@ -72,11 +72,14 @@ use serde_json::{Map, Value, json};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
+use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
+use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
-use xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog;
+use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::kiosk::KioskIds;
 
 use crate::compat_common::{Fixture, IdMap, Person, Step, fixtures_dir};
@@ -470,6 +473,65 @@ impl<'f> KioskReplay<'f> {
         }
     }
 
+    /// An accepted kiosk step of the owner's queue work, through the kiosk service as the route
+    /// runs it, as the owner; its audit lines go to the test's log as the route's would.
+    async fn kiosk_behind(&mut self, step: &Step) {
+        let label = self.replay.label(step);
+        let payload = self
+            .replay
+            .ids
+            .to_actual(step.payload.as_ref().unwrap_or(&json!({})));
+        let branch = BranchId::new(
+            payload
+                .get("branchId")
+                .and_then(Value::as_str)
+                .filter(|b| !b.is_empty())
+                .unwrap_or(MAIN),
+        );
+        let pool = self.replay.desk.db.pool.clone();
+        let audit: Arc<dyn KioskAuditLog> = self.hands.audit.clone();
+        let source: Arc<dyn RateSource> = self.replay.desk.bank.clone();
+        let service = KioskService::new(
+            self.replay.desk.db.branch_tx(),
+            Arc::new(PgKioskPorts::new(pool, audit, source)),
+        );
+        let owner = KioskActor::Staff {
+            username: "owner".to_string(),
+            role: KioskRole::Owner,
+        };
+        let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
+        let now = crate::snapshot_common::time(&step.at);
+        match step.action.as_deref() {
+            Some("accept") => {
+                service
+                    .accept(&branch, &owner, id, now)
+                    .await
+                    .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+            }
+            Some("identityChecked") => {
+                let confirmed = payload
+                    .get("confirmed")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                service
+                    .identity_checked(&branch, &owner, id, confirmed, now)
+                    .await
+                    .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+            }
+            Some("publishReceipt") => {
+                let image = payload.get("image").and_then(Value::as_str).unwrap_or("");
+                service
+                    .publish_receipt(&branch, &owner, id, image, now)
+                    .await
+                    .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+            }
+            // reading changes nothing
+            Some("get") => {}
+            other => panic!("{label}: v2 accepted {other:?}; nothing applies it behind the routes"),
+        }
+        self.replay.tally.applied_behind.push(step.n);
+    }
+
     /// #603: step `n` is a `configure` v2 refused and v3 accepts; the audit line it writes is the
     /// step's own (its code and switch, `buy` and `sell` `""`).
     pub fn v3_accepts(mut self, n: usize) -> Self {
@@ -546,6 +608,15 @@ impl<'f> KioskReplay<'f> {
         }
 
         self.replay.step(step).await;
+        // OR-4b (#767, §4.2 C8): the owner's queue work v2 accepted is refused by role; what it
+        // changed is applied behind the routes, by the owner as v2 recorded
+        if Self::is_kiosk(step)
+            && accepted
+            && self.replay.tally.blueprint.contains(&step.n)
+            && step.action.as_deref() != Some("list")
+        {
+            self.kiosk_behind(step).await;
+        }
 
         // #756: a direct save is published, as a v3 owner publishes it (D-3)
         if saves {

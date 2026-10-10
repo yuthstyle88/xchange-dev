@@ -22,7 +22,7 @@ use xc_rate::domain::validation::NO_SUCH_BRANCH;
 use super::error::V3Error;
 use crate::bootstrap::AppState;
 pub use crate::presentation::dto::v3::common::ViewAnswer;
-use crate::presentation::pages::SessionReader;
+use crate::presentation::pages;
 
 pub type RowId = String;
 
@@ -331,26 +331,46 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
 pub(super) async fn authenticate_and_authorize(
     req: &HttpRequest,
     inherits: (EntryPath, &'static str),
-) -> Result<Actor, HttpResponse> {
-    // 1. Sessions from SessionReader
-    let actor = if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
-        let sessions = reader.sessions(req).await;
-        // 2. The actor by entry path
-        match inherits.0 {
-            EntryPath::StaffRpc => sessions.staff,
-            _ => sessions.owner.or(sessions.staff),
-        }
-    } else {
-        None
+) -> Result<(Actor, xc_auth::domain::access::Actor), HttpResponse> {
+    let callers = pages::get_callers(req).await;
+    let now = chrono::Utc::now();
+    let action = Action::new(inherits.1);
+
+    let user = match inherits.0 {
+        EntryPath::StaffRpc => callers.staff_user.as_ref(),
+        _ => callers.user.as_ref(),
     };
 
-    // 3. Policy check
-    let action = Action::new(inherits.1);
-    if let Err(e) = Policy::allow(actor.as_ref(), inherits.0, &action) {
-        return Err(V3Error::from(e).error_response());
-    }
+    let user = match user {
+        Some(u) => {
+            if let Err(e) = Policy::authorize(Some(u), inherits.0, &action, None, now) {
+                return Err(V3Error::from(e).error_response());
+            }
+            u
+        }
+        None => {
+            let err = Policy::authorize(None, inherits.0, &action, None, now)
+                .err()
+                .unwrap_or(PolicyError::SignIn);
+            return Err(V3Error::from(err).error_response());
+        }
+    };
 
-    actor.ok_or_else(|| V3Error::from(PolicyError::SignIn).error_response())
+    let legacy_who = match inherits.0 {
+        EntryPath::StaffRpc => callers.staff,
+        _ => callers.owner.or(callers.staff),
+    };
+
+    let who = match legacy_who {
+        Some(w) => w,
+        None => {
+            let err = Policy::authorize(None, inherits.0, &action, None, now)
+                .err()
+                .unwrap_or(PolicyError::SignIn);
+            return Err(V3Error::from(err).error_response());
+        }
+    };
+    Ok((who, user.clone()))
 }
 
 /// 400 noSuchBranch when `branch` is not in `branches`; 500 serverError when it cannot be read.
@@ -386,8 +406,8 @@ pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Resu
 }
 
 async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let who = match authenticate_and_authorize(req, V::INHERITS).await {
-        Ok(who) => who,
+    let (who, user) = match authenticate_and_authorize(req, V::INHERITS).await {
+        Ok(res) => res,
         Err(resp) => return resp,
     };
 
@@ -396,7 +416,19 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Err(e) => return e.error_response(),
     };
 
-    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
+    let now = chrono::Utc::now();
+    let action = Action::new(V::INHERITS.1);
+    let grant = match Policy::authorize(
+        Some(&user),
+        V::INHERITS.0,
+        &action,
+        query.named_branch.as_ref(),
+        now,
+    ) {
+        Ok(g) => g,
+        Err(e) => return V3Error::from(e).error_response(),
+    };
+    let branch = grant.branch;
 
     if let Err(e) = require_branch(req, &branch).await {
         return e.error_response();
@@ -483,8 +515,8 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
 }
 
 async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let who = match authenticate_and_authorize(req, V::INHERITS).await {
-        Ok(who) => who,
+    let (who, user) = match authenticate_and_authorize(req, V::INHERITS).await {
+        Ok(res) => res,
         Err(resp) => return resp,
     };
 
@@ -493,7 +525,19 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
         Err(e) => return e.error_response(),
     };
 
-    let branch = Policy::branch(Some(&who), query.named_branch.as_ref());
+    let now = chrono::Utc::now();
+    let action = Action::new(V::INHERITS.1);
+    let grant = match Policy::authorize(
+        Some(&user),
+        V::INHERITS.0,
+        &action,
+        query.named_branch.as_ref(),
+        now,
+    ) {
+        Ok(g) => g,
+        Err(e) => return V3Error::from(e).error_response(),
+    };
+    let branch = grant.branch;
 
     if let Err(e) = require_branch(req, &branch).await {
         return e.error_response();

@@ -199,15 +199,17 @@ async fn ask(
 #[actix_web::test]
 async fn a_family_that_handles_a_name_answers_it_in_its_own_words() {
     let desk = Desk::open().await;
-    let family = Family::new("one", &["saveTransaction"], BOTH);
+    let family = Family::new("one", &["saveTransaction", "rateDraft"], BOTH);
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
+    // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
     let answer = ask(
         &app,
         &cookies,
         RPC,
-        "saveTransaction",
+        "rateDraft",
         "OWNER",
         json!({ "n": 1, "branchId": "MAIN" }),
     )
@@ -216,7 +218,7 @@ async fn a_family_that_handles_a_name_answers_it_in_its_own_words() {
     assert_eq!(
         answer.text,
         format!(
-            "{{\"zeta\":\"one\",\"action\":\"saveTransaction\",\"route\":\"rpc\",\
+            "{{\"zeta\":\"one\",\"action\":\"rateDraft\",\"route\":\"rpc\",\
              \"branch\":\"MAIN\",\"who\":\"owner\",\"now\":\"{NOW}\",\
              \"payload\":{{\"branchId\":\"MAIN\",\"n\":1}},\"passportUrl\":\"/files/abc\",\
              \"folderUrl\":\"/documents?ref=R1\",\"sheetUrl\":\"/#transactions\",\"alpha\":1}}"
@@ -358,7 +360,9 @@ async fn the_role_is_judged_before_a_family_is_asked() {
 #[actix_web::test]
 async fn the_branch_is_resolved_before_a_family_runs() {
     let desk = Desk::open().await;
-    let family = Family::new("one", &["saveTransaction"], BOTH);
+    let family = Family::new("one", &["saveTransaction", "rateDraft"], BOTH);
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
+    // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
@@ -366,7 +370,7 @@ async fn the_branch_is_resolved_before_a_family_runs() {
         &app,
         &cookies,
         RPC,
-        "saveTransaction",
+        "rateDraft",
         "OWNER",
         json!({ "branchId": "NOWHERE-1" }),
     )
@@ -376,7 +380,7 @@ async fn the_branch_is_resolved_before_a_family_runs() {
         &app,
         &cookies,
         RPC,
-        "saveTransaction",
+        "rateDraft",
         "OWNER",
         json!({ "branchId": "not a branch id" }),
     )
@@ -390,7 +394,7 @@ async fn the_branch_is_resolved_before_a_family_runs() {
         &app,
         &cookies,
         RPC,
-        "saveTransaction",
+        "rateDraft",
         "OWNER",
         json!({ "branchId": "B2" }),
     )
@@ -418,8 +422,10 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
     );
     let cookies = everybody(&desk, &app).await;
 
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
+    // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
     for (path, who, sentence) in [
-        (RPC, "OWNER", INVALID_REQUEST),
+        (RPC, "OWNER", ROLE_NOT_ALLOWED_RPC),
         (RPC, "FRONT", ROLE_NOT_ALLOWED_RPC),
         (STAFF_RPC, "FRONT", ROLE_NOT_ALLOWED_STAFF),
     ] {
@@ -431,11 +437,16 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
                 &format!("saveTransaction on {path} as {who}"),
             );
     }
+    // the gap for the owner's user, on a name it may ask
+    ask(&app, &cookies, RPC, "rateDraft", "OWNER", json!({}))
+        .await
+        .assert_refused(400, INVALID_REQUEST, "rateDraft on /api/rpc as OWNER");
     ask(&app, &cookies, STAFF_RPC, "opsNope", "FRONT", json!({}))
         .await
         .assert_refused(400, ROLE_NOT_ALLOWED_STAFF, "opsNope");
     assert_eq!(none.ran() + other.ran(), 0);
     // every registered family was asked, each time
+    // (the owner's rateDraft is answered before any family is asked)
     assert_eq!(none.asked(), 4);
     assert_eq!(other.asked(), 4);
 
@@ -448,7 +459,7 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
     let desk = Desk::open().await;
     let app = seam_app!(desk, Vec::new());
     let cookies = everybody(&desk, &app).await;
-    ask(&app, &cookies, RPC, "saveTransaction", "OWNER", json!({}))
+    ask(&app, &cookies, RPC, "rateDraft", "OWNER", json!({}))
         .await
         .assert_refused(400, INVALID_REQUEST, "no family at all");
     // the gap is answered before the branch is looked at, as it always was
@@ -456,7 +467,7 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
         &app,
         &cookies,
         RPC,
-        "saveTransaction",
+        "rateDraft",
         "OWNER",
         json!({ "branchId": "NOWHERE-1" }),
     )
@@ -470,11 +481,17 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
 #[actix_web::test]
 async fn a_family_answers_only_on_the_routes_it_handles() {
     let desk = Desk::open().await;
-    let family = Family::new("staff only", &["saveTransaction"], &[RpcRoute::StaffRpc]);
+    let family = Family::new(
+        "staff only",
+        &["saveTransaction", "rateDraft"],
+        &[RpcRoute::StaffRpc],
+    );
+    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
+    // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
-    ask(&app, &cookies, RPC, "saveTransaction", "OWNER", json!({}))
+    ask(&app, &cookies, RPC, "rateDraft", "OWNER", json!({}))
         .await
         .assert_refused(400, INVALID_REQUEST, "on /api/rpc");
     assert_eq!(family.ran(), 0);
@@ -499,8 +516,8 @@ async fn a_family_answers_only_on_the_routes_it_handles() {
 async fn of_two_families_that_handle_a_name_the_first_registered_answers() {
     for (first, second) in [("a", "b"), ("b", "a")] {
         let desk = Desk::open().await;
-        let one = Family::new(first, &["saveTransaction"], BOTH);
-        let two = Family::new(second, &["saveTransaction"], BOTH);
+        let one = Family::new(first, &["saveTransaction", "rateDraft"], BOTH);
+        let two = Family::new(second, &["saveTransaction", "rateDraft"], BOTH);
         let app = seam_app!(
             desk,
             vec![
@@ -510,7 +527,9 @@ async fn of_two_families_that_handle_a_name_the_first_registered_answers() {
         );
         let cookies = everybody(&desk, &app).await;
 
-        let answer = ask(&app, &cookies, RPC, "saveTransaction", "OWNER", json!({})).await;
+        // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
+        // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
+        let answer = ask(&app, &cookies, RPC, "rateDraft", "OWNER", json!({})).await;
         assert_eq!(answer.status, 200, "{:.300}", answer.text);
         assert_eq!(answer.json()["zeta"], first);
         assert_eq!((one.ran(), two.ran()), (1, 0));

@@ -44,18 +44,22 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
@@ -719,6 +723,27 @@ pub fn actor_of(fixture: &Fixture, step: &Step) -> Option<Actor> {
     )
 }
 
+/// The organisation a password session's user is in (B1, design §3.3): any one name, because
+/// `Policy::authorize` checks the caller against their own organisation.
+pub const ORGANIZATION: &str = "XC";
+
+/// The rule a route asks once every route is on `Policy::authorize` (OR-4b, #767; design §4.2):
+/// the caller as B1 maps them (OWNER → EXECUTIVE + ADMIN organisation-wide, an employee's role on
+/// their branch), naming no branch. The custody rows (`Need::Custody`, #582) stay on
+/// `Policy::allow`.
+pub fn route_rule(
+    actor: Option<&Actor>,
+    entry: EntryPath,
+    action: &str,
+) -> Result<(), PolicyError> {
+    let action = Action::new(action);
+    if Policy::need(entry, &action) == Some(Need::Custody) {
+        return Policy::allow(actor, entry, &action);
+    }
+    let user = actor.map(|a| actor_from_v3(a, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH));
+    Policy::authorize(user.as_ref(), entry, &action, None, Utc::now()).map(|_| ())
+}
+
 fn text_of(value: &Value, key: &str) -> String {
     match value.get(key) {
         Some(Value::String(text)) => text.clone(),
@@ -731,13 +756,22 @@ fn text_of(value: &Value, key: &str) -> String {
 // ── the replay ───────────────────────────────────────────────────────────────
 
 /// What is done with one recorded step.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Rule {
     /// Sent through HTTP and held to what v2 answered.
     Replay,
     /// Sent through HTTP and held to what was decided instead of v2's answer:
     /// this status and sentence.
     Differs { status: u16, sentence: &'static str },
+    /// A caller v2 let through and the Blueprint's role table refuses (OR-4b, #767; design §4.2:
+    /// C2 `ExchangeTransact` is TELLER's, C3 `CashManage` is BRANCH_MANAGER's and FINANCE's):
+    /// sent, and held to the route's refusal. What v2 accepted is applied behind the routes, as
+    /// recorded, so the steps after it see the state v2 recorded.
+    Blueprint(PolicyError),
+    /// Sent through HTTP and held to v2's answer as `edit` changes it: a caller the Blueprint
+    /// lets through and answers otherwise (OR-4b, #767; e.g. C8, the owner's user is not offered
+    /// the kiosk queue's work).
+    RecordedWith(fn(&mut Value)),
     /// Sent through HTTP and held to the recorded answer of another step (v3
     /// accepts what v2 refused): everything but `syncedAt`, which is this
     /// step's own clock. (An answer without `syncedAt` — a kiosk answer — is
@@ -765,11 +799,17 @@ pub struct Tally {
     pub excluded: Vec<(usize, &'static str)>,
     /// Of `part_two` and `excluded`: those applied behind the routes.
     pub applied_behind: Vec<usize>,
+    /// Held to the Blueprint's refusal (OR-4b); those v2 accepted are also in `applied_behind`.
+    pub blueprint: Vec<usize>,
 }
 
 impl Tally {
     pub fn total(&self) -> usize {
-        self.replayed.len() + self.differences.len() + self.part_two.len() + self.excluded.len()
+        self.replayed.len()
+            + self.differences.len()
+            + self.part_two.len()
+            + self.excluded.len()
+            + self.blueprint.len()
     }
 }
 
@@ -786,6 +826,10 @@ pub struct Replay<'f> {
     pub rules: BTreeMap<usize, Rule>,
 }
 
+/// (who, a file's key) → the key of the same file uploaded again by `who` (OR-4b):
+/// [`Replay::uploads_as`]. Keys are made at random, so one map serves every test.
+static UPLOADS_BY: Mutex<BTreeMap<(String, String), String>> = Mutex::new(BTreeMap::new());
+
 impl<'f> Replay<'f> {
     /// A desk with the people of `fixture` employed and signed in.
     pub async fn start(desk: Desk, app: App, fixture: &'f Fixture) -> Replay<'f> {
@@ -801,6 +845,85 @@ impl<'f> Replay<'f> {
             answers: BTreeMap::new(),
             rules: BTreeMap::new(),
         }
+    }
+
+    /// A TELLER (v2's FRONT) of `branch`, employed and signed in now: the key of their cookie
+    /// in [`Replay::cookies`]. OR-4b (#767, design §4.2 C2): `ExchangeTransact` is TELLER's, so
+    /// whoever reserves and saves in a branch is one of its tellers, not the owner's user.
+    pub async fn employ_teller(&mut self, branch: &str) -> String {
+        let key = format!("TELLER@{branch}");
+        let n = self.cookies.len() + 1;
+        let teller = Person {
+            key: key.clone(),
+            kind: "staff".to_string(),
+            id: format!("00000000-0000-4000-8000-0000000f{n:04x}"),
+            username: format!("teller{n}"),
+            name: format!("Teller of {branch}"),
+            role: "FRONT".to_string(),
+            branch_id: Some(branch.to_string()),
+            must_change: false,
+        };
+        let people = [teller];
+        self.desk.employ(&people).await;
+        let cookies = sign_in(&self.app, &self.fixture.origin, &people).await;
+        self.cookies.extend(cookies);
+        key
+    }
+
+    /// `payload` with its `passport` and `slip` uploaded again by `who`, in `who`'s branch. A save
+    /// attaches only files its saver uploaded; OR-4b (#767, C2) moves the owner's saves to a
+    /// TELLER, so the files the recorded owner uploaded are uploaded again by the teller. The same
+    /// file asked twice is the same new file.
+    pub async fn uploads_as(&self, who: &str, payload: &Value) -> Value {
+        let person = self
+            .fixture
+            .person(who)
+            .unwrap_or_else(|| panic!("{who} is a person of {}", self.fixture.name));
+        let mut out = payload.clone();
+        for field in ["passport", "slip"] {
+            let Some(key) = payload
+                .get(field)
+                .and_then(|f| f.get("uploadKey"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            let known = UPLOADS_BY
+                .lock()
+                .expect("the uploads")
+                .get(&(who.to_string(), key.to_string()))
+                .cloned();
+            let new_key = match known {
+                Some(k) => k,
+                None => {
+                    let mime: Option<String> =
+                        sqlx::query_scalar("SELECT mime FROM files WHERE key = $1")
+                            .bind(key)
+                            .fetch_optional(&self.desk.db.pool)
+                            .await
+                            .expect("read a file's kind");
+                    let Some(mime) = mime else {
+                        // not a file anybody uploaded: sent as it is
+                        continue;
+                    };
+                    let bytes = if mime == "application/pdf" { PDF } else { PNG };
+                    let branch = person.branch_id.clone().unwrap_or_else(|| MAIN.to_string());
+                    let k = self
+                        .desk
+                        .files
+                        .upload(&BranchId::new(branch), &person.id, &mime, bytes, Utc::now())
+                        .await
+                        .unwrap_or_else(|e| panic!("upload {field} again as {who}: {e:?}"));
+                    UPLOADS_BY
+                        .lock()
+                        .expect("the uploads")
+                        .insert((who.to_string(), key.to_string()), k.clone());
+                    k
+                }
+            };
+            out[field]["uploadKey"] = json!(new_key);
+        }
+        out
     }
 
     pub fn rule(mut self, n: usize, rule: Rule) -> Self {
@@ -829,6 +952,8 @@ impl<'f> Replay<'f> {
         let entry = match path {
             RPC => EntryPath::Rpc,
             STAFF_RPC => EntryPath::StaffRpc,
+            // OR-4b: the kiosk route asks the route table too (C8)
+            "/api/kiosk" => EntryPath::Kiosk,
             "/api/upload" | "/api/staff/upload" => {
                 return Rule::Excluded("an upload: the file routes are another ticket's");
             }
@@ -838,16 +963,37 @@ impl<'f> Replay<'f> {
         let Some(action) = action_of(step) else {
             return Rule::Replay;
         };
+        // the route judges the name before the payload, unless it refuses the request first
+        let judged_by_name = step.method.as_deref() == Some("POST")
+            && step.request_headers.is_empty()
+            && step.payload.as_ref().is_none_or(Value::is_object);
+        let actor = actor_of(self.fixture, step);
+        // OR-4b (#767, §4.2 C2, C3, C8): the Blueprint refuses this caller where v2 let them
+        // through, or refuses them in other words
+        if judged_by_name {
+            let v2 = Policy::allow(actor.as_ref(), entry, &Action::new(&action));
+            // the staff route reads the staff session only: the owner's is nobody there
+            let caller = actor.as_ref().filter(|_| {
+                !(entry == EntryPath::StaffRpc
+                    && self.fixture.sender(step).is_some_and(Person::is_owner))
+            });
+            match route_rule(caller, entry, &action) {
+                Err(refusal) if v2.as_ref().err() != Some(&refusal) => {
+                    return Rule::Blueprint(refusal);
+                }
+                Ok(()) if v2.is_err() => panic!(
+                    "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
+                    self.label(step)
+                ),
+                _ => {}
+            }
+        }
         if !is_part_two(&action) {
             return Rule::Replay;
         }
         // a part-two name is this part's to answer exactly when Policy refuses
         // it, or when the route refuses the request before any name is judged
-        let judged_by_name = step.method.as_deref() == Some("POST")
-            && step.request_headers.is_empty()
-            && step.payload.as_ref().is_none_or(Value::is_object);
-        let actor = actor_of(self.fixture, step);
-        let allowed = Policy::allow(actor.as_ref(), entry, &Action::new(action)).is_ok();
+        let allowed = route_rule(actor.as_ref(), entry, &action).is_ok();
         if judged_by_name && allowed {
             Rule::PartTwo
         } else {
@@ -892,30 +1038,42 @@ impl<'f> Replay<'f> {
         let label = self.label(step);
 
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
-        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
-            let earlier = self
-                .answers
-                .get(&same.same_as)
-                .unwrap_or_else(|| panic!("{label}: step {} was not replayed", same.same_as))
-                .json();
-            let earlier_customer = text_of(&earlier, "customerId");
-            let expected =
-                crate::compat_common::same_customer_answer(step.json(), &earlier_customer, &label);
-            assert_eq!(
-                answer.status, 200,
-                "{label} ({}): {:.300}",
-                same.reason, answer.text
-            );
-            assert_same(
-                &expected,
-                &answer.json(),
-                &format!("{label} ({})", same.reason),
-            );
-            self.ids
-                .alias_customer(&text_of(step.json(), "customerId"), &earlier_customer);
-            self.tally.differences.push(step.n);
-            self.answers.insert(step.n, answer);
-            return;
+        #[allow(clippy::collapsible_if)]
+        if matches!(rule, Rule::Replay) {
+            if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+                let earlier_answer = self
+                    .answers
+                    .get(&same.same_as)
+                    .unwrap_or_else(|| panic!("{label}: step {} was not replayed", same.same_as));
+                let earlier_customer = if earlier_answer.status == 200 {
+                    text_of(&earlier_answer.json(), "customerId")
+                } else {
+                    text_of(
+                        &self.ids.to_actual(self.fixture.step(same.same_as).json()),
+                        "customerId",
+                    )
+                };
+                let expected = crate::compat_common::same_customer_answer(
+                    step.json(),
+                    &earlier_customer,
+                    &label,
+                );
+                assert_eq!(
+                    answer.status, 200,
+                    "{label} ({}): {:.300}",
+                    same.reason, answer.text
+                );
+                assert_same(
+                    &expected,
+                    &answer.json(),
+                    &format!("{label} ({})", same.reason),
+                );
+                self.ids
+                    .alias_customer(&text_of(step.json(), "customerId"), &earlier_customer);
+                self.tally.differences.push(step.n);
+                self.answers.insert(step.n, answer);
+                return;
+            }
         }
 
         // CI-4 (#651): a save for a customer a SameCustomerAs step aliased: its receipt names that customer.
@@ -1013,6 +1171,30 @@ impl<'f> Replay<'f> {
                 {
                     self.save_behind(step).await;
                 }
+            }
+            Rule::Blueprint(refusal) => {
+                answer.assert_refused(refusal.status(), &refusal.to_string(), &label);
+                assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
+                self.tally.blueprint.push(step.n);
+                // a kiosk step is applied behind the routes by the kiosk's replay, which holds the
+                // kiosk's audit log
+                if step.status == Some(200) && step.path() != Some("/api/kiosk") {
+                    self.accepted_behind(step).await;
+                }
+            }
+            Rule::RecordedWith(edit) => {
+                assert_eq!(
+                    Some(answer.status),
+                    step.status,
+                    "{label}: {:.300}",
+                    answer.text
+                );
+                let mut expected = without_dropped_keys(step.json());
+                edit(&mut expected);
+                let actual = answer.json();
+                self.ids.learn(&expected, &actual);
+                assert_same(&self.ids.to_actual(&expected), &actual, &label);
+                self.tally.blueprint.push(step.n);
             }
             Rule::Excluded(_) => unreachable!("handled above"),
         }
@@ -1161,6 +1343,104 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
         self.ids.learn(step.json(), &json!({ "uploadKey": key }));
+        self.tally.applied_behind.push(step.n);
+    }
+
+    /// A step v2 accepted and the Blueprint refuses its caller (OR-4b): what it changed, applied
+    /// behind the routes as recorded — the exchange, the customer reservation, the stock move.
+    async fn accepted_behind(&mut self, step: &Step) {
+        match action_of(step).as_deref() {
+            Some("saveTransaction") => self.save_behind(step).await,
+            Some("reserveCustomer") => self.reserve_behind(step).await,
+            Some("adminMoveStock") => self.move_behind(step).await,
+            other => panic!(
+                "{}: v2 accepted {other:?}; nothing applies it behind the routes",
+                self.label(step)
+            ),
+        }
+    }
+
+    /// An accepted `reserveCustomer`, through the customer service as the route runs it; the id
+    /// v3 made is paired with the one v2 answered.
+    async fn reserve_behind(&mut self, step: &Step) {
+        let payload = self
+            .ids
+            .to_actual(step.payload.as_ref().expect("a payload"));
+        let command = ReserveCustomer {
+            name: text_of(&payload, "name"),
+            passport_no: text_of(&payload, "passportNo"),
+            nationality: text_of(&payload, "nationality"),
+            birth_date: text_of(&payload, "birthDate"),
+            passport_expiry: text_of(&payload, "passportExpiry"),
+            mode: text_of(&payload, "mode"),
+        };
+        let reserved = CustomerService::new(self.desk.db.branch_tx())
+            .reserve(&self.branch_of(step), command, time(&step.at))
+            .await
+            .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        let actual = json!({ "customerId": reserved.customer_id, "existing": reserved.existing });
+        let expected_existing =
+            if crate::compat_common::same_customer_as(&self.fixture.name, step.n).is_some() {
+                serde_json::Value::Bool(true)
+            } else {
+                step.json()["existing"].clone()
+            };
+        assert_eq!(
+            actual["existing"],
+            expected_existing,
+            "{}: the reservation behind the routes is v2's",
+            self.label(step)
+        );
+        // CI-4 (#651), held strictly when the step is held to the Blueprint (OR-4b C2): the
+        // reservation behind the routes is the earlier step's customer (controller ruling on #767)
+        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+            let earlier = text_of(
+                &self.ids.to_actual(self.fixture.step(same.same_as).json()),
+                "customerId",
+            );
+            assert_eq!(
+                reserved.customer_id,
+                earlier,
+                "{} ({}): the reservation behind the routes is step {}'s customer",
+                self.label(step),
+                same.reason,
+                same.same_as
+            );
+        }
+        self.ids.learn(step.json(), &actual);
+        self.ids
+            .alias_customer(&text_of(step.json(), "customerId"), &reserved.customer_id);
+        self.tally.applied_behind.push(step.n);
+    }
+
+    /// An accepted `adminMoveStock`, through the shift service as the route runs it, by whoever v2
+    /// recorded.
+    async fn move_behind(&mut self, step: &Step) {
+        let sender = self.fixture.sender(step).expect("somebody moved it");
+        let payload = self
+            .ids
+            .to_actual(step.payload.as_ref().expect("a payload"));
+        let command = MoveStock::from_payload(&payload)
+            .unwrap_or_else(|e| panic!("{}: v2 accepted it: {e:?}", self.label(step)));
+        let branch = self.branch_of(step);
+        let shifts = ShiftService::new(
+            Arc::new(PgShiftRepository::new(self.desk.db.pool.clone())),
+            self.desk.db.branch_tx(),
+        );
+        let who = sender.username.clone();
+        let at = time(&step.at);
+        let here = branch.clone();
+        let inner = shifts.clone();
+        shifts
+            .branch_tx()
+            .run(&branch, move |tx| {
+                Box::pin(async move {
+                    inner.move_stock_in(tx, &here, command, &who, at).await?;
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
         self.tally.applied_behind.push(step.n);
     }
 

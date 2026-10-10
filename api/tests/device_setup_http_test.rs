@@ -145,7 +145,9 @@ async fn only_the_owner_may_set_up_agents() {
     let room = Room::open().await;
     let answer = room.ask("nobody", t0(), "list", json!({})).await;
     answer.assert_refused(401, SIGN_IN, "nobody");
-    for key in staff_keys() {
+    // OR-4b (#767, design §4.2 C5): SystemSettings is ADMIN's too, and B1 makes SYSTEM an ADMIN;
+    // SYSTEM is asked below
+    for key in staff_keys().into_iter().filter(|k| k != "SYSTEM") {
         let answer = room.ask(&key, t0(), "list", json!({})).await;
         answer.assert_refused(403, OWNER_ONLY, &key);
         let answer = room
@@ -169,6 +171,18 @@ async fn only_the_owner_may_set_up_agents() {
         .await
         .expect("count");
     assert_eq!(count, 0, "nothing was added");
+    // C5: SYSTEM lists and adds
+    let answer = room.ask("SYSTEM", t0(), "list", json!({})).await;
+    assert_eq!(answer.status, 200, "SYSTEM list (C5): {:.300}", answer.text);
+    let answer = room
+        .ask(
+            "SYSTEM",
+            t0(),
+            "add",
+            json!({ "branchId": MAIN, "name": "x" }),
+        )
+        .await;
+    assert_eq!(answer.status, 200, "SYSTEM add (C5): {:.300}", answer.text);
     room.finish().await;
 }
 

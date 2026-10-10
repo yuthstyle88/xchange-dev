@@ -346,6 +346,18 @@ fn rate_of<'a>(data: &'a Value, code: &str) -> &'a Value {
 
 // ── who may read ─────────────────────────────────────────────────────────────
 
+/// OR-4b (#767, D-4, design §2 and §02 "Server ตรวจ … branch scope"): an employee who names a
+/// branch outside their scope is refused 403 `outOfScope`, where v3 answered their own branch.
+fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
+    assert_eq!(answer.status, 403, "{label}: {:.300}", answer.text);
+    assert_eq!(
+        answer.json()["error"]["code"],
+        serde_json::json!("outOfScope"),
+        "{label}: {:.300}",
+        answer.text
+    );
+}
+
 /// DK-A §10: each view refuses exactly whom `Policy::allow` refuses for its pair, caller by
 /// caller, with the policy's status and sentence.
 #[actix_web::test]
@@ -392,8 +404,15 @@ async fn the_owner_reads_the_branch_named_and_front_their_own() {
         .await;
     assert_eq!(owner["branchId"], json!(B9));
     assert_eq!(owner["branchName"], json!("Nine"));
+    // OR-4b (D-4): FRONT naming B9 is refused; naming MAIN they read their own
+    assert_out_of_scope(
+        &room
+            .get("FRONT", &view_path(STAFF_VIEW, &format!("branch={B9}")))
+            .await,
+        "FRONT naming B9",
+    );
     let front = room
-        .data("FRONT", STAFF_VIEW, &format!("branch={B9}"))
+        .data("FRONT", STAFF_VIEW, &format!("branch={MAIN}"))
         .await;
     assert_eq!(
         front["branchId"],
