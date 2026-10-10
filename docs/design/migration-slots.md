@@ -50,7 +50,7 @@ scripts/migration-slot.sh renumber <pr-number|branch>
   3. The PR must be currently open.
 - **Execution:** The script checks every migration added or renamed since `git merge-base origin/main HEAD` (`--diff-filter=AR`).
   - If all added migrations are already strictly greater than `origin/main`'s highest migration, the script outputs `nothing to renumber` and exits 0 with HEAD unchanged.
-  - If any migration has a version `<= origin/main`'s highest version, the script renames each such file via `git mv` to the next slot (calculated above `main` and all other open PRs, excluding the PR itself), preserving SQL content byte-for-byte.
+  - If any migration has a version `<= origin/main`'s highest version, the script renames each such file via `git mv` to the next slot (calculated above `main`, all other open PRs, and the PR's own migrations that stay above `main`), preserving SQL content byte-for-byte.
   - Each file rename is committed as a single commit with the exact subject:
     ```
     chore(migrations): renumber <old> → <new> at merge time

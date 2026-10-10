@@ -219,6 +219,7 @@ cmd_renumber() {
   added_files=$(git diff --name-only --diff-filter=AR "$merge_base" HEAD -- 'api/migrations/*.sql')
 
   local to_renumber=()
+  local kept_versions=()
   if [ -n "$added_files" ]; then
     while IFS= read -r f; do
       [ -z "$f" ] && continue
@@ -228,6 +229,8 @@ cmd_renumber() {
         v="${BASH_REMATCH[1]}"
         if [[ "$v" < "$base_max" || "$v" == "$base_max" ]]; then
           to_renumber+=("$f")
+        else
+          kept_versions+=("$v")
         fi
       fi
     done <<< "$added_files"
@@ -250,6 +253,14 @@ cmd_renumber() {
   local current_max="$base_max"
   if [ -n "$other_pr_versions" ]; then
     for v in $other_pr_versions; do
+      if [[ "$v" > "$current_max" ]]; then
+        current_max="$v"
+      fi
+    done
+  fi
+
+  if [ "${#kept_versions[@]}" -gt 0 ]; then
+    for v in "${kept_versions[@]}"; do
       if [[ "$v" > "$current_max" ]]; then
         current_max="$v"
       fi
