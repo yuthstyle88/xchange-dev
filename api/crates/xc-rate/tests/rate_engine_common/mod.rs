@@ -54,7 +54,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate};
-use xc_rate::application::approval::rate_publication;
+use xc_rate::application::approval::{rate_feed_publication, rate_publication};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::publication::publish_service::PublishService;
 use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
@@ -223,6 +223,7 @@ impl TestDb {
     pub fn engine(&self) -> Engine {
         let mut registry = ApprovalRegistry::new();
         rate_publication::register(&mut registry, self.pool.clone());
+        rate_feed_publication::register(&mut registry, self.pool.clone());
         let repository: Arc<dyn ApprovalRepository> =
             Arc::new(PgApprovalRepository::new(self.pool.clone()));
         let audit: Arc<dyn AuditLog> = Arc::new(PgAuditLog::new(self.pool.clone()));
