@@ -1,0 +1,54 @@
+.xc-admin .xc-content .denomination-groups-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.xc-admin .xc-content .denomination-groups-currency-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .denomination-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .group-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 6px;
+}
+
+.xc-admin .xc-content .group-code {
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.xc-admin .xc-content .board-key-display {
+  color: var(--ink-secondary, #64748b);
+  min-width: 80px;
+}
+
+.xc-admin .xc-content .add-group-form {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 6px;
+}
+
+.xc-admin .xc-content .error-msg,
+.xc-admin .xc-content .row-error {
+  color: var(--danger, #dc2626);
+  font-size: 13px;
+}
+
