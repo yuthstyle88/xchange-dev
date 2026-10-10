@@ -97,11 +97,10 @@ jobs:
           rm -rf "$STAGE" && install -d -m 700 "$STAGE"
           cp api/target/release/xchange "$STAGE/"
           cp -R api/configuration "$STAGE/configuration"
-          cp -R api/migrations "$STAGE/migrations"
           cp api/tools/extract-v2-pages.mjs "$STAGE/"
           cp deploy/server/{common.sh,install.sh,update.sh,smoke.sh,xc-v3.service} "$STAGE/"
           echo "$GITHUB_SHA" > "$STAGE/BUILD"
-          ( cd "$STAGE" && sha256sum xchange configuration/*.yaml migrations/*.sql extract-v2-pages.mjs \
+          ( cd "$STAGE" && sha256sum xchange configuration/*.yaml extract-v2-pages.mjs \
               common.sh install.sh update.sh smoke.sh xc-v3.service BUILD > SHA256SUMS )
           glibc="$(objdump -T "$STAGE/xchange" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
           echo "$glibc" > "$RUNNER_TEMP/glibc-needed"
