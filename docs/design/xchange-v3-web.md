@@ -1227,9 +1227,6 @@ number or a name use `{placeholders}`.
 - `useQueueStore` / `queueStore` for the counts, `working`, `branchName`, `latest`, `error` (v2's `xc:queue-state` and
   `xc:queue-error`, `admin-queue.js:13-21`), and `setQueueBranch` on a picker change (`admin-queue.js:22`);
 - `QueuePanel` inside its dialog (`admin-queue.js:8`), with `onClaimed` where it needs it;
-- `dockQueueCard(): () => void` [proposed] exported by `QueueCard.tsx`: while docked the card renders nothing but keeps
-  C4–C9 running (v2 hid the card on the admin page, `admin-queue.js:12`); the returned function undocks;
-  **superseded on admin by §12.18.12 (#786): admin no longer docks the card;**
 - `QueueSoundControls` [proposed], `web/src/shared/ui/QueueSoundControls.tsx`: the sound buttons and hint of C7, which
   #471 renders in its bar (`admin-queue.js:12` moved v2's controls there). The card renders the same component.
 
@@ -1296,7 +1293,7 @@ classDiagram
   class QueueBranch { <<queue-store.ts>> +queueBranch: Accessor~string~ +setQueueBranch(b) }
   class QueuePanel { <<shared/ui/QueuePanel.tsx>> +branch: string +shown: boolean +onClaimed(id) }
   class KioskQueueScreen { <<screens/kiosk-queue/>> }
-  class QueueCard { <<shared/ui/QueueCard.tsx>> +session: SessionStore +dockQueueCard() undock }
+  class QueueCard { <<shared/ui/QueueCard.tsx>> +session: SessionStore }
   class QueueSound { <<shared/queue/queue-sound.ts>> +soundOn +enable() +test() +chime() +announce(state, user, branch) }
   class QueueSoundControls { <<shared/ui/QueueSoundControls.tsx>> }
   class AccountBar
@@ -1330,7 +1327,7 @@ classDiagram
 | `QueuePanel` | `web/src/shared/ui/QueuePanel.tsx` | V1-kiosk-queue-panel (#486) | the page, #471 |
 | the page | `web/pages/kiosk-queue.html`, `web/src/screens/kiosk-queue/**` (its `i18n.ts`: `kiosk-queue.*`) | V1-kiosk-queue-panel (#486) | — |
 | every `queue.*` key; `SHARED_PREFIXES` | `web/src/shared/i18n/th.ts`, `en.ts`, `index.ts` (the one constant) | V1-kiosk-queue-panel (#486) | panel, card, #471 |
-| `QueueCard`, `dockQueueCard` | `web/src/shared/ui/QueueCard.tsx` | V1-queue-card (#487) | `AccountBar`, #471 |
+| `QueueCard` | `web/src/shared/ui/QueueCard.tsx` | V1-queue-card (#487) | `AccountBar` |
 | `QueueSound` | `web/src/shared/queue/queue-sound.ts` | V1-queue-card (#487) | `QueueCard`, `QueueSoundControls` |
 | `QueueSoundControls` | `web/src/shared/ui/QueueSoundControls.tsx` | V1-queue-card (#487) | `QueueCard`, #471 |
 | the render line | `web/src/shared/ui/AccountBar.tsx` | V1-queue-card (#487) | — |
@@ -1361,7 +1358,7 @@ floats. There is one floating widget, the card, on every screen admin included, 
 
 | # | Decision | Status |
 |---|---|---|
-| QF1 | **Admin stops docking.** `QueueBar` no longer calls `dockQueueCard()`, so `AccountBar`'s `QueueCard` (portalled to `body`) shows on admin as everywhere. `dockQueueCard` stays exported (C-dock tests pin it), with no caller | decided |
+| QF1 | **Admin stops docking.** `QueueBar` no longer docks the card, so `AccountBar`'s `QueueCard` (portalled to `body`) shows on admin as everywhere. The unused docking export and its tests were retired by #833 | decided |
 | QF2 | **Admin drops only the in-page card**: `QueueBar` renders no `aside.admin-queue-bar` (title, status, open button, sound controls, workers list). It keeps the store subscription (`setQueueBranch`), the `/kiosk-queue.html` link interception, the toast and the dialog | decided |
 | QF3 | **The card's action opens the same dialog on admin.** The card's link `เปิดคิว / รับเรื่อง →` (`/kiosk-queue.html?branch=…`, C3) is caught by `QueueBar`'s capture-phase interception (Q9), which opens the queue dialog. Offline, a session end or a branch awaiting its answer: the click is prevented and opens nothing (the old button's `disabled`). Closing the dialog returns focus to the link that opened it. Elsewhere the link still opens the page in a new tab | decided |
 | QF4 | **Titles.** The dialog keeps `คิวลูกค้า · <branch label>` (Q7, Q19). The card keeps its own `XC · <branchName>` (C4, `account-bar.js` @10677). The bar's in-page title `คิวลูกค้า · <branchName>` (Q2) goes with the bar | decided by this row; the controller may override |

@@ -8,7 +8,6 @@
 //
 //   web/src/shared/ui/QueueCard.tsx
 //     export function QueueCard(props: { session: SessionStore }): JSX.Element;
-//     export function dockQueueCard(): () => void;   // while held the card renders no DOM, but C4–C9 run
 //   web/src/shared/ui/QueueSoundControls.tsx
 //     export function QueueSoundControls(): JSX.Element;
 //
@@ -866,70 +865,9 @@ describe('QueueCard C9: it announces each answer', () => {
   });
 });
 
-// ── docking (§12.18.8) ───────────────────────────────────────────────────────
-
-describe('dockQueueCard (§12.18.8, for #471)', () => {
-  it('docked: no card in the DOM; a new latest with sound on still chimes; undocked: the card is back with the current line', async () => {
-    const page = await openPage();
-    await settle();
-    const controls = await mountControls();
-    button(controls, TH.soundOn)?.click();
-    await settle();
-    expect(audio.chimes()).toBe(1);
-
-    const undock = page.card.dockQueueCard();
-    await settle();
-    expect(cards()).toEqual([]);
-
-    answer('B1', { count: 1, latest: 'kq-1' });
-    await settle();
-    expect(cards()).toEqual([]);
-    expect(audio.chimes()).toBe(2);
-    expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-1');
-
-    undock();
-    await settle();
-    expect(statusLine(theCard()).textContent?.trim()).toBe(TH.waiting(1, 'Silom'));
-  });
-
-  it('docked before the card mounts: it never shows', async () => {
-    vi.resetModules();
-    const card = await import('./QueueCard');
-    queues().reset();
-    const undock = card.dockQueueCard();
-    const [me] = createSignal<Me | undefined>(NOK);
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    disposers.push(
-      render(() => <card.QueueCard session={{ me, signOut: async () => {}, dispose: () => {} }} />, host),
-    );
-    await settle();
-    expect(cards()).toEqual([]);
-    undock();
-    await settle();
-    expect(cards()).toHaveLength(1);
-  });
-
-  it('two docks: the card stays hidden until both are released; releasing twice does not over-count', async () => {
-    const page = await openPage();
-    await settle();
-    const a = page.card.dockQueueCard();
-    const b = page.card.dockQueueCard();
-    a();
-    a();
-    await settle();
-    expect(cards()).toEqual([]);
-    b();
-    await settle();
-    expect(cards()).toHaveLength(1);
-    const c = page.card.dockQueueCard();
-    await settle();
-    expect(cards()).toEqual([]);
-    c();
-    await settle();
-    expect(cards()).toHaveLength(1);
-  });
-});
+// ── docking (§12.18.8): retired by #833 ───────────────────────────────────────
+// #786 removed the only caller (admin's QueueBar); the shared card now floats on every screen, so
+// the dock export and its three tests are gone. The card always renders where it is mounted.
 
 // ── language (W10) ───────────────────────────────────────────────────────────
 

@@ -16,8 +16,8 @@
 // The bar makes no request of its own. It reads the queue store of #486
 // (`web/src/shared/queue/queue-store.ts`: `useQueueStore`, `setQueueBranch`), which this file
 // replaces with a fake the test drives — the same writes the real store makes (an answer clears
-// `error` then sets `state`; a failure sets `error` and keeps `state`). `QueuePanel` (#486),
-// `dockQueueCard` and `QueueSoundControls` (#487) are replaced by recorders: the claim, the tabs and
+// `error` then sets `state`; a failure sets `error` and keeps `state`). `QueuePanel` (#486)
+// and `QueueSoundControls` (#487) are replaced by recorders: the claim, the tabs and
 // the pager are the panel's and are not tested here. `fetch` is watched and must never be called.
 //
 // "Shown" means connected, with no `hidden` on it or an ancestor, no inline `display: none`, and,
@@ -72,8 +72,6 @@ const fake = vi.hoisted(() => ({
   stores: new Map<string, unknown>(),
   queueBranchCalls: [] as string[],
   panels: [] as { branch: string; shown: boolean; alive: boolean }[],
-  docks: 0,
-  undocks: 0,
   soundControls: 0,
 }));
 
@@ -131,16 +129,6 @@ vi.mock('../../../shared/ui/QueuePanel', async () => {
 });
 
 vi.mock('../../../shared/ui/QueueCard', () => ({
-  dockQueueCard: () => {
-    fake.docks += 1;
-    let released = false;
-    return () => {
-      if (!released) {
-        released = true;
-        fake.undocks += 1;
-      }
-    };
-  },
   QueueCard: () => document.createElement('div'),
 }));
 
@@ -261,8 +249,6 @@ beforeEach(() => {
   fake.stores.clear();
   fake.queueBranchCalls.length = 0;
   fake.panels.length = 0;
-  fake.docks = 0;
-  fake.undocks = 0;
   fake.soundControls = 0;
   sessionStorage.clear();
   fetchSpy = vi.fn(async () => new Response('{}', { status: 500 }));

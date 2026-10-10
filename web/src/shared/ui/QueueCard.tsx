@@ -7,19 +7,6 @@ import type { SessionStore } from '../session/session';
 import { QueueSoundControls } from './QueueSoundControls';
 import './queue-card.css';
 
-const [dockCount, setDockCount] = createSignal(0);
-
-export function dockQueueCard(): () => void {
-  setDockCount((c) => c + 1);
-  let released = false;
-  return () => {
-    if (!released) {
-      released = true;
-      setDockCount((c) => Math.max(0, c - 1));
-    }
-  };
-}
-
 function checkInitialFold(): boolean {
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
     try {
@@ -140,7 +127,7 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
   };
 
   return (
-    <Show when={props.session.me() && dockCount() === 0}>
+    <Show when={props.session.me()}>
       <Portal>
         <aside
           aria-label={t('queue.card.aria')}
