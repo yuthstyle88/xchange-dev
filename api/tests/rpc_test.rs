@@ -477,7 +477,8 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 184);
-    assert_eq!(replay.tally.differences, vec![159]);
+    // CI-4 (#651): #124 and its save #125 are SameCustomerAs (DEMO shares the LIVE customer)
+    assert_eq!(replay.tally.differences, vec![124, 125, 159]);
     assert_eq!(numbers(&replay.tally.excluded), vec![82, 83, 109]);
     let saves: Vec<usize> = (84..=108).chain(110..=123).chain([125, 144]).collect();
     let documents = [127, 128];
@@ -495,9 +496,9 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     if NO_FAMILY_WIRED {
         assert_eq!(part_two.len(), 43);
     }
-    // 184 − 3 uploads − 43 of part two − 1 difference; a step of a wired
-    // family is held to v2 instead
-    assert_eq!(replay.tally.replayed.len(), 137 + (43 - part_two.len()));
+    // 184 − 3 uploads − 43 of part two − 3 differences (#159, and CI-4's #124
+    // and #125); a step of a wired family is held to v2 instead
+    assert_eq!(replay.tally.replayed.len(), 135 + (43 - part_two.len()));
     // the three uploads, and — while the save is not wired — the four accepted
     // saves (one of them sent twice)
     let mut applied_behind = vec![82, 83, 109];
@@ -511,7 +512,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         let Some(action) = &step.action else { continue };
         if PART_ONE.contains(&action.as_str()) {
             assert!(
-                replay.tally.replayed.contains(&step.n) || step.n == 159,
+                replay.tally.replayed.contains(&step.n) || [124, 159].contains(&step.n),
                 "engine_actions#{} ({action}) was not compared",
                 step.n
             );
@@ -599,8 +600,9 @@ async fn branches_json_is_answered_as_v2_answered_it() {
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 39);
-    assert_eq!(replay.tally.differences, vec![3]);
-    assert_eq!(replay.tally.replayed.len(), 38);
+    // CI-4 (#651): #10 is SameCustomerAs (K1, a customer per company)
+    assert_eq!(replay.tally.differences, vec![3, 10]);
+    assert_eq!(replay.tally.replayed.len(), 37);
     let views: Vec<usize> = fixture
         .steps()
         .iter()
@@ -957,7 +959,7 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
                 RPC,
                 "reserveCustomer",
                 json!({ "branchId": "B-two", "name": "A Customer", "passportNo": "P7000001",
-                        "nationality": "DE", "mode": "LIVE" }),
+                        "nationality": "DEU", "mode": "LIVE" }),
             )
             .cookie(&cookies["OWNER"]),
         )
@@ -966,7 +968,8 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
     assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(1));
     let main = snapshot(RPC, "OWNER", json!({})).await;
-    assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(0));
+    // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
+    assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));
     desk.finish().await;
 }
 

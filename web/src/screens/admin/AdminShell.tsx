@@ -83,8 +83,43 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   // Search
   const [searchQuery, setSearchQuery] = createSignal('');
 
+  // Mobile / Narrow detection
+  const [isNarrow, setIsNarrow] = createSignal(
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 900px)').matches
+      : false,
+  );
+
   // Mobile menu
   const [mobileOpen, setMobileOpen] = createSignal(false);
+  let menuButtonRef: HTMLButtonElement | undefined;
+  let sidebarRef: HTMLElement | undefined;
+  let searchInputRef: HTMLInputElement | undefined;
+
+  const setMenu = (open: boolean) => {
+    if (mobileOpen() === open) return;
+    setMobileOpen(open);
+    if (!open) {
+      menuButtonRef?.focus();
+    } else {
+      if (isNarrow()) {
+        searchInputRef?.focus();
+      }
+    }
+  };
+
+  createEffect(() => {
+    if (sidebarRef) {
+      const shouldBeInert = !mobileOpen() && isNarrow();
+      if (shouldBeInert) {
+        sidebarRef.setAttribute('inert', '');
+        sidebarRef.inert = true;
+      } else {
+        sidebarRef.removeAttribute('inert');
+        sidebarRef.inert = false;
+      }
+    }
+  });
 
   // Period state
   const initialToday = getBangkokToday();
@@ -132,7 +167,37 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      setMobileOpen(false);
+      if (mobileOpen()) {
+        setMenu(false);
+      }
+    } else if (e.key === 'Tab' && mobileOpen() && isNarrow() && sidebarRef) {
+      if (document.activeElement?.closest('dialog')) return;
+      const focusables = Array.from(
+        sidebarRef.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusables.length > 0) {
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey) {
+          if (
+            document.activeElement === first ||
+            !sidebarRef.contains(document.activeElement)
+          ) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (
+            document.activeElement === last ||
+            !sidebarRef.contains(document.activeElement)
+          ) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     }
   };
 
@@ -140,6 +205,21 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     window.addEventListener('hashchange', onHashChange);
     document.addEventListener('keydown', onKeyDown);
     applyHashQuery(window.location.hash);
+
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function'
+    ) {
+      const mql = window.matchMedia('(max-width: 900px)');
+      const handler = (e: MediaQueryListEvent | { matches: boolean }) => {
+        setIsNarrow(e.matches);
+        if (!e.matches) {
+          setMenu(false);
+        }
+      };
+      mql.addEventListener('change', handler);
+      onCleanup(() => mql.removeEventListener('change', handler));
+    }
   });
 
   onCleanup(() => {
@@ -402,21 +482,25 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       ownsMain={true}
       nav={
         <button
+          ref={(el) => (menuButtonRef = el)}
           type="button"
           aria-controls="admin-sidebar"
           aria-expanded={mobileOpen() ? 'true' : 'false'}
-          onClick={() => setMobileOpen(!mobileOpen())}
+          onClick={() => setMenu(!mobileOpen())}
         >
           {t('menuButton')}
         </button>
       }
     >
-      <div class="admin-shell-container">
+      <div
+        class="admin-shell-container"
+        classList={{ 'workspace-menu-open': mobileOpen() }}
+      >
         {/* Sidebar */}
         <aside
+          ref={(el) => (sidebarRef = el)}
           id="admin-sidebar"
           class={mobileOpen() ? 'admin-sidebar open' : 'admin-sidebar'}
-          style={mobileOpen() ? {} : undefined}
         >
           {/* Branch management header */}
           <div class="branch-manager">
@@ -450,6 +534,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           {/* Search box */}
           <div class="menu-search">
             <input
+              ref={(el) => (searchInputRef = el)}
               type="text"
               placeholder={t('searchPlaceholder')}
               value={searchQuery()}
@@ -462,7 +547,15 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           </Show>
 
           {/* Nav groups */}
-          <nav class="admin-nav">
+          <nav
+            class="admin-nav"
+            onClick={(e) => {
+              const target = e.target as HTMLElement | null;
+              if (target?.closest('a')) {
+                setMenu(false);
+              }
+            }}
+          >
             {/* Group 1: Desk */}
             <Show when={deskMatches()}>
               <div class="nav-group">
@@ -584,6 +677,15 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             </Show>
           </nav>
         </aside>
+
+        <Show when={mobileOpen() && isNarrow()}>
+          <button
+            type="button"
+            class="workspace-shade"
+            aria-label={t('closeMenu')}
+            onClick={() => setMenu(false)}
+          />
+        </Show>
 
         {/* Main Content Area */}
         <main class="admin-main">

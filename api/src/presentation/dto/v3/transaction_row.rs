@@ -146,6 +146,7 @@ pub struct TransactionRow {
     pub currency: String,
     pub amount: String,
     pub rate: String,
+    pub unit_size: String,
     pub principal: String,
     pub fee: String,
     pub bank_fee: String,
@@ -215,7 +216,7 @@ impl TransactionRow {
                 };
 
                 (
-                    Some(format!("{:.4}", ref_rate.value())),
+                    Some(format!("{:.8}", ref_rate.value())),
                     Some(format!("{:.2}", ref_val)),
                     Some(spread_str),
                     Some(pct_str),
@@ -253,7 +254,8 @@ impl TransactionRow {
             r#type: record.side.clone(),
             currency: record.currency.trim().to_string(),
             amount: format!("{:.2}", record.amount),
-            rate: format!("{:.4}", record.rate.value()),
+            rate: format!("{:.8}", record.rate.value()),
+            unit_size: record.unit_size.value().normalize().to_string(),
             principal: format!("{:.2}", principal),
             fee: format!("{:.2}", record.fee),
             bank_fee: format!("{:.2}", record.bank_fee),

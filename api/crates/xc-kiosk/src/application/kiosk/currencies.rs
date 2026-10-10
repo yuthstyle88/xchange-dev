@@ -3,12 +3,10 @@
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
-use rust_decimal::Decimal;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, plain_decimal};
+use xc_kernel::money::CurrencyCode;
 
 use crate::domain::kiosk::commands::configure_currency::ConfigureCurrency;
-use crate::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
@@ -29,7 +27,7 @@ impl KioskService {
         Ok(KioskCurrencies::new(&self.repo.switches(branch).await?).all())
     }
 
-    /// `configure`: saves the counter rate, then stores the switch.
+    /// `configure`: switches a currency against the current publication.
     pub async fn configure(
         &self,
         branch: &BranchId,
@@ -42,34 +40,16 @@ impl KioskService {
             .ok()
             .filter(|code| !code.is_thb())
             .ok_or_else(|| refuse(KioskServiceError::InvalidCurrencySettings))?;
-        let rates_valid = match (plain_decimal(&cmd.buy), plain_decimal(&cmd.sell)) {
-            (Some(buy), Some(sell)) => buy > Decimal::ZERO && sell >= buy,
-            _ => false,
-        };
-        if !rates_valid {
-            return Err(refuse(KioskServiceError::RatesFirst));
-        }
 
         let actor = username(actor).to_owned();
-        let rate = SaveCounterRate {
-            code,
-            buy: cmd.buy.clone(),
-            sell: cmd.sell.clone(),
-            previous_updated: cmd.previous_updated,
-            partner_name: cmd.partner_name,
-            partner_cost: cmd.partner_cost,
-            request_id: cmd.request_id,
-        };
-        self.ports.save_rate(branch, &rate, &actor, now).await?;
-
         let at = cut_to_millis(now);
         let line = AuditLine {
             actor,
             subject: code.as_str().to_owned(),
             what: KioskAudit::CurrencyConfigured {
                 enabled: cmd.enabled,
-                buy: cmd.buy,
-                sell: cmd.sell,
+                buy: String::new(),
+                sell: String::new(),
             },
         };
         let (repo, ports, b, enabled) = (
@@ -81,6 +61,12 @@ impl KioskService {
         self.branch_tx
             .run(branch, move |tx| {
                 Box::pin(async move {
+                    if enabled {
+                        let has_both = repo.published_both_sides_in(&mut *tx, &b, code).await?;
+                        if !has_both {
+                            return Err(refuse(KioskServiceError::RatesFirst));
+                        }
+                    }
                     repo.set_switch_in(tx, &b, code, enabled).await?;
                     ports.record_in(tx, &b, &line, at).await
                 })

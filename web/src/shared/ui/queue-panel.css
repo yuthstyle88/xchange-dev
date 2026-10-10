@@ -171,6 +171,14 @@
   margin: 0;
 }
 
+/* v2 queue-panel.css rule 21 */
+.queue-order-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
 .queue-state {
   font-size: 12px;
   padding: 5px 10px;

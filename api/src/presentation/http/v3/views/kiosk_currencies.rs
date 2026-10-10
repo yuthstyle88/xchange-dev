@@ -7,8 +7,9 @@ use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 
 use actix_web::web;
-use chrono::SecondsFormat;
+use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::AppResult;
+use pos_infra::transactions::Transactor;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Deserialize;
 use serde_json::Value;
@@ -18,11 +19,8 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use pos_infra::transactions::Transactor;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
-use xc_rate::application::rate::service::RateService;
-use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
@@ -68,13 +66,21 @@ fn parse_bank_decimal(val: &Option<Value>) -> Option<Decimal> {
                 None
             }
         }
+        Some(Value::String(s)) => {
+            let d = Decimal::from_str(s).ok()?;
+            if d > Decimal::ZERO {
+                Some(d)
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
 
 pub struct KioskCurrenciesView {
+    pool: PgPool,
     kiosk_service: KioskService,
-    rate_service: RateService,
 }
 
 impl KioskCurrenciesView {
@@ -86,14 +92,21 @@ impl KioskCurrenciesView {
         let ports = Arc::new(PgKioskPorts::new(pool.clone(), audit, source.clone()));
         let kiosk_service = KioskService::new(branch_tx, ports);
 
-        let branch_tx_rate = BranchTx::new(Transactor::new(pool));
-        let rate_service = RateService::new(branch_tx_rate, source);
-
         Self {
+            pool,
             kiosk_service,
-            rate_service,
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct PublishedLineRow {
+    currency_code: String,
+    unit_size: Decimal,
+    buy_rate: Option<Decimal>,
+    sell_rate: Option<Decimal>,
+    published_at: DateTime<Utc>,
+    source_snapshot: Value,
 }
 
 impl BranchView for KioskCurrenciesView {
@@ -109,21 +122,43 @@ impl BranchView for KioskCurrenciesView {
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let kiosk_service = self.kiosk_service.clone();
-        let rate_service = self.rate_service.clone();
+        let pool = self.pool.clone();
         let branch = branch.clone();
 
         async move {
             let switches = kiosk_service.manage(&branch, &KioskActor::Customer).await?;
-            let rates = rate_service.current(&branch).await?;
 
             let switch_map: HashMap<String, bool> = switches
                 .into_iter()
                 .map(|s| (s.code.as_str().to_string(), s.enabled))
                 .collect();
 
-            let rate_map: HashMap<String, CounterRate> = rates
+            let register_units: HashMap<String, Decimal> = sqlx::query_as::<_, (String, Decimal)>(
+                "SELECT trim(code) AS code, unit_size FROM currencies",
+            )
+            .fetch_all(&pool)
+            .await
+            .map_err(pos_error::AppError::Database)?
+            .into_iter()
+            .collect();
+
+            let lines: Vec<PublishedLineRow> = sqlx::query_as(
+                "SELECT trim(prl.currency_code) AS currency_code, \
+                        prl.unit_size, prl.buy_rate, prl.sell_rate, \
+                        rp.published_at, prl.source_snapshot \
+                 FROM branches b \
+                 JOIN rate_publications rp ON rp.id = b.current_publication_id \
+                 JOIN published_rate_lines prl ON prl.publication_id = rp.id \
+                 WHERE b.id = $1 AND prl.denomination_group = 'ALL'",
+            )
+            .bind(branch.as_str())
+            .fetch_all(&pool)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let line_map: HashMap<String, PublishedLineRow> = lines
                 .into_iter()
-                .map(|r| (r.code.as_str().to_string(), r))
+                .map(|l| (l.currency_code.clone(), l))
                 .collect();
 
             let currencies_table = dto_kiosk::currency_table();
@@ -137,42 +172,87 @@ impl BranchView for KioskCurrenciesView {
             let mut currencies = Vec::with_capacity(currencies_table.len());
 
             for entry in currencies_table {
-                let rate_opt = rate_map.get(&entry.code);
+                let line = line_map.get(&entry.code);
                 let enabled = switch_map.get(&entry.code).copied().unwrap_or(false);
 
                 let countries: Vec<KioskCountry> =
                     serde_json::from_value(entry.countries.clone()).unwrap_or_default();
 
-                let buy = rate_opt
-                    .and_then(|r| r.buy)
-                    .map(|b| Rate(b.to_string()));
+                let (
+                    buy,
+                    sell,
+                    unit_size,
+                    updated,
+                    partner_name,
+                    partner_cost,
+                    shop_buy_dec,
+                    shop_sell_dec,
+                ) = if let Some(l) = line {
+                    let buy = l.buy_rate.map(|b| Rate(format!("{:.8}", b)));
+                    let sell = l.sell_rate.map(|s| Rate(format!("{:.8}", s)));
+                    let unit_size = l.unit_size.normalize().to_string();
+                    let updated = l.published_at.to_rfc3339_opts(SecondsFormat::Millis, true);
 
-                let sell = rate_opt
-                    .and_then(|r| r.sell)
-                    .map(|s| Rate(s.to_string()));
+                    let partner = l.source_snapshot.get("partner");
+                    let (partner_name, partner_cost) = match partner {
+                        Some(Value::Object(p)) => {
+                            let name =
+                                p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let cost =
+                                p.get("cost").and_then(|v| v.as_str()).map(|c| Rate(c.to_string()));
+                            (name, cost)
+                        }
+                        _ => (String::new(), None),
+                    };
 
-                let updated = rate_opt
-                    .and_then(|r| r.updated_at)
-                    .map_or_else(String::new, |t| t.to_rfc3339_opts(SecondsFormat::Millis, true));
+                    let shop_buy_dec =
+                        l.buy_rate.filter(|b| *b > Decimal::ZERO).map(|b| b / l.unit_size);
+                    let shop_sell_dec =
+                        l.sell_rate.filter(|s| *s > Decimal::ZERO).map(|s| s / l.unit_size);
 
-                let partner_name = rate_opt.map_or_else(String::new, |r| r.partner_name.clone());
+                    (
+                        buy,
+                        sell,
+                        unit_size,
+                        updated,
+                        partner_name,
+                        partner_cost,
+                        shop_buy_dec,
+                        shop_sell_dec,
+                    )
+                } else {
+                    let reg_unit = register_units
+                        .get(&entry.code)
+                        .copied()
+                        .ok_or_else(|| {
+                            pos_error::AppError::Internal(format!(
+                                "missing currency unit_size for {}",
+                                entry.code
+                            ))
+                        })?;
+                    let unit_size = reg_unit.normalize().to_string();
+                    (
+                        None,
+                        None,
+                        unit_size,
+                        String::new(),
+                        String::new(),
+                        None,
+                        None,
+                        None,
+                    )
+                };
 
-                let partner_cost = rate_opt
-                    .and_then(|r| r.partner_cost)
-                    .map(|c| Rate(c.to_string()));
-
-                let shop_buy_dec = rate_opt
-                    .and_then(|r| r.buy)
-                    .map(|b| b.value())
-                    .filter(|d| *d > Decimal::ZERO);
-
-                let shop_sell_dec = rate_opt
-                    .and_then(|r| r.sell)
-                    .map(|s| s.value())
-                    .filter(|d| *d > Decimal::ZERO);
-
-                let shop_buy_str = shop_buy_dec.map(|d| format!("{d:.5}"));
-                let shop_sell_str = shop_sell_dec.map(|d| format!("{d:.5}"));
+                let shop_buy_str = shop_buy_dec.map(|d| {
+                    let rounded =
+                        d.round_dp_with_strategy(5, RoundingStrategy::MidpointAwayFromZero);
+                    format!("{rounded:.5}")
+                });
+                let shop_sell_str = shop_sell_dec.map(|d| {
+                    let rounded =
+                        d.round_dp_with_strategy(5, RoundingStrategy::MidpointAwayFromZero);
+                    format!("{rounded:.5}")
+                });
 
                 let kbank_comparisons = match &*KBANK_DATA {
                     Some(kf) => {
@@ -196,8 +276,7 @@ impl BranchView for KioskCurrenciesView {
                                     let (buy_difference, bank_buy) =
                                         match (parse_bank_decimal(&note.buy), shop_buy_dec) {
                                             (Some(bank_d), Some(shop_d)) => {
-                                                let mut diff = shop_d - bank_d;
-                                                diff = diff.round_dp_with_strategy(
+                                                let diff = (shop_d - bank_d).round_dp_with_strategy(
                                                     5,
                                                     RoundingStrategy::MidpointAwayFromZero,
                                                 );
@@ -215,8 +294,7 @@ impl BranchView for KioskCurrenciesView {
                                     let (sell_difference, bank_sell) =
                                         match (parse_bank_decimal(&note.sell), shop_sell_dec) {
                                             (Some(bank_d), Some(shop_d)) => {
-                                                let mut diff = shop_d - bank_d;
-                                                diff = diff.round_dp_with_strategy(
+                                                let diff = (shop_d - bank_d).round_dp_with_strategy(
                                                     5,
                                                     RoundingStrategy::MidpointAwayFromZero,
                                                 );
@@ -262,6 +340,7 @@ impl BranchView for KioskCurrenciesView {
                     countries,
                     buy,
                     sell,
+                    unit_size,
                     updated,
                     partner_name,
                     partner_cost,

@@ -296,13 +296,12 @@ impl Shop {
 
 async fn seed_customer(db: &TestDb, id: &str, branch_id: &str) {
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ($1, $2, $3, $4, 'THA', 'LIVE', $5)",
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, b.organization_id, $1, $3, 'LIVE', $4 FROM branches b WHERE b.id = $2",
     )
     .bind(id)
     .bind(branch_id)
     .bind(format!("Customer {id}"))
-    .bind(format!("P-{id}"))
     .bind(at(0))
     .execute(&db.pool)
     .await

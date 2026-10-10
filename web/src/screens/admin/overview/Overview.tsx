@@ -20,7 +20,7 @@ import { toast } from '../parts/toast';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
-import { CardGrid } from '../../../shared/ui/Card';
+import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
 import { en, th } from './i18n';
 import './overview.css';
@@ -254,65 +254,45 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
       {/* Status Strip (B5) */}
       <div class="status-strip">
-        <div class="strip-header">
-          <span class="strip-title">{t('statusStripTitle')}</span>
+        <div>
+          <p class="eyebrow">{t('statusStripTitle')}</p>
+          <strong>
+            {error()
+              ? t('statusError')
+              : data()?.status.shiftOpen
+                ? t('shiftOpen')
+                : t('shiftClosed')}
+          </strong>
+          <span>
+            {error()
+              ? t('refreshHint')
+              : data()?.status.shiftOpen
+                ? data()?.status.openedBy
+                  ? t('openedByLabel', { staff: data()!.status.openedBy! })
+                  : ''
+                : t('openShiftHint')}
+          </span>
         </div>
-        <div class="strip-body">
-          <Show
-            when={!error()}
-            fallback={
-              <div class="strip-section status-error-section">
-                <div class="strip-state-text">{t('statusError')}</div>
-                <div class="strip-hint">{t('refreshHint')}</div>
-              </div>
-            }
-          >
-            <Show
-              when={data()?.status.shiftOpen}
-              fallback={
-                <div class="strip-section status-closed-section">
-                  <div class="strip-state-text">{t('shiftClosed')}</div>
-                  <div class="strip-hint">{t('openShiftHint')}</div>
-                  <a href="#cash">{t('viewCashLink')}</a>
-                </div>
-              }
-            >
-              <div class="strip-section status-open-section">
-                <div class="strip-state-text">{t('shiftOpen')}</div>
-                <Show when={data()?.status.openedBy}>
-                  {(opener) => (
-                    <div class="strip-opener">
-                      {t('openedByLabel', { staff: opener() })}
-                    </div>
-                  )}
-                </Show>
-              </div>
-            </Show>
-          </Show>
-
-          {/* Pending items check */}
-          <div class="strip-section pending-section">
-            <div class="pending-label">{t('pendingTotalLabel')}</div>
-            <div class="pending-count">
-              <Show
-                when={!error()}
-                fallback={<span class="pending-dash">—</span>}
-              >
-                {t('pendingItemCount', {
+        <a href="#cash">{t('viewCashLink')}</a>
+        <div>
+          <p class="eyebrow">{t('pendingTotalLabel')}</p>
+          <strong>
+            {error()
+              ? '—'
+              : t('pendingItemCount', {
                   count: data()?.status.pendingCount ?? 0,
                 })}
-              </Show>
-            </div>
-            <div class="pending-note">{t('pendingNote')}</div>
-            <button
-              type="button"
-              disabled={error() !== null}
-              onClick={handleCheckPending}
-            >
-              {t('checkPendingBtn')}
-            </button>
-          </div>
+          </strong>
+          <span>{t('pendingNote')}</span>
         </div>
+        <button
+          type="button"
+          class="secondary"
+          disabled={error() !== null}
+          onClick={handleCheckPending}
+        >
+          {t('checkPendingBtn')}
+        </button>
       </div>
 
       {/* Four Stat Cards (B1) */}
@@ -351,101 +331,105 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       </CardGrid>
 
       {/* Activity and Flow row (B2 & B3) */}
-      <div class="overview-split">
+      <div class="overview-grid">
         {/* Activity BUY/SELL bars (B2) */}
-        <div class="overview-panel activity-panel">
-          <div class="panel-eyebrow">{t('activityEyebrow')}</div>
-          <div class="panel-title">{t('activityTitle')}</div>
-          <div class="panel-unit">{t('activityUnit')}</div>
-          <div class="panel-note">{t('activityNote')}</div>
-
-          <div class="activity-bars">
-            <div class="activity-side buy">
-              <div class="side-info">
-                <span class="side-name">{t('buy')}</span>
-                <span class="side-count">
-                  / {data()?.totals.buyCount ?? 0} {t('completedUnit')}
+        <Card class="activity-panel">
+          <CardHead
+            eyebrow={t('activityEyebrow')}
+            title={t('activityTitle')}
+            aside={<span class="unit">{t('activityUnit')}</span>}
+          />
+          <div id="activity">
+            <div class="activity-row">
+              <div class="activity-caption">
+                <span>
+                  {t('buy')}{' '}
+                  <span class="unit">
+                    / {data()?.totals.buyCount ?? 0} {t('completedUnit')}
+                  </span>
                 </span>
-                <span class="side-sum">
+                <strong>
                   {formatMoney(data()?.totals.buyPrincipal ?? '0.00')}
-                </span>
+                </strong>
               </div>
-              <div class="bar-track">
+              <div class="activity-track">
                 <div
-                  class="bar-fill buy"
+                  class="activity-fill"
                   style={{ width: `${data()?.totals.buyShare ?? 0}%` }}
                 />
               </div>
             </div>
 
-            <div class="activity-side sell">
-              <div class="side-info">
-                <span class="side-name">{t('sell')}</span>
-                <span class="side-count">
-                  / {data()?.totals.sellCount ?? 0} {t('completedUnit')}
+            <div class="activity-row">
+              <div class="activity-caption">
+                <span>
+                  {t('sell')}{' '}
+                  <span class="unit">
+                    / {data()?.totals.sellCount ?? 0} {t('completedUnit')}
+                  </span>
                 </span>
-                <span class="side-sum">
+                <strong>
                   {formatMoney(data()?.totals.sellPrincipal ?? '0.00')}
-                </span>
+                </strong>
               </div>
-              <div class="bar-track">
+              <div class="activity-track">
                 <div
-                  class="bar-fill sell"
+                  class="activity-fill sell"
                   style={{ width: `${data()?.totals.sellShare ?? 0}%` }}
                 />
               </div>
             </div>
+
+            <p class="activity-key">{t('activityNote')}</p>
           </div>
-        </div>
+        </Card>
 
         {/* THB Flow (B3) */}
-        <div class="overview-panel flow-panel">
-          <div class="panel-eyebrow">{t('flowEyebrow')}</div>
-          <div class="panel-title">{t('flowTitle')}</div>
-
-          <div class="flow-values">
-            <div class="flow-item flow-received">
-              <span class="flow-label">{t('flowIn')}</span>
-              <span class="flow-amount">
-                {formatMoney(data()?.totals.received ?? '0.00')}
-              </span>
-            </div>
-            <div class="flow-item flow-paid">
-              <span class="flow-label">{t('flowOut')}</span>
-              <span class="flow-amount">
-                {formatMoney(data()?.totals.paid ?? '0.00')}
-              </span>
-            </div>
-            <div class="flow-item flow-net">
-              <span class="flow-net-amount">{netDisplay()}</span>
-            </div>
+        <Card tone="dark">
+          <p class="eyebrow">{t('flowEyebrow')}</p>
+          <h2>{t('flowTitle')}</h2>
+          <div class="flow-value">
+            {netDisplay()} <span class="unit">THB</span>
           </div>
-
-          <div class="panel-note">{t('flowNote1')}</div>
-          <div class="panel-note">{t('flowNote2')}</div>
-        </div>
+          <div class="flow-row">
+            <span>{t('flowIn')}</span>
+            <span>{formatMoney(data()?.totals.received ?? '0.00')}</span>
+          </div>
+          <div class="flow-row">
+            <span>{t('flowOut')}</span>
+            <span>{formatMoney(data()?.totals.paid ?? '0.00')}</span>
+          </div>
+          <p class="dark-note">
+            {t('flowNote1')}
+            <br />
+            {t('flowNote2')}
+          </p>
+        </Card>
       </div>
 
       {/* Latest five (B4) */}
-      <div class="overview-panel latest-panel">
-        <div class="latest-header">
-          <div>
-            <div class="panel-eyebrow">{t('latestEyebrow')}</div>
-            <div class="panel-title">{t('latestTitle')}</div>
-          </div>
-          <a href="#transactions">{t('viewAll')}</a>
-        </div>
-
-        <Show
-          when={(data()?.latest.length ?? 0) > 0}
-          fallback={<div class="empty-state">{t('emptyOverview')}</div>}
-        >
-          <TransactionTable
-            rows={data()!.latest}
-            onOpen={handleOpenDetail}
-          />
-        </Show>
-      </div>
+      <Card>
+        <CardHead
+          eyebrow={t('latestEyebrow')}
+          title={t('latestTitle')}
+          aside={<a href="#transactions" class="text-link">{t('viewAll')}</a>}
+        />
+        <CardBody flush>
+          <Show
+            when={(data()?.latest.length ?? 0) > 0}
+            fallback={
+              <div class="empty">
+                <strong>{t('emptyOverview')}</strong>
+              </div>
+            }
+          >
+            <TransactionTable
+              rows={data()!.latest}
+              onOpen={handleOpenDetail}
+            />
+          </Show>
+        </CardBody>
+      </Card>
     </div>
   );
 }

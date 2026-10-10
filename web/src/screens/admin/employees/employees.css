@@ -1,0 +1,4 @@
+/* v2 src/online/lib/admin-html.ts #employees-view section.card style="padding:20px" */
+.xc-admin .xc-content .card.employees-card {
+  padding: 20px;
+}

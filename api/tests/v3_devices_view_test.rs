@@ -29,9 +29,14 @@
 //! through the real `SaveTransactionWorkflow` behind the routes, as `rpc_common` does.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c), item 2: `configure` switches a
+//! currency on only when the branch's current publication has it on both sides, so the won is
+//! published (behind the routes) before the kiosk `configure` writer runs.
 
 mod common;
 mod compat_common;
+mod publication_seed;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
@@ -844,7 +849,15 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
     .await;
     every_view_changed(&room, v, "drawerObservation").await;
 
-    // a kiosk audit line goes into device_events
+    // a kiosk audit line goes into device_events (#603: the won is published first, which
+    // moves no version)
+    publication_seed::publish(
+        &room.desk.db.pool,
+        MAIN,
+        chrono::Utc::now(),
+        &[publication_seed::both("KRW", "23.1", "25.9")],
+    )
+    .await;
     let v = room.version(MAIN).await;
     room.ok(
         "OWNER",

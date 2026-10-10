@@ -9,6 +9,7 @@ use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, Side, UnitSize};
 
+use crate::domain::policy::stale_policy::StalePolicy;
 use crate::domain::publication::publication::{Publication, PublicationId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,4 +68,11 @@ pub trait PublishedRates: Send + Sync {
         code: CurrencyCode,
         side: Side,
     ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
+
+    /// The stale policy the line was published under (R5).
+    fn stale_policy_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        line: &'a PublishedSide,
+    ) -> BoxFuture<'a, AppResult<StalePolicy>>;
 }

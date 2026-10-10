@@ -1,72 +1,5 @@
 /* LK-SD (#716): admin queue bar & dialog look ported from v2 src/devices-public/queue-panel.css */
 
-.xc-admin .xc-content .admin-queue-bar {
-  margin: 18px 0;
-  padding: 18px 22px;
-  border: 1px solid #e7d7df;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 5px 20px #39152b08;
-  color: #2b2430;
-}
-
-.xc-admin .xc-content .queue-bar-main {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.xc-admin .xc-content .queue-bar-title {
-  font-size: 20px;
-  margin: 0;
-}
-
-.xc-admin .xc-content .queue-bar-status {
-  margin: 6px 0;
-  color: #716572;
-}
-
-.xc-admin .xc-content .queue-bar-open-button {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #a5003c;
-  color: #fff;
-  padding: 12px 18px;
-  border: 0;
-  border-radius: 10px;
-  text-decoration: none;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.xc-admin .xc-content .queue-bar-open-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.xc-admin .xc-content .queue-sound-area {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.xc-admin .xc-content .queue-workers-list {
-  font-size: 13px;
-  border-top: 1px solid #f0e7eb;
-  margin-top: 12px;
-  padding-top: 8px;
-}
-
-.xc-admin .xc-content .queue-worker-line {
-  padding: 4px 0;
-  color: #716572;
-  font-size: 13px;
-}
-
 .xc-admin .xc-content .admin-queue-toast {
   position: fixed;
   right: 22px;
@@ -155,16 +88,6 @@
 }
 
 @media (max-width: 600px) {
-  .xc-admin .xc-content .admin-queue-bar {
-    margin: 12px 0;
-    padding: 16px;
-  }
-
-  .xc-admin .xc-content .queue-bar-open-button {
-    margin-left: 0;
-    width: 100%;
-  }
-
   .xc-admin .xc-content .queue-dialog {
     padding: 16px;
   }

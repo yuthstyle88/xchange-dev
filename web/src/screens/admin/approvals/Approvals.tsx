@@ -5,6 +5,7 @@ import type {
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
 import { screenT } from '../../../shared/i18n';
+import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
@@ -96,66 +97,66 @@ function RequestCard(props: RequestCardProps): JSX.Element {
   };
 
   return (
-    <div class="approval-card" data-request={props.request.id}>
-      <div class="approval-card-header">
-        <span class="approval-type">{t('ratePublication')}</span>
-        <span class="approval-status">{t('pending')}</span>
-      </div>
+    <div data-request={props.request.id} style="display: contents">
+      <Card class="approval-card">
+        <div class="approval-card-header">
+          <span class="approval-type">{t('ratePublication')}</span>
+          <span class="pill neutral">{t('pending')}</span>
+        </div>
 
-      <div class="approval-proposer">
-        <span>{t('requestedBy')}</span>
-        <strong>{props.request.requestedBy}</strong>
-      </div>
+        <div class="approval-proposer">
+          <span>{t('requestedBy')}</span>
+          <strong>{props.request.requestedBy}</strong>
+        </div>
 
-      <Show when={outOfBound().length > 0}>
-        <div class="approval-out-of-bound-list">
-          <For each={outOfBound()}>
-            {(item) => (
-              <div class="approval-out-of-bound-item">
-                <span class="currency-code">{item.currency}</span>
-                <span class="currency-side">
+        <Show when={outOfBound().length > 0}>
+          <div class="approval-out-of-bound-list">
+            <For each={outOfBound()}>
+              {(item) => (
+                <span class={`pill ${item.side === 'BUY' ? 'buy' : 'sell'}`}>
+                  {item.currency}{' '}
                   {item.side === 'BUY' ? t('sideBUY') : t('sideSELL')}
                 </span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-
-      <div class="approval-decision-form">
-        <label class="approval-reason-label">
-          {t('decisionReason')}
-          <input
-            type="text"
-            value={reason()}
-            onInput={(e) => setReason(e.currentTarget.value)}
-            disabled={busy()}
-          />
-        </label>
-
-        <Show when={error()}>
-          <div class="approval-error-text">{error()}</div>
+              )}
+            </For>
+          </div>
         </Show>
 
-        <div class="approval-actions">
-          <button
-            type="button"
-            class="approval-btn-approve"
-            onClick={handleApprove}
-            disabled={busy()}
-          >
-            {t('approve')}
-          </button>
-          <button
-            type="button"
-            class="approval-btn-reject"
-            onClick={handleReject}
-            disabled={busy()}
-          >
-            {t('reject')}
-          </button>
+        <div class="approval-decision-form">
+          <label>
+            {t('decisionReason')}
+            <input
+              type="text"
+              value={reason()}
+              onInput={(e) => setReason(e.currentTarget.value)}
+              disabled={busy()}
+            />
+          </label>
+
+          <Show when={error()}>
+            <div class="error">{error()}</div>
+          </Show>
+
+          <CardActions>
+            <button
+              type="button"
+              class="danger"
+              onClick={handleReject}
+              disabled={busy()}
+            >
+              {t('reject')}
+            </button>
+            <button
+              type="button"
+              class="primary"
+              onClick={handleApprove}
+              disabled={busy()}
+            >
+              {t('approve')}
+            </button>
+          </CardActions>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -190,7 +191,13 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
     <div class="admin-approvals-screen">
       <Show
         when={requests().length > 0}
-        fallback={<div class="empty-queue-msg">{t('empty')}</div>}
+        fallback={
+          <Card>
+            <div class="empty">
+              <strong>{t('empty')}</strong>
+            </div>
+          </Card>
+        }
       >
         <div class="approvals-queue">
           <For each={requests()}>

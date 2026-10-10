@@ -341,20 +341,24 @@ async fn a_customer_is_known_when_live_in_that_branch() {
         .await;
     assert_eq!(
         (live.as_str(), demo.as_str(), elsewhere.as_str()),
-        ("CX-00000001", "TEST-CX-00000001", "CX-00000002")
+        // CI-4 (#651): DEMO shares LIVE's customer of a passport (owner, 2026-10-09).
+        ("CX-00000001", "CX-00000001", "CX-00000002")
     );
 
     assert!(known(&shop, MAIN, &live).await);
+    // CI-4 (#651): the DEMO reserve answered the LIVE customer (owner, 2026-10-09: DEMO shares LIVE).
     assert!(
-        !known(&shop, MAIN, &demo).await,
-        "a demo customer is not a customer"
+        known(&shop, MAIN, &demo).await,
+        "the DEMO reserve's customer is the LIVE customer"
     );
+    // CI-4 (#651): a customer of the organisation is known at every branch (#554 K1).
     assert!(
-        !known(&shop, MAIN, &elsewhere).await,
-        "a customer of another branch"
+        known(&shop, MAIN, &elsewhere).await,
+        "a customer reserved at another branch is the organisation's customer"
     );
     assert!(known(&shop, B01, &elsewhere).await);
-    assert!(!known(&shop, B01, &live).await);
+    // CI-4 (#651): K1, the MAIN customer is the organisation's at B01 too.
+    assert!(known(&shop, B01, &live).await);
     for unknown in [
         "CX-99999999",
         "",

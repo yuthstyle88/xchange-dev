@@ -4,9 +4,14 @@
 //! → one row, label AFN, shopBuy "0.45000", the bank values and differences null.
 //!
 //! Mutant R2: dropping shop figures on the no-note arm (shop_buy: None) must turn this test RED.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c), item 3: the view reads the current
+//! rate publication, not `rates`, so `set_rate` publishes the rate instead of inserting a `rates`
+//! row. The expectations are unchanged (AFN's unit is 1).
 
 mod common;
 mod compat_common;
+mod publication_seed;
 mod rpc_common;
 mod snapshot_common;
 
@@ -101,22 +106,16 @@ impl Room {
         body.get("data").cloned().expect("data in body")
     }
 
+    /// #603: a publication of this one line, not a `rates` row.
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
         let at = self.tick();
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, \
-             updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, '', NULL, $5, 'test', $6)",
+        publication_seed::publish(
+            &self.desk.db.pool,
+            branch,
+            at,
+            &[publication_seed::both(code, buy, sell)],
         )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(at)
-        .bind(format!("req-{}", next()))
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
+        .await;
     }
 
     async fn finish(self) {

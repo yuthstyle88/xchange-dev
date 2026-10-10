@@ -533,6 +533,8 @@ fn id_spans(text: &str) -> Vec<(usize, usize)> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct IdMap {
     to_actual: BTreeMap<String, String>,
+    /// Recorded customer id → the earlier customer v3 answered instead ([`SAME_CUSTOMER_AS`]).
+    customers: BTreeMap<String, String>,
 }
 
 impl IdMap {
@@ -573,6 +575,18 @@ impl IdMap {
         }
     }
 
+    /// CI-4 (#651): from now on the recorded customer id `recorded` stands for the actual customer `actual`
+    /// (a whole-string match: customer ids are whole values in v2's answers). Only [`SAME_CUSTOMER_AS`] adds these.
+    pub fn alias_customer(&mut self, recorded: &str, actual: &str) {
+        self.customers
+            .insert(recorded.to_owned(), actual.to_owned());
+    }
+
+    /// Whether `recorded` is a customer id a [`SAME_CUSTOMER_AS`] step aliased.
+    pub fn is_aliased_customer(&self, recorded: &str) -> bool {
+        self.customers.contains_key(recorded)
+    }
+
     /// The actual id paired with a recorded one.
     pub fn actual(&self, recorded_id: &str) -> Option<&str> {
         self.to_actual.get(recorded_id).map(String::as_str)
@@ -598,6 +612,9 @@ impl IdMap {
     /// strings too. Unpaired ids are left as recorded.
     pub fn to_actual(&self, recorded: &Value) -> Value {
         match recorded {
+            Value::String(text) if self.customers.contains_key(text) => {
+                Value::String(self.customers[text].clone())
+            }
             Value::String(text) => {
                 let mut out = String::with_capacity(text.len());
                 let mut copied = 0;
@@ -727,4 +744,253 @@ fn array_spans(raw: &str, start: usize) -> Vec<Span> {
         }
     }
     items
+}
+
+// ── decided customer differences (CI-4 #651) ─────────────────────────────────
+
+/// A recorded `reserveCustomer` that v2 answered with a new customer, and that v3 answers with an earlier
+/// step's customer. Lane controller's ruling (A), 2026-10-09: exactly these three, each with its cause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SameCustomer {
+    pub fixture: &'static str,
+    pub step: usize,
+    pub same_as: usize,
+    pub reason: &'static str,
+}
+
+pub const SAME_CUSTOMER_AS: [SameCustomer; 3] = [
+    SameCustomer {
+        fixture: "rpc/engine_actions.json",
+        step: 124,
+        same_as: 77,
+        reason: "owner 2026-10-09: DEMO shares LIVE",
+    },
+    SameCustomer {
+        fixture: "snapshot/transactions.json",
+        step: 8,
+        same_as: 4,
+        reason: "owner 2026-10-09: DEMO shares LIVE",
+    },
+    SameCustomer {
+        fixture: "snapshot/branches.json",
+        step: 10,
+        same_as: 9,
+        reason: "K1 (customer per company)",
+    },
+];
+
+/// The decided customer difference of this step, if it has one. A use without a reason panics.
+pub fn same_customer_as(fixture: &str, step: usize) -> Option<SameCustomer> {
+    let found = SAME_CUSTOMER_AS
+        .iter()
+        .find(|s| s.fixture == fixture && s.step == step)
+        .copied();
+    if let Some(s) = found {
+        assert!(
+            !s.reason.trim().is_empty(),
+            "{fixture}#{step}: a SameCustomerAs needs its reason"
+        );
+    }
+    found
+}
+
+/// The answer a [`SameCustomer`] step must give: the recorded one with `customerId` the earlier step's actual
+/// customer and `existing: true` (that customer already existed); nothing else changes. Panics, naming the
+/// step, when the recording is not a new customer.
+pub fn same_customer_answer(recorded: &Value, earlier_actual: &str, label: &str) -> Value {
+    assert_eq!(
+        recorded.get("existing"),
+        Some(&Value::Bool(false)),
+        "{label}: SameCustomerAs applies only where v2 made a new customer"
+    );
+    let mut expected = recorded.clone();
+    expected["customerId"] = Value::String(earlier_actual.to_owned());
+    expected["existing"] = Value::Bool(true);
+    expected
+}
+
+/// The answer a save for an aliased customer must give: the recorded one with `receiptUrl` the URL v3 gave,
+/// accepted only when it is `/files/receipt-<SHA-256 of the stored receipt>` (the receipt names its customer, so
+/// its hash moves with the alias). Nothing else changes. Panics, naming the step, on any other URL.
+pub fn same_customer_save_answer(
+    recorded: &Value,
+    actual_url: &str,
+    stored_receipt: &[u8],
+    label: &str,
+) -> Value {
+    use sha2::{Digest, Sha256};
+    let computed = format!("/files/receipt-{:x}", Sha256::digest(stored_receipt));
+    assert_eq!(
+        actual_url, computed,
+        "{label}: the receipt URL is not the hash of the stored receipt"
+    );
+    let mut expected = recorded.clone();
+    expected["receiptUrl"] = Value::String(actual_url.to_owned());
+    expected
+}
+
+/// The two recordings whose snapshots v3 answers with the company's customers (list_live company-wide, owner
+/// 2026-10-09, (c)). Lane controller's ruling, 2026-10-09: exactly these two fixtures.
+pub const COMPANY_CUSTOMERS_FIXTURES: [&str; 2] =
+    ["rpc/engine_actions.json", "snapshot/branches.json"];
+
+pub const COMPANY_CUSTOMERS_REASON: &str = "list_live company-wide, owner 2026-10-09, (c)";
+
+fn is_main_answer(step: &Step) -> bool {
+    step.body
+        .as_ref()
+        .and_then(|b| b.get("branchId"))
+        .and_then(Value::as_str)
+        == Some("MAIN")
+}
+
+fn carries_customers(step: &Step) -> bool {
+    step.body
+        .as_ref()
+        .is_some_and(|b| b.get("customers").is_some())
+}
+
+/// The steps the rule applies to, per fixture (lane controller's ruling 2026-10-09: explicit lists, not a
+/// predicate). `company_customers_rule_covers_every_non_main_customers_answer` walks both fixtures and proves every
+/// non-MAIN answer carrying `customers` is here or in COMPANY_CUSTOMERS_EXCEPTIONS, never both, never neither.
+pub const COMPANY_CUSTOMERS_STEPS: [(&str, &[usize]); 2] = [
+    (
+        "rpc/engine_actions.json",
+        &[
+            158, 160, 164, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
+            180, 181, 182, 183,
+        ],
+    ),
+    (
+        "snapshot/branches.json",
+        &[2, 4, 5, 6, 7, 8, 13, 15, 21, 23, 25, 27, 29, 33, 38],
+    ),
+];
+
+/// Non-MAIN answers carrying `customers` that stay exact, each with its reason.
+pub const COMPANY_CUSTOMERS_EXCEPTIONS: [(&str, usize, &str); 1] = [(
+    "snapshot/branches.json",
+    31,
+    "restricted staff view: empty in v2 and v3",
+)];
+
+/// Every recorded answer of `fixture` carrying `customers` at a branch other than MAIN (what the two lists above
+/// must cover between them).
+pub fn non_main_customers_answers(fixture: &Fixture) -> Vec<usize> {
+    fixture
+        .steps()
+        .iter()
+        .filter(|s| carries_customers(s) && !is_main_answer(s))
+        .map(|s| s.n)
+        .collect()
+}
+
+/// The steps of `fixture` the rule applies to; empty for any other fixture.
+pub fn company_customers_steps(fixture: &Fixture) -> Vec<usize> {
+    COMPANY_CUSTOMERS_STEPS
+        .iter()
+        .find(|(name, _)| *name == fixture.name)
+        .map(|(_, steps)| steps.to_vec())
+        .unwrap_or_default()
+}
+
+/// The `customers` a step of the rule must answer: those of the latest earlier **recorded** MAIN answer, `[]` when
+/// none precedes it. `None` when the rule does not apply to this step (it never applies to a MAIN answer).
+pub fn company_customers(fixture: &Fixture, n: usize) -> Option<Value> {
+    if !company_customers_steps(fixture).contains(&n) {
+        return None;
+    }
+    let latest_main = fixture
+        .steps()
+        .iter()
+        .rev()
+        .find(|s| s.n < n && carries_customers(s) && is_main_answer(s));
+    Some(match latest_main {
+        Some(s) => json_customers(s.json()),
+        None => Value::Array(Vec::new()),
+    })
+    .map(|list| customers_shaped_for(fixture.step(n).action.as_deref().unwrap_or(""), &list))
+}
+
+/// The steps whose CompanyCustomers expectation `customers_shaped_for` changes (its source answer had the other
+/// shape). Pinned by `same_customer_rule_test`.
+pub fn member_shape_rewritten_steps(fixture: &Fixture) -> Vec<usize> {
+    company_customers_steps(fixture)
+        .into_iter()
+        .filter(|&n| {
+            let source = fixture
+                .steps()
+                .iter()
+                .rev()
+                .find(|s| s.n < n && carries_customers(s) && is_main_answer(s))
+                .map(|s| json_customers(s.json()))
+                .unwrap_or(Value::Array(Vec::new()));
+            let action = fixture.step(n).action.as_deref().unwrap_or("");
+            customers_shaped_for(action, &source) != source
+        })
+        .collect()
+}
+
+/// The six actions v2 answers without `member`/`memberVerifiedAt` on each customer. The adapter keeps no constant
+/// of them, so `same_customer_rule_test` proves this list equals the six `write_answer` names
+/// (`api/src/application/compat/snapshot.rs`) and what every recorded answer shows.
+pub const WRITE_ANSWER_ACTIONS: [&str; 6] = [
+    "adminSaveRate",
+    "adminCreateBranch",
+    "adminOpenShift",
+    "adminMoveStock",
+    "adminCloseShift",
+    "adminAbandonRequest",
+];
+
+pub const MEMBER_SHAPE_REASON: &str = "new branch: no member rows; v2 write answers carry no member fields (snapshot.rs write_answer)";
+
+/// `customers` in the shape v2 answers `action` with: a write answer without `member`/`memberVerifiedAt`; a read
+/// answer with them, kept as recorded when the source has them and `false`/`null` when it does not (the source was
+/// a write answer).
+pub fn customers_shaped_for(action: &str, customers: &Value) -> Value {
+    let write = WRITE_ANSWER_ACTIONS.contains(&action);
+    let Value::Array(rows) = customers else {
+        return customers.clone();
+    };
+    Value::Array(
+        rows.iter()
+            .map(|row| {
+                let mut row = row.clone();
+                if let Value::Object(fields) = &mut row {
+                    if write {
+                        fields.remove("member");
+                        fields.remove("memberVerifiedAt");
+                    } else {
+                        fields.entry("member").or_insert(Value::Bool(false));
+                        fields.entry("memberVerifiedAt").or_insert(Value::Null);
+                    }
+                }
+                row
+            })
+            .collect(),
+    )
+}
+
+fn json_customers(answer: &Value) -> Value {
+    answer
+        .get("customers")
+        .cloned()
+        .unwrap_or(Value::Array(Vec::new()))
+}
+
+/// `recorded` with its `customers` replaced by `reference`'s `customers`; nothing else changes. Panics, naming the
+/// step, when either has no `customers`.
+pub fn with_customers_of(recorded: &Value, reference: &Value, label: &str) -> Value {
+    let customers = reference
+        .get("customers")
+        .unwrap_or_else(|| panic!("{label}: the referenced step recorded no customers"))
+        .clone();
+    assert!(
+        recorded.get("customers").is_some(),
+        "{label}: CompanyCustomers applies only to an answer with customers"
+    );
+    let mut expected = recorded.clone();
+    expected["customers"] = customers;
+    expected
 }

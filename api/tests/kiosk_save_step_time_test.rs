@@ -123,6 +123,22 @@ impl KioskPorts for Counter {
             Ok(())
         })
     }
+
+    /// #769: `KioskPorts::check_stale_in` has no default body, so this fake implements it. It
+    /// admits every quote, the behaviour the fake had through the default.
+    #[allow(clippy::too_many_arguments)]
+    fn check_stale_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a BranchId,
+        _line_id: LineId,
+        _currency: xc_kernel::money::CurrencyCode,
+        _side: Side,
+        _thb: xc_kernel::money::Money,
+        _now: DateTime<Utc>,
+    ) -> Asked<'a, bool> {
+        Box::pin(async { Ok(true) })
+    }
 }
 
 fn staff(id: &str, role: Role) -> SaveActor {

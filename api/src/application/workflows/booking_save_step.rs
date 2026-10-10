@@ -215,12 +215,45 @@ mod tests {
 
             // Seed customer in MAIN
             sqlx::query(
-                "INSERT INTO customers (id, branch_id, name, passport_no, nationality, birth_date, passport_expiry, mode, created_at) \
-                 VALUES ('CUST-1', 'MAIN', 'Test Customer', 'P1234567', 'THA', '1990-01-01', '2030-01-01', 'LIVE', now())",
+                "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+                 SELECT 'CUST-1', organization_id, 'CUST-1', 'Test Customer', 'LIVE', now() FROM branches WHERE id = 'MAIN'",
             )
             .execute(&self.pool)
             .await
             .expect("insert customer");
+
+            // CI-4 (#651): the customer's passport is an encrypted identity found by its lookup hash (#554 §4.1).
+            let keys = std::sync::Arc::new(
+                xc_kernel::pii::PiiKeys::parse(
+                    "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                )
+                .expect("the test PII key parses"),
+            );
+            xc_customer::install_pii_keys(keys.clone()).expect("one test PII key per process");
+            let normalized = xc_kernel::pii::normalize(
+                xc_kernel::pii::IdentityType::Passport,
+                "P1234567",
+                Some("THA"),
+            )
+            .expect("normalise the passport");
+            let hash = xc_kernel::pii::LookupHasher::new(&keys)
+                .hash(xc_kernel::pii::IdentityType::Passport, &normalized);
+            let sealed = xc_kernel::pii::PiiCipher::new(keys).encrypt(
+                b"CUST-1PASSPORT",
+                br#"{"number":"P1234567","nationality":"THA","birthDate":"1990-01-01","expiry":"2030-01-01","nameOnDocument":"Test Customer"}"#,
+            );
+            sqlx::query(
+                "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, key_id, \
+                 lookup_hash, nationality) \
+                 SELECT gen_random_uuid(), organization_id, 'CUST-1', 'PASSPORT', $1, $2, $3, 'THA' \
+                 FROM branches WHERE id = 'MAIN'",
+            )
+            .bind(&sealed.bytes)
+            .bind(&sealed.key_id)
+            .bind(hash.as_slice())
+            .execute(&self.pool)
+            .await
+            .expect("insert the customer's passport identity");
         }
 
         fn workflow(&self) -> SaveTransactionWorkflow {

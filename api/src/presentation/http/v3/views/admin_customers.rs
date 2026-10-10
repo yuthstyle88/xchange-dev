@@ -66,10 +66,11 @@ impl PagedView for AdminCustomersPagedView {
                 if let Some(before_id) = before {
                     let cursor = sqlx::query_as::<_, CustomerCursor>(
                         "SELECT \
-                         (SELECT MAX(t.recorded_at) FROM transactions t WHERE t.branch_id = c.branch_id AND t.customer_id = c.id AND t.mode = 'LIVE') AS last_at, \
-                         c.name, c.created_at, c.id \
+                         (SELECT MAX(t.recorded_at) FROM transactions t WHERE t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE') AS last_at, \
+                         c.display_name AS name, c.created_at, c.id \
                          FROM customers c \
-                         WHERE c.branch_id = $1 AND c.mode = 'LIVE' AND c.id = $2",
+                         JOIN branches b ON b.organization_id = c.organization_id \
+                         WHERE b.id = $1 AND c.mode = 'LIVE' AND c.id = $2",
                     )
                     .bind(branch.as_str())
                     .bind(&before_id)
@@ -89,16 +90,17 @@ impl PagedView for AdminCustomersPagedView {
                 "WITH customer_stats AS ( \
                  SELECT \
                      c.id, \
-                     c.name, \
-                     c.nationality, \
+                     c.display_name AS name, \
+                     COALESCE((SELECT ci.nationality FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' LIMIT 1), '') AS nationality, \
                      c.created_at, \
-                     EXISTS(SELECT 1 FROM members m WHERE m.branch_id = c.branch_id AND m.customer_id = c.id) AS member, \
+                     EXISTS(SELECT 1 FROM members m WHERE m.branch_id = b.id AND m.customer_id = c.id) AS member, \
                      COUNT(t.id) AS completed, \
                      COALESCE(SUM(t.principal)::text, '0.00') AS volume, \
                      MAX(t.recorded_at) AS last_at \
                  FROM customers c \
-                 LEFT JOIN transactions t ON t.branch_id = c.branch_id AND t.customer_id = c.id AND t.mode = 'LIVE' \
-                 WHERE c.branch_id = ",
+                 JOIN branches b ON b.organization_id = c.organization_id \
+                 LEFT JOIN transactions t ON t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' \
+                 WHERE b.id = ",
             );
             builder.push_bind(branch.as_str());
             builder.push(" AND c.mode = 'LIVE'");
@@ -109,16 +111,16 @@ impl PagedView for AdminCustomersPagedView {
                 builder.push(" AND (lower(normalize(c.id, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
                 builder.push_bind(q.as_str());
                 builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\' \
-                    OR lower(normalize(c.name, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
+                    OR lower(normalize(c.display_name, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
                 builder.push_bind(q.as_str());
                 builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\' \
-                    OR lower(normalize(c.nationality, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
+                    OR EXISTS (SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' AND lower(normalize(ci.nationality, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
                 builder.push_bind(q.as_str());
-                builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\')");
+                builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\'))");
             }
 
             builder.push(
-                " GROUP BY c.id, c.name, c.nationality, c.created_at, c.branch_id \
+                " GROUP BY c.id, c.display_name, c.created_at, b.id \
                  ) \
                  SELECT id, name, nationality, created_at, member, completed, volume, last_at \
                  FROM customer_stats \

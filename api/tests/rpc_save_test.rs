@@ -166,7 +166,7 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
                 "reserveCustomer",
                 json!({
                     "branchId": branch, "name": "Customer 1", "passportNo": "P1000001",
-                    "nationality": "DE", "birthDate": "1990-01-02",
+                    "nationality": "DEU", "birthDate": "1990-01-02",
                     "passportExpiry": "2031-06-11", "mode": "DEMO",
                 }),
             )
@@ -199,7 +199,7 @@ async fn a_second_branch(replay: &Replay<'_>) -> (String, String, String) {
 fn demo_save(branch: &str, customer: &str, passport: &str, submission: &str) -> Value {
     json!({
         "branchId": branch,
-        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
         "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "DEMO",
         "submissionId": submission, "customerId": customer,
         "type": "BUY", "currency": "USD", "amount": 100, "rate": 1, "fee": 0, "bankFee": 0,

@@ -918,7 +918,7 @@
   }
 }
 
-.xc-admin .xc-content.xc-content \n#data-mode {
+.xc-admin .xc-content.xc-content #data-mode {
   width:auto;
   font-size:14px;
   margin:0;
@@ -1054,7 +1054,7 @@
   }
 }
 
-.xc-admin .xc-content.xc-content \n\n#cash-stats {
+.xc-admin .xc-content.xc-content #cash-stats {
   grid-template-columns:repeat(4,minmax(0,1fr));
 }
 
@@ -1070,7 +1070,7 @@
   }
 }
 
-.xc-admin .xc-content.xc-content \n\n.branch-control {
+.xc-admin .xc-content.xc-content .branch-control {
   display:flex;
   align-items:center;
   gap:8px;

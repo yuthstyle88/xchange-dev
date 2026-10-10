@@ -164,6 +164,14 @@ pub trait KioskRepository: Send + Sync {
         enabled: bool,
     ) -> impl Future<Output = AppResult<()>> + Send;
 
+    /// True when the currency has both buy and sell rates on the branch's current publication.
+    fn published_both_sides_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        code: CurrencyCode,
+    ) -> impl Future<Output = AppResult<bool>> + Send;
+
     fn receipt(
         &self,
         branch: &BranchId,

@@ -2,6 +2,7 @@ import type { JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import { QueuePanel } from '../../shared/ui/QueuePanel';
 import * as screenI18n from './i18n';
+import './kiosk-queue.css';
 
 export function KioskQueueScreen(props: { branch: string }): JSX.Element {
   const t = screenT('kiosk-queue', screenI18n);

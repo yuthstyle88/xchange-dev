@@ -25,6 +25,13 @@
 //! time and `accept` answers an `AcceptOutcome`, as the 10-06 bundle's `queue-work.mjs` does — so the
 //! fixture's `accept` steps and its page size are recorded from that bundle (`gen_kiosk_service.mjs`),
 //! and the hand-written cases below ask the same questions of the new shapes.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c): `configure` never asks the rate
+//! context to save (item 1) and switches a currency on only when the branch's current
+//! publication has it on both sides (item 2). The fixture's `configure` steps are played against
+//! a publication made behind the service (`kiosk_service_common`, `play`), step 14 of "the kiosk
+//! offers six currencies…" carries v3's refusal, and the hand-written cases that switch CHF on
+//! publish it first and expect no rate save.
 
 mod kiosk_service_common;
 
@@ -530,6 +537,8 @@ async fn expired_is_never_a_stored_status() {
 #[tokio::test(flavor = "multi_thread")]
 async fn inside_a_write_every_statement_runs_on_its_transaction() {
     let db = TestDb::start_with(1).await;
+    // #603 item 2: CHF is published (both sides) before it is switched on
+    publish_one(&db.pool, MAIN, exact(0), "CHF", "36.4", "37.1").await;
     let ports = FakePorts::standard();
     let service = db.service(ports.clone());
     let main = branch(MAIN);
@@ -611,6 +620,8 @@ async fn inside_a_write_every_statement_runs_on_its_transaction() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_whose_audit_line_fails_stores_nothing() {
     let db = TestDb::start().await;
+    // #603 item 2: CHF is published (both sides) before it is switched on
+    publish_one(&db.pool, MAIN, exact(0), "CHF", "36.4", "37.1").await;
     let ports = FakePorts::standard();
     let service = db.service(ports.clone());
     let main = branch(MAIN);
@@ -660,10 +671,9 @@ async fn a_command_whose_audit_line_fails_stores_nothing() {
         0,
         "the switch is not stored"
     );
-    assert_eq!(
-        ports.rate_saves().len(),
-        1,
-        "the rate was saved before, in the rate context's own transaction; that is not undone"
+    assert!(
+        ports.rate_saves().is_empty(),
+        "#603 item 1: configure asks for no rate save"
     );
     ports.audit_fails(false);
 
@@ -791,6 +801,8 @@ async fn the_save_hook_lives_and_dies_with_the_saves_transaction() {
 #[tokio::test(flavor = "multi_thread")]
 async fn every_write_waits_for_the_branch_lock() {
     let db = Arc::new(TestDb::start().await);
+    // #603 item 2: CHF is published (both sides) before it is switched on
+    publish_one(&db.pool, MAIN, exact(0), "CHF", "36.4", "37.1").await;
     let ports = FakePorts::standard();
     let service = db.service(ports.clone());
     let (main, b2) = (branch(MAIN), branch(B2));

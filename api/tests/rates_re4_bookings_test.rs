@@ -136,8 +136,9 @@ impl Room {
         .await
         .expect("insert into rates");
         sqlx::query(
-            "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-             VALUES ($1, 'MAIN', 'Somchai Jaidee', 'P-1', 'THA', 'LIVE', $2)",
+            // CI-4 (#651): a customer belongs to the organisation
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, organization_id, $1, 'Somchai Jaidee', 'LIVE', $2 FROM branches WHERE id = 'MAIN'",
         )
         .bind(CUSTOMER)
         .bind(at("2026-10-06T04:00:00.000Z"))

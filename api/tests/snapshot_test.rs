@@ -110,7 +110,7 @@ fn customer(name: &str, passport: &str, mode: &str) -> ReserveCustomer {
     ReserveCustomer {
         name: name.to_string(),
         passport_no: passport.to_string(),
-        nationality: "DE".to_string(),
+        nationality: "DEU".to_string(),
         birth_date: "1990-01-02".to_string(),
         passport_expiry: "2031-06-11".to_string(),
         mode: mode.to_string(),
@@ -338,7 +338,7 @@ async fn a_write_answer_is_the_snapshot_without_operations_and_member_fields() {
     // the customer is still there, a member or not, without the two fields
     assert_eq!(
         member(&answer, "customers").to_text(),
-        r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DE","created":"2026-10-06T05:09:00.000Z"}]"#
+        r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DEU","created":"2026-10-06T05:09:00.000Z"}]"#
     );
     // nothing else changed
     for key in SNAPSHOT_KEYS
@@ -351,7 +351,7 @@ async fn a_write_answer_is_the_snapshot_without_operations_and_member_fields() {
     assert_eq!(
         member(&snapshot, "customers").to_text(),
         concat!(
-            r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DE","created":"2026-10-06T05:09:00.000Z","#,
+            r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DEU","created":"2026-10-06T05:09:00.000Z","#,
             r#""member":true,"memberVerifiedAt":"2026-10-06T04:00:00.000Z"}]"#
         )
     );
@@ -590,8 +590,10 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
         at_airport["stock"]["movements"][0]["reason"],
         "from the safe"
     );
-    assert_eq!(names(&at_main), ["At Main"]);
-    assert_eq!(names(&at_airport), ["At Airport"]);
+    // CI-4 (#651): the snapshot lists every LIVE customer of the company (list_live company-wide, owner
+    // 2026-10-09, (c)); rates, shifts and transactions stay the branch's.
+    assert_eq!(names(&at_main), ["At Main", "At Airport"]);
+    assert_eq!(names(&at_airport), ["At Main", "At Airport"]);
     assert_eq!(at_main["transactions"], json!([]));
     assert_eq!(at_airport["transactions"][0]["id"], "XC-20261006-000001");
     // a member mark of another branch marks nobody here
@@ -649,7 +651,7 @@ async fn with_nothing_yet_there_is_no_transaction_no_member_and_nobody_is_named(
     assert_eq!(
         member(&snapshot, "customers").to_text(),
         concat!(
-            r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DE","created":"2026-10-06T05:09:00.000Z","#,
+            r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DEU","created":"2026-10-06T05:09:00.000Z","#,
             r#""member":false,"memberVerifiedAt":null}]"#
         )
     );

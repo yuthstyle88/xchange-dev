@@ -20,6 +20,7 @@ import { toast } from '../parts/toast';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
+import { Card } from '../../../shared/ui/Card';
 import { en, th } from './i18n';
 import './transactions.css';
 
@@ -308,44 +309,46 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   }
 
   return (
-    <div class="transactions-screen">
-      <div class="transactions-toolbar">
-        <div class="filter-group">
-          <label>
-            <span>{t('searchLabel')}</span>
-            <input
-              type="search"
-              placeholder={t('searchPlaceholder')}
-              value={search()}
-              onInput={(e) => setSearch(e.currentTarget.value)}
-            />
-          </label>
-          <label>
-            <span>{t('typeLabel')}</span>
-            <select
-              value={type()}
-              onChange={(e) => setType(e.currentTarget.value)}
-            >
-              <option value="">{t('typeAll')}</option>
-              <option value="BUY">{t('typeBuy')}</option>
-              <option value="SELL">{t('typeSell')}</option>
-            </select>
-          </label>
-          <label>
-            <span>{t('statusLabel')}</span>
-            <select
-              value={status()}
-              onChange={(e) => setStatus(e.currentTarget.value)}
-            >
-              <option value="">{t('statusAll')}</option>
-              <option value="COMPLETED">{t('statusCompleted')}</option>
-              <option value="CANCELLED">{t('statusCancelled')}</option>
-              <option value="PENDING">{t('statusPending')}</option>
-            </select>
-          </label>
-        </div>
+    <Card class="transactions-screen">
+      <div class="filters">
+        <label class="search-label">
+          <span>{t('searchLabel')}</span>
+          <input
+            type="search"
+            placeholder={t('searchPlaceholder')}
+            value={search()}
+            onInput={(e) => setSearch(e.currentTarget.value)}
+          />
+        </label>
+        <label>
+          <span>{t('typeLabel')}</span>
+          <select
+            value={type()}
+            onChange={(e) => setType(e.currentTarget.value)}
+          >
+            <option value="">{t('typeAll')}</option>
+            <option value="BUY">{t('typeBuy')}</option>
+            <option value="SELL">{t('typeSell')}</option>
+          </select>
+        </label>
+        <label>
+          <span>{t('statusLabel')}</span>
+          <select
+            value={status()}
+            onChange={(e) => setStatus(e.currentTarget.value)}
+          >
+            <option value="">{t('statusAll')}</option>
+            <option value="COMPLETED">{t('statusCompleted')}</option>
+            <option value="CANCELLED">{t('statusCancelled')}</option>
+            <option value="PENDING">{t('statusPending')}</option>
+          </select>
+        </label>
         <div class="actions-group">
-          <button type="button" onClick={() => void handleExportCsv()}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => void handleExportCsv()}
+          >
             {t('exportCsv')}
           </button>
           <NewTransactionButton api={api} branch={props.branch()} />
@@ -354,27 +357,33 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
 
       <Show when={error()}>
         {(err) => (
-          <div class="transactions-error" role="alert">
+          <div class="error" role="alert">
             {err()}
           </div>
         )}
       </Show>
 
       <Show when={rows().length > 0}>
-        <div class="summary-line">
+        <div class="table-meta">
           {t('foundSummary', { count: rows().length })}
         </div>
       </Show>
 
-      <TransactionTable rows={rows()} onOpen={handleOpenDetail} />
+      <div class="table-scroll">
+        <TransactionTable rows={rows()} onOpen={handleOpenDetail} />
+      </div>
 
       <Show when={hasMore()}>
         <div class="load-more-wrapper">
-          <button type="button" onClick={() => void handleLoadMore()}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => void handleLoadMore()}
+          >
             {t('loadMore')}
           </button>
         </div>
       </Show>
-    </div>
+    </Card>
   );
 }

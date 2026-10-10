@@ -10,6 +10,7 @@ import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/gen
 import type { AdminEmployeeRow, AdminEmployeesData } from '../../../shared/api/generated/admin_employees';
 import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
 import { errorText, screenT } from '../../../shared/i18n';
+import { Card } from '../../../shared/ui/Card';
 import { PasswordField } from '../../../shared/ui/PasswordField';
 import { useForm } from '../../../shared/ui/form';
 import type { AdminMenuProps } from '../menus';
@@ -17,6 +18,7 @@ import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import './employees.css';
 
 const t = screenT('admin.employees', table);
 
@@ -165,40 +167,42 @@ export function Employees(props: AdminMenuProps): JSX.Element {
     openDialog(t('createTitle'), () => (
       <form ref={(el) => (formEl = el)} onSubmit={onSubmit}>
         <p>{t('handOver')}</p>
-        <div>
-          <label for="create-name">{t('name')}</label>
-          <input id="create-name" name="name" required />
-        </div>
-        <div>
-          <label for="create-username">{t('username')}</label>
-          <input id="create-username" name="username" required />
-        </div>
-        <div>
-          <label for="create-role">{t('role')}</label>
-          <select id="create-role" name="role">
-            <For each={ROLES}>{(r) => <option value={r}>{r}</option>}</For>
-          </select>
-        </div>
-        <div>
-          <label for="create-branch">{t('branch')}</label>
-          <select id="create-branch" name="branchId">
-            <For each={branches()}>
-              {(b) => (
-                <option value={b.id} selected={b.id === props.branch()}>
-                  {b.name}
-                </option>
-              )}
-            </For>
-          </select>
-        </div>
-        <div>
-          <label for="create-password">{t('password')}</label>
-          <input id="create-password" name="password" type="password" required />
+        <div class="form-grid">
+          <div>
+            <label for="create-name">{t('name')}</label>
+            <input id="create-name" name="name" required />
+          </div>
+          <div>
+            <label for="create-username">{t('username')}</label>
+            <input id="create-username" name="username" required />
+          </div>
+          <div>
+            <label for="create-role">{t('role')}</label>
+            <select id="create-role" name="role">
+              <For each={ROLES}>{(r) => <option value={r}>{r}</option>}</For>
+            </select>
+          </div>
+          <div>
+            <label for="create-branch">{t('branch')}</label>
+            <select id="create-branch" name="branchId">
+              <For each={branches()}>
+                {(b) => (
+                  <option value={b.id} selected={b.id === props.branch()}>
+                    {b.name}
+                  </option>
+                )}
+              </For>
+            </select>
+          </div>
+          <div>
+            <label for="create-password">{t('password')}</label>
+            <input id="create-password" name="password" type="password" required />
+          </div>
         </div>
         <Show when={error()}>
-          <p role="alert">{error()}</p>
+          <p role="alert" class="error">{error()}</p>
         </Show>
-        <button type="submit" disabled={submitting()}>
+        <button type="submit" class="primary" disabled={submitting()}>
           {t('createSubmit')}
         </button>
       </form>
@@ -248,9 +252,9 @@ export function Employees(props: AdminMenuProps): JSX.Element {
           required
         />
         <Show when={error()}>
-          <p role="alert">{error()}</p>
+          <p role="alert" class="error">{error()}</p>
         </Show>
-        <button type="submit" disabled={submitting()}>
+        <button type="submit" class="primary" disabled={submitting()}>
           {t('resetSubmit')}
         </button>
       </form>
@@ -308,9 +312,9 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         <p>{t('enableNote1')}</p>
         <p>{t('enableNote2')}</p>
         <Show when={error()}>
-          <p role="alert">{error()}</p>
+          <p role="alert" class="error">{error()}</p>
         </Show>
-        <button type="submit" disabled={submitting()}>
+        <button type="submit" class="primary" disabled={submitting()}>
           {t('enableSubmit')}
         </button>
       </form>
@@ -370,9 +374,9 @@ export function Employees(props: AdminMenuProps): JSX.Element {
           <input id="entity-separated" name="confirmSeparated" type="checkbox" required />
         </div>
         <Show when={error()}>
-          <p role="alert">{error()}</p>
+          <p role="alert" class="error">{error()}</p>
         </Show>
-        <button type="submit" disabled={submitting()}>
+        <button type="submit" class="primary" disabled={submitting()}>
           {t('entitySubmit')}
         </button>
       </form>
@@ -380,82 +384,95 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   }
 
   return (
-    <div>
-      <header>
-        <h2>{t('heading')}</h2>
-        <p>{t('intro')}</p>
-        <div>
-          <button type="button" onClick={openCreateDialog}>
-            {t('add')}
-          </button>
-          <button type="button" onClick={() => readEmployees()}>
-            {t('refresh')}
-          </button>
-          <a href="/staff" target="_blank" rel="noopener">
-            {t('staffLink')}
-          </a>
+    <>
+      <Card class="employees-card">
+        <header>
+          <h2>{t('heading')}</h2>
+          <p>{t('intro')}</p>
+          <div>
+            <button type="button" class="primary" onClick={openCreateDialog}>
+              {t('add')}
+            </button>{' '}
+            <button type="button" class="secondary" onClick={() => readEmployees()}>
+              {t('refresh')}
+            </button>{' '}
+            <a href="/staff" target="_blank" rel="noopener">
+              {t('staffLink')}
+            </a>
+          </div>
+        </header>
+
+        <Show when={employeesError()}>
+          <div role="alert">{employeesError()}</div>
+        </Show>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('headerAccountName')}</th>
+                <th>{t('headerRole')}</th>
+                <th>{t('headerBranch')}</th>
+                <th>{t('headerStatus')}</th>
+                <th>{t('headerActions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={employees()}>
+                {(e) => {
+                  const statusText = () => {
+                    if (!e.active) return t('disabled');
+                    if (e.mustChange) return t('mustChange');
+                    return t('active');
+                  };
+
+                  return (
+                    <tr>
+                      <td>
+                        <div>{e.username}</div>
+                        <div class="cell-sub">{e.name}</div>
+                      </td>
+                      <td>{e.role}</td>
+                      <td>{branchName(e.branchId)}</td>
+                      <td>{statusText()}</td>
+                      <td>
+                        <Show when={e.active}>
+                          <button
+                            type="button"
+                            class="secondary"
+                            onClick={() => openResetDialog(e)}
+                          >
+                            {t('reset')}
+                          </button>{' '}
+                          <button
+                            type="button"
+                            class="danger"
+                            onClick={() => handleDisable(e)}
+                          >
+                            {t('disable')}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  );
+                }}
+              </For>
+            </tbody>
+          </table>
         </div>
-      </header>
+      </Card>
 
-      <Show when={employeesError()}>
-        <div role="alert">{employeesError()}</div>
-      </Show>
-
-      <table>
-        <thead>
-          <tr>
-            <th>{t('headerAccountName')}</th>
-            <th>{t('headerRole')}</th>
-            <th>{t('headerBranch')}</th>
-            <th>{t('headerStatus')}</th>
-            <th>{t('headerActions')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={employees()}>
-            {(e) => {
-              const statusText = () => {
-                if (!e.active) return t('disabled');
-                if (e.mustChange) return t('mustChange');
-                return t('active');
-              };
-
-              return (
-                <tr>
-                  <td>
-                    <div>{e.username}</div>
-                    <div>{e.name}</div>
-                  </td>
-                  <td>{e.role}</td>
-                  <td>{branchName(e.branchId)}</td>
-                  <td>{statusText()}</td>
-                  <td>
-                    <Show when={e.active}>
-                      <button type="button" onClick={() => openResetDialog(e)}>
-                        {t('reset')}
-                      </button>
-                      <button type="button" onClick={() => handleDisable(e)}>
-                        {t('disable')}
-                      </button>
-                    </Show>
-                  </td>
-                </tr>
-              );
-            }}
-          </For>
-        </tbody>
-      </table>
-
-      <details>
+      <details class="workspace-history">
         <summary>{t('workflow')}</summary>
         <div>
           <p>{operations()?.enabled ? t('stateOn') : t('stateOff')}</p>
           <div>
-            <button type="button" onClick={openEntityDialog}>
+            <button type="button" class="secondary" onClick={openEntityDialog}>
               {t('entityButton')}
-            </button>
+            </button>{' '}
             <button
               type="button"
+              class="primary"
               disabled={operations()?.enabled === true}
               onClick={openEnableDialog}
             >
@@ -464,6 +481,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
           </div>
         </div>
       </details>
-    </div>
+    </>
   );
 }

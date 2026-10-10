@@ -78,6 +78,8 @@ export const en: Record<Key, string> = {
   'queue.card.endedExpired': 'Session expired. Please sign in again.',
   'queue.card.endedSwitched': 'Account changed in another window. Please sign in again before proceeding.',
   'queue.card.signInAgain': 'Sign in again →',
+  'queue.card.workerLine': '{staff} serving {queue} · started {time}',
+  'queue.card.noData': 'No data',
   'queue.sound.enable': 'Enable sound alerts',
   'queue.sound.test': 'Test sound',
   'queue.sound.hintInitial': 'Click enable sound once to allow browser audio',

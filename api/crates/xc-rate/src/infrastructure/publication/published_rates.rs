@@ -6,8 +6,9 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
+use crate::domain::policy::stale_policy::{OnStale, StalePolicy};
 use crate::domain::publication::publication::{Publication, PublicationId};
 use crate::domain::publication::published_rates::{
     PublicationRef, PublishedRateLineId, PublishedRates, PublishedSide,
@@ -155,6 +156,71 @@ impl PublishedRates for PgPublishedRates {
                 stale,
                 source_date,
             }))
+        })
+    }
+
+    fn stale_policy_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        line: &'a PublishedSide,
+    ) -> BoxFuture<'a, AppResult<StalePolicy>> {
+        Box::pin(async move {
+            let snapshot: Option<serde_json::Value> = sqlx::query_scalar(
+                "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
+            )
+            .bind(line.line_id.as_uuid())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let snapshot = snapshot.ok_or_else(|| {
+                pos_error::AppError::Internal(format!(
+                    "published rate line {} not found",
+                    line.line_id
+                ))
+            })?;
+
+            let policy_id_str = snapshot
+                .get("policy_version_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    pos_error::AppError::Internal(format!(
+                        "line {} has no policy_version_id in source_snapshot",
+                        line.line_id
+                    ))
+                })?;
+
+            let policy_id = Uuid::parse_str(policy_id_str).map_err(|e| {
+                pos_error::AppError::Internal(format!("invalid policy_version_id: {e}"))
+            })?;
+
+            let row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
+                "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
+            )
+            .bind(policy_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let (on_stale_str, stale_limit_dec) = row.ok_or_else(|| {
+                pos_error::AppError::Internal(format!("policy version {policy_id} not found"))
+            })?;
+
+            let on_stale = match on_stale_str {
+                Some(s) => Some(OnStale::parse_db(&s).ok_or_else(|| {
+                    pos_error::AppError::Internal(format!("invalid on_stale: {s}"))
+                })?),
+                None => None,
+            };
+
+            let stale_limit_thb = match stale_limit_dec {
+                Some(d) => Some(Money::parse(&d.to_string()).map_err(|e| {
+                    pos_error::AppError::Internal(format!("invalid stale_limit_thb: {e}"))
+                })?),
+                None => None,
+            };
+
+            Ok(StalePolicy::new(on_stale, stale_limit_thb))
         })
     }
 }

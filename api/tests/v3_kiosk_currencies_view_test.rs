@@ -21,15 +21,29 @@
 //! branches holding different data.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c), where #603 contradicts what was
+//! pinned here (`docs/design/blueprint/rates.md` §4.8, §9 RE-6):
+//! - item 3: the view reads the branch's current rate publication, not `rates`. `Room::set_rate`
+//!   now publishes (every line the branch was given so far, plus the new one) instead of
+//!   inserting a `rates` row; rates are answered as the 8-place strings the publication holds
+//!   (`"32.10000000"`, was `"32.1000"`); each currency gains `unitSize`; `updated` is the
+//!   publication's `published_at`, so it is no longer `manage`'s.
+//! - items 1 and 2: `configure` writes no rate and enables only a published currency, so the
+//!   writers `configure` and `adminSaveRate` move the version but no longer change a rate the
+//!   view answers, and every enabling `configure` here first publishes its currency.
+//!   The rest is as the #399 author wrote it.
 
 mod common;
 mod compat_common;
+mod publication_seed;
 mod rpc_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use actix_web::http::Method;
@@ -66,14 +80,16 @@ const INVALID_REQUEST: &str = "คำขอไม่ถูกต้อง";
 
 /// The keys of `data` (§7.3).
 const DATA_KEYS: [&str; 2] = ["currencies", "kbank"];
-/// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`.
-const CURRENCY_KEYS: [&str; 11] = [
+/// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`;
+/// plus `unitSize` (#603 item 3).
+const CURRENCY_KEYS: [&str; 12] = [
     "code",
     "name",
     "nameEn",
     "countries",
     "buy",
     "sell",
+    "unitSize",
     "updated",
     "partnerName",
     "partnerCost",
@@ -221,6 +237,8 @@ struct Room {
     app: App,
     cookies: Cookies,
     t0: DateTime<Utc>,
+    /// The lines published so far, per branch (#603: `set_rate` publishes them all again).
+    published: Mutex<BTreeMap<String, BTreeMap<String, publication_seed::Line>>>,
 }
 
 impl Room {
@@ -252,6 +270,7 @@ impl Room {
             app,
             cookies,
             t0,
+            published: Mutex::new(BTreeMap::new()),
         };
         room.set_rate(MAIN, "USD", "32.1", "33").await;
         room.set_rate(B9, "USD", "31.5", "32.75").await;
@@ -358,7 +377,8 @@ impl Room {
             .expect("read the branch version")
     }
 
-    /// A counter rate behind the routes (moves no version: only reads without `since` see it).
+    /// A published rate behind the routes (moves no version: only reads without `since` see it).
+    /// #603: the branch's next publication holds every line it was given so far, with this one.
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
         self.set_rate_with_partner(branch, code, buy, sell, "", None)
             .await;
@@ -374,22 +394,21 @@ impl Room {
         partner_cost: Option<&str>,
     ) {
         let at = self.tick();
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, \
-             updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5, $6::numeric, $7, 'test', $8)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(partner_name)
-        .bind(partner_cost)
-        .bind(at)
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
+        let eight = |text: &str| {
+            let d = Decimal::from_str(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+            format!("{d:.8}")
+        };
+        let mut line = publication_seed::both(code, buy, sell);
+        if let Some(cost) = partner_cost {
+            line.partner = publication_seed::Partner::Quote(partner_name.to_owned(), eight(cost));
+        }
+        let lines: Vec<publication_seed::Line> = {
+            let mut published = self.published.lock().expect("not poisoned");
+            let mine = published.entry(branch.to_owned()).or_default();
+            mine.insert(code.to_owned(), line);
+            mine.values().cloned().collect()
+        };
+        publication_seed::publish(&self.desk.db.pool, branch, at, &lines).await;
     }
 
     /// A kiosk switch behind the routes.
@@ -410,7 +429,12 @@ impl Room {
     /// `branch_versions` (the `since` check) and the sign-in tables stay.
     /// `branches` stays too: the core's branch check reads it before `since` (#500).
     async fn hide_the_views_tables(&self) {
-        for table in ["rates", "kiosk_currencies", "currencies"] {
+        for table in [
+            "published_rate_lines",
+            "rate_publications",
+            "kiosk_currencies",
+            "currencies",
+        ] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
                 "ALTER TABLE {table} RENAME TO hidden_{table}"
             )))
@@ -509,9 +533,9 @@ async fn the_view_answers_exactly_whom_the_kiosk_manage_row_allows() {
                 let branch = Policy::branch(actor.as_ref(), Some(&named));
                 let usd = currency(&body["data"], "USD");
                 let expected = if branch.as_str() == B9 {
-                    "31.5000"
+                    "31.50000000"
                 } else {
-                    "32.1000"
+                    "32.10000000"
                 };
                 assert_eq!(
                     usd["buy"],
@@ -556,8 +580,8 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
 
     let rates = room.data("RATES", "branch=B9").await;
     let usd = currency(&rates, "USD");
-    assert_eq!(usd["buy"], json!("32.1000"), "RATES works in MAIN");
-    assert_eq!(usd["sell"], json!("33.0000"));
+    assert_eq!(usd["buy"], json!("32.10000000"), "RATES works in MAIN");
+    assert_eq!(usd["sell"], json!("33.00000000"));
     assert_eq!(
         usd["kbank"][1]["shopBuy"],
         json!("32.10000"),
@@ -598,10 +622,10 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
     let usd = currency(&owner_b9, "USD");
     assert_eq!(
         usd["buy"],
-        json!("31.5000"),
+        json!("31.50000000"),
         "the owner reads the branch named"
     );
-    assert_eq!(usd["sell"], json!("32.7500"));
+    assert_eq!(usd["sell"], json!("32.75000000"));
     assert_eq!(
         usd["kbank"][1]["shopBuy"],
         json!("31.50000"),
@@ -620,10 +644,10 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
     assert_eq!(currency(&owner_b9, "KRW")["enabled"], json!(false));
     let sgd = currency(&owner_b9, "SGD");
     assert_eq!(sgd["enabled"], json!(true));
-    assert_eq!(sgd["buy"], json!("25.9000"));
-    assert_eq!(sgd["sell"], json!("26.6000"));
+    assert_eq!(sgd["buy"], json!("25.90000000"));
+    assert_eq!(sgd["sell"], json!("26.60000000"));
     assert_eq!(sgd["partnerName"], json!("SuperRich"));
-    assert_eq!(sgd["partnerCost"], json!("25.5000"));
+    assert_eq!(sgd["partnerCost"], json!("25.50000000"));
     assert_ne!(sgd["updated"], json!(""), "B9's rate has a time");
     assert_eq!(sgd["kbank"][0]["shopBuy"], json!("25.90000"));
     assert_eq!(sgd["kbank"][0]["buyDifference"], json!("0.18547"));
@@ -632,12 +656,14 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
         let owner = room.data("OWNER", query).await;
         assert_eq!(
             currency(&owner, "USD")["buy"],
-            json!("32.1000"),
+            json!("32.10000000"),
             "{query:?}: MAIN when no branch is named"
         );
     }
 
     // RATES's since is MAIN's version, whatever happens in B9
+    // (#603 item 2: GBP is published in B9 first, so the owner may switch it on)
+    room.set_rate(B9, "GBP", "43.1", "44.9").await;
     let v = room.version(MAIN).await;
     room.configure(
         "OWNER",
@@ -679,6 +705,8 @@ async fn an_ill_formed_branch_is_an_invalid_request() {
 #[actix_web::test]
 async fn an_equal_since_is_unchanged_and_the_view_is_not_loaded() {
     let room = Room::open().await;
+    // #603 item 2: JPY is published (per 100) before it is switched on
+    room.set_rate(MAIN, "JPY", "21.05", "22.05").await;
     room.configure(
         "OWNER",
         json!({ "code": "JPY", "enabled": true, "buy": "0.2105", "sell": "0.2205",
@@ -707,21 +735,37 @@ async fn an_equal_since_is_unchanged_and_the_view_is_not_loaded() {
 }
 
 /// V4 (§9 writers 1–3): one write by each writer of what the view reads, then the same `since`
-/// reports `changed: true` with the written rate. Writer 1: `configure` on `/api/kiosk`.
-/// Writer 2: `adminSaveRate` on `/api/rpc` by the owner. Writer 3: `adminSaveRate` on
-/// `/api/staff/rpc` by RATES. Each later write sends back the `updated` the view answered as
-/// `previousUpdated`, which the server compares with its newest rate time.
+/// reports `changed: true`. Writer 1: `configure` on `/api/kiosk`. Writer 2: `adminSaveRate` on
+/// `/api/rpc` by the owner. Writer 3: `adminSaveRate` on `/api/staff/rpc` by RATES.
+///
+/// Amended for #603: `configure` writes no rate (item 1) and the view reads the publication, not
+/// `rates` (item 3), so after each write the view still answers the published USD rate; the
+/// version still moves. The `adminSaveRate` writers send back `manage`'s `updated` (the newest
+/// `rates` time, which that route compares), no longer the view's. A publish moving the version
+/// is pinned in `v3_kiosk_currencies_publication_test.rs`.
 #[actix_web::test]
 async fn every_writer_of_the_views_tables_moves_the_version_it_answers() {
     let room = Room::open().await;
-    let previous = currency(&room.data("OWNER", "branch=MAIN").await, "USD")["updated"].clone();
+    let published = |usd: &Value, what: &str| {
+        assert_eq!(usd["buy"], json!("32.10000000"), "{what}: {usd}");
+        assert_eq!(usd["sell"], json!("33.00000000"), "{what}: {usd}");
+    };
+    let manage_updated = |manage: &Value| -> Value {
+        manage["currencies"]
+            .as_array()
+            .expect("manage's currencies")
+            .iter()
+            .find(|c| c["code"] == json!("USD"))
+            .map(|c| c["updated"].clone())
+            .unwrap_or_else(|| json!(""))
+    };
 
     // writer 1
     let v = room.version(MAIN).await;
     room.configure(
         "OWNER",
         json!({ "branchId": MAIN, "code": "USD", "enabled": true, "buy": "33.25",
-                "sell": "33.5", "previousUpdated": previous, "partnerName": "",
+                "sell": "33.5", "previousUpdated": "", "partnerName": "",
                 "partnerCost": null }),
     )
     .await;
@@ -731,12 +775,11 @@ async fn every_writer_of_the_views_tables_moves_the_version_it_answers() {
     assert_eq!(body["version"], json!(now), "configure: {body}");
     assert_eq!(body["changed"], json!(true), "configure: {body}");
     let usd = currency(&body["data"], "USD");
-    assert_eq!(usd["buy"], json!("33.2500"), "configure: {usd}");
-    assert_eq!(usd["sell"], json!("33.5000"), "configure: {usd}");
+    published(usd, "configure writes no rate");
     assert_eq!(usd["enabled"], json!(true), "configure: {usd}");
-    let previous = usd["updated"].clone();
 
     // writer 2
+    let previous = manage_updated(&room.manage(MAIN).await);
     let v = room.version(MAIN).await;
     room.ok(
         "OWNER",
@@ -760,15 +803,13 @@ async fn every_writer_of_the_views_tables_moves_the_version_it_answers() {
         json!(true),
         "adminSaveRate on /api/rpc: {body}"
     );
-    let usd = currency(&body["data"], "USD");
-    assert_eq!(
-        usd["buy"],
-        json!("33.3000"),
-        "adminSaveRate on /api/rpc: {usd}"
+    published(
+        currency(&body["data"], "USD"),
+        "adminSaveRate on /api/rpc: rates is not read",
     );
-    let previous = usd["updated"].clone();
 
     // writer 3
+    let previous = manage_updated(&room.manage(MAIN).await);
     let v = room.version(MAIN).await;
     room.ok(
         "RATES",
@@ -795,16 +836,9 @@ async fn every_writer_of_the_views_tables_moves_the_version_it_answers() {
         json!(true),
         "adminSaveRate on /api/staff/rpc: {body}"
     );
-    let usd = currency(&body["data"], "USD");
-    assert_eq!(
-        usd["buy"],
-        json!("33.3500"),
-        "adminSaveRate on /api/staff/rpc: {usd}"
-    );
-    assert_eq!(
-        usd["sell"],
-        json!("33.6500"),
-        "adminSaveRate on /api/staff/rpc: {usd}"
+    published(
+        currency(&body["data"], "USD"),
+        "adminSaveRate on /api/staff/rpc: rates is not read",
     );
     room.finish().await;
 }
@@ -862,28 +896,31 @@ async fn a_currency_with_no_rate_row_answers_nulls_and_an_empty_updated() {
     room.finish().await;
 }
 
-/// W7, §9: rates are sent as the strings the rate holds (four places), never JSON numbers;
-/// the partner's cost too.
+/// W7, §9: rates are sent as the strings the rate holds, never JSON numbers; the partner's
+/// cost too. Amended for #603 item 3: the strings the publication holds (8 places, JPY per 100),
+/// with each currency's `unitSize`, and `updated` the publication's `published_at`.
 #[actix_web::test]
 async fn rates_are_the_strings_the_rate_holds_never_numbers() {
     let room = Room::open().await;
     room.set_rate(MAIN, "USD", "33.25", "33.5").await;
-    room.set_rate(MAIN, "JPY", "0.2105", "0.2205").await;
+    room.set_rate(MAIN, "JPY", "21.05", "22.05").await;
     room.set_rate_with_partner(MAIN, "EUR", "37", "38.1", "SuperRich", Some("36.75"))
         .await;
     let data = room.data("OWNER", "branch=MAIN").await;
     let usd = currency(&data, "USD");
-    assert_eq!(usd["buy"], json!("33.2500"), "{usd}");
-    assert_eq!(usd["sell"], json!("33.5000"), "{usd}");
+    assert_eq!(usd["buy"], json!("33.25000000"), "{usd}");
+    assert_eq!(usd["sell"], json!("33.50000000"), "{usd}");
+    assert_eq!(usd["unitSize"], json!("1"), "{usd}");
     let jpy = currency(&data, "JPY");
-    assert_eq!(jpy["buy"], json!("0.2105"), "{jpy}");
-    assert_eq!(jpy["sell"], json!("0.2205"), "{jpy}");
+    assert_eq!(jpy["buy"], json!("21.05000000"), "{jpy}");
+    assert_eq!(jpy["sell"], json!("22.05000000"), "{jpy}");
+    assert_eq!(jpy["unitSize"], json!("100"), "{jpy}");
     let eur = currency(&data, "EUR");
-    assert_eq!(eur["buy"], json!("37.0000"), "{eur}");
+    assert_eq!(eur["buy"], json!("37.00000000"), "{eur}");
     assert_eq!(eur["partnerName"], json!("SuperRich"), "{eur}");
-    assert_eq!(eur["partnerCost"], json!("36.7500"), "{eur}");
+    assert_eq!(eur["partnerCost"], json!("36.75000000"), "{eur}");
     for c in data["currencies"].as_array().expect("currencies") {
-        for key in ["buy", "sell", "partnerCost"] {
+        for key in ["buy", "sell", "partnerCost", "unitSize"] {
             assert!(
                 c[key].is_string() || c[key].is_null(),
                 "{}: {key} is a string or null, never a number: {}",
@@ -895,55 +932,60 @@ async fn rates_are_the_strings_the_rate_holds_never_numbers() {
     room.finish().await;
 }
 
-/// §7.3: `updated` is byte-identical to `manage`'s `updated` for every currency, and the
-/// screen can send it back as `previousUpdated`: `configure` accepts it.
+/// §7.3, amended for #603 item 3 (`updated` is the publication's `published_at`, no longer
+/// `manage`'s rate time) and item 1 (`configure` ignores `previousUpdated` and the rates it
+/// carries): every currency of the current publication shows its `published_at` in today's
+/// format, the others `""`; `configure` accepts any `previousUpdated` back and changes no rate.
 #[actix_web::test]
-async fn updated_is_byte_identical_to_manage_and_configure_accepts_it_back() {
+async fn updated_is_the_publications_time_and_configure_ignores_it() {
     let room = Room::open().await;
+    room.set_rate(MAIN, "JPY", "21.05", "22.05").await;
     room.configure(
         "OWNER",
         json!({ "code": "JPY", "enabled": true, "buy": "0.2105", "sell": "0.2205",
                 "previousUpdated": "", "partnerName": "", "partnerCost": null }),
     )
     .await;
+    let at = room.tick();
     room.set_rate(MAIN, "EUR", "37", "38.1").await;
+    let published_at: DateTime<Utc> = sqlx::query_scalar(
+        "SELECT p.published_at FROM branches b \
+         JOIN rate_publications p ON p.id = b.current_publication_id WHERE b.id = 'MAIN'",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("MAIN's current publication");
+    assert!(published_at > at, "EUR's publication is the current one");
+    let want = published_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
-    let manage = room.manage(MAIN).await;
-    let manages: BTreeMap<String, Value> = manage["currencies"]
-        .as_array()
-        .expect("manage's currencies")
-        .iter()
-        .map(|c| {
-            (
-                c["code"].as_str().expect("a code").to_owned(),
-                c["updated"].clone(),
-            )
-        })
-        .collect();
     let data = room.data("OWNER", "branch=MAIN").await;
     let mut with_a_time = 0;
     for c in data["currencies"].as_array().expect("currencies") {
         let code = c["code"].as_str().expect("a code");
-        assert_eq!(
-            c["updated"], manages[code],
-            "{code}: updated as manage prints it"
-        );
-        if c["updated"] != json!("") {
+        if ["USD", "JPY", "EUR"].contains(&code) {
+            assert_eq!(c["updated"], json!(want), "{code}: the publication's time");
             with_a_time += 1;
+        } else {
+            assert_eq!(c["updated"], json!(""), "{code}: no line");
         }
     }
-    assert_eq!(with_a_time, 3, "USD, JPY and EUR have a rate");
+    assert_eq!(with_a_time, 3, "USD, JPY and EUR are published");
 
-    let previous = currency(&data, "JPY")["updated"].clone();
-    room.configure(
-        "OWNER",
-        json!({ "branchId": MAIN, "code": "JPY", "enabled": false, "buy": "0.2110",
-                "sell": "0.2210", "previousUpdated": previous, "partnerName": "",
-                "partnerCost": null }),
-    )
-    .await;
+    for previous in [json!(want), json!("2020-01-01T00:00:00.000Z"), json!("")] {
+        room.configure(
+            "OWNER",
+            json!({ "branchId": MAIN, "code": "JPY", "enabled": false, "buy": "0.2110",
+                    "sell": "0.2210", "previousUpdated": previous, "partnerName": "",
+                    "partnerCost": null }),
+        )
+        .await;
+    }
     let jpy = currency(&room.data("OWNER", "").await, "JPY").clone();
-    assert_eq!(jpy["buy"], json!("0.2110"), "{jpy}");
+    assert_eq!(
+        jpy["buy"],
+        json!("21.05000000"),
+        "configure changes no rate: {jpy}"
+    );
     assert_eq!(jpy["enabled"], json!(false), "{jpy}");
     room.finish().await;
 }

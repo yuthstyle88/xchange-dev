@@ -1,4 +1,4 @@
-/* LK-SA (#713) / CD-1: Admin cash screen look ported from v2 admin-html.ts and admin-workspace.css */
+/* LK-SA (#713) / CD-1 / #840: Admin cash screen look ported from v2 admin-html.ts and admin-workspace.css */
 
 /* v2 src/online/lib/admin-html.ts #cash-view */
 .xc-admin .xc-content .admin-cash-screen {
@@ -6,70 +6,22 @@
 }
 
 /* v2 src/online/lib/admin-html.ts .stock-banner */
-.xc-admin .xc-content .shift-banner {
-  padding: 18px 22px;
-  margin-bottom: 20px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--brand);
-  border-radius: 8px;
-}
-
-/* v2 src/online/lib/admin-html.ts .stock-banner neutral state */
-.xc-admin .xc-content .shift-banner-none {
-  border-left-color: var(--muted, #706a77);
-}
-
-/* v2 src/online/lib/admin-html.ts .stock-banner active state */
-.xc-admin .xc-content .shift-banner-open {
-  border-left-color: var(--brand);
-}
-
-/* v2 src/online/lib/admin-html.ts .stock-banner strong / h2 */
-.xc-admin .xc-content .banner-title {
+.xc-admin .xc-content .admin-cash-screen .stock-banner strong {
   font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-  color: var(--ink);
 }
 
-/* v2 src/online/lib/admin-html.ts .stock-banner p */
-.xc-admin .xc-content .banner-subtitle {
-  font-size: 14px;
-  color: var(--muted);
-  margin-top: 4px;
-  margin-bottom: 0;
+/* v2 admin-html:6 #cash-stats */
+.xc-admin .xc-content .admin-cash-screen > .card-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1150px) {
+  .xc-admin .xc-content .admin-cash-screen > .card-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-/* v2 src/online/lib/admin-html.ts #reference-summary.stock-banner */
-.xc-admin .xc-content .reference-summary {
-  padding: 18px 22px;
-  margin-bottom: 20px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--brand);
-  border-radius: 8px;
-}
-
-/* v2 src/online/lib/admin-html.ts #reference-summary strong */
-.xc-admin .xc-content .ref-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0;
-}
-
-/* v2 src/online/lib/admin-html.ts #reference-summary p */
-.xc-admin .xc-content .ref-counts {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 4px;
-  margin-bottom: 0;
+@media (max-width: 480px) {
+  .xc-admin .xc-content .admin-cash-screen > .card-grid.cols-4 { grid-template-columns: 1fr; }
 }
 
 /* v2 src/online/lib/admin-html.ts section.card */
 .xc-admin .xc-content .stock-card {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 /* v2 src/online/lib/admin-html.ts #stock-table table */
@@ -79,45 +31,15 @@
   font-size: 13px;
 }
 
-/* v2 src/online/lib/admin-html.ts .stock-banner p */
-.xc-admin .xc-content .stock-notes {
-  padding: 16px 20px 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-/* v2 src/online/lib/admin-html.ts p.footnote */
-.xc-admin .xc-content .cash-footnote {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 16px 0;
-}
-
-/* v2 src/online/lib/admin-html.ts .card */
-.xc-admin .xc-content .history-details {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  margin-bottom: 24px;
-  overflow: hidden;
-}
-
-/* v2 src/online/lib/admin-html.ts section.card */
-.xc-admin .xc-content .movements-section {
-  padding: 20px;
-}
+/* v2 ws.css:36 .workspace-stock-filter (+ admin-html:3 label weight 500); outranks admin.css:76-86 label:not(.check-field) */
+.xc-admin .xc-content.xc-content .admin-cash-screen .stock-filter { display: flex; font-size: 13px; }
+.xc-admin .xc-content.xc-content .admin-cash-screen .stock-filter input { margin: 0; }
 
 /* v2 src/online/lib/admin-html.ts #movement-table table */
 .xc-admin .xc-content .movements-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  margin-top: 12px;
-}
-
-/* v2 src/online/lib/admin-html.ts section.card */
-.xc-admin .xc-content .shifts-section {
-  padding: 20px;
 }
 
 /* v2 src/online/lib/admin-html.ts #shift-table table */
@@ -125,7 +47,6 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  margin-top: 12px;
 }
 
 /* v2 src/online/public/bookings.js load-more / PR 718 */

@@ -21,7 +21,6 @@ use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIO
 use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
 use xc_rate::application::rate::service::RateService;
-use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
 use xc_rate::domain::publication::published_rates::PublishedRates;
 use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
@@ -418,38 +417,9 @@ impl KioskPorts for PgKioskPorts {
             }
 
             if published_side.stale {
-                let snapshot_row: Option<serde_json::Value> = sqlx::query_scalar(
-                    "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
-                )
-                .bind(published_side.line_id.as_uuid())
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-
-                let policy_id = snapshot_row
-                    .as_ref()
-                    .and_then(|s| s.get("policy_version_id"))
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| uuid::Uuid::parse_str(s).ok());
-
-                if let Some(policy_id) = policy_id {
-                    let policy_row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
-                        "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
-                    )
-                    .bind(policy_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    if let Some((on_stale_str, stale_limit_dec)) = policy_row {
-                        let on_stale = on_stale_str.as_deref().and_then(OnStale::parse_db);
-                        let stale_limit_thb =
-                            stale_limit_dec.and_then(|d| Money::parse(&d.to_string()).ok());
-                        let stale_policy = StalePolicy::new(on_stale, stale_limit_thb);
-                        if stale_policy.admits(&published_side, thb).is_err() {
-                            return Ok(false);
-                        }
-                    }
+                let stale_policy = published_rates.stale_policy_in(tx, &published_side).await?;
+                if stale_policy.admits(&published_side, thb).is_err() {
+                    return Ok(false);
                 }
             }
 

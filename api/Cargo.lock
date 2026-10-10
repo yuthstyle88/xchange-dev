@@ -3887,6 +3887,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-customer"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "pos-infra",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "uuid",
+ "xc-auth",
+ "xc-kernel",
+]
+
+[[package]]
 name = "xc-device-agent"
 version = "1.0.0"
 dependencies = [
@@ -3914,6 +3932,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "xc-customer",
  "xc-kernel",
 ]
 
@@ -4023,6 +4042,7 @@ dependencies = [
  "uuid",
  "xc-approval",
  "xc-auth",
+ "xc-customer",
  "xc-exchange",
  "xc-kernel",
  "xc-kiosk",

@@ -5,14 +5,12 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use uuid::Uuid;
 use xc_exchange::domain::booking::entities::booking_steps::LiveCustomer;
 use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Side};
-use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
 use xc_rate::domain::publication::published_rates::PublishedRates;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
@@ -56,7 +54,10 @@ impl BookingPorts for PgBookingPorts {
     ) -> BoxFuture<'a, AppResult<Option<LiveCustomer>>> {
         Box::pin(async move {
             let row: Option<(String, String)> = sqlx::query_as(
-                "SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2 AND mode = 'LIVE'",
+                "SELECT c.id, c.display_name \
+                 FROM customers c \
+                 JOIN branches b ON b.organization_id = c.organization_id \
+                 WHERE c.id = $1 AND b.id = $2 AND c.mode = 'LIVE'",
             )
             .bind(id)
             .bind(branch.as_str())
@@ -120,38 +121,9 @@ impl BookingPorts for PgBookingPorts {
                     ExchangeArithmetic::thb(foreign, published_side.rate, published_side.unit_size);
 
                 if published_side.stale {
-                    let snapshot_row: Option<serde_json::Value> = sqlx::query_scalar(
-                        "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
-                    )
-                    .bind(published_side.line_id.as_uuid())
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    let policy_id = snapshot_row
-                        .as_ref()
-                        .and_then(|s| s.get("policy_version_id"))
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| Uuid::parse_str(s).ok());
-
-                    if let Some(policy_id) = policy_id {
-                        let policy_row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
-                            "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
-                        )
-                        .bind(policy_id)
-                        .fetch_optional(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-
-                        if let Some((on_stale_str, stale_limit_dec)) = policy_row {
-                            let on_stale = on_stale_str.as_deref().and_then(OnStale::parse_db);
-                            let stale_limit_thb =
-                                stale_limit_dec.and_then(|d| Money::parse(&d.to_string()).ok());
-                            let stale_policy = StalePolicy::new(on_stale, stale_limit_thb);
-                            if stale_policy.admits(&published_side, thb_amount).is_err() {
-                                return Ok(None);
-                            }
-                        }
+                    let stale_policy = published_rates.stale_policy_in(tx, &published_side).await?;
+                    if stale_policy.admits(&published_side, thb_amount).is_err() {
+                        return Ok(None);
                     }
                 }
             }

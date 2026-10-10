@@ -303,13 +303,12 @@ impl Room {
 
     async fn seed_customer(&self, id: &str, branch: &str, name: &str) {
         sqlx::query(
-            "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-             VALUES ($1, $2, $3, $4, 'THA', 'LIVE', $5)",
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, b.organization_id, $1, $3, 'LIVE', $4 FROM branches b WHERE b.id = $2",
         )
         .bind(id)
         .bind(branch)
         .bind(name)
-        .bind(format!("P-{id}"))
         .bind(self.now() - Duration::hours(1))
         .execute(&self.desk.db.pool)
         .await

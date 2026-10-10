@@ -3,6 +3,7 @@
 import { For, type JSX } from 'solid-js';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { screenT } from '../../../shared/i18n';
+import { formatRate } from '../../../shared/ui/rate';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { DataTable, type DataTableHeader } from './DataTable';
 import { en, th } from './i18n';
@@ -77,7 +78,7 @@ export function TransactionTable(props: TransactionTableProps): JSX.Element {
               <div>
                 {formatMoney(row.amount)} {row.currency}
               </div>
-              <div class="rate">@ {row.rate}</div>
+              <div class="rate">@ {formatRate(row.rate, row.unitSize, row.currency)}</div>
             </td>
             <td class="num">
               <div>{formatMoney(row.settlement)}</div>

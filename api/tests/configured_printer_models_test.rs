@@ -131,13 +131,14 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .expect("insert shift balances");
 
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ('cust-1', $1, 'Somchai Jaidee', 'AA1234567', 'THA', 'LIVE', now())",
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT 'cust-1', b.organization_id, 'cust-1', 'Somchai Jaidee', 'LIVE', now() FROM branches b WHERE b.id = $1",
     )
     .bind(MAIN)
     .execute(&desk.db.pool)
     .await
     .expect("insert customer");
+    snapshot_common::seed_passport_identity(&desk.db.pool, "cust-1", "AA1234567", "THA").await;
 
     desk.files
         .upload(

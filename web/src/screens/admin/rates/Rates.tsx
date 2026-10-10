@@ -389,26 +389,28 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       t('historyTitle'),
       () => (
         <div class="rate-history-dialog">
-          <table class="rates-table">
-            <thead>
-              <tr>
-                <th>{t('headerVersion')}</th>
-                <th>{t('headerPublishedBy')}</th>
-                <th>{t('headerPublishedAt')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={pubs}>
-                {(p) => (
-                  <tr>
-                    <td>{p.version}</td>
-                    <td>{p.publishedBy}</td>
-                    <td>{formatTime(p.publishedAt)}</td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="rates-table">
+              <thead>
+                <tr>
+                  <th>{t('headerVersion')}</th>
+                  <th>{t('headerPublishedBy')}</th>
+                  <th>{t('headerPublishedAt')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={pubs}>
+                  {(p) => (
+                    <tr>
+                      <td>{p.version}</td>
+                      <td>{p.publishedBy}</td>
+                      <td>{formatTime(p.publishedAt)}</td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
         </div>
       ),
     );
@@ -417,7 +419,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   return (
     <div class="admin-rates-screen">
       {/* R5 Kiosk Currency Link */}
-      <div class="kiosk-currency-link-bar">
+      <div class="rate-tools">
         <p>{t('kioskCurrencyNote')}</p>
         <a href={`/kiosk-currencies.html?branch=${props.branch()}`}>
           <span aria-hidden="true">◎</span> {t('kioskCurrencyLink')}
@@ -439,7 +441,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 </div>
               </Show>
             </div>
-            <div class="actions">
+            <div class="dialog-actions">
               <button
                 type="button"
                 class="btn-new-draft"
@@ -505,40 +507,42 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             </button>
           </div>
 
-          <table class="rates-table">
-            <thead>
-              <tr>
-                <th>{t('headerCurrency')}</th>
-                <th>{t('headerBuy')}</th>
-                <th>{t('headerSell')}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={draftDetail()?.lines ?? []}>
-                {(line) => (
-                  <tr data-draft-line={line.currency}>
-                    <td class="code">{line.currency}</td>
-                    <td>
-                      {line.buyMode === 'MANUAL' && line.manualBuy
-                        ? formatRate(line.manualBuy, getUnitSize(line.currency), line.currency)
-                        : line.buyMode}
-                    </td>
-                    <td>
-                      {line.sellMode === 'MANUAL' && line.manualSell
-                        ? formatRate(line.manualSell, getUnitSize(line.currency), line.currency)
-                        : line.sellMode}
-                    </td>
-                    <td>
-                      <Show when={isOutOfBound(line.currency)}>
-                        <span class="out-of-bound">{t('outOfBound')}</span>
-                      </Show>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="rates-table">
+              <thead>
+                <tr>
+                  <th>{t('headerCurrency')}</th>
+                  <th class="num">{t('headerBuy')}</th>
+                  <th class="num">{t('headerSell')}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={draftDetail()?.lines ?? []}>
+                  {(line) => (
+                    <tr data-draft-line={line.currency}>
+                      <td class="code">{line.currency}</td>
+                      <td class="num rate-number">
+                        {line.buyMode === 'MANUAL' && line.manualBuy
+                          ? formatRate(line.manualBuy, getUnitSize(line.currency), line.currency)
+                          : line.buyMode}
+                      </td>
+                      <td class="num rate-number">
+                        {line.sellMode === 'MANUAL' && line.manualSell
+                          ? formatRate(line.manualSell, getUnitSize(line.currency), line.currency)
+                          : line.sellMode}
+                      </td>
+                      <td>
+                        <Show when={isOutOfBound(line.currency)}>
+                          <span class="out-of-bound">{t('outOfBound')}</span>
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
         </Show>
       </div>
 
@@ -555,26 +559,28 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           </div>
         </div>
 
-        <table class="rates-table">
-          <thead>
-            <tr>
-              <th>{t('headerCurrency')}</th>
-              <th>{t('headerBuy')}</th>
-              <th>{t('headerSell')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={pubData()?.lines ?? []}>
-              {(l) => (
-                <tr data-published-line={l.currency}>
-                  <td class="code">{l.currency}</td>
-                  <td>{l.buyRate !== null ? formatRate(l.buyRate, l.unitSize, l.currency) : t('notSet')}</td>
-                  <td>{l.sellRate !== null ? formatRate(l.sellRate, l.unitSize, l.currency) : t('notSet')}</td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="rates-table">
+            <thead>
+              <tr>
+                <th>{t('headerCurrency')}</th>
+                <th class="num">{t('headerBuy')}</th>
+                <th class="num">{t('headerSell')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={pubData()?.lines ?? []}>
+                {(l) => (
+                  <tr data-published-line={l.currency}>
+                    <td class="code">{l.currency}</td>
+                    <td class="num rate-number">{l.buyRate !== null ? formatRate(l.buyRate, l.unitSize, l.currency) : t('notSet')}</td>
+                    <td class="num rate-number">{l.sellRate !== null ? formatRate(l.sellRate, l.unitSize, l.currency) : t('notSet')}</td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* BOT Reference Section */}
@@ -586,15 +592,17 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <h2>{t('botTitle')}</h2>
               <div class="subtitle">{t('botSubtitle')}</div>
             </div>
-            <div class="actions">
+            <div class="dialog-actions">
               <button
                 type="button"
+                class="secondary"
                 onClick={() => fetchReference({ fresh: true })}
               >
                 {t('botRefreshButton')}
               </button>
               <button
                 type="button"
+                class="secondary"
                 onClick={openHistory}
               >
                 {t('rateHistoryButton')}
@@ -617,26 +625,28 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         </div>
 
         <Show when={refData()?.rows && refData()!.rows.length > 0}>
-          <table class="comparison-table">
-            <thead>
-              <tr>
-                <th>{t('headerPair')}</th>
-                <th>{t('headerBotRates')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={refData()!.rows}>
-                {(r: RatesReferenceRow) => (
-                  <tr>
-                    <td><strong>{r.code}</strong></td>
-                    <td>
-                      {formatRate(r.buyingSight, r.unit, r.code)} / {formatRate(r.buyingTransfer, r.unit, r.code)} / {formatRate(r.selling, r.unit, r.code)}
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>{t('headerPair')}</th>
+                  <th>{t('headerBotRates')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={refData()!.rows}>
+                  {(r: RatesReferenceRow) => (
+                    <tr>
+                      <td><strong>{r.code}</strong></td>
+                      <td>
+                        {formatRate(r.buyingSight, r.unit, r.code)} / {formatRate(r.buyingTransfer, r.unit, r.code)} / {formatRate(r.selling, r.unit, r.code)}
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
         </Show>
       </div>
     </div>

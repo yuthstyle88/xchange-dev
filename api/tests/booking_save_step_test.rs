@@ -174,16 +174,12 @@ async fn member_of(replay: &Replay<'_>, id: &str, customer: &str) -> String {
     id.to_string()
 }
 
-/// The id v3 gave the LIVE customer of `MAIN` with this passport.
+/// The id v3 gave the LIVE customer with this passport.
 async fn customer_with(replay: &Replay<'_>, passport: &str) -> String {
-    let (id,): (String,) = sqlx::query_as(
-        "SELECT id FROM customers WHERE branch_id = 'MAIN' AND mode = 'LIVE' AND passport_no = $1",
-    )
-    .bind(passport)
-    .fetch_one(&replay.desk.db.pool)
-    .await
-    .unwrap_or_else(|e| panic!("the customer with {passport}: {e}"));
-    id
+    // CI-4 (#651): one customer per company with an encrypted passport (#554 K1, K2).
+    snapshot_common::live_customer_with_passport(&replay.desk.db.pool, passport)
+        .await
+        .unwrap_or_else(|| panic!("the customer with {passport}"))
 }
 
 async fn save(replay: &Replay<'_>, who: &str, route: &str, payload: &Value) -> Answer {

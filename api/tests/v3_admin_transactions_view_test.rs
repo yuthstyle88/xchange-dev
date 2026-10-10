@@ -22,8 +22,8 @@
 //!   reference selling) and `referencePercent` (spread ÷ reference × 100 to six places, half away
 //!   from zero — v2's `toFixed(6)`, `admin-html:36`, without its float error); the rest of the row
 //!   is the saved exchange as recorded (`TransactionRow::from_record`, design §12.2). Rates are
-//!   written with four places (v2 shows `Number(rate).toFixed(4)`, `admin-html:63`, `:77`, and the
-//!   parts show the server's string as written), money with two.
+//!   the 8 places the database holds, with the row's `unitSize` (#781, rates.md §3.3, §4.9 R1;
+//!   the parts show them through `formatRate`), money with two.
 //! - §4.2: every writer of what the view reads (`transactions`, `transaction_files`) goes through
 //!   `BranchTx` — one write per writer, then the same `since` answers `changed: true`. Writers: the
 //!   exchange save (the workflow, the desk's `saveTransaction` on `/api/staff/rpc`, and the same
@@ -78,7 +78,7 @@ const INVALID_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const PERIOD_ORDER: &str = "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด";
 
 /// `TransactionRow`'s fields (design §12.2), and nothing else.
-const ROW_FIELDS: [&str; 25] = [
+const ROW_FIELDS: [&str; 26] = [
     "id",
     "date",
     "created",
@@ -86,6 +86,7 @@ const ROW_FIELDS: [&str; 25] = [
     "currency",
     "amount",
     "rate",
+    "unitSize",
     "principal",
     "fee",
     "bankFee",
@@ -736,7 +737,7 @@ async fn each_branch_lists_its_own_exchanges_and_staff_read_their_own_branch() {
 
 // ── the row (design §12.2, W7) ───────────────────────────────────────────────
 
-/// The row is `TransactionRow`: its 25 fields and no other.
+/// The row is `TransactionRow`: its 26 fields and no other.
 #[actix_web::test]
 async fn a_row_has_exactly_the_transaction_row_fields() {
     let room = Room::open().await;
@@ -775,7 +776,8 @@ async fn a_row_is_the_saved_exchange_as_recorded() {
         "type": "BUY",
         "currency": "USD",
         "amount": "100.00",
-        "rate": "32.1000",
+        "rate": "32.10000000",
+        "unitSize": "1",
         "principal": "3210.00",
         "fee": "0.00",
         "bankFee": "1.50",
@@ -820,7 +822,7 @@ async fn principal_is_amount_times_rate_half_up_to_the_satang() {
     let row = room.row(&saved.id).await;
     assert_eq!(row["principal"], json!("322.61"), "{row}");
     assert_eq!(row["amount"], json!("10.05"), "{row}");
-    assert_eq!(row["rate"], json!("32.1000"), "{row}");
+    assert_eq!(row["rate"], json!("32.10000000"), "{row}");
     room.finish().await;
 }
 
@@ -843,7 +845,7 @@ async fn settlement_of_a_sale_is_principal_plus_fee() {
     let saved = room.save(Save::sell("10.05").fee("5.25")).await;
     let row = room.row(&saved.id).await;
     assert_eq!(row["type"], json!("SELL"), "{row}");
-    assert_eq!(row["rate"], json!("32.6000"), "{row}");
+    assert_eq!(row["rate"], json!("32.60000000"), "{row}");
     assert_eq!(row["principal"], json!("327.63"), "{row}");
     assert_eq!(row["settlement"], json!("332.88"), "{row}");
     room.finish().await;
@@ -851,13 +853,13 @@ async fn settlement_of_a_sale_is_principal_plus_fee() {
 
 /// `referenceValue` = amount × reference rate to the satang (`admin-html:36` `cents`):
 /// 31.15 × 32.8731 = 1023.997065 → `1024.00` (truncation gives 1023.99); `referenceRate` is the
-/// saved reference with four places.
+/// saved reference at the 8 places the database holds (#781).
 #[actix_web::test]
 async fn reference_value_is_amount_times_reference_rate_to_the_satang() {
     let room = Room::open().await;
     let saved = room.save(Save::buy("31.15").reference("32.8731")).await;
     let row = room.row(&saved.id).await;
-    assert_eq!(row["referenceRate"], json!("32.8731"), "{row}");
+    assert_eq!(row["referenceRate"], json!("32.87310000"), "{row}");
     assert_eq!(row["referenceValue"], json!("1024.00"), "{row}");
     room.finish().await;
 }
@@ -1403,7 +1405,7 @@ async fn a_desk_save_moves_the_version() {
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
-        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
                 "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "LIVE" }),
     )
     .await["customerId"]
@@ -1462,7 +1464,7 @@ async fn a_kiosk_save_moves_the_version() {
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
-        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
                 "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "LIVE" }),
     )
     .await["customerId"]
@@ -1548,7 +1550,7 @@ fn save_payload(
 ) -> Value {
     let now = room.counter.now();
     let mut payload = json!({
-        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
         "birthDate": "1990-01-02", "passportExpiry": "2031-06-11",
         "mode": "LIVE", "submissionId": submission,
         "customerId": customer, "type": "BUY", "currency": "USD",

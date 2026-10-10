@@ -1,27 +1,15 @@
+/* v2 src/devices-public/admin-payments.js:3 #payments-view */
 .xc-admin .xc-content .xc-payments {
   display: block;
 }
 
-.xc-admin .xc-content .xc-payment-error {
-  padding: 24px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: #a5003c;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
+/* v2 src/devices-public/admin-workspace.css:37 .payment-intro p:not(.eyebrow) */
+.xc-admin .xc-content .xc-payment-header .xc-payment-intro {
+  display: block;
+  margin: 0;
 }
 
-.xc-admin .xc-content .xc-payment-intro-eyebrow {
-  font-size: 11px;
-  letter-spacing: 1.8px;
-  color: var(--muted);
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-
+/* v2 src/devices-public/admin-workspace.css:34 .notice */
 .xc-admin .xc-content .xc-branch-notice {
   font-size: 13px;
   color: var(--muted);
@@ -32,38 +20,40 @@
   margin-bottom: 16px;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 .payment-meta */
 .xc-admin .xc-content .xc-payment-meta-text {
   font-size: 12px;
   color: var(--muted);
 }
 
-.xc-admin .xc-content .xc-payment-reload-btn {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
-  border-radius: 7px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+/* v2 src/devices-public/admin-workspace.css:24 .card-heading { padding: 22px } top inset for card head without CardHead */
+.xc-admin .xc-content .xc-payment-channel .xc-payment-card-head {
+  padding-top: 21px;
 }
 
-.xc-admin .xc-content .xc-payment-readonly {
-  font-size: 13px;
-  color: var(--muted);
-  background: var(--soft);
-  padding: 10px 14px;
-  border-radius: 6px;
-  margin-bottom: 16px;
-}
-
-.xc-admin .xc-content .xc-payment-receive-only {
-  display: block;
-  color: var(--muted);
+/* v2 src/devices-public/admin-workspace.css:37 .payment-directions small */
+.xc-admin .xc-content .xc-payment-directions .form-hint {
   font-size: 11px;
-  margin: 6px 0 0 25px;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 .payment-card>label */
+.xc-admin .xc-content .xc-payment-channel .form-field {
+  margin-top: 18px;
+}
+
+/* v2 src/devices-public/admin-workspace.css:37 .payment-card textarea */
+.xc-admin .xc-content .xc-payment-channel textarea {
+  font: inherit;
+  border: 1px solid #cdd0d7;
+  border-radius: 6px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  resize: vertical;
+  min-height: 75px;
+}
+
+/* v2 src/devices-public/admin-workspace.css:37 .payment-savebar */
 .xc-admin .xc-content .xc-payment-save-bar {
   display: flex;
   align-items: center;
@@ -76,16 +66,19 @@
   margin-top: 22px;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 .payment-savebar>div */
 .xc-admin .xc-content .xc-payment-save-status {
   flex: 1;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 .payment-savebar strong */
 .xc-admin .xc-content .xc-payment-dirty-state {
   display: block;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 .payment-savebar p */
 .xc-admin .xc-content .xc-payment-save-note {
   display: block;
   font-size: 12px;
@@ -93,45 +86,14 @@
   margin-top: 5px;
 }
 
+/* v2 src/devices-public/admin-payments.js:15 .payment-savebar */
 .xc-admin .xc-content .xc-payment-save-actions {
   display: flex;
   gap: 12px;
   align-items: center;
 }
 
-.xc-admin .xc-content .xc-payment-discard-btn {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
-  border-radius: 7px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.xc-admin .xc-content .xc-payment-save-btn {
-  background: var(--brand);
-  color: white;
-  border: 1px solid var(--brand);
-  border-radius: 7px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.xc-admin .xc-content .xc-payment-save-btn:hover {
-  background: #870032;
-}
-
-.xc-admin .xc-content .xc-payment-footnote {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-  margin-top: 18px;
-}
-
+/* v2 src/devices-public/admin-workspace.css:27 .workspace-history */
 .xc-admin .xc-content .xc-payment-history-details {
   border: 1px solid var(--line);
   background: white;
@@ -140,6 +102,7 @@
   padding: 0 20px;
 }
 
+/* v2 src/devices-public/admin-workspace.css:27 .workspace-history summary */
 .xc-admin .xc-content .xc-payment-history-details summary {
   min-height: 58px;
   padding: 17px 0;
@@ -149,21 +112,24 @@
   font-weight: 600;
 }
 
+/* v2 src/devices-public/admin-workspace.css:27 .workspace-history[open] summary */
 .xc-admin .xc-content .xc-payment-history-details[open] summary {
   margin-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 
+/* v2 src/devices-public/admin-workspace.css:27 .workspace-history table */
 .xc-admin .xc-content .xc-payment-history-table {
   width: 100%;
 }
 
+/* v2 src/devices-public/admin-workspace.css:37 @media(max-width:600px) */
 @media (max-width: 600px) {
   .xc-admin .xc-content .xc-payment-save-status {
     flex-basis: 100%;
   }
-  .xc-admin .xc-content .xc-payment-discard-btn,
-  .xc-admin .xc-content .xc-payment-save-btn {
+
+  .xc-admin .xc-content .xc-payment-save-bar button {
     flex: 1;
   }
 }

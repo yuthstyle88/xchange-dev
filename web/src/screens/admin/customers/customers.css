@@ -1,4 +1,4 @@
-/* Customers screen styles — ported from v2 for CD-2 (#714) */
+/* Customers screen styles — ported from v2 for CD-2 (#714, #797) */
 
 /* no v2 source: screen root wrapper container */
 .xc-admin .xc-content .customers-screen {
@@ -48,11 +48,7 @@
 
 /* v2 src/online/lib/admin-html.ts:2 .xc-workspace .toolbar */
 .xc-admin .xc-content .search-section {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px 18px;
-  margin-bottom: 22px;
+  padding: 20px;
 }
 
 /* v2 src/online/lib/admin-html.ts:2 label */
@@ -64,16 +60,21 @@
 }
 
 /* v2 src/online/lib/admin-html.ts:1 #customer-search */
-.xc-admin .xc-content .search-section input,
-.xc-admin .xc-content .search-bar input {
+.xc-admin .xc-content .customers-screen .search-section input,
+.xc-admin .xc-content .customers-screen .search-bar input,
+.xc-admin .xc-content.xc-content .customers-screen .search-section input,
+.xc-admin .xc-content.xc-content .customers-screen .search-bar input,
+.xc-admin .xc-content.xc-content .customers-screen .search-section label input,
+.xc-admin .xc-content.xc-content .search-section input,
+.xc-admin .xc-content.xc-content .search-bar input {
   width: min(100%, 480px);
   margin: 10px 0;
 }
 
 /* v2 src/online/lib/admin-html.ts:1 #customer-summary */
 .xc-admin .xc-content .summary-status {
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 15px;
+  color: var(--ink);
   margin: 0;
 }
 
@@ -84,26 +85,6 @@
   padding: 12px 0;
 }
 
-/* v2 src/online/lib/admin-html.ts:2 .notice.workspace-offline */
-.xc-admin .xc-content .error-container {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  background: #fff3e8;
-  border: 1px solid #e9bb94;
-  border-radius: 6px;
-  margin-bottom: 24px;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .notice strong */
-.xc-admin .xc-content .not-loaded {
-  display: block;
-  font-size: 14px;
-  color: #40444d;
-  font-weight: 600;
-}
-
 /* v2 src/online/lib/admin-html.ts:2 .error */
 .xc-admin .xc-content .refusal-message {
   color: #a5003c;
@@ -111,74 +92,10 @@
   margin: 12px 0;
 }
 
-/* v2 src/online/lib/admin-html.ts:2 .empty */
-.xc-admin .xc-content .empty-state,
-.xc-admin .xc-content .reg-empty {
-  padding: 45px 24px;
-  text-align: center;
-  color: var(--muted);
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .empty strong */
-.xc-admin .xc-content .empty-title {
-  display: block;
-  color: var(--ink);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .empty p */
-.xc-admin .xc-content .empty-note,
-.xc-admin .xc-content .empty-text {
-  font-size: 14px;
-  color: var(--muted);
-  margin: 0;
-}
-
 /* v2 src/online/lib/admin-html.ts:2 table */
 .xc-admin .xc-content .customers-table,
 .xc-admin .xc-content .history-table {
   width: 100%;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .pill */
-.xc-admin .xc-content .member-pill {
-  display: inline-block;
-  padding: 3px 9px;
-  border-radius: 5px;
-  font-size: 12px;
-  background: #eaf6ef;
-  color: #246446;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .secondary */
-.xc-admin .xc-content .btn-history,
-.xc-admin .xc-content .btn-load-older,
-.xc-admin .xc-content .pagination button,
-.xc-admin .xc-content .reg-search-bar button {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
-  border-radius: 7px;
-  min-height: 44px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .ref */
-.xc-admin .xc-content .btn-link {
-  font-family: Arial, sans-serif;
-  color: var(--brand);
-  font-weight: 600;
-  font-size: 13px;
-  padding: 0;
-  min-height: 32px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-decoration: underline;
 }
 
 /* v2 src/online/lib/admin-html.ts:1 #customer-pagination */
@@ -190,96 +107,42 @@
   padding: 18px;
 }
 
-/* v2 src/online/public/customers.js:12 span */
-.xc-admin .xc-content .page-info {
-  font-size: 14px;
-  color: var(--muted);
+/* v2 src/online/public/registrations.js:3 .pagination */
+.xc-admin .xc-content .reg-pagination {
+  justify-content: normal;
+  gap: 12px;
+  padding: 16px;
 }
 
-/* v2 src/devices-public/admin-workspace.css:21 .toolbar */
+/* v2 src/online/public/registrations.js:3 #registration-panel */
+.xc-admin .xc-content .registrations-card {
+  margin-top: 24px;
+}
+
+/* v2 src/online/public/registrations.js:3 padding:20px */
+.xc-admin .xc-content .reg-top-section {
+  padding: 20px;
+}
+
+/* v2 src/online/public/registrations.js:3 flex row */
 .xc-admin .xc-content .reg-search-bar {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
-  margin: 16px 0;
+  margin: 0;
   flex-wrap: wrap;
 }
 
-/* v2 src/devices-public/admin-workspace.css:21 .range input */
+/* v2 src/online/public/registrations.js:3 input */
 .xc-admin .xc-content .reg-search-bar input {
   width: min(100%, 480px);
 }
 
-/* no v2 source: customer history dialog container */
-.xc-admin .xc-content .customer-history {
-  display: block;
-}
-
-/* v2 src/devices-public/admin-workspace.css:12 .header-right */
-.xc-admin .xc-content .history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .dialog-note */
-.xc-admin .xc-content .branch-status {
-  font-size: 13px;
-  color: var(--muted);
+/* v2 src/online/public/registrations.js:4 empty text */
+.xc-admin .xc-content .reg-empty {
+  padding: 20px;
+  text-align: start;
   margin: 0;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .primary */
-.xc-admin .xc-content .btn-member {
-  background: var(--brand);
-  color: white;
-  border: 1px solid var(--brand);
-  border-radius: 7px;
-  min-height: 44px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .primary:hover */
-.xc-admin .xc-content .btn-member:hover {
-  background: #870032;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .details */
-.xc-admin .xc-content .customer-details {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px 25px;
-  margin: 15px 0;
-  font-size: 14px;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .details dt */
-.xc-admin .xc-content .customer-details dt {
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  padding: 8px 0;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .details dd */
-.xc-admin .xc-content .customer-details dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-  border-bottom: 1px solid var(--line);
-  padding: 8px 0;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .dialog-note */
-.xc-admin .xc-content .volume-note {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 8px 0 16px;
 }
 
 /* v2 src/online/lib/admin-html.ts:1 label */
@@ -324,7 +187,6 @@
   font-size: 14px;
   color: var(--ink);
   margin-bottom: 12px;
-  font-weight: 600;
 }
 
 /* v2 src/online/lib/admin-html.ts:2 .dialog-note */
@@ -332,11 +194,4 @@
   font-size: 13px;
   color: var(--muted);
   margin: 12px 0;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .dialog-note */
-.xc-admin .xc-content .note {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 8px 0;
 }

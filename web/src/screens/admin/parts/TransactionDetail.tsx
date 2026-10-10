@@ -11,6 +11,7 @@ import {
 import type { ApiClient } from '../../../shared/api/client';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { screenT } from '../../../shared/i18n';
+import { formatRate } from '../../../shared/ui/rate';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { en, th } from './i18n';
 import { methodName, statusName, typeName } from './transaction';
@@ -108,7 +109,7 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
         </dd>
 
         <dt>{t('detailRate')}</dt>
-        <dd>{props.row.rate}</dd>
+        <dd>{formatRate(props.row.rate, props.row.unitSize, props.row.currency)}</dd>
 
         <dt>{t('detailPrincipal')}</dt>
         <dd>{formatMoney(props.row.principal)} THB</dd>
@@ -142,7 +143,7 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
 
         <Show when={props.row.referenceRate !== null}>
           <dt>{t('detailRefRate')}</dt>
-          <dd>{props.row.referenceRate}</dd>
+          <dd>{formatRate(props.row.referenceRate!, props.row.unitSize, props.row.currency)}</dd>
 
           <dt>{t('detailRefValue')}</dt>
           <dd>{formatMoney(props.row.referenceValue!)} THB</dd>

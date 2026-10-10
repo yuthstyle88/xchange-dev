@@ -14,8 +14,7 @@ import type {
   KioskCurrency,
 } from '../../shared/api/generated/kiosk_currencies';
 import { errorText, locale, screenT } from '../../shared/i18n';
-import { type FieldBinding, useForm } from '../../shared/ui/form';
-import { TextField } from '../../shared/ui/TextField';
+import { formatRate } from '../../shared/ui/rate';
 import { matches } from './filter';
 import * as screenI18n from './i18n';
 import { configure } from './kiosk-api';
@@ -32,15 +31,7 @@ interface CardProps {
   saving: () => boolean;
   kbankRef: () => KbankReference | null;
   t: ReturnType<typeof screenT<typeof screenI18n>>;
-  onSave: (
-    code: string,
-    buyVal: string,
-    sellVal: string,
-    isEnabled: boolean,
-    previousUpdated: string,
-    partnerName: string,
-    partnerCost: string | null,
-  ) => Promise<void>;
+  onToggle: (code: string, isEnabled: boolean) => Promise<void>;
 }
 
 function formatTime(iso: string): string {
@@ -48,69 +39,25 @@ function formatTime(iso: string): string {
 }
 
 function CurrencyCard(props: CardProps): JSX.Element {
-  const form = useForm();
-  const [enabled, setEnabled] = createSignal(props.currency.enabled);
+  let checkboxRef: HTMLInputElement | undefined;
 
   createEffect(() => {
-    setEnabled(props.currency.enabled);
-  });
-
-  let buyInput: HTMLInputElement | undefined;
-  let sellInput: HTMLInputElement | undefined;
-
-  const buyField = form.field('buy');
-  const origBuyRef = buyField.ref;
-  const buyBinding: FieldBinding = {
-    ...buyField,
-    ref: (el: HTMLInputElement) => {
-      origBuyRef(el);
-      buyInput = el;
-      if (el) {
-        el.value = props.currency.buy ?? '';
-      }
-    },
-  };
-
-  const sellField = form.field('sell');
-  const origSellRef = sellField.ref;
-  const sellBinding: FieldBinding = {
-    ...sellField,
-    ref: (el: HTMLInputElement) => {
-      origSellRef(el);
-      sellInput = el;
-      if (el) {
-        el.value = props.currency.sell ?? '';
-      }
-    },
-  };
-
-  createEffect(() => {
-    if (buyInput) {
-      buyInput.value = props.currency.buy ?? '';
-    }
-    if (sellInput) {
-      sellInput.value = props.currency.sell ?? '';
+    if (checkboxRef) {
+      checkboxRef.checked = props.currency.enabled;
     }
   });
 
-  const handleSubmit = form.submit(async () => {
-    const buyVal = buyInput?.value ?? '';
-    const sellVal = sellInput?.value ?? '';
-    const isEnabled = enabled();
-
-    await props.onSave(
-      props.currency.code,
-      buyVal,
-      sellVal,
-      isEnabled,
-      props.currency.updated,
-      props.currency.partnerName || '',
-      props.currency.partnerCost ?? null,
-    );
-  });
+  const handleToggle = async (e: Event) => {
+    const target = e.currentTarget as HTMLInputElement;
+    const isEnabled = target.checked;
+    await props.onToggle(props.currency.code, isEnabled);
+    if (checkboxRef) {
+      checkboxRef.checked = props.currency.enabled;
+    }
+  };
 
   return (
-    <form class="quote" onSubmit={handleSubmit}>
+    <form class="quote" onSubmit={(e) => e.preventDefault()}>
       <h3>
         {props.currency.code} · {props.currency.name} / {props.currency.nameEn}
       </h3>
@@ -120,34 +67,32 @@ function CurrencyCard(props: CardProps): JSX.Element {
           <input
             id={`enabled-${props.currency.code}`}
             type="checkbox"
-            checked={enabled()}
-            onChange={(e) => setEnabled(e.currentTarget.checked)}
+            ref={checkboxRef}
+            checked={props.currency.enabled}
+            disabled={props.saving()}
+            onChange={handleToggle}
           />
           {props.t('enabled')}
         </label>
       </div>
 
-      <TextField
-        field={buyBinding}
-        label={props.t('buy')}
-        type="number"
-        required
-        min="0.0001"
-        max="1000000"
-        step="0.0001"
-        inputMode="decimal"
-      />
+      <div class="rate-side">
+        <span>{props.t('buy')}</span>
+        <span>
+          {props.currency.buy
+            ? formatRate(props.currency.buy, props.currency.unitSize, props.currency.code)
+            : '—'}
+        </span>
+      </div>
 
-      <TextField
-        field={sellBinding}
-        label={props.t('sell')}
-        type="number"
-        required
-        min="0.0001"
-        max="1000000"
-        step="0.0001"
-        inputMode="decimal"
-      />
+      <div class="rate-side">
+        <span>{props.t('sell')}</span>
+        <span>
+          {props.currency.sell
+            ? formatRate(props.currency.sell, props.currency.unitSize, props.currency.code)
+            : '—'}
+        </span>
+      </div>
 
       <div class="kbank-box">
         <Show
@@ -189,10 +134,6 @@ function CurrencyCard(props: CardProps): JSX.Element {
           )}
         </Show>
       </div>
-
-      <button type="submit" class="primary" disabled={props.saving()}>
-        {props.t('save')}
-      </button>
 
       <span role="status">{props.status()}</span>
     </form>
@@ -251,15 +192,7 @@ export function KioskCurrenciesScreen(props: {
     return t('found', { n: filteredCurrencies().length });
   });
 
-  const handleSave = async (
-    code: string,
-    buyVal: string,
-    sellVal: string,
-    isEnabled: boolean,
-    previousUpdated: string,
-    partnerName: string,
-    partnerCost: string | null,
-  ) => {
+  const handleToggle = async (code: string, isEnabled: boolean) => {
     setSavingCodes((prev) => ({ ...prev, [code]: true }));
     setCardStatuses((prev) => ({ ...prev, [code]: undefined }));
 
@@ -267,12 +200,7 @@ export function KioskCurrenciesScreen(props: {
       await configure(props.api, {
         branchId: props.branch || 'MAIN',
         code,
-        buy: buyVal,
-        sell: sellVal,
         enabled: isEnabled,
-        previousUpdated,
-        partnerName,
-        partnerCost,
       });
 
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
@@ -397,7 +325,7 @@ export function KioskCurrenciesScreen(props: {
               saving={() => Boolean(savingCodes()[c.code])}
               kbankRef={kbankRef}
               t={t}
-              onSave={handleSave}
+              onToggle={handleToggle}
             />
           )}
         </For>

@@ -156,13 +156,12 @@ impl Shop {
 
     async fn seed_customer(&self, id: &str, branch_id: &str, name: &str, mode: &str) {
         sqlx::query(
-            "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-             VALUES ($1, $2, $3, $4, 'THA', $5, $6)",
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, b.organization_id, $1, $3, $4, $5 FROM branches b WHERE b.id = $2",
         )
         .bind(id)
         .bind(branch_id)
         .bind(name)
-        .bind(format!("P-{id}"))
         .bind(mode)
         .bind(at(0))
         .execute(&self.db.pool)
@@ -569,12 +568,21 @@ async fn a_demo_customer_is_not_live() {
     };
     assert_eq!(ask(MAIN, "C-LIVE").await, Some(live("C-LIVE", "สมชาย ใจดี")));
     assert_eq!(ask(MAIN, "C-DEMO").await, None, "a DEMO customer");
-    assert_eq!(ask(MAIN, "C-AIR").await, None, "another branch's customer");
+    // CI-4 (#651): a customer belongs to the organisation, not a branch (#554 K1).
+    assert_eq!(
+        ask(MAIN, "C-AIR").await,
+        Some(live("C-AIR", "Airport Person")),
+        "another branch's customer is the organisation's customer"
+    );
     assert_eq!(
         ask(AIRPORT, "C-AIR").await,
         Some(live("C-AIR", "Airport Person"))
     );
-    assert_eq!(ask(AIRPORT, "C-LIVE").await, None);
+    // CI-4 (#651): K1, the organisation's customer at every branch.
+    assert_eq!(
+        ask(AIRPORT, "C-LIVE").await,
+        Some(live("C-LIVE", "สมชาย ใจดี"))
+    );
     assert_eq!(ask(MAIN, "C-NOBODY").await, None, "an unknown id");
     shop.finish().await;
 }

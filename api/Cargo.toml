@@ -16,6 +16,7 @@ xc-rate = { path = "crates/xc-rate" }
 xc-kiosk = { path = "crates/xc-kiosk" }
 xc-auth = { path = "crates/xc-auth" }
 xc-approval = { path = "crates/xc-approval" }
+xc-customer = { path = "crates/xc-customer" }
 
 [package]
 name = "xchange"
@@ -38,6 +39,7 @@ xc-rate = { workspace = true }
 xc-kiosk = { workspace = true }
 xc-auth = { workspace = true }
 xc-approval = { workspace = true }
+xc-customer = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,7 +1,3 @@
-//! Reservation entity.
+//! Reservation entity re-export from xc_customer.
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reservation {
-    pub customer_id: String,
-    pub existing: bool,
-}
+pub use xc_customer::domain::customer::entities::reservation::Reservation;

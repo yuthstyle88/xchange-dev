@@ -183,6 +183,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     currency: 'USD',
     amount: '100.00',
     rate: '32.1000',
+    unitSize: '1',
     principal: '3210.00',
     fee: '0.00',
     bankFee: '0.00',

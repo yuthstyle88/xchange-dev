@@ -204,6 +204,19 @@ body:has(.xc-auth) {
   cursor: not-allowed;
 }
 
+/* v2 login.html:1 input,button{…} button{…} — every button in the form; the eye (.xc-reveal) keeps its own rule */
+.xc-auth .xc-auth-card form button[type="button"]:not(.xc-reveal) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  font: inherit;
+  background: #183044;
+  color: #ffffff;
+  border: 0;
+  border-radius: 8px;
+  margin-top: 16px; /* v2: label{margin:16px 0} sits between a field and the next button */
+}
+
 .xc-auth #message {
   color: #a5003c;
   font-size: 13px;

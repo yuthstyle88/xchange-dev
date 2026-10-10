@@ -829,12 +829,8 @@ fn branches_json_prints_main_without_a_request_id() {
 fn customer(id: &str, name: &str, mode: Mode, created: &str) -> Customer {
     Customer {
         id: id.to_string(),
-        branch_id: main_branch(),
         name: name.to_string(),
-        passport_no: "P1000001".to_string(),
-        nationality: "DE".to_string(),
-        birth_date: chrono::NaiveDate::from_ymd_opt(1990, 1, 2),
-        passport_expiry: chrono::NaiveDate::from_ymd_opt(2031, 6, 11),
+        nationality: "DEU".to_string(),
         mode,
         created_at: at(created),
         last_document_ref: Some("XC-20261006-000001".to_string()),
@@ -854,7 +850,7 @@ fn customers_json_reproduces_branches_json_and_shows_no_passport() {
     assert_eq!(printed.to_value(), fixture.step(11).json()["customers"]);
     assert_eq!(
         printed.to_text(),
-        r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DE","created":"2026-10-06T05:09:00.000Z","member":false,"memberVerifiedAt":null}]"#
+        r#"[{"id":"CX-00000001","name":"Customer 1","nationality":"DEU","created":"2026-10-06T05:09:00.000Z","member":false,"memberVerifiedAt":null}]"#
     );
     let text = fixture.body_text(11).expect("branches.json#11 is JSON");
     assert!(text.contains(&format!("\"customers\":{},", printed.to_text())));

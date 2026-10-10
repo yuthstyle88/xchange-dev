@@ -16,7 +16,7 @@ import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { refreshTick } from '../parts/refresh';
-import { Card, CardHead, CardBody, CardActions, CardGrid } from '../../../shared/ui/Card';
+import { Card, CardHead, CardBody, CardGrid } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
 import { toast } from '../parts/toast';
 import { openShiftDetail } from './ShiftDetail';
@@ -567,22 +567,22 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       <Show
         when={cash()?.shift}
         fallback={
-          <div class="shift-banner shift-banner-none">
-            <div class="banner-title">{t('noOpenShift')}</div>
-            <div class="banner-subtitle">{t('noOpenShiftSubtitle')}</div>
+          <div class="stock-banner">
+            <strong>{t('noOpenShift')}</strong>
+            <p>{t('noOpenShiftSubtitle')}</p>
           </div>
         }
       >
-        <div class="shift-banner shift-banner-open">
-          <div class="banner-title">
+        <div class="stock-banner">
+          <strong>
             {t('openShiftBanner', { id: cash()!.shift!.id })}
-          </div>
-          <div class="banner-subtitle">
+          </strong>
+          <p>
             {t('openShiftBannerSub', {
               when: when(cash()!.shift!.openedAt),
               staff: cash()!.shift!.staff,
             })}
-          </div>
+          </p>
         </div>
       </Show>
 
@@ -615,21 +615,21 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       </CardGrid>
 
       {/* Reference Summary */}
-      <div class="reference-summary">
-        <div class="ref-title">
+      <div class="stock-banner">
+        <strong>
           {cash()?.shift && cash()?.reference && cash()!.reference.withReference > 0
             ? t('refSummaryWithRates', {
                 spread: formatMoney(cash()!.reference.spread),
                 percent: cash()!.reference.percent,
               })
             : t('refSummaryNoRates')}
-        </div>
-        <div class="ref-counts">
+        </strong>
+        <p>
           {t('refSummaryCounts', {
             withRef: cash()?.reference.withReference ?? 0,
             withoutRef: cash()?.reference.withoutReference ?? 0,
           })}
-        </div>
+        </p>
       </div>
 
       {/* Stock Card and Actions */}
@@ -638,9 +638,10 @@ export function Cash(props: AdminMenuProps): JSX.Element {
           eyebrow={t('stockEyebrow')}
           title={t('stockTitle')}
           aside={
-            <CardActions>
+            <div class="cash-actions">
               <button
                 type="button"
+                class="primary"
                 onClick={handleOpenShiftDialog}
                 disabled={isWriteDisabled() || hasOpenShift()}
               >
@@ -648,6 +649,15 @@ export function Cash(props: AdminMenuProps): JSX.Element {
               </button>
               <button
                 type="button"
+                class="secondary"
+                onClick={handleExampleDialog}
+                disabled={isWriteDisabled()}
+              >
+                {t('btnViewExample')}
+              </button>
+              <button
+                type="button"
+                class="secondary"
                 onClick={handleMoveStockDialog}
                 disabled={isWriteDisabled() || !hasOpenShift()}
               >
@@ -655,143 +665,166 @@ export function Cash(props: AdminMenuProps): JSX.Element {
               </button>
               <button
                 type="button"
+                class="secondary"
                 onClick={handleCloseShiftDialog}
                 disabled={isWriteDisabled() || !hasOpenShift()}
               >
                 {t('btnCloseShift')}
               </button>
-              <button
-                type="button"
-                onClick={handleExampleDialog}
-                disabled={isWriteDisabled()}
-              >
-                {t('btnViewExample')}
-              </button>
-            </CardActions>
+            </div>
           }
         />
         <CardBody flush>
-          <table class="stock-table">
-            <thead>
-              <tr>
-                <th>{t('headerCurrency')}</th>
-                <th>{t('headerOpening')}</th>
-                <th>{t('headerNet')}</th>
-                <th>{t('headerExpected')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={cash()?.stock ?? []}>
-                {(row) => (
+          <label class="stock-filter">
+            <input
+              type="checkbox"
+              checked={showAll()}
+              onChange={handleToggleShowAll}
+            />{' '}
+            {t('filterAll')} <span>{t('filterAllNote')}</span>
+          </label>
+
+          <Show
+            when={hasOpenShift()}
+            fallback={
+              <div class="empty">
+                <strong>{t('stockNote1')}</strong>
+                <p>{t('stockNote2')}</p>
+              </div>
+            }
+          >
+            <div class="table-scroll">
+              <table class="stock-table">
+                <thead>
                   <tr>
-                    <td>{row.code}</td>
-                    <td>{formatMoney(row.opening)}</td>
-                    <td>{formatMoney(row.net)}</td>
-                    <td>{formatMoney(row.expected)}</td>
+                    <th>{t('headerCurrency')}</th>
+                    <th class="num">{t('headerOpening')}</th>
+                    <th class="num">{t('headerNet')}</th>
+                    <th class="num">{t('headerExpected')}</th>
                   </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-
-          <div class="stock-notes">
-            <p>{t('stockNote1')}</p>
-            <p>{t('stockNote2')}</p>
-          </div>
-
-          <div class="stock-filter">
-            <label>
-              <input
-                type="checkbox"
-                checked={showAll()}
-                onChange={handleToggleShowAll}
-              />
-              {t('filterAll')}
-            </label>
-            <p>{t('filterAllNote')}</p>
-          </div>
+                </thead>
+                <tbody>
+                  <For each={cash()?.stock ?? []}>
+                    {(row) => (
+                      <tr>
+                        <td>
+                          <strong>{row.code}</strong>
+                        </td>
+                        <td class="num">{formatMoney(row.opening)}</td>
+                        <td class="num">{formatMoney(row.net)}</td>
+                        <td class="num">
+                          <strong>{formatMoney(row.expected)}</strong>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
         </CardBody>
       </Card>
 
       {/* Footnote */}
-      <p class="cash-footnote">{t('footnote')}</p>
+      <p class="footnote">{t('footnote')}</p>
 
       {/* History Details */}
-      <details class="history-details">
+      <details class="workspace-history">
         <summary>{t('historySummary')}</summary>
 
-        <div class="movements-section">
-          <h3>{t('historyMovementsTitle')}</h3>
+        <Card>
+          <CardHead title={t('historyMovementsTitle')} />
           <Show
             when={movements().length > 0}
-            fallback={<p>{t('emptyMovements')}</p>}
+            fallback={
+              <div class="empty">
+                <strong>{t('emptyMovements')}</strong>
+              </div>
+            }
           >
-            <table class="movements-table">
-              <thead>
-                <tr>
-                  <th>{t('headerDateTime')}</th>
-                  <th>{t('headerShift')}</th>
-                  <th>{t('headerItem')}</th>
-                  <th>{t('headerAmount')}</th>
-                  <th>{t('headerReason')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={movements()}>
-                  {(m) => (
-                    <tr>
-                      <td>{when(m.created)}</td>
-                      <td>{m.shiftId}</td>
-                      <td>{m.direction === 'IN' ? t('dirIn') : t('dirOut')}</td>
-                      <td>
-                        {formatMoney(m.amount)} {m.currency}
-                      </td>
-                      <td>{m.reason}</td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+            <div class="table-scroll">
+              <table class="movements-table">
+                <thead>
+                  <tr>
+                    <th>{t('headerDateTime')}</th>
+                    <th>{t('headerShift')}</th>
+                    <th>{t('headerItem')}</th>
+                    <th class="num">{t('headerAmount')}</th>
+                    <th>{t('headerReason')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={movements()}>
+                    {(m) => (
+                      <tr>
+                        <td>{when(m.created)}</td>
+                        <td>{m.shiftId}</td>
+                        <td>
+                          <span class={m.direction === 'OUT' ? 'pill buy' : 'pill'}>
+                            {m.direction === 'IN' ? t('dirIn') : t('dirOut')}
+                          </span>
+                        </td>
+                        <td class="num">
+                          {formatMoney(m.amount)} {m.currency}
+                        </td>
+                        <td>{m.reason}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
           </Show>
-        </div>
+        </Card>
 
-        <div class="shifts-section">
-          <h3>{t('historyShiftsTitle')}</h3>
-          <Show when={shifts().length > 0} fallback={<p>{t('emptyShifts')}</p>}>
-            <table class="shifts-table">
-              <thead>
-                <tr>
-                  <th>{t('headerShift')}</th>
-                  <th>{t('headerOpenedAt')}</th>
-                  <th>{t('headerOpenedBy')}</th>
-                  <th>{t('headerStatus')}</th>
-                  <th>{t('headerDifferenceClosed')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={shifts()}>
-                  {(s) => (
-                    <tr>
-                      <td>
-                        <button
-                          type="button"
-                          class="link-button"
-                          onClick={() => openShiftDetail(s, props.branch())}
-                        >
-                          {s.id}
-                        </button>
-                      </td>
-                      <td>{when(s.openedAt)}</td>
-                      <td>{s.staff}</td>
-                      <td>
-                        {s.status === 'OPEN' ? t('statusOpen') : t('statusClosed')}
-                      </td>
-                      <td>{shiftDiffText(s)}</td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+        <Card>
+          <CardHead title={t('historyShiftsTitle')} />
+          <Show
+            when={shifts().length > 0}
+            fallback={
+              <div class="empty">
+                <strong>{t('emptyShifts')}</strong>
+              </div>
+            }
+          >
+            <div class="table-scroll">
+              <table class="shifts-table">
+                <thead>
+                  <tr>
+                    <th>{t('headerShift')}</th>
+                    <th>{t('headerOpenedAt')}</th>
+                    <th>{t('headerOpenedBy')}</th>
+                    <th>{t('headerStatus')}</th>
+                    <th>{t('headerDifferenceClosed')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={shifts()}>
+                    {(s) => (
+                      <tr>
+                        <td>
+                          <button
+                            type="button"
+                            class="ref"
+                            onClick={() => openShiftDetail(s, props.branch())}
+                          >
+                            {s.id}
+                          </button>
+                        </td>
+                        <td>{when(s.openedAt)}</td>
+                        <td>{s.staff}</td>
+                        <td>
+                          <span class={s.status === 'CLOSED' ? 'pill neutral' : 'pill'}>
+                            {s.status === 'OPEN' ? t('statusOpen') : t('statusClosed')}
+                          </span>
+                        </td>
+                        <td>{shiftDiffText(s)}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
 
             <Show when={hasMoreShifts()}>
               <div class="load-older-shifts">
@@ -810,7 +843,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
               </div>
             </Show>
           </Show>
-        </div>
+        </Card>
       </details>
     </div>
   );

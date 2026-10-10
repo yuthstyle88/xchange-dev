@@ -25,9 +25,9 @@ export function DataTable(props: DataTableProps): JSX.Element {
     <Show
       when={props.rowCount > 0}
       fallback={
-        <div class="data-table-empty">
-          <p>{props.empty ?? t('emptyTransactions')}</p>
-          <p class="empty-note">{props.emptyNote ?? t('emptyTransactionsNote')}</p>
+        <div class="empty">
+          <strong>{props.empty ?? t('emptyTransactions')}</strong>
+          <p>{props.emptyNote ?? t('emptyTransactionsNote')}</p>
         </div>
       }
     >

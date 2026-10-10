@@ -106,8 +106,22 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 
 shifts                       -- existing table, changed (CA-1 adds the column, CA-3 swaps the index)
   + teller_id uuid NOT NULL REFERENCES users(id)          -- C1
+  + opened_by_count uuid NULL REFERENCES cash_counts(id)  -- CA-3, transitional: the verified OPEN/hand-over count
+                                                          -- that opened it; NULL = opened by v2's path. CA-10 drops it
   - DROP INDEX shifts_one_open_per_branch                 -- CA-3
-  + CREATE UNIQUE INDEX shifts_one_open_per_teller ON shifts (teller_id) WHERE status = 'OPEN'   -- CA-3, A8
+  + CREATE UNIQUE INDEX shifts_one_open_per_teller ON shifts (teller_id)
+      WHERE status = 'OPEN' AND opened_by_count IS NOT NULL                       -- CA-3, A8 (count-opened shifts)
+  + CREATE UNIQUE INDEX shifts_one_open_per_branch_v2 ON shifts (branch_id)
+      WHERE status = 'OPEN' AND opened_by_count IS NULL                           -- CA-3 → CA-10, v2's own rule
+  (end state, CA-10: drop opened_by_count and shifts_one_open_per_branch_v2;
+   shifts_one_open_per_teller ON shifts (teller_id) WHERE status = 'OPEN' — every shift, A8)
+
+**Why two indexes until CA-10** (lane controller's ruling, 2026-10-10, option A): v2's open path
+(`adminOpenShift` → `ShiftService::open_in`) runs until CA-10, and CA-1's opener resolution maps `"owner"` to one
+user, so the owner opens shifts at several branches as one teller. A8 applied to those shifts would refuse v2's own
+flows (measured on the CA-3 tests' first run: 75 `shifts_one_open_per_teller` violations across about 25 test files).
+So A8 binds the shifts the v3 count path opens, and v2's shifts keep v2's one-per-branch rule. The marker is
+scaffolding, not Blueprint model: CA-10 removes it and A8 then binds every shift.
 
 cash_counts(id uuid PK, organization_id, branch_id, shift_id FK NULL,   -- NULL for the safe's counts
             kind text CHECK (kind IN ('OPEN','HANDOVER_OUT','CLOSE','SAFE_OPEN','SAFE')),
@@ -180,7 +194,8 @@ each shift's CLOSE count, not of the branch.
 | Rule | Where |
 |---|---|
 | a shift opens only when its OPEN count, or the hand-over's count, is verified | `ShiftService::open_on_verified` |
-| one OPEN shift per teller, across branches (A8) | the unique index; `ShiftService::open_on_verified` answers `shiftAlreadyOpen` before the insert |
+| one OPEN shift per teller, across branches (A8), over the shifts a count opened (until CA-10: every shift) | `shifts_one_open_per_teller`; `ShiftService::open_on_verified` answers `shiftAlreadyOpen` before the insert. A v2-opened shift (`opened_by_count IS NULL`) does not count against A8 until CA-10 |
+| v2's path (`open_in`, `active_in(branch)`, `apply_delta_in(branch)`) sees only v2-opened shifts until CA-10 | `shift_repository.rs`: its per-branch reads add `AND opened_by_count IS NULL` |
 | `verified_by ≠ counted_by`; the verifier's role per §3.1; only the newest count of its (shift, kind) is verified | `CashCountService::verify` |
 | a CLOSE or HANDOVER_OUT count's `expected` = the shift's expected at the moment of counting; a later exchange on that shift refuses the verify (`balancesChanged`) | `CashCountService::verify` |
 | an exchange posts to the saver's own OPEN shift; no open shift → `noOpenShift` | `save_transaction.rs` (C1) |
@@ -409,15 +424,26 @@ CA-1 to merge; this design's M3 is `20261030110000`.
    the column is NOT NULL, so migration and binary deploy together, as every v3 release.
 4. *`down` loses* the new tables (empty until CA-3 writes them), the face-value rows and `teller_id`.
 
-**M2. `api/migrations/20261012110000_shift_per_teller.sql` (CA-3): the index.**
-1. *Existing rows.* None change. `DROP INDEX shifts_one_open_per_branch`; `CREATE UNIQUE INDEX
-   shifts_one_open_per_teller ON shifts (teller_id) WHERE status = 'OPEN'` (A8).
-2. *Backfill.* None. Precheck, else `RAISE`:
-   `SELECT teller_id, count(*) FROM shifts WHERE status = 'OPEN' GROUP BY 1 HAVING count(*) > 1;` (must be empty;
-   the owner may hold OPEN shifts at several branches under today's model: close them first).
-3. *Order.* With CA-3's binary, which opens shifts per teller. The old binary works with the schema but no longer
-   finds "the branch's one open shift"; it must not run after M2.
-4. *`down`* restores the per-branch index and fails if two tellers of one branch hold OPEN shifts.
+**M2. `api/migrations/20261031080000_shift_per_teller.sql` (CA-3): the marker and the two indexes (§4.1).**
+   *Version:* after every migration on main at the time of release (lane controller 2026-10-10; was `20261012110000`, which sorted before main's `20261030160000` and would have given fresh and existing databases different histories; the gate is #847).
+1. *Existing rows.* `ADD COLUMN opened_by_count uuid NULL REFERENCES cash_counts(id)`: every existing shift gets
+   NULL, so it counts as v2-opened and stays under v2's rule. `DROP INDEX shifts_one_open_per_branch`; `CREATE UNIQUE
+   INDEX shifts_one_open_per_teller ON shifts (teller_id) WHERE status = 'OPEN' AND opened_by_count IS NOT NULL` (A8)
+   and `shifts_one_open_per_branch_v2 ON shifts (branch_id) WHERE status = 'OPEN' AND opened_by_count IS NULL`.
+2. *Backfill.* None: no shift was opened by a count before CA-3 (CA-3 writes the first counts), so NULL is true of
+   every existing row. No precheck is needed for the teller index (it covers no existing row); the v2 index covers
+   exactly the rows the dropped per-branch index covered, so it cannot fail where that one held.
+   Count before deploy, for the record: `SELECT count(*) FROM shifts WHERE status = 'OPEN';`
+3. *Order.* With CA-3's binary, which sets `opened_by_count` on every shift it opens from a count and keeps v2's
+   per-branch reads on `opened_by_count IS NULL`. The old binary still runs on this schema (its shifts are v2-opened),
+   but it must not run once a count-opened shift exists, because its `active_in(branch)` would see two OPEN shifts.
+4. *`down`* drops both indexes and the column (**the marker is lost**: count-opened shifts become indistinguishable
+   from v2's), and restores `shifts_one_open_per_branch`, which fails if a branch holds two OPEN shifts.
+
+**CA-10's part of M2's end state** (in M3, below): `DROP INDEX shifts_one_open_per_branch_v2`, `DROP COLUMN
+opened_by_count`, and `shifts_one_open_per_teller` recreated over every shift (`WHERE status = 'OPEN'`), after the
+precheck `SELECT teller_id, count(*) FROM shifts WHERE status = 'OPEN' GROUP BY 1 HAVING count(*) > 1;` is empty
+(else `RAISE`: close the extra shifts first).
 
 **M3. `api/migrations/20261030110000_retire_custody_requests.sql` (CA-10): drop the request model.**
 1. *Existing rows.* `custody_requests` and `custody_signatures` are dropped **unconverted** (A9): v3 holds test data
@@ -427,6 +453,8 @@ CA-1 to merge; this design's M3 is `20261030110000`.
    `SELECT kind, status, count(*) FROM custody_requests GROUP BY 1,2;`
    `SELECT count(*) FROM custody_signatures;`
 3. *Order.* With CA-10's binary, which no longer reads those tables or the column. The old binary fails against M3.
+   M3 also finishes M2's end state (above): it drops `shifts_one_open_per_branch_v2` and `shifts.opened_by_count`
+   and widens `shifts_one_open_per_teller` to every OPEN shift.
 4. *`down`* recreates the tables and the column empty: **the dropped rows are lost**; only the backup brings them back.
 
 M3 is a destructive operation: the deploy that runs it is ordered by the owner.
@@ -440,14 +468,14 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 |---|---|---|---|
 | CA-1 | schema (§4.1) and `denominations` face values (A7): migration M1, create only | `api/migrations/20261012100000_cash.sql`; `xc-shift/src/infrastructure/shift/shift_repository.rs` (`teller_id` read/write only, with the two-form opener lookup of §8 M1 item 3) | this design, PR 570 RU-1, PR 589 OR-2. **Merges before PR 589 OR-7** (§8 M1) |
 | CA-2 | the crate skeleton and `PersonRules` | `api/crates/xc-cash/{Cargo.toml,src/lib.rs}`, workspace `Cargo.toml` (one line), `xc-cash/src/domain/person_rules.rs`, its tests | PR 589 OR-2 (permissions incl. the four new ones, `access::Actor`, `Authorizer`). Not OR-3: CA-2/CA-3 take `access::Actor` as a value; only CA-8's routes need OR-3's extractor (lane controller's ruling, 2026-10-09) |
-| CA-3 | counts and shifts per teller | `xc-cash/src/domain/count/**`, `xc-cash/src/application/count/**`, `xc-cash/src/domain/repository.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-shift/src/application/shift/service.rs` (`open_on_verified`, `close_on_verified`, `apply_delta_in(teller)`), `xc-cash/src/domain/posting.rs`, `xc-cash/src/infrastructure/interim_postings.rs`, `api/migrations/20261012110000_shift_per_teller.sql` (§8 M2) | CA-1, CA-2 |
+| CA-3 | counts and shifts per teller | `xc-cash/src/domain/count/**`, `xc-cash/src/application/count/**`, `xc-cash/src/domain/repository.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-shift/src/application/shift/service.rs` (`open_on_verified`, `close_on_verified`, `apply_delta_for_teller_in`), `xc-shift/src/infrastructure/shift/shift_repository.rs` (`opened_by_count` on insert; v2's per-branch reads on `opened_by_count IS NULL`), `xc-cash/src/domain/posting.rs`, `xc-cash/src/infrastructure/interim_postings.rs`, `api/migrations/20261031080000_shift_per_teller.sql` (§8 M2) | CA-1, CA-2 |
 | CA-4 | hand-over | `xc-cash/src/domain/handover/**`, `xc-cash/src/application/handover/**` | CA-3 |
 | CA-5 | the transfer core, BRANCH kind, approval subject and policy | `xc-cash/src/domain/transfer/{cash_transfer.rs,ends.rs,transfer_policy.rs,kinds/branch.rs,kinds/mod.rs}`, `xc-cash/src/application/transfer/**`, `xc-cash/src/application/approval/**` | CA-3, PR 570 AP-1 |
 | CA-6 | safe and external kinds | `xc-cash/src/domain/transfer/kinds/{safe.rs,external.rs}` | CA-5 |
 | CA-7 | the branch day rebound (C9), exchange save on the saver's shift | `xc-shift/src/domain/custody/branch_day.rs` (new, from the kept half of `custody_machine.rs`), `api/src/application/workflows/save_transaction.rs`, `custody_save_step.rs` | CA-3, PR 589 OR-6 |
 | CA-8 | commands and views (§4.4, §4.7) and their permissions | `api/src/presentation/http/v3/commands/cash/**` (including `permissions.rs`, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes) |
 | CA-9 | admin cash menu (B05) and transfer policy screen | `web/src/screens/admin/cash/**`, `web/src/screens/admin/cash-policy/**` | CA-8 |
-| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-9, and the `/staff` tickets moved to the new model |
+| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-9, and the `/staff` tickets moved to the new model |
 
 **The `/staff` tickets** (#571, #572, #573–#580, `docs/design/xchange-v3-wave3-staff.md`) were cut against the request
 model. #572 is superseded (the new count commands take strings from the start). #571 keeps holds, attendance,
@@ -460,14 +488,14 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 |---|---|
 | CA-1 | on a fixture DB with employee- and owner-opened shifts: every shift gets the right `teller_id` (employee → its user, owner → the EXECUTIVE + ADMIN user); an unmapped `opened_by` aborts; the binary's `teller_id` write resolves an employee id, `"owner"` and a plain `users.id` to the same user row, and an unknown id refuses the open (`tellerUnknown`); on a fresh database every migration applies in version order; `custody_requests` and `custodian_id` untouched; every new table has `organization_id` and its composite FK refuses another organisation's branch; face values seeded per A7; an amount with more places than `minor_unit` refused |
 | CA-2 | `PersonRules`: counter = verifier refused; hand-over verified only by its receiver; a teller acts only on their own shift. The role × permission matrix is PR 589's test, not this ticket's |
-| CA-3 | OPEN count verified by BRANCH_MANAGER opens the teller's shift; same person refused; two tellers hold two OPEN shifts; one teller cannot open a second shift at another branch (A8); M2's precheck refuses a teller with two OPEN shifts; a recount supersedes: only the newest count of (shift, kind) verifies; an exchange posts to the saver's shift only; CLOSE verify refused after a later exchange (`balancesChanged`); a non-zero difference writes an exception |
+| CA-3 | OPEN count verified by BRANCH_MANAGER opens the teller's shift; same person refused; two tellers hold two OPEN shifts; one teller cannot open a second shift at another branch (A8); a v2-opened shift does not count against A8, and two v2-opened OPEN shifts at one branch are still refused (M2's two indexes); a recount supersedes: only the newest count of (shift, kind) verifies; an exchange posts to the saver's shift only; CLOSE verify refused after a later exchange (`balancesChanged`); a non-zero difference writes an exception |
 | CA-4 | hand-over closes A's shift and opens B's with the same lines; only B verifies; reject leaves A open |
 | CA-5 | the five states in order, every illegal jump refused, no sixth state; a refused approval leaves the transfer DRAFT and it can be submitted again; `TransferEnds` held as `Arc<dyn TransferEnds>`; within limit approved by a BRANCH_MANAGER, above by EXECUTIVE only, never the creator; receipt with fewer notes writes an exception; dispatch beyond the drawer's expected refused |
 | CA-6 | each kept kind moves the right balances at dispatch and receipt (the money flow of `custody_machine.rs:420-634`, restated) |
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
 | CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
-| CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id` outside migrations |
+| CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
 
 ## 10. Must ask the owner (not decided here)
 

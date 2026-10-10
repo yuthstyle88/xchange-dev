@@ -569,6 +569,132 @@ what the teller typed today. Does it read the publication, or keep its typed rat
   RE-4c's up-front test commit re-expects them, one commit per fixture group with the reason, so its implementer never
   edits a provided test.
 
+
+### 4.10 Showing freshness on every rate display (#773)
+
+> designed-by: claude/83f682 · 2026-10-10 · measured on `origin/main` `ecdf2a7e` · assigned by the lane controller claude/608dff
+> (#773 was claude/e5ab6c's)
+
+§4.8 says: *"Every display shows the stale badge, and shows `source_date` and `published_at` separately. No display says
+'real time'."* No display does this yet. This row decides **which** displays carry it, **which** wires must add the
+facts, and the **one** rule and component behind it (♻️).
+
+**v3 today (measured).**
+- **Two stale rules.**
+  - `views/published_rates.rs:101-162` and `views/staff_published_rates.rs` (byte-identical, the same DTO) decide per
+    **publication**: a line is checked only when one of its sides is `AUTO`. A `MANUAL` side carrying a reference is
+    never checked.
+  - `PgPublishedRates::line_in` (`xc-rate/src/infrastructure/publication/published_rates.rs:120-147`) decides per
+    **side**: `MANUAL` with no `fetched_at` is fresh, and any side with `fetched_at` and `max_reference_age_hours` is
+    stale past the age.
+  - The kiosk's `check_stale_in` (`api/src/infrastructure/kiosk/kiosk_ports.rs:397`) reads `line_in`'s answer.
+  - So a `MANUAL` side with a reference past its age is **stale to a quote and fresh to a screen**.
+- **Facts on the wire:**
+  - `PublishedRatesData { publication: {id, version, published_at}, source_date, stale, lines }`
+    (`dto/v3/published_rates.rs:30-35`) has all three.
+  - `kiosk_currencies` (`dto/v3/kiosk_currencies.rs:54`, per currency `updated`), `admin_booking_settings.counterRates`
+    (`dto/v3/admin_bookings.rs:74`, `{currency, buy, sell}`) and the kiosk JSON `rates` (`dto/kiosk.rs:116-146`) carry none.
+- **What renders them:** no screen. Admin Rates (`web/src/screens/admin/rates/Rates.tsx:546-578`) reads
+  `published_rates` but renders neither `stale`, `sourceDate` nor `publishedAt`. No i18n file has a stale text.
+
+**The rule, once (§4.8 restated as one function).** A side is **stale** when its reference snapshot has `fetched_at`
+and `max_reference_age_hours`, and `now − fetched_at > max_reference_age_hours`.
+- A side with no reference (`MANUAL`, no `fetched_at`) is never stale. That is §4.8's two sentences together, and it
+  is `line_in`'s rule today.
+- A publication is stale when any of its sides is.
+- Its `source_date` is the **oldest** `source_date` among its sides that have one. The views take the first line's
+  today (`:115-119`), which can hide an older reference.
+
+```rust
+// api/crates/xc-rate/src/domain/publication/freshness.rs (new) [required: name, file, signatures]
+pub struct Freshness { pub stale: bool, pub source_date: Option<NaiveDate> }
+impl Freshness {
+    /// One side of one line, from its `source_snapshot` and the side ("buy" / "sell").
+    pub fn of_side(snapshot: &serde_json::Value, side: Side, now: DateTime<Utc>) -> Freshness;
+    /// A whole publication: stale if any side is; the oldest source_date.
+    pub fn of_publication<'a>(sides: impl IntoIterator<Item = Freshness>) -> Freshness;
+}
+```
+
+`line_in` and both views call it. No reader computes staleness any other way.
+
+**The component, once.**
+- `web/src/shared/ui/RateFreshness.tsx` (new) [required: name, file, props]:
+  `RateFreshness(props: { stale: boolean; sourceDate: string | null | undefined; publishedAt: string | null | undefined })`.
+- It renders one `<p class="xc-rate-freshness">` holding, in this order:
+  - when `stale`, a `<span class="xc-rate-stale" role="status">` with `rate.stale`;
+  - `rate.sourceDate` with the date, or `rate.noSourceDate` when it is null;
+  - `rate.publishedAt` with the time in Asia/Bangkok (`toLocaleString(locale, {timeZone: 'Asia/Bangkok'})`), left out when there is no publication.
+- It never says "real time" or "live".
+- The texts are shared keys under a new shared prefix `rate` (`web/src/shared/i18n/index.ts:19` `SHARED_PREFIXES`
+  gains `'rate'`), in `th.ts`, `en.ts` and `zh.ts`. The wording is look-only [proposed]:
+
+  | Key | th | en | zh |
+  |---|---|---|---|
+  | `rate.stale` | `เรทอ้างอิงเก่า` | `Reference out of date` | `参考汇率已过期` |
+  | `rate.sourceDate` | `อ้างอิงวันที่ {date}` | `Reference date {date}` | `参考日期 {date}` |
+  | `rate.noSourceDate` | `ไม่มีเรทอ้างอิง` | `No reference` | `无参考汇率` |
+  | `rate.publishedAt` | `ประกาศเมื่อ {at}` | `Published {at}` | `发布于 {at}` |
+
+- One `.xc-rate-stale` rule (the v2 admin warning colours, `#9a3412` on `#ffedd5`, radius 999px) in
+  `web/src/shared/ui/rate-freshness.css`, imported by the component.
+
+**Which displays, and what each needs.**
+
+| Display | Reads | Facts today | Carries `RateFreshness` | Ticket | Starts after |
+|---|---|---|---|---|---|
+| Admin Rates, the published table (A02/A03) | `published_rates` | all three | above the table | **RF-2** (#773) | #792 merged (it holds `Rates.tsx`) |
+| Staff RATES card (S-8) | `staff_published_rates` | all three | yes | S-8 #574 embeds it | the same rule (RF-1) |
+| Desk rate step (DK-C) | `published_rates` / `staff_published_rates` | all three | yes | DK-C #539 embeds it | — |
+| Kiosk currencies (the shop's own buy/sell) | `kiosk_currencies` | none | yes, once per page | **RF-3** | RE-6 #603 merged (it moves the page onto publications and owns the view and the screen) |
+| Admin Bookings create dialog (counter rates) | `admin_booking_settings` | none | yes | **RF-4** | RE-4c #757 merged (it edits `admin_bookings.rs`) |
+| Flutter kiosk (customer screen) | `POST /api/kiosk` `rates` | none | yes, on the select page | **RF-5** | RE-4b #756 merged (it holds `dto/kiosk.rs`) |
+| v2 kept pages (desk.html, staff.html, kiosk.html) | v2 rpc | none | **no**: they are not in this repo and are retired at V4 (`xchange-v3-web.md` §7) | — | — |
+| Rates of past transactions (reports, receipts, details) | the row's own rate | — | **no**: a stored row's rate is not a current rate, so freshness does not apply | — | — |
+
+The wire additions are one shape, `RateFreshnessDto { stale: bool, sourceDate: Option<String>, publishedAt:
+Option<String> }` in `dto/v3/common.rs`. A view that lacks the facts gains a `freshness` field with it. The kiosk JSON
+gains the same object under `freshness`, an additive field; v2's kept kiosk page ignores it. `published_rates` keeps
+its existing flat fields, because they are already on the wire and RF-2 maps them.
+
+**Tickets.**
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| RF-1 | the one rule, on both paths: the display views **and** the quote path (`line_in`, which every quoting reader and `check_stale_in` read) swap to `Freshness::of_side` | `xc-rate/src/domain/publication/{freshness.rs (new), mod.rs}`; `xc-rate/src/infrastructure/publication/published_rates.rs` (`line_in`'s stale block only); `api/src/presentation/http/v3/views/{published_rates,staff_published_rates}.rs`; `dto/v3/common.rs` (`RateFreshnessDto` only) + `common.ts` | this design; **#769 merged** (it holds `infrastructure/publication/published_rates.rs`) |
+| RF-2 (#773) | the component, its texts, and the Admin Rates table | `web/src/shared/ui/{RateFreshness.tsx, rate-freshness.css}` (new); `web/src/shared/i18n/{index.ts, th.ts, en.ts, zh.ts}` (the `rate` prefix and four keys); `web/src/screens/admin/rates/Rates.tsx` (one embed) | #792 merged |
+| RF-3 | kiosk currencies | `views/kiosk_currencies.rs`, `dto/v3/kiosk_currencies.rs`, `KioskCurrenciesScreen.tsx` (one embed) | #603 merged, RF-1, RF-2 |
+| RF-4 | Admin Bookings dialog | `views/admin_bookings.rs` and `dto/v3/admin_bookings.rs` (`freshness` on the settings), `BookingsScreen.tsx` (one embed) | #757 merged, RF-1, RF-2 |
+| RF-6 | the receipt sample says "Live Exchange Rates" (§05: no display says real time; the lane controller's ruling, 2026-10-10) | `web/src/screens/receipt-sample/ReceiptSample.tsx` (`:63`: the text becomes the `rate.publishedAt` wording or is dropped); the receipt-sample sha256 pin, re-expected in the up-front commit | RF-2 (the `rate.*` keys) |
+| RF-5 | Flutter kiosk | `dto/kiosk.rs` (`freshness`), the kiosk `rates` handler, `app/lib/features/kiosk/**` (model, select page) | #756 merged, RF-1 |
+
+RF-3…6 are cut when their blocker merges, so they are not written against files that are still moving.
+
+**Up-front tests** (🧪):
+- **RF-1.**
+  - `Freshness::of_side`: AUTO past age → stale; AUTO within age → fresh; MANUAL with no reference → fresh; MANUAL
+    with a reference past age → **stale** (the case the views get wrong today); no `max_reference_age_hours` → fresh.
+  - `of_publication`: any stale side → stale; the oldest `source_date`.
+  - Over HTTP: `published_rates` and `staff_published_rates` for a publication whose only old reference sits on a
+    MANUAL side answer `stale: true`, and `sourceDate` is the oldest one.
+  - **Quote and screen agree:** for that same MANUAL side with an old reference, `line_in` answers `stale: true`, and
+    so does the screen's `published_rates`. A fresh AUTO line is fresh on both paths. The test fails if either path
+    computes staleness its own way.
+- **RF-2.**
+  - The component renders the badge only when `stale`; it renders both dates, labelled; it leaves out `publishedAt`
+    when there is none; it shows `rate.noSourceDate` for a null date; no text contains "real time", "realtime",
+    "live" or "เรียลไทม์"; it follows `setLang`.
+  - The Admin Rates published table shows it from `published_rates`.
+
+**Data migration.** None: nothing is stored. Freshness is computed at read time from `rate_publication_lines.source_snapshot`.
+
+**Out of this row:**
+- **#769** (a stale line whose policy cannot be found is admitted: one `StalePolicy` reader, not fail-open) decides
+  **quoting**. This row decides **showing**. RF-1's `Freshness` is the input both use, and #769 should read
+  `Freshness::of_side` rather than `PublishedSide.stale` once RF-1 lands.
+- **`ReceiptSample.tsx:63`** printed "Live Exchange Rates", v2's sample text. The lane controller ruled on 2026-10-10 that
+  §05's "never say real time" applies to it, so it is RF-6.
+
 ---
 
 ## 5. Approvals and audit (#549)

@@ -174,6 +174,17 @@ impl Drop for Application {
 
 impl Application {
     pub async fn build(settings: Settings) -> Result<Self, anyhow::Error> {
+        let pii_key_path = std::path::Path::new("/etc/xc-v3/pii.key");
+        if pii_key_path.exists() {
+            let keys = xc_kernel::pii::PiiKeys::load(pii_key_path)?;
+            let _ = xc_customer::install_pii_keys(std::sync::Arc::new(keys));
+        } else if xc_customer::get_pii_keys().is_err() {
+            anyhow::bail!(
+                "PII key file {} does not exist and no keys are installed",
+                pii_key_path.display()
+            );
+        }
+
         let pool = connect(&settings).await?;
 
         let address = format!(

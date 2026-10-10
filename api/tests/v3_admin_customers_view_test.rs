@@ -95,7 +95,7 @@ const CUSTOMER_FIELDS: [&str; 8] = [
 ];
 
 /// `TransactionRow`'s fields (design §12.2), the shape every row of the history has.
-const ROW_FIELDS: [&str; 25] = [
+const ROW_FIELDS: [&str; 26] = [
     "id",
     "date",
     "created",
@@ -103,6 +103,7 @@ const ROW_FIELDS: [&str; 25] = [
     "currency",
     "amount",
     "rate",
+    "unitSize",
     "principal",
     "fee",
     "bankFee",
@@ -659,7 +660,7 @@ async fn admin_customer_history_answers_exactly_whom_the_snapshot_row_allows() {
 #[actix_web::test]
 async fn a_customer_row_has_exactly_its_fields_and_the_figures_of_its_exchanges() {
     let room = Room::open().await;
-    let malee = Who::new("Malee Rakdee").of("Japanese");
+    let malee = Who::new("Malee Rakdee").of("JPN");
     let reserved = room.reserve(MAIN, &malee).await;
     let odd = Ex {
         amount: "10.05",
@@ -677,7 +678,7 @@ async fn a_customer_row_has_exactly_its_fields_and_the_figures_of_its_exchanges(
     assert_eq!(row["name"], json!("Malee Rakdee"), "{row}");
     assert_eq!(
         row["nationality"],
-        json!("JAPANESE"),
+        json!("JPN"),
         "as stored (upper case): {row}"
     );
     assert_eq!(
@@ -766,27 +767,9 @@ async fn customers_are_ordered_by_last_activity_then_name_with_no_exchange_last(
     room.finish().await;
 }
 
-#[actix_web::test]
-async fn only_the_live_customers_of_the_branch_are_listed_staff_reading_their_own_branch() {
-    let room = Room::open().await;
-    let main = room.reserve(MAIN, &Who::new("Main Person")).await;
-    let demo = room.reserve(MAIN, &Who::new("Demo Person").demo()).await;
-    let nine = room.reserve(B9, &Who::new("Nine Person")).await;
-    let ids = room.customers("").await;
-    assert_eq!(
-        ids,
-        ids_of(&[&main]),
-        "LIVE only (design §12.5), MAIN only: {ids:?}"
-    );
-    assert!(!ids.contains(&demo.id), "no DEMO customer");
-
-    // FRONT works in MAIN: naming B9 changes nothing
-    let ids = room.ids("FRONT", CUSTOMERS, "branch=B9&limit=50").await;
-    assert_eq!(ids, ids_of(&[&main]), "FRONT is answered from MAIN");
-    let ids = room.ids("OWNER", CUSTOMERS, "branch=B9&limit=50").await;
-    assert_eq!(ids, ids_of(&[&nine]), "the owner naming B9");
-    room.finish().await;
-}
+// CI-4 (#651): `only_the_live_customers_of_the_branch_are_listed_staff_reading_their_own_branch` retired
+// (#554 §6): `admin_customers` lists every LIVE customer of the organisation (owner, 2026-10-09: "Yes, all
+// company customers"; #554 §4.4); its figures stay the branch's.
 
 /// `customers.js:11` shows `Member` for a customer the snapshot marks (`member`, T15-g).
 #[actix_web::test]
@@ -868,7 +851,7 @@ async fn customers_q_searches_id_name_and_nationality_only() {
             },
         )
         .await;
-    let ken_who = Who::new("Ken Tanaka").of("Japanese");
+    let ken_who = Who::new("Ken Tanaka").of("JPN");
     let ken = room.reserve(MAIN, &ken_who).await;
 
     let cases: Vec<(String, Vec<String>, &str)> = vec![
@@ -882,7 +865,7 @@ async fn customers_q_searches_id_name_and_nationality_only() {
             vec![somsri.customer_id.clone()],
             "the name",
         ),
-        ("japan".to_owned(), vec![ken.id.clone()], "the nationality"),
+        ("jpn".to_owned(), vec![ken.id.clone()], "the nationality"),
         (
             "CX-".to_owned(),
             vec![somsri.customer_id.clone(), ken.id.clone()],

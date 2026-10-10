@@ -425,8 +425,9 @@ async fn insert_in_stores_the_line_and_confirm_in_keeps_it() {
     let repo = PgBookingRepository::new(db.pool.clone());
     let line = seed_line(&db, "JPY", "100", "23.12345678", "23.5").await;
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ('C-1', $1, 'Somchai Jaidee', 'P-1', 'THA', 'LIVE', $2)",
+        // CI-4 (#651): a customer belongs to the organisation
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT 'C-1', organization_id, 'C-1', 'Somchai Jaidee', 'LIVE', $2 FROM branches WHERE id = $1",
     )
     .bind(MAIN)
     .bind(at(0))

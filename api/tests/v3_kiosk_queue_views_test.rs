@@ -1445,7 +1445,7 @@ async fn walk_to(last: Writer) {
                 .compat_rpc(
                     "reserveCustomer",
                     json!({ "name": "Customer 1", "passportNo": "P1000001",
-                            "nationality": "DE", "birthDate": "1990-01-02",
+                            "nationality": "DEU", "birthDate": "1990-01-02",
                             "passportExpiry": "2031-06-11", "mode": "LIVE" }),
                 )
                 .await;
@@ -1493,7 +1493,7 @@ async fn walk_to(last: Writer) {
                     "/api/staff/rpc",
                     "saveTransaction",
                     json!({
-                        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+                        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
                         "birthDate": "1990-01-02", "passportExpiry": "2031-06-11",
                         "mode": "LIVE", "submissionId": "00000000-0000-4000-8000-00000000b001",
                         "customerId": customer, "type": "BUY", "currency": "USD",

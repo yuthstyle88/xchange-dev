@@ -2,42 +2,18 @@
   display: block;
 }
 
-.xc-admin .xc-content .kiosk-currency-link-bar {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: center;
-  background: var(--soft);
-  border: 1px solid #edd4df;
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin-bottom: 22px;
-  font-size: 13px;
-}
-
-.xc-admin .xc-content .kiosk-currency-link-bar p {
-  margin: 0;
-}
-
-.xc-admin .xc-content .kiosk-currency-link-bar a {
-  color: var(--brand);
-  font-weight: bold;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
+/* admin-workspace.css:24 .xc-workspace .card */
 .xc-admin .xc-content .rates-section {
   background: white;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  margin-bottom: 24px;
+  border-radius: 8px;
+  margin-bottom: 22px;
   overflow: hidden;
 }
 
+/* admin-workspace.css:24 .xc-workspace .card-heading */
 .xc-admin .xc-content .section-header {
-  padding: 22px 24px 18px;
+  padding: 22px;
 }
 
 .xc-admin .xc-content .title-row {
@@ -47,9 +23,20 @@
   gap: 15px;
 }
 
-.xc-admin .xc-content .title-row h2 {
-  font-size: 20px;
+/* admin-html.ts:1 h2 */
+.xc-admin .xc-content .admin-rates-screen .title-row h2 {
+  font-size: 18px;
+  line-height: 1.6;
   margin: 0;
+}
+
+/* admin-html.ts:1 .cash-actions */
+.xc-admin .xc-content .admin-rates-screen .title-row .dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0;
+  justify-content: flex-start;
 }
 
 .xc-admin .xc-content .live-note {
@@ -68,6 +55,7 @@
   width: 100%;
 }
 
+/* admin-workspace.css:24 .currency-code */
 .xc-admin .xc-content .code {
   font-size: 17px;
   font-weight: bold;
@@ -83,11 +71,12 @@
   margin-top: 3px;
 }
 
+/* admin-workspace.css:24 .xc-workspace .card */
 .xc-admin .xc-content .bot-reference-section {
   background: white;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  margin-bottom: 24px;
+  border-radius: 8px;
+  margin-bottom: 22px;
   overflow: hidden;
 }
 
@@ -151,7 +140,6 @@
   margin: 6px 0 12px;
 }
 
-
 .xc-admin .xc-content .form-error {
   color: #a5003c;
   font-size: 13px;
@@ -170,12 +158,14 @@
   margin-bottom: 8px;
 }
 
+/* admin-html.ts:1 .pill + .pill.neutral */
 .xc-admin .xc-content .rates-pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 5px;
   font-size: 12px;
-  color: var(--muted);
-  background: var(--soft);
-  border-radius: 12px;
-  padding: 4px 10px;
+  background: #eff0f4;
+  color: #4b4f5b;
 }
 
 .xc-admin .xc-content .draft-status-label {
@@ -184,20 +174,30 @@
   color: var(--brand);
 }
 
-.xc-admin .xc-content .btn-new-draft,
-.xc-admin .xc-content .btn-simulate,
-.xc-admin .xc-content .btn-submit,
-.xc-admin .xc-content .btn-publish,
-.xc-admin .xc-content .btn-adjust-all {
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 14px;
-  border-radius: 6px;
-  cursor: pointer;
+/* admin-html.ts:1 .secondary */
+.xc-admin .xc-content .admin-rates-screen .btn-new-draft,
+.xc-admin .xc-content .admin-rates-screen .btn-simulate,
+.xc-admin .xc-content .admin-rates-screen .btn-submit,
+.xc-admin .xc-content .admin-rates-screen .btn-adjust-all {
+  background: white;
+  border-color: #d6d8df;
+  color: #363840;
 }
 
+/* admin-html.ts:1 .primary */
+.xc-admin .xc-content .admin-rates-screen .btn-publish {
+  background: var(--brand);
+  color: white;
+  border-color: var(--brand);
+}
+
+.xc-admin .xc-content .admin-rates-screen .btn-publish:hover {
+  background: #870032;
+}
+
+/* admin-html.ts:1 .positive */
 .xc-admin .xc-content .in-bound-status {
-  color: #1b873f;
+  color: #187151;
   font-size: 13px;
   font-weight: 600;
   margin-top: 8px;
@@ -216,12 +216,12 @@
   font-size: 13px;
 }
 
+/* admin-html.ts:1 .pill.buy */
 .xc-admin .xc-content .out-of-bound {
   display: inline-block;
-  font-size: 11px;
-  color: #a5003c;
-  background: #fde8ef;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 600;
+  font-size: 12px;
+  color: var(--brand);
+  background: #fbecf2;
+  padding: 3px 9px;
+  border-radius: 5px;
 }

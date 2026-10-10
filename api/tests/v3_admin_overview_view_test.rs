@@ -83,7 +83,7 @@ const JPEG: &[u8] = &[
 ];
 
 /// `TransactionRow`'s fields (V2-parts #476, design §12.2).
-const ROW_FIELDS: [&str; 25] = [
+const ROW_FIELDS: [&str; 26] = [
     "id",
     "date",
     "created",
@@ -91,6 +91,7 @@ const ROW_FIELDS: [&str; 25] = [
     "currency",
     "amount",
     "rate",
+    "unitSize",
     "principal",
     "fee",
     "bankFee",
