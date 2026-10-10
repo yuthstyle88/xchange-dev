@@ -101,34 +101,36 @@ function CurrencyCard(props: CardProps): JSX.Element {
         >
           {(ref) => (
             <>
-              <h4>{props.t('kbCaption')}</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>{props.t('colLabel')}</th>
-                    <th>{props.t('kbColBuy')}</th>
-                    <th>{props.t('kbColSell')}</th>
-                    <th>{props.t('kbColTime')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={props.currency.kbank}>
-                    {(r) => (
-                      <tr>
-                        <td>{r.label}</td>
-                        <td>{r.bankBuy ?? '—'}</td>
-                        <td>{r.bankSell ?? '—'}</td>
-                        <td>
-                          {props.t('kbStamp', {
-                            time: formatTime(ref().publishedAt),
-                            round: ref().round,
-                          })}
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
+              <div class="kbank-table">
+                <h4>{props.t('kbCaption')}</h4>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{props.t('colLabel')}</th>
+                      <th>{props.t('kbColBuy')}</th>
+                      <th>{props.t('kbColSell')}</th>
+                      <th>{props.t('kbColTime')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={props.currency.kbank}>
+                      {(r) => (
+                        <tr>
+                          <td>{r.label}</td>
+                          <td>{r.bankBuy ?? '—'}</td>
+                          <td>{r.bankSell ?? '—'}</td>
+                          <td>
+                            {props.t('kbStamp', {
+                              time: formatTime(ref().publishedAt),
+                              round: ref().round,
+                            })}
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
               <p>{props.t('kbNote')}</p>
             </>
           )}
@@ -248,7 +250,7 @@ export function KioskCurrenciesScreen(props: {
       <section aria-label={t('bankReference')} id="bank-reference">
         <Show
           when={kbankRef()}
-          fallback={<p>{t('kbankFailed')}</p>}
+          fallback={t('kbankFailed')}
         >
           {(ref) => (
             <>
@@ -266,38 +268,40 @@ export function KioskCurrenciesScreen(props: {
                 </a>
               </p>
               <p>{t('compareNote')}</p>
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t('colLabel')}</th>
-                    <th>{t('cmpColBankBuy')}</th>
-                    <th>{t('cmpColShopBuy')}</th>
-                    <th>{t('cmpColBuyDiff')}</th>
-                    <th>{t('cmpColBankSell')}</th>
-                    <th>{t('cmpColShopSell')}</th>
-                    <th>{t('cmpColSellDiff')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={filteredCurrencies()}>
-                    {(c) => (
-                      <For each={c.kbank}>
-                        {(r) => (
-                          <tr>
-                            <td>{r.label}</td>
-                            <td>{r.bankBuy ?? '—'}</td>
-                            <td>{r.shopBuy ?? '—'}</td>
-                            <td>{r.buyDifference ?? '—'}</td>
-                            <td>{r.bankSell ?? '—'}</td>
-                            <td>{r.shopSell ?? '—'}</td>
-                            <td>{r.sellDifference ?? '—'}</td>
-                          </tr>
-                        )}
-                      </For>
-                    )}
-                  </For>
-                </tbody>
-              </table>
+              <div class="bank-compare">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t('colLabel')}</th>
+                      <th>{t('cmpColBankBuy')}</th>
+                      <th>{t('cmpColShopBuy')}</th>
+                      <th>{t('cmpColBuyDiff')}</th>
+                      <th>{t('cmpColBankSell')}</th>
+                      <th>{t('cmpColShopSell')}</th>
+                      <th>{t('cmpColSellDiff')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={filteredCurrencies()}>
+                      {(c) => (
+                        <For each={c.kbank}>
+                          {(r) => (
+                            <tr>
+                              <td>{r.label}</td>
+                              <td>{r.bankBuy ?? '—'}</td>
+                              <td>{r.shopBuy ?? '—'}</td>
+                              <td>{r.buyDifference ?? '—'}</td>
+                              <td>{r.bankSell ?? '—'}</td>
+                              <td>{r.shopSell ?? '—'}</td>
+                              <td>{r.sellDifference ?? '—'}</td>
+                            </tr>
+                          )}
+                        </For>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </Show>
