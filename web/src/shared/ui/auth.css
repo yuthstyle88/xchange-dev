@@ -12,39 +12,36 @@ body:has(.xc-auth) {
   font: 16px/1.6 Tahoma, sans-serif;
   color: #183044;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
-  padding: 0 16px 24px;
+  padding: 0;
 }
 
 .xc-auth .xc-auth-card {
-  box-sizing: border-box;
-  width: 100%;
+  box-sizing: content-box;
+  width: auto;
   max-width: 420px;
-  margin: 8vh auto 24px;
+  margin: 8vh auto;
   background: #ffffff;
   padding: 32px;
   border-radius: 16px;
-  box-shadow: 0 4px 24px rgba(24, 48, 68, 0.08);
 }
 
 .xc-auth .xc-auth-header {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .xc-auth .xc-auth-header-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin: 16px 0;
 }
 
 .xc-auth .xc-auth-brand {
-  font-size: 12px;
-  letter-spacing: 1px;
-  color: #6b8090;
-  text-transform: uppercase;
+  font-size: 16px;
+  letter-spacing: normal;
+  color: inherit;
+  text-transform: none;
 }
 
 .xc-auth .xc-auth-header-top button {
@@ -66,25 +63,29 @@ body:has(.xc-auth) {
 }
 
 .xc-auth .xc-auth-card h1 {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 2em;
+  font-weight: bold;
   color: #183044;
-  margin: 0;
-  line-height: 1.25;
+  margin: .67em 0;
+  line-height: inherit;
 }
 
 .xc-auth .xc-auth-help {
-  font-size: 14px;
-  color: #6b8090;
-  margin: 0 0 16px;
+  font-size: inherit;
+  color: inherit;
+  margin: 1em 0;
+}
+
+.xc-auth .xc-field {
+  margin: 16px 0 0;
 }
 
 .xc-auth label {
   display: block;
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #183044;
+  margin: 0;
+  font-size: inherit;
+  font-weight: normal;
+  color: inherit;
 }
 
 .xc-auth input {
@@ -92,18 +93,6 @@ body:has(.xc-auth) {
   width: 100%;
   padding: 12px;
   font: inherit;
-  font-size: 15px;
-  border: 1px solid #c8d3dc;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #183044;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.xc-auth input:focus {
-  outline: none;
-  border-color: #183044;
-  box-shadow: 0 0 0 3px rgba(24, 48, 68, 0.12);
 }
 
 .xc-auth input[aria-invalid="true"] {
@@ -122,24 +111,11 @@ body:has(.xc-auth) {
   width: 100%;
   padding: 12px;
   font: inherit;
-  font-size: 16px;
-  font-weight: 600;
   background: #183044;
   color: #ffffff;
   border: 0;
   border-radius: 8px;
-  cursor: pointer;
   margin-top: 16px;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
-}
-
-.xc-auth button[type="submit"]:hover:not(:disabled) {
-  background: #234460;
-}
-
-.xc-auth button[type="submit"]:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 
 /* v2 login.html:1 input,button{…} button{…} — every button in the form; the eye (.xc-reveal) keeps its own rule */
@@ -157,9 +133,7 @@ body:has(.xc-auth) {
 
 .xc-auth #message {
   color: #a5003c;
-  font-size: 13px;
-  min-height: 18px;
-  margin: 12px 0 0;
+  margin: 1em 0;
 }
 
 .xc-auth footer {

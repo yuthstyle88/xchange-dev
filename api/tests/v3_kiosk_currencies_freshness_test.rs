@@ -141,9 +141,35 @@ struct Line {
     source_date: Option<&'static str>,
 }
 
+struct LineWithGroup {
+    currency: &'static str,
+    denomination_group: &'static str,
+    buy_mode: &'static str,
+    sell_mode: &'static str,
+    fetched_hours_ago: Option<i64>,
+    max_hours: Option<i64>,
+    source_date: Option<&'static str>,
+}
+
 /// One publication on MAIN at `PUBLISHED_AT` holding `lines`, made current. Bypasses the draft flow on purpose: the
 /// snapshot is the input under test.
 async fn publish(pool: &PgPool, lines: &[Line]) {
+    let with_groups: Vec<_> = lines
+        .iter()
+        .map(|l| LineWithGroup {
+            currency: l.currency,
+            denomination_group: "ALL",
+            buy_mode: l.buy_mode,
+            sell_mode: l.sell_mode,
+            fetched_hours_ago: l.fetched_hours_ago,
+            max_hours: l.max_hours,
+            source_date: l.source_date,
+        })
+        .collect();
+    publish_with_groups(pool, &with_groups).await;
+}
+
+async fn publish_with_groups(pool: &PgPool, lines: &[LineWithGroup]) {
     let at = time(PUBLISHED_AT);
     let request: String = sqlx::query_scalar(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
@@ -183,10 +209,11 @@ async fn publish(pool: &PgPool, lines: &[Line]) {
         sqlx::query(
             "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, unit_size, \
              buy_rate, sell_rate, source_snapshot) \
-             VALUES (gen_random_uuid(), $1::uuid, $2, 'ALL', 1, 32.10000000, 32.50000000, $3)",
+             VALUES (gen_random_uuid(), $1::uuid, $2, $3, 1, 32.10000000, 32.50000000, $4)",
         )
         .bind(&publication)
         .bind(l.currency)
+        .bind(l.denomination_group)
         .bind(&snapshot)
         .execute(pool)
         .await
@@ -397,6 +424,74 @@ async fn before_the_first_publication_the_kiosk_freshness_is_empty() {
     db.finish().await;
 }
 
+/// §4.10: a line with buy_mode AUTO (fresh) and sell_mode MANUAL with an old reference is stale on the kiosk page.
+#[actix_web::test]
+async fn a_line_with_auto_buy_and_manual_sell_with_an_old_reference_is_stale_on_the_kiosk_page() {
+    let db = TestDb::start().await;
+    publish(
+        &db.pool,
+        &[Line {
+            currency: "USD",
+            buy_mode: "AUTO",
+            sell_mode: "MANUAL",
+            fetched_hours_ago: Some(30),
+            max_hours: Some(24),
+            source_date: Some("2026-10-06"),
+        }],
+    )
+    .await;
+
+    let f = freshness(&db).await;
+    assert_eq!(f["stale"], json!(true), "{f}");
+    assert_eq!(f["sourceDate"], json!("2026-10-06"), "{f}");
+    assert_published_at(&f);
+    assert_agrees_with_published_rates(&db, &f).await;
+    db.finish().await;
+}
+
+/// §4.10: a publication whose only old reference is on a non-ALL line (the ALL line of the same currency is fresh)
+/// is stale on the kiosk page. Even though kiosk_currencies only renders cards for 'ALL' lines, the publication's
+/// freshness folds every line in published_rate_lines.
+#[actix_web::test]
+async fn a_publication_whose_only_old_reference_is_on_a_non_all_line_is_stale_on_the_kiosk_page() {
+    let db = TestDb::start().await;
+    publish_with_groups(
+        &db.pool,
+        &[
+            LineWithGroup {
+                currency: "USD",
+                denomination_group: "ALL",
+                buy_mode: "AUTO",
+                sell_mode: "AUTO",
+                fetched_hours_ago: Some(1),
+                max_hours: Some(24),
+                source_date: Some("2026-10-09"),
+            },
+            LineWithGroup {
+                currency: "USD",
+                denomination_group: "50-100",
+                buy_mode: "MANUAL",
+                sell_mode: "MANUAL",
+                fetched_hours_ago: Some(30),
+                max_hours: Some(24),
+                source_date: Some("2026-10-06"),
+            },
+        ],
+    )
+    .await;
+
+    let f = freshness(&db).await;
+    assert_eq!(
+        f["stale"],
+        json!(true),
+        "the publication folds non-ALL lines: {f}"
+    );
+    assert_eq!(f["sourceDate"], json!("2026-10-06"), "{f}");
+    assert_published_at(&f);
+    assert_agrees_with_published_rates(&db, &f).await;
+    db.finish().await;
+}
+
 // ------------------------------------------------------------ one rule, in the source
 
 /// The view computes freshness through `Freshness::` and reads no age key of its own (§4.10: "No reader computes
@@ -412,5 +507,20 @@ fn the_kiosk_currencies_view_calls_the_one_rule() {
     assert!(
         !src.contains("max_reference_age_hours") && !src.contains("fetched_at"),
         "{path} reads no snapshot age key itself"
+    );
+}
+
+/// §4.10: The kiosk currencies view folds both Buy and Sell sides of every published line into publication freshness.
+#[test]
+fn the_kiosk_currencies_view_folds_both_buy_and_sell_sides() {
+    let path = format!(
+        "{}/src/presentation/http/v3/views/kiosk_currencies.rs",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert!(
+        src.contains("Freshness::of_side(&source_snapshot, Side::Buy, now)")
+            && src.contains("Freshness::of_side(&source_snapshot, Side::Sell, now)"),
+        "{path} folds both Buy and Sell sides of each published line"
     );
 }

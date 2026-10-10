@@ -663,11 +663,11 @@ export function Customers(props: AdminMenuProps): JSX.Element {
                 {rows().length} {t('personUnit')} · {t('allPeriods')}
               </div>
             </Show>
-          </div>
 
-          <Show when={!hasLoadedOnce() && loading()}>
-            <div class="waiting-text">{t('waiting')}</div>
-          </Show>
+            <Show when={!hasLoadedOnce() && loading()}>
+              <div class="waiting-text">{t('waiting')}</div>
+            </Show>
+          </div>
 
           <Show when={refusalError()}>
             {(err) => (

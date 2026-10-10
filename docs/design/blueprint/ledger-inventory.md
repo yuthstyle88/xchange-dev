@@ -224,6 +224,49 @@ pub struct ReversedCost { pub reverses: TransactionLineId, pub cost_thb: Money, 
 `v2_shift_cases.json` and `v2_stock_cases.json` (the cash design §5.1 keeps them) must give the same answers through
 `expected_in`: the cutover ticket runs them against `LedgerCashPostings`.
 
+### 4.2.1 Reading balances back: `ShiftBalances` (LG-6, added 2026-10-10)
+
+**Why.** §4.2 says how a shift's figures derive from the ledger, but nothing in §4.1 reads them back. `CashPostings::expected_in` returns one place's balance only.
+- Measured on `main` `875f7e8d`, four readers need the same four figures per (shift, currency):
+  - `views/admin_cash.rs:174`, `:251`, `:317`, `:335`;
+  - `views/admin_shifts.rs:142`;
+  - `views/devices.rs:109`, `:133`;
+  - `xc-shift/src/infrastructure/shift/shift_repository.rs:118-180` (`load_shift_balances`).
+- Without a shared reader, each LG-6 child would copy §4.2's derivation into its own SQL. By ♻️ that is a copy, and the four copies would drift.
+
+```rust
+// api/crates/xc-shift/src/domain/shift/repositories/shift_balances.rs   (new, LG-6.0)
+pub struct ShiftBalance {
+    pub currency: CurrencyCode,
+    pub opening: Money,               // the OPENING posting, or the hand-over's, into DRAWER(shift)
+    pub expected: Money,              // Σ quantity_signed on DRAWER(shift) = expected_in(Drawer(shift))
+    pub moved_in: Money,              // Σ positive entries on DRAWER(shift) from postings whose source_type ∉ {EXCHANGE, OPENING}
+    pub moved_out: Money,             // Σ |negative| entries on the same set
+    pub counted: Option<Money>,       // the shift's verified CLOSE (or HANDOVER_OUT) count: cash_count_totals.counted
+    pub difference: Option<MoneyDelta>, // the same row's difference
+}
+pub trait ShiftBalances: Send + Sync {
+    /// One row per currency with a DRAWER(shift) account or a count line; ordered THB first, then A–Z.
+    fn shift_balances<'a>(&'a self, shift: &'a ShiftId) -> BoxFuture<'a, AppResult<Vec<ShiftBalance>>>;
+}
+// api/crates/xc-cash/src/infrastructure/ledger/shift_balances.rs   (new, LG-6.0): PgLedgerShiftBalances implements it
+```
+
+- **Why the trait is in `xc-shift`.** `xc-cash` depends on `xc-shift` (`xc-cash/Cargo.toml` on PR 871), so `xc-shift`'s `PgShiftRepository` cannot name an `xc-cash` type. The port sits beside `ShiftRepository` and `xc-cash` implements it. `PgShiftRepository` takes an `Arc<dyn ShiftBalances>`, and `api`'s views take the same `Arc` from `AppState` (one bootstrap line each, not reserved).
+- **The one source.** `expected` is the same sum as `LedgerCashPostings::expected_in(Drawer(shift))`; the two must not drift. LG-6.0's up-front tests compare them on the `v2_shift_cases.json` cases.
+- **A shift with no posting yet** answers its count rows only. A shift with neither answers `[]`, which today's readers already treat as "no balances".
+- **No new table.** It reads `cash_accounts`, `ledger_postings`, `ledger_entries` (§3.1), `cash_counts` and `cash_count_totals` (`20261012100000_cash.sql:120-161`).
+- **Fallback if LG-6.0 lands late (📐).** A consumer (r1–r4) may start before #1039 merges by declaring, in its own file, the exact `ShiftBalance` struct and `ShiftBalances` trait of the block above, with the comment `// stub: moves to xc-shift/src/domain/shift/repositories/shift_balances.rs (LG-6.0 #1039)`. Its tests use a test double of the trait. It never declares `PgLedgerShiftBalances` or any SQL on the ledger tables, and never touches LG-6.0's files. When #1039 merges, the consumer's PR (or its rebase) deletes the stub and imports the real path. The tickets keep `Blocked by #1039` until the lane controller chooses to lift it on this fallback.
+- **The safe** needs no new reader: `CashPostings::expected_in(Safe(branch))` already answers it.
+
+**Not covered by `ShiftBalances`: the `stock_movements` readers.** `views/admin_cash_movements.rs` (`:64-92`) lists `stock_movements` rows with a free-text `reason`. So do `ShiftRepository::movements`/`shift_movements`/`find_movement_by_request_id` (`shift_repository.rs:397`, `:444`, `:631`), called by `compat/snapshot.rs:101`, `v3/actions/shift_valuation.rs:85`, `compat/abandon_request.rs:198` and `service.rs:253`, `:434`. `ledger_postings` has no reason (§3.1), and after CA-10 the manual moves it lists are `cash_transfers` (#582).
+- **Ruled A by the lane controller (2026-10-10, #553 issuecomment after 6095872028):** after CA-10 #626, these readers list `cash_transfers` with their dispatch/receive state. `adminMoveStock` (`ShiftService::insert_movement`) retires with CA-10. The reason stays on the row where it is written, and `ledger_postings` gets no copied column.
+- LG-6.r6 does this. LG-6.m waits for it.
+
+**The shift writers.** `xc-shift`'s `ShiftService` still writes `shift_balances` through `ShiftRepository` (`insert_shift` `service.rs:229`, `update_expected` `:307`, `:411`, `close_shift` `:360`), separately from the posting port. Its `stock_movements` write (`insert_movement` `:305`) retires with CA-10 (the ruling above). The cash design keeps `ShiftService` (`cash-shift-transfer.md:364`).
+- After LG-4 those writes feed tables nothing reads. LG-6.r4 removes the `shift_balances` writes and points `ShiftRepository`'s balance read (`load_shift_balances`) at `ShiftBalances`.
+- Each removed write must already be posted through `CashPostings` (LG-2/LG-4). A write with no ledger counterpart stops the child; it does not get a new posting there.
+
 ### 4.3 An exchange (§09, called by #551's `CompleteExchange`)
 
 One posting, `source_type EXCHANGE`, `source_key complete`, per currency balanced:
@@ -326,7 +369,7 @@ Owned by **LG-2**, with the rest of the port's final shape (§10).
 
 ## 6. Reconciliation (the checks the design promises)
 
-`api/crates/xc-cash/src/application/reconcile.rs`, run by a test and by an admin view:
+`api/crates/xc-cash/src/application/reconcile/` (§6.1), run by a test and by F01's integrity row:
 1. every posting balances per currency (`GROUP BY posting_id, currency HAVING sum(quantity_signed) <> 0` is empty);
 2. every `inventory_positions` row equals the sum of its movements (quantity and cost);
 3. per branch and foreign currency: Σ of the balances of that branch's own `DRAWER`, `SAFE` and `IN_TRANSIT` accounts
@@ -338,6 +381,54 @@ Owned by **LG-2**, with the rest of the port's final shape (§10).
 
 A failure is a defect, never "corrected" by an update: it is reported, and an `ADJUSTMENT` posting is the only fix,
 by FINANCE.
+
+### 6.1 Shape: one core, one file per check (LG-7, added 2026-10-10)
+
+The five checks are five variants of one job, so they share one core and each lives in its own file (♻️). The
+first two lines of this section's old text named a single `reconcile.rs`; the module path `application::reconcile`
+is unchanged.
+
+```rust
+// api/crates/xc-cash/src/application/reconcile/mod.rs   (LG-7.0)
+pub struct ReconcileScope { pub organization_id: String, pub branch: Option<BranchId>, pub period: Option<(NaiveDate, NaiveDate)> }
+pub struct Offender { pub key: String, pub detail: String }     // key: posting id, or "<branch>:<currency>", …
+pub struct CheckResult { pub id: u8, pub ok: bool, pub offenders: Vec<Offender> }
+pub struct Report { pub checks: Vec<CheckResult> }            // in id order
+pub trait ReconcileCheck: Send + Sync {
+    fn id(&self) -> u8;                                          // 1..=5, the numbers of §6
+    fn run_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, scope: &'a ReconcileScope)
+        -> BoxFuture<'a, AppResult<Vec<Offender>>>;
+}
+pub struct Reconcile { /* Vec<Arc<dyn ReconcileCheck>> */ }
+impl Reconcile {
+    pub fn new(checks: Vec<Arc<dyn ReconcileCheck>>) -> Self;
+    pub fn standard() -> Self;                                   // the five, one line each
+    pub async fn run(&self, pool: &PgPool, scope: &ReconcileScope) -> AppResult<Report>;
+}
+// api/crates/xc-cash/src/application/reconcile/{balanced, positions, places, margin, valuation}.rs   (LG-7.1–7.5)
+```
+
+- **One snapshot.** `run` opens one `REPEATABLE READ READ ONLY` transaction and runs every check in it, so check 3
+  cannot see a posting without its position movement. It writes nothing.
+- **Each check is one SQL statement**, a `pub const QUERY: &str` in its file, that returns the offender rows (empty =
+  passed). LG-6.m's migration precheck runs the same five statements; a migration cannot import Rust, so it carries a
+  copy, frozen at the version it ships.
+- **What ties the copy to the constants (LG-6.m #1047).** The precheck runs the five copies as five separate
+  statements, and on the first one that returns a row it `RAISE`s `'reconcile check <id> failed'`. LG-6.m's test seeds
+  six databases: one clean, and one per check with a single hand-broken row that only that check catches (the same
+  cases as LG-7.1–7.5's tests). On each, it runs both the migration precheck and `Reconcile::standard().run`, and it
+  asserts the same outcome per check: the clean seed passes both, and seed *k* fails the precheck naming check *k*
+  while `run` reports check *k*, and only check *k*, as failed. A copy that drifts from its `QUERY` disagrees on at
+  least one seed, so the test goes red.
+- **Registration.** Each check's ticket adds its `pub mod` line and its one line in `standard()`. Those one-line
+  registrations are not reserved (lane controller's rule on #564), so the five check tickets touch disjoint files.
+- **Ordering and errors.** `Report.checks` is in id order whatever order `standard()` lists them. A check whose query
+  fails fails `run` with `AppError::Database`; a failed check is `ok: false` with its offenders, never an error.
+- **Who shows it.** No separate admin view: F01's integrity row (`executive-finance.md` §5, FN-2) reads
+  `Reconcile::run` for the branch behind `FinanceReconcile`. The old `views/cash_reconcile.rs` line of §10 is dropped.
+- **The org-wide run** (`branch: None`) has no screen of its own: it is the reconcile job's own output and LG-6.m's
+  precheck (lane controller's ruling on PR 1053, 2026-10-10: only this design and #927 had asked for a separate view;
+  no Blueprint item or owner decision did). An org-wide screen, if the owner asks for one, is a new ticket.
 
 ---
 
@@ -379,10 +470,17 @@ classDiagram
   class NegativeStockSubject { <<xc-cash application/ledger_approval/negative_stock.rs>> }
   class CountDifferenceSubject { <<xc-cash application/ledger_approval/count_difference.rs>> }
   class CountDifferenceGate { <<xc-cash application/ledger_approval/count_difference.rs>> +check_in() }
-  class Reconcile { <<xc-cash application/reconcile.rs>> +run() Report }
+  class Reconcile { <<xc-cash application/reconcile/mod.rs (LG-7.0)>> +run(pool, scope) Report +standard() }
+  class ReconcileCheck { <<trait xc-cash application/reconcile/mod.rs>> +id() +run_in(tx, scope) Offender[] }
+  class ReconcileChecks { <<reconcile/balanced, positions, places, margin, valuation (LG-7.1-7.5)>> +QUERY }
+  class Report { <<xc-cash application/reconcile/mod.rs>> +checks CheckResult[] }
+  class CheckResult { <<xc-cash application/reconcile/mod.rs>> +id u8 +ok bool +offenders Offender[] }
   class CompleteExchange { <<xc-exchange application/transaction/complete.rs (#551 TX-5)>> }
   class CashCountService { <<xc-cash application/count (#582 CA-3)>> }
   class ApprovalService { <<xc-approval AP-1>> }
+  class ShiftBalances { <<trait xc-shift domain/shift/repositories/shift_balances.rs (LG-6.0)>> +shift_balances(shift) ShiftBalance[] }
+  class PgLedgerShiftBalances { <<xc-cash infrastructure/ledger/shift_balances.rs (LG-6.0)>> }
+  class ShiftBalancesReaders { <<views admin_cash, admin_shifts, devices; xc-shift ShiftRepository (LG-6.r1-r4)>> }
 
   LedgerCashPostings ..|> CashPostings
   InterimCashPostings ..|> CashPostings
@@ -398,8 +496,12 @@ classDiagram
   CountDifferenceGate --> ApprovalService
   NegativeStockSubject ..|> ApprovalSubject
   CountDifferenceSubject ..|> ApprovalSubject
-  Reconcile --> LedgerRepository
-  Reconcile --> InventoryRepository
+  Reconcile --> ReconcileCheck
+  Reconcile --> Report : run
+  Report --> CheckResult
+  ReconcileChecks ..|> ReconcileCheck
+  PgLedgerShiftBalances ..|> ShiftBalances
+  ShiftBalancesReaders --> ShiftBalances : shift_balances
 ```
 
 ### 8.1 Who provides, who uses
@@ -407,6 +509,7 @@ classDiagram
 | Provided by | Used here | If it has not landed |
 |---|---|---|
 | #582 CA-2/CA-3: the `xc-cash` crate, `CashPostings`, `InterimCashPostings`, counts | §4.1, §4.4, §5.2 | LG-1 starts after CA-3 |
+| LG-1: `cash_accounts`, `ledger_postings`, `ledger_entries`; #582 CA-1: `cash_counts`, `cash_count_totals` | `PgLedgerShiftBalances` (§4.2.1) | LG-6.0 starts after LG-4 |
 | #582 CA-5 (#621): `TransferFlow::receive` | calls `post_in` for a receipt, which touches two branches | CA-5 stays as written (lane controller's ruling, 2026-10-09): until LG-4, `InterimCashPostings` writes only the receiver's tables, so its single-branch `BranchTx` is correct. **LG-4 switches `receive` to `BranchTx::run_pair(from, to, …)`** (LG-0, L-5) in the same PR that switches the postings |
 | `rates.md` RU-1: `ForeignAmount`, `MinorUnit` | `PostingRequest.quantity` | merged before CA-3 |
 | AP-1 (#596) | §5 | LG-3 starts after AP-1 |
@@ -466,8 +569,18 @@ database with rows.
 | LG-3 | the two approval subjects and `CountDifferenceGate`; `cash_limits` commands | `xc-cash/src/application/ledger_approval/{negative_stock,count_difference}.rs`, `http/v3/commands/ledger/limits.rs` (outside CA-8's `commands/cash/**`) | LG-1, AP-1 |
 | LG-4 | cutover: wire `LedgerCashPostings` in bootstrap, remove `InterimCashPostings`; `TransferFlow::receive` onto `run_pair`; migration 2 | `api/src/bootstrap/mod.rs` (one line), `interim_postings.rs` (deleted), the file of `TransferFlow::receive` under `xc-cash/src/application/transfer/` (#582 CA-5's; the `BranchTx` call only); migration 2 | LG-0, LG-2, #551 TX-5, #582 CA-5, #582 CA-7 |
 | LG-5 | the count-difference hook in `CashCountService::verify` | `xc-cash/src/application/count/count_service.rs` (cash design §5, `CashCountService`; the one call only) | LG-3, CA-3 |
-| LG-6 | readers on the ledger; migration 3 | per reader (`views/admin_cash.rs`, `shift_valuation.rs`, the staff report), one ticket per file; migration 3 last | LG-4 |
-| LG-7 | reconciliation (§6) and its admin view | `xc-cash/src/application/reconcile.rs`, `views/cash_reconcile.rs` | LG-2 |
+| LG-6.0 | `ShiftBalances` (§4.2.1) | `xc-shift/src/domain/shift/repositories/shift_balances.rs`, `xc-cash/src/infrastructure/ledger/shift_balances.rs` (both new) | LG-4 |
+| LG-6.r1–r3 | `admin_cash`, `admin_shifts`, `devices` read `ShiftBalances` | one view file each | LG-6.0 |
+| LG-6.r4 | `ShiftRepository`'s balances read `ShiftBalances`; `ShiftService`'s `shift_balances` writes removed (§4.2.1) | `xc-shift/src/infrastructure/shift/shift_repository.rs`, `xc-shift/src/application/shift/service.rs`, `xc-shift/src/domain/shift/repositories/shift_repository.rs` | LG-6.0, CA-1's opener lookup (#1025) |
+| LG-6.r5 | `ops_state.safe` neither read nor written; whoever still shows the safe after CA-10 (today `compat/v2_json.rs:493` and `CustodyPages`' floor facts) reads `CashPostings::expected_in(Safe(branch))` from `api`, because `xc-shift` cannot call `xc-cash` | `xc-shift/src/infrastructure/custody/{custody_pages.rs, custody_repository.rs}`, `xc-shift/src/domain/custody/{state.rs, repositories/custody_pages.rs}`, `api/src/application/compat/v2_json.rs` | LG-4, CA-10 (re-measured after it) |
+| LG-6.r6 | the `stock_movements` readers (`admin_cash_movements`, `ShiftRepository`'s movement methods and their callers) list `cash_transfers` (ruling A, §4.2.1) | `views/admin_cash_movements.rs`, `xc-shift` shift repository's movement methods, `compat/snapshot.rs`, `v3/actions/shift_valuation.rs`, `compat/abandon_request.rs` | LG-4, CA-10, CA-5 |
+| LG-6.m | migration 3 (§9); its precheck is tied to LG-7's `QUERY` constants (§6.1) | the migration only | every LG-6.r child; LG-7.1–7.5; `git grep` finds no reader |
+| LG-7.0 | the reconcile core (§6.1): `ReconcileCheck`, `Reconcile`, `Report` | `xc-cash/src/application/reconcile/mod.rs` | CA-3 (the crate) |
+| LG-7.1 | check 1, balanced postings | `reconcile/balanced.rs` | LG-7.0, LG-1 |
+| LG-7.2 | check 2, positions = movements | `reconcile/positions.rs` | LG-7.0, LG-1 |
+| LG-7.3 | check 3, cash places = positions | `reconcile/places.rs` | LG-7.0, LG-2 (its transfer cases post through the port) |
+| LG-7.4 | check 4, margin = sales − cost | `reconcile/margin.rs` | LG-7.0, TX-2 (`transaction_lines`) |
+| LG-7.5 | check 5, valuations sum to zero | `reconcile/valuation.rs` | LG-7.0, LG-1 |
 
 ### 10.1 Up-front tests (🧪)
 

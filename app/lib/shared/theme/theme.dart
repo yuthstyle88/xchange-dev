@@ -62,7 +62,7 @@ List<String> fontFallbacksForLanguage(String languageCode) {
 
 ThemeData kioskTheme(String languageCode) {
   OutlineInputBorder border(Color color) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(10),
     borderSide: BorderSide(color: color, width: 2),
   );
 
@@ -73,11 +73,16 @@ ThemeData kioskTheme(String languageCode) {
       seedColor: KioskColors.brand,
       primary: KioskColors.brand,
       surface: Colors.white,
+      onSurface: KioskColors.text,
+    ),
+    textTheme: const TextTheme(
+      bodyMedium: TextStyle(fontSize: 18),
+      bodyLarge: TextStyle(fontSize: 18),
     ),
     scaffoldBackgroundColor: KioskColors.stage,
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: const Color(0xFFFBFAFB),
       border: border(KioskColors.line),
       enabledBorder: border(KioskColors.line),
       focusedBorder: border(KioskColors.brand),

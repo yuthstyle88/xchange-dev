@@ -1,0 +1,24 @@
+[package]
+name = "xc-queue"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Queue bounded context for xchange: tickets with daily numbers (design queue-tickets.md)"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-error = { workspace = true }
+pos-infra = { workspace = true }
+xc-kernel = { workspace = true }
+thiserror = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = { version = "0.10" }
+futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono"] }
+
+[dev-dependencies]
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

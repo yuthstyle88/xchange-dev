@@ -26,6 +26,7 @@ class KioskPage extends ConsumerWidget {
       final s = ref.watch(kioskControllerProvider);
       final c = ref.read(kioskControllerProvider.notifier);
       final l = ref.watch(kioskTextsProvider);
+      final narrow = MediaQuery.sizeOf(context).width <= 760;
       final step = switch (s.screen) {
         KioskScreen.select => 'step1',
         KioskScreen.quote => 'step2',
@@ -58,7 +59,9 @@ class KioskPage extends ConsumerWidget {
                         child: SingleChildScrollView(
                           // A new screen starts at its top.
                           key: ValueKey(s.screen),
-                          padding: const EdgeInsets.fromLTRB(32, 28, 32, 36),
+                          padding: narrow
+                              ? const EdgeInsets.fromLTRB(16, 22, 16, 36)
+                              : const EdgeInsets.fromLTRB(32, 28, 32, 36),
                           child: Center(
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 1200),
@@ -93,8 +96,8 @@ class KioskPage extends ConsumerWidget {
                                     const SizedBox(height: 10),
                                     Text(
                                       l.text('subtitle'),
-                                      style: const TextStyle(
-                                        fontSize: 18,
+                                      style: TextStyle(
+                                        fontSize: narrow ? 17 : 18,
                                         fontWeight: FontWeight.w400,
                                         color: KioskColors.muted,
                                       ),
@@ -198,129 +201,185 @@ class _HeaderState extends ConsumerState<_Header> {
     final c = ref.read(kioskControllerProvider.notifier);
     final l = ref.watch(kioskTextsProvider);
     final List<KioskLanguage> matches = l.search(_search.text);
+    final narrow = MediaQuery.sizeOf(context).width <= 760;
+
+    final searchField = TextField(
+      controller: _search,
+      onChanged: (_) => setState(() {}),
+      style: const TextStyle(fontSize: 14),
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(minHeight: 40),
+        hintText: 'Search language / ภาษา / 国家',
+      ),
+    );
+
+    final langDropdown = DropdownButtonFormField<String>(
+      key: ValueKey('lang-${l.code}-${_search.text}'),
+      initialValue: matches.any((x) => x.code == l.code) ? l.code : null,
+      isDense: true,
+      isExpanded: true,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(minHeight: 40),
+      ),
+      items: [
+        for (final x in matches)
+          DropdownMenuItem(
+            value: x.code,
+            child: Text(x.label, style: const TextStyle(fontSize: 14)),
+          ),
+      ],
+      onChanged: (code) {
+        if (code != null) c.setLanguage(code);
+      },
+    );
+
     return Container(
       constraints: const BoxConstraints(minHeight: 98),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: KioskColors.line)),
       ),
-      padding: EdgeInsets.symmetric(
-        horizontal: MediaQuery.sizeOf(context).width * 0.04,
-        vertical: 12,
-      ),
-      child: Row(
-        children: [
-          // Ten seconds on the logo opens setup on an installed kiosk; a
-          // kiosk has no menu, and a customer must not reach it by accident.
-          Listener(
-            key: const Key('kiosk-logo'),
-            onPointerDown: (_) => _startHold(),
-            onPointerUp: (_) => _hold?.cancel(),
-            onPointerCancel: (_) => _hold?.cancel(),
-            child: Image.asset(
-              'assets/img/logo.png',
-              width: 130,
-              height: 76,
-              fit: BoxFit.contain,
-              semanticLabel: 'XCHANGE Currency Exchange',
+      padding: narrow
+          ? const EdgeInsets.symmetric(horizontal: 18, vertical: 10)
+          : EdgeInsets.symmetric(
+              horizontal: MediaQuery.sizeOf(context).width * 0.04,
+              vertical: 12,
             ),
-          ),
-          const SizedBox(width: 18),
-          Flexible(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 160),
-              decoration: const BoxDecoration(
-                border: BorderDirectional(
-                  start: BorderSide(color: KioskColors.line),
-                ),
-              ),
-              padding: const EdgeInsetsDirectional.only(start: 22),
-              child: const Text(
-                'T.K. EXCHANGE MONEY',
-                style: TextStyle(
-                  fontSize: 10,
-                  letterSpacing: 1.4,
-                  color: KioskColors.muted,
-                ),
-              ),
-            ),
-          ),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              s.model?.branchName ?? l.text('welcome'),
-              key: const Key('branch'),
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: 270,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: narrow
+          ? Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  l.text('lang'),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _search,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(fontSize: 14),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                Row(
+                  children: [
+                    Listener(
+                      key: const Key('kiosk-logo'),
+                      onPointerDown: (_) => _startHold(),
+                      onPointerUp: (_) => _hold?.cancel(),
+                      onPointerCancel: (_) => _hold?.cancel(),
+                      child: Image.asset(
+                        'assets/img/logo.png',
+                        width: 100,
+                        height: 62,
+                        fit: BoxFit.contain,
+                        semanticLabel: 'XCHANGE Currency Exchange',
+                      ),
                     ),
-                    constraints: BoxConstraints(minHeight: 40),
-                    hintText: 'Search language / ภาษา / 国家',
-                  ),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('lang-${l.code}-${_search.text}'),
-                  initialValue: matches.any((x) => x.code == l.code)
-                      ? l.code
-                      : null,
-                  isDense: true,
-                  isExpanded: true,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(fontSize: 14),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    constraints: BoxConstraints(minHeight: 40),
-                  ),
-                  items: [
-                    for (final x in matches)
-                      DropdownMenuItem(
-                        value: x.code,
-                        child: Text(
-                          x.label,
-                          style: const TextStyle(fontSize: 14),
+                    const Spacer(),
+                    Flexible(
+                      child: Text(
+                        s.model?.branchName ?? l.text('welcome'),
+                        key: const Key('branch'),
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
+                    ),
                   ],
-                  onChanged: (code) {
-                    if (code != null) c.setLanguage(code);
-                  },
+                ),
+                const SizedBox(height: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      l.text('lang'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(child: searchField),
+                        const SizedBox(width: 6),
+                        Expanded(child: langDropdown),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                // Ten seconds on the logo opens setup on an installed kiosk; a
+                // kiosk has no menu, and a customer must not reach it by accident.
+                Listener(
+                  key: const Key('kiosk-logo'),
+                  onPointerDown: (_) => _startHold(),
+                  onPointerUp: (_) => _hold?.cancel(),
+                  onPointerCancel: (_) => _hold?.cancel(),
+                  child: Image.asset(
+                    'assets/img/logo.png',
+                    width: 130,
+                    height: 76,
+                    fit: BoxFit.contain,
+                    semanticLabel: 'XCHANGE Currency Exchange',
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Flexible(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    decoration: const BoxDecoration(
+                      border: BorderDirectional(
+                        start: BorderSide(color: KioskColors.line),
+                      ),
+                    ),
+                    padding: const EdgeInsetsDirectional.only(start: 22),
+                    child: const Text(
+                      'T.K. EXCHANGE MONEY',
+                      style: TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 1.4,
+                        color: KioskColors.muted,
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Flexible(
+                  child: Text(
+                    s.model?.branchName ?? l.text('welcome'),
+                    key: const Key('branch'),
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 270,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l.text('lang'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      searchField,
+                      const SizedBox(height: 4),
+                      langDropdown,
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

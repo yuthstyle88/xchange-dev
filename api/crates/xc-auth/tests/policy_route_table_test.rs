@@ -162,9 +162,18 @@ fn the_role_table_holds_what_b1_translates() {
     ] {
         assert!(!has(Role::Marketing, p), "{p:?}");
     }
+    // #874 (amended by its ticket author claude/f03345fe, per lane controller 2026-10-10): the
+    // branch's manager and FINANCE (RG4 of #682, reversals) decide what each type's policy lets it (T2's over-limit exchange); rates stay
+    // the owner's through `RatePublicationPolicy`
+    assert_eq!(
+        BLUEPRINT
+            .into_iter()
+            .filter(|r| has(*r, Permission::ApprovalsDecide))
+            .collect::<Vec<_>>(),
+        [Role::Executive, Role::BranchManager, Role::Finance]
+    );
     // OWNER-only rows: EXECUTIVE; and nobody else holds them
     for p in [
-        Permission::ApprovalsDecide,
         Permission::BookingsAdmin,
         Permission::ReferenceRatesRead,
         Permission::RequestAbandon,

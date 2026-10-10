@@ -9,3 +9,17 @@
   max-width: none;
   padding: 0 8px;
 }
+
+/* v2 kiosk-queue.html:1 — no header; the page heading is the body h2 */
+.xc-shell:has(.queue-page) .xc-shell-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+

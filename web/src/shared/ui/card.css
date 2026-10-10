@@ -386,8 +386,8 @@
   }
 }
 
-/* v2 devices.css:1 @media (max-width: 700px) .devices */
-@media (max-width: 700px) {
+/* v2 devices.css:1 @media(max-width:640px) .devices */
+@media (max-width: 640px) {
   .xc-devices .xc-shell-main .card-grid,
   .xc-devices .xc-shell-main .card-grid.cols-4,
   .xc-devices .xc-shell-main .card-grid.cols-3,

@@ -78,6 +78,14 @@
   margin: 0;
 }
 
+/* v2 src/online/lib/admin-html.ts:1 #customer-summary */
+.xc-admin .xc-content .search-section .waiting-text {
+  font-size: 15px;
+  color: var(--ink);
+  padding: 0;
+  margin: 0;
+}
+
 /* v2 src/online/lib/admin-html.ts:2 .empty */
 .xc-admin .xc-content .waiting-text {
   font-size: 14px;
@@ -128,14 +136,13 @@
 .xc-admin .xc-content .reg-search-bar {
   display: flex;
   gap: 12px;
-  align-items: center;
   margin: 0;
   flex-wrap: wrap;
 }
 
 /* v2 src/online/public/registrations.js:3 input */
 .xc-admin .xc-content .reg-search-bar input {
-  width: min(100%, 480px);
+  width: 100%;
 }
 
 /* v2 src/online/public/registrations.js:4 empty text */
@@ -145,9 +152,31 @@
   margin: 0;
 }
 
+/* v2 src/online/public/registrations.js:4 bare text */
+.xc-admin .xc-content .registrations-card .error-banner {
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  margin: 0;
+}
+
 /* v2 src/online/lib/admin-html.ts:1 label */
 .xc-admin .xc-content .search-bar {
   margin: 16px 0;
+}
+
+/* v2 src/online/public/customers.js:16 dialog search */
+.xc-admin .xc-content dialog .search-bar {
+  margin: 0;
+}
+
+/* v2 src/online/lib/admin-html.ts:3 label input */
+.xc-admin .xc-content.xc-content dialog .search-bar input {
+  width: 100%;
+  margin: 6px 0 0;
 }
 
 /* v2 src/online/lib/admin-html.ts:2 .notice */

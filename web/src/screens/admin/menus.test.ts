@@ -235,7 +235,11 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // §03) is a v3 menu with no v2 row, OWNER only (its view and command are OWNER rows), so it can match
 // neither SERVED nor `roles: 'all'`. Its own record is pinned in
 // `web/src/screens/admin/approvals/Approvals.test.tsx`. Every served menu is still held to its row.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals'];
+// Amended by #655 (CI-8), by its ticket author's delegate (claude/5edf7bb5): `/admin/consent`
+// (`docs/design/blueprint/customer-identity-consent.md` §4.4, §9 CI-8) is a v3 menu with no v2 row,
+// OWNER only (`consentPolicy` is an owner row, PR 876), pinned in
+// `web/src/screens/admin/consent/Consent.test.tsx`.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent'];
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {

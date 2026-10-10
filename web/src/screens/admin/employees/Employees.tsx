@@ -427,7 +427,8 @@ export function Employees(props: AdminMenuProps): JSX.Element {
           <div role="alert">{employeesError()}</div>
         </Show>
 
-        <div class="table-scroll">
+        <Show when={!employeesError()}>
+          <div class="table-scroll">
           <table>
             <thead>
               <tr>
@@ -492,6 +493,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
             </tbody>
           </table>
         </div>
+        </Show>
       </Card>
 
       <details class="workspace-history">

@@ -850,12 +850,17 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
     every_view_changed(&room, v, "drawerObservation").await;
 
     // a kiosk audit line goes into device_events (#603: the won is published first, which
-    // moves no version)
+    // moves no version). The seeded publication becomes the branch's current one, so it carries
+    // the counter's USD line too, as a real publish carries every line: the exchange saved below
+    // is checked against the current publication (#757 RE-4c).
     publication_seed::publish(
         &room.desk.db.pool,
         MAIN,
         chrono::Utc::now(),
-        &[publication_seed::both("KRW", "23.1", "25.9")],
+        &[
+            publication_seed::both("USD", "32.1", "33"),
+            publication_seed::both("KRW", "23.1", "25.9"),
+        ],
     )
     .await;
     let v = room.version(MAIN).await;

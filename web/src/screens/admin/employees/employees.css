@@ -24,3 +24,13 @@
   margin-top: 0;
 }
 
+/* v2 src/online/public/employees.js:12 #entity-confirm checkbox input box look (EM-2) */
+.xc-admin .xc-content.xc-content #entity-separated {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #cdd0d7;
+  background: #fff;
+}
+
+

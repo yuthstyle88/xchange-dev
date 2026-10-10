@@ -280,7 +280,6 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
                             </a>
                           </Show>
                           <Show when={file.download}>
-                            {' · '}
                             <a href={file.path} download={file.download}>
                               {file.download}
                             </a>
