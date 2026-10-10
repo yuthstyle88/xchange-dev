@@ -79,7 +79,7 @@ async fn the_saved_row(
     // The shift's teller (`shifts.teller_id` is NOT NULL since #753).
     sqlx::query(
         "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'dev-teller', 'INVITED', 'test', 'dev-teller' FROM organizations \
+         SELECT id, 'dev-teller', 'PENDING', 'test', 'dev-teller' FROM organizations \
          WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
     )
     .execute(pool)

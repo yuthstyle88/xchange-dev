@@ -5,9 +5,31 @@ use serde_json::Value;
 
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
-    IdentityOtpVerifyResponse,
+    IdentityOtpVerifyResponse, IdentityRegisterRequest, IdentityRegisterResponse,
 };
 use crate::infrastructure::identity::identity_settings::IdentitySettings;
+
+/// Identity's server-side create (#1157).
+const REGISTER_PATH: &str = "/auth/register";
+
+/// Identity's error code: `{"error":"phone_taken"}` (its `ErrorResponse`), or an object's
+/// `code`, in either case style; normalised to snake_case.
+fn error_code(v: &Value) -> Option<String> {
+    let e = v.get("error")?;
+    let raw = e
+        .as_str()
+        .or_else(|| e.get("code").and_then(Value::as_str))?;
+    let mut out = String::with_capacity(raw.len() + 4);
+    for ch in raw.chars() {
+        if ch.is_ascii_uppercase() {
+            out.push('_');
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    Some(out)
+}
 
 pub struct HttpIdentityClient {
     client: reqwest::Client,
@@ -101,12 +123,9 @@ impl HttpIdentityClient {
             }
         } else {
             let json_val = serde_json::from_slice::<Value>(&bytes).ok();
-            let code = json_val
-                .as_ref()
-                .and_then(|v| v.get("error"))
-                .and_then(|e| e.as_str());
+            let code = json_val.as_ref().and_then(error_code);
 
-            match code {
+            match code.as_deref() {
                 Some("invalid_credentials") => Err(IdentityError::InvalidCredentials),
                 Some("account_locked") => Err(IdentityError::AccountLocked),
                 Some("rate_limited") | Some("too_many_attempts") => {
@@ -122,6 +141,13 @@ impl HttpIdentityClient {
                 | Some("refresh_token_reuse")
                 | Some("session_inactive")
                 | Some("session_not_found") => Err(IdentityError::SignIn),
+                // The server-side create (#1157) names which one is taken; every other call keeps
+                // the one sentence it had.
+                Some("phone_taken") if path == REGISTER_PATH => Err(IdentityError::PhoneTaken),
+                Some("username_taken") if path == REGISTER_PATH => {
+                    Err(IdentityError::UsernameTaken)
+                }
+                Some("email_taken") if path == REGISTER_PATH => Err(IdentityError::EmailTaken),
                 Some("username_taken") | Some("email_taken") | Some("phone_taken") => {
                     Err(IdentityError::AlreadyRegistered)
                 }
@@ -257,6 +283,26 @@ impl IdentityClient for HttpIdentityClient {
                 "registerIfAbsent": false,
             });
             self.send_request("/auth/otp/verify", body, client_ip).await
+        })
+    }
+
+    fn register<'a>(
+        &'a self,
+        request: &'a IdentityRegisterRequest<'a>,
+    ) -> BoxFuture<'a, Result<IdentityRegisterResponse, IdentityError>> {
+        Box::pin(async move {
+            let mut body = serde_json::json!({
+                "phone": request.phone,
+                "password": request.password,
+                "mustChangePassword": request.must_change_password,
+            });
+            if let Some(username) = request.username {
+                body["username"] = serde_json::json!(username);
+            }
+            if let Some(email) = request.email {
+                body["email"] = serde_json::json!(email);
+            }
+            self.send_request(REGISTER_PATH, body, None).await
         })
     }
 }

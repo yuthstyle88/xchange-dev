@@ -170,6 +170,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
         ? ''
         : '${names.currencySymbol(receive)} '
               '${formatMoney(estimate.receive)} $receive';
+    final freshness = s.model?.freshness;
     return KioskCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -207,6 +208,10 @@ class _SelectPageState extends ConsumerState<SelectPage> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                if (freshness != null) ...[
+                  const SizedBox(height: 8),
+                  _freshnessBlock(freshness),
+                ],
               ],
             ),
           ),
@@ -319,6 +324,65 @@ class _SelectPageState extends ConsumerState<SelectPage> {
         ],
       ),
     );
+  }
+
+  Widget _freshnessBlock(RateFreshness freshness) {
+    final formattedTime = freshness.publishedAt != null
+        ? _formatBangkokTime(freshness.publishedAt!)
+        : null;
+
+    return Container(
+      key: const Key('rate-freshness'),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (freshness.stale)
+            Container(
+              key: const Key('rate-stale'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEDD5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                l.text('rateStale'),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF9A3412),
+                ),
+              ),
+            ),
+          if (freshness.sourceDate != null)
+            Text(
+              l.text('rateSourceDate', {'date': freshness.sourceDate!}),
+              style: const TextStyle(fontSize: 12, color: KioskColors.muted),
+            )
+          else
+            Text(
+              l.text('rateNoSourceDate'),
+              style: const TextStyle(fontSize: 12, color: KioskColors.muted),
+            ),
+          if (formattedTime != null)
+            Text(
+              l.text('ratePublishedAt', {'at': formattedTime}),
+              style: const TextStyle(fontSize: 12, color: KioskColors.muted),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatBangkokTime(DateTime utcTime) {
+    final bkk = utcTime.toUtc().add(const Duration(hours: 7));
+    final y = bkk.year.toString().padLeft(4, '0');
+    final m = bkk.month.toString().padLeft(2, '0');
+    final d = bkk.day.toString().padLeft(2, '0');
+    final h = bkk.hour.toString().padLeft(2, '0');
+    final min = bkk.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $h:$min';
   }
 }
 

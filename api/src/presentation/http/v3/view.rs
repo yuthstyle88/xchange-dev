@@ -328,7 +328,7 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
     }
 }
 
-pub(super) async fn authenticate_and_authorize(
+pub(crate) async fn authenticate_and_authorize(
     req: &HttpRequest,
     inherits: (EntryPath, &'static str),
 ) -> Result<(Actor, xc_auth::domain::access::Actor), HttpResponse> {

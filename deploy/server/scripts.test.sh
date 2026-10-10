@@ -69,6 +69,8 @@
 #   B11b (BK-ENC) a failing age leaves no set, no plain file, prunes nothing
 #   B12  (BK-ENC) a dump pg_restore cannot list, or that lists no
 #        _sqlx_migrations, makes no set
+#   B12b (BK-ENC) a dump list larger than 1 MiB containing _sqlx_migrations
+#        makes a set under pipefail (#1162)
 #   B13  (BK-ENC) pg_dump toward a non-local host runs with PGSSLMODE=require
 #        (or verify-full); toward a local host it is not forced
 #   B13b (BK-ENC) locality rule matches DB-LINK: loopback IPs and sockets local;
@@ -581,6 +583,11 @@ if [ "$list" = 1 ]; then
       exit 1
       ;;
     nomig) printf ';\n215; 1259 16390 TABLE public files xc_v3\n' ;;
+    large)
+      printf ';\n214; 1259 16385 TABLE public _sqlx_migrations xc_v3\n'
+      head -c 1200000 </dev/zero | tr '\0' 'x'
+      printf '\n'
+      ;;
     *) printf ';\n214; 1259 16385 TABLE public _sqlx_migrations xc_v3\n215; 1259 16390 TABLE public files xc_v3\n' ;;
   esac
   exit 0
@@ -1407,6 +1414,18 @@ ck "the message names _sqlx_migrations" grep -qs '_sqlx_migrations' "$LOGS/b12.o
 ckeq "no set was made" "" "$(sets_in "$b12/backups")"
 ck "no plain file anywhere" no_plaintext "$b12/backups" "$b12/tmp"
 report B12 "a dump that pg_restore cannot list, or that lists no _sqlx_migrations, makes no set"
+
+# ---- B12b: a dump list larger than 1 MiB passes under pipefail (#1162) ------
+b12b="$ROOT/b12b"
+bk_case "$b12b" 20261007T133500Z
+mkdir -m 700 "$b12b/backups"
+run_backup "$b12b" XC_STUB_LIST=large
+printf '%s\n' "$OUT" >"$LOGS/b12b.out"
+ck "backup.sh exited 0" test "$RC" -eq 0
+ck "the set was made" test -n "$(sets_in "$b12b/backups")"
+ck "pg_restore --list was run" grep -Eqs -- '(^| )(--list|-l)( |$)' "$b12b/log/pg_restore.log"
+ck "no plain file anywhere" no_plaintext "$b12b/backups" "$b12b/tmp"
+report B12b "a dump list larger than 1 MiB containing _sqlx_migrations makes a set"
 
 # ---- B13: pg_dump toward a non-local host requires TLS (BK-ENC, §7c) --------
 b13="$ROOT/b13"

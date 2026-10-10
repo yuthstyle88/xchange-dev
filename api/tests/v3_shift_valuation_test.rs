@@ -1387,7 +1387,7 @@ async fn seed_opener(pool: &PgPool, id: &str) {
             sqlx::query(
                 "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
                  u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'INVITED', 'test' FROM o RETURNING id, organization_id) \
+                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
                  INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
                  SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
             )
@@ -1399,7 +1399,7 @@ async fn seed_opener(pool: &PgPool, id: &str) {
     }
     sqlx::query(
         "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'INVITED', 'test', $1 FROM organizations WHERE code = 'XC' \
+         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
          ON CONFLICT (legacy_employee_id) DO NOTHING",
     )
     .bind(id)

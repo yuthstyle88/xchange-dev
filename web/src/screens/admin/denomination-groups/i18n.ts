@@ -1,0 +1,29 @@
+export const th = {
+  label: 'กลุ่มธนบัตรและป้ายเรท',
+  eyebrow: 'BANKNOTE GROUPS',
+  title: 'กลุ่มธนบัตรและป้ายเรท',
+  subtitle: 'จัดการกลุ่มธนบัตรและการจับคู่แถวบนป้ายเรท',
+  currency: 'สกุลเงิน',
+  newGroup: 'กลุ่มใหม่',
+  add: 'เพิ่มกลุ่ม',
+  groupInvalid: 'รหัสกลุ่มไม่ถูกต้อง',
+  boardKey: 'คีย์ป้ายเรท',
+  save: 'บันทึก',
+  keyRequired: 'กรุณาระบุคีย์ป้ายเรท',
+  remove: 'ลบ',
+};
+
+export const en = {
+  label: 'Banknote Groups',
+  eyebrow: 'BANKNOTE GROUPS',
+  title: 'Banknote Groups',
+  subtitle: 'Manage banknote groups and rate board mappings',
+  currency: 'Currency',
+  newGroup: 'New Group',
+  add: 'Add Group',
+  groupInvalid: 'Invalid group code',
+  boardKey: 'Rate Board Key',
+  save: 'Save',
+  keyRequired: 'Rate board key is required',
+  remove: 'Remove',
+};

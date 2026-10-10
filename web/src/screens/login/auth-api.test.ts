@@ -1,14 +1,14 @@
-// OR-3 web follow-up (#762 §7 `auth-api.ts` [required], §8): the login screen's three calls to the
+// OR-3 web follow-up (#762 §7 `auth-api.ts` [required], §8): the login screen's two calls to the
 // Identity sign-in BFF that OR-3 (#752, merged 8234e77) added, made through `ApiClient.post`
 // and never through a `fetch` of its own.
 // Server side (api/src/presentation/http/auth.rs @ 8234e77):
 //   POST /api/auth/session        {}                                   → 200 {user: SessionUser | null}  (:406-425)
 //   POST /api/auth/login          {identifier, password}               → 200 {user: SessionUser}         (:196-236)
-//   POST /api/auth/invite/claim   {identifier, password, inviteCode}   → 200 {user: SessionUser}         (:238-285)
 //   a refusal is {"error": {"code", "message"}} (:145-154)
 // SessionUser: api/crates/xc-auth/src/application/session/session_service.rs:27-41.
 // Replaces the #396 pins of the old `/api/auth {action}` calls (the retired file's :49-97, :99-124).
 // Written before the implementation by the ticket author (claude/b060e9). Do not edit, delete or weaken.
+// Amended by #1157 (claude/08f7f46f): the one-time-code call is removed with its server route; the rest is unchanged.
 //
 // The API this test pins, in `web/src/screens/login/auth-api.ts`:
 //
@@ -17,7 +17,6 @@
 //   export interface AuthApi {
 //     session(): Promise<{ user: SessionUser | null }>;
 //     login(p: { identifier: string; password: string }): Promise<{ user: SessionUser }>;
-//     claim(p: { identifier: string; password: string; inviteCode: string }): Promise<{ user: SessionUser }>;
 //   }
 //   export function authApi(api: Pick<ApiClient, 'post'>): AuthApi;
 //
@@ -34,7 +33,6 @@ interface SessionUser {
 interface NewAuthApi {
   session(): Promise<{ user: SessionUser | null }>;
   login(p: { identifier: string; password: string }): Promise<{ user: SessionUser }>;
-  claim(p: { identifier: string; password: string; inviteCode: string }): Promise<{ user: SessionUser }>;
 }
 type AuthApiFn = (api: Pick<ApiClient, 'post'>) => NewAuthApi;
 
@@ -44,7 +42,7 @@ function authApi(api: Pick<ApiClient, 'post'>): NewAuthApi {
   const fn = modules['./auth-api.ts']?.authApi;
   expect(fn, 'web/src/screens/login/auth-api.ts exports authApi').toBeTypeOf('function');
   const made = (fn as AuthApiFn)(api);
-  for (const name of ['session', 'login', 'claim'] as const) {
+  for (const name of ['session', 'login'] as const) {
     expect(made[name], `authApi(...).${name} is a function`).toBeTypeOf('function');
   }
   return made;
@@ -105,30 +103,10 @@ describe('authApi over the Identity BFF (OR-3 web)', () => {
     expect(answer).toEqual({ user: NOK });
   });
 
-  it('claim posts exactly {identifier, password, inviteCode} to /api/auth/invite/claim', async () => {
-    const { api, posted } = fakePost([{ user: NOK }]);
-    const answer = await authApi(api).claim({
-      identifier: 'nok@example.com',
-      password: 'secret-pw-1',
-      inviteCode: 'INV-7Q2K',
-    });
-    expect(posted).toEqual([
-      {
-        path: '/api/auth/invite/claim',
-        body: { identifier: 'nok@example.com', password: 'secret-pw-1', inviteCode: 'INV-7Q2K' },
-      },
-    ]);
-    expect(answer).toEqual({ user: NOK });
-  });
-
   it('passes a refusal through unchanged', async () => {
     const refusal = new ApiError({ code: 'invalidCredentials', message: 'x', status: 401 });
     const { api } = fakePost([refusal]);
     await expect(authApi(api).login({ identifier: 'nok', password: 'wrong-pw' })).rejects.toBe(refusal);
-    const again = fakePost([refusal]);
-    await expect(
-      authApi(again.api).claim({ identifier: 'nok', password: 'pw', inviteCode: 'C' }),
-    ).rejects.toBe(refusal);
   });
 
   it('never calls the old /api/auth {action} endpoint and makes no fetch of its own', async () => {
@@ -136,13 +114,12 @@ describe('authApi over the Identity BFF (OR-3 web)', () => {
       throw new Error('authApi called fetch itself');
     });
     vi.stubGlobal('fetch', fetch);
-    const { api, posted } = fakePost([{ user: null }, { user: NOK }, { user: NOK }]);
+    const { api, posted } = fakePost([{ user: null }, { user: NOK }]);
     const auth = authApi(api);
     await auth.session();
     await auth.login({ identifier: 'nok', password: 'secret-pw-1' });
-    await auth.claim({ identifier: 'nok', password: 'secret-pw-1', inviteCode: 'C1' });
     expect(fetch).not.toHaveBeenCalled();
-    expect(posted.map((p) => p.path)).toEqual(['/api/auth/session', '/api/auth/login', '/api/auth/invite/claim']);
+    expect(posted.map((p) => p.path)).toEqual(['/api/auth/session', '/api/auth/login']);
     for (const p of posted) expect(JSON.stringify(p.body)).not.toContain('action');
   });
 

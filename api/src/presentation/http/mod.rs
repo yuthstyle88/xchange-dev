@@ -16,6 +16,7 @@ pub mod payment_methods;
 pub mod public;
 pub mod reference_rates;
 pub mod rpc;
+pub mod users;
 pub mod v3;
 
 use actix_web::web;
@@ -38,6 +39,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     kiosk::configure(cfg, state);
     payment_methods::configure(cfg, state);
     public::configure(cfg, state);
+    users::configure(cfg, state);
     reference_rates::configure(cfg, state);
     rpc::configure(cfg, state);
     v3::configure_v3(cfg, state);

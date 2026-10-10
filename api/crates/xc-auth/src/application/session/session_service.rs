@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 
 use crate::application::user::UserService;
-use crate::application::user::user_service::{ClaimError, InviteRefusal};
+use crate::application::user::user_service::{CreateStaffError, StaffCreate};
 use crate::domain::access::{Role, ScopedRole};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
@@ -52,7 +52,6 @@ pub enum SessionError {
     Identity(IdentityError),
     UserDisabled,
     UserNotBound,
-    InviteRefused(InviteRefusal),
     Database(String),
 }
 
@@ -73,17 +72,9 @@ impl SessionError {
             Self::UserNotBound => (
                 401,
                 "signIn",
-                "บัญชีนี้ยังไม่ได้ผูกกับผู้ใช้ของ XCHANGE กรุณาใช้รหัสเชิญ".to_string(),
+                "บัญชีนี้ยังไม่มีผู้ใช้ใน XCHANGE ให้เจ้าของร้านสร้างบัญชีให้".to_string(),
             ),
-            Self::InviteRefused(reason) => (400, "inviteRefused", reason.message().to_string()),
             Self::Database(_) => (503, "identityUnavailable", UNAVAILABLE_MESSAGE.to_string()),
-        }
-    }
-
-    pub fn reason(&self) -> Option<InviteRefusal> {
-        match self {
-            Self::InviteRefused(reason) => Some(*reason),
-            _ => None,
         }
     }
 }
@@ -324,98 +315,6 @@ impl SessionService {
 
         let login_resp = identity.login(identifier, password, client_ip).await?;
         self.sign_in_with_login(login_resp, now).await
-    }
-
-    pub async fn claim_invite(
-        &self,
-        identifier: &str,
-        password: &str,
-        invite_code: &str,
-        client_ip: Option<&str>,
-        now: DateTime<Utc>,
-    ) -> Result<SignInTail, SessionError> {
-        let identity = self.identity.as_ref().ok_or_else(|| {
-            IdentityError::unavailable("/api/auth/invite/claim", 503, "not_configured")
-        })?;
-        let verifier = self.verifier.as_ref().ok_or_else(|| {
-            IdentityError::unavailable("/api/auth/invite/claim", 503, "verifier_not_configured")
-        })?;
-
-        let login_resp = identity.login(identifier, password, client_ip).await?;
-        let verified = verifier
-            .verify(&login_resp.access_token)
-            .await
-            .map_err(|_| {
-                IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
-            })?;
-
-        let user_service = UserService::new(Arc::new(PgUserRepository::new()));
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| SessionError::Database(e.to_string()))?;
-
-        let claimed_user = user_service
-            .claim(&mut tx, invite_code, &verified.subject, now)
-            .await
-            .map_err(|err| match err {
-                ClaimError::Refused(reason) => SessionError::InviteRefused(reason),
-                ClaimError::App(other) => SessionError::Database(other.to_string()),
-            })?;
-
-        let token = generate_session_token();
-        let token_hash = sha256_hex(&token);
-        let expires = now + Duration::seconds(SESSION_SECONDS);
-
-        let refresh_enc = match (
-            self.client_secret.as_deref(),
-            login_resp.refresh_token.as_deref(),
-        ) {
-            (Some(secret), Some(rt)) => {
-                let enc = encrypt_refresh_token(secret, rt).map_err(|_| {
-                    SessionError::Identity(IdentityError::unavailable(
-                        "/api/auth/invite/claim",
-                        503,
-                        "encrypt_failed",
-                    ))
-                })?;
-                Some(enc)
-            }
-            _ => None,
-        };
-
-        sqlx::query(
-            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id) \
-             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid)",
-        )
-        .bind(&token_hash)
-        .bind(&claimed_user.id)
-        .bind(claimed_user.version)
-        .bind(expires)
-        .bind(refresh_enc)
-        .bind(&claimed_user.organization_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| SessionError::Database(e.to_string()))?;
-
-        let roles = Self::fetch_user_roles(&self.pool, &claimed_user.id, now)
-            .await
-            .map_err(|e| SessionError::Database(e.to_string()))?;
-
-        Ok(SignInTail {
-            user: SessionUser {
-                id: claimed_user.id,
-                name: claimed_user.name,
-                organization_id: claimed_user.organization_id,
-                roles,
-            },
-            session_token: token,
-        })
     }
 
     pub async fn session_check(
@@ -710,11 +609,22 @@ impl SessionService {
         Ok(Some((user, scoped_roles)))
     }
 
-    pub async fn create_first_admin_invite(
+    /// The first owner of an install (#1157, the first-user bootstrap): one user with
+    /// organisation-wide EXECUTIVE + ADMIN, whose Identity account is created server-side with
+    /// `must_change_password: true`, bound and `ACTIVE`. An owner left `PENDING` (Identity refused or
+    /// was down) is completed by running it again; an `ACTIVE` owner refuses.
+    pub async fn create_owner(
         &self,
         name: &str,
+        phone: &str,
+        password: &str,
         now: DateTime<Utc>,
     ) -> Result<String, String> {
+        let identity = self
+            .identity
+            .as_ref()
+            .ok_or_else(|| "Identity is not configured (IDENTITY_BASE_URL)".to_string())?;
+
         let owners: Vec<(String, String, String)> = sqlx::query_as(
             "SELECT u.id::text, u.status, u.organization_id::text \
              FROM users u \
@@ -741,8 +651,8 @@ impl SessionService {
         .await
         .map_err(|e| e.to_string())?;
 
-        match owners.len() {
-            0 => {
+        let (org_id, retry_user_id) = match owners.as_slice() {
+            [] => {
                 let org_id: String = sqlx::query_scalar(
                     "SELECT id::text FROM organizations WHERE code = 'XC' LIMIT 1",
                 )
@@ -750,89 +660,69 @@ impl SessionService {
                 .await
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| "organisation XC not found".to_string())?;
-
-                let user_id = generate_uuid();
-                let invite_code = generate_session_token();
-                let code_hash = sha256_hex(&invite_code);
-                let expires_at = now + Duration::days(7);
-
-                let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-
-                sqlx::query(
-                    "INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id) \
-                     VALUES ($1::uuid, $2::uuid, NULL, $3, 'INVITED', 1, $4, 'create-admin-invite', NULL)",
-                )
-                .bind(&user_id)
-                .bind(&org_id)
-                .bind(name)
-                .bind(now)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-                sqlx::query(
-                    "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
-                     VALUES ($1::uuid, 'EXECUTIVE', $2::uuid, NULL, $3)",
-                )
-                .bind(&user_id)
-                .bind(&org_id)
-                .bind(now)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-                sqlx::query(
-                    "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
-                     VALUES ($1::uuid, 'ADMIN', $2::uuid, NULL, $3)",
-                )
-                .bind(&user_id)
-                .bind(&org_id)
-                .bind(now)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-                sqlx::query(
-                    "INSERT INTO user_invites (user_id, code_hash, expires_at, used_at) \
-                     VALUES ($1::uuid, $2, $3, NULL)",
-                )
-                .bind(&user_id)
-                .bind(&code_hash)
-                .bind(expires_at)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-                tx.commit().await.map_err(|e| e.to_string())?;
-                Ok(invite_code)
+                (org_id, None)
             }
-            1 => {
-                let (user_id, status, _) = &owners[0];
-                if status == "INVITED" {
-                    let invite_code = generate_session_token();
-                    let code_hash = sha256_hex(&invite_code);
-                    let expires_at = now + Duration::days(7);
+            [(user_id, status, org_id)] => match status.as_str() {
+                "PENDING" => (org_id.clone(), Some(user_id.clone())),
+                "ACTIVE" => return Err("The owner user is already ACTIVE".to_string()),
+                other => return Err(format!("Owner user has invalid status {other}")),
+            },
+            _ => return Err("More than one owner user exists".to_string()),
+        };
 
-                    sqlx::query(
-                        "INSERT INTO user_invites (user_id, code_hash, expires_at, used_at) \
-                         VALUES ($1::uuid, $2, $3, NULL) \
-                         ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, used_at = NULL",
-                    )
-                    .bind(user_id)
-                    .bind(&code_hash)
-                    .bind(expires_at)
-                    .execute(&self.pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
+        // A PENDING owner (the users migration's mirror of the owner account, or an earlier run that
+        // Identity refused) takes the name this command gives it.
+        if let (Some(user_id), false) = (&retry_user_id, name.trim().is_empty()) {
+            sqlx::query("UPDATE users SET name = $1 WHERE id = $2::uuid AND status = 'PENDING'")
+                .bind(name.trim())
+                .bind(user_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
-                    Ok(invite_code)
-                } else if status == "ACTIVE" {
-                    Err("The owner user is already ACTIVE".to_string())
-                } else {
-                    Err(format!("Owner user has invalid status {status}"))
-                }
+        let users = UserService::new(Arc::new(PgUserRepository::new()));
+        let input = StaffCreate {
+            name,
+            username: None,
+            phone,
+            email: None,
+            password,
+            roles: vec![
+                ScopedRole::new(Role::Executive, None, now, None),
+                ScopedRole::new(Role::Admin, None, now, None),
+            ],
+            must_change_password: true,
+            retry_user_id: retry_user_id.as_deref(),
+            created_by: "create-owner",
+            creator_roles: None,
+        };
+        match users
+            .create_staff(&self.pool, identity.as_ref(), &org_id, &input, now)
+            .await
+        {
+            Ok(user) => Ok(user.id),
+            Err(CreateStaffError::Validation { field, message }) => {
+                Err(format!("{field}: {message}"))
             }
-            _ => Err("More than one owner user exists".to_string()),
+            // create-owner passes no creator roles, so the scope rule never refuses it.
+            Err(CreateStaffError::OutOfScope) => {
+                Err("roles outside the creator's scope".to_string())
+            }
+            Err(CreateStaffError::Identity(e)) => {
+                let (_, code, message) = e.refusal();
+                Err(format!(
+                    "Identity refused ({code}): {message}; the owner stays PENDING, run again"
+                ))
+            }
+            Err(CreateStaffError::BindFailed {
+                user_id,
+                identity_id,
+            }) => Err(format!(
+                "Identity account {identity_id} was created but could not be bound to user {user_id} \
+                 (recorded in user_audit)"
+            )),
+            Err(CreateStaffError::App(e)) => Err(e.to_string()),
         }
     }
 }

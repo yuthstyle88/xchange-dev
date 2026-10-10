@@ -96,6 +96,27 @@ class PaymentChannel {
   );
 }
 
+class RateFreshness {
+  const RateFreshness({required this.stale, this.sourceDate, this.publishedAt});
+
+  final bool stale;
+  final String? sourceDate;
+  final DateTime? publishedAt;
+
+  factory RateFreshness.fromJson(Map<String, dynamic> j) {
+    DateTime? published;
+    final rawPublished = j['publishedAt'];
+    if (rawPublished is String) {
+      published = DateTime.tryParse(rawPublished)?.toUtc();
+    }
+    return RateFreshness(
+      stale: j['stale'] == true,
+      sourceDate: j['sourceDate'] as String?,
+      publishedAt: published,
+    );
+  }
+}
+
 class RatesModel {
   const RatesModel({
     required this.branchId,
@@ -103,6 +124,7 @@ class RatesModel {
     required this.open,
     required this.rates,
     this.paymentMethods,
+    this.freshness,
   });
   final String branchId, branchName;
   final bool open;
@@ -111,9 +133,11 @@ class RatesModel {
   /// The branch's channels, or null when the answer has none (the deployed
   /// v2 server, or v3 before K-HTTP): the kiosk then keeps its fixed lists.
   final List<PaymentChannel>? paymentMethods;
+  final RateFreshness? freshness;
 
   factory RatesModel.fromJson(Map<String, dynamic> j) {
     final methods = j['paymentMethods'];
+    final fresh = j['freshness'];
     return RatesModel(
       branchId: '${j['branchId'] ?? ''}',
       branchName: '${j['branchName'] ?? ''}',
@@ -128,6 +152,9 @@ class RatesModel {
                 if (m is Map)
                   PaymentChannel.fromJson(Map<String, dynamic>.from(m)),
             ]
+          : null,
+      freshness: fresh is Map
+          ? RateFreshness.fromJson(Map<String, dynamic>.from(fresh))
           : null,
     );
   }

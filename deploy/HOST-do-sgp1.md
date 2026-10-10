@@ -38,6 +38,24 @@ Installed and updated with `deploy/server/` (`build.md`, `install.sh`, `update.s
 daily encrypted backup `xc-v3-backup.timer`. `update.sh` backs up first and keeps `.prev` copies.
 Test data only (D6); the channel reports `staging`.
 
+**Identity settings come from a drop-in the installer does not make.** The unit `deploy/server/xc-v3.service`
+loads only `/etc/xc-v3/env` (`EnvironmentFile=`, rendered by `deploy/server/common.sh` `render_unit`), and nothing
+in `deploy/server/` mentions `/etc/xc-v3/identity-client.env` (section 4). On this host the owner added
+`/etc/systemd/system/xc-v3.service.d/identity.conf` with `EnvironmentFile=/etc/xc-v3/identity-client.env`,
+written by the lane controller's `set-identity-api-key.sh` (the owner ran it on 2026-10-10 around 19:35Z). Without that drop-in the server runs with Identity off:
+the sign-in routes (`/api/auth/login`, `/api/auth/otp/*`) answer `503` (`api/tests/identity_signin_test.rs`), and nobody can sign in.
+- **Fresh install or rebuilt host:** write `/etc/systemd/system/xc-v3.service.d/identity.conf` with exactly
+  this content (systemd ignores a drop-in without the `[Service]` header):
+
+  ```ini
+  [Service]
+  EnvironmentFile=/etc/xc-v3/identity-client.env
+  ```
+
+  Then run `systemctl daemon-reload` and `systemctl restart xc-v3`. Check that `systemctl cat xc-v3` lists both
+  `EnvironmentFile=` lines.
+- **Remove:** delete the drop-in, `daemon-reload`, restart. Sign-in stops working.
+
 ## 3. Kiosk web (Flutter)
 
 `app/` built with `flutter build web --release`, copied to `/var/www/xc-v3-customer/web` (old copy kept as
@@ -86,7 +104,7 @@ The v3 server on this host calls it over HTTPS through a public name (Dell has n
 | # | Work | Where the ticket belongs | Notes |
 |---|---|---|---|
 | I-1 | ~~DNS record `xc-id.spacing.cloud`, certbot + `:443`~~ | — | **Done 2026-10-09**: `https://xc-id.spacing.cloud/health` 200, JWKS 200, `/admin/*` 401 without the internal token |
-| I-2 | The xchange server verifies Identity tokens: `aud=xchange`, `iss=auth-service`, keys from `xc-id`'s JWKS; reads `/etc/xc-v3/identity-client.env` | `108-Plaza/xchange` — design #550 (PR 589 §5) and #554 | **Everyone signs in through xc-identity: staff, the owner and customers.** The owner answered on 2026-10-09 "Follow the Blueprint: Identity for everyone" (PR 589 §0 B2), which reverses the 10-06 D4 order that xc-auth keeps staff accounts. An xchange user is bound to an Identity account by a one-time invite code (PR 589 §5.3) |
+| I-2 | The xchange server verifies Identity tokens: `aud=xchange`, `iss=auth-service`, keys from `xc-id`'s JWKS; reads `/etc/xc-v3/identity-client.env` | `108-Plaza/xchange` — design #550 (PR 589 §5) and #554 | **Everyone signs in through xc-identity: staff, the owner and customers.** The owner answered on 2026-10-09 "Follow the Blueprint: Identity for everyone" (PR 589 §0 B2), which reverses the 10-06 D4 order that xc-auth keeps staff accounts. The shop owner or an ADMIN creates each staff account: the server registers the phone with Identity and binds the account, with no invite (owner ruling B6, PR 1161; shipped by #1157, PR 1194) |
 | I-3 | Customer sign-in flow in the app (register by phone, OTP delivery, optional Google) | `108-Plaza/xchange` — #558 (customer app), #550 (staff) | OTP is `noop` today: an SMS/e-mail sender must be chosen (owner). Identity registration **requires a phone** (`phone_required`), so staff register with their own phones too |
 | I-4 | `/health` reports `build: unknown` | `108-Plaza/108-platform-services` | The fleet versioning rule wants `build`/`builtAt`/`channel`; set them at build time |
 | R-1 | Design a Recognize HTTP service that fits 2 vCPU / ~2 GB: which documents (passport MRZ, Thai ID), which engine, concurrency limit, request size, no image kept after the answer | **already open: `108-Plaza/Recognize-Platform#150`** — host: **Dell first** (owner) (claude/b060e9, carries v2's MRZ behaviour contract) — do not open a second ticket | Blueprint §16 rules apply: identity documents are never logged or exported |

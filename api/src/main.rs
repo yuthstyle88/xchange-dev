@@ -3,10 +3,14 @@ use std::sync::Arc;
 
 use pos_error::AppError;
 use xc_auth::application::account::service::AccountService;
+use xc_auth::application::session::SessionService;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
+use xc_auth::domain::identity::identity_client::IdentityClient;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_auth::infrastructure::identity::http_identity_client::HttpIdentityClient;
 use xchange::bootstrap::Application;
 use xchange::config::Settings;
+use xchange::presentation::http::client_address::CLIENT_ADDRESS_HEADER;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -63,16 +67,35 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
-        [_, cmd, flag, name] if cmd == "create-admin-invite" && flag == "--name" => {
+        [_, cmd, name_flag, name, phone_flag, phone]
+            if cmd == "create-owner" && name_flag == "--name" && phone_flag == "--phone" =>
+        {
+            // The password is one line on standard input, never an argument: it stays off the
+            // command line and out of the shell history (deploy/README.md, "First owner account").
+            let mut password = String::new();
+            std::io::stdin().lock().read_line(&mut password)?;
+            let password = password.trim_end_matches(['\r', '\n']).to_string();
+
             let settings = Settings::load()?;
+            let identity_settings = settings.identity.clone().ok_or_else(|| {
+                anyhow::anyhow!("Identity is not configured (IDENTITY_BASE_URL and its client)")
+            })?;
+            let identity: Arc<dyn IdentityClient> = Arc::new(HttpIdentityClient::new(
+                identity_settings,
+                CLIENT_ADDRESS_HEADER,
+            ));
             let pool = xchange::bootstrap::connect(&settings).await?;
-            let session_service =
-                xc_auth::application::session::SessionService::new(pool, None, None, None);
+            let session_service = SessionService::new(pool, Some(identity), None, None);
             let now = chrono::Utc::now();
 
-            match session_service.create_first_admin_invite(name, now).await {
-                Ok(code) => {
-                    println!("{code}");
+            match session_service
+                .create_owner(name, phone, &password, now)
+                .await
+            {
+                Ok(user_id) => {
+                    println!(
+                        "Owner {name} created (user {user_id}); sign in on /login with the phone"
+                    );
                     Ok(())
                 }
                 Err(e) => {

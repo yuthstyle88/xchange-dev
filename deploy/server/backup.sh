@@ -102,7 +102,7 @@ if ! dump_list="$(pg_restore --list "$dump_file" </dev/null 2>&1)"; then
   echo "ERROR: pg_restore --list failed on dump (expected _sqlx_migrations): $dump_list" >&2
   exit 1
 fi
-if ! printf '%s\n' "$dump_list" | grep -qs '_sqlx_migrations'; then
+if ! grep -qs '_sqlx_migrations' <<<"$dump_list"; then
   echo "ERROR: backup dump does not contain _sqlx_migrations" >&2
   exit 1
 fi

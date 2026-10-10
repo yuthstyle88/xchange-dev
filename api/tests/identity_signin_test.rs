@@ -1,9 +1,13 @@
 //! OR-3 (#550 design `docs/design/blueprint/org-roles-branches.md` §5, §10 "OR-3" up-front tests): sign-in
-//! through Identity — the BFF routes under `/api/auth/*`, the one session cookie, `user_sessions`, the invite
-//! claim, and the session reaching the old route code (a shift opened by a user signed in the new way).
+//! through Identity — the BFF routes under `/api/auth/*`, the one session cookie, `user_sessions`, and the session
+//! reaching the old route code (a shift opened by a user signed in the new way).
 //!
 //! Written before the implementation by the ticket author (claude/b060e9). Do not edit, delete or weaken these
 //! tests; add your own in another file.
+//!
+//! Amended by #1157 (claude/08f7f46f, the owner's order "ไม่มีระบบเชิญสำหรับพนักงาน"): the code-claim cases
+//! and the claim route's 503 row are removed with the route, as the ticket lists; the not-bound sentence no longer
+//! points to a one-time code. Every other case is unchanged.
 //!
 //! Identity is faked over real HTTP (`identity_signin_common::FakeIdentity`); nothing here reaches a real
 //! Identity. The token checks run through I-2's verifier (#649), fed by the fake's JWKS.
@@ -14,25 +18,15 @@ mod auth_http_common;
 mod common;
 mod identity_signin_common;
 
-use std::sync::Arc;
-
 use auth_http_common::Desk;
-use chrono::{Duration, Utc};
 use identity_signin_common::*;
 use serde_json::json;
 use sqlx::PgPool;
-use xc_auth::application::user::UserService;
-use xc_auth::domain::access::{Role, ScopedRole};
-use xc_auth::infrastructure::user::PgUserRepository;
-use xc_kernel::ids::BranchId;
 use xchange::config::Settings;
 
 const SIGN_IN: &str = "กรุณาเข้าสู่ระบบ";
-const NOT_BOUND: &str = "บัญชีนี้ยังไม่ได้ผูกกับผู้ใช้ของ XCHANGE กรุณาใช้รหัสเชิญ";
+const NOT_BOUND: &str = "บัญชีนี้ยังไม่มีผู้ใช้ใน XCHANGE ให้เจ้าของร้านสร้างบัญชีให้";
 const DISABLED: &str = "บัญชีถูกระงับ";
-/// OR-2's sentences (`api/crates/xc-auth/src/application/user/user_service.rs:141`, `:149`).
-const INVITE_SPENT: &str = "รหัสเชิญไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุแล้ว";
-const SUBJECT_TAKEN: &str = "ผู้ใช้นี้ลงทะเบียนแล้ว";
 
 fn login(identifier: &str) -> Req {
     Req::post(
@@ -446,7 +440,6 @@ async fn without_identity_settings_the_routes_that_need_identity_are_503() {
         "/api/auth/login",
         "/api/auth/otp/request",
         "/api/auth/otp/verify",
-        "/api/auth/invite/claim",
     ] {
         let reply = app.send(Req::post(path, json!({}))).await;
         assert_eq!(reply.status, 503, "{path}: {}", reply.text);
@@ -493,120 +486,6 @@ async fn a_cross_site_signin_is_refused_before_identity() {
     assert_eq!(reply.status, 400, "{}", reply.text);
     assert_eq!(reply.refusal().0, "invalidRequest");
     assert!(identity.calls().is_empty(), "Identity was not called");
-    desk.drop_schema().await;
-}
-
-// ── invites (§5.3) ────────────────────────────────────────────────────────
-
-/// An invite for a new TELLER at MAIN (OR-2's `UserService::invite`): (users.id, code).
-async fn invite(pool: &PgPool) -> (String, String) {
-    let org = organization(pool).await;
-    let now = Utc::now();
-    let mut tx = pool.begin().await.expect("begin");
-    let (user, code) = UserService::new(Arc::new(PgUserRepository::new()))
-        .invite(
-            &mut tx,
-            &org,
-            "Invited Teller",
-            vec![ScopedRole::new(
-                Role::Teller,
-                Some(BranchId::new("MAIN")),
-                now - Duration::days(1),
-                None,
-            )],
-            "test",
-            now,
-            now + Duration::days(7),
-        )
-        .await
-        .expect("invite");
-    tx.commit().await.expect("commit");
-    (user.id, code)
-}
-
-fn claim(code: &str) -> Req {
-    Req::post(
-        "/api/auth/invite/claim",
-        json!({ "identifier": "+66812345678", "password": "pw-from-the-browser-01", "inviteCode": code }),
-    )
-}
-
-async fn subject_and_status(pool: &PgPool, user: &str) -> (Option<String>, String) {
-    sqlx::query_as("SELECT auth_subject, status FROM users WHERE id = $1::uuid")
-        .bind(user)
-        .fetch_one(pool)
-        .await
-        .expect("the user")
-}
-
-/// §10 OR-3: the first claim binds the Identity subject and signs in; the same code claimed again (another
-/// person) is refused and changes nothing.
-#[actix_web::test]
-async fn an_invite_claimed_twice_is_refused() {
-    let (desk, identity, app) = setup().await;
-    let (user, code) = invite(&desk.pool).await;
-
-    identity.login_answers("/auth/login", VALID_A, REFRESH_1);
-    let first = app.send(claim(&code)).await;
-    assert_eq!(first.status, 200, "{}", first.text);
-    assert_eq!(first.json()["user"]["id"], json!(user));
-    first.session();
-    assert_eq!(
-        subject_and_status(&desk.pool, &user).await,
-        (Some(SUB_A.to_owned()), "ACTIVE".to_owned())
-    );
-
-    identity.login_answers("/auth/login", VALID_B, REFRESH_2);
-    let second = app.send(claim(&code)).await;
-    assert_eq!(second.status, 400, "{}", second.text);
-    assert_eq!(
-        second.refusal(),
-        ("inviteRefused".to_owned(), INVITE_SPENT.to_owned())
-    );
-    assert!(second.sets_no_session());
-    assert_eq!(
-        subject_and_status(&desk.pool, &user).await,
-        (Some(SUB_A.to_owned()), "ACTIVE".to_owned()),
-        "the first claim stands"
-    );
-    assert_eq!(sessions_of(&desk.pool, &user).await, 1);
-    assert_eq!(all_sessions(&desk.pool).await, 1);
-    desk.drop_schema().await;
-}
-
-/// §5.3: a second code for a subject already bound is refused, and that code is **not** spent (the claim runs
-/// in one transaction).
-#[actix_web::test]
-async fn a_second_invite_for_a_bound_subject_is_refused_and_not_spent() {
-    let (desk, identity, app) = setup().await;
-    let (first_user, first_code) = invite(&desk.pool).await;
-    let (second_user, second_code) = invite(&desk.pool).await;
-    identity.login_answers("/auth/login", VALID_A, REFRESH_1);
-    assert_eq!(app.send(claim(&first_code)).await.status, 200);
-
-    let reply = app.send(claim(&second_code)).await;
-    assert_eq!(reply.status, 400, "{}", reply.text);
-    assert_eq!(
-        reply.refusal(),
-        ("inviteRefused".to_owned(), SUBJECT_TAKEN.to_owned())
-    );
-    assert!(reply.sets_no_session());
-    assert_eq!(
-        subject_and_status(&desk.pool, &second_user).await,
-        (None, "INVITED".to_owned())
-    );
-    let used: Option<chrono::DateTime<Utc>> =
-        sqlx::query_scalar("SELECT used_at FROM user_invites WHERE user_id = $1::uuid")
-            .bind(&second_user)
-            .fetch_one(&desk.pool)
-            .await
-            .expect("the second invite");
-    assert_eq!(
-        used, None,
-        "the refused claim rolled back: the code is unspent"
-    );
-    assert_eq!(sessions_of(&desk.pool, &first_user).await, 1);
-    assert_eq!(all_sessions(&desk.pool).await, 1);
     desk.drop_schema().await;
 }
 

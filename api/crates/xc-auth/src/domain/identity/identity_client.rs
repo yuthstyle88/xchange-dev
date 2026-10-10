@@ -59,6 +59,9 @@ pub enum IdentityError {
     CodeExpired,
     SignIn,
     AlreadyRegistered,
+    PhoneTaken,
+    UsernameTaken,
+    EmailTaken,
     PhoneRequired,
     InvalidPhone,
     WeakPassword,
@@ -93,6 +96,9 @@ impl IdentityError {
             Self::CodeExpired => (410, "codeExpired", "รหัสยืนยันหมดอายุ กรุณาขอรหัสใหม่"),
             Self::SignIn => (401, "signIn", "กรุณาเข้าสู่ระบบ"),
             Self::AlreadyRegistered => (409, "alreadyRegistered", "มีบัญชีนี้อยู่แล้ว กรุณาเข้าสู่ระบบ"),
+            Self::PhoneTaken => (400, "phoneTaken", "เบอร์โทรศัพท์นี้มีบัญชีอยู่แล้ว"),
+            Self::UsernameTaken => (400, "usernameTaken", "ชื่อผู้ใช้นี้มีอยู่แล้ว"),
+            Self::EmailTaken => (400, "emailTaken", "อีเมลนี้มีบัญชีอยู่แล้ว"),
             Self::PhoneRequired => (422, "phoneRequired", "กรุณากรอกเบอร์โทรศัพท์"),
             Self::InvalidPhone => (422, "invalidPhone", "เบอร์โทรศัพท์ไม่ถูกต้อง"),
             Self::WeakPassword => (422, "weakPassword", "รหัสผ่านไม่ผ่านเงื่อนไขความปลอดภัย"),
@@ -135,4 +141,21 @@ pub trait IdentityClient: Send + Sync + 'static {
         code: &'a str,
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>>;
+
+    /// Creates an Identity account server-side (#1157). Only the staff create and the
+    /// `create-owner` bootstrap call this; no public route reaches it. No OTP is sent.
+    fn register<'a>(
+        &'a self,
+        request: &'a IdentityRegisterRequest<'a>,
+    ) -> BoxFuture<'a, Result<IdentityRegisterResponse, IdentityError>>;
+}
+
+/// What a server-side create sends to Identity `POST /auth/register` (camelCase on the wire).
+#[derive(Debug, Clone, Copy)]
+pub struct IdentityRegisterRequest<'a> {
+    pub username: Option<&'a str>,
+    pub phone: &'a str,
+    pub email: Option<&'a str>,
+    pub password: &'a str,
+    pub must_change_password: bool,
 }

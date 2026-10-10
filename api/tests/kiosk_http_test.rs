@@ -735,10 +735,21 @@ async fn the_answers_keep_v2s_key_order() {
          \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"K-C0FFEE12\"}"
     );
     let rates = counter.ask(None, "rates", json!({})).await;
+    // RF-5 (#877): v3 appends `freshness` after v2's last key (snapshot_common::V3_ADDED_KEYS);
+    // v2's part is everything before it, unchanged.
+    let (v2_part, added) = rates
+        .text
+        .split_once(",\"freshness\":{\"stale\":")
+        .unwrap_or_else(|| panic!("`freshness` comes after v2's last key: {}", rates.text));
     assert!(
-        rates.text.starts_with(
+        added.ends_with("}}") && !added.contains("\"simulation\""),
+        "`freshness` is the last key: {}",
+        rates.text
+    );
+    assert!(
+        v2_part.starts_with(
             "{\"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"open\":true,\"rates\":[{\"code\":\"USD\",\"name\":\""
-        ) && rates.text.ends_with(
+        ) && format!("{v2_part}}}").ends_with(
             "\"buy\":32.1,\"sell\":32.6}],\"paymentMethods\":[\
              {\"id\":\"Cash\",\"enabled\":true,\"buy\":true,\"sell\":true,\"instruction\":\"\"},\
              {\"id\":\"Credit Card\",\"enabled\":true,\"buy\":false,\"sell\":true,\"instruction\":\"\"},\

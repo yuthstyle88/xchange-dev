@@ -208,6 +208,49 @@ pub fn without_dropped_keys(recorded: &Value) -> Value {
     value
 }
 
+/// Top-level keys v3 adds to a v2 answer by decision, per route and action, with the
+/// exact fields each one's object must have. v2's pages ignore them; every other key
+/// is still compared strictly both ways.
+/// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
+///   appends `freshness`.
+pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[(
+    "/api/kiosk",
+    "rates",
+    "freshness",
+    &["publishedAt", "sourceDate", "stale"],
+)];
+
+/// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,
+/// after checking each one present is an object with exactly its fields. The key
+/// may be absent: the tests of the change that adds it require it.
+pub fn without_v3_added_keys(
+    route: Option<&str>,
+    action: Option<&str>,
+    actual: &Value,
+    label: &str,
+) -> Value {
+    let mut actual = actual.clone();
+    for (r, a, key, fields) in V3_ADDED_KEYS {
+        if route != Some(*r) || action != Some(*a) {
+            continue;
+        }
+        let Some(map) = actual.as_object_mut() else {
+            continue;
+        };
+        if let Some(added) = map.remove(*key) {
+            let mut got: Vec<&str> = added
+                .as_object()
+                .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
+                .keys()
+                .map(String::as_str)
+                .collect();
+            got.sort_unstable();
+            assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+        }
+    }
+    actual
+}
+
 /// `value` without the top-level `keys`.
 pub fn without_keys(value: &Value, keys: &[&str]) -> Value {
     match value {
@@ -1648,7 +1691,7 @@ pub async fn seed_opener(pool: &PgPool, id: &str) {
             sqlx::query(
                 "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
                  u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'INVITED', 'test' FROM o RETURNING id, organization_id) \
+                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
                  INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
                  SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
             )
@@ -1660,7 +1703,7 @@ pub async fn seed_opener(pool: &PgPool, id: &str) {
     }
     sqlx::query(
         "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'INVITED', 'test', $1 FROM organizations WHERE code = 'XC' \
+         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
          ON CONFLICT (legacy_employee_id) DO NOTHING",
     )
     .bind(id)

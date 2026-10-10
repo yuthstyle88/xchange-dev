@@ -25,6 +25,7 @@ use crate::application::compat::v2_json::{
     V2Json, money_json, rate_json, time_json, time_or_empty_json,
 };
 use crate::application::settings::payment_json::rules_v2_json;
+use crate::presentation::dto::v3::common::RateFreshnessDto;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CurrencyTableEntry {
@@ -114,7 +115,7 @@ fn compat_rate_json(rate: Rate, unit_size: UnitSize) -> AppResult<V2Json> {
     Ok(V2Json::Number(shortest(&dec.to_string())))
 }
 
-pub fn rates_json(public_rates: &PublicRates) -> AppResult<V2Json> {
+pub fn rates_json(public_rates: &PublicRates, freshness: &RateFreshnessDto) -> AppResult<V2Json> {
     let mut rate_items = Vec::with_capacity(public_rates.rates.len());
     for rate in &public_rates.rates {
         let entry = CURRENCY_MAP.get(rate.code.as_str());
@@ -134,6 +135,20 @@ pub fn rates_json(public_rates: &PublicRates) -> AppResult<V2Json> {
         ]));
     }
 
+    let freshness_json = V2Json::object(vec![
+        ("stale", V2Json::Bool(freshness.stale)),
+        (
+            "sourceDate",
+            optional(freshness.source_date.as_ref(), |d| V2Json::text(d.as_str())),
+        ),
+        (
+            "publishedAt",
+            optional(freshness.published_at.as_ref(), |p| {
+                V2Json::text(p.as_str())
+            }),
+        ),
+    ]);
+
     Ok(V2Json::object(vec![
         ("branchId", V2Json::text(public_rates.branch_id.as_str())),
         ("branchName", V2Json::text(&public_rates.branch_name)),
@@ -144,6 +159,7 @@ pub fn rates_json(public_rates: &PublicRates) -> AppResult<V2Json> {
             rules_v2_json(&public_rates.payment, false),
         ),
         ("simulation", V2Json::Bool(false)),
+        ("freshness", freshness_json),
     ]))
 }
 
@@ -483,7 +499,7 @@ mod tests {
                 line_id: LineId(1),
             }],
         };
-        let err = rates_json(&public_rates).unwrap_err();
+        let err = rates_json(&public_rates, &RateFreshnessDto::default()).unwrap_err();
         assert!(matches!(err, AppError::Internal(_)));
     }
 }

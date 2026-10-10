@@ -4014,6 +4014,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-notify"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "xc-auth",
+ "xc-kernel",
+]
+
+[[package]]
 name = "xc-outbox"
 version = "0.1.0"
 dependencies = [
@@ -4138,6 +4154,7 @@ dependencies = [
  "xc-exchange",
  "xc-kernel",
  "xc-kiosk",
+ "xc-notify",
  "xc-outbox",
  "xc-rate",
  "xc-referral",

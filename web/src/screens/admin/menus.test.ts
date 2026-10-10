@@ -239,7 +239,10 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // (`docs/design/blueprint/customer-identity-consent.md` §4.4, §9 CI-8) is a v3 menu with no v2 row,
 // OWNER only (`consentPolicy` is an owner row, PR 876), pinned in
 // `web/src/screens/admin/consent/Consent.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent'];
+// Amended by the rate feed's F3w, by its ticket author (claude/c954feda): `/admin/denomination-groups`
+// (`docs/design/rate-feed-connector.md` §10.3; owner's ruling R-3 on #986) is a v3 menu with no v2
+// row, OWNER only, pinned in `web/src/screens/admin/denomination-groups/DenominationGroups.test.tsx`.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups'];
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {

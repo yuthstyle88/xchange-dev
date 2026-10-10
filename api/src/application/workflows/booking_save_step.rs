@@ -175,7 +175,7 @@ mod tests {
             // Open shift in MAIN
             sqlx::query(
                 "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-                 SELECT id, 'test', 'INVITED', 'test', 'test' FROM organizations WHERE code = 'XC' \
+                 SELECT id, 'test', 'PENDING', 'test', 'test' FROM organizations WHERE code = 'XC' \
                  ON CONFLICT (legacy_employee_id) DO NOTHING",
             )
             .execute(&self.pool)
