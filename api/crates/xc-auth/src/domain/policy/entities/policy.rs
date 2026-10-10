@@ -507,6 +507,8 @@ pub enum Need {
     Public,
     /// `Authorizer::check` with this permission.
     Permission(Permission),
+    /// Any of these permissions (`Need::AnyOf`).
+    AnyOf(&'static [Permission]),
     /// #582's row: until #582, the custody engine asks the v2 rule [`Policy::allow`].
     Custody,
 }
@@ -649,7 +651,26 @@ impl Policy {
         named: Option<&BranchId>,
         now: DateTime<Utc>,
     ) -> Result<Grant, PolicyError> {
-        let need = Self::need(path, action);
+        Self::authorize_with(
+            crate::domain::policy::areas::AREA_ROWS,
+            actor,
+            path,
+            action,
+            named,
+            now,
+        )
+    }
+
+    /// `authorize` over the given area rows. `Policy::authorize` is `authorize_with(AREA_ROWS, …)`.
+    pub fn authorize_with(
+        areas: &[&[crate::domain::policy::areas::AreaRow]],
+        actor: Option<&Who>,
+        path: EntryPath,
+        action: &Action,
+        named: Option<&BranchId>,
+        now: DateTime<Utc>,
+    ) -> Result<Grant, PolicyError> {
+        let need = Self::need_with(areas, path, action);
 
         // 1. Need::Public -> Grant
         if need == Some(Need::Public) {
@@ -724,10 +745,15 @@ impl Policy {
         };
 
         // 5. Need::Custody -> refused with InvalidRequest
-        let permission = match need {
+        let single;
+        let permissions: &[Permission] = match need {
             Need::Public => unreachable!(),
             Need::Custody => return Err(PolicyError::InvalidRequest),
-            Need::Permission(p) => p,
+            Need::Permission(p) => {
+                single = [p];
+                &single
+            }
+            Need::AnyOf(ps) => ps,
         };
 
         // 6. Authorizer::check
@@ -736,11 +762,29 @@ impl Policy {
             named.cloned(),
             actor.customer_id.as_deref(),
         );
-        match Authorizer::check(Some(actor), permission, &target, now) {
-            Ok(grant) => Ok(grant),
-            Err(Refusal::SignIn) => Err(PolicyError::SignIn),
-            Err(Refusal::OutOfScope) => Err(PolicyError::OutOfScope),
-            Err(Refusal::RoleNotAllowed) => match path {
+
+        let mut saw_out_of_scope = false;
+        for &perm in permissions {
+            match Authorizer::check(Some(actor), perm, &target, now) {
+                Ok(grant) => return Ok(grant),
+                Err(Refusal::SignIn) => return Err(PolicyError::SignIn),
+                Err(Refusal::OutOfScope) => {
+                    saw_out_of_scope = true;
+                }
+                Err(Refusal::RoleNotAllowed) => {}
+            }
+        }
+
+        let refusal = if saw_out_of_scope {
+            Refusal::OutOfScope
+        } else {
+            Refusal::RoleNotAllowed
+        };
+
+        match refusal {
+            Refusal::SignIn => Err(PolicyError::SignIn),
+            Refusal::OutOfScope => Err(PolicyError::OutOfScope),
+            Refusal::RoleNotAllowed => match path {
                 EntryPath::Rpc => Err(PolicyError::RoleNotAllowedHere),
                 EntryPath::StaffRpc => match action.as_str() {
                     "adminDeskConfig" => Err(PolicyError::FrontOnly),
