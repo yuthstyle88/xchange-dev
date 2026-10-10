@@ -21,7 +21,7 @@ import type {
 } from '../../../shared/api/generated/admin_payments';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
-import { Card, CardHead, CardBody, CardGrid } from '../../../shared/ui/Card';
+import { Card, CardBody, CardGrid } from '../../../shared/ui/Card';
 import { Field, CheckField } from '../../../shared/ui/Field';
 import { en, th } from './i18n';
 import { formatDate } from './text';
@@ -30,11 +30,11 @@ import './payments.css';
 const t = screenT('admin.payments', { th, en });
 
 const CHANNELS = [
-  { id: 'Cash', nameKey: 'channelCash' as const, line: 'Cash' },
-  { id: 'Credit Card', nameKey: 'channelCreditCard' as const, line: 'Credit card' },
-  { id: 'Alipay', nameKey: 'channelAlipay' as const, line: 'Alipay' },
-  { id: 'PromptPay', nameKey: 'channelPromptPay' as const, line: 'PromptPay' },
-  { id: 'Bank Transfer', nameKey: 'channelBankTransfer' as const, line: 'Bank transfer' },
+  { id: 'Cash', nameKey: 'channelCash' as const, line: 'Cash', icon: '฿' },
+  { id: 'Credit Card', nameKey: 'channelCreditCard' as const, line: 'Credit card', icon: '▣' },
+  { id: 'Alipay', nameKey: 'channelAlipay' as const, line: 'Alipay', icon: '支' },
+  { id: 'PromptPay', nameKey: 'channelPromptPay' as const, line: 'PromptPay', icon: '▦' },
+  { id: 'Bank Transfer', nameKey: 'channelBankTransfer' as const, line: 'Bank transfer', icon: '⇄' },
 ] as const;
 
 const BUY_CHANNELS: readonly string[] = ['Cash', 'Bank Transfer'];
@@ -347,44 +347,55 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   return (
     <div class="xc-payments">
       <Show when={loading() && !data()}>
-        <div class="xc-payment-loading">{t('loading')}</div>
+        <Card class="xc-payment-loading">
+          <p role="status">{t('loading')}</p>
+        </Card>
       </Show>
 
       <Show when={error() && !data()}>
-        <div class="xc-payment-error">
-          <span>{errorText(error()!.code, error()!.message)}</span>
-          <button type="button" onClick={() => void loadData(displayedBranch())}>
+        <Card class="xc-payment-loading">
+          <p role="status">{errorText(error()!.code, error()!.message)}</p>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => void loadData(displayedBranch())}
+          >
             {t('retry')}
           </button>
-        </div>
+        </Card>
       </Show>
 
       <Show when={data()}>
-        <header class="xc-payment-header">
-          <div class="xc-payment-intro-eyebrow">{t('introEyebrow')}</div>
-          <h2>
-            {t('headingOf')} {branchDisplayName()}
-          </h2>
-          <Show when={branchNotice()}>
-            <div class="xc-branch-notice">{branchNotice()}</div>
-          </Show>
-          <div class="xc-payment-intro">{t('intro')}</div>
-          <div class="xc-payment-meta-bar">
-            <span class="xc-payment-count-pill">{openCount()}</span>
-            <span class="xc-payment-meta-text">{metaText()}</span>
-            <button
-              type="button"
-              disabled={saving()}
-              onClick={handleReload}
-              class="xc-payment-reload-btn"
-            >
-              {t('reload')}
-            </button>
+        <div class="xc-payment-header">
+          <div>
+            <p class="eyebrow">{t('introEyebrow')}</p>
+            <h2>
+              {t('headingOf')} {branchDisplayName()}
+            </h2>
+            <p class="xc-payment-intro">{t('intro')}</p>
           </div>
-          <Show when={!canEdit()}>
-            <div class="xc-payment-readonly">{t('readOnly')}</div>
-          </Show>
-        </header>
+          <span class="pill xc-payment-count-pill">{openCount()}</span>
+        </div>
+
+        <div class="xc-payment-meta-bar">
+          <span class="xc-payment-meta-text">{metaText()}</span>
+          <button
+            type="button"
+            disabled={saving()}
+            onClick={handleReload}
+            class="secondary"
+          >
+            {t('reload')}
+          </button>
+        </div>
+
+        <Show when={branchNotice()}>
+          <div class="xc-branch-notice">{branchNotice()}</div>
+        </Show>
+
+        <Show when={!canEdit()}>
+          <p class="stock-banner">{t('readOnly')}</p>
+        </Show>
 
         <form
           onSubmit={(e) => {
@@ -408,21 +419,26 @@ export function Payments(props: AdminMenuProps): JSX.Element {
 
                   return (
                     <div data-payment-id={c.id} style="display: contents">
-                      <Card>
-                        <CardHead
-                          level={3}
-                          title={t(c.nameKey)}
-                          aside={<span class="xc-payment-line">{c.line}</span>}
-                        />
-
+                      <Card class="xc-payment-channel">
                         <CardBody>
-                          <CheckField
-                            label={t('enabled')}
-                            checked={method().enabled}
-                            onChange={(checked) =>
-                              updateMethod(c.id, { enabled: checked })
-                            }
-                          />
+                          <div class="xc-payment-card-head">
+                            <span class="xc-payment-icon" aria-hidden="true">
+                              {c.icon}
+                            </span>
+                            <div>
+                              <h3>{t(c.nameKey)}</h3>
+                              <p class="xc-payment-line">{c.line}</p>
+                            </div>
+                            <span class="xc-payment-switch">
+                              <CheckField
+                                label={t('enabled')}
+                                checked={method().enabled}
+                                onChange={(checked) =>
+                                  updateMethod(c.id, { enabled: checked })
+                                }
+                              />
+                            </span>
+                          </div>
 
                           <div class="xc-payment-directions">
                             <CheckField
@@ -437,7 +453,13 @@ export function Payments(props: AdminMenuProps): JSX.Element {
                             <Show
                               when={BUY_CHANNELS.includes(c.id)}
                               fallback={
-                                <div class="xc-payment-receive-only">{t('receiveOnly')}</div>
+                                <CheckField
+                                  label={t('buy')}
+                                  hint={t('receiveOnly')}
+                                  checked={false}
+                                  disabled={true}
+                                  onChange={() => {}}
+                                />
                               }
                             >
                               <CheckField
@@ -490,7 +512,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
 
           <div class="xc-payment-save-bar">
             <div class="xc-payment-save-status">
-              <span class="xc-payment-dirty-state">{isDirty() ? t('dirty') : t('clean')}</span>
+              <strong class="xc-payment-dirty-state">{isDirty() ? t('dirty') : t('clean')}</strong>
               <span class="xc-payment-save-note">{t('saveNote')}</span>
             </div>
 
@@ -499,25 +521,25 @@ export function Payments(props: AdminMenuProps): JSX.Element {
                 type="button"
                 disabled={!isDirty() || saving()}
                 onClick={handleDiscard}
-                class="xc-payment-discard-btn"
+                class="secondary"
               >
                 {t('discard')}
               </button>
               <button
                 type="submit"
                 disabled={!canEdit() || saving()}
-                class="xc-payment-save-btn"
+                class="primary"
               >
                 {t('save')}
               </button>
             </div>
           </div>
 
-          <div role="status" id="payment-feedback" class="xc-payment-feedback">
+          <p role="status" id="payment-feedback" class="error xc-payment-feedback">
             {feedback()}
-          </div>
+          </p>
 
-          <div class="xc-payment-footnote">{t('footnote')}</div>
+          <p class="footnote">{t('footnote')}</p>
         </form>
 
         <Show when={data()?.history !== undefined}>
@@ -525,37 +547,39 @@ export function Payments(props: AdminMenuProps): JSX.Element {
             <summary>
               {t('historySummary', { count: data()!.history.length })}
             </summary>
-            <table class="xc-payment-history-table">
-              <thead>
-                <tr>
-                  <th>{t('historyHeaderDate')}</th>
-                  <th>{t('historyHeaderActor')}</th>
-                  <th>{t('historyHeaderChanges')}</th>
-                  <th>{t('historyHeaderVersion')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <Show
-                  when={data()!.history.length > 0}
-                  fallback={
-                    <tr>
-                      <td colspan="4">{t('noHistory')}</td>
-                    </tr>
-                  }
-                >
-                  <For each={data()!.history}>
-                    {(h: PaymentHistoryItem) => (
+            <div class="table-scroll">
+              <table class="xc-payment-history-table">
+                <thead>
+                  <tr>
+                    <th>{t('historyHeaderDate')}</th>
+                    <th>{t('historyHeaderActor')}</th>
+                    <th>{t('historyHeaderChanges')}</th>
+                    <th>{t('historyHeaderVersion')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <Show
+                    when={data()!.history.length > 0}
+                    fallback={
                       <tr>
-                        <td>{formatDate(h.createdAt)}</td>
-                        <td>{h.actor}</td>
-                        <td>{computeChangedChannels(h.beforeMethods, h.afterMethods)}</td>
-                        <td>{String(h.version)}</td>
+                        <td colspan="4">{t('noHistory')}</td>
                       </tr>
-                    )}
-                  </For>
-                </Show>
-              </tbody>
-            </table>
+                    }
+                  >
+                    <For each={data()!.history}>
+                      {(h: PaymentHistoryItem) => (
+                        <tr>
+                          <td>{formatDate(h.createdAt)}</td>
+                          <td>{h.actor}</td>
+                          <td>{computeChangedChannels(h.beforeMethods, h.afterMethods)}</td>
+                          <td>{String(h.version)}</td>
+                        </tr>
+                      )}
+                    </For>
+                  </Show>
+                </tbody>
+              </table>
+            </div>
           </details>
         </Show>
       </Show>
