@@ -8,10 +8,12 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Money, Side};
 use xc_kernel::payment::PaymentRules;
 
 use crate::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use crate::domain::kiosk::value_objects::audit_line::AuditLine;
+use crate::domain::kiosk::value_objects::counter_facts::LineId;
 use crate::domain::kiosk::value_objects::counter_view::CounterView;
 
 pub trait KioskPorts: Send + Sync {
@@ -63,5 +65,22 @@ pub trait KioskPorts: Send + Sync {
     ) -> BoxFuture<'a, AppResult<PaymentRules>> {
         let _ = (tx, branch);
         Box::pin(async { Ok(PaymentRules::defaults()) })
+    }
+
+    /// Checks whether the quote on `line_id` is admitted under the publication's stale policy (R5).
+    /// Returns `Ok(true)` if admitted, `Ok(false)` if refused due to staleness.
+    #[allow(clippy::too_many_arguments)]
+    fn check_stale_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        line_id: LineId,
+        currency: CurrencyCode,
+        side: Side,
+        thb: Money,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        let _ = (tx, branch, line_id, currency, side, thb, now);
+        Box::pin(async { Ok(true) })
     }
 }

@@ -17,6 +17,13 @@
 //!
 //! Every caller's answer is also in `fixtures/v2_policy_cases.json` (paths `PaymentMethods`,
 //! `DrawerPassport`), which `policy_test.rs` replays whole.
+//!
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.2, §4.3)
+//! onto the Blueprint's users: the callers are the owner's user (EXECUTIVE + ADMIN, B3) and one
+//! user per Blueprint role. One answer changes, C5 (§02 ADMIN "ตั้งค่าระบบ"): `save` is
+//! SystemSettings, EXECUTIVE and ADMIN, so ADMIN (ex-SYSTEM) now saves the payment settings. The
+//! passport drawer is DrawerPassport, the B1 translation of OWNER, FRONT, BACKEND, MANAGER:
+//! EXECUTIVE, TELLER, BRANCH_MANAGER — no change.
 
 mod policy_common;
 
@@ -26,12 +33,16 @@ const B2: &str = "B2";
 
 fn everybody_signed_in() -> Vec<Actor> {
     let mut all = vec![owner()];
-    all.extend(Role::STAFF.into_iter().map(|r| staff(r, B2)));
+    all.extend(BLUEPRINT.into_iter().map(|r| staff(r, B2)));
     all
 }
 
-fn label(who: &Actor) -> &'static str {
-    who.role().as_str()
+fn label(who: &Actor) -> String {
+    who.roles
+        .iter()
+        .map(|r| r.role.as_str())
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 // ── payment methods ──────────────────────────────────────────────────────────
@@ -60,12 +71,24 @@ fn the_payment_settings_are_read_by_anybody_signed_in() {
 }
 
 #[test]
-fn the_payment_settings_are_saved_by_the_owner_alone() {
+fn the_payment_settings_are_saved_by_executive_and_admin() {
+    // C5: SystemSettings (was: the owner alone)
     assert_eq!(
         ask(Some(&owner()), EntryPath::PaymentMethods, "save"),
         Ok(())
     );
-    for r in Role::STAFF {
+    for r in [Role::Executive, Role::Admin] {
+        assert_eq!(
+            ask(Some(&staff(r, B2)), EntryPath::PaymentMethods, "save"),
+            Ok(()),
+            "{}",
+            r.as_str()
+        );
+    }
+    for r in BLUEPRINT
+        .into_iter()
+        .filter(|r| !matches!(r, Role::Executive | Role::Admin))
+    {
         assert_eq!(
             said(ask(Some(&staff(r, B2)), EntryPath::PaymentMethods, "save")),
             (PAYMENT_OWNER_ONLY.to_owned(), 403),
@@ -95,7 +118,7 @@ fn a_name_the_payment_settings_do_not_know_is_a_bad_request_to_everybody_signed_
 #[test]
 fn the_passport_drawer_is_asked_by_the_desk_alone() {
     let mut desk = vec![owner()];
-    desk.extend([Role::Front, Role::Backend, Role::Manager].map(|r| staff(r, B2)));
+    desk.extend([Role::Executive, Role::BranchManager, Role::Teller].map(|r| staff(r, B2)));
     for who in &desk {
         assert_eq!(
             ask(Some(who), EntryPath::DrawerPassport, "drawer"),
@@ -105,12 +128,12 @@ fn the_passport_drawer_is_asked_by_the_desk_alone() {
         );
     }
     for r in [
-        Role::Rates,
-        Role::Monitor,
+        Role::Admin,
+        Role::RateManager,
         Role::Finance,
-        Role::System,
-        Role::Documents,
-        Role::DocumentReview,
+        Role::Marketing,
+        Role::Customer,
+        Role::VerificationReviewer,
     ] {
         assert_eq!(
             said(ask(
@@ -167,7 +190,7 @@ fn the_two_new_refusals_say_v2s_sentences_with_v2s_statuses() {
 
 #[test]
 fn the_recording_holds_both_paths_for_every_caller() {
-    let f = fixture();
+    let f = mapped_fixture();
     for (p, names) in [
         ("PaymentMethods", vec!["list", "save", "nope", ""]),
         ("DrawerPassport", vec!["drawer"]),

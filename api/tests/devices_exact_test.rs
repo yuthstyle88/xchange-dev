@@ -17,17 +17,98 @@ use std::str::FromStr;
 use devices_common::*;
 use rust_decimal::Decimal;
 
-/// (foreign amount, rate, the product digit for digit). The first pair is the
+/// (foreign amount, rate, the baht digit for digit). The first pair is the
 /// one the reviewer of PR 107 measured: a 64-bit float keeps 12345669998.765432.
 /// The second loses three digits as a float (…912.056).
+///
+/// Amended for #759 (RE-4e, rates.md §4.9 R2; ticket author's ruling): the count
+/// line's baht is `ExchangeArithmetic::thb`, HALF_UP to 2 places, not the exact
+/// product (12345669998.765433 → .77, 865721688912.056088 → .06; 10000 stays 10000).
+/// Still never through a float; the text is normalized as before (`amounts_json`).
 const PAIRS: [(&str, &str, &str); 3] = [
-    ("99999999.99", "123.4567", "12345669998.765433"),
-    ("87654321.09", "9876.5432", "865721688912.056088"),
+    ("99999999.99", "123.4567", "12345669998.77"),
+    ("87654321.09", "9876.5432", "865721688912.06"),
     ("100000000", "0.0001", "10000"),
 ];
 
+/// The `transactions` row the save writes before its device step (amended for #759, RE-4e:
+/// rates.md §4.9 R9 and the ticket author's ruling, the device service reads the stored row's
+/// `unit_size` by document number, and a missing row is an error). The rate is per 1, as the
+/// saved exchange carries it, so `unit_size` is 1; the principal is the baht HALF_UP to 2
+/// places. A customer and an open shift of the branch come with it. A row already there (the
+/// same document saved again) is kept.
+async fn the_saved_row(
+    pool: &sqlx::PgPool,
+    branch_id: &str,
+    document_ref: &str,
+    submission_id: &str,
+    currency: &str,
+    amount: &str,
+    rate: &str,
+) {
+    sqlx::query(
+        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
+         VALUES ('dev-customer-' || $1, $1, 'Somchai', 'DEV-' || $1, 'THA', 'LIVE', now()) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's customer");
+    // The shift's teller (`shifts.teller_id` is NOT NULL since #753).
+    sqlx::query(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, 'dev-teller', 'INVITED', 'test', 'dev-teller' FROM organizations \
+         WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("the saved row's teller");
+    sqlx::query(
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+         VALUES ('dev-shift-' || $1, $1, 'OPEN', now(), 'owner', 'dev-open-' || $1, \
+           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller')) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(branch_id)
+    .execute(pool)
+    .await
+    .expect("the saved row's shift");
+    sqlx::query(
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
+            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
+            unit_size, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
+            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by) \
+         VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, \
+            'Somchai', 'THA', 'BUY', $4, $5::numeric, $6::numeric, 1, \
+            round($5::numeric * $6::numeric, 2), 0, 0, 0, round($5::numeric * $6::numeric, 2), \
+            'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', '2026-10-06', now(), now(), \
+            'owner') \
+         ON CONFLICT (document_ref) DO NOTHING",
+    )
+    .bind(document_ref)
+    .bind(branch_id)
+    .bind(submission_id)
+    .bind(currency)
+    .bind(amount)
+    .bind(rate)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the saved row {document_ref}: {e}"));
+}
+
 async fn save(db: &Devices, n: u32, amount: &str, rate: &str) -> String {
     let submission = format!("sub-exact-{n}");
+    the_saved_row(
+        &db.pool,
+        MAIN,
+        &format!("XC-20261007-{n:06}"),
+        &submission,
+        "USD",
+        amount,
+        rate,
+    )
+    .await;
     let saved = SavedExchange {
         cash: true,
         submission_id: submission.clone(),
@@ -55,7 +136,8 @@ async fn save(db: &Devices, n: u32, amount: &str, rate: &str) -> String {
     submission
 }
 
-/// What PostgreSQL holds, read back as text: every digit of the product and of
+/// What PostgreSQL holds, read back as text: every digit of the baht (#759: rounded
+/// HALF_UP to 2 places) and of
 /// the amount.
 #[tokio::test]
 async fn the_count_line_stores_the_product_digit_for_digit() {
@@ -105,7 +187,9 @@ async fn the_count_line_is_handed_out_as_exact_decimals() {
         });
         assert_eq!(thb, *product, "{amount} × {rate}");
         assert_eq!(foreign, *amount);
-        let exact = Decimal::from_str(amount).unwrap() * Decimal::from_str(rate).unwrap();
+        // #759 (R2): the product rounded HALF_UP to 2 places once.
+        let exact = (Decimal::from_str(amount).unwrap() * Decimal::from_str(rate).unwrap())
+            .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
         assert_eq!(Decimal::from_str(thb).unwrap(), exact);
         // the rest of the line is as before
         assert_eq!(line.detail["mode"], "EMPLOYEE_CONFIRMATION");

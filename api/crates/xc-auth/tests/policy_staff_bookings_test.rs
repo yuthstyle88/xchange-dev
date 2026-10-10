@@ -14,6 +14,16 @@
 //!
 //! Not pinned here, on purpose (open on #410): which sentence a role outside the counter gets for
 //! an owner action or an unknown name. Those calls are only required to be refused.
+//!
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.2, §4.3)
+//! onto the Blueprint's users. Three answers change:
+//! - C9 (§03 B02, user TELLER): the counter actions are BookingsDesk, TELLER's alone; BRANCH_MANAGER
+//!   (ex-BACKEND, ex-MANAGER) is refused like any other role outside the counter;
+//! - C1 (§07, one User): the owner's user is answered by its roles, EXECUTIVE + ADMIN, neither of
+//!   which holds BookingsDesk, so it hears what a role outside the counter hears;
+//! - D-4: an employee naming a branch outside their scope is refused, no longer moved to their own.
+//!
+//! The owner actions keep their row through the owner route: BookingsAdmin, EXECUTIVE.
 
 mod policy_common;
 
@@ -36,14 +46,17 @@ const UNKNOWN: [&str; 9] = [
     "adminSnapshot",
 ];
 
-const COUNTER_ROLES: [Role; 3] = [Role::Front, Role::Backend, Role::Manager];
-const OTHER_ROLES: [Role; 6] = [
-    Role::Rates,
-    Role::Monitor,
+const COUNTER_ROLES: [Role; 1] = [Role::Teller];
+/// C9: BRANCH_MANAGER is outside the counter now.
+const OTHER_ROLES: [Role; 8] = [
+    Role::Executive,
+    Role::Admin,
+    Role::RateManager,
+    Role::BranchManager,
     Role::Finance,
-    Role::System,
-    Role::Documents,
-    Role::DocumentReview,
+    Role::Marketing,
+    Role::Customer,
+    Role::VerificationReviewer,
 ];
 
 fn every_name() -> Vec<&'static str> {
@@ -61,18 +74,18 @@ fn the_path_has_a_name() {
 }
 
 #[test]
-fn nobody_and_the_owner_alone_must_sign_in_as_an_employee() {
-    // the staff routes know employees only; the owner's session means nothing there
+fn nobody_must_sign_in_as_an_employee_and_the_owners_user_is_outside_the_counter() {
     for name in every_name() {
         assert_eq!(
             said(ask(None, EntryPath::StaffBookings, name)),
             (EMPLOYEE_AUTH.to_owned(), 401),
             "nobody, {name:?}"
         );
+        // C1: was EMPLOYEE_AUTH_REQUIRED (the owner was no employee); now its roles answer
         assert_eq!(
             said(ask(Some(&owner()), EntryPath::StaffBookings, name)),
-            (EMPLOYEE_AUTH.to_owned(), 401),
-            "the owner, {name:?}"
+            (ROLE_NOT_ALLOWED.to_owned(), 400),
+            "the owner's user, {name:?}"
         );
     }
 }
@@ -121,7 +134,7 @@ fn the_other_roles_are_refused() {
 
 #[test]
 fn no_employee_reaches_an_owner_action() {
-    for r in Role::STAFF {
+    for r in BLUEPRINT {
         for name in OWNER_ACTIONS.into_iter().chain(UNKNOWN) {
             assert!(
                 ask(Some(&staff(r, B2)), EntryPath::StaffBookings, name).is_err(),
@@ -148,38 +161,53 @@ fn a_name_the_bookings_do_not_know_is_a_bad_request() {
 
 #[test]
 fn the_owner_route_is_unchanged() {
-    // `POST /api/bookings` keeps v2's owner-only check; the action is judged after it
-    for name in every_name() {
+    // `POST /api/bookings` keeps its owner-only check (it asks as "/api/bookings"; BookingsAdmin,
+    // the B1 translation of OWNER, is EXECUTIVE's); the action is judged after it
+    let name = "/api/bookings";
+    assert_eq!(ask(Some(&owner()), EntryPath::OwnerRoute, name), Ok(()));
+    assert_eq!(
+        ask(
+            Some(&staff(Role::Executive, B2)),
+            EntryPath::OwnerRoute,
+            name
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        said(ask(None, EntryPath::OwnerRoute, name)),
+        (SIGN_IN.to_owned(), 401)
+    );
+    for r in BLUEPRINT.into_iter().filter(|r| *r != Role::Executive) {
         assert_eq!(
-            ask(Some(&owner()), EntryPath::OwnerRoute, name),
-            Ok(()),
-            "{name:?}"
+            said(ask(Some(&staff(r, B2)), EntryPath::OwnerRoute, name)),
+            (OWNER_ONLY.to_owned(), 403),
+            "{}",
+            r.as_str()
         );
-        assert_eq!(
-            said(ask(None, EntryPath::OwnerRoute, name)),
-            (SIGN_IN.to_owned(), 401),
-            "{name:?}"
-        );
-        for r in Role::STAFF {
-            assert_eq!(
-                said(ask(Some(&staff(r, B2)), EntryPath::OwnerRoute, name)),
-                (OWNER_ONLY.to_owned(), 403),
-                "{} {name:?}",
-                r.as_str()
-            );
-        }
     }
 }
 
 #[test]
 fn staff_bookings_run_on_the_employees_own_branch() {
-    // §5.6.4 row 5: whatever branch is named, an employee works on their own
+    // §5.6.4 row 5, under D-4: an employee works on their own branch, and naming another is refused
     for r in COUNTER_ROLES {
         let who = staff(r, B2);
         assert_eq!(
-            Policy::branch(Some(&who), Some(&branch("MAIN"))),
-            branch(B2)
+            said(ask_on(
+                Some(&who),
+                EntryPath::StaffBookings,
+                "list",
+                Some("MAIN")
+            )),
+            (OUT_OF_SCOPE.to_owned(), 403)
         );
-        assert_eq!(Policy::branch(Some(&who), None), branch(B2));
+        assert_eq!(
+            ask_on(Some(&who), EntryPath::StaffBookings, "list", Some(B2)),
+            Ok(branch(B2))
+        );
+        assert_eq!(
+            ask_on(Some(&who), EntryPath::StaffBookings, "list", None),
+            Ok(branch(B2))
+        );
     }
 }

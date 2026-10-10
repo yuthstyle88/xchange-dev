@@ -608,6 +608,12 @@ await scenario('the kiosk offers six currencies until the branch says otherwise'
 ]);
 
 // ═══ 7. the counter at the moment of the call ═══════════════════════════════
+// #756 (RE-4b, docs/design/blueprint/rates.md §4.9 R4): v3 refuses a confirm when the current line
+// is not the quoted one, and a line carries both rates, so a move of the selling rate also refuses
+// the BUY quoted before it. That request stays QUOTED, and the steps after it say so in `v3`.
+const R4 = '#756 RE-4b, rates.md §4.9 R4: a move of either USD rate is a new line, so the BUY quoted on the old line is refused at confirm and stays QUOTED';
+const RATE_MOVED = 'Rate changed or counter closed. Please start again.';
+const r4Rows = (third = 'QUOTED') => [row('B2', ID(1)), row('MAIN', ID(2)), { ...row('MAIN', ID(3)), status: third }];
 await scenario('the quote and the confirm look at the counter as it is now', [
   { op: 'counter', open: false },
   { op: 'rates' },
@@ -618,16 +624,21 @@ await scenario('the quote and the confirm look at the counter as it is now', [
   { at: 1000, op: 'quote', type: 'SELL', currency: 'USD', amount: '1000' },
   { at: 2000, op: 'counter', rates: [{ code: 'USD', buy: '32.1', sell: '32.7' }], note: 'only the selling rate moves' },
   { at: 5000, op: 'confirm', id: ID(3), note: 'sold at 32.6, now 32.7' },
-  { at: 5000, op: 'confirm', id: ID(2), note: 'bought at 32.1, still 32.1' },
+  { at: 5000, op: 'confirm', id: ID(2), note: 'bought at 32.1, still 32.1',
+    v3: { error: RATE_MOVED, rows: r4Rows(), note: R4 } },
   { at: 6000, op: 'counter', rates: [{ code: 'USD', buy: '32.1', sell: '32.6' }] },
   { at: 6000, op: 'counter', open: false },
-  { at: 6000, op: 'confirm', id: ID(3), note: 'the rate is back, the counter is closed' },
-  { at: 6000, op: 'confirm', id: ID(2), note: 'already waiting: answered whatever the counter does' },
-  { at: 6000, op: 'accept', who: 'F1', id: ID(2), note: 'the desk does not look at the counter' },
-  { at: 6100, op: 'identityChecked', who: 'F1', id: ID(2), confirmed: true },
+  { at: 6000, op: 'confirm', id: ID(3), note: 'the rate is back, the counter is closed', v3: { rows: r4Rows(), note: R4 } },
+  { at: 6000, op: 'confirm', id: ID(2), note: 'already waiting: answered whatever the counter does',
+    v3: { error: RATE_MOVED, rows: r4Rows(), note: R4 + '; not waiting, and the counter is closed' } },
+  { at: 6000, op: 'accept', who: 'F1', id: ID(2), note: 'the desk does not look at the counter',
+    v3: { error: 'คิวนี้ไม่พร้อมรับเรื่อง กรุณาโหลดล่าสุด', rows: r4Rows(), note: R4 + '; a QUOTED request is not accepted' } },
+  { at: 6100, op: 'identityChecked', who: 'F1', id: ID(2), confirmed: true,
+    v3: { error: 'The assigned employee must confirm the passport check.', rows: r4Rows(), note: R4 + '; nobody holds it' } },
   { at: 7000, op: 'counter', open: true },
-  { at: 7000, op: 'confirm', id: ID(3) },
-  { at: 5 * MIN + 1000, op: 'confirm', id: ID(3), note: 'again after five minutes: it is waiting, so it is answered' },
+  { at: 7000, op: 'confirm', id: ID(3), v3: { rows: r4Rows('WAITING'), note: R4 } },
+  { at: 5 * MIN + 1000, op: 'confirm', id: ID(3), note: 'again after five minutes: it is waiting, so it is answered',
+    v3: { rows: r4Rows('WAITING'), note: R4 } },
 ]);
 
 // ═══ 8. the save of a transaction made for a kiosk request ══════════════════

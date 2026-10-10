@@ -30,7 +30,7 @@ pub const QUEUE_LIMIT: i64 = 100;
 /// A counter nobody needs to look at: closed, no rate.
 pub(super) const NO_COUNTER: CounterFacts = CounterFacts {
     open: false,
-    rate: None,
+    line: None,
 };
 
 pub(super) fn refuse(sentence: impl Display) -> AppError {

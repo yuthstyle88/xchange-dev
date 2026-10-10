@@ -11,6 +11,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 use crate::bootstrap::{AppState, BuildInfo};
 
@@ -325,24 +326,26 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
             .body("ไม่พบรายการ");
     };
 
-    let tx_row: Option<(String, String, String, String, String, String)> = match sqlx::query_as(
-        "SELECT customer_id, type, code, amount::text, rate::text, fee::text \
+    let tx_row: Option<(String, String, String, String, String, String, String)> =
+        match sqlx::query_as(
+            "SELECT customer_id, type, code, amount::text, rate::text, fee::text, unit_size::text \
          FROM transactions \
          WHERE branch_id = $1 AND document_ref = $2 AND mode = 'LIVE'",
-    )
-    .bind(target_branch)
-    .bind(ref_str)
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(row) => row,
-        Err(e) => {
-            tracing::error!("database error querying transaction {ref_str}: {e}");
-            return server_error();
-        }
-    };
+        )
+        .bind(target_branch)
+        .bind(ref_str)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::error!("database error querying transaction {ref_str}: {e}");
+                return server_error();
+            }
+        };
 
-    let Some((customer_id, tx_type, code, amount_str, rate_str, fee_str)) = tx_row else {
+    let Some((customer_id, tx_type, code, amount_str, rate_str, fee_str, unit_size_str)) = tx_row
+    else {
         return HttpResponse::NotFound()
             .content_type("text/plain; charset=utf-8")
             .body("ไม่พบรายการ");
@@ -351,8 +354,26 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
     let amount = Decimal::from_str(&amount_str).unwrap_or_default();
     let rate = Decimal::from_str(&rate_str).unwrap_or_default();
     let fee = Decimal::from_str(&fee_str).unwrap_or_default();
+    let unit_val = match UnitSize::parse(unit_size_str.trim()) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::error!("invalid unit_size {unit_size_str:?} in transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
+    let rate_val = match Rate::parse(&rate.normalize().to_string()) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("invalid rate {rate:?} in transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
 
-    let base = amount * rate;
+    let foreign = ForeignAmount::from_decimal(amount);
+    let base = Decimal::from_i128_with_scale(
+        ExchangeArithmetic::thb(foreign, rate_val, unit_val).minor_i128(),
+        2,
+    );
     let (verb, thb) = if tx_type == "BUY" {
         ("จ่าย", base - fee)
     } else {

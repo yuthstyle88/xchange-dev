@@ -71,9 +71,17 @@
   margin: 0;
 }
 
-/* no v2 source for .card-body; default container flow */
+/* v2 admin-workspace.css:24 .card-heading { padding: 22px }, lines up body content with heading text */
 .xc-admin .xc-content .card-body {
   display: block;
+  padding: 0 22px 22px;
+}
+
+/* v2 admin-html.ts:1 @media(max-width:600px) .card-heading { padding: 19px 17px } */
+@media (max-width: 600px) {
+  .xc-admin .xc-content .card-body {
+    padding: 0 17px 19px;
+  }
 }
 
 /* no v2 source for .card-body.flush; flush modifier for edge-to-edge tables */

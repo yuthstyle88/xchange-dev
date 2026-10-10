@@ -14,7 +14,9 @@ use ts_rs::TS;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{fixed2, round_cents, CurrencyCode};
+use xc_kernel::money::{
+    fixed2, round_cents, CurrencyCode, ExchangeArithmetic, ForeignAmount, Rate, UnitSize,
+};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_cash::{
@@ -24,20 +26,27 @@ use crate::presentation::dto::v3::admin_cash::{
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 /// Computes the reference principal and spread for a transaction with a reference rate.
-/// Rounds the reference value to cents using `xc_kernel::money::round_cents` (v2's half-up).
+/// Rounds the reference value to cents using `xc_kernel::money::ExchangeArithmetic::thb`.
 pub fn compute_reference_exchange(
     amount: Decimal,
     ref_rate: Decimal,
+    unit_size: Decimal,
     principal: Decimal,
     is_buy: bool,
 ) -> AppResult<(Decimal, Decimal)> {
-    let product = amount
+    // Keep amount.checked_mul(ref_rate) as an overflow guard before arithmetic.
+    amount
         .checked_mul(ref_rate)
         .ok_or_else(|| AppError::Internal("amount overflow in reference rate calculation".into()))?;
-    let ref_cents = round_cents(product)
-        .ok_or_else(|| AppError::Internal("cents overflow in reference rate calculation".into()))?;
-    let ref_principal = Decimal::try_from_i128_with_scale(ref_cents, 2)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let foreign = ForeignAmount::from_decimal(amount);
+    let ref_rate_parsed = Rate::parse(&ref_rate.normalize().to_string())
+        .map_err(|e| AppError::Internal(format!("invalid reference rate: {e}")))?;
+    let unit_val = UnitSize::from_decimal(unit_size.normalize())
+        .map_err(|e| AppError::Internal(format!("invalid unit size: {e}")))?;
+    let ref_principal = Decimal::from_i128_with_scale(
+        ExchangeArithmetic::thb(foreign, ref_rate_parsed, unit_val).minor_i128(),
+        2,
+    );
     let spread = if is_buy {
         ref_principal - principal
     } else {
@@ -128,6 +137,7 @@ struct TxRefRow {
     principal: Decimal,
     amount: Decimal,
     reference_rate: Option<Decimal>,
+    unit_size: Decimal,
 }
 
 impl BranchView for AdminCashBranchView {
@@ -341,7 +351,7 @@ impl BranchView for AdminCashBranchView {
 
             // 5. Reference summary over open shift's exchanges
             let tx_rows: Vec<TxRefRow> = sqlx::query_as(
-                "SELECT type as type_, principal, amount, reference_rate FROM transactions WHERE shift_id = $1",
+                "SELECT type as type_, principal, amount, reference_rate, unit_size FROM transactions WHERE shift_id = $1",
             )
             .bind(&shift_id)
             .fetch_all(&pool)
@@ -359,6 +369,7 @@ impl BranchView for AdminCashBranchView {
                     let (ref_principal, spread) = compute_reference_exchange(
                         tx.amount,
                         ref_rate,
+                        tx.unit_size,
                         tx.principal,
                         tx.type_ == "BUY",
                     )?;
@@ -437,9 +448,22 @@ mod tests {
         let ref_rate = Decimal::from_str("0.05").unwrap();
         let principal = Decimal::from_str("0.50").unwrap();
         let (ref_principal, spread) =
-            compute_reference_exchange(amount, ref_rate, principal, true).unwrap();
+            compute_reference_exchange(amount, ref_rate, Decimal::ONE, principal, true).unwrap();
         assert_eq!(ref_principal, Decimal::from_str("0.53").unwrap());
         assert_eq!(spread, Decimal::from_str("0.03").unwrap());
+    }
+
+    #[test]
+    fn test_reference_exchange_divides_by_unit_size() {
+        // 1000 JPY at ref_rate 23.5 per 100 gives ref_principal 235.00
+        let amount = Decimal::from_str("1000").unwrap();
+        let ref_rate = Decimal::from_str("23.5").unwrap();
+        let unit_size = Decimal::from_str("100").unwrap();
+        let principal = Decimal::from_str("230.00").unwrap();
+        let (ref_principal, spread) =
+            compute_reference_exchange(amount, ref_rate, unit_size, principal, true).unwrap();
+        assert_eq!(ref_principal, Decimal::from_str("235.00").unwrap());
+        assert_eq!(spread, Decimal::from_str("5.00").unwrap());
     }
 
     #[test]
@@ -449,7 +473,7 @@ mod tests {
         let amount = Decimal::from_str("1000000000000000000").unwrap(); // 1e18
         let ref_rate = Decimal::from_str("10000000000").unwrap(); // 1e10
         let principal = Decimal::ZERO;
-        let result = compute_reference_exchange(amount, ref_rate, principal, true);
+        let result = compute_reference_exchange(amount, ref_rate, Decimal::ONE, principal, true);
         assert!(result.is_err(), "expected overflow Err, got {:?}", result);
     }
 }

@@ -14,7 +14,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{fixed2, round_cents};
+use xc_kernel::money::{fixed2, round_cents, ExchangeArithmetic, ForeignAmount};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
@@ -66,6 +66,7 @@ impl BranchView for AdminOverviewBranchView {
             let mut builder = sqlx::QueryBuilder::new(
                 "SELECT t.document_ref, t.value_date, t.recorded_at, t.type, t.code::text AS code, \
                  t.amount::text AS amount, t.rate::text AS rate, t.reference_rate::text AS reference_rate, \
+                 t.unit_size::text AS unit_size, \
                  t.fee::text AS fee, t.bank_fee::text AS bank_fee, t.method, t.payment_ref, \
                  t.customer_id, t.customer_name, t.staff_id, t.notes, t.shift_id, \
                  (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1) AS slip_key \
@@ -114,9 +115,9 @@ impl BranchView for AdminOverviewBranchView {
             for sql_row in sql_rows {
                 let record = TransactionRecord::try_from(sql_row)?;
                 let is_buy = record.side == "BUY";
-                let raw_principal = record.amount * record.rate;
-                let principal_cents = round_cents(raw_principal)
-                    .ok_or_else(|| AppError::Internal("principal overflow".into()))?;
+                let foreign = ForeignAmount::from_decimal(record.amount);
+                let principal_cents =
+                    ExchangeArithmetic::thb(foreign, record.rate, record.unit_size).minor_i128();
                 let fee_cents = round_cents(record.fee)
                     .ok_or_else(|| AppError::Internal("fee overflow".into()))?;
 

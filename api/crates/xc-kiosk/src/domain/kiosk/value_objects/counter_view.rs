@@ -1,8 +1,8 @@
 //! What the rest of the shop says about a branch's counter.
 
-use xc_kernel::money::{CurrencyCode, Rate, Side};
+use xc_kernel::money::{CurrencyCode, MinorUnit, Rate, Side, UnitSize};
 
-use crate::domain::kiosk::value_objects::counter_facts::CounterFacts;
+use crate::domain::kiosk::value_objects::counter_facts::{CounterFacts, CounterLine, LineId};
 use crate::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
 
 /// The counter rate of one currency.
@@ -11,6 +11,9 @@ pub struct CounterRate {
     pub code: CurrencyCode,
     pub buy: Rate,
     pub sell: Rate,
+    pub unit_size: UnitSize,
+    pub minor_unit: MinorUnit,
+    pub line_id: LineId,
 }
 
 /// A branch as the kiosk needs to see it: its name, whether a shift is open,
@@ -39,17 +42,22 @@ impl CounterView {
         currency: CurrencyCode,
         side: Side,
     ) -> CounterFacts {
-        let rate = self
+        let line = self
             .rates
             .iter()
             .find(|rate| rate.code == currency && currencies.offers(rate.code))
-            .map(|rate| match side {
-                Side::Buy => rate.buy,
-                Side::Sell => rate.sell,
+            .map(|rate| CounterLine {
+                line_id: rate.line_id,
+                rate: match side {
+                    Side::Buy => rate.buy,
+                    Side::Sell => rate.sell,
+                },
+                unit_size: rate.unit_size,
+                minor_unit: rate.minor_unit,
             });
         CounterFacts {
             open: self.open,
-            rate,
+            line,
         }
     }
 
@@ -57,7 +65,7 @@ impl CounterView {
     pub fn facts_without_rate(&self) -> CounterFacts {
         CounterFacts {
             open: self.open,
-            rate: None,
+            line: None,
         }
     }
 }

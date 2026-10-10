@@ -92,6 +92,10 @@ pub enum PolicyError {
     /// บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก
     #[error("บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก")]
     DrawerRoleNotAllowed,
+
+    /// `outOfScope` (#550 §10, D-4): a branch outside the caller's scope.
+    #[error("สาขานี้อยู่นอกขอบเขตของบัญชีนี้")]
+    OutOfScope,
 }
 
 impl PolicyError {
@@ -99,7 +103,7 @@ impl PolicyError {
     pub fn status(&self) -> u16 {
         match self {
             Self::SignIn | Self::EmployeeAuthRequired => 401,
-            Self::OwnerOnly | Self::PaymentOwnerOnly => 403,
+            Self::OwnerOnly | Self::PaymentOwnerOnly | Self::OutOfScope => 403,
             Self::NotFound => 404,
             Self::InvalidRequest
             | Self::RoleNotAllowed

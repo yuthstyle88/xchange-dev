@@ -28,11 +28,36 @@ export function QueueBar(props: {
   const error = () => store().error();
 
   let openButtonRef: HTMLButtonElement | undefined;
+  let dialogRef: HTMLDialogElement | undefined;
 
   const [dialogOpen, setDialogOpen] = createSignal(false);
   const [toastVisible, setToastVisible] = createSignal(false);
   const [toastMessage, setToastMessage] = createSignal('');
   const [locked, setLocked] = createSignal(false);
+
+  createEffect(() => {
+    const open = dialogOpen();
+    if (!dialogRef) return;
+    if (open) {
+      if (typeof dialogRef.showModal === 'function') {
+        if (!dialogRef.open) {
+          dialogRef.showModal();
+        }
+      } else {
+        dialogRef.open = true;
+        dialogRef.setAttribute('open', '');
+      }
+    } else {
+      if (typeof dialogRef.close === 'function') {
+        if (dialogRef.open) {
+          dialogRef.close();
+        }
+      } else {
+        dialogRef.open = false;
+        dialogRef.removeAttribute('open');
+      }
+    }
+  });
 
   let prevBranch = props.branch();
   const [branchAwaitingAnswer, setBranchAwaitingAnswer] = createSignal(false);
@@ -243,9 +268,13 @@ export function QueueBar(props: {
       </Show>
 
       <dialog
-        open={dialogOpen()}
+        ref={dialogRef}
         aria-labelledby="queue-dialog-title"
         class="queue-dialog"
+        onCancel={() => {
+          setDialogOpen(false);
+          openButtonRef?.focus();
+        }}
       >
         <div class="queue-dialog-header">
           <h2 id="queue-dialog-title">

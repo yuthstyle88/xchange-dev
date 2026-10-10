@@ -27,7 +27,16 @@ v2 has **three palettes**, one per family of pages, and only some pages have a h
 1. **Port, don't redesign.** Copy each v2 rule as it is: the same values, colours, sizes and media queries.
 2. **Selectors follow v3's markup.** Where v3 renamed a class (v2 `.queue-tabs` is v3 `.xc-queue-tabs`), change the selector and leave the markup.
    Add a `class` to a v3 element only when it has none and a v2 rule needs one. The one other allowed markup change is the
-   page root of rule 3: `AppShell`'s `look` prop and the root class it renders. Make no other markup, text or logic change.
+   page root of rule 3: `AppShell`'s `look` prop and the root class it renders.
+   - **Amended 2026-10-10:** where CSS alone cannot reproduce v2's layout, a look ticket may also move markup structurally.
+     That covers reordering elements, adding or removing a wrapper, and moving content into the shared `Card` parts.
+     - This applies only when the ticket's §2 shows the v2 structure the move copies, with file:line.
+     - Owner, 2026-10-10: *"ดีไชน์ ยังไม่เหมือน V2"*. Look follows v2 exactly. Lane controller claude/608dff ruled option A.
+   - **Still forbidden in a look ticket:**
+     - changes to visible text or i18n keys;
+     - changes to handlers, hrefs or data flow;
+     - changes to any selector, role, id or text that a test pins. Tests must pass unedited.
+   - Make no other logic change.
 3. **Each screen declares its own v2 palette on one page root, set by `AppShell`. Nothing is declared on `:root`.**
    - **The element.** `AppShell` (`web/src/shared/ui/AppShell.tsx`, LK-1) gains an optional prop
      `look?: 'devices' | 'kiosk' | 'admin'` [required: name, type, optional]. It renders its outermost element as

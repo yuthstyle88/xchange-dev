@@ -28,6 +28,15 @@
 //! StaffRpc, a role with no row for the action is `RoleNotAllowed` (`policy.rs:114-126`), and the
 //! owner is `EmployeeAuthRequired`; nobody signed in is `SignIn` on Rpc and
 //! `EmployeeAuthRequired` on StaffRpc.
+//!
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §3.4, §4.2,
+//! §4.3) onto the Blueprint's users. The rows become permissions, roles by B1 (OWNER → EXECUTIVE,
+//! RATES → RATE_MANAGER): `rateDraft` and `adminSaveRate` are RatesDraft (RATE_MANAGER, EXECUTIVE);
+//! `ratePolicySave` is RatePolicySave, which the role table therefore gives RATE_MANAGER beside
+//! EXECUTIVE (the lane controller's ruling of 2026-10-09 above, #602); `approvalDecide` and
+//! `approvalRead` are ApprovalsDecide, EXECUTIVE's (the B1 translation of "OWNER" alone). One
+//! answer changes, C1: on StaffRpc the owner's user is answered by its roles, so it may `rateDraft`
+//! there through EXECUTIVE (was `EmployeeAuthRequired`).
 
 mod policy_common;
 
@@ -36,7 +45,7 @@ use policy_common::*;
 const B2: &str = "B2";
 
 fn allowed_roles(on: EntryPath, name: &str) -> Vec<&'static str> {
-    Role::STAFF
+    BLUEPRINT
         .into_iter()
         .filter(|r| ask(Some(&staff(*r, B2)), on, name).is_ok())
         .map(Role::as_str)
@@ -46,13 +55,23 @@ fn allowed_roles(on: EntryPath, name: &str) -> Vec<&'static str> {
 #[test]
 fn rate_draft_is_owner_and_rates_on_rpc_and_rates_on_the_staff_bridge() {
     assert_eq!(ask(Some(&owner()), EntryPath::Rpc, "rateDraft"), Ok(()));
-    assert_eq!(allowed_roles(EntryPath::Rpc, "rateDraft"), ["RATES"]);
-    assert_eq!(allowed_roles(EntryPath::StaffRpc, "rateDraft"), ["RATES"]);
+    assert_eq!(
+        allowed_roles(EntryPath::Rpc, "rateDraft"),
+        ["EXECUTIVE", "RATE_MANAGER"]
+    );
+    assert_eq!(
+        allowed_roles(EntryPath::StaffRpc, "rateDraft"),
+        ["EXECUTIVE", "RATE_MANAGER"]
+    );
+    // C1: was EmployeeAuthRequired
     assert_eq!(
         ask(Some(&owner()), EntryPath::StaffRpc, "rateDraft"),
-        Err(PolicyError::EmployeeAuthRequired)
+        Ok(())
     );
-    for r in Role::STAFF.into_iter().filter(|r| *r != Role::Rates) {
+    for r in BLUEPRINT
+        .into_iter()
+        .filter(|r| !matches!(r, Role::Executive | Role::RateManager))
+    {
         assert_eq!(
             ask(Some(&staff(r, B2)), EntryPath::Rpc, "rateDraft"),
             Err(PolicyError::RoleNotAllowedHere),
@@ -78,14 +97,20 @@ fn rate_draft_is_owner_and_rates_on_rpc_and_rates_on_the_staff_bridge() {
 
 #[test]
 fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
-    // #602: RATE_MANAGER "ปรับ %" (Blueprint §02); the command keeps RATES to the percents
+    // #602: RATE_MANAGER "ปรับ %" (Blueprint §02); the command keeps RATE_MANAGER to the percents
     assert_eq!(
         ask(Some(&owner()), EntryPath::Rpc, "ratePolicySave"),
         Ok(())
     );
-    assert_eq!(allowed_roles(EntryPath::Rpc, "ratePolicySave"), ["RATES"]);
+    assert_eq!(
+        allowed_roles(EntryPath::Rpc, "ratePolicySave"),
+        ["EXECUTIVE", "RATE_MANAGER"]
+    );
     assert!(allowed_roles(EntryPath::StaffRpc, "ratePolicySave").is_empty());
-    for r in Role::STAFF.into_iter().filter(|r| *r != Role::Rates) {
+    for r in BLUEPRINT
+        .into_iter()
+        .filter(|r| !matches!(r, Role::Executive | Role::RateManager))
+    {
         assert_eq!(
             ask(Some(&staff(r, B2)), EntryPath::Rpc, "ratePolicySave"),
             Err(PolicyError::RoleNotAllowedHere),
@@ -93,7 +118,7 @@ fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
             r.as_str()
         );
     }
-    for r in Role::STAFF {
+    for r in BLUEPRINT {
         assert_eq!(
             ask(Some(&staff(r, B2)), EntryPath::StaffRpc, "ratePolicySave"),
             Err(PolicyError::RoleNotAllowed),
@@ -111,21 +136,24 @@ fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
 fn approval_decide_and_approval_read_are_the_owners_alone() {
     for name in ["approvalDecide", "approvalRead"] {
         assert_eq!(ask(Some(&owner()), EntryPath::Rpc, name), Ok(()), "{name}");
-        assert!(
-            allowed_roles(EntryPath::Rpc, name).is_empty(),
-            "{name}: no staff role on Rpc"
+        assert_eq!(
+            allowed_roles(EntryPath::Rpc, name),
+            ["EXECUTIVE"],
+            "{name}: EXECUTIVE alone on Rpc"
         );
         assert!(
             allowed_roles(EntryPath::StaffRpc, name).is_empty(),
-            "{name}: no staff role on StaffRpc"
+            "{name}: no role on StaffRpc"
         );
-        for r in Role::STAFF {
+        for r in BLUEPRINT.into_iter().filter(|r| *r != Role::Executive) {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),
                 Err(PolicyError::RoleNotAllowedHere),
                 "{name}: {} on Rpc",
                 r.as_str()
             );
+        }
+        for r in BLUEPRINT {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::StaffRpc, name),
                 Err(PolicyError::RoleNotAllowed),
@@ -143,10 +171,13 @@ fn approval_decide_and_approval_read_are_the_owners_alone() {
 
 #[test]
 fn the_new_rows_leave_the_existing_rows_as_they_were() {
-    // RE-3 adds rows; the direct save stays RATES-only until RE-7, and the snapshot is everyone's
+    // RE-3 adds rows; the direct save stays RatesDraft until RE-7, and the snapshot is CompatRead
     for on in [EntryPath::Rpc, EntryPath::StaffRpc] {
-        assert_eq!(allowed_roles(on, "adminSaveRate"), ["RATES"]);
-        assert_eq!(allowed_roles(on, "adminSnapshot").len(), 9);
+        assert_eq!(
+            allowed_roles(on, "adminSaveRate"),
+            ["EXECUTIVE", "RATE_MANAGER"]
+        );
+        assert_eq!(allowed_roles(on, "adminSnapshot").len(), 7);
     }
     assert_eq!(ask(Some(&owner()), EntryPath::Rpc, "adminSaveRate"), Ok(()));
     // an action no row names is still refused, on both paths
@@ -156,7 +187,7 @@ fn the_new_rows_leave_the_existing_rows_as_they_were() {
     );
     assert_eq!(
         ask(
-            Some(&staff(Role::Rates, B2)),
+            Some(&staff(Role::RateManager, B2)),
             EntryPath::StaffRpc,
             "rateDraftt"
         ),

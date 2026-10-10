@@ -19,11 +19,17 @@
 //! ACCEPTED or ID_CHECKED request who accepts it again is answered, with nothing written. That is
 //! now the machine's answer here and in the fixture (`gen_kiosk.mjs` plays every `accept` on both
 //! bundles); every other `accept` keeps its refusal.
+//!
+//! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1, R4): the
+//! machine is handed the published line (`CounterFacts::line`) instead of a bare rate, and a
+//! quote keeps the line's id and `unit_size`. `open(rate)` is a counter whose line is
+//! `kiosk_common::line_at(rate)` (per 1, two-place amounts, one id per rate), so every answer
+//! below is unchanged; the line-not-rate cases are in `kiosk_machine_line_test.rs`.
 
 mod kiosk_common;
 
 use kiosk_common::*;
-use xc_kernel::money::Side;
+use xc_kernel::money::{Side, UnitSize};
 
 use KioskCommand as Cmd;
 use KioskError as E;
@@ -38,7 +44,7 @@ const ID: &str = "3fa9c1d2-7e57-4000-8000-00000000beef";
 fn open(rate_text: &str) -> CounterFacts {
     CounterFacts {
         open: true,
-        rate: Some(rate(rate_text)),
+        line: Some(line_at(rate_text)),
     }
 }
 
@@ -164,6 +170,8 @@ fn a_quote_buys_the_amount_named_and_records_what_it_was_given() {
                 side: Side::Buy,
                 currency: code("USD"),
                 rate: rate("32.1"),
+                unit_size: UnitSize::ONE,
+                line_id: Some(line_of("32.1")),
                 foreign: money("250.50"),
                 thb: money("8041.05"),
                 input_amount: money("250.50"),
@@ -246,7 +254,7 @@ fn the_amount_is_above_zero_and_at_most_ten_million() {
 fn a_currency_without_a_rate_is_not_quoted() {
     let no_rate = CounterFacts {
         open: true,
-        rate: None,
+        line: None,
     };
     assert_eq!(
         quote_at(&wants(Side::Buy, "USD", "100"), &no_rate),
@@ -342,11 +350,11 @@ fn a_customer_who_sells_currency_is_paid_in_cash_or_by_bank_transfer() {
 fn a_quote_names_the_first_thing_that_is_wrong() {
     let closed_no_rate = CounterFacts {
         open: false,
-        rate: None,
+        line: None,
     };
     let no_rate = CounterFacts {
         open: true,
-        rate: None,
+        line: None,
     };
     let all_wrong = QuoteInput {
         side: None,
@@ -384,7 +392,7 @@ fn a_quote_names_the_first_thing_that_is_wrong() {
             &wants(Side::Buy, "USD", "100"),
             &CounterFacts {
                 open: false,
-                rate: Some(rate("32.1"))
+                line: Some(line_at("32.1"))
             }
         ),
         Err(E::CounterClosed)
@@ -547,7 +555,7 @@ fn the_counter_and_the_rate_are_asked_again_at_confirm() {
     assert_eq!(
         refusal(with(CounterFacts {
             open: true,
-            rate: None
+            line: None
         })),
         E::RateChangedOrClosed,
         "the currency is no longer offered"
@@ -555,7 +563,7 @@ fn the_counter_and_the_rate_are_asked_again_at_confirm() {
     assert_eq!(
         refusal(with(CounterFacts {
             open: false,
-            rate: Some(rate("32.1"))
+            line: Some(line_at("32.1"))
         })),
         E::RateChangedOrClosed,
         "the counter closed"

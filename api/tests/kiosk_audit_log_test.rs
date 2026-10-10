@@ -10,7 +10,7 @@ use compat_common::Person;
 use rpc_common::Desk;
 use serde_json::{Value, json};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
 use xc_kiosk::domain::kiosk::value_objects::payment_method::PaymentMethod;
@@ -22,6 +22,9 @@ fn test_quote() -> KioskQuote {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
         rate: Rate::parse("32.1").unwrap(),
+        // #756 (RE-4b, rates.md §4.9 R1): a quote keeps its line's id and unit_size.
+        unit_size: UnitSize::ONE,
+        line_id: None,
         foreign: Money::from_minor(25000).unwrap(),
         thb: Money::from_minor(802500).unwrap(),
         input_amount: Money::from_minor(25000).unwrap(),

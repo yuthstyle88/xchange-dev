@@ -93,6 +93,7 @@ impl From<PolicyError> for V3Error {
             PolicyError::ClockInFirst => "clockInFirst",
             PolicyError::PaymentOwnerOnly => "paymentOwnerOnly",
             PolicyError::DrawerRoleNotAllowed => "drawerRoleNotAllowed",
+            PolicyError::OutOfScope => "outOfScope",
         };
         let status =
             StatusCode::from_u16(err.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

@@ -5,8 +5,18 @@
 # No retries: a retry turns a real race into a silent green (#568).
 retries = 0
 
-[test-groups]
-serial = { max-threads = 1 }
+# #761: nextest runs one process per test at one thread per CPU; each DB test
+# rebuilds all migrations in the shared database; 16 at once is measured clean.
+# A new package with DB tests must be added to this filter to be covered.
+[test-groups.db]
+max-threads = 16
+
+[test-groups.serial]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'package(xchange) | package(xc-shift) | package(xc-rate) | package(xc-kiosk) | package(xc-kernel) | package(xc-exchange) | package(xc-auth) | package(xc-approval)'
+test-group = 'db'
 
 [[profile.default.overrides]]
 filter = 'package(xc-device-agent)'

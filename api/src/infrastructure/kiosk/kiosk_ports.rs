@@ -13,16 +13,20 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate, Side};
+use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
 use xc_kernel::payment::PaymentRules;
 use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
+use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
 use xc_rate::application::rate::service::RateService;
+use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
+use xc_rate::domain::publication::published_rates::PublishedRates;
 use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
+use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::application::settings::payment_settings::PaymentSettingsService;
 use crate::infrastructure::devices::device_repository::{DeviceRepository, NewEvent};
@@ -153,10 +157,47 @@ fn parse_rate(dec: Decimal) -> AppResult<Rate> {
 }
 
 #[derive(sqlx::FromRow)]
-struct RateRow {
-    code: String,
-    buy: Decimal,
-    sell: Decimal,
+struct PublishedLineRow {
+    id: String,
+    currency_code: String,
+    buy_rate: Option<Decimal>,
+    sell_rate: Option<Decimal>,
+    unit_size: Decimal,
+    minor_unit: i16,
+}
+
+fn parse_counter_rates(rows: Vec<PublishedLineRow>) -> AppResult<Vec<CounterRate>> {
+    let mut rate_map = HashMap::with_capacity(rows.len());
+    for r in rows {
+        rate_map.insert(r.currency_code.trim().to_string(), r);
+    }
+
+    let mut rates = Vec::new();
+    for c in &CurrencyCode::all()[1..] {
+        let Some(r) = rate_map.get(c.as_str()) else {
+            continue;
+        };
+        let (Some(buy_dec), Some(sell_dec)) = (r.buy_rate, r.sell_rate) else {
+            continue;
+        };
+        let buy = parse_rate(buy_dec)?;
+        let sell = parse_rate(sell_dec)?;
+        let unit_size = UnitSize::from_decimal(r.unit_size)
+            .map_err(|e| AppError::Internal(format!("invalid unit size {}: {e}", r.unit_size)))?;
+        let minor_unit = MinorUnit::new(r.minor_unit as u8)
+            .map_err(|e| AppError::Internal(format!("invalid minor unit {}: {e}", r.minor_unit)))?;
+        let line_id = LineId::parse_uuid(&r.id)
+            .ok_or_else(|| AppError::Internal(format!("invalid line id uuid {}", r.id)))?;
+        rates.push(CounterRate {
+            code: *c,
+            buy,
+            sell,
+            unit_size,
+            minor_unit,
+            line_id,
+        });
+    }
+    Ok(rates)
 }
 
 impl KioskPorts for PgKioskPorts {
@@ -176,13 +217,13 @@ impl KioskPorts for PgKioskPorts {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
-            let branch_row: Option<(String,)> =
-                sqlx::query_as("SELECT name FROM branches WHERE id = $1")
+            let branch_row: Option<(String, Option<uuid::Uuid>)> =
+                sqlx::query_as("SELECT name, current_publication_id FROM branches WHERE id = $1")
                     .bind(branch.as_str())
                     .fetch_optional(&self.pool)
                     .await
                     .map_err(AppError::Database)?;
-            let Some((branch_name,)) = branch_row else {
+            let Some((branch_name, current_pub_id)) = branch_row else {
                 return Ok(None);
             };
 
@@ -194,30 +235,22 @@ impl KioskPorts for PgKioskPorts {
             .await
             .map_err(AppError::Database)?;
 
-            let rows: Vec<RateRow> = sqlx::query_as(
-                "SELECT DISTINCT ON (code) code, buy, sell \
-                 FROM rates WHERE branch_id = $1 ORDER BY code, id DESC",
-            )
-            .bind(branch.as_str())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AppError::Database)?;
-
-            let mut rate_map = HashMap::with_capacity(rows.len());
-            for r in rows {
-                rate_map.insert(r.code.trim().to_string(), (r.buy, r.sell));
-            }
-
-            let mut rates = Vec::new();
-            for c in &CurrencyCode::all()[1..] {
-                if let Some(&(buy_dec, sell_dec)) = rate_map.get(c.as_str()) {
-                    rates.push(CounterRate {
-                        code: *c,
-                        buy: parse_rate(buy_dec)?,
-                        sell: parse_rate(sell_dec)?,
-                    });
+            let rates = match current_pub_id {
+                Some(pub_id) => {
+                    let rows: Vec<PublishedLineRow> = sqlx::query_as(
+                        "SELECT l.id::text, l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, c.minor_unit \
+                         FROM published_rate_lines l \
+                         JOIN currencies c ON c.code = l.currency_code \
+                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL'",
+                    )
+                    .bind(pub_id)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(AppError::Database)?;
+                    parse_counter_rates(rows)?
                 }
-            }
+                None => Vec::new(),
+            };
 
             Ok(Some(CounterView {
                 branch_name,
@@ -233,13 +266,13 @@ impl KioskPorts for PgKioskPorts {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
-            let branch_row: Option<(String,)> =
-                sqlx::query_as("SELECT name FROM branches WHERE id = $1")
+            let branch_row: Option<(String, Option<uuid::Uuid>)> =
+                sqlx::query_as("SELECT name, current_publication_id FROM branches WHERE id = $1")
                     .bind(branch.as_str())
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(AppError::Database)?;
-            let Some((branch_name,)) = branch_row else {
+            let Some((branch_name, current_pub_id)) = branch_row else {
                 return Ok(None);
             };
 
@@ -251,30 +284,22 @@ impl KioskPorts for PgKioskPorts {
             .await
             .map_err(AppError::Database)?;
 
-            let rows: Vec<RateRow> = sqlx::query_as(
-                "SELECT DISTINCT ON (code) code, buy, sell \
-                 FROM rates WHERE branch_id = $1 ORDER BY code, id DESC",
-            )
-            .bind(branch.as_str())
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-
-            let mut rate_map = HashMap::with_capacity(rows.len());
-            for r in rows {
-                rate_map.insert(r.code.trim().to_string(), (r.buy, r.sell));
-            }
-
-            let mut rates = Vec::new();
-            for c in &CurrencyCode::all()[1..] {
-                if let Some(&(buy_dec, sell_dec)) = rate_map.get(c.as_str()) {
-                    rates.push(CounterRate {
-                        code: *c,
-                        buy: parse_rate(buy_dec)?,
-                        sell: parse_rate(sell_dec)?,
-                    });
+            let rates = match current_pub_id {
+                Some(pub_id) => {
+                    let rows: Vec<PublishedLineRow> = sqlx::query_as(
+                        "SELECT l.id::text, l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, c.minor_unit \
+                         FROM published_rate_lines l \
+                         JOIN currencies c ON c.code = l.currency_code \
+                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL'",
+                    )
+                    .bind(pub_id)
+                    .fetch_all(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                    parse_counter_rates(rows)?
                 }
-            }
+                None => Vec::new(),
+            };
 
             Ok(Some(CounterView {
                 branch_name,
@@ -366,5 +391,69 @@ impl KioskPorts for PgKioskPorts {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<PaymentRules>> {
         Box::pin(self.payment.rules_in(tx, branch))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_stale_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        line_id: LineId,
+        currency: CurrencyCode,
+        side: Side,
+        thb: Money,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        let _ = now;
+        Box::pin(async move {
+            let published_rates = PgPublishedRates::new(self.pool.clone());
+            let published_side = match published_rates.line_in(tx, branch, currency, side).await? {
+                Some(s) => s,
+                None => return Ok(false),
+            };
+
+            let quoted_uuid = uuid::Uuid::from_u128(line_id.0);
+            if published_side.line_id.as_uuid() != quoted_uuid {
+                return Ok(false);
+            }
+
+            if published_side.stale {
+                let snapshot_row: Option<serde_json::Value> = sqlx::query_scalar(
+                    "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
+                )
+                .bind(published_side.line_id.as_uuid())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(AppError::Database)?;
+
+                let policy_id = snapshot_row
+                    .as_ref()
+                    .and_then(|s| s.get("policy_version_id"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| uuid::Uuid::parse_str(s).ok());
+
+                if let Some(policy_id) = policy_id {
+                    let policy_row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
+                        "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
+                    )
+                    .bind(policy_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    if let Some((on_stale_str, stale_limit_dec)) = policy_row {
+                        let on_stale = on_stale_str.as_deref().and_then(OnStale::parse_db);
+                        let stale_limit_thb =
+                            stale_limit_dec.and_then(|d| Money::parse(&d.to_string()).ok());
+                        let stale_policy = StalePolicy::new(on_stale, stale_limit_thb);
+                        if stale_policy.admits(&published_side, thb).is_err() {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+
+            Ok(true)
+        })
     }
 }

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -731,9 +732,21 @@ impl DeviceService {
         let now = cut_to_millis(now)?;
         let b = branch.as_str();
         if saved.cash {
-            let thb = saved.amount.checked_mul(saved.rate).ok_or_else(|| {
-                AppError::Internal(format!("{} × {} is out of range", saved.amount, saved.rate))
+            let principal: Option<Decimal> =
+                sqlx::query_scalar("SELECT principal FROM transactions WHERE document_ref = $1")
+                    .bind(&saved.document_ref)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+            let principal = principal.ok_or_else(|| {
+                AppError::Internal(format!("no stored transaction for {}", saved.document_ref))
             })?;
+
+            let mut thb = principal
+                .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+            thb.rescale(2);
+
             let detail = json!({ "mode": "EMPLOYEE_CONFIRMATION", "currency": saved.currency });
             let amounts = [("foreignAmount", saved.amount), ("thb", thb)];
             let key = format!("COUNT:{b}:{}", saved.submission_id);
@@ -808,5 +821,35 @@ impl DeviceService {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn count_confirmed_thb_pins_stored_principal_half_up_two_places() {
+        // R9: The device count line's THB (COUNT_CONFIRMED) is the row's stored principal, 2 places, HALF_UP.
+        // It is not recomputed from amount * rate.
+        let principal = Decimal::from_str("1234.567").unwrap();
+        let mut thb = principal
+            .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        thb.rescale(2);
+        assert_eq!(thb.to_string(), "1234.57");
+
+        let exact = Decimal::from_str("10000").unwrap();
+        let mut thb2 =
+            exact.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        thb2.rescale(2);
+        assert_eq!(thb2.to_string(), "10000.00");
+
+        let half_up = Decimal::from_str("100.005").unwrap();
+        let mut thb3 =
+            half_up.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        thb3.rescale(2);
+        assert_eq!(thb3.to_string(), "100.01");
     }
 }
