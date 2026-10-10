@@ -17,6 +17,7 @@ import { openMenu } from '../parts/hash';
 import { NewTransactionButton } from '../parts/NewTransactionButton';
 import { refreshTick } from '../parts/refresh';
 import { toast } from '../parts/toast';
+import { DataTable } from '../parts/DataTable';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
@@ -375,15 +376,15 @@ export function Overview(props: AdminMenuProps): JSX.Element {
           <Show
             when={(data()?.latest.length ?? 0) > 0}
             fallback={
-              <div class="empty">
-                <strong>{t('emptyOverview')}</strong>
-              </div>
+              <DataTable headers={[]} rowCount={0} empty={t('emptyOverview')} />
             }
           >
-            <TransactionTable
-              rows={data()!.latest}
-              onOpen={handleOpenDetail}
-            />
+            <div class="table-scroll">
+              <TransactionTable
+                rows={data()!.latest}
+                onOpen={handleOpenDetail}
+              />
+            </div>
           </Show>
         </CardBody>
       </Card>
