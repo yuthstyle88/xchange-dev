@@ -8,6 +8,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiError, type ApiClient } from '../../shared/api/client';
+import type { RateFreshnessDto } from '../../shared/api/generated/common';
 import type {
   KbankReference,
   KioskCurrencies,
@@ -15,6 +16,7 @@ import type {
 } from '../../shared/api/generated/kiosk_currencies';
 import { errorText, locale, screenT } from '../../shared/i18n';
 import { formatRate } from '../../shared/ui/rate';
+import { RateFreshness } from '../../shared/ui/RateFreshness';
 import { matches } from './filter';
 import * as screenI18n from './i18n';
 import { configure } from './kiosk-api';
@@ -150,6 +152,7 @@ export function KioskCurrenciesScreen(props: {
 
   const [currencies, setCurrencies] = createSignal<KioskCurrency[]>([]);
   const [kbankRef, setKbankRef] = createSignal<KbankReference | null>(null);
+  const [freshness, setFreshness] = createSignal<RateFreshnessDto | null>(null);
   const [searchQuery, setSearchQuery] = createSignal('');
   const [loadError, setLoadError] = createSignal<
     { code: string; message: string } | undefined
@@ -167,6 +170,7 @@ export function KioskCurrenciesScreen(props: {
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
+        setFreshness(res.data.freshness);
       }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -178,6 +182,7 @@ export function KioskCurrenciesScreen(props: {
       }
       setCurrencies([]);
       setKbankRef(null);
+      setFreshness(null);
     }
   });
 
@@ -212,6 +217,7 @@ export function KioskCurrenciesScreen(props: {
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
+        setFreshness(res.data.freshness);
         const thisCurrency = res.data.currencies.find((c) => c.code === code);
         const active = thisCurrency ? thisCurrency.enabled : isEnabled;
         setCardStatuses((prev) => ({
@@ -246,6 +252,12 @@ export function KioskCurrenciesScreen(props: {
       <a href="/">{t('back')}</a>
       <h1>{t('heading')}</h1>
       <p>{t('intro')}</p>
+
+      <RateFreshness
+        stale={freshness()?.stale ?? false}
+        sourceDate={freshness()?.sourceDate}
+        publishedAt={freshness()?.publishedAt}
+      />
 
       <section aria-label={t('bankReference')} id="bank-reference">
         <Show

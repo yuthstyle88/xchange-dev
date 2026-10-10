@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::common::Rate;
+use super::common::{Rate, RateFreshnessDto};
 
 /// One country where a currency is used.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -66,4 +66,5 @@ pub struct KioskCurrency {
 pub struct KioskCurrencies {
     pub currencies: Vec<KioskCurrency>,
     pub kbank: Option<KbankReference>,
+    pub freshness: RateFreshnessDto,
 }

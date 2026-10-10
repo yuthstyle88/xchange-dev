@@ -59,13 +59,11 @@
 }
 
 /* v2 kiosk-currencies.html:1,:3: <label>text<input></label> — no gap, input inherits the label's 17px/600 */
-.xc-kiosk .xc-shell-main label[for="kiosk-search"],
-.xc-kiosk .xc-shell-main .quote .xc-field > label {
+.xc-kiosk .xc-shell-main label[for="kiosk-search"] {
   margin-bottom: 0;
 }
 
-.xc-kiosk .xc-shell-main #kiosk-search,
-.xc-kiosk .xc-shell-main .quote .xc-field > input {
+.xc-kiosk .xc-shell-main #kiosk-search {
   font-size: 17px;
   font-weight: 600;
 }

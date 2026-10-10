@@ -78,8 +78,8 @@ const RATES_MUST_CHANGE: &str = "RATES_MUST_CHANGE";
 const OWNER_OR_RATES: &str = "Owner or Rates access required.";
 const INVALID_REQUEST: &str = "คำขอไม่ถูกต้อง";
 
-/// The keys of `data` (§7.3).
-const DATA_KEYS: [&str; 2] = ["currencies", "kbank"];
+/// The keys of `data` (§7.3), plus `freshness` (RF-3, rates.md §4.10; re-expected by the RF-3 ticket author).
+const DATA_KEYS: [&str; 3] = ["currencies", "freshness", "kbank"];
 /// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`;
 /// plus `unitSize` (#603 item 3).
 const CURRENCY_KEYS: [&str; 12] = [
