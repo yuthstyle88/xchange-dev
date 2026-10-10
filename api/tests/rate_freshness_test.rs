@@ -35,9 +35,35 @@ struct Line {
     source_date: Option<&'static str>,
 }
 
+struct LineWithGroup {
+    currency: &'static str,
+    denomination_group: &'static str,
+    buy_mode: &'static str,
+    sell_mode: &'static str,
+    fetched_hours_ago: Option<i64>,
+    max_hours: Option<i64>,
+    source_date: Option<&'static str>,
+}
+
 /// One publication on MAIN holding `lines`, made current. Bypasses the draft flow on purpose: the snapshot is the
 /// input under test.
 async fn publish(pool: &PgPool, lines: &[Line]) {
+    let with_groups: Vec<_> = lines
+        .iter()
+        .map(|l| LineWithGroup {
+            currency: l.currency,
+            denomination_group: "ALL",
+            buy_mode: l.buy_mode,
+            sell_mode: l.sell_mode,
+            fetched_hours_ago: l.fetched_hours_ago,
+            max_hours: l.max_hours,
+            source_date: l.source_date,
+        })
+        .collect();
+    publish_with_groups(pool, &with_groups).await;
+}
+
+async fn publish_with_groups(pool: &PgPool, lines: &[LineWithGroup]) {
     let request: String = sqlx::query_scalar(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
          proposed_payload, requested_by, requested_at, status, idempotency_key) \
@@ -71,11 +97,12 @@ async fn publish(pool: &PgPool, lines: &[Line]) {
             snapshot["source_date"] = json!(d);
         }
         sqlx::query(
-            "INSERT INTO published_rate_lines (id, publication_id, currency_code, unit_size, buy_rate, sell_rate, \
-             source_snapshot) VALUES (gen_random_uuid(), $1::uuid, $2, 1, 32.10000000, 32.50000000, $3)",
+            "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, unit_size, buy_rate, sell_rate, \
+             source_snapshot) VALUES (gen_random_uuid(), $1::uuid, $2, $3, 1, 32.10000000, 32.50000000, $4)",
         )
         .bind(&publication)
         .bind(l.currency)
+        .bind(l.denomination_group)
         .bind(&snapshot)
         .execute(pool)
         .await
@@ -242,6 +269,79 @@ async fn the_screens_source_date_is_the_oldest_reference() {
     desk.drop_schema().await;
 }
 
+/// §4.10: a line with buy_mode AUTO and sell_mode MANUAL with an old reference is stale on both paths.
+#[actix_web::test]
+async fn a_line_with_auto_buy_and_manual_sell_with_an_old_reference_is_stale() {
+    let (desk, app, owner) = setup().await;
+    publish(
+        &desk.pool,
+        &[Line {
+            currency: "USD",
+            buy_mode: "AUTO",
+            sell_mode: "MANUAL",
+            fetched_hours_ago: Some(30),
+            max_hours: Some(24),
+            source_date: Some("2026-10-06"),
+        }],
+    )
+    .await;
+
+    assert!(
+        quote_path(&desk.pool, "USD", Side::Buy).await,
+        "quote path, buy"
+    );
+    assert!(
+        quote_path(&desk.pool, "USD", Side::Sell).await,
+        "quote path, sell"
+    );
+    let data = screen(&app, &owner).await;
+    assert_eq!(data["stale"], json!(true), "{data}");
+    assert_eq!(data["sourceDate"], json!("2026-10-06"), "{data}");
+    drop(app);
+    desk.drop_schema().await;
+}
+
+/// §4.10: a publication whose only old reference is on a non-ALL line (the ALL line of the same currency is fresh)
+/// is stale on the screen.
+#[actix_web::test]
+async fn a_publication_whose_only_old_reference_is_on_a_non_all_line_is_stale_on_the_screen() {
+    let (desk, app, owner) = setup().await;
+    publish_with_groups(
+        &desk.pool,
+        &[
+            LineWithGroup {
+                currency: "USD",
+                denomination_group: "ALL",
+                buy_mode: "AUTO",
+                sell_mode: "AUTO",
+                fetched_hours_ago: Some(1),
+                max_hours: Some(24),
+                source_date: Some("2026-10-09"),
+            },
+            LineWithGroup {
+                currency: "USD",
+                denomination_group: "50-100",
+                buy_mode: "MANUAL",
+                sell_mode: "MANUAL",
+                fetched_hours_ago: Some(30),
+                max_hours: Some(24),
+                source_date: Some("2026-10-06"),
+            },
+        ],
+    )
+    .await;
+
+    let data = screen(&app, &owner).await;
+    assert_eq!(
+        data["stale"],
+        json!(true),
+        "the screen folds non-ALL lines: {data}"
+    );
+    assert_eq!(data["sourceDate"], json!("2026-10-06"), "{data}");
+    drop(app);
+    desk.drop_schema().await;
+}
+
 // ── one rule, in the source ───────────────────────────────────────────────
 
 fn source(path: &str) -> String {
@@ -265,5 +365,21 @@ fn the_views_and_the_quote_path_call_the_one_rule() {
                 "{path} computes staleness itself ({own})"
             );
         }
+    }
+}
+
+/// §4.10: Both published_rates and staff_published_rates views fold both Buy and Sell sides of each published line.
+#[test]
+fn the_published_rates_views_fold_both_buy_and_sell_sides() {
+    for path in [
+        "src/presentation/http/v3/views/published_rates.rs",
+        "src/presentation/http/v3/views/staff_published_rates.rs",
+    ] {
+        let text = source(path);
+        assert!(
+            text.contains("Freshness::of_side(&snapshot, Side::Buy, now)")
+                && text.contains("Freshness::of_side(&snapshot, Side::Sell, now)"),
+            "{path} folds both Side::Buy and Side::Sell of each published line"
+        );
     }
 }
