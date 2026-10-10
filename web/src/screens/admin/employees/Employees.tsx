@@ -384,83 +384,85 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   }
 
   return (
-    <Card class="employees-card">
-      <header>
-        <h2>{t('heading')}</h2>
-        <p>{t('intro')}</p>
-        <div>
-          <button type="button" class="primary" onClick={openCreateDialog}>
-            {t('add')}
-          </button>{' '}
-          <button type="button" class="secondary" onClick={() => readEmployees()}>
-            {t('refresh')}
-          </button>{' '}
-          <a href="/staff" target="_blank" rel="noopener">
-            {t('staffLink')}
-          </a>
+    <>
+      <Card class="employees-card">
+        <header>
+          <h2>{t('heading')}</h2>
+          <p>{t('intro')}</p>
+          <div>
+            <button type="button" class="primary" onClick={openCreateDialog}>
+              {t('add')}
+            </button>{' '}
+            <button type="button" class="secondary" onClick={() => readEmployees()}>
+              {t('refresh')}
+            </button>{' '}
+            <a href="/staff" target="_blank" rel="noopener">
+              {t('staffLink')}
+            </a>
+          </div>
+        </header>
+
+        <Show when={employeesError()}>
+          <div role="alert">{employeesError()}</div>
+        </Show>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('headerAccountName')}</th>
+                <th>{t('headerRole')}</th>
+                <th>{t('headerBranch')}</th>
+                <th>{t('headerStatus')}</th>
+                <th>{t('headerActions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={employees()}>
+                {(e) => {
+                  const statusText = () => {
+                    if (!e.active) return t('disabled');
+                    if (e.mustChange) return t('mustChange');
+                    return t('active');
+                  };
+
+                  return (
+                    <tr>
+                      <td>
+                        <div>{e.username}</div>
+                        <div class="cell-sub">{e.name}</div>
+                      </td>
+                      <td>{e.role}</td>
+                      <td>{branchName(e.branchId)}</td>
+                      <td>{statusText()}</td>
+                      <td>
+                        <Show when={e.active}>
+                          <button
+                            type="button"
+                            class="secondary"
+                            onClick={() => openResetDialog(e)}
+                          >
+                            {t('reset')}
+                          </button>{' '}
+                          <button
+                            type="button"
+                            class="danger"
+                            onClick={() => handleDisable(e)}
+                          >
+                            {t('disable')}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  );
+                }}
+              </For>
+            </tbody>
+          </table>
         </div>
-      </header>
+      </Card>
 
-      <Show when={employeesError()}>
-        <div role="alert">{employeesError()}</div>
-      </Show>
-
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>{t('headerAccountName')}</th>
-              <th>{t('headerRole')}</th>
-              <th>{t('headerBranch')}</th>
-              <th>{t('headerStatus')}</th>
-              <th>{t('headerActions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={employees()}>
-              {(e) => {
-                const statusText = () => {
-                  if (!e.active) return t('disabled');
-                  if (e.mustChange) return t('mustChange');
-                  return t('active');
-                };
-
-                return (
-                  <tr>
-                    <td>
-                      <div>{e.username}</div>
-                      <div class="cell-sub">{e.name}</div>
-                    </td>
-                    <td>{e.role}</td>
-                    <td>{branchName(e.branchId)}</td>
-                    <td>{statusText()}</td>
-                    <td>
-                      <Show when={e.active}>
-                        <button
-                          type="button"
-                          class="secondary"
-                          onClick={() => openResetDialog(e)}
-                        >
-                          {t('reset')}
-                        </button>{' '}
-                        <button
-                          type="button"
-                          class="danger"
-                          onClick={() => handleDisable(e)}
-                        >
-                          {t('disable')}
-                        </button>
-                      </Show>
-                    </td>
-                  </tr>
-                );
-              }}
-            </For>
-          </tbody>
-        </table>
-      </div>
-
-      <details>
+      <details class="workspace-history">
         <summary>{t('workflow')}</summary>
         <div>
           <p>{operations()?.enabled ? t('stateOn') : t('stateOff')}</p>
@@ -479,6 +481,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
           </div>
         </div>
       </details>
-    </Card>
+    </>
   );
 }
