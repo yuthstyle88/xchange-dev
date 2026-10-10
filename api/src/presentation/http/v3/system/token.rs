@@ -2,6 +2,8 @@
 //!
 //! Scaffold written by the ticket author: the bodies are `todo!()`; the implementer fills them.
 
+use std::fmt;
+
 use subtle::ConstantTimeEq;
 
 /// The environment variable holding the feed token. It is not `XC_BROKER_SERVICE_TOKEN`, the
@@ -12,9 +14,17 @@ pub const FEED_TOKEN_ENV: &str = "XC_BROKER_FEED_TOKEN";
 pub const HEADER: &str = "x-system-token";
 
 /// The configured token, read once at boot. Unset or blank ⇒ every request is refused.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SystemToken {
     expected: Option<Vec<u8>>,
+}
+
+impl fmt::Debug for SystemToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SystemToken")
+            .field("configured", &self.expected.is_some())
+            .finish()
+    }
 }
 
 impl SystemToken {

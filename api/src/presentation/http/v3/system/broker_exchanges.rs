@@ -117,8 +117,9 @@ async fn get_broker_exchanges(req: HttpRequest, state: web::Data<RouteState>) ->
     let page = match state.reader.page(since, limit).await {
         Ok(p) => p,
         Err(e) => {
+            tracing::error!(error = %e, "broker exchanges feed read failed");
             return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": e.to_string()
+                "error": "internal error"
             }));
         }
     };
