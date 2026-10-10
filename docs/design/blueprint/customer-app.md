@@ -457,7 +457,7 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-15 | C13 notifications screen | `web/pages/app-notifications.html`, `web/src/screens/customer/notifications/**` | APP-3, APP-7 |
 | APP-16 | C02 book screen, with the optional referral-code field (prefilled from `?ref=`) | `web/pages/app-book.html`, `web/src/screens/customer/book/**` | APP-4 (`planner_preview`), APP-5 (the public branch list), APP-7 (shell, sign-in), #555 BK-6 (routes), BK-3 (the capture) |
 | APP-17 | C03 my bookings screen (list, QR, cancel, reschedule) | `web/pages/app-bookings.html`, `web/src/screens/customer/bookings/**` | APP-7, #555 BK-6 |
-| APP-18 | **the v3 endpoint seam for customer callers** (lane controller's ruling on #994, option B, 2026-10-11): `view.rs`, `command.rs` and `action.rs` admit a `Need::Public` row with no session instead of answering `signIn`, and hand the handler one caller `{ legacy actor?, access::Actor?, AppSession? }` instead of the v2 `Actor` alone, so the customer routes of APP-3, APP-4, APP-6 and APP-11 are thin wrappers over their services rather than five hand-rolled endpoints (♻️) | `http/v3/view.rs`, `http/v3/command.rs`, `http/v3/action.rs`, `http/v3/caller.rs` (new: the caller type) | OR-7.7 #1030 (which moves the same seam to `access::Actor`), APP-4's `AppSession` (merged with PR 1168); held under the owner's phase lock of 2026-10-11 until phase 2 closes |
+| APP-18 | **the v3 endpoint seam for customer callers** (lane controller's ruling on #994, option B, 2026-10-11): `view.rs`, `command.rs` and `action.rs` admit a `Need::Public` row with no session instead of answering `signIn`, and hand the handler one caller `{ legacy actor?, access::Actor?, AppSession? }` instead of the v2 `Actor` alone, so the customer routes of APP-3, APP-4, APP-6 and APP-11 are thin wrappers over their services rather than five hand-rolled endpoints (♻️) | `http/v3/view.rs`, `http/v3/command.rs`, `http/v3/action.rs`, `http/v3/caller.rs` (new: the caller type) | OR-7.7 #1030 (which moves the same seam to `access::Actor`) and EX-9 #1147 (which adds the export gate's one call in `view.rs`'s paged handler): APP-18 starts after both have merged and rebases over them; APP-4's `AppSession` (lands with PR 1168); held under the owner's phase lock of 2026-10-11 until phase 2 closes |
 
 ### 9.1 Tests written before implementation
 
@@ -563,3 +563,9 @@ A draft holds no rate or stock (P5), so a longer life costs nothing but storage.
 | §18 draft has no booking/stock hold; refresh keeps data; QR not PII; customer cannot complete | P5, P3, P14, APP-5 test |
 | §09 idempotency and concurrency | §4.3, `CommandAction` + `idempotency_records`, the unique indexes |
 | §07 organization_id, created_at/updated_at | §4.1 header |
+
+## 12. Open questions (not decided here; ask before building)
+
+| # | Question | Why it is open | Where it is answered |
+|---|---|---|---|
+| Q-1 | **How does `my_notifications` tell a polling client that a notification was read?** P15 versions the view per recipient by the maximum notification `seq`. `markRead` / `markAllRead` set `read_at` and do not move `seq`, so a second tab polling with `since` gets `{changed:false}` and keeps showing the notification as unread. | Found in review of PR 1169 (#993, 2026-10-11). The implementation follows P15 as written; the gap is in the design. Obvious shapes, **not decided**: a per-recipient read version (a column or row bumped by every read), or a version of `max(seq)` plus the count or latest time of reads. Each changes the APP-1 schema or the view's version query. | With APP-3's route work after the owner's phase lock (lane controller, 2026-10-11); asked on #993 before that work starts |
