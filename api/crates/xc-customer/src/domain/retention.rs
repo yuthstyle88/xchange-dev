@@ -13,6 +13,8 @@ pub enum DataType {
     Contact,
     #[serde(rename = "CLOSED_CUSTOMER")]
     ClosedCustomer,
+    #[serde(rename = "RATE_ALERT")]
+    RateAlert,
 }
 
 impl DataType {
@@ -21,6 +23,7 @@ impl DataType {
             DataType::IdentityValue => "IDENTITY_VALUE",
             DataType::Contact => "CONTACT",
             DataType::ClosedCustomer => "CLOSED_CUSTOMER",
+            DataType::RateAlert => "RATE_ALERT",
         }
     }
 }
@@ -39,6 +42,7 @@ impl FromStr for DataType {
             "IDENTITY_VALUE" => Ok(DataType::IdentityValue),
             "CONTACT" => Ok(DataType::Contact),
             "CLOSED_CUSTOMER" => Ok(DataType::ClosedCustomer),
+            "RATE_ALERT" => Ok(DataType::RateAlert),
             _ => Err(format!("unknown data type: {s}")),
         }
     }

@@ -1,0 +1,37 @@
+# Infra tickets: the one list
+
+> designed-by: claude/5edf7bb5 (xchange lane controller), on the owner's order 2026-10-11:
+> *"ทาง ก: ทำเอกสาร docs/design/infra.md เป็นรายการใบ infra ใบเดียว ใบ infra ต้องอยู่ในรายการนี้ก่อนจึงเปิดได้ คุมจำนวนได้แบบเดียวกับฟีเจอร์"*
+> Measured on `origin/main` `c326b31b`.
+
+Feature work is bounded by the Blueprint (`docs/blueprint/XC-Desk-Blueprint-Data-Model-v2.html`,
+`docs/design/xchange-system-blueprint-v3.html`) and each design's ticket list (owner's order 2026-10-11, #564).
+Infra work has no Blueprint feature behind it, so this file is its ticket list. It covers deploy and host
+scripts, backups, CI workflows and runners, and build or registration architecture.
+
+## 1. Rules
+
+1. **No infra ticket without a row here.** A new row comes in by PR (review → merge) *before* the ticket is opened.
+   The row must carry measured evidence: `file:line`, a run id, or a host log line. "Might break" is not a row.
+2. **One row, one ticket, one outcome.** Splitting a row needs its own rows here first. That is the same rule as feature designs.
+3. **Not infra:** anything that changes what a user, a screen or the data model does. That belongs to a Blueprint design.
+4. Every infra ticket cites its row code (`I-n`) on its first lines.
+
+No exception: an emergency path was proposed and withdrawn on 2026-10-11 (no production exists; xc-v3 holds test data only).
+
+## 2. Tickets
+
+| Code | Issue | What is wrong (measured) | Files | State 2026-10-11 |
+|---|---|---|---|---|
+| I-1 | #422 | The v3 server reaches a machine only by hand: no `deploy/staging` (mirror) or `release/prod` (org) lane | `.github/workflows/`, `deploy/server/` | open (deploy lanes are the owner's call) |
+| I-2 | #1146 | Registration files (`xc-cash/src/application/reconcile/mod.rs`, `http/v3/commands/mod.rs`, `xc-auth` permission tables) collide on every parallel ticket | the registration files; build-time generation | open (design note before code) |
+| I-3 | #1151 | api CI pool selection counts only queued jobs, so api jobs pile onto Dell | `.github/workflows/api.yml` | closed not planned 2026-10-10: measured, the mac pool is slower. One isolated run of PR 1152's api job on studio-org-3: Test step 22m26s and the job hit its 30-min timeout, against 11–16 min for the whole job on Dell (#1151 issuecomment-6101843237). PR 1152 closed. |
+| I-4 | #1162 | `deploy/server/backup.sh:105` pipes into `grep -q` under `pipefail`; a large dump list breaks the pipe and every backup fails | `deploy/server/backup.sh`, `deploy/server/scripts*.test.sh` | open; PR 1164 PASS, merges last in the queue (already done, no further work). **Backups are final-phase work** (owner 2026-10-11) |
+| I-5 | — | `deploy/server/install.sh:77`: `ss -ltnH … \| grep -q .` has the same latent SIGPIPE pattern under `pipefail` (PR 1164 verdict issuecomment-6101180580) | `deploy/server/install.sh` | listed, not opened. It is the installer's port check, not backup work; it stays unopened because nothing runs past development yet (owner: *"งานพัฒนา ยังไม่ถึงระยะ staging เลย"*) |
+| I-6 | #1184 | main's own api run never finishes while main moves faster than one run: `api-main` `cancel-in-progress` cancelled the runs at `50b352a`, `f0a75ea` and `d200a3b`, so a deploy has no green main run to point at (claude/08f7f46f, #422 issuecomment-6101203798) | `.github/workflows/api.yml` | opened #1184; PR 1185 (one line: `cancel-in-progress` only for pull requests) |
+
+**Backups are final-phase work.** Owner, 2026-10-11: *"backup เราจะทำ ระยะ สุดท้าย"* and *"งานพัฒนา ยังไม่ถึงระยะ staging เลย จะมากลัวอะไรหาย"*. No new backup or restore ticket opens before the last phase. Recorded on #1162: issuecomment-6101322958.
+
+## 3. Counts
+
+Listed 6 · opened 5 (open 4, closed 1) · not yet opened 1. Update this line with every row change.

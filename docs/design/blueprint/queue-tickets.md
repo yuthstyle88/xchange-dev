@@ -318,6 +318,18 @@ belongs to #555's check-in ticket. The second is a desk screen ticket that reads
 | QU-7 | every route, permission refusals, `Idempotency-Key` replay and conflict, `since` → `{changed:false}`; `branch_service_status` carries no customer field; `branch_service_status` and `my_queue_ticket` carry `estimateLowSeconds`/`estimateHighSeconds` next to `estimateSeconds` and `estimateAsOf` |
 | QU-8 | the workspace builds and passes with the two views and columns gone; `git grep -n started_at -- api/crates/xc-kiosk` finds no reader |
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| QU-A1 | #879 | closed | QU-1 + QU-2 |
+| QU-A2 | #880 | closed | QU-3, QU-4, QU-5 |
+| QU-A3 | #1128 | open | the unfinished part of the QU-4 row: the shift-open/close calls into `CounterService` (#880 shipped the service, nothing calls it) |
+| QU-B | #881 | open | QU-6, QU-7, QU-8 |
+
 ## 10. Must ask the owner
 
 None open. Q-A1…Q-A6 are answered (§0).

@@ -46,4 +46,7 @@ pub enum Permission {
     ReferenceRatesRead,
     /// Consent policy manage permission (§3, §5.1, CI-6).
     ConsentPolicyManage,
+    /// LG-3b (#926, ledger design §11 Q-2): set a branch's `cash_limits`. FINANCE and ADMIN only,
+    /// not BRANCH_MANAGER, whose own counts the limit decides on.
+    CashLimitsManage,
 }

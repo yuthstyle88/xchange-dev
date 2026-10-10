@@ -1354,6 +1354,18 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| CM-3 | #708 | closed not planned | folded into CM-2 #704 |
+| RF-7 (design question) | #1036 | open | per-side freshness: a §4.10 design amendment, no code ticket. Renamed from "RF-6 (design)", which collided with RF-6 #891 |
+| RE-7 follow-up | #770 | open | named as a §4.9 follow-up (R3) |
+| RE-3 follow-up | #1094 | open | §4.7 "Two paths, two views": the staff view reads through the one loader RE-3 owns; §4.10 notes the two views are byte-identical |
+
 ## 10. Must ask the owner (not decided here)
 
 | # | Question | Blocks |

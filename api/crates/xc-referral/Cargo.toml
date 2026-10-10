@@ -13,6 +13,8 @@ pos-error = { workspace = true }
 xc-outbox = { path = "../xc-outbox" }
 xc-approval = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tracing = "0.1"
 rust_decimal = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 futures = "0.3"
@@ -21,4 +23,5 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 
 [dev-dependencies]
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "macros"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net", "io-util"] }
+tracing = "0.1"

@@ -13,6 +13,7 @@ pub mod files;
 pub mod health;
 pub mod kiosk;
 pub mod payment_methods;
+pub mod public;
 pub mod reference_rates;
 pub mod rpc;
 pub mod v3;
@@ -36,6 +37,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     files::configure(cfg, state);
     kiosk::configure(cfg, state);
     payment_methods::configure(cfg, state);
+    public::configure(cfg, state);
     reference_rates::configure(cfg, state);
     rpc::configure(cfg, state);
     v3::configure_v3(cfg, state);

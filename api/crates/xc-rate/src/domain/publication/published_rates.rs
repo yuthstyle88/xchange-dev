@@ -88,6 +88,15 @@ pub trait PublishedRates: Send + Sync {
         sel: LineSelector,
     ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
 
+    /// One line of the current publication by line id and side, in the caller's transaction.
+    fn line_by_id<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        line_id: PublishedRateLineId,
+        side: Side,
+    ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
+
     /// The stale policy the line was published under (R5).
     fn stale_policy_in<'a>(
         &'a self,

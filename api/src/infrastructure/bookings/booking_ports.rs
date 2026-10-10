@@ -5,13 +5,17 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use uuid::Uuid;
 use xc_exchange::domain::booking::entities::booking_steps::LiveCustomer;
 use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Side};
-use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
+use xc_rate::domain::publication::published_rates::{
+    LineSelector, PublishedRateLineId, PublishedRates,
+};
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
@@ -107,7 +111,20 @@ impl BookingPorts for PgBookingPorts {
     ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
         Box::pin(async move {
             let published_rates = PgPublishedRates::new(self.pool.clone());
-            let published_side = published_rates.line_in(tx, branch, *code, side).await?;
+            let quantity =
+                amount.map(|a| ForeignAmount::from_decimal(Decimal::new(a.minor_i128() as i64, 2)));
+            let published_side = published_rates
+                .line_for(
+                    tx,
+                    branch,
+                    LineSelector {
+                        code: *code,
+                        side,
+                        group: GroupCode::all(),
+                        quantity,
+                    },
+                )
+                .await?;
 
             let published_side = match published_side {
                 Some(s) => s,
@@ -127,6 +144,33 @@ impl BookingPorts for PgBookingPorts {
                     }
                 }
             }
+
+            Ok(Some(CounterLine {
+                line_id: published_side.line_id.as_uuid(),
+                rate: published_side.rate,
+                unit_size: published_side.unit_size,
+            }))
+        })
+    }
+
+    fn stored_line_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        _code: &'a CurrencyCode,
+        side: Side,
+        line_id: Uuid,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
+        Box::pin(async move {
+            let published_rates = PgPublishedRates::new(self.pool.clone());
+            let published_side = published_rates
+                .line_by_id(tx, branch, PublishedRateLineId::new(line_id), side)
+                .await?;
+
+            let published_side = match published_side {
+                Some(s) => s,
+                None => return Ok(None),
+            };
 
             Ok(Some(CounterLine {
                 line_id: published_side.line_id.as_uuid(),

@@ -302,6 +302,15 @@ files (`customer-app.md` §9). RA-2 adds only its own line, and on a rebase conf
 | RA-4 | publications v1 (below), v2 (above), v3 (above), v4 (below), v5 (above) for an `ABOVE` alert with cooldown 0 give events for v2 and v5 only, episodes 1 and 2; delivering the v2 row twice gives one event and one notification; two evaluators on one publication at once give one event (`SKIP LOCKED` + version); a paused alert at v2 then resumed at v3 (above) does not fire; an expired alert does not fire; a line with `unit_size` ≠ the alert's disables it with `UNIT_CHANGED` and writes no event; with `ALL_FRESH` (Q-R3), a stale side is skipped and leaves the relation unchanged, and a fresh MANUAL side is compared like a fresh AUTO side; the notification's `params` hold no customer name, phone or amount of any transaction |
 | RA-5, RA-6 | vitest: create/pause/resume/delete flows, loading/empty/error/retry; the side is labelled in customer words with the unit; TH/EN/中文 on RA-5 only; RA-6 visible to EXECUTIVE only |
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| AL-1 … AL-6 | #996, #1002, #1008–#1011 | AL-1 closed, others open | this design's RA-1 … RA-6, renamed AL-* because RA-1 … RA-3 are broker-seam.md's #979–#981. Read RA-n here as AL-n |
+
 ## 10. Owner decisions (2026-10-10)
 
 The owner was asked in the lane controller's session (`claude/5edf7bb5`) on **2026-10-10**:

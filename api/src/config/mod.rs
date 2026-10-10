@@ -80,6 +80,23 @@ impl Default for DevicesSettings {
 
 pub use xc_auth::infrastructure::identity::IdentitySettings;
 
+/// Where the Broker attribution handler sends (RA-2 #980, design `broker-seam.md` §5.4). Read
+/// from `XC_BROKER_BASE_URL` and `XC_BROKER_SERVICE_TOKEN`; `None` when either is unset or blank,
+/// and then no handler is registered. `Debug` never prints the token.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BrokerSettings {
+    pub base_url: String,
+    pub service_token: String,
+}
+
+impl std::fmt::Debug for BrokerSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrokerSettings")
+            .field("base_url", &self.base_url)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
@@ -94,6 +111,8 @@ pub struct Settings {
     pub devices: DevicesSettings,
     #[serde(default)]
     pub identity: Option<IdentitySettings>,
+    #[serde(skip)]
+    pub broker: Option<BrokerSettings>,
 }
 
 impl Settings {
@@ -144,6 +163,21 @@ impl Settings {
             ));
         };
 
+        let broker = match (
+            env_map.get("XC_BROKER_BASE_URL"),
+            env_map.get("XC_BROKER_SERVICE_TOKEN"),
+        ) {
+            (Some(base_url), Some(service_token))
+                if !base_url.trim().is_empty() && !service_token.trim().is_empty() =>
+            {
+                Some(BrokerSettings {
+                    base_url: base_url.trim().to_owned(),
+                    service_token: service_token.trim().to_owned(),
+                })
+            }
+            _ => None,
+        };
+
         let environment = env_map
             .get("APP_ENVIRONMENT")
             .map(|s| s.as_str())
@@ -184,6 +218,7 @@ impl Settings {
 
         let mut settings: Settings = builder.build()?.try_deserialize()?;
         settings.identity = identity;
+        settings.broker = broker;
         if settings.auth.purge_interval_secs == 0 {
             return Err(config::ConfigError::Message(
                 "auth.purge_interval_secs must be at least 1".to_string(),

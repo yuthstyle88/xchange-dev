@@ -47,4 +47,18 @@ pub trait BookingPorts: Send + Sync {
         side: Side,
         amount: Option<Money>,
     ) -> BoxFuture<'a, AppResult<Option<CounterLine>>>;
+
+    fn stored_line_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        code: &'a CurrencyCode,
+        side: Side,
+        line_id: Uuid,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
+        Box::pin(async move {
+            let line = self.counter_rate_in(tx, branch, code, side, None).await?;
+            Ok(line.filter(|l| l.line_id == line_id))
+        })
+    }
 }

@@ -6,6 +6,7 @@ use actix_web::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::ViewFilter;
 
@@ -87,6 +88,7 @@ pub struct AdminBookingSettingsData {
     pub member_count: u64,
     pub public_url: String,
     pub counter_rates: Vec<AdminBookingCounterRate>,
+    pub freshness: RateFreshnessDto,
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

@@ -1,8 +1,8 @@
 //! The ledger reconcile core (LG-7.0 #1054; design `docs/design/blueprint/ledger-inventory.md` §6 and
 //! §6.1). The five checks of §6 each live in their own file beside this one and register themselves
 //! in [`Reconcile::standard`]; the core runs them in one read-only snapshot.
-//!
-//! Scaffold written by the ticket author: `run` is `todo!()`; the implementer fills it.
+
+pub mod balanced;
 
 pub mod positions;
 pub mod valuation;
@@ -70,6 +70,7 @@ impl Reconcile {
     /// The five checks of design §6. Each check ticket (LG-7.1–7.5) adds its one line here.
     pub fn standard() -> Self {
         Self::new(vec![
+            Arc::new(balanced::BalancedCheck),
             Arc::new(positions::PositionsCheck),
             Arc::new(valuation::ValuationCheck),
         ])
