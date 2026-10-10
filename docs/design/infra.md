@@ -13,7 +13,7 @@ scripts, backups, CI workflows and runners, and build or registration architectu
 
 1. **No infra ticket without a row here.** A new row comes in by PR (review → merge) *before* the ticket is opened.
    The row must carry measured evidence: `file:line`, a run id, or a host log line. "Might break" is not a row.
-2. **The one exception: the server is down or data is at risk now** (a failing backup, a failed deploy, a crash
+2. **[proposed by the lane controller — not yet confirmed by the owner; until confirmed, rule 1 applies with no exception]** **The one exception: the server is down or data is at risk now** (a failing backup, a failed deploy, a crash
    loop). The owner may order the ticket opened first. The row is then added within the same day, citing that order.
 3. **One row, one ticket, one outcome.** Splitting a row needs its own rows here first. That is the same rule as feature designs.
 4. **Not infra:** anything that changes what a user, a screen or the data model does. That belongs to a Blueprint design.
