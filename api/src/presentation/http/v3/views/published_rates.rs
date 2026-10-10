@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -15,6 +15,8 @@ use uuid::Uuid;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::Side;
+use xc_rate::domain::publication::freshness::Freshness;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
@@ -98,8 +100,7 @@ impl BranchView for PublishedRatesBranchView {
             .map_err(pos_error::AppError::Database)?;
 
             let mut lines = Vec::new();
-            let mut is_stale = false;
-            let mut source_date = None;
+            let mut freshnesses = Vec::new();
             let now = Utc::now();
 
             for r in lines_db {
@@ -116,31 +117,8 @@ impl BranchView for PublishedRatesBranchView {
                 let buy_rate = buy_dec.map(|d| format!("{:.8}", d));
                 let sell_rate = sell_dec.map(|d| format!("{:.8}", d));
 
-                if source_date.is_none()
-                    && let Some(sd) = snapshot.get("source_date").and_then(|v| v.as_str())
-                {
-                    source_date = Some(sd.to_string());
-                }
-
-                let is_auto = snapshot.get("buy_mode").and_then(|v| v.as_str()) == Some("AUTO")
-                    || snapshot.get("sell_mode").and_then(|v| v.as_str()) == Some("AUTO");
-
-                if is_auto {
-                    let max_age_hours = snapshot
-                        .get("max_reference_age_hours")
-                        .and_then(|v| v.as_i64());
-                    let fetched_at = snapshot
-                        .get("fetched_at")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| dt.with_timezone(&Utc));
-
-                    if let (Some(age), Some(fat)) = (max_age_hours, fetched_at)
-                        && now - fat > Duration::hours(age)
-                    {
-                        is_stale = true;
-                    }
-                }
+                freshnesses.push(Freshness::of_side(&snapshot, Side::Buy, now));
+                freshnesses.push(Freshness::of_side(&snapshot, Side::Sell, now));
 
                 lines.push(PublishedLineDto {
                     currency: currency.trim().to_string(),
@@ -152,14 +130,18 @@ impl BranchView for PublishedRatesBranchView {
                 });
             }
 
+            let pub_freshness = Freshness::of_publication(freshnesses);
+
             Ok(PublishedRatesData {
                 publication: Some(PublishedPublicationDto {
                     id: pid.to_string(),
                     version: pver,
                     published_at: pat.to_rfc3339(),
                 }),
-                source_date,
-                stale: is_stale,
+                source_date: pub_freshness
+                    .source_date
+                    .map(|d| d.format("%Y-%m-%d").to_string()),
+                stale: pub_freshness.stale,
                 lines,
             })
         }

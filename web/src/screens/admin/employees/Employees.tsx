@@ -136,6 +136,8 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const currentBranchName = () => branchName(props.branch());
 
   function openCreateDialog() {
+    const form = useForm();
+    const passwordField = form.field('password');
     let formEl: HTMLFormElement | undefined;
     const [error, setError] = createSignal<string | null>(null);
     const [submitting, setSubmitting] = createSignal(false);
@@ -172,24 +174,23 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
     openDialog(t('createTitle'), () => (
       <form ref={(el) => (formEl = el)} onSubmit={onSubmit}>
-        <p>{t('handOver')}</p>
         <div class="form-grid">
-          <div>
-            <label for="create-name">{t('name')}</label>
+          <label for="create-name">
+            {t('name')}
             <input id="create-name" name="name" required />
-          </div>
-          <div>
-            <label for="create-username">{t('username')}</label>
+          </label>
+          <label for="create-username">
+            {t('username')}
             <input id="create-username" name="username" required />
-          </div>
-          <div>
-            <label for="create-role">{t('role')}</label>
+          </label>
+          <label for="create-role">
+            {t('role')}
             <select id="create-role" name="role">
               <For each={ROLES}>{(r) => <option value={r}>{r}</option>}</For>
             </select>
-          </div>
-          <div>
-            <label for="create-branch">{t('branch')}</label>
+          </label>
+          <label for="create-branch">
+            {t('branch')}
             <select id="create-branch" name="branchId">
               <For each={branches()}>
                 {(b) => (
@@ -199,12 +200,14 @@ export function Employees(props: AdminMenuProps): JSX.Element {
                 )}
               </For>
             </select>
-          </div>
-          <div>
-            <label for="create-password">{t('password')}</label>
-            <input id="create-password" name="password" type="password" required />
-          </div>
+          </label>
+          <PasswordField
+            field={passwordField}
+            label={t('password')}
+            required
+          />
         </div>
+        <p>{t('handOver')}</p>
         <Show when={error()}>
           <p role="alert" class="error">{error()}</p>
         </Show>
@@ -251,12 +254,12 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
     openDialog(t('resetTitle'), () => (
       <form ref={(el) => (formEl = el)} onSubmit={onSubmit}>
-        <p>{t('sessionsEnd')}</p>
         <PasswordField
           field={passwordField}
           label={t('newPassword')}
           required
         />
+        <p>{t('sessionsEnd')}</p>
         <Show when={error()}>
           <p role="alert" class="error">{error()}</p>
         </Show>
@@ -366,19 +369,18 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
     openDialog(t('entityTitle'), () => (
       <form ref={(el) => (formEl = el)} onSubmit={onSubmit}>
-        <p>{t('entityNote')}</p>
-        <div>
-          <label for="entity-company">{t('company')}</label>
+        <label for="entity-company">
+          {t('company')}
           <input id="entity-company" name="company" value={initialCompany} required />
-        </div>
-        <div>
-          <label for="entity-site">{t('site')}</label>
+        </label>
+        <label for="entity-site">
+          {t('site')}
           <input id="entity-site" name="site" value={initialSite} required />
-        </div>
-        <div>
-          <label for="entity-separated">{t('separated')}</label>
-          <input id="entity-separated" name="confirmSeparated" type="checkbox" required />
-        </div>
+        </label>
+        <label for="entity-separated">
+          <input id="entity-separated" name="confirmSeparated" type="checkbox" required /> {t('separated')}
+        </label>
+        <p>{t('entityNote')}</p>
         <Show when={error()}>
           <p role="alert" class="error">{error()}</p>
         </Show>

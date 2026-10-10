@@ -9,6 +9,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::policy::stale_policy::{OnStale, StalePolicy};
+use crate::domain::publication::freshness::Freshness;
 use crate::domain::publication::publication::{Publication, PublicationId};
 use crate::domain::publication::published_rates::{
     PublicationRef, PublishedRateLineId, PublishedRates, PublishedSide,
@@ -113,37 +114,7 @@ impl PublishedRates for PgPublishedRates {
             let unit_size = UnitSize::parse(&unit_size_dec.to_string())
                 .map_err(|e| pos_error::AppError::Internal(format!("invalid unit size: {e}")))?;
 
-            let buy_mode = snapshot.get("buy_mode").and_then(|v| v.as_str());
-            let sell_mode = snapshot.get("sell_mode").and_then(|v| v.as_str());
-            let side_mode = match side {
-                Side::Buy => buy_mode,
-                Side::Sell => sell_mode,
-            };
-            let is_manual = side_mode == Some("MANUAL");
-
-            let fetched_at_str = snapshot.get("fetched_at").and_then(|v| v.as_str());
-            let source_date = snapshot
-                .get("source_date")
-                .and_then(|v| v.as_str())
-                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-
-            let max_age = snapshot
-                .get("max_reference_age_hours")
-                .and_then(|v| v.as_i64());
-
-            let stale = if is_manual && fetched_at_str.is_none() {
-                false
-            } else if let (Some(fat_str), Some(max_hours)) = (fetched_at_str, max_age) {
-                if let Ok(fat) = chrono::DateTime::parse_from_rfc3339(fat_str) {
-                    let now = chrono::Utc::now();
-                    let age = now.signed_duration_since(fat.with_timezone(&chrono::Utc));
-                    age.num_seconds() > max_hours * 3600
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
+            let freshness = Freshness::of_side(&snapshot, side, chrono::Utc::now());
 
             Ok(Some(PublishedSide {
                 line_id: PublishedRateLineId::new(line_id),
@@ -153,8 +124,8 @@ impl PublishedRates for PgPublishedRates {
                     id: PublicationId::new(pub_id),
                     version: pub_version,
                 },
-                stale,
-                source_date,
+                stale: freshness.stale,
+                source_date: freshness.source_date,
             }))
         })
     }

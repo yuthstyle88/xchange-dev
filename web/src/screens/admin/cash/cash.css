@@ -5,11 +5,6 @@
   display: block;
 }
 
-/* v2 src/online/lib/admin-html.ts .stock-banner */
-.xc-admin .xc-content .admin-cash-screen .stock-banner strong {
-  font-size: 16px;
-}
-
 /* v2 admin-html:6 #cash-stats */
 .xc-admin .xc-content .admin-cash-screen > .card-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1150px) {

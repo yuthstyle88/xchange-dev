@@ -56,11 +56,11 @@ export function ReceiptSample(props: { print?: () => void }): JSX.Element {
         </section>
         <div class="perforation" aria-hidden="true"><i class="notch left"></i><span>KEEP EXPLORING</span><i class="notch right"></i></div>
         <footer class="stub">
-          <h2 class="promo">USDT REAL-TIME RATE UPDATE<br />&amp; RATE RESERVATION</h2>
+          <h2 class="promo">USDT RATE UPDATE<br />&amp; RATE RESERVATION</h2>
           <div class="footer-grid">
             <a href="https://t.me/XCHANGEXTK" aria-label="Open Telegram"><img class="qr" alt="Scan to open Telegram @XCHANGEXTK" src={qrUrl} /></a>
             <div>
-              <div class="scan-copy"><b>Scan QR Code for</b><br />Live Exchange Rates<br />&amp; Rate Reservation</div>
+              <div class="scan-copy"><b>Scan QR Code for</b><br />Rate Reservation</div>
               <div class="contacts">WhatsApp<br /><a href="https://wa.me/66968799989"><strong>(+66) 96 879 9989</strong></a><br />Telegram: <a href="https://t.me/XCHANGEXTK"><strong>@XCHANGEXTK</strong></a></div>
             </div>
           </div>

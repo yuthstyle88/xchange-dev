@@ -1,6 +1,8 @@
 // V1-auth-layout (#531; design docs/design/xchange-v3-web.md §12.21.1): PasswordField's eye looks like the served
 // pages' eye (#378, api/web/forms/src/password-field.ts and style.ts): an icon inside the field's right edge, not a text
-// button beside it. On signed-out pages only (under .xc-auth); the admin form is not restyled.
+// button beside it. #531 scoped it to signed-out pages (under .xc-auth). #866 (owner 2026-10-10) makes it the same
+// look everywhere: the rules move into the component's own shared/ui/password-field.css, applied below with auth.css,
+// and the "admin form is not restyled" case is retired (see PasswordField.everywhere.test.tsx).
 // Written before the implementation by the lane controller (claude/608dff). Do not edit, delete or weaken.
 //
 // PasswordField.test.tsx, PasswordField.validation.test.tsx and shared/i18n/retrofit.test.tsx keep pinning the
@@ -18,6 +20,7 @@ interface NodeFs {
 }
 
 let authCss: string | undefined;
+let fieldCss: string | undefined;
 let dispose: (() => void) | undefined;
 let style: HTMLStyleElement | undefined;
 
@@ -26,6 +29,7 @@ beforeAll(async () => {
   const fs = (await import(/* @vite-ignore */ specifier)) as NodeFs;
   const dir = decodeURIComponent(import.meta.url.replace(/^file:\/\//, '').replace(/[^/]*$/, ''));
   authCss = fs.existsSync(dir + 'auth.css') ? fs.readFileSync(dir + 'auth.css', 'utf8') : undefined;
+  fieldCss = fs.existsSync(dir + 'password-field.css') ? fs.readFileSync(dir + 'password-field.css', 'utf8') : undefined;
 });
 
 afterEach(() => {
@@ -40,7 +44,8 @@ afterEach(() => {
 function applyAuthCss() {
   expect(authCss, 'web/src/shared/ui/auth.css exists (§12.21.1)').toBeTypeOf('string');
   style = document.createElement('style');
-  style.textContent = authCss!;
+  // #866: the eye's look may live in the component's own stylesheet; a signed-out page has both.
+  style.textContent = authCss! + '\n' + (fieldCss ?? '');
   document.head.appendChild(style);
 }
 
@@ -107,11 +112,5 @@ describe('PasswordField — the eye inside the field (§12.21.1, #378)', () => {
     expect(visuallyHidden(eye.querySelector('.xc-reveal-text')!), 'the eye text is visually hidden').toBe(true);
   });
 
-  it('outside .xc-auth (the admin form) the eye is not restyled', () => {
-    applyAuthCss();
-    const { input, eye } = mount(false);
-    expect(getComputedStyle(input.parentElement!).position).not.toBe('relative');
-    expect(getComputedStyle(eye).position).not.toBe('absolute');
-    expect(visuallyHidden(eye.querySelector('.xc-reveal-text') ?? eye)).toBe(false);
-  });
+  // Retired by #866: 'outside .xc-auth (the admin form) the eye is not restyled'. The owner wants one look everywhere.
 });

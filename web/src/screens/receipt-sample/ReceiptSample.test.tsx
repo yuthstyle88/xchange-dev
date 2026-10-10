@@ -30,10 +30,14 @@ const BANNER = 'SAMPLE / ตัวอย่าง ไม่ใช่รายก
 
 // v2's markup, verbatim from the source, with only the two data-URI `src`s and the two `onclick`s taken out: the
 // images are checked against logo.png / qr-telegram.png below, and the print button is checked by clicking it.
+// RF-6 (lane controller claude/5edf7bb5 ruling, 2026-10-10; docs/design/blueprint/rates.md RF-6 row): two v2 texts
+// are changed because §05 says no display claims rates are real time or live. The promo heading drops "REAL-TIME"
+// (v2: "USDT REAL-TIME RATE UPDATE"), and the "Live Exchange Rates" line of the scan copy is dropped: a static
+// sample has no publication time to fill `rate.publishedAt`'s {at}. Everything else stays v2's.
 const V2_HEADING = `<p class="screen-heading">XCHANGE / EXCHANGE TICKET</p>`;
 
 const V2_RECEIPT = `<main class="receipt" aria-label="Exchange transaction receipt"><section class="main-ticket"><p style="font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px;margin:1mm 0">SAMPLE / ตัวอย่าง ไม่ใช่รายการจริง</p><header class="brand"><div class="logo-window"><img class="logo" alt="XCHANGE Currency Exchange"></div><div class="ticket-label"><strong>EXCHANGE</strong>TRANSACTION<br>RECEIPT / 01</div></header><div class="route" aria-hidden="true"><span class="route-code">USD</span><div class="route-mid"><svg viewBox="0 0 100 20" fill="none"><path d="M0 10H91M85 4L93 10L85 16" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"/></svg>CURRENCY EXCHANGE</div><span class="route-code">THB</span></div><dl><div class="row receipt-number"><dt>Receipt No.</dt><dd>EX202609270001</dd></div><div class="row"><dt>Type</dt><dd>SELL</dd></div><div class="row passenger"><dt>Customer</dt><dd>John Smith</dd></div><div class="row"><dt>Currency</dt><dd>USD</dd></div><div class="row"><dt>Amount</dt><dd>1,000.00 USD</dd></div><div class="row"><dt>Booked Rate</dt><dd>33.2500</dd></div><div class="row"><dt>Time</dt><dd>27/09/2026 14:05</dd></div><div class="row"><dt>Customer ID</dt><dd>CX-20260927-00001</dd></div><div class="row"><dt>Pay Via</dt><dd>Cash</dd></div><div class="row"><dt>Ref No.</dt><dd>—</dd></div><div class="row"><dt>Staff</dt><dd>ADMIN01</dd></div></dl><dl id="settlement"><div class="row"><dt>Customer Fee THB</dt><dd>0.00</dd></div><div class="row"><dt>Net Received THB</dt><dd>33,250.00</dd></div></dl><dl><div class="row total"><dt>THB Total</dt><dd>33,250.00<span class="unit"> THB</span></dd></div></dl></section><div class="perforation" aria-hidden="true"><i class="notch left"></i><span>KEEP EXPLORING</span><i class="notch right"></i></div>
-<footer class="stub"><h2 class="promo">USDT REAL-TIME RATE UPDATE<br>&amp; RATE RESERVATION</h2><div class="footer-grid"><a href="https://t.me/XCHANGEXTK" aria-label="Open Telegram"><img class="qr" alt="Scan to open Telegram @XCHANGEXTK"></a><div><div class="scan-copy"><b>Scan QR Code for</b><br>Live Exchange Rates<br>&amp; Rate Reservation</div><div class="contacts">WhatsApp<br><a href="https://wa.me/66968799989"><strong>(+66) 96 879 9989</strong></a><br>Telegram: <a href="https://t.me/XCHANGEXTK"><strong>@XCHANGEXTK</strong></a></div></div></div><div class="company"><strong>T.K. EXCHANGE MONEY CO., LTD.</strong>REG. 0205567035266 &middot; LIC. MC125670033<br>HEAD OFFICE: 75/223 MOO 12, SOI JOMTIEN 7<br>NONG PRUE, BANG LAMUNG, CHON BURI, THAILAND</div></footer></main>`;
+<footer class="stub"><h2 class="promo">USDT RATE UPDATE<br>&amp; RATE RESERVATION</h2><div class="footer-grid"><a href="https://t.me/XCHANGEXTK" aria-label="Open Telegram"><img class="qr" alt="Scan to open Telegram @XCHANGEXTK"></a><div><div class="scan-copy"><b>Scan QR Code for</b><br>Rate Reservation</div><div class="contacts">WhatsApp<br><a href="https://wa.me/66968799989"><strong>(+66) 96 879 9989</strong></a><br>Telegram: <a href="https://t.me/XCHANGEXTK"><strong>@XCHANGEXTK</strong></a></div></div></div><div class="company"><strong>T.K. EXCHANGE MONEY CO., LTD.</strong>REG. 0205567035266 &middot; LIC. MC125670033<br>HEAD OFFICE: 75/223 MOO 12, SOI JOMTIEN 7<br>NONG PRUE, BANG LAMUNG, CHON BURI, THAILAND</div></footer></main>`;
 
 const V2_PRINT_BUTTON = `<button class="print-button">Print receipt &middot; 80 × 90 mm</button>`;
 
@@ -265,5 +269,54 @@ describe('V1-receipt-sample: the screen', () => {
     expect(banner(host).textContent).toBe(screenLookup.en[key!]);
     setLang('th');
     expect(banner(host).textContent).toBe(BANNER);
+  });
+});
+
+// RF-6 (lane controller claude/5edf7bb5, 2026-10-10): §05 says no display claims rates are real time or live
+// (docs/design/blueprint/rates.md §4.8 and the RF-6 row). The pattern is RF-2's, from
+// web/src/shared/ui/RateFreshness.test.tsx. Written before the implementation. Do not edit, delete or weaken.
+const NOT_LIVE = /real[\s-]?time|\blive\b|เรียลไทม์|ล่าสุดแบบสด|实时/i;
+
+/** Each text node on its own, so that `<br>`-separated lines keep their word boundaries ("for" + "Live"). */
+function textNodes(root: Node): string[] {
+  const out: string[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push((n as Text).data);
+  return out;
+}
+
+/** Every text a reader can meet: each text node plus the attributes a screen reader or a hover reads out. */
+function readable(host: HTMLElement): string[] {
+  const out = textNodes(host);
+  for (const el of Array.from(host.querySelectorAll('*'))) {
+    for (const name of ['alt', 'aria-label', 'title']) {
+      const value = el.getAttribute(name);
+      if (value) out.push(value);
+    }
+  }
+  return out;
+}
+
+describe('RF-6: the receipt sample makes no live-rate claim (§05)', () => {
+  for (const lang of ['th', 'en'] as const) {
+    it(`no text on the ${lang} screen says "real time" or "live"`, () => {
+      setLang(lang);
+      const host = mount();
+      for (const text of readable(host)) expect(text).not.toMatch(NOT_LIVE);
+    });
+  }
+
+  it('the promo heading and the scan copy make no rate-freshness claim', () => {
+    const host = mount();
+    expect(textNodes(only(host, 'footer.stub h2.promo')).join(' ')).not.toMatch(NOT_LIVE);
+    expect(textNodes(only(host, 'footer.stub .scan-copy')).join(' ')).not.toMatch(NOT_LIVE);
+  });
+
+  it("no entry of the screen's own text table says \"real time\" or \"live\"", () => {
+    for (const table of [screenLookup.th, screenLookup.en] as Record<string, string>[]) {
+      for (const key of Object.keys(table).filter((k) => k.startsWith(NS))) {
+        expect(table[key] ?? '', key).not.toMatch(NOT_LIVE);
+      }
+    }
   });
 });

@@ -8,7 +8,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-top: 12px;
 }
 
 .xc-admin .xc-content.xc-content .card.employees-card header label.employees-filter {

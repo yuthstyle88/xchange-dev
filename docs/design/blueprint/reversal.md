@@ -74,8 +74,8 @@ reversals(
   reason                  text NOT NULL CHECK (length(reason) BETWEEN 1 AND 500),
   amount_thb              numeric(20,2) NOT NULL CHECK (amount_thb > 0),   -- = the original's Σ settle_thb (V-1)
   business_date           date NOT NULL,          -- the original's completion date in the branch timezone (R-1)
-  approval_request_id     uuid NOT NULL REFERENCES approval_requests(id),  -- §07 approval_id
-  posting_id              uuid NULL REFERENCES ledger_postings(id),       -- §07 posting_id; set at POSTED
+  approval_request_id     uuid NULL REFERENCES approval_requests(id),      -- §07 approval_id; NULL only while REQUESTED (RG6)
+  posting_id              uuid NULL,                                       -- §07 posting_id; set at POSTED; FK to ledger_postings added by RV-3 (RG1)
   receipt_id              uuid NULL REFERENCES receipts(id),              -- the reversal document; set at POSTED
   shift_id                text NULL,                                       -- the poster's shift; set at POSTED
   requested_by            text NOT NULL,  requested_at timestamptz NOT NULL,
@@ -83,11 +83,20 @@ reversals(
   realized_margin_reversed_thb numeric(20,2) NULL,                         -- − the original lines' margin; set at POSTED
   cost_difference_thb     numeric(20,2) NULL,     -- Σ ReversedCost.difference_thb (ledger-inventory.md §4.6); set at POSTED
   created_at, updated_at,
+  CHECK (status = 'REQUESTED' OR approval_request_id IS NOT NULL),                                  -- RG6
   CHECK ((status = 'POSTED') = (posting_id IS NOT NULL AND receipt_id IS NOT NULL AND posted_at IS NOT NULL))
 )
 CREATE UNIQUE INDEX one_live_reversal_per_transaction
   ON reversals (original_transaction_id) WHERE status <> 'REJECTED';                      -- V-5
 ```
+
+Rulings on #682, lane controller (claude/608dff), 2026-10-10:
+- **RG1:** `ledger_postings` is #553's table and is not on main when RV-1 lands, so RV-1 creates `posting_id` with no
+  foreign key. RV-3 (#684), which starts after LG-4, adds `REFERENCES ledger_postings(id)` in its own migration.
+- **RG6:** `ApprovalService::request` reads the subject's `version_hash` from the reversal row
+  (`api/crates/xc-approval/src/application/approval_service.rs:122`), so the row exists before its request does.
+  `approval_request_id` is therefore NULL at insert. The request workflow sets it in the same transaction, and the
+  CHECK keeps every decided reversal tied to its request.
 
 ### 3.2 `receipts` gains a kind (V-4)
 
@@ -178,12 +187,12 @@ classDiagram
   class Reversal { <<xc-exchange domain/reversal/reversal.rs>> +status +amount_thb +business_date }
   class ReversalRepository { <<trait xc-exchange domain/reversal/repository.rs>> +insert_in() +find_in() +set_status_in() +post_in() }
   class PgReversalRepository { <<xc-exchange infrastructure/reversal/repository.rs>> }
-  class RequestReversal { <<api application/workflows/exchange/reversal_request.rs>> +run_in(tx: &mut Transaction~Postgres~, original: TransactionId, reason, who: &SaveActor, key, now) AppResult~Reversal~ }
+  class RequestReversal { <<api application/workflows/exchange/reversal_request.rs>> +run_in(tx: &mut Transaction~Postgres~, input: RequestReversalInput, who: &SaveActor, now) AppResult~Reversal~ }
   class PostReversal { <<api application/workflows/exchange/reversal_post.rs>> +run_in(tx: &mut Transaction~Postgres~, id: ReversalId, who: &SaveActor, now) AppResult~PostedReversal~ }
   class ReversalSubject { <<api application/workflows/exchange/reversal_approval.rs>> }
   class ReversalPolicy { <<api application/workflows/exchange/reversal_approval.rs>> }
-  class ReversalWindow { <<xc-exchange domain/reversal/window.rs>> +is_open(business_date, now, hours: &BranchHours) bool }
-  class ReversalCommands { <<api http/v3/commands/exchange/reversals.rs>> }
+  class ReversalWindow { <<xc-exchange domain/reversal/window.rs>> +business_date_of(completed_at, tz: Tz) NaiveDate +is_open(business_date, now, tz: Tz) bool }
+  class ReversalCommands { <<api http/v3/commands/reversal_requests.rs>> }
   class ReversalView { <<api http/v3/views/reversal.rs>> }
   class CashPostings { <<trait xc-cash domain/posting.rs (#553)>> }
   class ExchangeFeedWriter { <<xc-referral application/feed_writer.rs (#563)>> +record_reversed() }
@@ -205,6 +214,12 @@ classDiagram
   ReversalCommands --> RequestReversal
   ReversalCommands --> PostReversal
 ```
+
+**Rulings on #682 (lane controller, 2026-10-10):**
+- **RG2:** `BranchHours` is in xc-rate, which xc-exchange cannot depend on, so the window takes the branch's IANA timezone (`chrono_tz::Tz`, OR-1's `branches.timezone`). xc-exchange gains `chrono-tz` 0.10.
+- **RG5:** `RequestReversalInput { branch, original, reason, key }`: the branch travels in the input, because `SaveActor` has none and the request must refuse another branch's transaction.
+- **RG7:** the command file is flat, as above.
+- **RG3/RG4:** the route rows (`reversalRequest`, and FINANCE's `ApprovalsDecide`) are #874's.
 
 The orchestrators live in the `api` crate beside #551's (`quote-transaction.md` §7: `xc-exchange` depends on kernel
 crates only); `xc-exchange` keeps the domain, the window rule and the repository.
@@ -243,7 +258,7 @@ crates only); `xc-exchange` keeps the domain, the window rule and the repository
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
 | RV-1 | domain, window rule, repository; migration 1 | `xc-exchange/src/domain/reversal/**`, `xc-exchange/src/infrastructure/reversal/**` (new); migration 1 | #551 TX-2, #550 OR-1 |
-| RV-2 | request command, approval subject and policy | `api/src/application/workflows/exchange/{reversal_request,reversal_approval}.rs`, `http/v3/commands/exchange/reversals.rs` (the request arm), `dto/v3/reversal.rs` + TS | RV-1, AP-1 (merged), CM-1 #597 |
+| RV-2 | request command, approval subject and policy | `api/src/application/workflows/exchange/{reversal_request,reversal_approval}.rs`, `http/v3/commands/reversal_requests.rs` (flat: `build.rs` serves only plain files in `commands/`; no committed TS for a command DTO, RG7) | RV-1, AP-1 (merged), CM-1 #597 |
 | RV-3 | post: the opposite posting, the document, the feed and the event | `api/src/application/workflows/exchange/reversal_post.rs`, `http/v3/commands/exchange/reversal_post.rs` | RV-2, #553 LG-4 |
 | RV-4 | reads: the reversal view and the B04 field | `http/v3/views/reversal.rs`, the reversal field in #551 TX-10's DTO (after TX-10) | RV-1, #551 TX-10 |
 
