@@ -19,6 +19,7 @@ import { toast } from '../parts/toast';
 import { refreshTick } from '../parts/refresh';
 import { Card } from '../../../shared/ui/Card';
 import { CheckField } from '../../../shared/ui/Field';
+import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { th, en } from './i18n';
 import './bookings.css';
 
@@ -430,6 +431,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
 
     openDialog(t('createButton'), () => (
       <form onSubmit={handleCreateSubmit}>
+        <RateFreshness
+          stale={settings()?.freshness?.stale ?? false}
+          sourceDate={settings()?.freshness?.sourceDate}
+          publishedAt={settings()?.freshness?.publishedAt}
+        />
         <label>
           {t('fieldName')}
           <input

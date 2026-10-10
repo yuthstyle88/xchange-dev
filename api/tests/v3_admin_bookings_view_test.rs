@@ -58,6 +58,12 @@
 //! - `every_writer_of_the_views_tables_moves_the_version`: the counter rates' writer is a
 //!   publication through the rate routes, no longer `adminSaveRate` (D-3: a direct save is not
 //!   the counter rate).
+//!
+//! Amended for #943 (RF-4) by its up-front test author (claude/dell-claude-4, on the lane
+//! controller's order): `admin_booking_settings` also answers `freshness` (`RateFreshnessDto`,
+//! RF-1), so the two key-set pins below (`settings_answers_rules_members_public_url_and_counter_rates`
+//! and `the_generated_types_carry_the_tickets_fields`) name it. Its values are pinned in
+//! `v3_admin_booking_settings_freshness_test.rs`.
 
 mod common;
 mod compat_common;
@@ -1145,7 +1151,13 @@ async fn settings_answers_rules_members_public_url_and_counter_rates() {
     let data = room.settings(MAIN).await;
     assert_eq!(
         keys(&data),
-        set_of(&["rules", "memberCount", "publicUrl", "counterRates"]),
+        set_of(&[
+            "rules",
+            "memberCount",
+            "publicUrl",
+            "counterRates",
+            "freshness"
+        ]),
         "{data}"
     );
     assert_eq!(
@@ -1578,7 +1590,13 @@ fn the_generated_types_carry_the_tickets_fields() {
     let fields: BTreeSet<String> = settings.keys().cloned().collect();
     assert_eq!(
         fields,
-        set_of(&["rules", "memberCount", "publicUrl", "counterRates"]),
+        set_of(&[
+            "rules",
+            "memberCount",
+            "publicUrl",
+            "counterRates",
+            "freshness"
+        ]),
         "{ts}"
     );
     assert_eq!(settings["memberCount"], "number");

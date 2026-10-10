@@ -10,7 +10,9 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
+use serde_json::Value;
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::booking::entities::booking::Booking;
@@ -20,6 +22,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
     CompatRate, CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
 };
+use xc_rate::domain::publication::freshness::Freshness;
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
 use crate::bootstrap::AppState;
@@ -28,7 +31,7 @@ use crate::presentation::dto::v3::admin_bookings::{
     AdminBookingCounterRate, AdminBookingFilter, AdminBookingRow, AdminBookingRules,
     AdminBookingSettingsData,
 };
-use crate::presentation::dto::v3::common::NoFilter;
+use crate::presentation::dto::v3::common::{NoFilter, RateFreshnessDto};
 use crate::presentation::http::v3::view::{BranchView, PagedView, RowId, ViewEndpoint};
 
 struct AdminBookingsPagedView {
@@ -285,61 +288,104 @@ impl BranchView for AdminBookingSettingsBranchView {
                     .await
                     .map_err(AppError::Database)?;
 
-            let line_rows: Vec<(String, Option<Decimal>, Option<Decimal>, Decimal)> = sqlx::query_as(
-                "SELECT l.currency_code, l.buy_rate, l.sell_rate, l.unit_size \
+            let pub_row = sqlx::query(
+                "SELECT p.id, p.published_at \
                  FROM branches b \
                  JOIN rate_publications p ON p.id = b.current_publication_id \
-                 JOIN published_rate_lines l ON l.publication_id = p.id \
-                 WHERE b.id = $1 AND l.denomination_group = 'ALL' \
-                 ORDER BY l.currency_code ASC",
+                 WHERE b.id = $1",
             )
             .bind(branch.as_str())
-            .fetch_all(&db)
+            .fetch_optional(&db)
             .await
             .map_err(AppError::Database)?;
 
-            let mut counter_rates = Vec::new();
-            for (code, buy_dec, sell_dec, unit_dec) in line_rows {
-                let unit_size = UnitSize::from_decimal(unit_dec)
-                    .map_err(|e| AppError::Internal(format!("invalid unit_size: {e}")))?;
-                let buy = buy_dec
-                    .map(|d| Rate::parse(&d.normalize().to_string()))
-                    .transpose()
-                    .map_err(|e| AppError::Internal(format!("invalid buy_rate: {e}")))?;
-                let sell = sell_dec
-                    .map(|d| Rate::parse(&d.normalize().to_string()))
-                    .transpose()
-                    .map_err(|e| AppError::Internal(format!("invalid sell_rate: {e}")))?;
+            let (freshness, counter_rates) = match pub_row {
+                Some(r) => {
+                    let pub_id: Uuid = r.get(0);
+                    let published_at: DateTime<Utc> = r.get(1);
 
-                let buy_str = match buy {
-                    Some(b) => {
-                        let per_one = CompatRate::per_one(b, unit_size)
-                            .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
-                        format_per_one_rate(per_one)
-                    }
-                    None => String::new(),
-                };
-                let sell_str = match sell {
-                    Some(s) => {
-                        let per_one = CompatRate::per_one(s, unit_size)
-                            .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
-                        format_per_one_rate(per_one)
-                    }
-                    None => String::new(),
-                };
+                    let raw_lines = sqlx::query(
+                        "SELECT currency_code, denomination_group, unit_size, buy_rate, sell_rate, source_snapshot \
+                         FROM published_rate_lines WHERE publication_id = $1 \
+                         ORDER BY currency_code ASC",
+                    )
+                    .bind(pub_id)
+                    .fetch_all(&db)
+                    .await
+                    .map_err(AppError::Database)?;
 
-                counter_rates.push(AdminBookingCounterRate {
-                    currency: code.trim().to_string(),
-                    buy: buy_str,
-                    sell: sell_str,
-                });
-            }
+                    let now = Utc::now();
+                    let mut freshnesses = Vec::with_capacity(raw_lines.len() * 2);
+                    let mut counter_rates = Vec::new();
+
+                    for row in raw_lines {
+                        let code: String = row.get(0);
+                        let denomination_group: String = row.get(1);
+                        let unit_dec: Decimal = row.get(2);
+                        let buy_dec: Option<Decimal> = row.get(3);
+                        let sell_dec: Option<Decimal> = row.get(4);
+                        let source_snapshot: Value = row.get(5);
+
+                        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Buy, now));
+                        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Sell, now));
+
+                        if denomination_group == "ALL" {
+                            let unit_size = UnitSize::from_decimal(unit_dec)
+                                .map_err(|e| AppError::Internal(format!("invalid unit_size: {e}")))?;
+                            let buy = buy_dec
+                                .map(|d| Rate::parse(&d.normalize().to_string()))
+                                .transpose()
+                                .map_err(|e| AppError::Internal(format!("invalid buy_rate: {e}")))?;
+                            let sell = sell_dec
+                                .map(|d| Rate::parse(&d.normalize().to_string()))
+                                .transpose()
+                                .map_err(|e| AppError::Internal(format!("invalid sell_rate: {e}")))?;
+
+                            let buy_str = match buy {
+                                Some(b) => {
+                                    let per_one = CompatRate::per_one(b, unit_size)
+                                        .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
+                                    format_per_one_rate(per_one)
+                                }
+                                None => String::new(),
+                            };
+                            let sell_str = match sell {
+                                Some(s) => {
+                                    let per_one = CompatRate::per_one(s, unit_size)
+                                        .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
+                                    format_per_one_rate(per_one)
+                                }
+                                None => String::new(),
+                            };
+
+                            counter_rates.push(AdminBookingCounterRate {
+                                currency: code.trim().to_string(),
+                                buy: buy_str,
+                                sell: sell_str,
+                            });
+                        }
+                    }
+
+                    let pub_freshness = Freshness::of_publication(freshnesses);
+                    let freshness_dto = RateFreshnessDto {
+                        stale: pub_freshness.stale,
+                        source_date: pub_freshness
+                            .source_date
+                            .map(|d| d.format("%Y-%m-%d").to_string()),
+                        published_at: Some(published_at.to_rfc3339()),
+                    };
+
+                    (freshness_dto, counter_rates)
+                }
+                None => (RateFreshnessDto::default(), Vec::new()),
+            };
 
             Ok(AdminBookingSettingsData {
                 rules,
                 member_count: member_count as u64,
                 public_url: String::new(),
                 counter_rates,
+                freshness,
             })
         }
     }
