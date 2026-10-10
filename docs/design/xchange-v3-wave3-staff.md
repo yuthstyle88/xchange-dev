@@ -213,6 +213,9 @@ Replaces the first version's S-1…S-8 (issues #573, #574, #575, #577, #578, #57
 | **S-6** transfers card | B8, C8–C9 | `web/src/screens/staff/transfers/**` | S-3, #582 CA-8 |
 | **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 CA-8 |
 | **S-8** RATES card, read only | B11, S10 | `web/src/screens/staff/rates/**` | S-3 and RE-3 (`staff_published_rates`, `rates.md:950`) |
+| **S-9** sign-in returns to `/staff` | S1's "and back to `/staff` after it" | `web/src/screens/login/home.ts`, `web/src/screens/login/LoginScreen.tsx`, `web/src/screens/login/main.tsx` and their tests | S-3 |
+
+S-9 exists because S1 is `[required]` and OR-3's sign-in screen on `main` `08c94225` ignores `next`: `LoginScreen` navigates to `homeOf(user)` (`web/src/screens/login/home.ts`), which answers `/desk` or `/` only. S-3 pins only the redirect to `/login?next=%2Fstaff` (lane controller ruling on #575, 2026-10-11); the return leg is S-9's. `next` must be a same-origin path so the sign-in screen is not an open redirect.
 
 V4 (claude/e5ab6c) retires `/staff`'s `PAGE_SPECS` row after S-3…S-8; CA-10 retires `/api/staff/rpc`'s `ops*` actions.
 
@@ -223,6 +226,7 @@ V4 (claude/e5ab6c) retires `/staff`'s `PAGE_SPECS` row after S-3…S-8; CA-10 re
 | S-1 | each view refuses an actor without its permission; `staff_floor` answers target/safe only to `BranchDayOperate`/`CashTargetSet`/`CashManage` holders; `staff_attendance` own rows vs all; another branch → `outOfScope`; `staff_floor.hours` from `BranchHours` (none set → absent); `myShift` is the actor's own OPEN shift; money as strings; `floor` reads one `ops_state` row and at most one attendance row |
 | S-2 | empty `q` → empty page; a name, a customer id and a passport number (any spacing/case) each find the customer; the answer never carries an identity value |
 | S-3 | vitest: signed out → redirect; `can()` reads `staff_me.permissions`; a card whose `visible` is false is not rendered; every text through `t()`; **no role name** (`TELLER`, `BRANCH_MANAGER`, `FINANCE`, `FRONT`, `BACKEND`…) appears in `web/src/screens/staff/**` (grep test) |
+| S-9 | vitest, for **both** of LoginScreen's exits (after a successful sign-in, and the already-signed-in check on mount): `/login?next=%2Fstaff` → navigates to `/staff`; the rule for `next`, applied to the value after one URL-decode: **accepted only if it starts with exactly one `/` and its second character is neither `/` nor `\`** — so `//evil`, `/\evil.com`, `%2F%2Fevil`, `https://…`, `javascript:…` and a bare `staff` are each ignored and the user goes to `homeOf`; no `next` → `homeOf` unchanged (existing `home.test.ts` stays green, unedited); **no loop:** the mount exit navigates once and never back to `/login`, and `/staff` sends a visitor to `/login` only when `staff_me` answers `signIn` (S-3's "signed out → redirect"), not on a refusal such as `roleNotAllowedHere` |
 | S-4…S-8 | vitest per card: each B-row and C-row — shown for each permission set, and the exact command and body sent; a retry resends the same `Idempotency-Key` and byte-equal body; no `Number(` in `web/src/screens/staff/**` (grep test) |
 
 ## 9. The seam with the report (`/staff/report`, claude/e5ab6c)
