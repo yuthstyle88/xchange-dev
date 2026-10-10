@@ -49,6 +49,7 @@ xc-outbox = { workspace = true }
 xc-notify = { workspace = true }
 xc-cash = { workspace = true }
 subtle = "2"
+xc-app = { path = "crates/xc-app" }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,0 +1,27 @@
+[package]
+name = "xc-app"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "The customer app's server half: planner drafts, the anonymous app session and the app settings (design customer-app.md)"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-error = { workspace = true }
+xc-kernel = { workspace = true }
+xc-rate = { workspace = true }
+xc-auth = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+futures = "0.3"
+rand = "0.8"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "uuid"] }
+
+[dev-dependencies]
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "uuid", "json", "migrate", "derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+serde_json = { workspace = true }
