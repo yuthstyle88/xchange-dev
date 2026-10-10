@@ -12,6 +12,7 @@ publish = false
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-kernel = { workspace = true }
+xc-auth = { workspace = true }
 thiserror = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 chrono-tz = { version = "0.10" }
