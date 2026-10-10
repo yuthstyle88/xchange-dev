@@ -2033,8 +2033,8 @@ field's right edge (`.xc-password` relative, `.xc-reveal` absolute, 44px wide, `
 - [required] `TextField`'s wrapper gets `class="xc-field"`; `PasswordField`'s inner wrapper gets `class="xc-password"`
   and its eye `class="xc-reveal"`, the input's next sibling as today. The eye keeps its text and `aria-label`
   (`field.password.show` / `.hide`, pinned by `shared/i18n/retrofit.test.tsx:52-60`), with the text in a
-  `<span class="xc-reveal-text">`; under `.xc-auth` that span is visually hidden and the eye is drawn as an icon by CSS.
-  Outside `.xc-auth` (the admin employees form) nothing is restyled, and the eye looks as it does today.
+  `<span class="xc-reveal-text">`. The look is `shared/ui/password-field.css`, shared by every `PasswordField`, and no
+  screen renders a password input of its own.
 - [proposed] The card's look is the v2 rules above, translated under `.xc-auth`; the submit button is the form's
   `button[type=submit]`. The brand line is `12px`, letter-spacing `1px`, `#6b8090` (what `LoginScreen.tsx:96-103` uses today).
   The version footer is `13px`, centred under the card, in the page's text colour (#311's readable version line).

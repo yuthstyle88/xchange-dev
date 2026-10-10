@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { t } from '../i18n';
 import type { FieldBinding } from './form';
+import './password-field.css';
 
 export function PasswordField(props: {
   field: FieldBinding;

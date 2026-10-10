@@ -136,6 +136,8 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const currentBranchName = () => branchName(props.branch());
 
   function openCreateDialog() {
+    const form = useForm();
+    const passwordField = form.field('password');
     let formEl: HTMLFormElement | undefined;
     const [error, setError] = createSignal<string | null>(null);
     const [submitting, setSubmitting] = createSignal(false);
@@ -200,10 +202,11 @@ export function Employees(props: AdminMenuProps): JSX.Element {
               </For>
             </select>
           </div>
-          <div>
-            <label for="create-password">{t('password')}</label>
-            <input id="create-password" name="password" type="password" required />
-          </div>
+          <PasswordField
+            field={passwordField}
+            label={t('password')}
+            required
+          />
         </div>
         <Show when={error()}>
           <p role="alert" class="error">{error()}</p>
