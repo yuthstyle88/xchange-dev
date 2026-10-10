@@ -48,7 +48,7 @@ impl SaveStep for BookingSaveStep {
                 side: ctx.form.side,
                 currency,
                 amount: ctx.form.amount,
-                rate: ctx.form.rate,
+                rate: ctx.form.client_rate,
                 form_booking: ctx.form.booking.clone(),
                 customer_id: ctx.form.customer_id.clone(),
                 customer_confirmed: claim.customer_confirmed,

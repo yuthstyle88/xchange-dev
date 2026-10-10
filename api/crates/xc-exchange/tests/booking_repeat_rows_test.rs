@@ -102,7 +102,8 @@ fn redeem_cmd() -> RedeemBooking {
         side: Side::Buy,
         currency: code("USD"),
         amount: money("100"),
-        rate: rate("32.1"),
+        // amended for #757 (RE-4c, rates.md §4.9 R7): the form's rate is the exact per-1 Decimal
+        rate: rust_decimal::Decimal::from_str_exact("32.1").expect("a decimal"),
         form_booking: "BK-1".to_owned(),
         customer_id: "C-1".to_owned(),
         customer_confirmed: true,

@@ -294,7 +294,9 @@ fn claim(booking: &Booking, submission_id: &str, customer_id: &str) -> RedeemBoo
         side: booking.side,
         currency: booking.currency,
         amount: booking.amount,
-        rate: booking.rate,
+        // amended for #757 (RE-4c, rates.md §4.9 R7): the form's rate is the exact per-1 Decimal
+        // (the bookings here are unit 1: the stored rate's number)
+        rate: booking.rate.value(),
         form_booking: booking.id.clone(),
         customer_id: customer_id.to_string(),
         customer_confirmed: true,

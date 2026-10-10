@@ -9,6 +9,14 @@
 //! `api/migrations/` applied and an upload directory of its own.
 #![allow(dead_code)]
 
+/// Publishing through the rate engine (#757 RE-4c): the helpers of `rates_re4c_common`, included
+/// as an inline module rather than loaded as a file, so that a binary that also loads
+/// `snapshot_common` (which loads `rates_re4c_common/mod.rs`) loads no file twice.
+pub mod rates_re4c_common {
+    #![allow(dead_code)]
+    include!("../rates_re4c_common/publish.rs");
+}
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -299,6 +307,12 @@ impl Shop {
     }
 
     /// The counter rate of a currency from now on (the table is ticket T5a's).
+    ///
+    /// Amended for #757 (RE-4c, `docs/design/blueprint/rates.md` D-3, §4.9 R4): the counter rate is
+    /// the line of the branch's current publication, no longer the newest `rates` row. So, after
+    /// the row the direct save appends (per 1), the branch's newest row of every currency is
+    /// published as the next publication, per `unit_size` (× `currencies.unit_size`, as
+    /// migration 4 converts them) — the rate set the counter had before RE-4, now published.
     pub async fn set_rate(&self, branch_id: &str, currency: &str, buy: &str, sell: &str) {
         sqlx::query(
             "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
@@ -312,6 +326,7 @@ impl Shop {
         .execute(&self.pool)
         .await
         .expect("insert into rates");
+        rates_re4c_common::publish_newest_rates(&self.pool, branch_id).await;
     }
 
     pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {

@@ -21,16 +21,18 @@
 //! between two of them can show in one list and not yet in another. v2 read the
 //! same way, and every screen asks again after its own write.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use xc_exchange::application::customer::service::CustomerService;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Side;
+use xc_kernel::money::{CompatRate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
+use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
 
@@ -39,7 +41,7 @@ use crate::application::compat::snapshot_sources::{
 };
 use crate::application::compat::v2_json::{
     V2Json, branches_json, customers_json, money_json, movements_json, operations_json,
-    rate_history_json, rate_json, rates_json, shifts_json, time_json, time_or_empty_json,
+    rate_history_json, shifts_json, shortest, time_json, time_or_empty_json,
 };
 use crate::application::settings::rules_v2_json;
 
@@ -93,7 +95,9 @@ impl SnapshotBuilder {
         let here = self.branches.require(branch).await?;
         let branches = self.branches.list().await?;
         let history = self.rates.history(branch).await?;
+        let pool = self.customers.branch_tx().pool();
         let rates = self.rates.current(branch).await?;
+        let rates_val = published_rates_json(pool, branch, &rates).await?;
         let customers = self.customers.list_live(branch).await?;
         let members = self.sources.members(branch).await?;
         let transactions = self.sources.transactions(branch).await?;
@@ -114,8 +118,8 @@ impl SnapshotBuilder {
             ),
             ("branchId", V2Json::text(branch_id)),
             ("branches", branches_json(&branches)),
-            ("transactions", transactions_json(&transactions)),
-            ("rates", rates_json(&rates)),
+            ("transactions", transactions_json(&transactions)?),
+            ("rates", rates_val),
             (
                 "stock",
                 V2Json::object(vec![
@@ -143,7 +147,9 @@ impl SnapshotBuilder {
     /// A branch that does not exist is refused with `ไม่พบสาขาที่เลือก กรุณารีเฟรช`.
     pub async fn desk_config(&self, branch: &BranchId) -> AppResult<V2Json> {
         let here = self.branches.require(branch).await?;
+        let pool = self.customers.branch_tx().pool();
         let rates = self.rates.current(branch).await?;
+        let rates_val = published_rates_json(pool, branch, &rates).await?;
         let active = self.shifts.active(branch).await?;
         let operations = self.operations(branch).await?;
         let rules = self.sources.payment_rules(branch).await?;
@@ -152,7 +158,7 @@ impl SnapshotBuilder {
         Ok(V2Json::object(vec![
             ("branchId", V2Json::text(branch_id)),
             ("branchName", V2Json::text(here.name.as_str())),
-            ("rates", rates_json(&rates)),
+            ("rates", rates_val),
             (
                 "activeShift",
                 active.map_or(V2Json::Null, |shift| V2Json::text(shift.id)),
@@ -267,11 +273,15 @@ fn with_members(customers: V2Json, members: &[MemberMark]) -> V2Json {
 /// first): `{id, status, created, date, type, currency, amount, rate,
 /// referenceRate, fee, bankFee, method, slipUrl, paymentRef, customerId,
 /// customer, staff, notes, shiftId}`.
-fn transactions_json(transactions: &[SnapshotTransaction]) -> V2Json {
-    V2Json::Array(transactions.iter().map(transaction_json).collect())
+fn transactions_json(transactions: &[SnapshotTransaction]) -> AppResult<V2Json> {
+    let mut list = Vec::with_capacity(transactions.len());
+    for tx in transactions {
+        list.push(transaction_json(tx)?);
+    }
+    Ok(V2Json::Array(list))
 }
 
-fn transaction_json(tx: &SnapshotTransaction) -> V2Json {
+fn transaction_json(tx: &SnapshotTransaction) -> AppResult<V2Json> {
     let side = match tx.side {
         Side::Buy => "BUY",
         Side::Sell => "SELL",
@@ -281,7 +291,27 @@ fn transaction_json(tx: &SnapshotTransaction) -> V2Json {
     } else {
         tx.method.as_str()
     };
-    V2Json::object(vec![
+    let rate_d = CompatRate::per_one(tx.rate, tx.unit_size).map_err(|e| {
+        AppError::Internal(format!(
+            "transaction {} rate per_one error: {e}",
+            tx.document_ref
+        ))
+    })?;
+    let rate_val = V2Json::Number(shortest(&rate_d.to_string()));
+
+    let reference_rate_val = match tx.reference_rate {
+        Some(r) => {
+            let ref_d = CompatRate::per_one(r, tx.unit_size).map_err(|e| {
+                AppError::Internal(format!(
+                    "transaction {} reference_rate per_one error: {e}",
+                    tx.document_ref
+                ))
+            })?;
+            V2Json::Number(shortest(&ref_d.to_string()))
+        }
+        None => V2Json::Null,
+    };
+    Ok(V2Json::object(vec![
         ("id", V2Json::text(tx.document_ref.as_str())),
         ("status", V2Json::text("COMPLETED")),
         ("created", time_json(tx.recorded_at)),
@@ -292,11 +322,8 @@ fn transaction_json(tx: &SnapshotTransaction) -> V2Json {
         ("type", V2Json::text(side)),
         ("currency", V2Json::text(tx.currency.as_str())),
         ("amount", money_json(tx.amount)),
-        ("rate", rate_json(tx.rate)),
-        (
-            "referenceRate",
-            tx.reference_rate.map_or(V2Json::Null, rate_json),
-        ),
+        ("rate", rate_val),
+        ("referenceRate", reference_rate_val),
         ("fee", money_json(tx.fee)),
         ("bankFee", money_json(tx.bank_fee)),
         ("method", V2Json::text(method)),
@@ -315,7 +342,111 @@ fn transaction_json(tx: &SnapshotTransaction) -> V2Json {
             "shiftId",
             tx.shift_id.as_deref().map_or(V2Json::Null, V2Json::text),
         ),
-    ])
+    ]))
+}
+
+async fn published_rates_json(
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+    rates: &[CounterRate],
+) -> AppResult<V2Json> {
+    type PubRow = (
+        String,
+        Option<Decimal>,
+        Option<Decimal>,
+        Decimal,
+        serde_json::Value,
+        DateTime<Utc>,
+    );
+    let pub_rows: Vec<PubRow> = sqlx::query_as(
+        "SELECT l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, l.source_snapshot, p.published_at \
+         FROM branches b JOIN rate_publications p ON p.id = b.current_publication_id \
+         JOIN published_rate_lines l ON l.publication_id = p.id \
+         WHERE b.id = $1 AND l.denomination_group = 'ALL'",
+    )
+    .bind(branch.as_str())
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    type PublishedRateTuple = (
+        Option<Decimal>,
+        Option<Decimal>,
+        Decimal,
+        serde_json::Value,
+        DateTime<Utc>,
+    );
+    let pub_map: HashMap<String, PublishedRateTuple> = pub_rows
+        .into_iter()
+        .map(|(code, buy, sell, unit, snapshot, published_at)| {
+            (
+                code.trim().to_string(),
+                (buy, sell, unit, snapshot, published_at),
+            )
+        })
+        .collect();
+
+    let mut entries = Vec::new();
+    for rate in rates {
+        if rate.code.is_thb() {
+            continue;
+        }
+        let mut pairs = vec![
+            ("code", V2Json::text(rate.code.as_str())),
+            ("name", V2Json::text(rate.name.as_str())),
+        ];
+        if let Some(symbol) = rate.symbol.as_deref().filter(|s| !s.is_empty()) {
+            pairs.push(("symbol", V2Json::text(symbol)));
+        }
+
+        if let Some((buy, sell, unit, snapshot, published_at)) = pub_map.get(rate.code.as_str()) {
+            let per_one = |r: Decimal| -> V2Json {
+                let text = (r / *unit).normalize().to_string();
+                V2Json::Number(shortest(&text))
+            };
+            let buy_json = buy.map_or(V2Json::Null, per_one);
+            let sell_json = sell.map_or(V2Json::Null, per_one);
+            let partner = snapshot.get("partner").filter(|p| !p.is_null());
+            let partner_name = partner
+                .and_then(|p| p.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            let partner_cost: Option<Decimal> =
+                partner.and_then(|p| p.get("cost")).and_then(|c| match c {
+                    serde_json::Value::String(text) => text.parse::<Decimal>().ok(),
+                    serde_json::Value::Number(n) => n.to_string().parse::<Decimal>().ok(),
+                    _ => None,
+                });
+            let partner_cost_json = partner_cost.map_or(V2Json::Null, |cost| {
+                let text = cost.normalize().to_string();
+                V2Json::Number(shortest(&text))
+            });
+
+            pairs.extend([
+                ("buy", buy_json),
+                ("sell", sell_json),
+                ("updated", time_json(*published_at)),
+                ("requestId", V2Json::text("")),
+                ("partnerName", V2Json::text(partner_name)),
+                ("partnerCost", partner_cost_json),
+                ("botReference", V2Json::text("")),
+            ]);
+        } else {
+            pairs.extend([
+                ("buy", V2Json::Null),
+                ("sell", V2Json::Null),
+                ("updated", V2Json::text("")),
+                ("requestId", V2Json::text("")),
+                ("partnerName", V2Json::text("")),
+                ("partnerCost", V2Json::Null),
+                ("botReference", V2Json::Null),
+            ]);
+        }
+        entries.push(V2Json::object(pairs));
+    }
+
+    Ok(V2Json::Array(entries))
 }
 
 /// JavaScript's `encodeURIComponent`: everything but letters, digits and

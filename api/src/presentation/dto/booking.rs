@@ -3,14 +3,15 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use serde_json::{Number, Value, json};
 use xc_exchange::application::booking::list::{BookingList, BookingView};
-use xc_exchange::domain::booking::entities::booking::{Booking, CompatRate};
+use xc_exchange::domain::booking::entities::booking::Booking;
 use xc_exchange::domain::booking::entities::member::Member;
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Side;
+use xc_kernel::money::{CompatRate, Side};
 
 /// Formats a decimal string into a shortest JSON number with no trailing fractional zeros.
 fn shortest_number(raw: &str) -> Value {
@@ -25,13 +26,14 @@ fn shortest_number(raw: &str) -> Value {
 
 /// The 13 fields of a booking as printed:
 /// `{id, branchId, name, phone, member: bool, type: "BUY"|"SELL", currency, amount: number, rate: number, status, createdAt, expiresAt: string|null, transactionRef: string|null}`
-pub fn booking_json(booking: &Booking, now: DateTime<Utc>) -> Value {
+pub fn booking_json(booking: &Booking, now: DateTime<Utc>) -> AppResult<Value> {
     let side_str = match booking.side {
         Side::Buy => "BUY",
         Side::Sell => "SELL",
     };
     let amount_num = shortest_number(&booking.amount.to_string());
-    let per_one = CompatRate::per_one(booking.rate, booking.unit_size);
+    let per_one = CompatRate::per_one(booking.rate, booking.unit_size)
+        .map_err(|e| AppError::Internal(format!("failed to compute per-one rate: {e}")))?;
     let rate_num = shortest_number(&per_one.to_string());
     let created_at = booking
         .created_at
@@ -46,7 +48,7 @@ pub fn booking_json(booking: &Booking, now: DateTime<Utc>) -> Value {
         .map(|s| Value::String(s.clone()))
         .unwrap_or(Value::Null);
 
-    json!({
+    Ok(json!({
         "id": booking.id,
         "branchId": booking.branch_id.as_str(),
         "name": booking.name,
@@ -60,12 +62,12 @@ pub fn booking_json(booking: &Booking, now: DateTime<Utc>) -> Value {
         "createdAt": created_at,
         "expiresAt": expires_at,
         "transactionRef": transaction_ref,
-    })
+    }))
 }
 
 /// A booking view as returned by `get`: the 13 booking fields plus `customerId`.
-pub fn booking_view_json(view: &BookingView, now: DateTime<Utc>) -> Value {
-    let mut obj = booking_json(&view.booking, now);
+pub fn booking_view_json(view: &BookingView, now: DateTime<Utc>) -> AppResult<Value> {
+    let mut obj = booking_json(&view.booking, now)?;
     let customer_id = view
         .customer_id
         .as_ref()
@@ -74,7 +76,7 @@ pub fn booking_view_json(view: &BookingView, now: DateTime<Utc>) -> Value {
     if let Value::Object(ref mut map) = obj {
         map.insert("customerId".to_string(), customer_id);
     }
-    obj
+    Ok(obj)
 }
 
 /// A member formatted with v2's snake_case keys.
@@ -104,11 +106,14 @@ pub fn rules_json(branch: &BranchId, rules: Option<&BookingRules>) -> Value {
 }
 
 /// The response for the `list` action: bookings, members, rules, publicUrl.
-pub fn list_json(branch: &BranchId, list: &BookingList, now: DateTime<Utc>) -> Value {
-    json!({
-        "bookings": list.bookings.iter().map(|b| booking_json(b, now)).collect::<Vec<_>>(),
+pub fn list_json(branch: &BranchId, list: &BookingList, now: DateTime<Utc>) -> AppResult<Value> {
+    let bookings: Result<Vec<Value>, AppError> =
+        list.bookings.iter().map(|b| booking_json(b, now)).collect();
+    let bookings = bookings?;
+    Ok(json!({
+        "bookings": bookings,
         "members": list.members.iter().map(member_json).collect::<Vec<_>>(),
         "rules": rules_json(branch, list.rules.as_ref()),
         "publicUrl": "",
-    })
+    }))
 }

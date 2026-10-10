@@ -333,17 +333,17 @@ impl Room {
             .expect("read the branch version")
     }
 
-    /// The `updated` v2's form sends back as `previousUpdated`: the newest row of `code`, as
-    /// the snapshot prints it, or `""`.
+    /// The `updated` v2's form sends back as `previousUpdated`: the newest row of `code`, or `""`.
+    ///
+    /// Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): the snapshot's `rates[].updated` is now
+    /// the publication's `published_at`, not the newest `rates` row, so it is read from
+    /// `admin_rates`, whose `updated` is that row's time (`a_rows_updated_is_the_previous_updated_
+    /// a_save_takes`).
     async fn previous(&self, branch: &str, code: &str) -> String {
-        let snapshot = self.snapshot(branch).await;
-        snapshot["rates"]
-            .as_array()
-            .expect("the snapshot's rates")
-            .iter()
-            .find(|r| r["code"] == json!(code))
-            .and_then(|r| r["updated"].as_str())
-            .unwrap_or("")
+        let data = self.rates("OWNER", &format!("branch={branch}")).await;
+        rate_of(&data, code)["updated"]
+            .as_str()
+            .expect("updated is a string")
             .to_owned()
     }
 
@@ -479,8 +479,36 @@ async fn admin_rates_is_the_snapshots_rates_with_the_spreads_computed_by_the_ser
         "the newest rate row of the branch, as the snapshot's `updated`"
     );
 
+    // Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): the snapshot's `rates[]` is the current
+    // publication now, while `admin_rates` reads the direct save until RE-5/RE-7. The stored
+    // figures it is held to are the newest `rates` row of each code, which the snapshot still
+    // lists in `rateHistory` (newest first); name and symbol stay the snapshot's.
+    let history = snapshot["rateHistory"].as_array().expect("rateHistory");
+    let stored: Vec<Value> = snapshot["rates"]
+        .as_array()
+        .expect("the snapshot's rates")
+        .iter()
+        .map(|entry| {
+            let mut row = entry.clone();
+            match history.iter().find(|h| h["code"] == entry["code"]) {
+                Some(newest) => {
+                    for key in ["buy", "sell", "updated", "partnerName", "partnerCost"] {
+                        row[key] = newest[key].clone();
+                    }
+                }
+                None => {
+                    for key in ["buy", "sell", "partnerCost"] {
+                        row[key] = Value::Null;
+                    }
+                    row["updated"] = json!("");
+                    row["partnerName"] = json!("");
+                }
+            }
+            row
+        })
+        .collect();
     let ours = data["rates"].as_array().expect("rates is a list");
-    let theirs = snapshot["rates"].as_array().expect("the snapshot's rates");
+    let theirs = &stored;
     assert_eq!(
         ours.iter().map(|r| r["code"].clone()).collect::<Vec<_>>(),
         theirs.iter().map(|r| r["code"].clone()).collect::<Vec<_>>(),

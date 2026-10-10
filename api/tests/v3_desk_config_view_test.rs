@@ -239,14 +239,22 @@ impl Room {
             .clone()
     }
 
-    /// Puts a rate in force for `code` in `branch`. See the file header: today v2's direct save,
-    /// re-pointed at draft → approve → publish when #548 lands.
+    /// Puts a rate in force for `code` in `branch`. See the file header: v2's direct save, then
+    /// the publication of what it saved.
+    ///
+    /// Amended for #757 (RE-4c, `docs/design/blueprint/rates.md` D-3, §4.9 R10): the rate in
+    /// force is the branch's current publication, which `adminDeskConfig` now reads and a direct
+    /// save no longer changes; so the branch's newest saved rates are published through the
+    /// rate engine (`rates_re4c_common::publish_newest_rates`) after the save, and
+    /// `previousUpdated` is read from `rateHistory`.
     async fn publish(&self, branch: &str, code: &str, buy: &str, sell: &str) {
         let snapshot = self
             .rpc("OWNER", "adminSnapshot", json!({ "branchId": branch }))
             .await
             .json();
-        let previous = snapshot["rates"]
+        // the newest saved row of `code`, which the snapshot lists first in `rateHistory`:
+        // `rates[].updated` is the publication's time now
+        let previous = snapshot["rateHistory"]
             .as_array()
             .and_then(|rates| rates.iter().find(|r| r["code"] == json!(code)))
             .and_then(|r| r["updated"].as_str())
@@ -266,6 +274,7 @@ impl Room {
             "rate {code} {buy}/{sell} in {branch}: {:.300}",
             answer.text
         );
+        snapshot_common::rates_re4c_common::publish_newest_rates(&self.desk.db.pool, branch).await;
     }
 
     async fn open_shift(&self, branch: &str) {

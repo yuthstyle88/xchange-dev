@@ -574,17 +574,18 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
     let front = staff(FRONT, Role::Front);
     let before = (s.shop.everything().await, s.requests().await);
 
-    // the kiosk agrees, the counter rate has moved since
-    s.shop.set_rate(MAIN, "USD", "32.2", "33").await;
-    let got = s
-        .save(s.form("shop-0001-aaaaaaaaaa"), &with_kiosk("q1"), &front)
-        .await;
+    // Amended for #757 (RE-4c, rates.md §4.9 R7, ruling of 2026-10-10): a save completing a
+    // kiosk request stores the request's line and is not re-checked against a newer
+    // publication; what the shop refuses is a rate that is not the request's (32.2 where the
+    // customer was quoted 32.1), `RATE_MISMATCH`, writing nothing.
+    let mut moved = s.form("shop-0001-aaaaaaaaaa");
+    moved.rate = "32.2".to_owned();
+    let got = s.save(moved, &with_kiosk("q1"), &front).await;
     assert_eq!(refusal(got), RATE_MISMATCH);
     assert_eq!((s.shop.everything().await, s.requests().await), before);
     assert!(s.counter.completed().is_empty());
 
-    // the same request is saved once the rate is back
-    s.shop.set_rate(MAIN, "USD", "32.1", "33").await;
+    // the same request is saved at the request's rate
     s.save(s.form("shop-0001-aaaaaaaaaa"), &with_kiosk("q1"), &front)
         .await
         .expect("the request is still ready");

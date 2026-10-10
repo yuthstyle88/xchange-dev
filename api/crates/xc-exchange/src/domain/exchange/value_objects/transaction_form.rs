@@ -3,7 +3,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::input;
-use xc_kernel::money::{Money, Quote, QuoteError, Rate, Side};
+use xc_kernel::money::{Money, Quote, Rate, Side};
+
+use rust_decimal::Decimal;
+use rust_decimal::RoundingStrategy;
 
 use crate::domain::customer::value_objects::customer_details::CustomerDetails;
 use crate::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -29,6 +32,7 @@ pub struct TransactionForm {
     pub currency: String,
     pub amount: Money,
     pub rate: Rate,
+    pub client_rate: Decimal,
     pub fee: Money,
     pub bank_fee: Money,
     pub method: PaymentMethod,
@@ -42,6 +46,7 @@ pub struct TransactionForm {
     pub passport: String,
     pub slip: Option<String>,
     pub reference_rate: Option<Rate>,
+    pub client_reference_rate: Option<Decimal>,
     pub quote: Quote,
 }
 
@@ -69,7 +74,11 @@ impl TransactionForm {
         }
 
         // Step 7: Rate
-        let rate = Rate::parse(&cmd.rate).map_err(input::number_error)?;
+        let client_rate = parse_client_rate(&cmd.rate)?;
+        let rate = Rate::parse(&cmd.rate).unwrap_or_else(|_| {
+            Rate::parse(&format!("{:.8}", client_rate))
+                .unwrap_or_else(|_| Rate::parse("1").unwrap())
+        });
 
         // Step 8: Fee
         let fee = Money::parse(&cmd.fee).map_err(input::number_error)?;
@@ -145,19 +154,42 @@ impl TransactionForm {
         }
 
         // Step 20: Principal limit check
-        let quote_zero = Quote::compute(side, amount, rate, Money::ZERO)
-            .map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
-        if quote_zero.principal.minor_i128() > 9_007_199_254_740_991 {
+        let amount_dec = Decimal::from_i128_with_scale(amount.minor_i128(), 2);
+        let raw_principal = amount_dec * client_rate;
+        let mut principal_dec =
+            raw_principal.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+        principal_dec.rescale(2);
+        let principal_minor = principal_dec.mantissa();
+        if principal_minor > 9_007_199_254_740_991 {
             return Err(AppError::Domain(TOO_LARGE.to_owned()));
         }
+        let principal = Money::try_from_minor_i128(principal_minor)
+            .map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
 
         // Step 21: Fee exceeds principal check
-        let quote = match Quote::compute(side, amount, rate, fee) {
-            Ok(q) => q,
-            Err(QuoteError::FeeExceedsPrincipal) => {
-                return Err(AppError::Domain(FEE_ABOVE_PRINCIPAL.to_owned()));
+        let quote = match side {
+            Side::Buy => {
+                if fee > principal {
+                    return Err(AppError::Domain(FEE_ABOVE_PRINCIPAL.to_owned()));
+                }
+                let paid = Money::try_from_minor_i128(principal.minor_i128() - fee.minor_i128())
+                    .map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
+                Quote {
+                    principal,
+                    received: Money::ZERO,
+                    paid,
+                }
             }
-            Err(QuoteError::ZeroAmount) => return Err(AppError::Domain(BAD_NUMBER.to_owned())),
+            Side::Sell => {
+                let received =
+                    Money::try_from_minor_i128(principal.minor_i128() + fee.minor_i128())
+                        .map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
+                Quote {
+                    principal,
+                    received,
+                    paid: Money::ZERO,
+                }
+            }
         };
 
         // Step 22: Passport required
@@ -173,9 +205,15 @@ impl TransactionForm {
         let slip = cmd.slip.clone();
 
         // Step 24: Reference rate
-        let reference_rate = match cmd.reference_rate.as_deref() {
-            None | Some("") => None,
-            Some(s) => Some(Rate::parse(s).map_err(input::number_error)?),
+        let (reference_rate, client_reference_rate) = match cmd.reference_rate.as_deref() {
+            None | Some("") => (None, None),
+            Some(s) => {
+                let client_ref = parse_client_rate(s)?;
+                let ref_rate = Rate::parse(s)
+                    .ok()
+                    .or_else(|| Rate::parse(&format!("{:.8}", client_ref)).ok());
+                (ref_rate, Some(client_ref))
+            }
         };
 
         Ok(Self {
@@ -186,6 +224,7 @@ impl TransactionForm {
             currency: currency_str.to_owned(),
             amount,
             rate,
+            client_rate,
             fee,
             bank_fee,
             method,
@@ -199,7 +238,37 @@ impl TransactionForm {
             passport,
             slip,
             reference_rate,
+            client_reference_rate,
             quote,
         })
     }
+}
+
+fn parse_client_rate(text: &str) -> AppResult<Decimal> {
+    if text.is_empty() || text.starts_with('.') || text.ends_with('.') {
+        return Err(AppError::Domain(BAD_NUMBER.to_owned()));
+    }
+    let mut dot_count = 0;
+    for b in text.bytes() {
+        if b == b'.' {
+            dot_count += 1;
+            if dot_count > 1 {
+                return Err(AppError::Domain(BAD_NUMBER.to_owned()));
+            }
+        } else if !b.is_ascii_digit() {
+            return Err(AppError::Domain(BAD_NUMBER.to_owned()));
+        }
+    }
+    let frac_part = match text.split_once('.') {
+        Some((_, frac)) => frac,
+        None => "",
+    };
+    if frac_part.len() > 11 && frac_part[11..].bytes().any(|b| b != b'0') {
+        return Err(AppError::Domain(TOO_MANY_DECIMALS.to_owned()));
+    }
+    let val = Decimal::from_str_exact(text).map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
+    if val.is_zero() || val > Decimal::from(Money::MAX_INPUT_UNITS) {
+        return Err(AppError::Domain(BAD_NUMBER.to_owned()));
+    }
+    Ok(val)
 }
