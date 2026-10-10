@@ -42,89 +42,118 @@ class KioskPage extends ConsumerWidget {
             },
             child: Scaffold(
               backgroundColor: KioskColors.stage,
-              body: SafeArea(
-                child: Column(
-                  children: [
-                    const _Header(),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        // A new screen starts at its top.
-                        key: ValueKey(s.screen),
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1100),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  l.text(step),
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: KioskColors.brand,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                // #325: the title and subtitle ask the
-                                // customer to choose; only step 1 does.
-                                if (s.screen == KioskScreen.select) ...[
-                                  const SizedBox(height: 6),
+              body: DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(0.9, -0.9),
+                    radius: 0.8,
+                    colors: [Color(0xFFF7E6EE), Color(0x00F7E6EE)],
+                  ),
+                ),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      const _Header(),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          // A new screen starts at its top.
+                          key: ValueKey(s.screen),
+                          padding: const EdgeInsets.fromLTRB(32, 28, 32, 36),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1200),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
                                   Text(
-                                    l.text('title'),
+                                    l.text(step),
                                     style: const TextStyle(
-                                      fontSize: 40,
-                                      fontWeight: FontWeight.w800,
-                                      height: 1.1,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: KioskColors.brand,
+                                      letterSpacing: 1.8,
                                     ),
                                   ),
+                                  const SizedBox(height: 14),
+                                  // #325: the title and subtitle ask the
+                                  // customer to choose; only step 1 does.
+                                  if (s.screen == KioskScreen.select) ...[
+                                    Text(
+                                      l.text('title'),
+                                      style: TextStyle(
+                                        fontSize:
+                                            (MediaQuery.sizeOf(context).width *
+                                                    0.04)
+                                                .clamp(32, 48),
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -1.6,
+                                        height: 1.12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      l.text('subtitle'),
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w400,
+                                        color: KioskColors.muted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                  ],
+                                  // #326: above the step, so it is seen without scrolling.
+                                  if (s.error.isNotEmpty) ...[
+                                    Semantics(
+                                      liveRegion: true,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: KioskColors.soft,
+                                          border: Border.all(
+                                            color: const Color(0xFFEFB3C8),
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.error,
+                                          key: const Key('error'),
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.normal,
+                                            color: Color(0xFF870031),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                  ],
+                                  switch (s.screen) {
+                                    KioskScreen.select => const SelectPage(),
+                                    KioskScreen.quote => const QuotePage(),
+                                    KioskScreen.waiting => const WaitingPage(),
+                                    KioskScreen.receipt => const ReceiptPage(),
+                                  },
+                                  const SizedBox(height: 24),
                                   Text(
-                                    l.text('subtitle'),
+                                    l.text('footer'),
+                                    textAlign: TextAlign.center,
                                     style: const TextStyle(
-                                      fontSize: 20,
+                                      fontSize: 12,
+                                      height: 1.8,
                                       color: KioskColors.muted,
                                     ),
                                   ),
+                                  const SizedBox(height: 24),
                                 ],
-                                // #326: above the step, so it is seen without scrolling.
-                                if (s.error.isNotEmpty) ...[
-                                  const SizedBox(height: 16),
-                                  Semantics(
-                                    liveRegion: true,
-                                    child: Text(
-                                      s.error,
-                                      key: const Key('error'),
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700,
-                                        color: KioskColors.brand,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 20),
-                                switch (s.screen) {
-                                  KioskScreen.select => const SelectPage(),
-                                  KioskScreen.quote => const QuotePage(),
-                                  KioskScreen.waiting => const WaitingPage(),
-                                  KioskScreen.receipt => const ReceiptPage(),
-                                },
-                                const SizedBox(height: 28),
-                                Text(
-                                  l.text('footer'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: KioskColors.muted,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -170,8 +199,15 @@ class _HeaderState extends ConsumerState<_Header> {
     final l = ref.watch(kioskTextsProvider);
     final List<KioskLanguage> matches = l.search(_search.text);
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      constraints: const BoxConstraints(minHeight: 98),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: KioskColors.line)),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: MediaQuery.sizeOf(context).width * 0.04,
+        vertical: 12,
+      ),
       child: Row(
         children: [
           // Ten seconds on the logo opens setup on an installed kiosk; a
@@ -183,30 +219,44 @@ class _HeaderState extends ConsumerState<_Header> {
             onPointerCancel: (_) => _hold?.cancel(),
             child: Image.asset(
               'assets/img/logo.png',
-              height: 56,
+              width: 130,
+              height: 76,
+              fit: BoxFit.contain,
               semanticLabel: 'XCHANGE Currency Exchange',
             ),
           ),
-          const SizedBox(width: 14),
-          const Flexible(
-            child: Text(
-              'T.K. EXCHANGE MONEY',
-              style: TextStyle(
-                fontSize: 12,
-                letterSpacing: 2,
-                color: KioskColors.muted,
+          const SizedBox(width: 18),
+          Flexible(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 160),
+              decoration: const BoxDecoration(
+                border: BorderDirectional(
+                  start: BorderSide(color: KioskColors.line),
+                ),
+              ),
+              padding: const EdgeInsetsDirectional.only(start: 22),
+              child: const Text(
+                'T.K. EXCHANGE MONEY',
+                style: TextStyle(
+                  fontSize: 10,
+                  letterSpacing: 1.4,
+                  color: KioskColors.muted,
+                ),
               ),
             ),
           ),
           const Spacer(),
-          Text(
-            s.model?.branchName ?? l.text('welcome'),
-            key: const Key('branch'),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          Flexible(
+            child: Text(
+              s.model?.branchName ?? l.text('welcome'),
+              key: const Key('branch'),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 16),
           SizedBox(
-            width: 260,
+            width: 270,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -215,19 +265,25 @@ class _HeaderState extends ConsumerState<_Header> {
                   l.text('lang'),
                   style: const TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: KioskColors.brand,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(height: 4),
                 TextField(
                   controller: _search,
                   onChanged: (_) => setState(() {}),
+                  style: const TextStyle(fontSize: 14),
                   decoration: const InputDecoration(
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    constraints: BoxConstraints(minHeight: 40),
                     hintText: 'Search language / ภาษา / 国家',
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
                   key: ValueKey('lang-${l.code}-${_search.text}'),
                   initialValue: matches.any((x) => x.code == l.code)
@@ -235,9 +291,26 @@ class _HeaderState extends ConsumerState<_Header> {
                       : null,
                   isDense: true,
                   isExpanded: true,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(fontSize: 14),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    constraints: BoxConstraints(minHeight: 40),
+                  ),
                   items: [
                     for (final x in matches)
-                      DropdownMenuItem(value: x.code, child: Text(x.label)),
+                      DropdownMenuItem(
+                        value: x.code,
+                        child: Text(
+                          x.label,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
                   ],
                   onChanged: (code) {
                     if (code != null) c.setLanguage(code);
