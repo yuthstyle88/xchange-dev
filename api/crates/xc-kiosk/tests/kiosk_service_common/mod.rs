@@ -22,6 +22,19 @@
 //! id, `unit_size` and minor unit. The fake prices per 1 with two-place amounts, as v2 did, and
 //! its line id follows the pair of rates (`fake_line`): a save that changes a rate is a new line,
 //! as a new publication is.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c): `configure` never asks the rate
+//! context to save (item 1) and switches a currency on only when the branch's current
+//! publication has it on both sides (item 2). `play` therefore, before a `configure` step that
+//! switches a currency on and is accepted, publishes the step's rate for its branch (every line
+//! published there so far, plus this one) and puts it in the fake counter, as v2's rate save
+//! did; and it holds every `configure` step to no rate save. `publish_rates` writes the
+//! publication as `../kiosk_publication_common/mod.rs` does; that module is not loaded here (a
+//! test file loads it once, beside this one).
+//!
+//! Amended again by the ticket author of #603 (ruling of 2026-10-09): configure sets no rate, so
+//! its `KIOSK_CURRENCY_CONFIGURED` line records `buy` and `sell` as `""`. `play` holds the
+//! fixture's recorded configure lines to that (`v3_configure_line`); the fixture is unchanged.
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
@@ -535,6 +548,91 @@ impl KioskPorts for FakePorts {
     }
 }
 
+// ── #603: a rate publication behind the service ─────────────────────────────
+
+/// #603 (ruling of 2026-10-09): a recorded `KIOSK_CURRENCY_CONFIGURED` line as v3 writes it, with
+/// `buy` and `sell` `""`; every other line as recorded.
+pub fn v3_configure_lines(events: &Value) -> Value {
+    let mut events = events.clone();
+    for line in events.as_array_mut().into_iter().flatten() {
+        if line["kind"] == json!("KIOSK_CURRENCY_CONFIGURED") {
+            line["buy"] = json!("");
+            line["sell"] = json!("");
+        }
+    }
+    events
+}
+
+/// #603 (RE-6): the branch's next rate publication, holding `lines` (code → buy, sell) at the
+/// currency's register unit, made the branch's current one, as RE-1's publish leaves it.
+pub async fn publish_rates(
+    pool: &PgPool,
+    branch: &str,
+    at: DateTime<Utc>,
+    lines: &BTreeMap<String, (String, String)>,
+) {
+    let mut tx = pool.begin().await.expect("begin the publication");
+    let request: String = sqlx::query_scalar(
+        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
+         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         VALUES (gen_random_uuid(), 'RATE_PUBLICATION', $1, 'seeded', 'seeded', '1', '{}'::jsonb, \
+         'test', $2, 'APPROVED', gen_random_uuid()::text) RETURNING id::text",
+    )
+    .bind(branch)
+    .bind(at)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("the approval request");
+    let publication: String = sqlx::query_scalar(
+        "INSERT INTO rate_publications (id, branch_id, version, published_at, \
+         approved_request_id, draft_id, published_by) \
+         SELECT gen_random_uuid(), $1, COALESCE(MAX(version), 0) + 1, $2, $3::uuid, NULL, 'test' \
+         FROM rate_publications WHERE branch_id = $1 RETURNING id::text",
+    )
+    .bind(branch)
+    .bind(at)
+    .bind(&request)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("the publication");
+    for (code, (buy, sell)) in lines {
+        sqlx::query(
+            "INSERT INTO published_rate_lines (id, publication_id, currency_code, \
+             denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+             VALUES (gen_random_uuid(), $1::uuid, $2, 'ALL', \
+             (SELECT unit_size FROM currencies WHERE code = $2), $3::numeric, $4::numeric, \
+             '{\"partner\": null}'::jsonb)",
+        )
+        .bind(&publication)
+        .bind(code)
+        .bind(buy)
+        .bind(sell)
+        .execute(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("the line {code}: {e}"));
+    }
+    sqlx::query("UPDATE branches SET current_publication_id = $1::uuid WHERE id = $2")
+        .bind(&publication)
+        .bind(branch)
+        .execute(&mut *tx)
+        .await
+        .expect("the branch's current publication");
+    tx.commit().await.expect("commit the publication");
+}
+
+/// #603: `publish_rates` of one currency.
+pub async fn publish_one(
+    pool: &PgPool,
+    branch: &str,
+    at: DateTime<Utc>,
+    c: &str,
+    buy: &str,
+    sell: &str,
+) {
+    let lines = BTreeMap::from([(c.to_owned(), (buy.to_owned(), sell.to_owned()))]);
+    publish_rates(pool, branch, at, &lines).await;
+}
+
 // ── the database ────────────────────────────────────────────────────────────
 
 pub struct TestDb {
@@ -980,6 +1078,8 @@ pub async fn play(name: &str) -> Vec<String> {
     let service = db.service(ports.clone());
     let mut wrong = Vec::new();
     let mut audit_seen = 0;
+    // #603: per branch, the lines published so far
+    let mut published: BTreeMap<String, BTreeMap<String, (String, String)>> = BTreeMap::new();
 
     for (i, step) in scenario["steps"]
         .as_array()
@@ -1010,6 +1110,16 @@ pub async fn play(name: &str) -> Vec<String> {
         }
 
         let saves_before = ports.rate_saves().len();
+        if op == "configure" && step["enabled"].as_bool() == Some(true) {
+            let v3_error = step["v3"].get("error").is_some_and(|e| !e.is_null());
+            if !v3_error && step["error"].is_null() {
+                let (c, buy, sell) = (text(&step["code"]), text(&step["buy"]), text(&step["sell"]));
+                let lines = published.entry(b.as_str().to_owned()).or_default();
+                lines.insert(c.clone(), (buy.clone(), sell.clone()));
+                publish_rates(&db.pool, b.as_str(), now, lines).await;
+                ports.set_rate(b.as_str(), counter_rate(&c, &buy, &sell));
+            }
+        }
         let got: AppResult<Value> = match op.as_str() {
             "rates" => service.public_rates(&b).await.map(|r| {
                 json!({
@@ -1182,7 +1292,7 @@ pub async fn play(name: &str) -> Vec<String> {
         let (lines, last, times) = db.audit_since(audit_seen).await;
         audit_seen = last;
         let want_lines = if v3["error"].is_null() {
-            step["events"].clone()
+            v3_configure_lines(&step["events"])
         } else {
             json!([])
         };
@@ -1224,10 +1334,10 @@ pub async fn play(name: &str) -> Vec<String> {
                     })
                 })
                 .collect();
-            if Value::Array(saves.clone()) != step["rateSaves"] {
+            // #603 item 1: never, whatever v2 asked for
+            if !saves.is_empty() {
                 wrong.push(format!(
-                    "{here}: asked the rate context for {saves:?}, expected {}",
-                    step["rateSaves"]
+                    "{here}: asked the rate context for {saves:?}, expected nothing (#603)"
                 ));
             }
         }

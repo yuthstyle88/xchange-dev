@@ -7,6 +7,14 @@
 // showed is pinned by `i18n.test.tsx`. The rates and the KBank figures are the view's strings,
 // shown as they come (W7): one KBank difference below is deliberately not shop − bank, so a
 // screen that computes shows the wrong figure.
+//
+// Amended by the ticket author of #603 (RE-6, claude/e5ab6c; `docs/design/blueprint/rates.md`
+// §4.8, §4.9 R1, §9 RE-6): each currency of the view gains `unitSize`, the unit its rates are per.
+// The four fixtures here (AFN, JPY, NOK, USD) say `'1'`, which keeps their rates and KBank figures
+// as they were.
+// RE-6 removes the rate fields and the save button (D-3: a rate changes only through a draft and
+// its publish). So `cards()` finds a card by its switch, and "a card: …" no longer pins the rate
+// fields (C8), and the six saving tests are retired (see the note at the end of this file).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../shared/api/client';
@@ -26,7 +34,6 @@ const PUBLISHED = '2026-10-02T22:16:01+07:00';
 const SOURCE = 'https://www.kasikornbank.com/en/rate/Pages/Foreign-Exchange.aspx';
 const DASH = '—';
 const OWNER_OR_RATES = 'Owner or Rates access required.';
-const RATES_FIRST = 'Set valid counter buy and sell rates first.';
 
 function cmp(
   label: string,
@@ -47,6 +54,7 @@ const AFN: KioskCurrency = {
   countries: [{ code: 'AF', en: 'Afghanistan', th: 'อัฟกานิสถาน' }],
   buy: null,
   sell: null,
+  unitSize: '1',
   updated: '',
   partnerName: '',
   partnerCost: null,
@@ -61,6 +69,7 @@ const JPY: KioskCurrency = {
   countries: [{ code: 'JP', en: 'Japan', th: 'ญี่ปุ่น' }],
   buy: '0.2105',
   sell: '0.2205',
+  unitSize: '1',
   updated: '2026-10-06T05:00:02.123Z',
   partnerName: '',
   partnerCost: null,
@@ -78,6 +87,7 @@ const NOK: KioskCurrency = {
   ],
   buy: null,
   sell: null,
+  unitSize: '1',
   updated: '',
   partnerName: '',
   partnerCost: null,
@@ -95,6 +105,7 @@ const USD: KioskCurrency = {
   ],
   buy: '33.2500',
   sell: '33.5000',
+  unitSize: '1',
   updated: '2026-10-06T05:00:01.123Z',
   partnerName: 'SuperRich',
   partnerCost: '32.9000',
@@ -147,16 +158,6 @@ function fake(
   return { api, views, posts };
 }
 
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
 // ── the page ─────────────────────────────────────────────────────────────────
 
 let host: HTMLDivElement;
@@ -203,14 +204,23 @@ function heading(c: KioskCurrency): string {
   return `${c.code} · ${c.name} / ${c.nameEn}`;
 }
 
-/** The currency cards: forms with the save button (`save` = its text in the language shown). */
-function cards(save: string = th.save): HTMLFormElement[] {
-  return [...host.querySelectorAll('form')].filter((f) =>
-    [...f.querySelectorAll('button')].some((b) => textOf(b) === save),
-  );
+/**
+ * The currency cards: around each switch labelled `enabled` (its text in the language shown), the
+ * nearest ancestor that holds a heading. Amended for #603 (was: forms with the save button, which
+ * RE-6 removes, design D-3/§4.8).
+ */
+function cards(enabled: string = th.enabled): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  for (const l of host.querySelectorAll('label')) {
+    if (textOf(l) !== enabled) continue;
+    let el: HTMLElement | null = l.parentElement;
+    while (el && el !== host && !el.querySelector('h1, h2, h3, h4, h5, h6')) el = el.parentElement;
+    if (el && el !== host && !found.includes(el)) found.push(el);
+  }
+  return found;
 }
 
-function cardOf(c: KioskCurrency): HTMLFormElement {
+function cardOf(c: KioskCurrency): HTMLElement {
   const card = cards().find((f) =>
     [...f.querySelectorAll('h1, h2, h3, h4, h5, h6')].some((h) => textOf(h) === heading(c)),
   );
@@ -227,27 +237,6 @@ function shownCodes(): string[] {
   });
 }
 
-/** The input a label of `card` names, whether the label wraps it or points at it. */
-function inputLabelled(card: HTMLElement, label: string): HTMLInputElement {
-  const l = [...card.querySelectorAll('label')].find((x) => textOf(x) === label);
-  if (!l) throw new Error(`no label ${label}`);
-  const input = l.htmlFor
-    ? [...card.querySelectorAll('input')].find((i) => i.id === l.htmlFor)
-    : l.querySelector('input');
-  if (!input) throw new Error(`no input for ${label}`);
-  return input;
-}
-
-function saveButton(card: HTMLElement): HTMLButtonElement {
-  const b = [...card.querySelectorAll('button')].find((x) => textOf(x) === th.save);
-  if (!b) throw new Error('no save button');
-  return b;
-}
-
-function cardStatus(card: HTMLElement): string {
-  return textOf(card.querySelector('[role="status"]'));
-}
-
 /** The texts of the status lines outside the cards. */
 function pageStatuses(): string[] {
   return [...host.querySelectorAll('[role="status"]')].filter((el) => !el.closest('form')).map(textOf);
@@ -256,10 +245,6 @@ function pageStatuses(): string[] {
 function type(input: HTMLInputElement, value: string): void {
   input.value = value;
   input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function submit(card: HTMLFormElement): void {
-  card.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 }
 
 /** The KBank section, by its aria-label (`label` = its text in the language shown). */
@@ -349,7 +334,9 @@ describe('KioskCurrenciesScreen reading (#399)', () => {
     expect(pageStatuses()).toContain(fill(th.found, { n: 4 }));
   });
 
-  it("a card: heading, the countries' Thai names, the switch, the rate fields with the browser's checks (C7, C8)", async () => {
+  // Amended for #603 (RE-6, design D-3/§4.8): the rate fields and their browser checks (C8) are
+  // gone; how a card shows its published rate is pinned in KioskCurrenciesScreen.publication.test.tsx.
+  it("a card: heading, the countries' Thai names and the switch (C7)", async () => {
     mount(fake([answer()]).api);
     await loaded();
     const usd = cardOf(USD);
@@ -358,23 +345,6 @@ describe('KioskCurrenciesScreen reading (#399)', () => {
     expect(enabled?.checked).toBe(true);
     expect([...usd.querySelectorAll('label')].some((l) => textOf(l) === th.enabled)).toBe(true);
     expect(cardOf(JPY).querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
-
-    for (const [label, value] of [
-      [th.buy, '33.2500'],
-      [th.sell, '33.5000'],
-    ] as const) {
-      const input = inputLabelled(usd, label);
-      expect(input.type, label).toBe('number');
-      expect(input.required, label).toBe(true);
-      expect(input.getAttribute('min'), label).toBe('0.0001');
-      expect(input.getAttribute('max'), label).toBe('1000000');
-      expect(input.getAttribute('step'), label).toBe('0.0001');
-      expect(input.getAttribute('inputmode'), label).toBe('decimal');
-      expect(input.value, label).toBe(value);
-    }
-    expect(inputLabelled(cardOf(JPY), th.buy).value).toBe('0.2105');
-    expect(inputLabelled(cardOf(AFN), th.buy).value).toBe('');
-    expect(inputLabelled(cardOf(AFN), th.sell).value).toBe('');
   });
 
   it('the search filters the cards and the count on every keystroke (C4, C5, C6)', async () => {
@@ -404,11 +374,12 @@ describe('KioskCurrenciesScreen reading (#399)', () => {
     expect(cards()).toEqual([]);
   });
 
+  // Amended for #603: the cards are found by the switch's label, not by the save button RE-6 removes.
   it('every text follows the language: English when chosen, Thai again after the switch', async () => {
     setLang('en');
     mount(fake([answer()]).api);
-    await vi.waitFor(() => expect(cards(en.save)).toHaveLength(4));
-    expect(cards(th.save)).toEqual([]);
+    await vi.waitFor(() => expect(cards(en.enabled)).toHaveLength(4));
+    expect(cards(th.enabled)).toEqual([]);
     expect(byText(host, en.heading).length).toBeGreaterThan(0);
     expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.placeholder).toBe(en.searchPlaceholder);
     expect(pageStatuses()).toContain(fill(en.found, { n: 4 }));
@@ -498,134 +469,19 @@ describe('KioskCurrenciesScreen KBank reference (#399)', () => {
   });
 });
 
-// ── saving (C10, V2, V8) ─────────────────────────────────────────────────────
-
-describe('KioskCurrenciesScreen saving (#399)', () => {
-  it('a save sends configure with strings and the row as read, then reads the view again (§9)', async () => {
-    const after: KioskCurrency = {
-      ...USD,
-      buy: '33.2500',
-      sell: '33.5000',
-      updated: '2026-10-06T05:00:09.456Z',
-    };
-    const f = fake([answer(), answer([AFN, JPY, NOK, after], undefined, 8)]);
-    mount(f.api, 'B9');
-    await loaded();
-    const usd = cardOf(USD);
-    type(inputLabelled(usd, th.buy), '33.25');
-    type(inputLabelled(usd, th.sell), '33.50');
-    submit(usd);
-
-    await vi.waitFor(() => expect(f.views).toHaveLength(2));
-    expect(f.posts).toEqual([
-      {
-        path: '/api/kiosk',
-        body: {
-          action: 'configure',
-          payload: {
-            branchId: 'B9',
-            code: 'USD',
-            buy: '33.25',
-            sell: '33.50',
-            enabled: true,
-            previousUpdated: '2026-10-06T05:00:01.123Z',
-            partnerName: 'SuperRich',
-            partnerCost: '32.9000',
-          },
-        },
-      },
-    ]);
-    expect(f.views[1]!.name).toBe('kiosk_currencies');
-    expect(f.views[1]!.q?.branch).toBe('B9');
-    await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(th.savedOn));
-    expect(saveButton(cardOf(USD)).disabled).toBe(false);
-
-    // the next save of the row sends back the time the view answered after the first
-    submit(cardOf(USD));
-    await vi.waitFor(() => expect(f.posts).toHaveLength(2));
-    const second = f.posts[1]!.body as { payload: Record<string, unknown> };
-    expect(second.payload.previousUpdated).toBe('2026-10-06T05:00:09.456Z');
-  });
-
-  it('a save of a currency left off says so, and sends no partner as empty and null', async () => {
-    const f = fake([answer()]);
-    mount(f.api, 'MAIN');
-    await loaded();
-    submit(cardOf(JPY));
-    await vi.waitFor(() => expect(cardStatus(cardOf(JPY))).toBe(th.savedOff));
-    expect(f.posts).toEqual([
-      {
-        path: '/api/kiosk',
-        body: {
-          action: 'configure',
-          payload: {
-            branchId: 'MAIN',
-            code: 'JPY',
-            buy: '0.2105',
-            sell: '0.2205',
-            enabled: false,
-            previousUpdated: '2026-10-06T05:00:02.123Z',
-            partnerName: '',
-            partnerCost: null,
-          },
-        },
-      },
-    ]);
-  });
-
-  it('the switch is sent as it is ticked, and the saved line says what the view answers after', async () => {
-    const f = fake([answer(), answer([AFN, { ...JPY, enabled: true }, NOK, USD], undefined, 8)]);
-    mount(f.api);
-    await loaded();
-    const jpy = cardOf(JPY);
-    const box = jpy.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    box.click();
-    expect(box.checked).toBe(true);
-    submit(jpy);
-    await vi.waitFor(() => expect(f.posts).toHaveLength(1));
-    expect((f.posts[0]!.body as { payload: { enabled: boolean } }).payload.enabled).toBe(true);
-    await vi.waitFor(() => expect(cardStatus(cardOf(JPY))).toBe(th.savedOn));
-  });
-
-  it("while saving the button is disabled; a refusal shows the server's sentence on that card and frees the button (§9)", async () => {
-    const pending = deferred<unknown>();
-    const f = fake([answer()], () => pending.promise);
-    mount(f.api);
-    await loaded();
-    const usd = cardOf(USD);
-    submit(usd);
-    await vi.waitFor(() => expect(saveButton(cardOf(USD)).disabled).toBe(true));
-    expect(saveButton(cardOf(JPY)).disabled).toBe(false);
-
-    pending.reject(new ApiError({ code: 'refused', message: RATES_FIRST, status: 400 }));
-    await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(RATES_FIRST));
-    expect(saveButton(cardOf(USD)).disabled).toBe(false);
-    expect(cardStatus(cardOf(JPY))).toBe('');
-    expect(f.views, 'a refused save reads nothing again').toHaveLength(1);
-  });
-
-  it('a rate field left empty is checked before sending: no request, the field marked and focused (V8)', async () => {
-    const f = fake([answer()]);
-    mount(f.api);
-    await loaded();
-    const afn = cardOf(AFN);
-    submit(afn);
-    const buy = inputLabelled(afn, th.buy);
-    await vi.waitFor(() => expect(buy.getAttribute('aria-invalid')).toBe('true'));
-    expect(document.activeElement).toBe(buy);
-    expect(f.posts).toEqual([]);
-  });
-
-  it('a rate under the minimum is checked before sending too (V8)', async () => {
-    const f = fake([answer()]);
-    mount(f.api);
-    await loaded();
-    const usd = cardOf(USD);
-    type(inputLabelled(usd, th.sell), '0');
-    submit(usd);
-    const sell = inputLabelled(usd, th.sell);
-    await vi.waitFor(() => expect(sell.getAttribute('aria-invalid')).toBe('true'));
-    expect(document.activeElement).toBe(sell);
-    expect(f.posts).toEqual([]);
-  });
-});
+// ── saving (C10, V2, V8): retired for #603 ──────────────────────────────────
+//
+// Retired by the ticket author of #603 (RE-6, claude/e5ab6c; `docs/design/blueprint/rates.md`
+// D-3, §4.8, §9 RE-6): the screen no longer saves a rate, so its save button and rate fields are
+// gone and the switch sends `configure` with `{ branchId, code, enabled }` alone. The six tests
+// here pinned the old save:
+// - "a save sends configure with strings and the row as read, then reads the view again (§9)"
+// - "a save of a currency left off says so, and sends no partner as empty and null"
+// - "the switch is sent as it is ticked, and the saved line says what the view answers after"
+// - "while saving the button is disabled; a refusal shows the server's sentence on that card and
+//   frees the button (§9)"
+// - "a rate field left empty is checked before sending: no request, the field marked and focused (V8)"
+// - "a rate under the minimum is checked before sending too (V8)"
+// Their replacements (the switch's exact body, the re-read, the saved line, the disabled switch
+// while sending, the refusal on its card) are in KioskCurrenciesScreen.publication.test.tsx. V8
+// has no replacement: there is no rate field left to check.

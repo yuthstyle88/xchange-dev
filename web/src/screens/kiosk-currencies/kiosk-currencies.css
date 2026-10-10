@@ -57,6 +57,10 @@
   margin: 12px 0 8px;
 }
 
+.xc-kiosk .xc-shell-main .rate-side {
+  margin: 12px 0 8px;
+}
+
 .xc-kiosk .xc-shell-main select,
 .xc-kiosk .xc-shell-main input {
   width: 100%;

@@ -13,10 +13,18 @@
 //!
 //! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in
 //! `_test`). Without it they FAIL; none skips.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c): `configure` no longer reads,
+//! saves or judges the rate texts (item 1); it switches a currency on only when the branch's
+//! current publication has it on both sides (item 2). The two odd-text tests still hold (nothing
+//! is published, so the rates-first refusal comes and nothing is written).
+//! `plain_texts_are_saved_as_they_came` publishes CHF first and pins that no rate is saved.
 
 mod kiosk_service_common;
 
-use kiosk_service_common::{FakePorts, MAIN, TestDb, at, branch, configure_of, owner, refusal};
+use kiosk_service_common::{
+    FakePorts, MAIN, TestDb, at, branch, configure_of, exact, owner, publish_one, refusal,
+};
 
 const RATES_FIRST: &str = "Set valid counter buy and sell rates first.";
 
@@ -78,11 +86,12 @@ async fn a_sell_that_is_not_a_plain_decimal_saves_and_writes_nothing() {
     nothing_is_saved_for(&ODD_SELL).await;
 }
 
-/// Holds before the fix and after it: plain texts are saved as they came, one rate save, one
-/// audit line, one switch.
+/// Holds before the fix and after it: one audit line, one switch. Amended for #603: CHF is
+/// published first, and no rate save is asked for.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn plain_texts_are_saved_as_they_came() {
     let db = TestDb::start().await;
+    publish_one(&db.pool, MAIN, exact(0), "CHF", "36.4", "37.1").await;
     let ports = FakePorts::standard();
     let service = db.service(ports.clone());
     service
@@ -94,11 +103,9 @@ async fn plain_texts_are_saved_as_they_came() {
         )
         .await
         .expect("a plain buy and sell are accepted");
-    let saves = ports.rate_saves();
-    assert_eq!(saves.len(), 1);
-    assert_eq!(
-        (saves[0].rate.buy.as_str(), saves[0].rate.sell.as_str()),
-        ("36.4", "37.1")
+    assert!(
+        ports.rate_saves().is_empty(),
+        "#603 item 1: configure asks for no rate save"
     );
     assert_eq!(db.count("test_audit").await, 1);
     assert_eq!(db.count("kiosk_currencies").await, 1);

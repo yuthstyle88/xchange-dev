@@ -6123,6 +6123,10 @@
      "rateSaveFails": "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
      "note": "the rate cannot be saved: the switch is not stored either",
      "error": "เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน",
+     "v3": {
+      "error": "Set valid counter buy and sell rates first.",
+      "why": "#603 (RE-6): configure saves no rate and CHF is not published yet"
+     },
      "rateSaves": [
       {
        "branch": "MAIN",

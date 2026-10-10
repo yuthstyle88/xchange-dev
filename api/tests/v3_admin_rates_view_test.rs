@@ -40,9 +40,15 @@
 //! `/api/rpc` `adminSaveRate`, with the test's Bank of Thailand behind it.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing skips.
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c): the kiosk `configure` saves no
+//! rate (item 1) and switches on only a published currency (item 2). In
+//! `every_writer_of_the_rates_moves_the_version_it_answers` the euro is published first and the
+//! `configure` writer still moves the version, but writes no rate the view would show.
 
 mod common;
 mod compat_common;
+mod publication_seed;
 mod rpc_common;
 mod snapshot_common;
 
@@ -740,6 +746,14 @@ async fn every_writer_of_the_rates_moves_the_version_it_answers() {
                 Some(("USD", "31.0000"))
             }
             "kiosk configure" => {
+                // #603 item 2: the euro is published first (moves no version)
+                publication_seed::publish(
+                    &room.desk.db.pool,
+                    MAIN,
+                    chrono::Utc::now(),
+                    &[publication_seed::both("EUR", "37.5", "38.5")],
+                )
+                .await;
                 let answer = room
                     .post(
                         "OWNER",
@@ -752,7 +766,8 @@ async fn every_writer_of_the_rates_moves_the_version_it_answers() {
                     )
                     .await;
                 assert_eq!(answer.status, 200, "configure: {:.300}", answer.text);
-                Some(("EUR", "37.5000"))
+                // #603 item 1: the switch and its audit line move the version; no rate is saved
+                None
             }
             "adminCreateBranch" => {
                 let answer = room

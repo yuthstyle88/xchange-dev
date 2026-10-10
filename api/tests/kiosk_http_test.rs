@@ -21,6 +21,12 @@
 //! Edited by the author of ticket POL (design `docs/design/xchange-v3.md` §5.5.7): the six
 //! `list` steps of `queue.json` that the 10-06 bundle answers differently from the recording
 //! are held to the decided answer (`changed_since_the_recording`).
+//!
+//! Amended by the ticket author of #603 (RE-6, claude/e5ab6c): `configure` writes no rate
+//! (item 1) and switches a currency on only when it is published on both sides (item 2). The
+//! replay applies v2's rate save behind the routes (`kiosk_http_common`, `configure_behind`), and
+//! three steps of `currencies.json` are held to v3's answer (`decided_by_603`). The test of a
+//! failing audit line publishes the won first and no longer expects a rate to have been saved.
 
 mod common;
 mod compat_common;
@@ -62,6 +68,32 @@ fn engine_sentences(fixture: &Fixture) -> Vec<usize> {
 /// the desk (`queue.json` #67–#72: RT1, MO1, FI1, SY1, DO1, RV1) are shown the queue MG1 was
 /// shown the step before (#66); `accept` by the current holder answers `{"saved":true}`
 /// (`queue.json` #105; ticket #328, row Q1). Row K-HTTP re-records these files from the 10-06 bundle.
+/// #603 (RE-6): the `configure` steps of `currencies.json` v3 answers otherwise, because
+/// `configure` no longer saves a rate and enables only a published currency:
+/// - #27 (v2: the stale `previousUpdated` refused by the rate save): the dollar is published
+///   (#24), so the switch is stored and `{"saved":true}` answered, as #24 was, with its audit line;
+/// - #29 (v2: the partner rule) and #40 (v2: the Bank of Thailand down): the pound was never
+///   published, so the rates-first sentence.
+///
+/// Answers the rules and the steps v3 accepts.
+fn decided_by_603(name: &str) -> (Vec<(usize, Rule)>, Vec<usize>) {
+    if name != "kiosk/currencies.json" {
+        return (Vec::new(), Vec::new());
+    }
+    let rates_first = Rule::Differs {
+        status: 400,
+        sentence: "Set valid counter buy and sell rates first.",
+    };
+    (
+        vec![
+            (27, Rule::AnswersAs(24)),
+            (29, rates_first.clone()),
+            (40, rates_first),
+        ],
+        vec![27],
+    )
+}
+
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
     // role, the holder's repeat `accept`), so each step is replayed as recorded.
@@ -75,6 +107,13 @@ async fn replayed(name: &str) -> (Fixture, usize) {
         let mut replay = KioskReplay::start(&fixture).await;
         for (n, rule) in changed_since_the_recording(name) {
             replay = replay.rule(n, rule);
+        }
+        let (rules, accepts) = decided_by_603(name);
+        for (n, rule) in rules {
+            replay = replay.rule(n, rule);
+        }
+        for n in accepts {
+            replay = replay.v3_accepts(n);
         }
         for n in engine_sentences(&fixture) {
             replay = replay.rule(
@@ -124,7 +163,10 @@ async fn transport_json_is_answered_as_v2_answered_it() {
 #[actix_web::test]
 async fn currencies_json_is_answered_as_v2_answered_it() {
     let (fixture, lines) = replayed("kiosk/currencies.json").await;
-    assert_eq!(lines, 10, "ten accepted configure steps, one line each");
+    assert_eq!(
+        lines, 11,
+        "ten configure steps v2 accepted and #27 that v3 accepts (#603), one line each"
+    );
     assert_eq!(fixture.steps().len(), 54);
 }
 
@@ -504,13 +546,14 @@ async fn a_step_whose_audit_line_fails_is_rolled_back() {
     counter.finish().await;
 }
 
-/// `configure` saves the rate first and stores the switch after it, as v2 does.
-/// When the switch's audit line cannot be written the switch is not stored;
-/// the rate, saved in a transaction of its own before it, stays — and the
-/// answer is the server-error sentence, not `saved`.
+/// When the switch's audit line cannot be written the switch is not stored, and the answer is
+/// the server-error sentence, not `saved`. Amended for #603: `configure` saves no rate (item 1)
+/// and switches on only a published currency (item 2), so the won is published first, and no
+/// rate of the won is in `rates` afterwards.
 #[actix_web::test]
 async fn a_configure_whose_audit_line_fails_stores_no_switch() {
     let counter = Counter::open(&[]).await;
+    publish_behind(&counter, "KRW", "23.1", "25.9").await;
     counter.hands.audit.fail(true);
     let answer = counter
         .ask(
@@ -527,6 +570,11 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
         .await
         .expect("read kiosk_currencies");
     assert_eq!(switches.0, 0, "no switch was stored");
+    let won: (i64,) = sqlx::query_as("SELECT count(*) FROM rates WHERE code = 'KRW'")
+        .fetch_one(&counter.desk.db.pool)
+        .await
+        .expect("read rates");
+    assert_eq!(won.0, 0, "configure saved no rate");
     counter.hands.audit.fail(false);
     let rates = counter.ask(None, "rates", json!({})).await;
     let offered: Vec<String> = rates.json()["rates"]
@@ -687,4 +735,15 @@ async fn a_holder_accepting_again_gets_saved() {
         .assert_refused(400, "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว", "another employee");
 
     counter.finish().await;
+}
+
+/// #603: `MAIN`'s next publication holds `code` on both sides (behind the routes), beside the
+/// dollar `Counter::open` published (RE-4b's publisher; rates per the currency's unit).
+async fn publish_behind(counter: &Counter, code: &str, buy: &str, sell: &str) {
+    kiosk_http_common::rates_re4_common::publish(
+        &counter.desk.db.pool,
+        "MAIN",
+        &[("USD", "32.1", "32.6"), (code, buy, sell)],
+    )
+    .await;
 }

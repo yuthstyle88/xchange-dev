@@ -24,4 +24,4 @@ export type KioskCurrencies = { currencies: Array<KioskCurrency>, kbank: KbankRe
 /**
  * One currency in the kiosk currencies view.
  */
-export type KioskCurrency = { code: string, name: string, nameEn: string, countries: Array<KioskCountry>, buy: Rate | null, sell: Rate | null, updated: string, partnerName: string, partnerCost: Rate | null, enabled: boolean, kbank: Array<KbankComparison>, };
+export type KioskCurrency = { code: string, name: string, nameEn: string, countries: Array<KioskCountry>, buy: Rate | null, sell: Rate | null, unitSize: string, updated: string, partnerName: string, partnerCost: Rate | null, enabled: boolean, kbank: Array<KbankComparison>, };

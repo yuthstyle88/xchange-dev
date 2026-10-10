@@ -660,6 +660,31 @@ impl KioskRepository for PgKioskRepository {
         Ok(())
     }
 
+    async fn published_both_sides_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        code: CurrencyCode,
+    ) -> AppResult<bool> {
+        let (exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS( \
+                SELECT 1 FROM branches b \
+                JOIN rate_publications rp ON rp.id = b.current_publication_id \
+                JOIN published_rate_lines prl ON prl.publication_id = rp.id \
+                WHERE b.id = $1 \
+                  AND prl.currency_code = $2 \
+                  AND prl.denomination_group = 'ALL' \
+                  AND prl.buy_rate IS NOT NULL \
+                  AND prl.sell_rate IS NOT NULL \
+            )",
+        )
+        .bind(branch.as_str())
+        .bind(code.as_str())
+        .fetch_one(&mut **tx)
+        .await?;
+        Ok(exists)
+    }
+
     async fn receipt(&self, branch: &BranchId, id: &str) -> AppResult<Option<StoredReceipt>> {
         let row: Option<(String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT image, updated_at FROM kiosk_receipts WHERE branch_id = $1 AND request_id = $2",

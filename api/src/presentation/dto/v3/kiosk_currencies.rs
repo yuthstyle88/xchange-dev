@@ -51,6 +51,7 @@ pub struct KioskCurrency {
     pub countries: Vec<KioskCountry>,
     pub buy: Option<Rate>,
     pub sell: Option<Rate>,
+    pub unit_size: String,
     pub updated: String,
     pub partner_name: String,
     pub partner_cost: Option<Rate>,

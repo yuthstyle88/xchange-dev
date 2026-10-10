@@ -5,6 +5,10 @@
 // v2 (`kiosk-currencies.html` line 3): join [code, name, nameEn, ...countries.flatMap(c =>
 // [c.code, c.en, c.th])] with spaces, lower-case it, and keep the currency when it includes
 // query.trim().toLowerCase().
+//
+// Amended by the ticket author of #603 (RE-6, claude/e5ab6c; `docs/design/blueprint/rates.md`
+// §4.9 R1, §9 RE-6): `currency()` fills the view's new `unitSize` with `'1'`. The search does not
+// read it.
 import { describe, expect, it } from 'vitest';
 import type { KioskCurrency } from '../../shared/api/generated/kiosk_currencies';
 import { matches } from './filter';
@@ -22,6 +26,7 @@ function currency(
     countries: countries.map(([c, en, th]) => ({ code: c, en, th })),
     buy: null,
     sell: null,
+    unitSize: '1',
     updated: '',
     partnerName: '',
     partnerCost: null,
