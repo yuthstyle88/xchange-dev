@@ -13,14 +13,17 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::Side;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use xc_rate::domain::publication::freshness::Freshness;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
@@ -28,7 +31,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
-use crate::presentation::dto::v3::common::{NoFilter, Rate};
+use crate::presentation::dto::v3::common::{NoFilter, Rate, RateFreshnessDto};
 use crate::presentation::dto::v3::kiosk_currencies::{
     KbankComparison, KbankReference, KioskCountry, KioskCurrencies, KioskCurrency,
 };
@@ -142,19 +145,78 @@ impl BranchView for KioskCurrenciesView {
             .into_iter()
             .collect();
 
-            let lines: Vec<PublishedLineRow> = sqlx::query_as(
-                "SELECT trim(prl.currency_code) AS currency_code, \
-                        prl.unit_size, prl.buy_rate, prl.sell_rate, \
-                        rp.published_at, prl.source_snapshot \
+            let pub_row = sqlx::query(
+                "SELECT rp.id, rp.published_at \
                  FROM branches b \
                  JOIN rate_publications rp ON rp.id = b.current_publication_id \
-                 JOIN published_rate_lines prl ON prl.publication_id = rp.id \
-                 WHERE b.id = $1 AND prl.denomination_group = 'ALL'",
+                 WHERE b.id = $1",
             )
             .bind(branch.as_str())
-            .fetch_all(&pool)
+            .fetch_optional(&pool)
             .await
             .map_err(pos_error::AppError::Database)?;
+
+            let (freshness, lines) = match pub_row {
+                Some(r) => {
+                    let pub_id: Uuid = r.get(0);
+                    let published_at: DateTime<Utc> = r.get(1);
+
+                    let raw_lines = sqlx::query(
+                        "SELECT trim(currency_code), denomination_group, unit_size, buy_rate, sell_rate, source_snapshot \
+                         FROM published_rate_lines WHERE publication_id = $1",
+                    )
+                    .bind(pub_id)
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(pos_error::AppError::Database)?;
+
+                    let now = Utc::now();
+                    let mut freshnesses = Vec::with_capacity(raw_lines.len() * 2);
+                    let mut lines = Vec::new();
+
+                    for row in raw_lines {
+                        let currency_code: String = row.get(0);
+                        let denomination_group: String = row.get(1);
+                        let unit_size: Decimal = row.get(2);
+                        let buy_rate: Option<Decimal> = row.get(3);
+                        let sell_rate: Option<Decimal> = row.get(4);
+                        let source_snapshot: Value = row.get(5);
+
+                        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Buy, now));
+                        freshnesses.push(Freshness::of_side(&source_snapshot, Side::Sell, now));
+
+                        if denomination_group == "ALL" {
+                            lines.push(PublishedLineRow {
+                                currency_code,
+                                unit_size,
+                                buy_rate,
+                                sell_rate,
+                                published_at,
+                                source_snapshot,
+                            });
+                        }
+                    }
+
+                    let pub_freshness = Freshness::of_publication(freshnesses);
+                    let freshness_dto = RateFreshnessDto {
+                        stale: pub_freshness.stale,
+                        source_date: pub_freshness
+                            .source_date
+                            .map(|d| d.format("%Y-%m-%d").to_string()),
+                        published_at: Some(published_at.to_rfc3339()),
+                    };
+
+                    (freshness_dto, lines)
+                }
+                None => (
+                    RateFreshnessDto {
+                        stale: false,
+                        source_date: None,
+                        published_at: None,
+                    },
+                    Vec::new(),
+                ),
+            };
 
             let line_map: HashMap<String, PublishedLineRow> = lines
                 .into_iter()
@@ -352,6 +414,7 @@ impl BranchView for KioskCurrenciesView {
             Ok(KioskCurrencies {
                 currencies,
                 kbank: kbank_ref,
+                freshness,
             })
         }
     }

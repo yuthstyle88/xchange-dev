@@ -125,7 +125,7 @@ function answer(
   kbank: KioskCurrencies['kbank'] = { source: SOURCE, publishedAt: PUBLISHED, round: 10 },
   version = 7,
 ): ViewAnswer<KioskCurrencies> {
-  return { version, changed: true, data: { currencies, kbank } };
+  return { version, changed: true, data: { currencies, kbank, freshness: { stale: false, sourceDate: null, publishedAt: null } } };
 }
 
 // ── the fake ApiClient ───────────────────────────────────────────────────────

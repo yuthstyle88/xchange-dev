@@ -158,6 +158,9 @@ body:has(.xc-shell) {
   align-items: center;
 }
 
+/* v2 account-bar.js:12 put the bar first in <body> (`document.body.prepend(bar)`): a strip across
+   the full width above the header. AppShell renders it as the shell's first child for the same
+   reason, so it spans whatever width the shell gives it, whatever padding a screen's header uses. */
 .account-bar a {
   color: #fff;
   white-space: nowrap;

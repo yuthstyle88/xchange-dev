@@ -75,7 +75,8 @@ impl Policy {
                 | "adminAbandonRequest"
                 | "getConnectionStatus"
                 | "reserveCustomer"
-                | "saveTransaction" => Ok(()),
+                | "saveTransaction"
+                | "consentPolicy" => Ok(()),
                 _ => Err(PolicyError::InvalidRequest),
             },
             ActorKind::Staff => {
@@ -539,6 +540,7 @@ impl Policy {
                 "approvalDecide" | "approvalRead" => {
                     Some(Need::Permission(Permission::ApprovalsDecide))
                 }
+                "consentPolicy" => Some(Need::Permission(Permission::ConsentPolicyManage)),
                 _ => None,
             },
             EntryPath::StaffRpc => match act {

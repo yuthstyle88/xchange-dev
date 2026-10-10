@@ -11,9 +11,11 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use xc_auth::domain::policy::value_objects::role::Role;
+use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize};
 use xc_kernel::payment::PaymentRules;
 use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
@@ -28,6 +30,10 @@ use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::application::settings::payment_settings::PaymentSettingsService;
+use crate::application::workflows::exchange::quote::{
+    QuoteRequest, QuoteRequestLine, QuoteService,
+};
+use crate::application::workflows::save_step::SaveActor;
 use crate::infrastructure::devices::device_repository::{DeviceRepository, NewEvent};
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
@@ -424,6 +430,39 @@ impl KioskPorts for PgKioskPorts {
             }
 
             Ok(true)
+        })
+    }
+
+    fn quote_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: CurrencyCode,
+        side: Side,
+        quantity: ForeignAmount,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<Option<String>>> {
+        Box::pin(async move {
+            let quote_service = QuoteService::new(self.pool.clone());
+            let req = QuoteRequest {
+                branch_id: branch.clone(),
+                customer_id: None,
+                channel: QuoteChannel::Kiosk,
+                lines: vec![QuoteRequestLine {
+                    currency,
+                    shop_side: side,
+                    quantity,
+                    fee_thb: None,
+                }],
+            };
+            let who = SaveActor {
+                id: CUSTOMER_KIOSK.to_string(),
+                username: CUSTOMER_KIOSK.to_string(),
+                employee_id: None,
+                role: Role::System,
+            };
+            let quote = quote_service.quote_in(tx, req, &who, now).await?;
+            Ok(Some(quote.id.to_string()))
         })
     }
 }

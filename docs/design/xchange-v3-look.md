@@ -129,3 +129,55 @@ Behaviour does not change, and the existing tests must stay green without edits.
 ## Data migration
 
 None.
+
+## Flutter kiosk app (`app/`): v2's kiosk look
+
+> designed-by: claude/5edf7bb5-subagent for lane controller claude/5edf7bb5 · 2026-10-10 · measured on `main` at `f4d6207`, v2 at `xchange-v2-source@4d0bdbb`
+> The owner, 2026-10-10, in the controller's session (claude/5edf7bb5): *"ทำ แอป kiosk Flutter ให้เหมือน v2"* ("make the Flutter kiosk app look like v2").
+
+The rules above are for the web pages. This section is for the Flutter kiosk in `app/`, which replaced v2's `kiosk.html`
+(`docs/design/xchange-v3.md` §8). **The logic follows the Blueprint and §8. The look follows v2's kiosk exactly**: the
+`kiosk.css` rules (`src/devices-public/kiosk.css`) that v2's `kiosk.html` markup uses.
+
+**Rules.**
+1. **Port, don't redesign.** Each v2 value (colour, size, weight, spacing, radius, shadow) becomes the same value in Flutter, in logical pixels.
+   Where `kiosk.css` sets the same property more than once, the last rule that matches wins, as in the browser.
+   - Example: `h1` is `42px` at `kiosk.css:4` and `clamp(32px,4vw,48px)` at `:18`, so `:18` applies.
+2. **Only the look changes.** A look ticket changes no visible text, l10n key, `Key(...)`, handler, provider or controller.
+   Every existing test passes unedited. That includes the ones that pin today's look:
+   - `app/test/shared/kiosk_text_spacing_test.dart`: button labels 24/22, the dropdown value 20, no `letterSpacing`/`height`;
+   - `app/test/shared/kiosk_theme_font_chain_test.dart` and `every_text_uses_the_bundled_fonts_test.dart`: the font family and its nine fallbacks;
+   - `app/test/features/kiosk/kiosk_page_layout_test.dart`: the error line sits above the step.
+   Where v2 differs from a pinned value, the pinned value stays. The ticket lists the difference as out of scope.
+3. **The font family is not ported.** v2's `Arial,Tahoma,…` is replaced by the bundled Noto chain (#6, #30), which the tests pin.
+4. **Where a value lives.**
+   - Colours shared by every screen go in `KioskColors` (`app/lib/shared/theme/colors.dart`).
+   - v2's `body`, `input` and `select` values go in `kioskTheme` (`app/lib/shared/theme/theme.dart`).
+   - Page-level values go in the page file. Widgets in `kiosk_widgets.dart` are changed only by a ticket that owns that file.
+
+**Map.**
+
+| v2 (`kiosk.css` @ `4d0bdbb`) | What it sets | v3 file | Ticket |
+|---|---|---|---|
+| `:3` `:root{--xc;--ink;--muted;--line;--soft}` | the palette | `app/lib/shared/theme/colors.dart` (`KioskColors.brand`/`ink`/`muted`/`line`/`soft`, already equal) | — |
+| `:16` `body{background:…#f7f7f9;font-size:18px;color:#212126}` | page colour, body text size and colour | `colors.dart` (`stage`, a body-text colour), `theme.dart` (`textTheme`) | LF-1 #934 |
+| `:4` `select,input{border-color:var(--line);background:#fbfafb;border-radius:10px}` | the input box | `theme.dart` (`inputDecorationTheme`) | LF-1 #934 |
+| `:16` the `radial-gradient(… #f7e6ee …)` layer | the page's top-right glow | `app/lib/features/kiosk/presentation/pages/kiosk_page.dart` (the `Scaffold` body) | LF-2 #935 |
+| `:4`, `:17` `header`, `.kiosk-brand*`, `header p`; `:29`, `:31` `.kiosk-lang*` | header, logo, brand line, branch, language picker | `kiosk_page.dart` (`_Header`) | LF-2 #935 |
+| `:18` `main`, `.step`, `h1`, `h1 span`; `:4` `#error:not(:empty)`; `:4`, `:24` `footer` | the frame around the four screens | `kiosk_page.dart` (`KioskPage.build`) | LF-2 #935 |
+| `:4`, `:24` `#confirm`, `#confirm h2`, `#confirm>p`; `:1`, `:19` `.directions` | the review card | `app/lib/features/kiosk/presentation/pages/quote_page.dart` | LF-3 #937 |
+| `:4`, `:24` `#done`, `#done h2`, `#done>p`, `.success`; `:11`, `:24` `.telegram-card*`; `:24` `#customer-receipt` | the sent card and the receipt | `app/lib/features/kiosk/presentation/pages/waiting_page.dart`, `receipt_page.dart` | LF-4 #938 |
+| `:4`, `:19`–`:23`, `:27` `.directions button`, `form#form`, `.currency-pane`, `.currency-shortcuts`, `#rates`, `#amount`, `#receive`, `#estimate`, `#review`, `#payment-choice` | the select screen | `select_page.dart` | after RF-5 (#877), which reserves the file |
+| `:1`, `:4`, `:9`, `:11`, `:24` `button`, `.primary`, `.quote`, `.order-identity`, `.order-progress`, `#queue` | shared buttons, quote rows, identity block, progress, queue number | `app/lib/features/kiosk/presentation/widgets/kiosk_widgets.dart` | after RF-5 (#877), which reserves the file |
+| `:5`, `:6`, `:25`, `:29` `@media(max-width:…)` / `(max-height:850px)` | narrow and short screens | the files above | not yet ticketed |
+
+Each LF ticket's §2 table quotes the v2 rule (`kiosk.css:N`) beside the v3 `file:line@sha` it changes.
+LF-1…LF-4 own disjoint files, so they can run in parallel.
+
+**Done criterion for every LF ticket.** The following run in `app/` and are all green:
+- `flutter analyze --fatal-infos`
+- `dart format --output=none --set-exit-if-changed .`
+- `flutter test`, with the pinning tests unedited.
+
+The PR also attaches screenshots at 1280×800 of the touched screen beside v2's `kiosk.html`, opened as a static file from `xchange-v2-source@4d0bdbb`.
+There are no up-front tests: the tickets are look-only (the owner's 2026-10-07 rule, *"page-only tickets need no prep"*).

@@ -187,7 +187,7 @@ function answer(
   return {
     version,
     changed: true,
-    data: { currencies, kbank: { source: SOURCE, publishedAt: PUBLISHED, round: 10 } },
+    data: { currencies, kbank: { source: SOURCE, publishedAt: PUBLISHED, round: 10 }, freshness: { stale: false, sourceDate: null, publishedAt: null } },
   };
 }
 

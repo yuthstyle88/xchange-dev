@@ -187,4 +187,16 @@ pub trait KioskRepository: Send + Sync {
         image: &ReceiptImage,
         at: KioskTime,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// Stores the quote_id on a request inside a transaction.
+    fn set_quote_id_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        quote_id: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send {
+        let _ = (tx, branch, id, quote_id);
+        async { Ok(()) }
+    }
 }

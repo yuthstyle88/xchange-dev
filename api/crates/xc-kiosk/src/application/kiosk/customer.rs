@@ -3,7 +3,9 @@
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
+use rust_decimal::Decimal;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::ForeignAmount;
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::new_quote::NewQuote;
@@ -106,6 +108,29 @@ impl KioskService {
                     }
 
                     repo.insert_in(tx, &b, &request, &cmd.client_ip).await?;
+
+                    let quote_qty =
+                        ForeignAmount::from_decimal(Decimal::new(request.quote.foreign.minor(), 2));
+                    if let Some(quote_id) = ports
+                        .quote_in(
+                            tx,
+                            &b,
+                            request.quote.currency,
+                            request.quote.side,
+                            quote_qty,
+                            at,
+                        )
+                        .await
+                        .map_err(|err| match err {
+                            pos_error::AppError::Domain(_) => {
+                                refuse(KioskError::AmountOrCurrencyInvalid)
+                            }
+                            other => other,
+                        })?
+                    {
+                        repo.set_quote_id_in(tx, &b, &request.id, &quote_id).await?;
+                    }
+
                     let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
                     Ok(IdentifiedRequest { request, identity })
                 })

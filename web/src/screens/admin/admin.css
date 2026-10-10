@@ -1135,6 +1135,7 @@
   box-sizing: border-box;
 }
 
+.xc-admin .account-bar,
 .xc-admin .xc-shell-header,
 .xc-admin .xc-shell-alert,
 .xc-admin .xc-shell-footer,
@@ -1980,6 +1981,7 @@
     transform: none;
     display: flex;
   }
+  .xc-admin .account-bar,
   .xc-admin .xc-shell-header,
   .xc-admin .xc-shell-alert,
   .xc-admin .xc-shell-footer,

@@ -721,6 +721,30 @@ impl KioskRepository for PgKioskRepository {
         .await?;
         Ok(())
     }
+
+    async fn set_quote_id_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        quote_id: &str,
+    ) -> AppResult<()> {
+        let done = sqlx::query(
+            "UPDATE kiosk_requests SET quote_id = $3::uuid \
+             WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(quote_id)
+        .execute(&mut **tx)
+        .await?;
+        if done.rows_affected() != 1 {
+            return Err(AppError::Internal(format!(
+                "kiosk request {id} of branch {branch} is gone",
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

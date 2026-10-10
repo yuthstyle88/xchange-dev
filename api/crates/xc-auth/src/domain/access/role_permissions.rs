@@ -27,6 +27,7 @@ impl RolePermissions {
                 Permission::DevicePrinterOnline,
                 Permission::DrawerPassport,
                 Permission::SignedIn,
+                Permission::ConsentPolicyManage,
             ],
             Role::Admin => &[
                 Permission::BranchesManage,

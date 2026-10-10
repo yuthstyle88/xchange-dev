@@ -155,8 +155,10 @@ async fn old_columns(pool: &PgPool) -> Value {
         // `organization_id` is OR-1's (#615), checked by `xc-rate/tests/organizations_migration_test.rs`.
         // `published_rate_line_id` is RE-4's migration 5 (#601, `20261010125000_published_rate_line_ids.sql`),
         // checked by `api/tests/rates_re4_migration_test.rs`.
+        // `quote_id` is TX-7's migration 4 (#675, `20261031100000_kiosk_quote_id.sql`), checked by
+        // `api/tests/kiosk_quote_service_test.rs` (added by #675's ticket author, claude/f03345fe).
         "SELECT (to_jsonb(r) - 'started_at' - 'completed_at' - 'unit_size' - 'organization_id' \
-                 - 'published_rate_line_id')::text AS row \
+                 - 'published_rate_line_id' - 'quote_id')::text AS row \
          FROM kiosk_requests r ORDER BY branch_id, id",
     )
     .fetch_all(pool)
@@ -240,8 +242,8 @@ async fn the_migration_adds_two_nullable_times_and_nothing_else() {
     .await
     .expect("count the columns");
     assert_eq!(
-        count, 20,
-        "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595), OR-1's organization_id (#615) and RE-4's published_rate_line_id (#601)"
+        count, 21,
+        "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595), OR-1's organization_id (#615), RE-4's published_rate_line_id (#601) and TX-7's quote_id (#675)"
     );
     db.finish().await;
 }

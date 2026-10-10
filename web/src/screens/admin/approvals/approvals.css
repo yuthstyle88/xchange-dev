@@ -45,11 +45,9 @@
   gap: 8px;
 }
 
-/* no v2 source: decision input and action block */
+/* v2 admin-html.ts:129 form: label, .error and .dialog-actions in block flow, spaced by their own margins */
 .xc-admin .xc-content .approval-decision-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: block;
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--line);

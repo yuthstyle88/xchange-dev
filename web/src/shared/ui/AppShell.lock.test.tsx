@@ -10,7 +10,13 @@
 //   - The content wrapper (`<main>`, or `<div class="xc-content">` with `ownsMain`) sits inside a
 //     `<fieldset class="xc-lock">`, always rendered, disabled exactly while the session has ended.
 //     Every button, input, select and textarea of the content is then :disabled, in a form or not.
-//   - The `<header>` (LangSwitch, AccountBar's sign-out) stays outside the fieldset and usable.
+//   - The `<header>` (LangSwitch) and the account bar (AccountBar's sign-out) stay outside the
+//     fieldset and usable.
+//
+// Amended 2026-10-10 by claude/c954feda on the owner's order (xchange#917 follow-up): the account
+// bar moved from inside `<header>` to just before it, where v2 put it (account-bar.js:12
+// `document.body.prepend(bar)`). Every check is kept; the sign-out is looked up in the bar instead
+// of the header, and the bar is also checked to be outside the fieldset and before the header.
 //
 // Texts: two shared keys under `shell.*` (W10) in web/src/shared/i18n/th.ts and en.ts. The Thai is
 // v2's, verbatim (account-bar.js:44). The English is the implementer's ([proposed] in the design).
@@ -121,7 +127,7 @@ function contentControls(host: HTMLElement): HTMLElement[] {
 
 async function signedIn(host: HTMLElement) {
   await vi.waitFor(() => {
-    expect(host.querySelector('header .account-bar')).not.toBeNull();
+    expect(host.querySelector('.account-bar')).not.toBeNull();
   });
 }
 
@@ -251,14 +257,24 @@ for (const ownsMain of [false, true]) {
         expect(host.querySelector('[role="alert"]')).not.toBeNull();
       });
 
-      const headerButtons = Array.from(host.querySelectorAll<HTMLButtonElement>('header button'));
-      const signOut = headerButtons.find((b) => b.textContent === 'ออกจากระบบ');
-      const langSwitch = headerButtons.find((b) => b.textContent === 'EN');
+      const bar = host.querySelector('.account-bar')!;
+      expect(bar.closest('header'), 'the bar sits before the header, not in it').toBeNull();
+      expect(bar.closest('fieldset'), 'the bar is outside the lock').toBeNull();
+      expect(
+        bar.compareDocumentPosition(host.querySelector('header')!) & Node.DOCUMENT_POSITION_FOLLOWING,
+        'the bar comes before the header',
+      ).toBeTruthy();
+      const signOut = Array.from(bar.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === 'ออกจากระบบ',
+      );
+      const langSwitch = Array.from(host.querySelectorAll<HTMLButtonElement>('header button')).find(
+        (b) => b.textContent === 'EN',
+      );
       expect(signOut, 'the sign-out button').toBeDefined();
       expect(langSwitch, 'the language switch').toBeDefined();
       expect(signOut!.matches(':disabled')).toBe(false);
       expect(langSwitch!.matches(':disabled')).toBe(false);
-      expect(host.querySelector('header .account-bar')!.textContent).toContain('Somchai');
+      expect(host.querySelector('.account-bar')!.textContent).toContain('Somchai');
     });
 
     it('in English the notice shows the en sentences, and follows a language switch', async () => {
@@ -309,7 +325,7 @@ describe('AppShell lock, end to end', () => {
     });
     expect((host.querySelector('fieldset.xc-lock') as HTMLFieldSetElement).disabled).toBe(true);
     for (const el of contentControls(host)) expect(el.matches(':disabled'), el.outerHTML).toBe(true);
-    expect(host.querySelector('header .account-bar')!.textContent).toContain('Somchai');
+    expect(host.querySelector('.account-bar')!.textContent).toContain('Somchai');
   });
 
   it('on /login (nobody signed in) a 401 on the me read locks nothing', async () => {

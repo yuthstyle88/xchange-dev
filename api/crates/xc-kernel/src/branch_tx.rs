@@ -83,7 +83,7 @@ impl BranchTx {
                     let result = f(tx).await?;
 
                     sqlx::query(
-                        "UPDATE branch_versions SET version = version + 1 WHERE branch_id = $1",
+                        "UPDATE branch_versions SET version = version + 1, changed_at = now() WHERE branch_id = $1",
                     )
                     .bind(&branch_id)
                     .execute(&mut **tx)
@@ -178,7 +178,9 @@ impl BranchTx {
             .execute(&mut **tx)
             .await?;
 
-        sqlx::query("UPDATE branch_versions SET version = version + 1 WHERE branch_id = $1")
+        sqlx::query(
+            "UPDATE branch_versions SET version = version + 1, changed_at = now() WHERE branch_id = $1",
+        )
             .bind(branch.as_str())
             .execute(&mut **tx)
             .await?;

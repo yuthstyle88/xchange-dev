@@ -69,6 +69,8 @@ function answer(): ViewAnswer<KioskCurrencies> {
     data: {
       currencies: [CNY, JPY],
       kbank: { source: 'https://www.kasikornbank.com/', publishedAt: '2026-10-02T22:16:01+07:00', round: 10 },
+      // RF-3 (rates.md §4.10): the view's answer gains `freshness`; re-expected by the RF-3 ticket author.
+      freshness: { stale: false, sourceDate: null, publishedAt: null },
     },
   };
 }

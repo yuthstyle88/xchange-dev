@@ -320,11 +320,9 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
         )}
       </Show>
 
-      <Show when={rows().length > 0}>
-        <div class="table-meta">
-          {t('foundSummary', { count: rows().length })}
-        </div>
-      </Show>
+      <div class="table-meta">
+        {t('foundSummary', { count: rows().length })}
+      </div>
 
       <div class="table-scroll">
         <TransactionTable rows={rows()} onOpen={handleOpenDetail} />

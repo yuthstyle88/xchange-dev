@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_kernel::payment::PaymentRules;
 
 use crate::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
@@ -80,4 +80,19 @@ pub trait KioskPorts: Send + Sync {
         thb: Money,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>>;
+
+    /// Quotes one line through the shop's quote service inside the caller's transaction.
+    /// The default answers `Ok(None)`.
+    fn quote_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: CurrencyCode,
+        side: Side,
+        quantity: ForeignAmount,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<Option<String>>> {
+        let _ = (tx, branch, currency, side, quantity, now);
+        Box::pin(async { Ok(None) })
+    }
 }
