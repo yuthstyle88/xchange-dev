@@ -272,6 +272,12 @@ fn has_staff(spec: &str) -> bool {
     sessions_of(spec).staff.is_some()
 }
 
+fn is_approver_staff(spec: &str) -> bool {
+    sessions_of(spec)
+        .staff
+        .is_some_and(|s| matches!(s.role(), Role::Manager | Role::Backend | Role::Finance))
+}
+
 fn is_rates_staff(spec: &str) -> bool {
     sessions_of(spec)
         .staff
@@ -283,8 +289,11 @@ fn is_rates_staff(spec: &str) -> bool {
 enum Who {
     /// `rateDraft` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
     OwnerOrRates,
-    /// `approvalDecide`, `approvalRead` on Rpc: OWNER. (`ratePolicySave` was here until #602.)
-    Owner,
+    /// `approvalDecide`, `approvalRead` on Rpc: OWNER, and since #874 the v3 roles that become
+    /// BRANCH_MANAGER (MANAGER, BACKEND), and FINANCE (RG4 of #682). Amended by #874's ticket author (claude/f03345fe), per lane
+    /// controller (2026-10-10); a manager is then refused by the type's own policy, not the gate.
+    /// (`ratePolicySave` was here until #602.)
+    OwnerOrApprover,
     /// `adminSnapshot` on Rpc: any signed-in caller.
     AnySession,
     /// `adminSnapshot` on StaffRpc: any staff session; the owner's session is not one.
@@ -295,7 +304,7 @@ impl Who {
     fn allows(self, spec: &str) -> bool {
         match self {
             Who::OwnerOrRates => has_owner(spec) || is_rates_staff(spec),
-            Who::Owner => has_owner(spec),
+            Who::OwnerOrApprover => has_owner(spec) || is_approver_staff(spec),
             Who::AnySession => has_owner(spec) || has_staff(spec),
             Who::StaffSession => has_staff(spec),
         }
@@ -598,7 +607,7 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
             uri: Box::new(move |b| format!("/api/approvals/{}/decide", request_of(b))),
             body: Some(json!({ "outcome": "APPROVED", "reason": "test" })),
             pair: (EntryPath::Rpc, "approvalDecide"),
-            who: Who::Owner,
+            who: Who::OwnerOrApprover,
             send_allowed: true,
         },
         Route {
@@ -646,7 +655,7 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
             uri: Box::new(|_| "/api/v3/views/approval_requests".to_owned()),
             body: None,
             pair: (EntryPath::Rpc, "approvalRead"),
-            who: Who::Owner,
+            who: Who::OwnerOrApprover,
             send_allowed: true,
         },
         Route {

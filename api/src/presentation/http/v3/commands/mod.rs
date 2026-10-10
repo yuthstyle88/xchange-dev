@@ -14,9 +14,14 @@ use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 
 use crate::presentation::http::v3::error::V3Error;
 
-pub fn make_approval_service(pool: PgPool) -> Arc<ApprovalService> {
+pub fn make_approval_registry(pool: PgPool) -> ApprovalRegistry {
     let mut registry = ApprovalRegistry::new();
-    rate_publication::register(&mut registry, pool.clone());
+    rate_publication::register(&mut registry, pool);
+    registry
+}
+
+pub fn make_approval_service(pool: PgPool) -> Arc<ApprovalService> {
+    let registry = make_approval_registry(pool.clone());
     let repo = Arc::new(PgApprovalRepository::new(pool.clone()));
     let audit_log = Arc::new(PgAuditLog::new(pool));
     Arc::new(ApprovalService::new(registry, repo, audit_log))

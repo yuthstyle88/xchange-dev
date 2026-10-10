@@ -89,6 +89,12 @@ impl Policy {
                         role == Role::Backend || role == Role::Manager
                     }
                     "adminMoveStock" => role == Role::Finance,
+                    "approvalDecide" | "approvalRead" => {
+                        role == Role::Backend || role == Role::Manager || role == Role::Finance
+                    }
+                    "reversalRequest" => {
+                        role == Role::Front || role == Role::Manager || role == Role::Backend
+                    }
                     _ => false,
                 };
                 if allowed {
@@ -540,6 +546,7 @@ impl Policy {
                 "approvalDecide" | "approvalRead" => {
                     Some(Need::Permission(Permission::ApprovalsDecide))
                 }
+                "reversalRequest" => Some(Need::Permission(Permission::ReversalRequest)),
                 "consentPolicy" => Some(Need::Permission(Permission::ConsentPolicyManage)),
                 _ => None,
             },

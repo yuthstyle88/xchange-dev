@@ -15,8 +15,8 @@
 //! |---|---|---|
 //! | `ratePolicySave` | OWNER, RATES (#602) | — |
 //! | `rateDraft` (save, submit, simulate, publish, fetch reference) | OWNER, RATES | RATES |
-//! | `approvalDecide` | OWNER | — |
-//! | `approvalRead` | OWNER | — |
+//! | `approvalDecide` | OWNER, MANAGER/BACKEND, FINANCE (#874) | — |
+//! | `approvalRead` | OWNER, MANAGER/BACKEND, FINANCE (#874) | — |
 //!
 //! and §9's table of provided tests that change: `policy_test.rs:386,705` (`adminSaveRate ==
 //! ["RATES"]`) stays as it is in RE-3 — `adminSaveRate` is removed only in RE-7. Nothing in
@@ -132,20 +132,26 @@ fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
     );
 }
 
+/// Amended for #874 by its ticket author (claude/f03345fe), per lane controller (2026-10-10):
+/// BRANCH_MANAGER and (RG4 of #682) FINANCE qualify for ApprovalsDecide; each type's policy still decides (rates stay the
+/// owner's through `RatePublicationPolicy`). Every other assertion is unchanged.
 #[test]
-fn approval_decide_and_approval_read_are_the_owners_alone() {
+fn approval_decide_and_approval_read_are_the_executives_the_branch_managers_and_finances() {
     for name in ["approvalDecide", "approvalRead"] {
         assert_eq!(ask(Some(&owner()), EntryPath::Rpc, name), Ok(()), "{name}");
         assert_eq!(
             allowed_roles(EntryPath::Rpc, name),
-            ["EXECUTIVE"],
-            "{name}: EXECUTIVE alone on Rpc"
+            ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"],
+            "{name}: EXECUTIVE, BRANCH_MANAGER and FINANCE on Rpc"
         );
         assert!(
             allowed_roles(EntryPath::StaffRpc, name).is_empty(),
             "{name}: no role on StaffRpc"
         );
-        for r in BLUEPRINT.into_iter().filter(|r| *r != Role::Executive) {
+        for r in BLUEPRINT
+            .into_iter()
+            .filter(|r| ![Role::Executive, Role::BranchManager, Role::Finance].contains(r))
+        {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),
                 Err(PolicyError::RoleNotAllowedHere),
