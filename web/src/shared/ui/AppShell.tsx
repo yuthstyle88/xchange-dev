@@ -15,11 +15,13 @@ export function AppShell(props: {
   children?: JSX.Element;
   ownsMain?: boolean;
   look?: AppShellLook;
+  banner?: JSX.Element;
 }): JSX.Element {
   const session = sharedSession();
 
   return (
     <div class={props.look ? `xc-shell xc-${props.look}` : 'xc-shell'}>
+      {props.banner ? <div class="xc-shell-banner">{props.banner}</div> : null}
       <header class="xc-shell-header">
         {props.nav ? <div class="xc-shell-nav">{props.nav}</div> : null}
         <h1 class="xc-shell-title">{props.title}</h1>

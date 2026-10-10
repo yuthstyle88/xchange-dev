@@ -46,7 +46,7 @@
   color: var(--muted, #706a77);
 }
 
-.xc-devices .xc-shell-main .banner {
+.xc-devices .xc-shell-banner .banner {
   text-align: center;
   padding: 10px;
   background: #fff0ba;
