@@ -1,10 +1,14 @@
-/* LK-SD (#716): admin reports screen look ported from v2 admin-html.ts */
+/* LK-SD (#716), #795: admin reports screen look ported from v2 admin-html.ts */
 
-.xc-admin .xc-content .value {
+.xc-admin .xc-content .reports-screen {
+  display: block;
+}
+
+.xc-admin .xc-content .reports-screen .value {
   font-variant-numeric: tabular-nums;
 }
 
-.xc-admin .xc-content .link-button {
+.xc-admin .xc-content .reports-screen .link-button {
   font-family: Arial, sans-serif;
   color: var(--brand, #a5003c);
   font-weight: 600;
@@ -16,9 +20,21 @@
   cursor: pointer;
 }
 
-.xc-admin .xc-content .small {
-  font-size: 12px;
-  color: var(--muted, #676a73);
-  margin-top: 2px;
+.xc-admin .xc-content .reports-screen .small {
+  display: block;
 }
 
+.xc-admin .xc-content .reports-screen .reports-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.xc-admin .xc-content .reports-screen .reports-toolbar button {
+  margin-bottom: 12px;
+}
+
+.xc-admin .xc-content .reports-screen .reports-toolbar .secondary,
+.xc-admin .xc-content .reports-screen button.secondary#export {
+  font-size: 12px;
+  color: var(--brand, #a5003c);
+}
