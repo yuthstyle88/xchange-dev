@@ -97,3 +97,12 @@ pub fn state_with(settings: Settings, database: FakeDatabase) -> AppState {
         .with_build(injected_build())
         .with_database_probe(Arc::new(database))
 }
+
+/// CI-4 (#651): the server refuses to start without PII keys (U3, `bootstrap/mod.rs`), so a test that starts it
+/// installs the test key first. `tests/bootstrap_pii_key_test.rs` deliberately does not.
+pub fn install_test_pii_keys() {
+    let keys =
+        xc_kernel::pii::PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+            .expect("the test PII key parses");
+    xc_customer::install_pii_keys(std::sync::Arc::new(keys)).expect("one test PII key per process");
+}

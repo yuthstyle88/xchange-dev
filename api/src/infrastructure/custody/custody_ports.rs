@@ -79,7 +79,7 @@ impl CustodyPorts for PgCustodyPorts {
         })
     }
 
-    /// A live customer of this branch with that id.
+    /// A live customer of this branch's organisation with that id.
     fn customer_known<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
@@ -88,8 +88,11 @@ impl CustodyPorts for PgCustodyPorts {
     ) -> Answer<'a, bool> {
         Box::pin(async move {
             sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM customers \
-                 WHERE branch_id = $1 AND id = $2 AND mode = 'LIVE')",
+                "SELECT EXISTS ( \
+                     SELECT 1 FROM customers c \
+                     JOIN branches b ON b.organization_id = c.organization_id \
+                     WHERE b.id = $1 AND c.id = $2 AND c.mode = 'LIVE' \
+                 )",
             )
             .bind(branch.as_str())
             .bind(customer_id)

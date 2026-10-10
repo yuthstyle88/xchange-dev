@@ -182,8 +182,10 @@ async fn put(pool: &PgPool, ex: &Ex) {
             .await
             .expect("the counter's open shift");
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ($1, 'MAIN', 'Somchai', $1, 'THA', 'LIVE', now()) ON CONFLICT DO NOTHING",
+        // CI-4 (#651): a customer belongs to the organisation
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT $1, organization_id, $1, 'Somchai', 'LIVE', now() FROM branches WHERE id = 'MAIN' \
+         ON CONFLICT DO NOTHING",
     )
     .bind(format!("CU-{}", ex.id))
     .execute(pool)
@@ -997,12 +999,16 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
     )
     .await;
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ('cust-re4e', 'MAIN', 'Somchai Jaidee', 'AA1234567', 'THA', 'LIVE', now())",
+        // CI-4 (#651): a customer belongs to the organisation
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT 'cust-re4e', organization_id, 'cust-re4e', 'Somchai Jaidee', 'LIVE', now() \
+         FROM branches WHERE id = 'MAIN'",
     )
     .execute(&pool)
     .await
     .expect("insert the customer");
+    // CI-4 (#651): the passport is the customer's encrypted identity (#554 §4.1)
+    snapshot_common::seed_passport_identity(&pool, "cust-re4e", "AA1234567", "THA").await;
     let passport = counter
         .desk
         .files

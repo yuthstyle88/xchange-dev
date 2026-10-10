@@ -1403,7 +1403,7 @@ async fn a_desk_save_moves_the_version() {
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
-        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
                 "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "LIVE" }),
     )
     .await["customerId"]
@@ -1462,7 +1462,7 @@ async fn a_kiosk_save_moves_the_version() {
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
-        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        json!({ "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
                 "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "LIVE" }),
     )
     .await["customerId"]
@@ -1548,7 +1548,7 @@ fn save_payload(
 ) -> Value {
     let now = room.counter.now();
     let mut payload = json!({
-        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
         "birthDate": "1990-01-02", "passportExpiry": "2031-06-11",
         "mode": "LIVE", "submissionId": submission,
         "customerId": customer, "type": "BUY", "currency": "USD",

@@ -356,6 +356,7 @@ async fn a_server_purges_its_database_at_start_and_again_after_the_interval() {
     .await
     .expect("insert attempt windows");
 
+    common::install_test_pii_keys();
     let application = Application::build(scratch.settings.clone())
         .await
         .expect("the server starts");

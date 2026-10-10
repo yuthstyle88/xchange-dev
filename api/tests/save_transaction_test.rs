@@ -8,7 +8,9 @@
 //! receipt, and writes the customer — all of it or none of it.
 //!
 //! `fixtures/save/v2_save_cases.json` was recorded by playing 28 scenarios (107
-//! saves) against the v2 engine (`api/tools/v2-fixtures/gen_save.mjs`); the
+//! saves) against the v2 engine (`api/tools/v2-fixtures/gen_save.mjs`); CI-4
+//! (#651) retired one (27 scenarios, 99 saves remain) and holds five reserves to
+//! decided customer differences (save_common::SAME_SCENARIO_CUSTOMER); the
 //! first test replays them. The others are what the engine could not be asked:
 //! the attached files, which v2 checks before its engine runs; failures in the
 //! middle; saves at the same moment.
@@ -36,6 +38,10 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
     let mut keys: BTreeMap<(String, String), String> = BTreeMap::new();
     // a branch nobody created, for the scenario that needs one
     branches.insert("GONE".to_owned(), "XC-B99".to_owned());
+    // CI-4 (#651): step -> the customer v3 reserved; recorded customer id -> the earlier customer it stands for
+    let mut reserved: BTreeMap<usize, String> = BTreeMap::new();
+    let mut aliases: BTreeMap<String, String> = BTreeMap::new();
+    let mut written: Vec<WrittenSave> = Vec::new();
 
     for (i, step) in scenario.steps.iter().enumerate() {
         let op = step["op"].as_str().expect("a step has an op");
@@ -82,12 +88,31 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                     passport_expiry: s("passportExpiry"),
                     mode: s("mode"),
                 };
+                if let Some(same) = same_scenario_customer(&scenario.name, i + 1) {
+                    // CI-4 (#651): a decided customer difference, held strictly
+                    let got = shop
+                        .customers
+                        .reserve(&branch(&branches[&label]), who, at(-30))
+                        .await
+                        .expect("reserve a customer");
+                    let label = format!("{here} ({})", same.reason);
+                    hold_same_scenario_customer(
+                        &got.customer_id,
+                        got.existing,
+                        &reserved[&same.same_as],
+                        &label,
+                    );
+                    aliases.insert(s("customerId"), got.customer_id.clone());
+                    reserved.insert(i + 1, got.customer_id);
+                    continue;
+                }
                 let id = shop.reserve(&branches[&label], who).await;
                 assert_eq!(
                     id,
                     s("customerId"),
                     "{here}: the customer number (ticket T6a's)"
                 );
+                reserved.insert(i + 1, id);
             }
             "save" => {
                 let save: FxSave =
@@ -119,7 +144,19 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                     }
                     uploaded.push(Some(keys[&k].clone()).filter(|k| !k.is_empty()));
                 }
-                let cmd = command(&save.form, uploaded[0].clone(), uploaded[1].clone());
+                let mut form = save.form.clone();
+                let aliased = form
+                    .get("customerId")
+                    .and_then(|v| v.as_str())
+                    .and_then(|c| aliases.get(c))
+                    .cloned();
+                if let Some(actual) = &aliased {
+                    form.insert(
+                        "customerId".to_owned(),
+                        serde_json::Value::String(actual.clone()),
+                    );
+                }
+                let cmd = command(&form, uploaded[0].clone(), uploaded[1].clone());
                 let got = shop
                     .workflow
                     .save(&branch(&branch_id), cmd, &fx.actor, instant(&save.at))
@@ -145,9 +182,36 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                             // mean the receipt is v2's byte for byte
                             receipt_url: v2.receipt_url.clone(),
                         };
+                        // CI-4 (#651): the receipt names the aliased customer, so its address is held to the
+                        // hash of the receipt v3 stored, not to v2's
+                        let want = if aliased.is_some() {
+                            let key = saved.receipt_url.trim_start_matches("/files/");
+                            let bytes = std::fs::read(shop.dir.join(key))
+                                .unwrap_or_else(|e| panic!("{here}: the receipt {key}: {e}"));
+                            hold_receipt_hash(&saved.receipt_url, &bytes, &here);
+                            SavedTransaction {
+                                receipt_url: saved.receipt_url.clone(),
+                                ..want
+                            }
+                        } else {
+                            want
+                        };
                         if saved != &want {
                             wrong.push(format!("{here}: v2 answered {want:?}, got {saved:?}"));
                         }
+                        let text = |k: &str| {
+                            form.get(k)
+                                .and_then(|v| v.as_str())
+                                .filter(|v| !v.is_empty())
+                                .map(str::to_owned)
+                        };
+                        written.push(WrittenSave {
+                            customer: text("customerId").unwrap_or_default(),
+                            document_ref: v2.document_ref.clone(),
+                            name: text("name").unwrap_or_default(),
+                            birth_date: text("birthDate"),
+                            passport_expiry: text("passportExpiry"),
+                        });
                     }
                     (want, _, got) => {
                         wrong.push(format!("{here}: v2 answered {want:?}, got {got:?}"))
@@ -214,27 +278,35 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                         ));
                     }
                 }
+                // CI-4 (#651): an aliased customer is folded into its earlier customer
+                let expected: Vec<FxCustomer> = if aliases.is_empty() {
+                    after.customers.clone()
+                } else {
+                    fold_aliased_customers(&after.customers, &aliases, &written)
+                };
                 let mut seen = Vec::new();
-                for c in &after.customers {
+                for c in &expected {
                     let stored = shop
                         .customers
                         .find(&branch(&branch_id), &c.id)
                         .await
                         .unwrap();
+                    // CI-4 (#651): the birth date and expiry live in the encrypted passport identity (#554 §4.1).
+                    let passport = passport_payload(&shop.pool, &c.id).await;
+                    let text_of = |k: &str| passport[k].as_str().map(str::to_owned);
                     seen.push(stored.map(|s| FxCustomer {
                         id: s.id,
                         name: s.name,
-                        birth_date: s.birth_date.map(|d| d.to_string()),
-                        passport_expiry: s.passport_expiry.map(|d| d.to_string()),
+                        birth_date: text_of("birthDate"),
+                        passport_expiry: text_of("expiry"),
                         last_document_ref: s.last_document_ref,
                         mode: s.mode.as_str().to_owned(),
                     }));
                 }
-                let want: Vec<Option<&FxCustomer>> = after.customers.iter().map(Some).collect();
+                let want: Vec<Option<&FxCustomer>> = expected.iter().map(Some).collect();
                 if seen.iter().map(Option::as_ref).collect::<Vec<_>>() != want {
                     wrong.push(format!(
-                        "{here}: customers are {seen:?}, v2 has {:?}",
-                        after.customers
+                        "{here}: customers are {seen:?}, v2 has {expected:?} (as folded)",
                     ));
                 }
             }
@@ -258,10 +330,12 @@ async fn every_scenario_ends_as_v2_ended() {
             fx.counts["saved"],
             fx.counts["refused"]
         ),
-        (28, 107, 55, 52),
+        // CI-4 (#651): "the customer id must be that passport in that branch and mode" (8 saves: 1 saved,
+        // 7 refused) is retired; its rule is gone (#554 K1, owner 2026-10-09: DEMO shares LIVE).
+        (27, 99, 54, 45),
         "v2_save_cases.json was cut short"
     );
-    assert_eq!(fx.scenarios.len(), 28);
+    assert_eq!(fx.scenarios.len(), 27);
     assert_eq!(fx.sentences.len(), 11, "{:?}", fx.sentences);
 
     let mut wrong = Vec::new();

@@ -242,7 +242,7 @@ async fn ok(app: &App, call: Call, what: &str) -> Value {
 fn demo_save(customer: &str, passport: &str, submission: &str) -> Value {
     json!({
         "branchId": "MAIN",
-        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DE",
+        "name": "Customer 1", "passportNo": "P1000001", "nationality": "DEU",
         "birthDate": "1990-01-02", "passportExpiry": "2031-06-11", "mode": "DEMO",
         "submissionId": submission, "customerId": customer,
         "type": "BUY", "currency": "USD", "amount": 100, "rate": 1, "fee": 0, "bankFee": 0,
@@ -269,7 +269,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
             "reserveCustomer",
             json!({
                 "branchId": "MAIN", "name": "Customer 1", "passportNo": "P1000001",
-                "nationality": "DE", "birthDate": "1990-01-02",
+                "nationality": "DEU", "birthDate": "1990-01-02",
                 "passportExpiry": "2031-06-11", "mode": "DEMO",
             }),
         )

@@ -280,6 +280,7 @@ impl TestDb {
         for opener in ["owner-1", "test"] {
             seed_opener(&pool, opener).await;
         }
+        install_test_pii_keys();
 
         let v2_hours = serde_json::json!({
             "mon": [{ "open": "11:00", "close": "23:00" }],
@@ -768,6 +769,8 @@ pub struct Replay<'f> {
     /// The recorded `transactions` a `saveTransaction` step is fed from: those
     /// of the view the test will compare. Empty: saves are not fed.
     pub recorded_transactions: Vec<Value>,
+    /// Step number → the customer v3 answered (CI-4 #651, for SAME_CUSTOMER_AS).
+    pub reserved: BTreeMap<usize, String>,
 }
 
 impl<'f> Replay<'f> {
@@ -778,6 +781,7 @@ impl<'f> Replay<'f> {
             ids: IdMap::new(),
             compared: Compared::default(),
             recorded_transactions: Vec::new(),
+            reserved: BTreeMap::new(),
         }
     }
 
@@ -993,11 +997,26 @@ impl<'f> Replay<'f> {
             )
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
-        assert_same(
-            step.json(),
-            &json!({"customerId": reservation.customer_id, "existing": reservation.existing}),
-            &self.label(step),
-        );
+        let actual =
+            json!({"customerId": reservation.customer_id, "existing": reservation.existing});
+        // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
+        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+            let label = format!("{} ({})", self.label(step), same.reason);
+            let earlier = self
+                .reserved
+                .get(&same.same_as)
+                .unwrap_or_else(|| panic!("{label}: step {} was not replayed", same.same_as))
+                .clone();
+            let expected =
+                crate::compat_common::same_customer_answer(step.json(), &earlier, &label);
+            assert_same(&expected, &actual, &label);
+            self.ids
+                .alias_customer(&text_of(step.json(), "customerId"), &earlier);
+        } else {
+            assert_same(step.json(), &actual, &self.label(step));
+        }
+        self.reserved
+            .insert(step.n, reservation.customer_id.clone());
         self.compared.reservations += 1;
     }
 
@@ -1043,6 +1062,22 @@ impl<'f> Replay<'f> {
         }
     }
 
+    /// CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (compat_common::COMPANY_CUSTOMERS).
+    fn decided_customers(&self, step: &Step, recorded: Value) -> Value {
+        match crate::compat_common::company_customers(self.fixture, step.n) {
+            Some(list) => crate::compat_common::with_customers_of(
+                &recorded,
+                &json!({ "customers": list }),
+                &format!(
+                    "{} ({})",
+                    self.label(step),
+                    crate::compat_common::COMPANY_CUSTOMERS_REASON
+                ),
+            ),
+            None => recorded,
+        }
+    }
+
     async fn compare_snapshot(&mut self, step: &Step) {
         let actual = self
             .shop
@@ -1055,7 +1090,7 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)))
             .to_value();
-        let recorded = without_dropped_keys(step.json());
+        let recorded = self.decided_customers(step, without_dropped_keys(step.json()));
         self.ids.learn(&recorded, &actual);
         assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.snapshots += 1;
@@ -1090,7 +1125,10 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
         let mut actual = write_answer(&snapshot).to_value();
-        let mut recorded = without_keys(&without_dropped_keys(step.json()), &["requestResolution"]);
+        let mut recorded = self.decided_customers(
+            step,
+            without_keys(&without_dropped_keys(step.json()), &["requestResolution"]),
+        );
         if step.path() == Some("/api/staff/rpc") {
             recorded = without_keys(&recorded, &["sheetUrl", "deskUrl"]);
             actual = without_keys(&actual, &["sheetUrl", "deskUrl"]);
@@ -1584,4 +1622,101 @@ pub async fn seed_opener(pool: &PgPool, id: &str) {
     .execute(pool)
     .await
     .expect("seed an opener's user");
+}
+
+/// CI-4 (#651): the PII keys every test process installs (U3: one `key_id:base64(32 bytes)` line). A test key,
+/// never a real one. Added by the ticket author in CI-4's up-front commit.
+pub const TEST_PII_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
+pub fn install_test_pii_keys() -> std::sync::Arc<xc_kernel::pii::PiiKeys> {
+    let keys = std::sync::Arc::new(
+        xc_kernel::pii::PiiKeys::parse(TEST_PII_KEYS).expect("the test PII key parses"),
+    );
+    xc_customer::install_pii_keys(keys.clone()).expect("one test PII key per process");
+    keys
+}
+
+/// The decrypted payload of a customer's ACTIVE passport identity: `{number, nationality, birthDate, expiry,
+/// nameOnDocument}` (#554 §4.1), read the way only a test may.
+pub async fn passport_payload(pool: &sqlx::PgPool, customer_id: &str) -> serde_json::Value {
+    let (bytes, key_id): (Vec<u8>, String) = sqlx::query_as(
+        "SELECT encrypted_value, key_id FROM customer_identities \
+         WHERE customer_id = $1 AND type = 'PASSPORT' AND status = 'ACTIVE'",
+    )
+    .bind(customer_id)
+    .fetch_one(pool)
+    .await
+    .expect("the customer's passport identity");
+    let cipher = xc_kernel::pii::PiiCipher::new(install_test_pii_keys());
+    let plain = cipher
+        .decrypt(
+            format!("{customer_id}PASSPORT").as_bytes(),
+            &xc_kernel::pii::Sealed { key_id, bytes },
+        )
+        .expect("decrypt with the test key");
+    serde_json::from_slice(&plain).expect("the passport payload is JSON")
+}
+
+/// CI-4 (#651): the LIVE customer whose ACTIVE passport carries this number, found by decrypting each passport
+/// identity with the test key (a test's view; the product finds customers by lookup hash, #554 K4).
+pub async fn live_customer_with_passport(pool: &sqlx::PgPool, number: &str) -> Option<String> {
+    let rows: Vec<(String, Vec<u8>, String)> = sqlx::query_as(
+        "SELECT i.customer_id, i.encrypted_value, i.key_id FROM customer_identities i \
+         JOIN customers c ON c.id = i.customer_id \
+         WHERE i.type = 'PASSPORT' AND i.status = 'ACTIVE' AND c.mode = 'LIVE' ORDER BY i.customer_id",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("read the passport identities");
+    let cipher = xc_kernel::pii::PiiCipher::new(install_test_pii_keys());
+    for (customer_id, bytes, key_id) in rows {
+        let plain = cipher
+            .decrypt(
+                format!("{customer_id}PASSPORT").as_bytes(),
+                &xc_kernel::pii::Sealed { key_id, bytes },
+            )
+            .expect("decrypt with the test key");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&plain).expect("the passport payload is JSON");
+        if payload["number"].as_str() == Some(number) {
+            return Some(customer_id);
+        }
+    }
+    None
+}
+
+/// CI-4 (#651): gives an existing customer its ACTIVE passport identity, encrypted and hashed with the test key,
+/// for tests that insert a customer row directly (#554 §4.1: the passport lives in `customer_identities`).
+pub async fn seed_passport_identity(
+    pool: &sqlx::PgPool,
+    customer_id: &str,
+    number: &str,
+    nationality: &str,
+) {
+    use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, normalize};
+    let keys = install_test_pii_keys();
+    let normalized =
+        normalize(IdentityType::Passport, number, Some(nationality)).expect("an alpha-3 passport");
+    let hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
+    let payload =
+        serde_json::json!({"number": number, "nationality": nationality, "birthDate": null,
+        "expiry": null, "nameOnDocument": null})
+        .to_string();
+    let sealed = PiiCipher::new(keys).encrypt(
+        format!("{customer_id}PASSPORT").as_bytes(),
+        payload.as_bytes(),
+    );
+    sqlx::query(
+        "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, key_id, \
+         lookup_hash, nationality) SELECT gen_random_uuid(), organization_id, id, 'PASSPORT', $2, $3, $4, $5 \
+         FROM customers WHERE id = $1",
+    )
+    .bind(customer_id)
+    .bind(&sealed.bytes)
+    .bind(&sealed.key_id)
+    .bind(hash.as_slice())
+    .bind(nationality)
+    .execute(pool)
+    .await
+    .expect("insert the passport identity");
 }

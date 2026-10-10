@@ -56,7 +56,10 @@ impl BookingPorts for PgBookingPorts {
     ) -> BoxFuture<'a, AppResult<Option<LiveCustomer>>> {
         Box::pin(async move {
             let row: Option<(String, String)> = sqlx::query_as(
-                "SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2 AND mode = 'LIVE'",
+                "SELECT c.id, c.display_name \
+                 FROM customers c \
+                 JOIN branches b ON b.organization_id = c.organization_id \
+                 WHERE c.id = $1 AND b.id = $2 AND c.mode = 'LIVE'",
             )
             .bind(id)
             .bind(branch.as_str())

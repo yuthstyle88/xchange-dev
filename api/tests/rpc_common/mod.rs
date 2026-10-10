@@ -889,6 +889,74 @@ impl<'f> Replay<'f> {
         let answer = self.app.send(call).await;
         let label = self.label(step);
 
+        // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
+        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+            let earlier = self
+                .answers
+                .get(&same.same_as)
+                .unwrap_or_else(|| panic!("{label}: step {} was not replayed", same.same_as))
+                .json();
+            let earlier_customer = text_of(&earlier, "customerId");
+            let expected =
+                crate::compat_common::same_customer_answer(step.json(), &earlier_customer, &label);
+            assert_eq!(
+                answer.status, 200,
+                "{label} ({}): {:.300}",
+                same.reason, answer.text
+            );
+            assert_same(
+                &expected,
+                &answer.json(),
+                &format!("{label} ({})", same.reason),
+            );
+            self.ids
+                .alias_customer(&text_of(step.json(), "customerId"), &earlier_customer);
+            self.tally.differences.push(step.n);
+            self.answers.insert(step.n, answer);
+            return;
+        }
+
+        // CI-4 (#651): a save for a customer a SameCustomerAs step aliased: its receipt names that customer.
+        let saved_customer = step
+            .payload
+            .as_ref()
+            .and_then(|p| p.get("customerId"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        if matches!(rule, Rule::Replay)
+            && step.status == Some(200)
+            && action_of(step).as_deref() == Some("saveTransaction")
+            && saved_customer.is_some_and(|c| self.ids.is_aliased_customer(&c))
+        {
+            let actual = answer.json();
+            let url = text_of(&actual, "receiptUrl");
+            let key = url.trim_start_matches("/files/").to_owned();
+            let (branch_id,): (String,) =
+                sqlx::query_as("SELECT branch_id FROM files WHERE key = $1")
+                    .bind(&key)
+                    .fetch_one(&self.desk.db.pool)
+                    .await
+                    .unwrap_or_else(|e| panic!("{label}: the receipt {key}: {e}"));
+            let stored = self
+                .desk
+                .files
+                .open_in_branch(&key, &BranchId::new(branch_id))
+                .await
+                .expect("open the receipt")
+                .unwrap_or_else(|| panic!("{label}: the receipt {key} is not stored"));
+            let expected = crate::compat_common::same_customer_save_answer(
+                step.json(),
+                &url,
+                &stored.bytes,
+                &label,
+            );
+            assert_eq!(answer.status, 200, "{label}: {:.300}", answer.text);
+            assert_same(&self.ids.to_actual(&expected), &actual, &label);
+            self.tally.differences.push(step.n);
+            self.answers.insert(step.n, answer);
+            return;
+        }
+
         match rule {
             Rule::Replay => {
                 self.hold_to_recorded(step, &answer);
@@ -907,6 +975,17 @@ impl<'f> Replay<'f> {
             Rule::AnswersAs(other) => {
                 assert_ne!(step.status, Some(200), "{label}: v2 accepted this one");
                 let mut expected = without_dropped_keys(self.fixture.step(other).json());
+                // CI-4 (#651): the expectation of the step whose recording is used
+                if let Some(list) = crate::compat_common::company_customers(self.fixture, other) {
+                    expected = crate::compat_common::with_customers_of(
+                        &expected,
+                        &json!({ "customers": list }),
+                        &format!(
+                            "{label} ({})",
+                            crate::compat_common::COMPANY_CUSTOMERS_REASON
+                        ),
+                    );
+                }
                 if expected.get("syncedAt").is_some() {
                     expected["syncedAt"] = json!(step.at);
                 }
@@ -989,7 +1068,18 @@ impl<'f> Replay<'f> {
             return;
         }
         let actual = answer.json();
-        let expected = without_dropped_keys(step.json());
+        let mut expected = without_dropped_keys(step.json());
+        // CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (COMPANY_CUSTOMERS)
+        if let Some(list) = crate::compat_common::company_customers(self.fixture, step.n) {
+            expected = crate::compat_common::with_customers_of(
+                &expected,
+                &serde_json::json!({ "customers": list }),
+                &format!(
+                    "{label} ({})",
+                    crate::compat_common::COMPANY_CUSTOMERS_REASON
+                ),
+            );
+        }
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
     }

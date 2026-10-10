@@ -12,6 +12,7 @@ publish = false
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-kernel = { workspace = true }
+xc-customer = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

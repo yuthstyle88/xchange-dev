@@ -97,9 +97,10 @@ async fn the_saved_row(
     rate: &str,
 ) {
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ('dev-customer-' || $1, $1, 'Somchai', 'DEV-' || $1, 'THA', 'LIVE', now()) \
-         ON CONFLICT DO NOTHING",
+        // CI-4 (#651): a customer belongs to the organisation
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT 'dev-customer-' || $1, organization_id, 'dev-customer-' || $1, 'Somchai', 'LIVE', now() \
+         FROM branches WHERE id = $1 ON CONFLICT DO NOTHING",
     )
     .bind(branch_id)
     .execute(pool)

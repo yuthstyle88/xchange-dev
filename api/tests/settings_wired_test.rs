@@ -81,6 +81,7 @@ async fn a_graceful_stop_waits_as_long_as_the_settings_say() {
     let mut settings = db.settings();
     settings.application.shutdown_timeout_secs = SHUTDOWN_TIMEOUT_SECS;
 
+    common::install_test_pii_keys();
     let application = Application::build(settings)
         .await
         .expect("start on an empty, reachable database");

@@ -201,13 +201,12 @@ impl Room {
 
     async fn seed_customer(&self, id: &str, branch: &str, name: &str, mode: &str) {
         sqlx::query(
-            "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-             VALUES ($1, $2, $3, $4, 'THA', $5, $6)",
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, b.organization_id, $1, $3, $4, $5 FROM branches b WHERE b.id = $2",
         )
         .bind(id)
         .bind(branch)
         .bind(name)
-        .bind(format!("P-{id}"))
         .bind(mode)
         .bind(at("2026-10-06T04:00:00.000Z"))
         .execute(&self.desk.db.pool)
@@ -1780,12 +1779,9 @@ async fn member_refusals_in_order_and_the_answer() {
         }
         cases.push((p, NOT_IDENTIFIED));
     }
-    for customer in [
-        json!("C-NOBODY"),
-        json!(DEMO),
-        json!(AIR_CUSTOMER.0),
-        Value::Null,
-    ] {
+    // CI-4 (#651): AIR_CUSTOMER left this list: a customer reserved at another branch is the organisation's
+    // customer and is identified here too (#554 K1).
+    for customer in [json!("C-NOBODY"), json!(DEMO), Value::Null] {
         let p = if customer.is_null() {
             without(&good, "customerId")
         } else {

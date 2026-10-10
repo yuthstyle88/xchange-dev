@@ -115,17 +115,6 @@ pub fn person(n: u32) -> ReserveCustomer {
     }
 }
 
-/// id, name, passport_no, nationality, birth_date, passport_expiry, mode
-type StoredRow = (
-    String,
-    String,
-    String,
-    String,
-    Option<NaiveDate>,
-    Option<NaiveDate>,
-    String,
-);
-
 pub struct TestDb {
     pub pool: PgPool,
     schema: String,
@@ -182,6 +171,11 @@ impl TestDb {
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
+        xc_customer::install_pii_keys(std::sync::Arc::new(
+            xc_kernel::pii::PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+                .expect("the test PII key parses"),
+        ))
+        .expect("one test PII key per process");
 
         Self { pool, schema }
     }
@@ -229,34 +223,6 @@ impl TestDb {
             .unwrap_or_else(|e| panic!("count {table}: {e}"))
     }
 
-    /// Every stored customer of a branch, both modes, as the fixture records them.
-    pub async fn stored(&self, branch_id: &str) -> Vec<FxStored> {
-        let rows: Vec<StoredRow> = sqlx::query_as(
-            "SELECT id, name, passport_no, nationality, birth_date, passport_expiry, mode \
-                 FROM customers WHERE branch_id = $1",
-        )
-        .bind(branch_id)
-        .fetch_all(&self.pool)
-        .await
-        .expect("read customers");
-        let mut out: Vec<FxStored> = rows
-            .into_iter()
-            .map(
-                |(id, name, passport_no, nationality, birth, expiry, mode)| FxStored {
-                    id,
-                    name,
-                    passport_no,
-                    nationality,
-                    birth_date: birth.map(|d| d.to_string()),
-                    passport_expiry: expiry.map(|d| d.to_string()),
-                    mode,
-                },
-            )
-            .collect();
-        out.sort();
-        out
-    }
-
     /// Drop the schema. Reached only by a test that passed; a failed test
     /// leaves its schema behind for inspection.
     pub async fn finish(self) {
@@ -276,156 +242,4 @@ impl TestDb {
         .expect("drop the test schema");
         admin.close().await;
     }
-}
-
-// ── the v2 fixture ──────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct Fixture {
-    pub sentences: Vec<String>,
-    pub scenarios: Vec<Scenario>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Scenario {
-    pub name: String,
-    /// Where v2's numbering stood before the first step; a key that is absent was never used.
-    pub counters: std::collections::BTreeMap<String, String>,
-    pub steps: Vec<Step>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Step {
-    pub op: String,
-    pub branch: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub passport_no: String,
-    #[serde(default)]
-    pub nationality: String,
-    #[serde(default)]
-    pub birth_date: String,
-    #[serde(default)]
-    pub passport_expiry: String,
-    /// Absent when the screen sent no mode at all.
-    #[serde(default)]
-    pub mode: String,
-    /// What v2 answered: `None` when it accepted the step.
-    pub v2_error: Option<String>,
-    pub customer_id: Option<String>,
-    pub existing: Option<bool>,
-    pub stored: Option<Vec<FxStored>>,
-    pub listed: Option<Vec<FxListed>>,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "camelCase")]
-pub struct FxStored {
-    pub id: String,
-    pub name: String,
-    pub passport_no: String,
-    pub nationality: String,
-    pub birth_date: Option<String>,
-    pub passport_expiry: Option<String>,
-    pub mode: String,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct FxListed {
-    pub id: String,
-    pub name: String,
-    pub nationality: String,
-}
-
-pub fn fixture() -> Fixture {
-    serde_json::from_str(include_str!("../fixtures/v2_customer_cases.json"))
-        .expect("tests/fixtures/v2_customer_cases.json parses")
-}
-
-/// Play one fixture scenario against a fresh schema and return every place where
-/// the service answered differently from v2.
-pub async fn play(scenario: &Scenario) -> Vec<String> {
-    let db = TestDb::start().await;
-    for (key, value) in &scenario.counters {
-        db.seed_counter(key, value.parse().expect("a counter is a whole number"))
-            .await;
-    }
-    let customers = db.customers();
-    let mut wrong = Vec::new();
-
-    for (i, step) in scenario.steps.iter().enumerate() {
-        let here = format!("'{}' step {} ({})", scenario.name, i + 1, step.op);
-        match step.op.as_str() {
-            "createBranch" => db.seed_branch(&step.branch, &step.name).await,
-            "reserve" => {
-                let cmd = ReserveCustomer {
-                    name: step.name.clone(),
-                    passport_no: step.passport_no.clone(),
-                    nationality: step.nationality.clone(),
-                    birth_date: step.birth_date.clone(),
-                    passport_expiry: step.passport_expiry.clone(),
-                    mode: step.mode.clone(),
-                };
-                let got = customers
-                    .reserve(&branch(&step.branch), cmd, at(i as i64))
-                    .await;
-                match (&step.v2_error, &got) {
-                    (None, Ok(r)) => {
-                        if Some(&r.customer_id) != step.customer_id.as_ref()
-                            || Some(r.existing) != step.existing
-                        {
-                            wrong.push(format!(
-                                "{here}: v2 answered ({:?}, existing {:?}), the service answered {r:?}",
-                                step.customer_id, step.existing
-                            ));
-                        }
-                    }
-                    (Some(want), Err(AppError::Domain(sentence))) if sentence == want => {}
-                    (want, got) => wrong.push(format!(
-                        "{here}: v2 answered {want:?}, the service answered {got:?}"
-                    )),
-                }
-                if let Some(expected) = &step.stored {
-                    let mut expected: Vec<&FxStored> = expected.iter().collect();
-                    expected.sort();
-                    let got = db.stored(&step.branch).await;
-                    if got.iter().collect::<Vec<_>>() != expected {
-                        wrong.push(format!(
-                            "{here}: stored customers are {got:?}, v2 has {expected:?}"
-                        ));
-                    }
-                }
-                if let Some(expected) = &step.listed {
-                    match customers.list_live(&branch(&step.branch)).await {
-                        Ok(list) => {
-                            let got: Vec<FxListed> = list
-                                .iter()
-                                .map(|c| FxListed {
-                                    id: c.id.clone(),
-                                    name: c.name.clone(),
-                                    nationality: c.nationality.clone(),
-                                })
-                                .collect();
-                            if &got != expected {
-                                wrong.push(format!(
-                                    "{here}: list_live is {got:?}, v2 lists {expected:?}"
-                                ));
-                            }
-                        }
-                        Err(e) => wrong.push(format!("{here}: list_live failed: {e:?}")),
-                    }
-                }
-            }
-            other => {
-                panic!("{here}: the fixture has an operation this test does not know: {other}")
-            }
-        }
-    }
-
-    if wrong.is_empty() {
-        db.finish().await;
-    }
-    wrong
 }

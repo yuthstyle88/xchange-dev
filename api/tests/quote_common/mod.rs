@@ -356,11 +356,11 @@ impl TestDb {
         .unwrap_or_else(|| panic!("{branch} has a current publication"))
     }
 
-    /// A LIVE customer of `branch`.
+    /// A LIVE customer of `branch`'s organisation (CI-4 #651: a customer belongs to the organisation).
     pub async fn customer(&self, id: &str, branch: &str) {
         self.exec(&format!(
-            "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-             VALUES ('{id}', '{branch}', 'Test Customer', 'P{id}', 'TH', 'LIVE', now())"
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT '{id}', organization_id, '{id}', 'Test Customer', 'LIVE', now() FROM branches WHERE id = '{branch}'"
         ))
         .await;
     }

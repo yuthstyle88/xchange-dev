@@ -661,13 +661,12 @@ async fn publish_line(db: &TestDb, branch_id: &str, currency: &str, to: &str) ->
 async fn seed_customer(db: &TestDb, ports: &FakePorts, id: &str, branch_id: &str, mode: &str) {
     let name = format!("ลูกค้า {id}");
     sqlx::query(
-        "INSERT INTO customers (id, branch_id, name, passport_no, nationality, mode, created_at) \
-         VALUES ($1, $2, $3, $4, 'THA', $5, $6)",
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT $1, b.organization_id, $1, $3, $4, $5 FROM branches b WHERE b.id = $2",
     )
     .bind(id)
     .bind(branch_id)
     .bind(&name)
-    .bind(format!("P-{id}"))
     .bind(mode)
     .bind(at(0))
     .execute(&db.pool)

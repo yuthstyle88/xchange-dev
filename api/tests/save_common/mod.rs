@@ -251,6 +251,7 @@ impl Shop {
         for opener in ["test"] {
             seed_opener(&pool, opener).await;
         }
+        install_test_pii_keys();
 
         let scratch = std::env::temp_dir().join(format!("xc-{schema}"));
         let _ = std::fs::remove_dir_all(&scratch);
@@ -564,7 +565,7 @@ pub struct FxAfter {
     pub counters: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub struct FxCustomer {
     pub id: String,
@@ -666,4 +667,155 @@ pub async fn seed_opener(pool: &PgPool, id: &str) {
     .execute(pool)
     .await
     .expect("seed an opener's user");
+}
+
+/// CI-4 (#651): the PII keys every test process installs (U3: one `key_id:base64(32 bytes)` line). A test key,
+/// never a real one. Added by the ticket author in CI-4's up-front commit.
+pub const TEST_PII_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
+pub fn install_test_pii_keys() -> std::sync::Arc<xc_kernel::pii::PiiKeys> {
+    let keys = std::sync::Arc::new(
+        xc_kernel::pii::PiiKeys::parse(TEST_PII_KEYS).expect("the test PII key parses"),
+    );
+    xc_customer::install_pii_keys(keys.clone()).expect("one test PII key per process");
+    keys
+}
+
+/// The decrypted payload of a customer's ACTIVE passport identity: `{number, nationality, birthDate, expiry,
+/// nameOnDocument}` (#554 §4.1), read the way only a test may.
+pub async fn passport_payload(pool: &sqlx::PgPool, customer_id: &str) -> serde_json::Value {
+    let (bytes, key_id): (Vec<u8>, String) = sqlx::query_as(
+        "SELECT encrypted_value, key_id FROM customer_identities \
+         WHERE customer_id = $1 AND type = 'PASSPORT' AND status = 'ACTIVE'",
+    )
+    .bind(customer_id)
+    .fetch_one(pool)
+    .await
+    .expect("the customer's passport identity");
+    let cipher = xc_kernel::pii::PiiCipher::new(install_test_pii_keys());
+    let plain = cipher
+        .decrypt(
+            format!("{customer_id}PASSPORT").as_bytes(),
+            &xc_kernel::pii::Sealed { key_id, bytes },
+        )
+        .expect("decrypt with the test key");
+    serde_json::from_slice(&plain).expect("the passport payload is JSON")
+}
+
+// ── decided customer differences in the save scenarios (CI-4 #651) ───────────
+
+/// A scenario `reserve` (1-based step) that v2 answered with a new customer and v3 answers with the customer of
+/// an earlier step of the same scenario. Lane controller's ruling, 2026-10-09: these five, each with its cause;
+/// with the three replay uses (compat_common::SAME_CUSTOMER_AS) the cap is eight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SameScenarioCustomer {
+    pub scenario: &'static str,
+    pub step: usize,
+    pub same_as: usize,
+    pub reason: &'static str,
+}
+
+pub const SAME_SCENARIO_CUSTOMER: [SameScenarioCustomer; 5] = [
+    SameScenarioCustomer {
+        scenario: "numbers follow one another through a day, live and demo apart",
+        step: 4,
+        same_as: 3,
+        reason: "owner 2026-10-09: DEMO shares LIVE",
+    },
+    SameScenarioCustomer {
+        scenario: "the same submission live and demo is two exchanges",
+        step: 4,
+        same_as: 3,
+        reason: "owner 2026-10-09: DEMO shares LIVE",
+    },
+    SameScenarioCustomer {
+        scenario: "the number is counted for the whole shop, not per branch",
+        step: 7,
+        same_as: 3,
+        reason: "K1 (customer per company)",
+    },
+    SameScenarioCustomer {
+        scenario: "the same submission in two branches is two exchanges",
+        step: 7,
+        same_as: 3,
+        reason: "K1 (customer per company)",
+    },
+    SameScenarioCustomer {
+        scenario: "a rate of another branch does not count",
+        step: 7,
+        same_as: 3,
+        reason: "K1 (customer per company)",
+    },
+];
+
+/// The decided difference of this scenario step, if any. A use without a reason panics.
+pub fn same_scenario_customer(scenario: &str, step: usize) -> Option<SameScenarioCustomer> {
+    let found = SAME_SCENARIO_CUSTOMER
+        .iter()
+        .find(|s| s.scenario == scenario && s.step == step)
+        .copied();
+    if let Some(s) = found {
+        assert!(
+            !s.reason.trim().is_empty(),
+            "{scenario} step {step}: needs its reason"
+        );
+    }
+    found
+}
+
+/// Holds a decided step strictly: v3 answered the earlier step's customer and said it already existed.
+/// Panics, naming the step, otherwise.
+pub fn hold_same_scenario_customer(got: &str, existing: bool, earlier: &str, label: &str) {
+    assert_eq!(got, earlier, "{label}: not the earlier step's customer");
+    assert!(
+        existing,
+        "{label}: v3 must answer that the customer already existed"
+    );
+}
+
+/// Holds the receipt address of a save for an aliased customer: `/files/receipt-<SHA-256 of the stored receipt>`.
+pub fn hold_receipt_hash(url: &str, stored_receipt: &[u8], label: &str) {
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        url,
+        format!("/files/receipt-{:x}", Sha256::digest(stored_receipt)),
+        "{label}: the receipt URL is not the hash of the stored receipt"
+    );
+}
+
+/// CI-4 (#651): one accepted save of a scenario, in order: the customer it was written to and what it wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrittenSave {
+    pub customer: String,
+    pub document_ref: String,
+    pub name: String,
+    pub birth_date: Option<String>,
+    pub passport_expiry: Option<String>,
+}
+
+/// CI-4 (#651), the `after.customers` of a scenario with a decided customer difference (lane controller
+/// 2026-10-09): every aliased entry is folded into its earlier customer, whose name, birth date, expiry and
+/// last document become those of the newest save to that customer; its mode stays its own. Every other entry
+/// is v2's, unchanged.
+pub fn fold_aliased_customers(
+    after: &[FxCustomer],
+    aliases: &BTreeMap<String, String>,
+    saves: &[WrittenSave],
+) -> Vec<FxCustomer> {
+    after
+        .iter()
+        .filter(|c| !aliases.contains_key(&c.id))
+        .map(|c| {
+            let mut c = c.clone();
+            if aliases.values().any(|a| a == &c.id)
+                && let Some(newest) = saves.iter().rev().find(|s| s.customer == c.id)
+            {
+                c.name = newest.name.clone();
+                c.birth_date = newest.birth_date.clone();
+                c.passport_expiry = newest.passport_expiry.clone();
+                c.last_document_ref = Some(newest.document_ref.clone());
+            }
+            c
+        })
+        .collect()
 }

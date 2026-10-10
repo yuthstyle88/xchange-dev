@@ -267,6 +267,7 @@ async fn connect_fails_soon_when_nothing_listens() {
 async fn the_server_still_refuses_to_start_without_a_database() {
     let settings = settings_without_a_database(closed_port());
     let started = Instant::now();
+    common::install_test_pii_keys();
     let result = Application::build(settings).await;
     assert!(result.is_err(), "the server started without a database");
     assert!(
@@ -281,6 +282,7 @@ async fn the_server_migrates_binds_and_serves_the_route_table() {
     let db = ScratchDatabase::create("t1b_server").await;
     let inspect = db.inspect().await;
 
+    common::install_test_pii_keys();
     let application = Application::build(db.settings())
         .await
         .expect("start on an empty, reachable database");

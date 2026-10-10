@@ -56,6 +56,8 @@ use sqlx::{AssertSqlSafe, PgPool};
 use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 const MIGRATION_5: i64 = 20261010125000;
+/// CI-4 (#651) M1, `20261019100000_customers_org.sql`.
+const CUSTOMERS_ORG: i64 = 20261019100000;
 const MUST_FINISH: Duration = Duration::from_secs(30);
 
 /// §8 migration 5, "Count before deploy", verbatim.
@@ -427,9 +429,13 @@ async fn migration_5_converts_stored_jpy_and_krw_rates_to_their_unit_size() {
         "the count before deploy sees the per-1 JPY/KRW rows"
     );
 
-    all.run(&db.pool)
+    // CI-4 (#651): up to the customer migration, which refuses a database with customers (U4: recreate, do not
+    // convert); what follows reads only the rate columns migration 5 converted
+    before(CUSTOMERS_ORG)
         .await
-        .expect("apply migration 5 and the rest");
+        .run(&db.pool)
+        .await
+        .expect("apply migration 5 and the rest before the customer migration");
 
     assert_eq!(
         count_before_deploy(&db.pool).await,
