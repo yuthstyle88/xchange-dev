@@ -127,6 +127,9 @@ and M04 respectively and are not on A01.
   - `WalkIn`: none of the above.
   - A transaction that is both booked and referred counts under `Booking` for the filter and `Referred` is a separate
     attribute; the filter matches either (a referred booking appears under both choices).
+  - `Channel` and its per-value SQL condition live in **one file**, `api/src/application/executive/channel.rs` (EX-3);
+    the executive facts and the drill-down targets `admin_transactions` and `admin_overview` (EX-11) call it rather than
+    repeating the booking/kiosk/referral conditions (lane controller ruling G1, #1071 issuecomment-6098404213).
 
 ### 4.2 The screen
 
@@ -155,11 +158,20 @@ builds its own list. **The drill-down passes only the filters its target accepts
 ones it dropped (`dropped: ["currency", "channel"]`), so the screen can say "ตัวกรองนี้ยังไม่ส่งต่อ". EX-11 adds the
 missing filters to the targets, after the tickets that own those files.
 
+`dropped` is computed, not listed (ruling G2, #1071 issuecomment-6098404213): each target's DTO file declares
+`pub const DRILLDOWN_KEYS: &[&str]` (the filter keys it accepts), and EX-3 sends as `dropped` the A01 keys the target's
+`DRILLDOWN_KEYS` lacks. The lookup is `accepted_keys(view)` in its own small file,
+`api/src/application/executive/drilldown.rs` (EX-3), one match arm per target, seeded with the "Passed" column below.
+Each EX-11 child declares its target's constant in its own DTO file and swaps its arm in `drilldown.rs` to read that
+constant. **Every EX-11 child lists `drilldown.rs` in its `## File scope`**, so the queue runs them one after another on
+that file (a one-arm edit each; they are already staggered by different TX-8 dependencies). They do not touch EX-3's
+other files.
+
 | From | To | Passed | Dropped until EX-11 |
 |---|---|---|---|
 | ยอดซื้อ / ยอดขาย / a branch's ยอด | `admin_transactions` | `from`, `to`, `type`, `branch` (+ `status = COMPLETED` after TX-8); `AdminTransactionsFilter` = `from, to, q, type, status, staff, staff_q` (`dto/v3/admin_transactions.rs:32`) | `currency`, `channel` |
 | ลูกค้าซ้ำ | `admin_customers` (organisation-wide, `customer-identity-consent.md:163`); `AdminCustomersFilter` = `q` only (`dto/v3/admin_customers.rs:32-36`) | — | `repeat`, `from`, `to` |
-| เรทรออนุมัติ | `approval_requests` | `branch` | `type` (the view lists every type) |
+| เรทรออนุมัติ | `approval_requests` | `branch`, `type = RATE_PUBLICATION` (`ApprovalRequestsFilter.type`, `dto/v3/approval_requests.rs:10-13`, RE-1 `f04fd32c`; applied at `views/approval_requests.rs:57-82`) | none |
 | เงินนับไม่ตรง | `cash_counts` (CA-8) and F01 for the branch-day | as CA-8 defines its filter (`shift`, `status`) | difference-only |
 | สต็อกต่ำ / เงินคงเหลือ | `admin_cash` | `branch` | `currency` |
 | a branch row | `admin_overview` (#461) | `branch`, `from`, `to` | `currency`, `channel` |
@@ -348,6 +360,7 @@ classDiagram
   class ExecutiveOverviewView { <<api/src/presentation/http/v3/views/executive_overview.rs>> }
   class ExecutiveOverviewService { <<api/src/application/executive/overview.rs>> +overview(scope, filter, changed) }
   class MetricDefinitions { <<api/src/application/executive/metrics.rs>> Metric; MetricUnavailable; definitions() }
+  class Channel { <<api/src/application/executive/channel.rs (EX-3)>> WalkIn; Booking; Kiosk; Referred; sql_condition(alias) }
   class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm() }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
@@ -396,6 +409,7 @@ classDiagram
   BookingFacts ..|> ExchangeFacts : booking conversion part
   BranchAlertSettingsView --> AlertSettingsRepository
   ReconciliationCertify --> ReconciliationService
+  WideTransactionFacts --> Channel
 ```
 
 Web: `web/src/screens/admin/executive/**` (A01) and `web/src/screens/admin/reconciliation/**` (F01), each an admin menu
@@ -417,6 +431,7 @@ shared route or menu file is edited.
 | #555 (booking design) | Blueprint booking states and appointment day | booking conversion |
 | Broker-Platform (other lane) | commission summary endpoint | `BrokerCommissionSource` |
 | AP-1 (merged) | approval core | F01 reversal decisions |
+| EX-3 | `Channel` + its SQL condition (`application/executive/channel.rs`) | `WideTransactionFacts`, EX-11 `admin_transactions` and `admin_overview` |
 | #868 | the shared LIVE CSV builder | exports (D-8) |
 | EX-3 | `ExchangeFacts` (trait in `application/executive/ports.rs`; today's impl `WideTransactionFacts`) | FN-1 `ReconciliationService` (F01 "today's parts: transactions") |
 | EX-2 | `v3/mod.rs` module lines and the empty `v3/org_view.rs`, `v3/export_gate.rs` | EX-3, EX-9 |
@@ -449,7 +464,7 @@ Ordered so the first ones start **now**, without the TX chain. Each owns disjoin
 |---|---|---|---|
 | EX-1 | `ReportsExport`, `AlertSettingsSave`; `BranchScope` (FINANCE's `ApprovalsDecide` is #874's) | `xc-auth/src/domain/access/permission.rs`, `role_permissions.rs`, `branch_scope.rs` (new) | **CI-6 #653** (owns `permission.rs`, `role_permissions.rs`), **#874** (also `role_permissions.rs`) and **SB-1 #837** (owns `access/mod.rs`, which gains `pub mod branch_scope;` — or SB-1's PR adds that line) |
 | EX-2 | migration `20261031130000`; `changed_at` written by `BranchTx`; **the module roots** | `api/migrations/20261031130000_executive_finance.sql`, `xc-kernel/src/branch_tx.rs` (the two `UPDATE branch_versions` lines, `:86`, `:181`), `api/src/application/mod.rs` and `api/src/infrastructure/mod.rs` (the `pub mod executive;` / `pub mod finance;` lines), the four empty roots `application/{executive,finance}/mod.rs`, `infrastructure/{executive,finance}/mod.rs`, and `api/src/presentation/http/v3/mod.rs` (the `pub mod org_view;` / `pub mod export_gate;` lines) with the two empty files `v3/org_view.rs` and `v3/export_gate.rs` that EX-3 and EX-9 then fill | now |
-| EX-3 | `OrgView` seam; `executive_overview` with today's sources (`WideTransactionFacts`, `ShiftBalanceCashFacts`, `PgAlertFacts` for rates pending and stale data); metric registry; unavailable reasons; the drill-down `dropped` list | `v3/org_view.rs`, `views/executive_overview.rs`, `dto/v3/executive_overview.rs`, `application/executive/{mod,overview,metrics,ports}.rs`, `infrastructure/executive/{mod,wide_transaction_facts,shift_balance_cash_facts,alert_facts}.rs`, the generated `.ts` | EX-1, EX-2 |
+| EX-3 | `OrgView` seam; `executive_overview` with today's sources (`WideTransactionFacts`, `ShiftBalanceCashFacts`, `PgAlertFacts` for rates pending and stale data); metric registry; unavailable reasons; `Channel`; the drill-down `dropped` computation (§4.4) | `v3/org_view.rs`, `views/executive_overview.rs`, `dto/v3/executive_overview.rs`, `application/executive/{mod,overview,metrics,ports,channel,drilldown}.rs`, `infrastructure/executive/{mod,wide_transaction_facts,shift_balance_cash_facts,alert_facts}.rs`, the generated `.ts` | EX-1, EX-2 |
 | EX-4 | A01 screen | `web/src/screens/admin/executive/**` | EX-3 |
 | EX-5 | thresholds: repository, save command (§6.1), settings view and form | `infrastructure/executive/alert_settings_repository.rs` (+ its `pub mod` line in `infrastructure/executive/mod.rs`), `commands/branch_alert_settings_save.rs`, `views/branch_alert_settings.rs`, `dto/v3/branch_alert_settings.rs`, `web/src/screens/admin/alert-settings/**` | **EX-3** (owns `infrastructure/executive/mod.rs` until it merges), EX-1 |
 | FN-1 | F01 sheet (today's parts: transactions, exceptions) + certify (§5.2) | `views/finance_reconciliation.rs`, `commands/reconciliation_certify.rs`, `application/finance/{mod,reconciliation}.rs`, `infrastructure/finance/{mod,certification_repository}.rs`, `dto/v3/finance_reconciliation.rs`, `web/src/screens/admin/reconciliation/**` | EX-1, EX-2, **EX-3** (provides `ExchangeFacts`, which `ReconciliationService` uses for today's transactions) |
@@ -459,7 +474,7 @@ Ordered so the first ones start **now**, without the TX chain. Each owns disjoin
 | EX-8 | booking conversion | `infrastructure/executive/booking_facts.rs` | EX-3, #555's booking design and tickets |
 | EX-9 | `ExportGate` + the export buttons honour `ReportsExport` | `v3/export_gate.rs`, the one call in `view.rs`, the three screens' export buttons | EX-2, OR-4b #767 (owns `view.rs`), #868 (merged; the three screens) |
 | EX-10 | `BrokerCommissionSource` | `infrastructure/executive/broker_commission.rs` | EX-3, the Broker lane's endpoint (§8.3) |
-| EX-11 | the drill-down targets accept A01's filters: `currency`, `channel` on `admin_transactions` and `admin_overview`; `repeat`, `from`, `to` on `admin_customers`; `currency` on `admin_cash`; `type` on `approval_requests` | those views' DTO and view files | the TX-8 children that own `admin_transactions`, `admin_overview`, `admin_customers` and `admin_cash` (`quote-transaction.md:680`), and LG-6 for `admin_cash` |
+| EX-11 | the drill-down targets accept A01's filters: `currency`, `channel` on `admin_transactions` and `admin_overview`; `repeat`, `from`, `to` on `admin_customers`; `currency` on `admin_cash` (`approval_requests` already takes `type` since RE-1, so it needs no EX-11 child); each child declares `DRILLDOWN_KEYS` in its target's DTO file and swaps its arm in `application/executive/drilldown.rs` (§4.4) | those views' DTO and view files, and `application/executive/drilldown.rs` (one arm; the children serialize on it) | the TX-8 children that own `admin_transactions`, `admin_overview`, `admin_customers` and `admin_cash` (`quote-transaction.md:680`), and LG-6 for `admin_cash` |
 
 EX-6, EX-7, EX-8 and EX-10 each add one `pub mod` line to `infrastructure/executive/mod.rs` and one wiring line to
 `application/executive/overview.rs`. Their start conditions are far apart; any two that become ready together run
