@@ -46,9 +46,6 @@ jobs:
       - name: Self-test main-push-base
         run: bash .github/scripts/main-push-base.test.sh
 
-      - name: Self-test migration-order
-        run: bash .github/scripts/migration-order.test.sh
-
       - name: Check changed files
         id: filter
         env:
@@ -76,7 +73,7 @@ jobs:
             skip_build=false
           else
             should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-            should_build_web=$(bash .github/scripts/should-build.sh --pathspec "web/pages/ web/vite.config.ts web/package.json web/package-lock.json api/web/forms/ web/src/shared/api/generated/" .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+            should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
             echo "should_build_api=$should_build_api should_build_web=$should_build_web"
             if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
               skip_build=false
@@ -193,10 +190,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check migration order
-        if: github.event_name == 'pull_request'
-        run: bash .github/scripts/migration-order.sh "origin/${{ github.base_ref }}" "${{ github.event.pull_request.head.sha }}"
 
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh

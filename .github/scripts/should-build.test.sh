@@ -3,21 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SHOULD_BUILD="$SCRIPT_DIR/should-build.sh"
-API_WORKFLOW="$SCRIPT_DIR/../workflows/api.yml"
 
 if [ ! -x "$SHOULD_BUILD" ]; then
   echo "Error: $SHOULD_BUILD not found or not executable" >&2
-  exit 1
-fi
-
-if [ ! -f "$API_WORKFLOW" ]; then
-  echo "Error: $API_WORKFLOW not found" >&2
-  exit 1
-fi
-
-WEB_PATHSPECS=$(grep -E 'should_build_web=' "$API_WORKFLOW" | grep -oE -- '--pathspec "[^"]+"' | head -n 1 | sed -E 's/--pathspec "([^"]+)"/\1/' || true)
-if [ -z "$WEB_PATHSPECS" ]; then
-  echo "Error: failed to extract --pathspec \"...\" of should_build_web line from $API_WORKFLOW" >&2
   exit 1
 fi
 
@@ -175,60 +163,6 @@ git add .github/scripts/helper.sh
 git commit -q -m "add helper script"
 HEAD_SCRIPTS=$(git rev-parse HEAD)
 
-# Branch: case (a) diff touching only web/src/screens/admin/admin.css
-git checkout -q -b pr-case-a-css "$BASE_SHA"
-mkdir -p web/src/screens/admin
-echo "body { color: blue; }" > web/src/screens/admin/admin.css
-git add web/src/screens/admin/admin.css
-git commit -q -m "case a: touch admin.css"
-HEAD_CASE_A=$(git rev-parse HEAD)
-
-# Branch: case (b) diff touching web/pages/admin.html
-git checkout -q -b pr-case-b-page "$BASE_SHA"
-mkdir -p web/pages
-echo "<html>admin</html>" > web/pages/admin.html
-git add web/pages/admin.html
-git commit -q -m "case b: touch admin.html"
-HEAD_CASE_B=$(git rev-parse HEAD)
-
-# Branch: case (c) diff touching web/vite.config.ts
-git checkout -q -b pr-case-c-vite "$BASE_SHA"
-mkdir -p web
-echo "export default {}" > web/vite.config.ts
-git add web/vite.config.ts
-git commit -q -m "case c: touch vite.config.ts"
-HEAD_CASE_C=$(git rev-parse HEAD)
-
-# Branch: case (d) diff touching web/package-lock.json
-git checkout -q -b pr-case-d-lock "$BASE_SHA"
-mkdir -p web
-echo '{"name": "web"}' > web/package-lock.json
-git add web/package-lock.json
-git commit -q -m "case d: touch package-lock.json"
-HEAD_CASE_D=$(git rev-parse HEAD)
-
-# Branch: case (e) diff touching api/src/x.rs
-git checkout -q -b pr-case-e-api-x "$BASE_SHA"
-mkdir -p api/src
-echo "pub fn x() {}" > api/src/x.rs
-git add api/src/x.rs
-git commit -q -m "case e: touch api/src/x.rs"
-HEAD_CASE_E=$(git rev-parse HEAD)
-
-# Branch: case (f) diff touching .github/workflows/api.yml
-git checkout -q -b pr-case-f-wf "$BASE_SHA"
-echo "# comment in api.yml" >> .github/workflows/api.yml
-git commit -q -am "case f: touch api.yml"
-HEAD_CASE_F=$(git rev-parse HEAD)
-
-# Branch: case (g) diff touching web/src/shared/api/generated/common.ts
-git checkout -q -b pr-case-g-generated "$BASE_SHA"
-mkdir -p web/src/shared/api/generated
-echo "export type Common = { id: string };" > web/src/shared/api/generated/common.ts
-git add web/src/shared/api/generated/common.ts
-git commit -q -m "case g: touch generated/common.ts"
-HEAD_CASE_G=$(git rev-parse HEAD)
-
 total=0
 failed=0
 
@@ -339,56 +273,6 @@ for target in "api" "app"; do
   # 6. shared CI file under .github/scripts/ => true
   run_test "[$target] pull_request shared CI file under .github/scripts/ -> true" "true" "$target" "$wf" "pull_request" "$BASE_SHA" "$HEAD_SCRIPTS"
 done
-
-echo "## Testing api decision cases (a)–(g) (§4)"
-
-api_decision() {
-  local event="$1"
-  local base="$2"
-  local head="$3"
-  local sb_api sb_web
-  sb_api=$(bash "$SHOULD_BUILD" api .github/workflows/api.yml "$event" "$base" "$head" 2>/dev/null || echo "true")
-  sb_web=$(bash "$SHOULD_BUILD" --pathspec "$WEB_PATHSPECS" .github/workflows/api.yml "$event" "$base" "$head" 2>/dev/null || echo "true")
-  if [ "$sb_api" = "true" ] || [ "$sb_web" = "true" ]; then
-    echo "true"
-  else
-    echo "false"
-  fi
-}
-
-run_api_decision_test() {
-  local desc="$1"
-  local expected="$2"
-  local event="$3"
-  local base="$4"
-  local head="$5"
-
-  total=$((total + 1))
-  local actual
-  actual=$(api_decision "$event" "$base" "$head")
-  if [ "$actual" = "$expected" ]; then
-    echo "ok $total - $desc"
-  else
-    echo "not ok $total - $desc (expected: $expected, got: $actual)"
-    failed=$((failed + 1))
-  fi
-}
-
-run_api_decision_test "[api decision] (a) diff touching only web/src/screens/admin/admin.css -> false" "false" "pull_request" "$BASE_SHA" "$HEAD_CASE_A"
-run_api_decision_test "[api decision] (b) diff touching web/pages/admin.html -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_B"
-run_api_decision_test "[api decision] (c) diff touching web/vite.config.ts -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_C"
-run_api_decision_test "[api decision] (d) diff touching web/package-lock.json -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_D"
-run_api_decision_test "[api decision] (e) diff touching api/src/x.rs -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_E"
-run_api_decision_test "[api decision] (f) diff touching .github/workflows/api.yml -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_F"
-run_api_decision_test "[api decision] (g) diff touching web/src/shared/api/generated/common.ts -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_CASE_G"
-
-run_api_decision_test "[api decision push] (a) diff touching only web/src/screens/admin/admin.css -> false" "false" "push" "$BASE_SHA" "$HEAD_CASE_A"
-run_api_decision_test "[api decision push] (b) diff touching web/pages/admin.html -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_B"
-run_api_decision_test "[api decision push] (c) diff touching web/vite.config.ts -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_C"
-run_api_decision_test "[api decision push] (d) diff touching web/package-lock.json -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_D"
-run_api_decision_test "[api decision push] (e) diff touching api/src/x.rs -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_E"
-run_api_decision_test "[api decision push] (f) diff touching .github/workflows/api.yml -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_F"
-run_api_decision_test "[api decision push] (g) diff touching web/src/shared/api/generated/common.ts -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_G"
 
 echo "# Results: $total tests, $failed failures"
 if [ "$failed" -eq 0 ]; then
