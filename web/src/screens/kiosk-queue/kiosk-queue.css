@@ -1,0 +1,11 @@
+/* v2 kiosk-queue.html:1 <h1> in main.queue-page, no rule: browser h1 = 2em, margin .67em */
+.xc-shell-main .queue-page > h2 {
+  font-size: 2em;
+  margin: 0.67em 0;
+}
+
+/* v2 kiosk-queue.html:1: main.queue-page sits in <body> with the browser's 8px margin (queue-panel.css has no body rule) */
+.xc-shell-main:has(> .queue-page) {
+  max-width: none;
+  padding: 0 8px;
+}
