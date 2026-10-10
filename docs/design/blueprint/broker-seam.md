@@ -781,7 +781,7 @@ pub const ROWS: &[AreaRow] = &[
 | RA-3 #981 | `areas/referral.rs` |
 | APP-3 #993 | `areas/notifications.rs` |
 | APP-4 #994 | `areas/customer_app.rs` |
-| APP-5 #995 | `areas/public_branches.rs` |
+| APP-5 #995 | none: the public routes need no policy row (#995 ruling) |
 | APP-6 #997 | `areas/assistant.rs` |
 | APP-11 #1003 | `areas/customer_history.rs` |
 | receipt route #1012 | `areas/receipts.rs` |

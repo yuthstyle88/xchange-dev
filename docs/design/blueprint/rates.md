@@ -451,7 +451,7 @@ Writes go through the command seam (§6), which serves the route each command de
 | `GET /api/v3/views/rate_policy` | view | OWNER, RATES | the current policy version |
 | `GET /api/v3/views/approval_requests` | paged view (A06), filters `status`, `type` | OWNER | requests with proposer, values before and after, reason |
 
-- **The public display.** `GET /api/public/branches/:code/rates` (§10, P01) reads the same `PublishedRates` port with
+- **The public display.** `GET /api/public/orgs/:org/branches/:code/rates` (§10, P01; the org code is in the path because branch codes are unique only per organisation, #995) reads the same `PublishedRates` port with
   the same shape. Its route belongs to the storefront design.
 - **Error codes.** They are §10's, written in v3's camelCase:
   - `validationFailed`

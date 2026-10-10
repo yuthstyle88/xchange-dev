@@ -48,7 +48,7 @@ What is already decided elsewhere and is not asked again:
 | `access::Actor` carries `customer_id` | `api/crates/xc-auth/src/domain/access/actor.rs:6-24` |
 | `Role::Customer` has `CustomerSelf` and `SignedIn` only | `api/crates/xc-auth/src/domain/access/role_permissions.rs:118` |
 | The token verifier exists (CI-2) | `api/crates/xc-auth/src/domain/token/token_verifier.rs` |
-| Publications are the rate source; no public route serves them yet | `api/crates/xc-rate/src/domain/publication/published_rates.rs`; `rates.md:454` names `GET /api/public/branches/:code/rates` without an owner; `git grep -n "api/public" origin/main -- api/src` is empty |
+| Publications are the rate source; no public route serves them yet | `api/crates/xc-rate/src/domain/publication/published_rates.rs`; `rates.md:454` named a public rates route without an owner (now `GET /api/public/orgs/:org/branches/:code/rates`, owned by P16 here); `git grep -n "api/public" origin/main -- api/src` is empty |
 | Transactions carry `customer_id`; quotes may | `20261007190000_transactions.sql:11`; `20261014100000_quotes.sql:8` |
 | Writes go through `CommandAction` with `Idempotency-Key` | `api/src/presentation/http/v3/command.rs`; `rates.md` §6 |
 | No planner draft, notification, delivery or assistant table or type; no `/app` page | `git grep -n -i -E "planner_draft|notification_deliver|assistant_(conversation|message)" origin/main -- api/migrations api/crates` is empty (a bare `planner|assistant` also matches one test comment, `xc-shift/tests/custody_pages_test.rs:1038`, which is not a table or type); `ls web/pages` has no `app*.html` |
@@ -72,8 +72,8 @@ What is already decided elsewhere and is not asked again:
 | P12 | **Redaction is one core function**: `redact_text` in `xc-kernel/src/pii/text_redactor.rs` masks phone numbers, e-mail addresses, passport-like and national-id-like tokens, card-like digit runs and OTP-like 4–8 digit codes before a message is stored or logged. | §16 *"ไม่รับ credentials/เอกสารใน chat"*, ♻️ |
 | P13 | **Retention is data** (`customer-identity-consent.md` U2): conversations use data type `ASSISTANT_CONVERSATION` and drafts use `PLANNER_DRAFT` in `retention_policies`. A type with no period is never purged. A draft also has its own `expires_at`: `created_at` + the organisation's draft lifetime, 7 days as seeded (owner C4). | §16 *"retention สั้นตาม policy"*, U2 |
 | P14 | **The customer never moves a booking, ticket or transaction to a done state.** No app command completes, collects, calls or advances anything. The QR on the pass is #555's token, never PII. | §17 row 3, §18 *"ลูกค้าทำ completed/collect ทาง API ไม่ได้"* |
-| P15 | **Polling sends only changes** (fleet rule 🔁). `my_notifications`, `my_journey` parts and `public_branches` take `since` and answer `{changed:false}` when the version is unchanged (`notifications` per recipient: max `id` seq; branch views: `branch_versions`). | fleet rule |
-| P16 | **One public read route for a branch's rates**, owned here: `GET /api/public/branches/{code}/rates`, the §10 shape, read through `PublishedRates::current` and `Freshness`. P01's board uses the same route. | §10, `rates.md:454` |
+| P15 | **Polling sends only changes** (fleet rule 🔁). `my_notifications` and `my_journey` parts take `since` and answer `{changed:false}` when the version is unchanged (`notifications` per recipient: max `id` seq). The public branch list (`GET /api/public/orgs/{org}/branches`) uses an ETag of (listed count, sum(version), max(branches.created_at)) and answers 304 when unchanged (#995 ruling). | fleet rule |
+| P16 | **One public read route for a branch's rates**, owned here: `GET /api/public/orgs/{org}/branches/{code}/rates` (org code in the path, lane controller ruling on #995, 2026-10-10), the §10 shape, read through `PublishedRates::current` and `Freshness`. P01's board uses the same route. | §10, `rates.md:454` |
 
 ## 3. Who does what
 
@@ -202,7 +202,6 @@ Commands are `CommandAction`s (`rates.md` §6) with `Idempotency-Key`. §10 name
 |---|---|---|
 | `notifications.rs` | `notificationRead`, `notificationReadAll`, view `my_notifications` | APP-3 |
 | `customer_app.rs` | `plannerDraftSave`, `plannerDraftDelete`, compute `planner_preview`, view `my_planner_drafts`, `appSettingsSave` (ADMIN) | APP-4 |
-| `public_branches.rs` | view `public_branches` and the public rates route, each one row for **anyone** (no actor needed, like today's kiosk `rates` row, `org-roles-branches.md:243`). The rates route is a PL-0 `system/` route file, but it is **not** `EntryPath::System` (that is for service callers): its handler looks up its row in this file and serves without a session | APP-5 |
 | `assistant.rs` | `assistantAsk`, view `my_assistant_conversation` | APP-6 |
 | `customer_history.rs` | view `my_transactions` | APP-11 |
 
@@ -213,8 +212,9 @@ Commands are `CommandAction`s (`rates.md` §6) with `Idempotency-Key`. §10 name
 | compute `planner_preview` (no write) | `POST /api/v3/compute/planner_preview` | same, or public with an inline draft |
 | `assistantAsk` | `POST /api/app/assistant/messages` | `CustomerSelf` or app session |
 | `notificationRead` / `notificationReadAll` | `POST /api/app/notifications/{id}/read` · `/read-all` | `SignedIn` (own rows) |
-| view `public_branches` (C08: code, name, address, hours, timezone, booking flag, service status) | `/api/v3/views/public_branches` | public |
-| public route: a branch's rates (C01, P01) | `GET /api/public/branches/{code}/rates` | public |
+| public branch list (C08: code, name, address, hours, timezone, booking flag, service status) | `GET /api/public/orgs/{org}/branches` (not a v3 view; #995 ruling) | public by construction |
+| public route: a branch's rates (C01, P01) | `GET /api/public/orgs/{org}/branches/{code}/rates` | public by construction (no policy row, #995 ruling) |
+| public route: the organisation's branch list (C08) | `GET /api/public/orgs/{org}/branches`, ETag = (listed count, sum(version), max(branches.created_at)), 304 when unchanged | public by construction (no policy row, #995 ruling) |
 | view `my_planner_drafts` | `/api/v3/views/my_planner_drafts` | `CustomerSelf` or app session |
 | `appSettingsSave` (`plannerDraftTtlSeconds`, C4; upsert of the organisation's row) | `PUT /api/app-settings` | ADMIN |
 | view `my_transactions` (C04: completed and reversed, branch, receipt ref) | `/api/v3/views/my_transactions` | `CustomerSelf` |
@@ -231,11 +231,11 @@ views and QR.
 | Screen | Page | Folder (one ticket each) | Reads |
 |---|---|---|---|
 | shell: bottom navigation, sign-in state, language switch | — | `web/src/screens/customer/_shell/` | `my_profile`, `LangSwitch` (LN-1) |
-| C01 home `/app` | `web/pages/app-home.html` | `web/src/screens/customer/home/` | public rates, `public_branches`, `planner_preview`, `plannerDraftSave` |
+| C01 home `/app` | `web/pages/app-home.html` | `web/src/screens/customer/home/` | public rates, the public branch list, `planner_preview`, `plannerDraftSave` |
 | C04 history `/app/history` | `web/pages/app-history.html` | `web/src/screens/customer/history/` | `my_transactions`, receipt |
-| C08 branches `/app/branches` | `web/pages/app-branches.html` | `web/src/screens/customer/branches/` | `public_branches` (+ #555 slots once designed) |
+| C08 branches `/app/branches` | `web/pages/app-branches.html` | `web/src/screens/customer/branches/` | the public branch list (+ #555 slots once designed) |
 | C09 journey `/app/journey` | `web/pages/app-journey.html` | `web/src/screens/customer/journey/` | `my_planner_drafts`, #555 bookings + QR, `my_queue_ticket` |
-| C02 book `/app/book` (added 2026-10-10, below) | `web/pages/app-book.html` | `web/src/screens/customer/book/` | `public_branches` (APP-5), #555's `booking_slots`, `planner_preview` (APP-4: an estimate only, no Quote is made, P5), `bookingCreate` with an optional `referralCode` and **no `quoteId`** |
+| C02 book `/app/book` (added 2026-10-10, below) | `web/pages/app-book.html` | `web/src/screens/customer/book/` | the public branch list (APP-5), #555's `booking_slots`, `planner_preview` (APP-4: an estimate only, no Quote is made, P5), `bookingCreate` with an optional `referralCode` and **no `quoteId`** |
 | C03 my bookings `/app/bookings` (added 2026-10-10, below) | `web/pages/app-bookings.html` | `web/src/screens/customer/bookings/` | #555's `my_bookings`, `my_booking` (QR), `bookingCancel`, `bookingReschedule` |
 | C12 assistant `/app/assistant` | `web/pages/app-assistant.html` | `web/src/screens/customer/assistant/` | `assistantAsk`, `my_assistant_conversation` |
 | C13 notifications `/app/notifications` | `web/pages/app-notifications.html` | `web/src/screens/customer/notifications/` | `my_notifications`, `notificationRead*` |
@@ -367,7 +367,7 @@ classDiagram
 | OR-3 `SessionService`, `/api/auth/*`; CI-2 `TokenVerifier` | C14, every `CustomerSelf` route, the session claim | none: APP-7 starts after OR-3 |
 | CI-7 `customerRegister`, `my_profile`, `consent_texts` | C14, the shell | APP-7 starts after CI-7 |
 | LN-1 customer audience, shared `zh.ts` | every screen | none: screen tickets start after LN-1 |
-| PL-0 seams (area rows, outbox handlers, system routes) | policy rows, delivery handler, the public rates route | APP-2..4 start after PL-0 |
+| PL-0 seams (area rows, outbox handlers, system routes) | policy rows, delivery handler (the public routes live in `http/public/` and need no PL-0 seam, #995) | APP-2..4 start after PL-0 |
 | OB-1 outbox core | non-IN_APP deliveries | APP-9 only; IN_APP needs no outbox |
 | rates `PublishedRates`, `Freshness`, `StalePolicy`, `CommandAction`, `idempotency_records` | preview, public rates, every command | merged on `main` |
 | `queue-tickets.md` `branch_service_status`, `my_queue_ticket`, `QueueDesk` | C08, C09, the "called" notification | the "called" wiring (APP-10) waits for QU-3; C08/C09 render without the queue part until QU-7 |
@@ -382,7 +382,7 @@ classDiagram
 |---|---|
 | the kiosk is the only customer surface | the kiosk stays as is; the customer app is added beside it (P2) |
 | `kiosk_notifications` is a staff list | unchanged; customer notifications are the new `notifications` table |
-| no public rates route | `GET /api/public/branches/{code}/rates` (P16) |
+| no public rates route | `GET /api/public/orgs/{org}/branches/{code}/rates` (P16) |
 
 Nothing is retired.
 
@@ -444,7 +444,7 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-2 | `xc-kernel` pieces: `CustomerSide`, `redact_text`, the `Notifications` port | `xc-kernel/src/money/customer_side.rs`, `xc-kernel/src/pii/text_redactor.rs`, `xc-kernel/src/notifications.rs`, one `pub mod`/`pub use` line each in `xc-kernel/src/{lib.rs,money/mod.rs,pii/mod.rs}` | this design |
 | APP-3 | `xc-notify`: notification, delivery, templates registry, `NotificationService` (IN_APP only), views `my_notifications`, commands `notificationRead*` | `api/crates/xc-notify/**`, `http/v3/views/my_notifications.rs`, `http/v3/commands/notification_read.rs`, their DTOs/TS, `xc-auth/src/domain/policy/areas/notifications.rs` | APP-1, APP-2, PL-0 |
 | APP-4 | `xc-app` planner: `PlannerDraft`, `PlannerService`, `PlannerPreview`, `AppSession` + guard, `AppSettings` + `AppSettingsRepository` + `PgAppSettingsRepository` + `AppSettingsService`; commands `plannerDraftSave/Delete`, `appSettingsSave`, compute `planner_preview`, view `my_planner_drafts` | `api/crates/xc-app/{Cargo.toml,src/lib.rs,src/domain/{owner.rs,app_session.rs,settings.rs,planner/**},src/application/{planner/**,settings/**},src/infrastructure/{planner_repository.rs,app_settings_repository.rs}}`, `api/src/presentation/extractors/app_session.rs`, `http/v3/commands/{planner_draft_*,app_settings_save}.rs`, `http/v3/actions/planner_preview.rs`, `views/my_planner_drafts.rs`, DTOs/TS, `xc-auth/.../areas/customer_app.rs` | APP-1, APP-2, PL-0 |
-| APP-5 | public reads: `GET /api/public/branches/{code}/rates`, view `public_branches`; the route-table guard test of P14 | `http/v3/system/public_branch_rates.rs` (PL-0 seam), `views/public_branches.rs`, DTOs/TS, `xc-auth/src/domain/policy/areas/public_branches.rs`, `api/tests/app_no_completion_route_test.rs` | PL-0 |
+| APP-5 | public reads: `GET /api/public/orgs/{org}/branches/{code}/rates` and `GET /api/public/orgs/{org}/branches` (routes in `http/public/`, public by construction, no policy row — #995 rulings); the route-table guard test of P14 | `http/public/branches.rs`, DTOs/TS, `api/tests/app_no_completion_route_test.rs` | PL-0 |
 | APP-6 | `xc-app` assistant: `IntentParser`, `AssistantService`, command `assistantAsk`, view `my_assistant_conversation`; `ASSISTANT_CONVERSATION` and `PLANNER_DRAFT` retention types | `xc-app/src/domain/assistant/**`, `xc-app/src/application/assistant/**`, `xc-app/src/infrastructure/assistant_repository.rs`, `http/v3/commands/assistant_ask.rs`, `views/my_assistant_conversation.rs`, DTOs/TS, `xc-auth/src/domain/policy/areas/assistant.rs` (the retention line is an unreserved registration, above) | APP-4, CI-6 |
 | APP-7 | sign-in/up screens and the session claim | `web/pages/app-sign-in.html`, `web/pages/app-sign-up.html`, `web/src/screens/customer/sign-in/**`, the `claim_session_in` calls in OR-3's `session_service.rs` (two lines, after OR-3 merges), `web/src/screens/customer/_shell/**` | APP-4, APP-6, OR-3, CI-7, LN-1 |
 | APP-8 | C01 home screen | `web/pages/app-home.html`, `web/src/screens/customer/home/**` | APP-4, APP-5, APP-7 (shell) |
@@ -455,7 +455,7 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-13 | C09 journey screen (drafts + ticket; bookings when #555 lands) | `web/pages/app-journey.html`, `web/src/screens/customer/journey/**` | APP-4, APP-7, QU-7 |
 | APP-14 | C12 assistant screen | `web/pages/app-assistant.html`, `web/src/screens/customer/assistant/**` | APP-6, APP-7 |
 | APP-15 | C13 notifications screen | `web/pages/app-notifications.html`, `web/src/screens/customer/notifications/**` | APP-3, APP-7 |
-| APP-16 | C02 book screen, with the optional referral-code field (prefilled from `?ref=`) | `web/pages/app-book.html`, `web/src/screens/customer/book/**` | APP-4 (`planner_preview`), APP-5 (`public_branches`), APP-7 (shell, sign-in), #555 BK-6 (routes), BK-3 (the capture) |
+| APP-16 | C02 book screen, with the optional referral-code field (prefilled from `?ref=`) | `web/pages/app-book.html`, `web/src/screens/customer/book/**` | APP-4 (`planner_preview`), APP-5 (the public branch list), APP-7 (shell, sign-in), #555 BK-6 (routes), BK-3 (the capture) |
 | APP-17 | C03 my bookings screen (list, QR, cancel, reschedule) | `web/pages/app-bookings.html`, `web/src/screens/customer/bookings/**` | APP-7, #555 BK-6 |
 
 ### 9.1 Tests written before implementation
@@ -466,7 +466,7 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-2 | `CUSTOMER_BUY.to_shop() == Side::Sell`, `CUSTOMER_SELL.to_shop() == Side::Buy`; `redact_text` masks `+66812345678`, `0812345678`, `a@b.co`, `AA1234567`, a 13-digit Thai id, a 16-digit card number and `246810`, and leaves `USD 500` and `100 JPY` intact |
 | APP-3 | `notify_in` twice with one (recipient, event, template) gives one row and returns the same id; IN_APP delivery is SENT in the same transaction and a rollback writes neither; `markRead` twice keeps the first `read_at`; a user cannot read or mark another user's notification (`outOfScope`); `my_notifications` with an unchanged `since` answers `{changed:false}`; the view renders the stored locale (`zh` row in Chinese while the reader's page is Thai); a marketing template with withdrawn consent gives SKIPPED/`noConsent`; a template whose `params` hold a phone is refused at build of the request |
 | APP-4 | create, update with `expectedVersion`, stale version → `staleVersion`; same key same body → same draft, other body → `idempotencyConflict`; a session cannot read a customer's draft or another session's draft; `planner_preview` writes no row in `quotes`, `stock_*` or `bookings` (row counts before/after) and answers `stale`/`rateUnavailable` like `QuoteService`; JPY 10 000 against a JPY line of unit 100 gives the same THB as the desk quote for the same line (§18 *"JPY/KRW per-unit กับ board-unit ได้ยอดเดียวกัน"*); `claim_session_in` moves every session draft and a second call moves none; a new draft's `expires_at` = `created_at` + the setting, and an update leaves `expires_at` unchanged; with no row or `NULL` → `appSettingsMissing`; `appSettingsSave` by ADMIN on an organisation with no row inserts one, and a second save updates it (one row); `appSettingsSave` by a non-ADMIN → `outOfScope` |
-| APP-5 | the public rates route answers the §10 shape with `publication_id`, `source_date`, `published_at`, `stale`, `lines{unit,buy,sell}` and no reference cost, partner value or customer field; an unknown code is 404; `public_branches` carries no customer field and answers `{changed:false}` on an unchanged branch version; **no route in the generated route table under `/api/app` names complete, collect, call, check-in or a transaction state** |
+| APP-5 | the public rates route answers the §10 shape with `publication_id`, `source_date`, `published_at`, `stale`, `lines{unit,buy,sell}` and no reference cost, partner value or customer field; an unknown code is 404; the public branch list carries no customer field and answers 304 on an unchanged ETag (count, sum(version), max(created_at)); **no route in the generated route table under `/api/app` names complete, collect, call, check-in or a transaction state** |
 | APP-6 | each of the prototype's sample sentences in TH, EN and ZH parses to the same `Intent` (the fixture is the ticket author's, from §14's prototype tests); an unknown sentence → `UNKNOWN`; the stored `redacted_text` of a message holding a phone and an OTP holds neither; `assistantAsk` writes no draft, quote or booking; the same `Idempotency-Key` gives one message; a conversation's `expires_at` is NULL when no period is set |
 | APP-7 | sign-up refuses without a published `TERMS` text in the page language (`consentTextMissing`, CI rule); after sign-in the session's drafts are the customer's; the built `web/dist` contains neither `246810` nor `demo-login`; every customer `main.tsx` calls `setAudience('customer')` before `render` (LN-1's guard test, now non-vacuous); the human check of `zh.ts` is recorded on the ticket (#558 controller comment) |
 | APP-8, APP-11..15 | vitest per screen: loading, empty, error and retry states; the language switch shows TH / EN / 中文; amounts render with `MoneyText` and do not change with the locale; C04 shows only the reader's own transactions (the view is mocked to return one, the screen asks with no customer id); C09 shows "unknown" when the estimate is NULL, never a number; C13 marks read optimistically and rolls back on error |
@@ -536,7 +536,7 @@ A draft holds no rate or stock (P5), so a longer life costs nothing but storage.
 | §01 MVP mobile web for customers; installed app later | P1, C1 |
 | §03 C01 home (rates, nearby branches, hours, member benefits) | §4.5 C01; member benefits wait for #559 |
 | §03 C04 history (completed/reversed, branch, receipt; own only) | `my_transactions`, APP-11 |
-| §15 C08 branches + service status + booking/queue | `public_branches`, `branch_service_status` (#556), slots (#555) |
+| §15 C08 branches + service status + booking/queue | the public branch list, `branch_service_status` (#556), slots (#555) |
 | §15 C09 pass list + draft/booking + QR + readiness + queue | APP-13; QR is #555's token |
 | §15 C12 assistant fills the planner, preview before confirm | P11, `assistantAsk` |
 | §15 C13 notifications: list, read, filter, link to object | `notifications`, `my_notifications`, `notificationRead*` |
