@@ -79,8 +79,5 @@ pub trait KioskPorts: Send + Sync {
         side: Side,
         thb: Money,
         now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<bool>> {
-        let _ = (tx, branch, line_id, currency, side, thb, now);
-        Box::pin(async { Ok(true) })
-    }
+    ) -> BoxFuture<'a, AppResult<bool>>;
 }

@@ -517,6 +517,22 @@ impl KioskPorts for FakePorts {
             Ok(())
         })
     }
+
+    /// #769: `KioskPorts::check_stale_in` has no default body, so this fake implements it. It
+    /// admits every quote, the behaviour the fake had through the default.
+    #[allow(clippy::too_many_arguments)]
+    fn check_stale_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a BranchId,
+        _line_id: LineId,
+        _currency: CurrencyCode,
+        _side: Side,
+        _thb: Money,
+        _now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        Box::pin(async { Ok(true) })
+    }
 }
 
 // ── the database ────────────────────────────────────────────────────────────

@@ -304,6 +304,22 @@ impl KioskPorts for Switched {
         let rules = self.of(branch);
         Box::pin(async move { Ok(rules) })
     }
+
+    /// #769: `KioskPorts::check_stale_in` has no default body, so this fake implements it. It
+    /// admits every quote, the behaviour the fake had through the default.
+    #[allow(clippy::too_many_arguments)]
+    fn check_stale_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a BranchId,
+        _line_id: xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId,
+        _currency: CurrencyCode,
+        _side: Side,
+        _thb: Money,
+        _now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        Box::pin(async { Ok(true) })
+    }
 }
 
 fn service(db: &TestDb, ports: &Arc<Switched>) -> KioskService {

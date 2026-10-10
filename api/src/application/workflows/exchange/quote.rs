@@ -13,7 +13,6 @@ use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Side};
-use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
 use xc_rate::domain::publication::published_rates::PublishedRates;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
@@ -142,41 +141,13 @@ impl QuoteService {
 
         // Step 5: Staleness check under policy version the line was published under
         if published_side.stale {
-            let snapshot_row: Option<serde_json::Value> = sqlx::query_scalar(
-                "SELECT source_snapshot FROM published_rate_lines WHERE id = $1",
-            )
-            .bind(published_side.line_id.as_uuid())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-
-            let policy_id = snapshot_row
-                .as_ref()
-                .and_then(|s| s.get("policy_version_id"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| Uuid::parse_str(s).ok());
-
-            if let Some(policy_id) = policy_id {
-                let policy_row: Option<(Option<String>, Option<Decimal>)> = sqlx::query_as(
-                    "SELECT on_stale, stale_limit_thb FROM rate_policy_versions WHERE id = $1",
-                )
-                .bind(policy_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-
-                if let Some((on_stale_str, stale_limit_dec)) = policy_row {
-                    let on_stale = on_stale_str.as_deref().and_then(OnStale::parse_db);
-                    let stale_limit_thb =
-                        stale_limit_dec.and_then(|d| Money::parse(&d.to_string()).ok());
-                    let stale_policy = StalePolicy::new(on_stale, stale_limit_thb);
-                    stale_policy
-                        .admits(&published_side, thb_amount)
-                        .map_err(|_| {
-                            AppError::Domain("rateUnavailable: stale line refused".to_string())
-                        })?;
-                }
-            }
+            let stale_policy = self
+                .published_rates
+                .stale_policy_in(tx, &published_side)
+                .await?;
+            stale_policy
+                .admits(&published_side, thb_amount)
+                .map_err(|_| AppError::Domain("rateUnavailable: stale line refused".to_string()))?;
         }
 
         // Step 6: Organization & TTL
