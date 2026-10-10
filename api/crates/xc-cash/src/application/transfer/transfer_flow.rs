@@ -1,0 +1,514 @@
+//! `TransferFlow`: orchestrates cash transfers across the 5 states (D:§4.5, §9.1 CA-5).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
+use rust_decimal::Decimal;
+use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
+use xc_approval::application::approval_service::ApprovalService;
+use xc_approval::application::registry::ApprovalRegistry;
+use xc_approval::domain::request::{Outcome, RequestId};
+use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
+use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
+
+use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
+use crate::domain::posting::{CashPlace, CashPostings};
+use crate::domain::transfer::cash_transfer::{
+    CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
+};
+use crate::domain::transfer::kinds::TransferKinds;
+use crate::domain::transfer::transfer_repository::TransferRepository;
+use crate::infrastructure::interim_postings::InterimCashPostings;
+use crate::infrastructure::transfer_repository::PgTransferRepository;
+
+pub struct TransferFlow {
+    pool: PgPool,
+    /// Dispatch, receive and reconcile run in a branch's `BranchTx` (design §09 atomicity,
+    /// `cash-shift-transfer.md:517`): the posting and the state change commit together, under that
+    /// branch's lock, and the branch version moves.
+    branch_tx: BranchTx,
+    repo: Arc<dyn TransferRepository>,
+    postings: Arc<dyn CashPostings>,
+    kinds: TransferKinds,
+    approvals: Arc<ApprovalService>,
+}
+
+/// `who` holds `permission` on `branch` at `now` (D:§3.1), or the refusal's code as a domain error.
+fn require(
+    who: &Actor,
+    permission: Permission,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let target = Target::new(&who.organization_id, Some(branch.clone()), None);
+    Authorizer::check(Some(who), permission, &target, now)
+        .map(|_| ())
+        .map_err(|e| AppError::Domain(e.code().to_string()))
+}
+
+impl TransferFlow {
+    pub fn new(
+        pool: PgPool,
+        repo: Arc<dyn TransferRepository>,
+        postings: Arc<dyn CashPostings>,
+        kinds: TransferKinds,
+        approvals: Arc<ApprovalService>,
+    ) -> Self {
+        Self {
+            branch_tx: BranchTx::new(Transactor::new(pool.clone())),
+            pool,
+            repo,
+            postings,
+            kinds,
+            approvals,
+        }
+    }
+
+    pub fn pg(pool: PgPool) -> Self {
+        let repo = Arc::new(PgTransferRepository::new(pool.clone()));
+        let postings = Arc::new(InterimCashPostings::new());
+        let kinds = TransferKinds::standard();
+
+        let mut registry = ApprovalRegistry::new();
+        registry.register(
+            Arc::new(TransferApprovalSubject::new(pool.clone())),
+            Arc::new(TransferApprovalPolicy::new()),
+        );
+
+        let approvals = Arc::new(ApprovalService::new(
+            registry,
+            Arc::new(PgApprovalRepository::new(pool.clone())),
+            Arc::new(PgAuditLog::new(pool.clone())),
+        ));
+
+        Self::new(pool, repo, postings, kinds, approvals)
+    }
+
+    /// Creates a transfer in DRAFT status.
+    pub async fn create(
+        &self,
+        who: &Actor,
+        cmd: NewTransfer,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let ends = self
+            .kinds
+            .get(cmd.kind)
+            .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", cmd.kind)))?;
+
+        ends.check_create(who, &cmd)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        let mut tx = self.pool.begin().await?;
+
+        // Check idempotency replay
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM cash_transfers WHERE from_branch_id = $1 AND idempotency_key = $2",
+        )
+        .bind(cmd.from_branch.as_str())
+        .bind(&cmd.idempotency_key)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if let Some(id) = existing {
+            if let Some(t) = self.repo.find_by_id_in(&mut tx, &id.to_string()).await? {
+                tx.commit().await?;
+                return Ok(t);
+            }
+        }
+
+        let transfer = self.repo.insert(&mut tx, &cmd, who, now).await?;
+        tx.commit().await?;
+        Ok(transfer)
+    }
+
+    /// Submits a transfer in DRAFT status to the approval core.
+    pub async fn submit(
+        &self,
+        who: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let t = self
+            .repo
+            .find_by_id(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "CashTransfer",
+                id: id.to_string(),
+            })?;
+
+        if t.status != TransferStatus::Draft {
+            return Err(AppError::Domain(
+                TransferError::IllegalTransition {
+                    from: t.status,
+                    step: TransferStep::Approve,
+                }
+                .to_string(),
+            ));
+        }
+
+        if t.created_by != who.user_id {
+            return Err(AppError::Domain(
+                "only the creator may submit a transfer".into(),
+            ));
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        let policy = self
+            .repo
+            .find_latest_policy(&mut tx, &who.organization_id)
+            .await?;
+        let within_limit = policy
+            .as_ref()
+            .map(|p| p.is_within_limit(&t.lines))
+            .unwrap_or(false);
+
+        let payload = serde_json::json!({
+            "transfer_id": id,
+            "from_branch": t.from_branch.as_str(),
+            "within_limit": within_limit,
+        });
+
+        let policy_actor = policy_actor(who, &t.from_branch, Permission::CashManage, now)
+            .ok_or_else(|| AppError::Domain("roleNotAllowed".into()))?;
+        let key = format!("submit_{}_{}", id, Uuid::new_v4());
+
+        let req = self
+            .approvals
+            .request(&mut tx, "CASH_TRANSFER", id, &payload, &policy_actor, &key)
+            .await
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        self.repo
+            .set_approval_request_id(&mut tx, id, &req.id, now)
+            .await?;
+
+        tx.commit().await?;
+
+        let updated = self.repo.find_by_id(id).await?.unwrap();
+        Ok(updated)
+    }
+
+    /// Decides on an approval request.
+    pub async fn decide(
+        &self,
+        who: &Actor,
+        id: &str,
+        outcome: Outcome,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let t = self
+            .repo
+            .find_by_id(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "CashTransfer",
+                id: id.to_string(),
+            })?;
+
+        if t.status != TransferStatus::Draft {
+            return Err(AppError::Domain(
+                TransferError::IllegalTransition {
+                    from: t.status,
+                    step: TransferStep::Approve,
+                }
+                .to_string(),
+            ));
+        }
+
+        if t.created_by == who.user_id {
+            return Err(AppError::Domain(
+                "creator cannot approve own transfer".into(),
+            ));
+        }
+
+        require(who, Permission::ApprovalsDecide, &t.from_branch, now)?;
+        // Who decides within and above the limit is `TransferApprovalPolicy::may_decide`'s (A5, ruling Q2),
+        // over the limit recorded at submit; an approver that maps to no policy actor is refused here.
+        let policy_actor = policy_actor(who, &t.from_branch, Permission::ApprovalsDecide, now)
+            .ok_or_else(|| AppError::Domain("roleNotAllowed".into()))?;
+
+        let mut tx = self.pool.begin().await?;
+
+        let req_id_opt: Option<Uuid> = sqlx::query_scalar(
+            "SELECT approval_request_id FROM cash_transfers WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let req_id_uuid =
+            req_id_opt.ok_or_else(|| AppError::Domain("no pending approval request".into()))?;
+        let req_id = RequestId::new(req_id_uuid.to_string());
+
+        self.approvals
+            .decide(&mut tx, &req_id, &policy_actor, outcome, reason, "")
+            .await
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        tx.commit().await?;
+
+        let updated = self.repo.find_by_id(id).await?.unwrap();
+        Ok(updated)
+    }
+
+    /// Dispatches a transfer: checks stock and moves from source to InTransit, in the source
+    /// branch's `BranchTx`. The transfer is re-read and its state re-checked under that lock, and the
+    /// state change is conditional on APPROVED, so a second dispatch of the same transfer is refused
+    /// and posts nothing.
+    pub async fn dispatch(
+        &self,
+        who: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let t = self.load(id).await?;
+        t.status
+            .next(TransferStep::Dispatch)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+        require(who, Permission::CashManage, &t.from_branch, now)?;
+        let ends = self
+            .kinds
+            .get(t.kind)
+            .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
+
+        let repo = self.repo.clone();
+        let postings = self.postings.clone();
+        let who = who.clone();
+        let id_owned = id.to_owned();
+        self.branch_tx
+            .run(&t.from_branch, move |tx| {
+                Box::pin(async move {
+                    let t = locked(repo.as_ref(), tx, &id_owned, TransferStep::Dispatch).await?;
+                    let reqs = ends.on_dispatch(&t);
+
+                    // A move out of a drawer or the safe cannot exceed its expected balance.
+                    for r in &reqs {
+                        match &r.from {
+                            CashPlace::Drawer(_) | CashPlace::Safe(_) => {
+                                let balances = postings.expected_in(tx, &r.from).await?;
+                                if balances.get(r.currency) < r.amount {
+                                    return Err(AppError::Domain(
+                                        TransferError::StockInsufficient.to_string(),
+                                    ));
+                                }
+                            }
+                            CashPlace::InTransit(_) | CashPlace::Outside => {}
+                        }
+                    }
+
+                    repo.mark_dispatched(tx, &id_owned, &who, now).await?;
+                    postings.post_in(tx, &reqs).await?;
+                    Ok(())
+                })
+            })
+            .await?;
+
+        self.load(id).await
+    }
+
+    /// Receives a transfer: updates counted lines, moves from InTransit to destination, writes
+    /// exceptions, in the destination branch's `BranchTx` (the source branch for a single-branch
+    /// move). The state is re-read under that lock and the change is conditional on DISPATCHED.
+    pub async fn receive(
+        &self,
+        who: &Actor,
+        id: &str,
+        counted: Vec<NewTransferLine>,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let t = self.load(id).await?;
+        t.status
+            .next(TransferStep::Receive)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+        let ends = self
+            .kinds
+            .get(t.kind)
+            .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
+        ends.check_receive(who, &t)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        let dest_branch = destination(&t);
+        let repo = self.repo.clone();
+        let postings = self.postings.clone();
+        let who = who.clone();
+        let id_owned = id.to_owned();
+        let locked_branch = dest_branch.clone();
+        self.branch_tx
+            .run(&locked_branch, move |tx| {
+                Box::pin(async move {
+                    let t = locked(repo.as_ref(), tx, &id_owned, TransferStep::Receive).await?;
+
+                    // Person rule (ruling Q1): cash entering a drawer is received by that shift's
+                    // own teller, by user id.
+                    if let Some(ref shift_id) = t.to_shift {
+                        let shift_teller: String =
+                            sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
+                                .bind(shift_id)
+                                .fetch_one(&mut **tx)
+                                .await?;
+                        if shift_teller != who.user_id {
+                            return Err(AppError::Domain(
+                                "only the shift's teller may receive into drawer".into(),
+                            ));
+                        }
+                    }
+
+                    repo.mark_received(tx, &id_owned, &who, &counted, now)
+                        .await?;
+                    let updated_t = repo
+                        .find_by_id_in(tx, &id_owned)
+                        .await?
+                        .ok_or_else(|| not_found(&id_owned))?;
+                    let reqs = ends.on_receive(&updated_t);
+                    postings.post_in(tx, &reqs).await?;
+                    write_exceptions(tx, &id_owned, &dest_branch, &updated_t).await
+                })
+            })
+            .await?;
+
+        self.load(id).await
+    }
+
+    /// Reconciles a transfer in RECEIVED status, in the destination branch's `BranchTx` (as
+    /// `receive`). The state is re-read under that lock and the change is conditional on RECEIVED.
+    pub async fn reconcile(
+        &self,
+        who: &Actor,
+        id: &str,
+        note: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashTransfer> {
+        let t = self.load(id).await?;
+        t.status
+            .next(TransferStep::Reconcile)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        let repo = self.repo.clone();
+        let who = who.clone();
+        let id_owned = id.to_owned();
+        let note = note.to_owned();
+        self.branch_tx
+            .run(&destination(&t), move |tx| {
+                Box::pin(async move {
+                    locked(repo.as_ref(), tx, &id_owned, TransferStep::Reconcile).await?;
+
+                    let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
+                        "SELECT created_by, received_by FROM cash_transfers WHERE id = $1::uuid",
+                    )
+                    .bind(&id_owned)
+                    .fetch_one(&mut **tx)
+                    .await?;
+                    if creator_uuid.to_string() == who.user_id {
+                        return Err(AppError::Domain("creator cannot reconcile transfer".into()));
+                    }
+                    if receiver_uuid.map(|u| u.to_string()) == Some(who.user_id.clone()) {
+                        return Err(AppError::Domain(
+                            "receiver cannot reconcile transfer".into(),
+                        ));
+                    }
+
+                    let target = Target::new(&who.organization_id, None, None);
+                    Authorizer::check(Some(&who), Permission::FinanceReconcile, &target, now)
+                        .map_err(|e| AppError::Domain(e.code().to_string()))?;
+
+                    repo.mark_reconciled(tx, &id_owned, &who, &note, now).await
+                })
+            })
+            .await?;
+
+        self.load(id).await
+    }
+
+    async fn load(&self, id: &str) -> AppResult<CashTransfer> {
+        self.repo.find_by_id(id).await?.ok_or_else(|| not_found(id))
+    }
+}
+
+fn not_found(id: &str) -> AppError {
+    AppError::NotFound {
+        entity: "CashTransfer",
+        id: id.to_string(),
+    }
+}
+
+/// The branch whose cash a receipt moves into: the destination of a BRANCH transfer, else the
+/// move's own branch. Receive and reconcile run in its `BranchTx`, and exceptions are written on it.
+fn destination(t: &CashTransfer) -> BranchId {
+    t.to_branch.clone().unwrap_or_else(|| t.from_branch.clone())
+}
+
+/// The transfer re-read inside the step's transaction, refused unless `step` is legal from its
+/// state now (a concurrent step may have moved it since the caller's first read).
+async fn locked(
+    repo: &dyn TransferRepository,
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    step: TransferStep,
+) -> AppResult<CashTransfer> {
+    let t = repo
+        .find_by_id_in(tx, id)
+        .await?
+        .ok_or_else(|| not_found(id))?;
+    t.status
+        .next(step)
+        .map_err(|e| AppError::Domain(e.to_string()))?;
+    Ok(t)
+}
+
+/// One `cash_exceptions` row on `branch` per currency whose counted total differs from the sent one.
+async fn write_exceptions(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    branch: &BranchId,
+    t: &CashTransfer,
+) -> AppResult<()> {
+    let mut sent_totals: HashMap<CurrencyCode, i64> = HashMap::new();
+    let mut recv_totals: HashMap<CurrencyCode, i64> = HashMap::new();
+    for line in &t.lines {
+        let sent_minor = line.face_value.minor() * (line.qty_sent as i64);
+        *sent_totals.entry(line.currency).or_insert(0) += sent_minor;
+        let recv_minor = line.face_value.minor() * (line.qty_received.unwrap_or(0) as i64);
+        *recv_totals.entry(line.currency).or_insert(0) += recv_minor;
+    }
+
+    for (cur, sent_minor) in sent_totals {
+        let recv_minor = recv_totals.get(&cur).copied().unwrap_or(0);
+        if recv_minor == sent_minor {
+            continue;
+        }
+        let diff_dec = Decimal::new(recv_minor - sent_minor, 2);
+        let pos: i32 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
+        )
+        .bind(branch.as_str())
+        .fetch_one(&mut **tx)
+        .await?;
+        let exc_data = serde_json::json!({
+            "transferId": id,
+            "currency": cur.as_str(),
+            "difference": diff_dec.to_string(),
+        });
+        sqlx::query(
+            "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(format!("EX-{}", Uuid::new_v4()))
+        .bind(branch.as_str())
+        .bind(pos)
+        .bind(exc_data)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}

@@ -615,7 +615,7 @@ async fn a_transfer_has_the_five_states_and_no_sixth() {
     {
         let res = sqlx::query(
             "INSERT INTO cash_transfers (id, organization_id, kind, from_branch_id, status, created_by, idempotency_key) \
-             VALUES (gen_random_uuid(), $1::uuid, 'DRAWER_TO_SAFE', 'A', $2, $3::uuid, $4)",
+             VALUES (gen_random_uuid(), $1::uuid, 'EXTERNAL_IN', 'A', $2, $3::uuid, $4)",
         )
         .bind(&org)
         .bind(status)
