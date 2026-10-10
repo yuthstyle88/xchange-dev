@@ -26,10 +26,24 @@
   color: var(--muted);
 }
 
-/* v2 src/devices-public/admin-workspace.css:24 .card-heading { padding: 22px } top inset for card head without CardHead */
-.xc-admin .xc-content .xc-payment-channel .xc-payment-card-head {
-  padding-top: 21px;
-}
+/* v2 admin-workspace.css:37 .payment-cards{gap:20px} (grid has no bottom margin) */
+.xc-admin .xc-content .xc-payment-fieldset > .card-grid { gap: 20px; margin-bottom: 0; }
+/* v2 .payment-card has no margin */
+.xc-admin .xc-content .xc-payment-fieldset .xc-payment-channel { margin-bottom: 0; }
+/* v2 .payment-card{padding:24px} */
+.xc-admin .xc-content .xc-payment-channel > .card-body { padding: 24px; }
+.xc-admin .xc-content .xc-payment-channel .xc-payment-card-head { padding-top: 0; }   /* replaces :30-32 */
+/* v2 .payment-card>label{font-size:13px}; beats admin.css:77 (0,4,1) */
+.xc-admin .xc-content.xc-content .xc-payment-channel label.form-field { font-size: 13px; }
+/* v2 .unit is inline after the label text; block only ≤600px */
+.xc-admin .xc-content .xc-payment-channel .form-unit { display: inline; }
+/* v2 base label (admin-html line 3) on .payment-switch */
+.xc-admin .xc-content .xc-payment-switch .form-label { font-size: 14px; font-weight: 500; }
+/* v2 .payment-directions label / small / input (rules 16-18) */
+.xc-admin .xc-content .xc-payment-directions .check-field { display: block; font-size: 13px; font-weight: 500; }
+.xc-admin .xc-content .xc-payment-directions .check-field input[type="checkbox"] { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.xc-admin .xc-content .xc-payment-directions .check-text { display: inline; }
+.xc-admin .xc-content .xc-payment-directions .check-text .form-hint { display: block; margin: 6px 0 0 25px; font-weight: 400; }
 
 /* v2 src/devices-public/admin-workspace.css:37 .payment-directions small */
 .xc-admin .xc-content .xc-payment-directions .form-hint {
@@ -132,4 +146,12 @@
   .xc-admin .xc-content .xc-payment-save-bar button {
     flex: 1;
   }
+
+  /* v2 @media(max-width:600px): grid gap unchanged, .payment-card{padding:18px}, h3{font-size:17px}, .unit{display:block} */
+  .xc-admin .xc-content .xc-payment-fieldset > .card-grid { gap: 20px; }
+  .xc-admin .xc-content .xc-payment-channel > .card-body { padding: 18px; }
+  .xc-admin .xc-content .xc-payment-channel h3 { font-size: 17px; }
+  .xc-admin .xc-content .xc-payment-channel .form-unit { display: block; }
+  /* v2 .payment-savebar button{flex:1}: let the actions div take the row */
+  .xc-admin .xc-content .xc-payment-save-actions { flex: 1 1 100%; }
 }
