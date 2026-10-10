@@ -870,6 +870,15 @@ pub const ROWS: &[AreaRow] = &[
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| FD-3 hardening | #1112 | open | the system route of FD-3 (#974): `SystemToken` Debug and the 500 echo must not print the token |
+
 ## 12. Blueprint conformance (owner's rule, 2026-10-09: logic is fixed, only the look may change)
 
 Owner, recorded on #564: *"พิมพ์ เราจะปรับ ได้ แค่เรื่อง หน้า ตา แค่นั้น ส่วน logic ห้าม แก้ไข"* (we may adjust only

@@ -756,6 +756,28 @@ Each ticket owns disjoint files.
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| OR-3 web | #762 | closed | the web half of the OR-3 row (`web/src/screens/login/**`), split at cutting; done |
+| OR-4a, OR-4b | #766, #767 | closed | the OR-4 row allows "Split per area if the controller prefers"; done |
+| OR-5a | #945 | open | the API half of the OR-5 row (branch profile, grant, revoke, disable); no invite (B6, §5.3) |
+| OR-5b | #946 | open | the web half of the OR-5 row (A04/A05 screens) |
+| OR-5c | #1157 | open | §5.3 (B6): the OWNER/ADMIN creates a staff account and the server registers it in Identity; removes the withdrawn invite path |
+| OR-6 follow-up | #755 | closed | lane controller ruling on #754; done |
+| OR-7 (parent) | #947 | open | holder only; never `ready` (the OR-7 row: "split per service when cut") |
+| OR-7.1 … OR-7.5 | #1020–#1024 | open | one service each, the services the OR-7 row names |
+| OR-7.6 | #1025 | closed not planned | folded |
+| OR-7.7, OR-7.e, OR-7.m | #1030, #1026, #1027 | open | seams, the extractor bridge, and migration 3 with the deletions: the rest of the OR-7 row |
+| SB-3 | #842 | open | §14: kiosk-queue, kiosk-currencies and devices take the session branch; after SB-2 #892 |
+| Need::AnyOf | #1149 | open | §3.4–3.5 permissions: a view open to either of two permissions (raised by S-1 #573) |
+
+SB-3 is also recorded here because §14.7 lists only SB-1 and SB-2.
+
 ## 11. Blueprint conformance
 
 | Blueprint rule | § | Here |

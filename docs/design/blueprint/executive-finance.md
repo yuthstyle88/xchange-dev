@@ -506,6 +506,17 @@ in parallel** (all after EX-3: FN-1 uses EX-3's `ExchangeFacts`; disjoint files;
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| EX-11a … EX-11d | #1103–#1106 | open | the EX-11 row: "each child declares DRILLDOWN_KEYS"; one child per target (admin_transactions, admin_overview, admin_customers, admin_cash). No EX-11 parent issue |
+| EX-12 | #1072 | folded into EX-3 #1071 | the count-difference alert is §4.3; EX-3 owns the alert facts |
+| EX-13 | #1077 | folded into EX-7 #1076 | the EX-7 row already says "low-stock from positions" |
+
 ## 12. Must ask the owner (not decided here)
 
 | # | Question | Why it is open |

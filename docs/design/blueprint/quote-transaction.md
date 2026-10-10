@@ -705,6 +705,21 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| TX-8 (parent) | #676 | open | holder only; the TX-8 row: "one ticket per file" |
+| TX-8a/b/c/d/j | #1129 | open | files the TX-8 row names (merged into one ticket) |
+| TX-8e … TX-8i, TX-8k, TX-8l | #1130–#1136 | open | one file each, from the TX-8 row's list |
+| TX-8m | #1137 | open | `pg_saved_exchanges.rs`, cited in §1 |
+| TX-8n | #1138 | open | `device_service.rs`: a reader the TX-8 row's list missed (`git grep "(FROM|JOIN) transactions"`) |
+| TX-8o | #1139 | open | `compat/snapshot_sources.rs`: a reader the list missed |
+| TX-8p | #1154 | open | `xc-exchange` `transaction_repository.rs` reads: a reader the list missed |
+
 ## 10. What changes for the desk, the staff report and the documents
 
 - **Desk** (`xchange-v3-wave3-desk.md` §4.2, §5.4): the calls are, in order, `POST /api/quotes` (on each change),

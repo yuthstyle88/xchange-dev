@@ -595,6 +595,17 @@ database with rows.
 
 ---
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| LG-3b | #926 | open | the `cash_limits` commands half of the LG-3 row, split at cutting (LG-3 #925 closed) |
+| LG-6 (parent) | #930 | open | holder only for LG-6.0 … LG-6.m |
+| LG-7 (parent) | #927 | open | holder only for LG-7.0 … LG-7.5 |
+
 ## 11. Must ask the owner (not decided here)
 
 | # | Question | Blocks |

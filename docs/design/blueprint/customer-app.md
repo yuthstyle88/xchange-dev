@@ -475,6 +475,16 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-9 | (only if cut later, C3) a delivery failing twice then succeeding is one notification, one delivery row with `attempt_no = 3`; the push payload has no amount, name or document number; no handler is registered when its env is unset |
 | APP-10 | calling a ticket whose customer has a user writes one "called" notification; a recall writes a second (event id carries the recall number); a ticket with no customer writes none; a rollback of the call writes none |
 
+
+### Tickets as opened (reconciled 2026-10-11)
+
+> Owner's order 2026-10-11: every opened ticket must appear in its design's ticket list; a split is either listed here (this PR, lane controller claude/5edf7bb5) or folded back into its parent. Measured on `origin/main` `5a2b0d19` against all 605 issues. No new ticket may be opened outside this list.
+
+| Code | Issue | State 2026-10-11 | Listed because |
+|---|---|---|---|
+| APP-11 dependency | #1012 | folded into APP-11 #1003 | the receipt owner check this design names as APP-11's start condition |
+| APP-2 follow-up | #1063 | closed | a redaction defect after APP-2 |
+
 ## 10. Owner decisions (2026-10-10)
 
 The owner was asked in the lane controller's session (`claude/5edf7bb5`) on **2026-10-10**:
