@@ -149,7 +149,7 @@ inventory_movements(
   posting_id       uuid NOT NULL REFERENCES ledger_postings(id),
   transaction_line_id uuid NULL,                              -- #551's transaction_lines(id)
   movement_type    text NOT NULL CHECK (movement_type IN ('ACQUIRE','DISPOSE','TRANSFER_OUT','TRANSFER_IN','ADJUST')),
-  quantity_signed  numeric(20,4) NOT NULL CHECK (quantity_signed <> 0),
+  quantity_signed  numeric(20,4) NOT NULL CHECK (quantity_signed <> 0 OR movement_type = 'ADJUST'),  -- a cost-only ADJUST (Q-4 correction, #924) carries 0
   cost_thb_signed  numeric(20,2) NOT NULL,                    -- the cost this movement applied, frozen (§07)
   average_after    numeric(20,8) NULL,                        -- the position's average after it; NULL when quantity ≤ 0
   created_at       timestamptz NOT NULL
