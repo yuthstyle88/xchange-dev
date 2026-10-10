@@ -37,12 +37,23 @@ html body:has(.xc-shell) {
 
 /* v2 staff-guide.html:1 header in plain flow */
 .xc-shell .xc-shell-header {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
   padding: 0;
   background: transparent;
   border-bottom: 0;
   font: inherit;
   color: inherit;
+}
+
+/* v2 account-bar.js:12 bar is body's first child, above nav */
+.xc-shell .xc-shell-header .account-bar {
+  order: -1;
+  align-self: stretch;
+  width: auto;
+  margin: 0;
 }
 
 /* v2 staff-guide.html:1 nav line */
@@ -64,6 +75,12 @@ html body:has(.xc-shell) {
   color: #a5003c;
 }
 
+/* v2 staff-guide.html:1 browser default focus ring */
+.xc-shell .xc-shell-nav a:focus-visible {
+  outline: revert;
+  outline-offset: revert;
+}
+
 /* v2 staff-guide.html:1 browser default print button */
 .xc-shell .xc-shell-nav button {
   all: revert;
@@ -73,4 +90,9 @@ html body:has(.xc-shell) {
 .xc-shell .xc-shell-main {
   max-width: none;
   padding: 0;
+}
+
+/* v2 staff-guide.html:1 no footer */
+.xc-shell .xc-shell-footer {
+  display: none;
 }
