@@ -37,9 +37,14 @@ impl BookingService {
                         .await?
                         .ok_or_else(|| AppError::Domain(BookingError::NotFound.to_string()))?;
 
-                    let counter = ports
-                        .counter_rate_in(tx, &b, &booking.currency, booking.side, None)
-                        .await?;
+                    let counter = match booking.published_rate_line_id {
+                        Some(id) => {
+                            ports
+                                .stored_line_in(tx, &b, &booking.currency, booking.side, id)
+                                .await?
+                        }
+                        None => None,
+                    };
 
                     let step = BookingMachine::confirm(&booking, &cmd, counter, now)
                         .map_err(|e| AppError::Domain(e.to_string()))?;

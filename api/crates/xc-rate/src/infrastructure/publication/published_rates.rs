@@ -328,6 +328,74 @@ impl PublishedRates for PgPublishedRates {
         })
     }
 
+    fn line_by_id<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        line_id: PublishedRateLineId,
+        side: Side,
+    ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>> {
+        Box::pin(async move {
+            let row = sqlx::query(
+                "SELECT l.id, l.buy_rate, l.sell_rate, l.unit_size, l.source_snapshot, p.id, p.version, l.value_tier \
+                 FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 JOIN published_rate_lines l ON l.publication_id = p.id \
+                 WHERE b.id = $1 AND l.id = $2",
+            )
+            .bind(branch.as_str())
+            .bind(line_id.as_uuid())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let r = match row {
+                Some(r) => r,
+                None => return Ok(None),
+            };
+
+            let row_line_id: Uuid = r.get(0);
+            let buy_rate: Option<Decimal> = r.get(1);
+            let sell_rate: Option<Decimal> = r.get(2);
+            let unit_size_dec: Decimal = r.get(3);
+            let snapshot: serde_json::Value = r.get(4);
+            let pub_id: Uuid = r.get(5);
+            let pub_version: i32 = r.get(6);
+            let tier_str: String = r.get(7);
+
+            let rate_dec = match side {
+                Side::Buy => buy_rate,
+                Side::Sell => sell_rate,
+            };
+
+            let rate = match rate_dec {
+                Some(d) => Rate::parse(&d.to_string())
+                    .map_err(|e| pos_error::AppError::Internal(format!("invalid rate: {e}")))?,
+                None => return Ok(None),
+            };
+
+            let unit_size = UnitSize::parse(&unit_size_dec.to_string())
+                .map_err(|e| pos_error::AppError::Internal(format!("invalid unit size: {e}")))?;
+
+            let freshness = Freshness::of_side(&snapshot, side, chrono::Utc::now());
+            let value_tier = TierCode::new(tier_str)
+                .map_err(|e| pos_error::AppError::Internal(format!("invalid tier code: {e}")))?;
+
+            Ok(Some(PublishedSide {
+                line_id: PublishedRateLineId::new(row_line_id),
+                rate,
+                unit_size,
+                publication: PublicationRef {
+                    id: PublicationId::new(pub_id),
+                    version: pub_version,
+                },
+                stale: freshness.stale,
+                source_date: freshness.source_date,
+                value_tier,
+            }))
+        })
+    }
+
     fn stale_policy_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
