@@ -4015,6 +4015,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-referral"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "rust_decimal",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "xc-shift"
 version = "0.1.0"
 dependencies = [
