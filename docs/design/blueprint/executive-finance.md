@@ -471,9 +471,9 @@ Ordered so the first ones start **now**, without the TX chain. Each owns disjoin
 | EX-6 | `LineFacts` (lines + reversals) and the switch | `infrastructure/executive/line_facts.rs`, the one wiring line in `overview.rs` | EX-3, TX-2, TX-8, RV-1 |
 | EX-7 | `LedgerCashFacts`, realized margin, low-stock from positions | `infrastructure/executive/ledger_cash_facts.rs` | EX-3, LG-4, LG-6 |
 | FN-2 | F01 counts, transfers, integrity (LG-7), reversal decisions | `application/finance/sheet_parts.rs` (+ its `pub mod` line in `application/finance/mod.rs`) | **FN-1**, CA-3, CA-5, LG-7, RV-1 |
-| EX-8 | booking conversion | `infrastructure/executive/booking_facts.rs` | EX-3, #555's booking design and tickets |
+| EX-8 | booking conversion | `infrastructure/executive/booking_facts.rs` | EX-3, #555's booking design and tickets. **Held:** #555's booking design has merged (`booking-slots.md`, PR 968, `5fae9fbd`); what EX-8 waits for is its BK-1…BK-12 tickets, phase 4 under the owner's phase lock of 2026-10-11 and not yet opened. Until they land A01 shows `booking_conversion` as unavailable (`awaitsBookingDesign`, D-2) |
 | EX-9 | `ExportGate` + the export buttons honour `ReportsExport` | `v3/export_gate.rs`, the one call in `view.rs`, the three screens' export buttons | EX-2, OR-4b #767 (owns `view.rs`), #868 (merged; the three screens) |
-| EX-10 | `BrokerCommissionSource` | `infrastructure/executive/broker_commission.rs` | EX-3, the Broker lane's endpoint (§8.3) |
+| EX-10 | `BrokerCommissionSource` | `infrastructure/executive/broker_commission.rs` | EX-3, the Broker lane's endpoint (§8.3). **Held:** until the Broker lane sets that endpoint's shape; until then A01 shows `commission_thb` as unavailable (`awaitsBroker`, D-2 and §3) |
 | EX-11 | the drill-down targets accept A01's filters: `currency`, `channel` on `admin_transactions` and `admin_overview`; `repeat`, `from`, `to` on `admin_customers`; `currency` on `admin_cash` (`approval_requests` already takes `type` since RE-1, so it needs no EX-11 child); each child declares `DRILLDOWN_KEYS` in its target's DTO file and swaps its arm in `application/executive/drilldown.rs` (§4.4) | those views' DTO and view files, and `application/executive/drilldown.rs` (one arm; the children serialize on it) | the TX-8 children that own `admin_transactions`, `admin_overview`, `admin_customers` and `admin_cash` (`quote-transaction.md:680`), and LG-6 for `admin_cash` |
 
 EX-6, EX-7, EX-8 and EX-10 each add one `pub mod` line to `infrastructure/executive/mod.rs` and one wiring line to
@@ -516,6 +516,7 @@ in parallel** (all after EX-3: FN-1 uses EX-3's `ExchangeFacts`; disjoint files;
 | EX-11a … EX-11d | #1103–#1106 | open | the EX-11 row: "each child declares DRILLDOWN_KEYS"; one child per target (admin_transactions, admin_overview, admin_customers, admin_cash). No EX-11 parent issue |
 | EX-12 | #1072 | folded into EX-3 #1071 | the count-difference alert is §4.3; EX-3 owns the alert facts |
 | EX-13 | #1077 | folded into EX-7 #1076 | the EX-7 row already says "low-stock from positions" |
+| EX-4 | #1186 | open, no `ready` (after EX-3 #1071 and OR-7.7 #1030; phase 2) | the EX-4 row: the A01 screen, `web/src/screens/admin/executive/**` |
 
 ## 12. Must ask the owner (not decided here)
 
