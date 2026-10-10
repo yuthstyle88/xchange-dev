@@ -12,7 +12,7 @@ use crate::application::user::user_service::{ClaimError, InviteRefusal};
 use crate::domain::access::{Role, ScopedRole};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
-    IdentityRegisterResponse, UNAVAILABLE_MESSAGE,
+    UNAVAILABLE_MESSAGE,
 };
 use crate::domain::token::TokenVerifier;
 use crate::domain::user::{User, UserStatus};
@@ -648,22 +648,6 @@ impl SessionService {
         } else {
             Err(IdentityError::InvalidCode.into())
         }
-    }
-
-    pub async fn register(
-        &self,
-        phone: &str,
-        password: &str,
-        email: Option<&str>,
-        client_ip: Option<&str>,
-    ) -> Result<IdentityRegisterResponse, SessionError> {
-        let identity = self.identity.as_ref().ok_or_else(|| {
-            IdentityError::unavailable("/api/auth/register", 503, "not_configured")
-        })?;
-        identity
-            .register(phone, password, email, client_ip)
-            .await
-            .map_err(Into::into)
     }
 
     pub async fn active_user_and_roles(

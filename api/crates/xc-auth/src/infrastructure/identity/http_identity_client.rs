@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
-    IdentityOtpVerifyResponse, IdentityRegisterResponse,
+    IdentityOtpVerifyResponse,
 };
 use crate::infrastructure::identity::identity_settings::IdentitySettings;
 
@@ -257,25 +257,6 @@ impl IdentityClient for HttpIdentityClient {
                 "registerIfAbsent": false,
             });
             self.send_request("/auth/otp/verify", body, client_ip).await
-        })
-    }
-
-    fn register<'a>(
-        &'a self,
-        phone: &'a str,
-        password: &'a str,
-        email: Option<&'a str>,
-        client_ip: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<IdentityRegisterResponse, IdentityError>> {
-        Box::pin(async move {
-            let mut body = serde_json::json!({
-                "phone": phone,
-                "password": password,
-            });
-            if let Some(em) = email {
-                body["email"] = serde_json::json!(em);
-            }
-            self.send_request("/auth/register", body, client_ip).await
         })
     }
 }
