@@ -6,6 +6,7 @@ pub mod ids;
 pub mod input;
 pub mod mode;
 pub mod money;
+pub mod notifications;
 pub mod payment;
 pub mod pii;
 pub mod queue_tickets;

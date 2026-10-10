@@ -258,6 +258,12 @@ impl CashCountService {
                 id: count_id.to_string(),
             })?;
 
+        if count.kind == CountKind::HandoverOut {
+            return Err(AppError::Domain(
+                crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
+            ));
+        }
+
         let permission = match count.kind {
             CountKind::HandoverOut => Permission::ShiftOperate,
             _ => Permission::ShiftCloseCertify,
@@ -330,7 +336,7 @@ impl CashCountService {
 
         if count.kind == CountKind::Close {
             let shift_id = count.shift_id.as_deref().ok_or(ShiftError::NoOpenShift)?;
-            let mut totals = self.repo.get_count_totals(&mut tx, count_id).await?;
+            let totals = self.repo.get_count_totals(&mut tx, count_id).await?;
 
             let held: Vec<(String, Decimal)> =
                 sqlx::query_as("SELECT code, expected FROM shift_balances WHERE shift_id = $1")
@@ -338,17 +344,12 @@ impl CashCountService {
                     .fetch_all(&mut *tx)
                     .await?;
 
-            for (code, exp) in held {
+            for (code, _exp) in held {
                 if !totals
                     .iter()
                     .any(|t| t.currency.eq_ignore_ascii_case(&code))
                 {
-                    totals.push(CountTotal {
-                        currency: code,
-                        counted: Decimal::ZERO,
-                        expected: Some(exp),
-                        difference: None,
-                    });
+                    return Err(CashError::BalancesChanged.into());
                 }
             }
 
