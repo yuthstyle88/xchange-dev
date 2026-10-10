@@ -104,7 +104,9 @@ body:has(.xc-shell) {
 }
 
 /* v2 devices.html:3 — the header holds only the brand and the nav; the page title is the body heading */
-.xc-devices .xc-shell-title {
+/* v2 kiosk-currencies.html:1 — no header; the page heading is the body h1 */
+.xc-devices .xc-shell-title,
+.xc-kiosk .xc-shell-title {
   position: absolute;
   width: 1px;
   height: 1px;
