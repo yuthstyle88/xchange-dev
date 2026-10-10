@@ -22,11 +22,11 @@ export function AppShell(props: {
   return (
     <div class={props.look ? `xc-shell xc-${props.look}` : 'xc-shell'}>
       {props.banner ? <div class="xc-shell-banner">{props.banner}</div> : null}
+      <AccountBar session={session} />
       <header class="xc-shell-header">
         {props.nav ? <div class="xc-shell-nav">{props.nav}</div> : null}
         <h1 class="xc-shell-title">{props.title}</h1>
         <LangSwitch />
-        <AccountBar session={session} />
       </header>
       <Show when={session.ended()}>
         <p role="alert" class="xc-shell-alert">{t(`shell.session.${session.ended()!}` as Key)}</p>
