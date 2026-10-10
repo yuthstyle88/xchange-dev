@@ -474,7 +474,7 @@ classDiagram
   class TransactionLine { <<xc-exchange domain/transaction/line.rs>> }
   class TransactionPayment { <<xc-exchange domain/transaction/payment.rs>> }
   class Receipt { <<xc-exchange domain/transaction/receipt_record.rs>> +number +revision }
-  class TransactionRepository2 { <<trait xc-exchange domain/transaction/repository.rs>> +insert_draft_in() +set_status_in() +complete_in() }
+  class TransactionStore { <<trait xc-exchange domain/transaction/repository.rs>> +insert_draft_in() +set_status_in() +complete_in() }
   class PgTransactionStore { <<xc-exchange infrastructure/transaction/store.rs>> }
   class CreateTransaction { <<api application/workflows/exchange/create.rs>> +run_in(tx: &mut Transaction~Postgres~, CreateRequest, who: &SaveActor, now) AppResult~ExchangeTransaction~ }
   class ConfirmTransaction { <<api application/workflows/exchange/confirm.rs>> +run_in(tx: &mut Transaction~Postgres~, id: TransactionId, who: &SaveActor, extras: &SaveExtras, now) AppResult~ConfirmOutcome~ }
@@ -508,9 +508,9 @@ classDiagram
   ExchangeTransaction --> TransactionLine
   ExchangeTransaction --> TransactionPayment
   ExchangeTransaction --> Receipt
-  PgTransactionStore ..|> TransactionRepository2
+  PgTransactionStore ..|> TransactionStore
   CreateTransaction --> QuoteRepository
-  CreateTransaction --> TransactionRepository2
+  CreateTransaction --> TransactionStore
   ConfirmTransaction --> SaveStep : before_in
   ConfirmTransaction --> ApprovalService : request
   ConfirmTransaction --> SettingsRepository : limit
@@ -530,9 +530,8 @@ classDiagram
   TransactionCommands --> CancelTransaction
 ```
 
-`TransactionRepository2` is a working name for the new port beside today's `TransactionRepository`
-(`xc-exchange/src/domain/exchange/repositories/`); the implementer keeps today's name for the old one until TX-6
-removes it. `[proposed]`
+The new port is named `TransactionStore` (#670 §7, which pins its methods). It sits beside today's
+`TransactionRepository` (`xc-exchange/src/domain/exchange/repositories/`), which keeps its name until TX-6 removes it.
 
 **Where the services live, and their signatures** `[required]` (they cross tickets: TX-6's adapter calls TX-1, TX-4
 and TX-5's):
@@ -593,6 +592,15 @@ migrations still run correctly on a database with rows.
 **2. `api/migrations/20261014110000_transaction_states.sql`** (TX-2)
 
 - *Changes:* §3.2's columns on `transactions`; creates `transaction_lines`, `transaction_payments`, `receipts`.
+  Two more, ruled by the lane controller on #670 (2026-10-10):
+  - `bookings.transaction_ref` stops referencing the single-column UNIQUE on `document_ref`. It becomes
+    `(organization_id, transaction_ref) → transactions (organization_id, document_ref)`, swapped before that UNIQUE
+    is dropped.
+  - D-4's counter key is `document-<organization_id>-<LIVE|DEMO>-<YYYYMMDD>`
+    (`DocumentRef::counter_key(organization, mode, now)`). Every existing `document-<mode>-<date>` row of `counters`
+    is renamed to its organisation's key, keeping its value, so the day's sequence carries on. Count first:
+    `SELECT count(*) FROM counters WHERE key ~ '^document-(LIVE|DEMO)-[0-9]{8}$';`. There is one organisation
+    (`SELECT count(*) FROM organizations;` = 1), so every renamed row names it.
 - *Existing rows:* every row is a finished exchange, so it gets `status 'COMPLETED'` (the column default),
   `completed_at = recorded_at`, `quote_id NULL`, `booking_id` from `bookings.transaction_ref = document_ref` when one
   exists.
@@ -615,11 +623,15 @@ migrations still run correctly on a database with rows.
   the per-1 rate while the wide column is converted. So **TX-2 merges after RE-4**, and migration 2 converts nothing
   itself. (Version order does not enforce this: `sqlx::migrate!` applies any unapplied migration, whatever its
   version.)
-- *Deploy and the old binary:* with the TX-2 binary, which writes the children on every save. A pre-TX-2 binary still
-  inserts rows (every new column has a default or is NULL-able) but would write no children, so it must not run after
-  migration 2; v3 deploys one binary at a time.
-- *`down`:* drops the three tables and the new columns, and restores `document_ref NOT NULL` (it fails, by design, if a
-  non-COMPLETED row exists; such rows must be cancelled and deleted first, which only test data can have).
+- *Deploy and the old binary:* with the TX-2 binary, which writes the children and `completed_at` on every save.
+  **A pre-TX-2 binary cannot write after migration 2.** Its INSERT has no `completed_at`, and `status` defaults to
+  `COMPLETED`, so the CHECK `(status = 'COMPLETED') = (completed_at IS NOT NULL)` refuses it. No compatibility
+  trigger is added (lane controller's ruling on #670, 2026-10-10): v3 is not installed and deploys one binary at a
+  time. Tests that seed `transactions` in the old shape are updated in TX-2's up-front commits (listed on #670).
+- *`down`:* drops the three tables and the new columns, and restores `document_ref NOT NULL`, its single-column UNIQUE
+  and the old `bookings.transaction_ref` FK. It renames the document counters back to `document-<mode>-<date>`. It
+  fails, by design, if a non-COMPLETED row exists (such rows must be cancelled and deleted first, which only test data
+  can have) or if two organisations share a number.
 
 **3. `api/migrations/20261030130000_drop_wide_transaction_columns.sql`** (TX-9, after TX-8) — cleanup block, slot
 assigned on #564 (issuecomment-6074437590)
