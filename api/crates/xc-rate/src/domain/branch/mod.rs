@@ -2,5 +2,6 @@
 pub mod branch_hours;
 pub mod commands;
 pub mod entities;
+pub mod price_source;
 pub mod repositories;
 pub mod value_objects;
