@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'api-main') || format('api-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   actions: read
