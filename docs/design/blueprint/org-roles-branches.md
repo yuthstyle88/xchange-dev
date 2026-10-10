@@ -174,9 +174,9 @@ The last four rows are named by the cash design (#582, PR 590) and live in this 
 4. **Owner.** For `CustomerSelf`, the target's customer must be the actor's customer, else `outOfScope`.
 
 `Grant { branch: BranchId, roles_used }` is what handlers use. The branch is the **named** branch when it is in
-scope. A user whose roles cover exactly one branch, and who names none, gets that branch. A user with an
-organisation-wide role who names none gets `MAIN`, v3's rule (`policy.rs:43-53`, which the Blueprint does not
-replace).
+scope. A user who names none gets the **session branch** (§14): the branch the user chose in the account bar, kept on
+the session. Before §14 lands, the old rule applies: a user whose roles cover exactly one branch gets that branch, and a
+user with an organisation-wide role gets `MAIN` (`policy.rs:43-53`). §14 replaces the `MAIN` fallback (owner, 2026-10-10).
 
 ---
 
@@ -725,7 +725,7 @@ Each ticket owns disjoint files.
 | The service window inside opening hours | the last start at close − 10 min, the last save at close | v3's existing D7 rule (v2 parity), now relative to the branch's own hours (B4) |
 | How a person is bound to a user | a one-time invite code | binds an Identity `sub` without any new Identity feature (B2) |
 | The `opening_hours` JSON shape | weekly, per day | A04 sets *"เวลาเปิด"*; closure dates belong to booking slots (#555) |
-| The branch an organisation-wide user works on when naming none | `MAIN` | v3's existing rule (`policy.rs:43-53`) |
+| The branch a user works on when naming none | the session branch, chosen from the account bar (§14) | the owner, 2026-10-10: *"sysadmin ให้ เลือก สาขา เข้าทำงานได้"* · *"ให้ มี เมนูสลับ สาขา เอาก็ได้"* · *"ตรงloginไม่ต้องใส่แล้ว สาขา"* |
 | Error codes `signIn`, `roleNotAllowed` | kept | §10 lists its error names as proposals (*"errors เสนอ"*); v3's existing codes stay beside them |
 
 ---
@@ -747,3 +747,189 @@ Each ticket owns disjoint files.
 | O-1 | The organisation's legal name and code | nothing: ADMIN enters them (`legal_name` NULL until then) |
 | O-2 | Each branch's opening hours | service on that branch. ADMIN enters them in A04 (B4), and until then the branch does not open |
 | O-3 | ~~Registering the `xchange` client in Identity~~: done (§5.2) | — |
+
+---
+
+## 14. Session branch and the branch switch menu (SB)
+
+> designed-by: claude/83f682 · 2026-10-10 · measured on `origin/main` `8084ccec` · assigned by the lane controller
+> claude/608dff (previously claude/b060e9's, after OR-4b #767)
+
+### 14.0 The owner's decision and the controller's rulings
+
+The owner, 2026-10-10, in session claude/b060e9:
+- *"sysadmin ให้ เลือก สาขา เข้าทำงานได้"* (sysadmin may choose the branch they work in);
+- *"ให้ มี เมนูสลับ สาขา เอาก็ได้"* (a branch switch menu is fine);
+- *"ตรงloginไม่ต้องใส่แล้ว สาขา"* (no branch at login any more).
+
+The lane controller (claude/608dff) ruled, 2026-10-10:
+
+| # | Ruling |
+|---|---|
+| R1 | The switch menu is reachable from every screen. It opens from the account bar, which shows the branch **name**, not its id. |
+| R2 | There is **one** session branch, on the session (`__Host-xc_session`), set by **one** server command. Admin, desk and devices all read it. |
+| R3 | The server refuses a branch outside the user's grants (D-4), with a test. |
+| R4 | There is no branch picker at login. |
+| R5 | The initial branch is the only branch; else the user's last choice (stored per user); else the first granted branch by `branches.code`. |
+| R6 | The last choice is a new column, so this section has a data migration (§14.5). |
+
+### 14.1 v3 today (measured on `8084ccec`)
+
+- **The session row has no branch.**
+  - `user_sessions(hash, user_id, version, expires, refresh_token_enc, organization_id)` (`api/migrations/20261011110000_users_roles.sql:74-81`); no later migration alters it.
+  - `access::Actor` has no branch either (`api/crates/xc-auth/src/domain/access/actor.rs:6-11`).
+- **The branch is guessed per request.**
+  - The extractor's stopgap `legacy_actor` takes the first role by priority and its branch, else `"MAIN"` (`api/src/presentation/extractors/actor.rs:135-188`).
+  - `Policy::branch` (`policy.rs:43-53`) lets a staff user's own branch win, then the named branch, then `MAIN`.
+  - `Authorizer::check` refuses a user with several branches who names none (`authorizer.rs:95-110`).
+- **Each screen keeps its own branch.**
+  - **Admin:** a sidebar `<select>` "branch-manager" (`web/src/screens/admin/AdminShell.tsx:422-437`, `handleBranchChange` `:261-271`). The initial value is `me.branch`, else `?branch=`, else `'MAIN'` (`:178-206`). `?branch=` is copied onto links (`:486`, `:559`, `:568`, `:579`).
+  - **Devices:** `?branch=` or `'MAIN'` (`web/src/screens/devices/main.tsx:19`), plus a `<select>` over `overview().branches` (`DevicesScreen.tsx:403-415`, `handleBranchChange` `:222-230`).
+  - **Desk:** no branch code at all (`web/src/screens/desk/main.tsx:16-23`); the server decides.
+- **The account bar shows the branch id:** `t('shell.account.branch', {branch: u().branch})` (`web/src/shared/ui/AccountBar.tsx:48`); `'สาขา {branch}'` (`shared/i18n/th.ts:5`). `Me.branch` is an id (`api/src/presentation/dto/v3/common.rs:59`).
+- **Login has no branch field** (`web/src/screens/login/auth-api.ts:23,34`; `api/src/presentation/http/auth.rs:231-241`). R4 needs no change; SB-1 keeps it that way with a test.
+
+### 14.2 The rules
+
+**Switchable set `S(user, now)`.** The user's role rows valid now (`valid_from <= now < valid_to`) give:
+- if any row has `branch_id IS NULL` (organisation-wide, §3.2), **every** branch of the user's organisation;
+- otherwise, the distinct `branch_id`s of those rows.
+
+`S` is ordered by `branches.code`, then by `id`.
+
+**Initial branch (R5)**, computed at sign-in (`create_session_for_user`, and `claim_invite`):
+1. `|S| = 1` → that branch;
+2. else, if `users.last_branch_id ∈ S` → that branch;
+3. else → the first branch of `S`;
+4. `S` empty → `NULL`. That user is refused everything anyway (`roleNotAllowed`).
+
+**Effective branch, on every request.** It is the stored `user_sessions.branch_id` **if it is still in `S`**; otherwise it is recomputed by the initial rule. This covers a grant revoked mid-session. Reading never writes.
+
+**The check (§3.5), amended.** When the target names no branch, `Authorizer::check` uses the actor's effective branch. A named branch is unchanged: honoured when it is in scope, `outOfScope` when not (D-4). The screens stop naming one (§14.4).
+
+**The switch command (R2, R3).** It sets the session's branch for **this session only**. Another browser's session keeps its own. It also records the choice as `users.last_branch_id`, in one transaction. A branch not in `S` is refused `403 outOfScope` and nothing is written. Repeating the same switch writes the same values, so the command is idempotent by value and needs no `idempotency_records` row.
+
+### 14.3 Server shape
+
+| Item | Where | Shape |
+|---|---|---|
+| `SessionBranch` [required: name, file] | `api/crates/xc-auth/src/domain/access/session_branch.rs` (**new**) | pure: `fn switchable(roles: &[ScopedRole], org_branches: &[BranchRef], now) -> Vec<BranchRef>`; `fn initial(s: &[BranchRef], last: Option<&BranchId>) -> Option<BranchId>`; `fn effective(stored: Option<&BranchId>, s: &[BranchRef], last: Option<&BranchId>) -> Option<BranchId>`. `BranchRef { id: BranchId, code: String, name: String }` in the same file |
+| `access::Actor` | `xc-auth/src/domain/access/actor.rs` | gains `branch: Option<BranchId>`, the effective branch [required] |
+| `Authorizer::check` | `xc-auth/src/domain/access/authorizer.rs:95-110` | the "names none" arm uses `actor.branch` when it is `Some` and in scope; the old arms stay for `None` |
+| `SessionService` | `xc-auth/src/application/session/session_service.rs` | `create_session_for_user` and the `claim_invite` insert write `branch_id = SessionBranch::initial(..)`; `active_user_and_roles` also returns the stored branch, `last_branch_id` and the organisation's branches; new `switch_branch(cookie_hash, branch) -> Result<Me-ready data, SessionError::OutOfScope>` |
+| The command route [required: path, body, codes] | `api/src/presentation/http/auth.rs` (beside `/api/auth/session`) | `POST /api/auth/session/branch`, body `{"branch": "<branch id>"}`, `X-Xchange-Request: 1` and the same-origin check as the other auth POSTs. `200` + the `Me` of §14.4; `400` malformed; `401 signIn` no session; `403 outOfScope` not in `S` |
+| The extractor | `api/src/presentation/extractors/actor.rs` | builds `access::Actor.branch` from `SessionBranch::effective` |
+| `Me` [required: JSON fields] | `api/src/presentation/dto/v3/common.rs` + `http/v3/views/me.rs` | `branch` = the effective branch id (unchanged name); new `branchName: string`; new `branches: {id, code, name}[]` = `S`, ordered as §14.2. A user with `|S| = 1` gets a one-element list |
+
+**Why not a v3 `CommandAction`.** A `CommandAction` runs inside one branch's lock and needs an `INHERITS` row (`command.rs:25-60`). Choosing a branch is not business on any branch. It is session state, like sign-out, so it sits with the session routes in `auth.rs`.
+
+### 14.4 Web shape
+
+| Item | Where | Change |
+|---|---|---|
+| The account bar [required: R1] | `web/src/shared/ui/AccountBar.tsx` (+ `account-bar.css` if one is needed) | It shows `สาขา {branchName}`. When `branches.length > 1`, that text is a `button` (`aria-haspopup="menu"`, `aria-expanded`) opening a `role="menu"` list of `branches`, each a `menuitemradio` with the current one checked. Choosing one posts §14.3. On `200` it reloads the page with any `branch` query parameter removed. On an error it shows `shell.account.switchFailed` in the bar and keeps the old branch. Esc and a click outside close the menu. |
+| i18n | `web/src/shared/i18n/{th,en,zh}.ts` | `shell.account.branch` keeps `'สาขา {branch}'` (the value becomes the name); new `shell.account.switchBranch` (`'สลับสาขา'` / `'Switch branch'`), `shell.account.switchFailed` (`'สลับสาขาไม่สำเร็จ'` / `'Could not switch branch'`); `zh` as the file's convention |
+| The session store | `web/src/shared/session/session.ts:57-117` | `SessionUser` carries `branchName` and `branches`. Its 60-second poll ends the page with a new `EndReason` `'branchChanged'` when `me.branch` differs from the held one (switched in another tab), and the shell reloads on it |
+| Admin | `web/src/screens/admin/AdminShell.tsx` | The sidebar `<select>` and `handleBranchChange` are removed. `currentBranch` is `me.branch`, with no `?branch=` and no `'MAIN'` fallback, and links stop carrying `?branch=`. Screens keep receiving `branch={currentBranch}`, so no menu file changes |
+| Devices | `web/src/screens/devices/main.tsx`, `DevicesScreen.tsx` | The branch comes from `me.branch`; the `<select>` at `:403-415` and `handleBranchChange` go |
+| Desk | none | It already takes the server's branch |
+| Login | none | R4: no field (§14.1) |
+
+**Out of this design:** the per-screen *filters* that list another branch's records inside admin, `Payments.tsx:50-52` and `Slips.tsx:34`. They choose what to **view**, not where the user **works**, and they stay. Kiosk and device-token routes have no user session and are unchanged.
+
+### 14.5 Data migration (R6)
+
+**`api/migrations/20261031100000_session_branch.sql`** (SB-1). It is ordered after the latest file on `8084ccec`, `20261030160000_idempotency_organization.sql`.
+
+```sql
+ALTER TABLE users ADD COLUMN last_branch_id text NULL;
+ALTER TABLE users ADD CONSTRAINT users_last_branch_fk
+  FOREIGN KEY (organization_id, last_branch_id) REFERENCES branches(organization_id, id) ON DELETE SET NULL (last_branch_id);
+ALTER TABLE user_sessions ADD COLUMN branch_id text NULL;
+ALTER TABLE user_sessions ADD CONSTRAINT user_sessions_branch_fk
+  FOREIGN KEY (organization_id, branch_id) REFERENCES branches(organization_id, id) ON DELETE SET NULL (branch_id);
+```
+
+1. **Existing rows after the migration.**
+   - Every `users` row gets `last_branch_id = NULL`: no choice made yet. Its next sign-in uses R5 steps 1 and 3.
+   - Every `user_sessions` row gets `branch_id = NULL`. The read rule (§14.2 "effective") treats `NULL` as "recompute", so an open session keeps working and gets the R5 branch on its next request.
+   - No row breaks the new FKs, because both columns are `NULL`.
+2. **Backfill: none.** `NULL` is the correct value for both columns ("no choice yet"), and the code computes the branch lazily. Rows measured to confirm: `SELECT count(*) FROM users; SELECT count(*) FROM user_sessions;`. Both are counted only, not changed.
+3. **Deploy order.** Migration first, then the new binary.
+   - The **old** binary still works on the new schema: it never names the two new nullable columns, and its `INSERT INTO user_sessions` lists its columns (`session_service.rs:241`).
+   - The **new** binary needs the columns, so it must not run before the migration (sqlx runs migrations at start, as for every v3 migration).
+4. **What `down` loses.** Dropping the two columns loses each user's last choice and each open session's chosen branch. Sessions fall back to the pre-§14 rule (`MAIN` for organisation-wide users). Nothing else depends on them.
+
+`ON DELETE SET NULL (col)` needs PostgreSQL 15 or later. If the install is older, the ticket uses a plain FK; branches are never deleted in v3 (no delete route exists).
+
+### 14.6 Class diagram
+
+```mermaid
+classDiagram
+  direction LR
+  class SessionBranch { <<xc-auth domain/access/session_branch.rs NEW>> +switchable(roles, org_branches, now) Vec~BranchRef~ +initial(s, last) BranchId? +effective(stored, s, last) BranchId? }
+  class BranchRef { <<xc-auth domain/access/session_branch.rs NEW>> id; code; name }
+  class Actor { <<xc-auth domain/access/actor.rs>> user_id; organization_id; roles; customer_id?; +branch? }
+  class Authorizer { <<xc-auth domain/access/authorizer.rs>> +check(actor, permission, target) Grant }
+  class SessionService { <<xc-auth application/session/session_service.rs>> +sign_in() +actor_of(cookie) +switch_branch(cookie, branch) }
+  class AuthRoutes { <<api presentation/http/auth.rs>> POST /api/auth/session/branch }
+  class ActorExtractor { <<api presentation/extractors/actor.rs>> }
+  class MeView { <<api http/v3/views/me.rs + dto/v3/common.rs>> branch; branchName; branches }
+  class AccountBar { <<web shared/ui/AccountBar.tsx>> switch menu }
+  class SessionStore { <<web shared/session/session.ts>> branchChanged }
+  SessionBranch --> BranchRef
+  SessionService --> SessionBranch
+  ActorExtractor --> SessionService
+  ActorExtractor --> Actor
+  Authorizer --> Actor
+  AuthRoutes --> SessionService
+  MeView --> SessionService
+  AccountBar --> AuthRoutes
+  AccountBar --> SessionStore
+  SessionStore --> MeView
+```
+
+| Provider | Used by |
+|---|---|
+| `SessionBranch` | `SessionService` (sign-in, read, switch) |
+| `Actor.branch` | `Authorizer::check` (the "names none" arm), so every view and command through `Policy::authorize` |
+| `POST /api/auth/session/branch` | `AccountBar` |
+| `Me.branchName`, `Me.branches` | `AccountBar`, `SessionStore`, `AdminShell`, devices |
+
+### 14.7 Tickets
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| SB-1 | session branch on the server: migration, `SessionBranch`, `Actor.branch`, the check, the switch route, `Me` | the §14.5 migration; `xc-auth/src/domain/access/{session_branch.rs (new), actor.rs, authorizer.rs, mod.rs}`; `xc-auth/src/application/session/session_service.rs`; `api/src/presentation/http/auth.rs`; `api/src/presentation/extractors/actor.rs`; `api/src/presentation/http/v3/views/me.rs`; `api/src/presentation/dto/v3/common.rs` (`Me` only); the exported `common.ts`; its new test files | OR-4b #767 merged (it holds `extractors/actor.rs`, and puts every route on `Policy::authorize`, which this changes) |
+| SB-2 | the switch menu and the screens reading the session branch | `web/src/shared/ui/AccountBar.tsx` (+ css), `web/src/shared/session/session.ts`, `web/src/shared/i18n/{th,en,zh}.ts` (three keys), `web/src/screens/admin/AdminShell.tsx`, `web/src/screens/devices/{main.tsx, DevicesScreen.tsx}`; the tests named below | SB-1 merged (it needs the route and `Me`'s fields) |
+
+**Up-front tests** (🧪), written by the ticket author before `ready`:
+- **SB-1:**
+  - **`SessionBranch` (unit):**
+    - one branch → it;
+    - several, `last ∈ S` → `last`;
+    - `last ∉ S` → the first by code;
+    - an organisation-wide row → every branch of the organisation;
+    - an expired row gives nothing;
+    - `S` empty → `None`;
+    - a stored branch revoked → recomputed.
+  - **HTTP, real Postgres (`api/tests/*_test.rs`, `Desk::start`):**
+    - sign-in stores the R5 branch;
+    - `POST /api/auth/session/branch` to an in-scope branch → `200`, the session row and `users.last_branch_id` change, and the next view with no `?branch=` answers for that branch;
+    - an out-of-scope branch → `403 outOfScope`, and **nothing written** (R3, D-4);
+    - no session → `401`;
+    - a second sign-in lands on the last choice;
+    - the login body still has no branch field (R4);
+    - a named in-scope `?branch=` still wins for that request.
+- **SB-2 (vitest, jsdom):**
+  - the bar shows the branch **name**;
+  - one branch → no menu button;
+  - several → the menu lists them by code with the current one checked;
+  - choosing one posts `{branch}` and reloads;
+  - an error shows `switchFailed` and keeps the old name;
+  - the session store ends with `'branchChanged'` when `me.branch` changes;
+  - the admin sidebar has no `<select>` and links carry no `?branch=`;
+  - devices reads `me.branch`.
+  - The existing pins that SB-2 changes are rewritten by the ticket author in the test commit, with each change named: `AccountBar.test.tsx:130,141,229,235` (id → name), `AdminShell.test.tsx:830,937` (the select), and `DevicesScreen.test.tsx:995` (D19).
+
+**Open, for the controller:** none. R1–R6 cover every choice. The one judgement made here is that an explicit in-scope `?branch=` still wins per request (§14.2): D-4 already allows it, and removing it would touch every route again after OR-4b.
