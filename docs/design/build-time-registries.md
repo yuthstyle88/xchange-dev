@@ -158,11 +158,19 @@ LG-2 #924 will add `NEGATIVE_STOCK` (#925's ruling).
 
 ### 2.2 The directory and the export
 
-- **Directory:** `api/src/presentation/http/v3/commands/approval_subjects/` (new).
+- **Directory:** `api/src/bootstrap/approval_subjects/` (new), beside `bootstrap/outbox_handlers/`.
   - **One file per subject,** named by the subject: `rate_publication.rs`, `rate_feed_publication.rs`,
     `count_difference.rs`, later `negative_stock.rs`.
-  - **The commands table never sees these files:** its generator reads only files directly in `commands/`
-    (`api/build.rs:246-248`, `path.is_file()`), so a subdirectory is never a command.
+  - **Why not under `commands/`** (amended 2026-10-11, the BE lane controller's ruling on #1218). This note first
+    put the files in `presentation/http/v3/commands/approval_subjects/`, and checked only that the commands
+    **generator** ignores subdirectories (`api/build.rs:246-248`, `path.is_file()`). It did not check the route
+    **guard**: `api/tests/or4_routes_guard_test.rs:68-76` (`v3_route_files`) walks `v3/{views,actions,commands}`
+    recursively (`rust_files`, `:38-47`) and treats every non-`mod.rs` file there as a route, so the subject files
+    failed it (PR 1221). The rule "every file under `commands/` is a route" is right, so the files move; the guard
+    gets no exception.
+  - **Why `bootstrap/`:** it is where the repo already keeps the other build-time registry assembled at the
+    composition root (`bootstrap/outbox_handlers/`, PL-0a), and no route guard walks it. The two guards that scan
+    all of `src/` (`or4_routes_guard_test.rs:194`, `:225`) look for patterns a subject file does not contain.
 - **Exports [required]**, per file:
   ```rust
   pub const TYPE: &str = "<the subject's type_name()>";
@@ -172,7 +180,8 @@ LG-2 #924 will add `NEGATIVE_STOCK` (#925's ruling).
   It lets the test compare the generated set with the registry, because `ApprovalRegistry` exposes only
   `register` and `get` (`xc-approval/src/application/registry.rs:27`, `:33`) and has no list. The generator requires
   both the text `pub const TYPE: &str` and `pub fn register(`.
-- **`approval_subjects/mod.rs` (new)**, as `bootstrap/outbox_handlers/mod.rs:1-31`:
+- **`bootstrap/approval_subjects/mod.rs` (new)**, as `bootstrap/outbox_handlers/mod.rs:1-31`, declared as
+  `pub mod approval_subjects;` in `api/src/bootstrap/mod.rs` beside `pub mod outbox_handlers;` (`:3`):
   - `pub type RegisterFn = fn(&mut ApprovalRegistry, PgPool);`
   - `include!(concat!(env!("OUT_DIR"), "/approval_subjects.rs"));`
   - `pub fn registry(pool: PgPool) -> ApprovalRegistry`, which calls every `APPROVAL_SUBJECTS` entry with
@@ -184,7 +193,7 @@ LG-2 #924 will add `NEGATIVE_STOCK` (#925's ruling).
   MissingType, MissingRegisterFn }` and `approval_subjects_table(files)`. It is a copy of
   `api/build_support/outbox_handlers.rs:1-78` with the required texts of §2.2.
 - **`api/build.rs`:** one new block after `:288-326` (the outbox block), reading
-  `src/presentation/http/v3/commands/approval_subjects`, plus `#[path = "build_support/approval_subjects.rs"] mod
+  `src/bootstrap/approval_subjects`, plus `#[path = "build_support/approval_subjects.rs"] mod
   approval_subjects_gen;` beside `:75-76`. This is the only edit to `api/build.rs`, and later subjects never touch it.
 
 ### 2.4 What is generated and where it goes
@@ -192,7 +201,7 @@ LG-2 #924 will add `NEGATIVE_STOCK` (#925's ruling).
 `$OUT_DIR/approval_subjects.rs`:
 
 ```rust
-#[path = "<abs>/src/presentation/http/v3/commands/approval_subjects/count_difference.rs"]
+#[path = "<abs>/src/bootstrap/approval_subjects/count_difference.rs"]
 mod count_difference;
 #[path = "<abs>/…/approval_subjects/rate_feed_publication.rs"]
 mod rate_feed_publication;
@@ -204,22 +213,24 @@ pub const APPROVAL_SUBJECT_TYPES: &[&str] =
     &[count_difference::TYPE, rate_feed_publication::TYPE, rate_publication::TYPE];
 ```
 
-It is included by `approval_subjects/mod.rs`. In `commands/mod.rs`, `:18-24` becomes:
+It is included by `bootstrap/approval_subjects/mod.rs`. In `commands/mod.rs`, `:18-24` becomes:
 
 ```rust
-pub fn make_approval_registry(pool: PgPool) -> ApprovalRegistry { approval_subjects::registry(pool) }
+pub fn make_approval_registry(pool: PgPool) -> ApprovalRegistry {
+    crate::bootstrap::approval_subjects::registry(pool)
+}
 ```
 
-with `pub mod approval_subjects;`. The `use` lines `:10` and `:12` go away. Registration order does not matter:
+and `commands/mod.rs` declares no `approval_subjects` module. The `use` lines `:10` and `:12` go away. Registration order does not matter:
 the registry is a `HashMap` keyed by `type_name()` (`registry.rs:15`, `:29`).
 
 ### 2.5 Moving the existing entries (pure code moves, one commit each)
 
 | # | From (main `4b60f190`) | To |
 |---|---|---|
-| A1 | `commands/mod.rs:20` + `:12` (`rate_publication`) | `approval_subjects/rate_publication.rs`: `TYPE = "RATE_PUBLICATION"`; `register` calls `xc_rate::application::approval::rate_publication::register(registry, pool)` |
-| A2 | `commands/mod.rs:21` + `:12` (`rate_feed_publication`) | `approval_subjects/rate_feed_publication.rs`: `TYPE = "RATE_FEED_PUBLICATION"`; calls `…::rate_feed_publication::register` |
-| A3 | `commands/mod.rs:22` + `:10` (`count_difference`) | `approval_subjects/count_difference.rs`: `TYPE = xc_cash::application::ledger_approval::count_difference::COUNT_DIFFERENCE`; calls `…::count_difference::register` |
+| A1 | `commands/mod.rs:20` + `:12` (`rate_publication`) | `bootstrap/approval_subjects/rate_publication.rs`: `TYPE = "RATE_PUBLICATION"`; `register` calls `xc_rate::application::approval::rate_publication::register(registry, pool)` |
+| A2 | `commands/mod.rs:21` + `:12` (`rate_feed_publication`) | `bootstrap/approval_subjects/rate_feed_publication.rs`: `TYPE = "RATE_FEED_PUBLICATION"`; calls `…::rate_feed_publication::register` |
+| A3 | `commands/mod.rs:22` + `:10` (`count_difference`) | `bootstrap/approval_subjects/count_difference.rs`: `TYPE = xc_cash::application::ledger_approval::count_difference::COUNT_DIFFERENCE`; calls `…::count_difference::register` |
 | A4 | `commands/mod.rs:18-24` | the one-line `make_approval_registry` of §2.4 |
 
 No owning crate changes. Each subject's `register` stays where it is (`xc-rate`, `xc-cash`); only the call to it moves.
@@ -229,7 +240,7 @@ No owning crate changes. Each subject's `register` stays where it is (`xc-rate`,
 `api/tests/approval_subjects_seam_test.rs` (new, no DB; the registry needs a `PgPool` value only, so the test
 uses an unconnected pool such as `PgPoolOptions::new().connect_lazy("postgres://…")`, as
 `outbox_handlers_seam_test.rs:141` uses `common::unreachable_pool()`):
-- **`the_generated_set_is_the_files`:** the stems of `commands/approval_subjects/*.rs` (no `mod.rs`), sorted, equal
+- **`the_generated_set_is_the_files`:** the stems of `bootstrap/approval_subjects/*.rs` (no `mod.rs`), sorted, equal
   the modules behind `APPROVAL_SUBJECTS`. This needs a generated `pub const APPROVAL_SUBJECT_MODULES: &[&str]`,
   beside the two constants of §2.4.
 - **`every_type_is_registered_once`:**
@@ -240,6 +251,9 @@ uses an unconnected pool such as `PgPoolOptions::new().connect_lazy("postgres://
 - **`today_s_three_subjects_are_registered`:** the type set contains `RATE_PUBLICATION`, `RATE_FEED_PUBLICATION`
   and `COUNT_DIFFERENCE` on this ticket's head.
 - `views/approval_requests.rs` and the four `make_approval_service` test callers of §2.1 stay green and unedited.
+- `api/tests/or4_routes_guard_test.rs` stays green and unedited (the reason for §2.2's placement).
+- The test imports `xchange::bootstrap::approval_subjects::{…}` (test commit `beb33117`, which moved only the paths
+  and the import of `d2cd21f2`).
 
 ## 3. Class diagram
 
@@ -253,8 +267,8 @@ classDiagram
   class GeneratedChecks { <<OUT_DIR/reconcile_checks.rs>> +standard_checks() +CHECK_MODULES }
 
   class ApprovalRegistry { <<xc-approval application/registry.rs>> +register(subject, policy) +get(type) }
-  class SubjectFile { <<api commands/approval_subjects/NAME.rs, one per subject>> +TYPE +register(registry, pool) }
-  class ApprovalSubjectsMod { <<api commands/approval_subjects/mod.rs>> +RegisterFn +registry(pool) }
+  class SubjectFile { <<api bootstrap/approval_subjects/NAME.rs, one per subject>> +TYPE +register(registry, pool) }
+  class ApprovalSubjectsMod { <<api bootstrap/approval_subjects/mod.rs>> +RegisterFn +registry(pool) }
   class ApprovalSubjectsGen { <<api build_support/approval_subjects.rs>> +approval_subjects_table(files) }
   class ApiBuild { <<api build.rs>> }
   class GeneratedSubjects { <<OUT_DIR/approval_subjects.rs>> +APPROVAL_SUBJECTS +APPROVAL_SUBJECT_TYPES +APPROVAL_SUBJECT_MODULES }
@@ -291,7 +305,7 @@ classDiagram
 **After this:**
 - a reconcile check ticket (LG-7.3 #1057, LG-7.4 #1058) adds `reconcile/checks/<name>.rs` and nothing else;
 - an approval subject ticket (#924's `NEGATIVE_STOCK`) adds its own crate's subject plus
-  `commands/approval_subjects/negative_stock.rs`, and nothing shared.
+  `bootstrap/approval_subjects/negative_stock.rs`, and nothing shared.
 
 ## 4. Not covered: `Cargo.toml`
 
@@ -310,8 +324,8 @@ Also not covered (named in #1146 §1 but not one of the two lists): `api/crates/
 | | Ticket A: reconcile checks | Ticket B: approval subjects |
 |---|---|---|
 | crate | `xc-cash` | `api` |
-| shared files edited | `xc-cash/src/application/reconcile/mod.rs` | `api/build.rs`, `api/src/presentation/http/v3/commands/mod.rs` |
-| new | `xc-cash/build.rs`, `xc-cash/build_support/reconcile_checks.rs`, `reconcile/checks/`, one seam test | `api/build_support/approval_subjects.rs`, `commands/approval_subjects/`, one seam test |
+| shared files edited | `xc-cash/src/application/reconcile/mod.rs` | `api/build.rs`, `api/src/bootstrap/mod.rs`, `api/src/presentation/http/v3/commands/mod.rs` |
+| new | `xc-cash/build.rs`, `xc-cash/build_support/reconcile_checks.rs`, `reconcile/checks/`, one seam test | `api/build_support/approval_subjects.rs`, `bootstrap/approval_subjects/`, one seam test |
 
 No path is in both, so they can be dispatched in parallel and merged in either order.
 - **Ticket A** should merge before LG-7.3 #1057 and LG-7.4 #1058 start, so that each of those adds one file
@@ -342,11 +356,16 @@ api/build.rs
 api/build_support/approval_subjects.rs
 api/src/presentation/http/v3/commands/mod.rs
 api/src/presentation/http/v3/commands/approval_subjects/
+api/src/bootstrap/mod.rs
+api/src/bootstrap/approval_subjects/
 api/tests/approval_subjects_seam_test.rs
 ```
 
-`api/src/presentation/http/v3/commands/approval_subjects/` is a **new directory this ticket owns outright**; it
-intentionally reserves the whole subtree. Every other line is one file.
+`api/src/bootstrap/approval_subjects/` is a **new directory this ticket owns outright**; it intentionally reserves
+the whole subtree. `api/src/presentation/http/v3/commands/approval_subjects/` stays listed only because ticket B's
+PR (1221) created it and must delete it in the move; after ticket B it does not exist. `commands/mod.rs` stays for
+the one-line `make_approval_registry` and the removal of its `pub mod approval_subjects;`. Every other line is one
+file.
 
 ## 6. Data migration
 
@@ -358,7 +377,7 @@ generation and code moves.
 1. **The pure moves are pure.** `git diff -M100% --stat origin/main...HEAD` shows R1–R3 as renames; A1–A3 add files
    whose `register` is a one-line call to the owning crate.
 2. **Adding an item touches no existing file.** The seam test of each ticket also ships a scratch check in its own
-   commit message's "how to try": add `checks/zz_probe.rs` (or `approval_subjects/zz_probe.rs`), build, and the
+   commit message's "how to try": add `checks/zz_probe.rs` (or `bootstrap/approval_subjects/zz_probe.rs`), build, and the
    generated set grows by one. This is written down, not committed.
 3. **Every existing item is still registered:** `the_generated_set_is_the_files` and the "today's" test of §1.6 and
    §2.6 pass, and the existing `Reconcile::standard()` and `make_approval_service` callers stay green unedited.
