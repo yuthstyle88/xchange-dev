@@ -1,9 +1,25 @@
+.xc-shell .xc-shell-header,
+.xc-shell .xc-shell-footer,
+.xc-shell > .account-bar {
+  display: none;
+}
+
+.xc-shell {
+  min-height: 0;
+}
+
 @media print {
   .screen-heading,
   .print-button,
   .print-tip,
   header:not(.brand),
-  footer:not(.stub) {
+  footer:not(.stub),
+  .xc-shell-footer,
+  .xc-shell > .account-bar {
     display: none;
+  }
+
+  .xc-shell {
+    min-height: 0;
   }
 }
