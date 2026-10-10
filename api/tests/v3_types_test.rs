@@ -113,13 +113,14 @@ fn the_committed_types_are_what_the_rust_dtos_generate() {
     }
 }
 
-/// The file a view or action owns. A `staff_<x>` entry whose twin `<x>` is also in the same
-/// table shares the twin's DTOs, so `<x>.ts` is its own file instead of `staff_<x>.ts`
-/// (`docs/design/xchange-v3-wave3-desk.md` §6, ticket #537: the preparer's amendment). An entry
-/// named `staff_<x>` with no twin keeps `staff_<x>.ts`.
-fn own_file(name: &str, table: &[&str]) -> String {
-    match name.strip_prefix("staff_") {
-        Some(twin) if table.contains(&twin) => format!("{twin}.ts"),
+/// The file a view or action owns. An explicit list of views share their twin's DTOs,
+/// so `<x>.ts` is their own file instead of `staff_<x>.ts` (`staff_desk_config` → `desk_config.ts`,
+/// `staff_published_rates` → `published_rates.ts`). Every other view writes `<name>.ts`,
+/// `staff_me` included.
+fn own_file(name: &str, _table: &[&str]) -> String {
+    match name {
+        "staff_desk_config" => "desk_config.ts".to_string(),
+        "staff_published_rates" => "published_rates.ts".to_string(),
         _ => format!("{name}.ts"),
     }
 }
