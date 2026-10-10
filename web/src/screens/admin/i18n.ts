@@ -15,6 +15,7 @@ export const th = {
   searchPlaceholder: 'ค้นหาเมนู…',
   noMenu: 'ไม่พบเมนู ลองใช้คำอื่น',
   menuButton: '☰ เมนู',
+  closeMenu: 'ปิดเมนู',
 
   manageBranches: 'จัดการสาขา',
   addBranch: '＋ สาขา',
@@ -59,6 +60,7 @@ export const en = {
   searchPlaceholder: 'Search menus…',
   noMenu: 'No menus found. Try another search.',
   menuButton: '☰ Menu',
+  closeMenu: 'Close menu',
 
   manageBranches: 'Manage Branches',
   addBranch: '＋ Branch',
