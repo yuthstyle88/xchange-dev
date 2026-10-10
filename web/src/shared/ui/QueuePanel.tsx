@@ -319,46 +319,56 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         </button>
       </nav>
 
-      <div class="queue-message" role="status" aria-live="polite">
+      <p class="queue-message" role="status" aria-live="polite">
         {statusMessage()}
-      </div>
+      </p>
 
       <Show
         when={displayedRows().length > 0}
-        fallback={<div class="queue-empty">{t('queue.list.empty')}</div>}
+        fallback={<p class="queue-empty">{t('queue.list.empty')}</p>}
       >
         <div class="xc-queue-list">
           <For each={displayedRows()}>
             {(row) => (
               <article class="xc-queue-card">
-                <h3>{row.queue}</h3>
-                <div class="queue-state">{stateWord(row.status)}</div>
-                <div>
+                <div class="queue-order-head">
+                  <h3>{row.queue}</h3>
+                  <span class="queue-state">{stateWord(row.status)}</span>
+                </div>
+                <p>
                   {sideText(row.type)} ·{' '}
                   <MoneyText value={row.foreign} currency={row.currency} /> →{' '}
                   <MoneyText value={row.thb} currency="THB" />
-                </div>
-                <div class="queue-refs">
+                </p>
+                <p class="queue-refs">
                   {fill(t('queue.row.order'), {
                     orderNo: row.orderNo,
                     transactionNo: row.transactionNo ?? t('queue.row.unrecorded'),
                   })}
-                </div>
+                </p>
                 <dl class="queue-times">
-                  <dt>{t('queue.row.staff')}</dt>
-                  <dd>{row.staff ? row.staff : t('queue.row.noStaff')}</dd>
-                  <dt>{t('queue.row.startedAt')}</dt>
-                  <dd>{row.startedAt ? stamp(row.startedAt) : t('queue.row.noData')}</dd>
-                  <dt>{t('queue.row.completedAt')}</dt>
-                  <dd>
-                    {row.status === 'COMPLETED'
-                      ? row.completedAt
-                        ? stamp(row.completedAt)
-                        : t('queue.row.noHistoricalTime')
-                      : '—'}
-                  </dd>
-                  <dt>{t('queue.row.duration')}</dt>
-                  <dd>{renderDuration(row)}</dd>
+                  <div>
+                    <dt>{t('queue.row.staff')}</dt>
+                    <dd>{row.staff ? row.staff : t('queue.row.noStaff')}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('queue.row.startedAt')}</dt>
+                    <dd>{row.startedAt ? stamp(row.startedAt) : t('queue.row.noData')}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('queue.row.completedAt')}</dt>
+                    <dd>
+                      {row.status === 'COMPLETED'
+                        ? row.completedAt
+                          ? stamp(row.completedAt)
+                          : t('queue.row.noHistoricalTime')
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('queue.row.duration')}</dt>
+                    <dd>{renderDuration(row)}</dd>
+                  </div>
                 </dl>
 
                 <div class="queue-order-actions">
@@ -390,9 +400,9 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
                       (row.status === 'ACCEPTED' || row.status === 'ID_CHECKED')
                     }
                   >
-                    <span class="queue-assigned">
+                    <p class="queue-assigned">
                       {fill(t('queue.row.workingBy'), { staff: row.staff })}
-                    </span>
+                    </p>
                   </Show>
                 </div>
               </article>
