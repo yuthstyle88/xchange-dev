@@ -38,6 +38,24 @@ Installed and updated with `deploy/server/` (`build.md`, `install.sh`, `update.s
 daily encrypted backup `xc-v3-backup.timer`. `update.sh` backs up first and keeps `.prev` copies.
 Test data only (D6); the channel reports `staging`.
 
+**Identity settings come from a drop-in the installer does not make.** The unit `deploy/server/xc-v3.service`
+loads only `/etc/xc-v3/env` (`EnvironmentFile=`, rendered by `deploy/server/common.sh` `render_unit`), and nothing
+in `deploy/server/` mentions `/etc/xc-v3/identity-client.env` (section 4). On this host the owner added
+`/etc/systemd/system/xc-v3.service.d/identity.conf` with `EnvironmentFile=/etc/xc-v3/identity-client.env`,
+written by the lane controller's `set-identity-api-key.sh` (the owner ran it on 2026-10-10 around 19:35Z). Without that drop-in the server runs with Identity off:
+the sign-in routes (`/api/auth/login`, `/api/auth/otp/*`) answer `503` (`api/tests/identity_signin_test.rs`), and nobody can sign in.
+- **Fresh install or rebuilt host:** write `/etc/systemd/system/xc-v3.service.d/identity.conf` with exactly
+  this content (systemd ignores a drop-in without the `[Service]` header):
+
+  ```ini
+  [Service]
+  EnvironmentFile=/etc/xc-v3/identity-client.env
+  ```
+
+  Then run `systemctl daemon-reload` and `systemctl restart xc-v3`. Check that `systemctl cat xc-v3` lists both
+  `EnvironmentFile=` lines.
+- **Remove:** delete the drop-in, `daemon-reload`, restart. Sign-in stops working.
+
 ## 3. Kiosk web (Flutter)
 
 `app/` built with `flutter build web --release`, copied to `/var/www/xc-v3-customer/web` (old copy kept as
