@@ -20,33 +20,11 @@ import { toast } from '../parts/toast';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
 import { downloadCsv, walkPages } from '../parts/csv';
+import { LIVE_CSV_HEADERS, liveCsvRow } from '../parts/live-csv';
 import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
 import { en, th } from './i18n';
 import './overview.css';
-
-const CSV_HEADERS = [
-  'Branch ID',
-  'Branch',
-  'Mode',
-  'Document Ref',
-  'Date',
-  'Type',
-  'Currency',
-  'Amount',
-  'Rate',
-  'Principal THB',
-  'Fee THB',
-  'Bank Fee THB',
-  'Settlement THB',
-  'Method',
-  'Status',
-  'Shift ID',
-  'Reference Rate',
-  'Reference Value THB',
-  'Reference Spread THB',
-  'Reference Spread %',
-];
 
 export function Overview(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.overview', { th, en });
@@ -193,30 +171,9 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       const safeBranch = branchName.replace(/[^a-zA-Z0-9-]/g, '_');
       const filename = `XCHANGE-LIVE-${safeBranch}-${todayBangkok}.csv`;
 
-      const csvRows = allRows.map((r) => [
-        branch,
-        branchName,
-        'LIVE',
-        r.id,
-        r.date,
-        r.type,
-        r.currency,
-        r.amount,
-        r.rate,
-        r.principal,
-        r.fee,
-        r.bankFee,
-        r.settlement,
-        r.method,
-        r.status,
-        r.shiftId ?? '',
-        r.referenceRate ?? '',
-        r.referenceValue ?? '',
-        r.referenceSpread ?? '',
-        r.referencePercent ?? '',
-      ]);
+      const csvRows = allRows.map((r) => liveCsvRow(branch, branchName, r));
 
-      downloadCsv(filename, CSV_HEADERS, csvRows);
+      downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(errorText(err.code, err.message));

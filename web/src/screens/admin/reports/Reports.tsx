@@ -27,33 +27,11 @@ import { toast } from '../parts/toast';
 import { methodName, statusName, typeName } from '../parts/transaction';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { formatBangkokTime } from '../parts/TransactionTable';
+import { LIVE_CSV_HEADERS, liveCsvRow } from '../parts/live-csv';
 import * as table from './i18n';
 import './reports.css';
 
 const t = screenT('admin.reports', table);
-
-const CSV_HEADERS = [
-  'Branch ID',
-  'Branch',
-  'Mode',
-  'Document Ref',
-  'Date',
-  'Type',
-  'Currency',
-  'Amount',
-  'Rate',
-  'Principal THB',
-  'Fee THB',
-  'Bank Fee THB',
-  'Settlement THB',
-  'Method',
-  'Status',
-  'Shift ID',
-  'Reference Rate',
-  'Reference Value THB',
-  'Reference Spread THB',
-  'Reference Spread %',
-];
 
 const EMPLOYEE_CSV_HEADERS = [
   'พนักงาน',
@@ -225,30 +203,9 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     const fileName = `XCHANGE-LIVE-${safeBranchName}-${today}.csv`;
 
     const reversed = [...rows].reverse();
-    const rowData = reversed.map((r) => [
-      props.branch(),
-      bName,
-      'LIVE',
-      r.id,
-      r.date,
-      r.type,
-      r.currency,
-      r.amount,
-      r.rate,
-      r.principal,
-      r.fee,
-      r.bankFee,
-      r.settlement,
-      r.method,
-      r.status,
-      r.shiftId ?? '',
-      r.referenceRate ?? '',
-      r.referenceValue ?? '',
-      r.referenceSpread ?? '',
-      r.referencePercent ?? '',
-    ]);
+    const rowData = reversed.map((r) => liveCsvRow(props.branch(), bName, r));
 
-    downloadCsv(fileName, CSV_HEADERS, rowData);
+    downloadCsv(fileName, LIVE_CSV_HEADERS, rowData);
   }
 
   async function handleEmployeeCsv() {

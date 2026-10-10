@@ -36,7 +36,8 @@ function theMenu(): AdminMenu {
 const VIEW = 'admin_transactions';
 const THAI = /[฀-๿]/;
 const HEADERS = ['รายการ / เวลา', 'ลูกค้า', 'ประเภท', 'จำนวนเงิน', 'ยอดชำระ THB', 'สถานะ'];
-/** v2's LIVE export header, `admin-html:170`. */
+/** v2's LIVE export header, `admin-html:170`, with `Unit Size` after `Rate` (#868: the owner's
+ *  decision 2026-10-10; rates are per unit since #781, rates.md §4.9 R1). */
 const CSV_HEADERS = [
   'Branch ID',
   'Branch',
@@ -47,6 +48,7 @@ const CSV_HEADERS = [
   'Currency',
   'Amount',
   'Rate',
+  'Unit Size',
   'Principal THB',
   'Fee THB',
   'Bank Fee THB',
@@ -630,13 +632,13 @@ describe('V2-transactions: CSV (#464 T5; design §12.8)', () => {
     expect(lines[0]).toBe(quoted(CSV_HEADERS));
     expect(lines[1]).toBe(
       quoted([
-        'B1', 'Silom #2', 'LIVE', tx(300).id, '2026-10-08', 'SELL', 'USD', '1500.50', '32.6000', '48916.30',
+        'B1', 'Silom #2', 'LIVE', tx(300).id, '2026-10-08', 'SELL', 'USD', '1500.50', '32.6000', '1', '48916.30',
         '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775',
       ]),
     );
     expect(lines[2]).toBe(
       quoted([
-        'B1', 'Silom #2', 'LIVE', tx(299).id, '2026-10-08', 'BUY', 'USD', '100.00', '32.1000', '3210.00',
+        'B1', 'Silom #2', 'LIVE', tx(299).id, '2026-10-08', 'BUY', 'USD', '100.00', '32.1000', '1', '3210.00',
         '0.00', '0.00', '3209.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '',
       ]),
     );
@@ -657,8 +659,8 @@ describe('V2-transactions: CSV (#464 T5; design §12.8)', () => {
     const [, row] = (await csvText()).split('\r\n');
     const cells = row!.split('","');
     expect(cells[1]).toBe(`'=HYPERLINK(""x"")`);
-    expect(cells[18]).toBe(`'-54.80`);
-    expect(cells[19]).toBe(`'-5.351563"`);
+    expect(cells[19]).toBe(`'-54.80`);
+    expect(cells[20]).toBe(`'-5.351563"`);
     expect(names).toEqual(['XCHANGE-LIVE-_HYPERLINK__x__-2026-10-09.csv']);
   });
 
