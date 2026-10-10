@@ -39,17 +39,17 @@ export function NewTransactionButton(
       } else {
         const deskUrl = res.data.deskUrl;
         openDialog(t('newTransactionTitle'), () => (
-          <div class="new-transaction-dialog">
+          <>
             <p>{t('newTransactionSentence')}</p>
             <div class="dialog-actions">
-              <a href={deskUrl} target="_blank" rel="noopener">
-                {t('openDeskLink')}
-              </a>
-              <button type="button" onClick={closeDialog}>
+              <button type="button" class="secondary" onClick={closeDialog}>
                 {t('close')}
               </button>
+              <a class="primary" href={deskUrl} target="_blank" rel="noopener">
+                {t('openDeskLink')}
+              </a>
             </div>
-          </div>
+          </>
         ));
       }
     } catch (err: unknown) {

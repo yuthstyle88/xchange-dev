@@ -67,17 +67,6 @@
   font-size: 12px;
 }
 
-.xc-admin .xc-content .new-transaction-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.xc-admin .xc-content .new-transaction-dialog p {
-  font-size: 14px;
-  margin: 0;
-}
-
 .xc-admin .xc-content .stat-note {
   font-size: 12px;
   color: var(--muted);
@@ -240,21 +229,15 @@
   margin-top: 3px;
 }
 
-.xc-admin .xc-content .pending-write-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* v2 admin-html.ts:offset 205712 a.primary style="padding:10px 16px;border-radius:7px" */
+.xc-admin .xc-content .dialog-actions a.primary {
+  padding: 10px 16px;
+  border-radius: 7px;
 }
 
 .xc-admin .xc-content .error-message {
   color: #a5003c;
   font-size: 13px;
-  margin: 0;
-}
-
-.xc-admin .xc-content .note-message {
-  font-size: 13px;
-  color: var(--muted);
   margin: 0;
 }
 

@@ -57,18 +57,26 @@ function disableDialogControls(): void {
 function showNotConfirmedDialog(errorMessage: string): void {
   const t = screenT('admin.parts', { th, en });
   openDialog(t('notConfirmed'), () => (
-    <div class="pending-write-dialog">
-      <p class="error-message">{errorMessage}</p>
-      <p class="note-message">{t('notConfirmedNote')}</p>
+    <>
+      <p class="error">{errorMessage}</p>
+      <p class="dialog-note">{t('notConfirmedNote')}</p>
       <div class="dialog-actions">
-        <button type="button" onClick={() => void pendingWrite.retry()}>
+        <button
+          type="button"
+          class="primary"
+          onClick={() => void pendingWrite.retry()}
+        >
           {t('retry')}
         </button>
-        <button type="button" onClick={() => void pendingWrite.inspect()}>
+        <button
+          type="button"
+          class="secondary"
+          onClick={() => void pendingWrite.inspect()}
+        >
           {t('inspect')}
         </button>
       </div>
-    </div>
+    </>
   ));
   setDialogLocked(true);
 }
@@ -76,17 +84,25 @@ function showNotConfirmedDialog(errorMessage: string): void {
 function showNotFoundDialog(): void {
   const t = screenT('admin.parts', { th, en });
   openDialog(t('notFoundInServer'), () => (
-    <div class="pending-write-dialog">
-      <p class="note-message">{t('notFoundInServerText')}</p>
+    <>
+      <p>{t('notFoundInServerText')}</p>
       <div class="dialog-actions">
-        <button type="button" onClick={() => void pendingWrite.retry()}>
+        <button
+          type="button"
+          class="primary"
+          onClick={() => void pendingWrite.retry()}
+        >
           {t('retry')}
         </button>
-        <button type="button" onClick={() => void pendingWrite.abandon()}>
+        <button
+          type="button"
+          class="secondary"
+          onClick={() => void pendingWrite.abandon()}
+        >
           {t('discard')}
         </button>
       </div>
-    </div>
+    </>
   ));
   setDialogLocked(true);
 }
