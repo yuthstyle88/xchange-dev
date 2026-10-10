@@ -5,48 +5,15 @@ use std::sync::Arc;
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use sha2::{Digest, Sha256};
-use sqlx::{Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
 use crate::domain::access::{Role, ScopeRule, ScopedRole};
-use crate::domain::user::{Invite, User, UserRepository, UserStatus};
+use crate::domain::identity::identity_client::{
+    IdentityClient, IdentityError, IdentityRegisterRequest,
+};
+use crate::domain::user::{User, UserRepository, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum InviteRefusal {
-    InviteInvalid,
-    AlreadyLinked,
-    UserNotFound,
-    UserDisabled,
-}
-
-impl InviteRefusal {
-    pub fn message(&self) -> &'static str {
-        match self {
-            Self::InviteInvalid => "รหัสเชิญไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุแล้ว",
-            Self::AlreadyLinked => "ผู้ใช้นี้ลงทะเบียนแล้ว",
-            Self::UserNotFound => "ไม่พบผู้ใช้งาน",
-            Self::UserDisabled => "บัญชีถูกระงับ",
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ClaimError {
-    #[error("invite refused: {0:?}")]
-    Refused(InviteRefusal),
-    #[error(transparent)]
-    App(#[from] AppError),
-}
-
-fn generate_token() -> String {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 fn generate_uuid() -> String {
     let mut bytes = [0u8; 16];
@@ -74,13 +41,6 @@ fn generate_uuid() -> String {
     )
 }
 
-fn sha256_hex(text: &str) -> String {
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
 #[derive(Clone)]
 pub struct UserService<R = PgUserRepository> {
     repo: Arc<R>,
@@ -97,111 +57,6 @@ impl<R> UserService<R> {
 }
 
 impl<R: UserRepository> UserService<R> {
-    /// Invites a new user: validates initial roles with ScopeRule, inserts user (status INVITED),
-    /// generates a one-time invite code and stores its hash, and assigns the roles.
-    /// Returns the created User and the plaintext invite code.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn invite(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        organization_id: &str,
-        name: &str,
-        roles: Vec<ScopedRole>,
-        created_by: &str,
-        now: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
-    ) -> AppResult<(User, String)> {
-        let mut accumulated: Vec<ScopedRole> = Vec::new();
-        for r in &roles {
-            ScopeRule::check(r.role, r.branch.as_ref(), &accumulated).map_err(|e| {
-                AppError::Domain(format!("Scope rule rejected role {:?}: {e}", r.role))
-            })?;
-            accumulated.push(r.clone());
-        }
-
-        let user_id = generate_uuid();
-        let invite_code = generate_token();
-        let code_hash = sha256_hex(&invite_code);
-
-        let user = User {
-            id: user_id.clone(),
-            organization_id: organization_id.to_string(),
-            auth_subject: None,
-            name: name.to_string(),
-            status: UserStatus::Invited,
-            version: 1,
-            created_at: now,
-            created_by: created_by.to_string(),
-            legacy_employee_id: None,
-            roles: roles.clone(),
-        };
-
-        self.repo.create_user(tx, &user).await?;
-
-        let invite = Invite::new(&user_id, code_hash, expires_at);
-        self.repo.create_invite(tx, &invite).await?;
-
-        for r in &roles {
-            self.repo.add_role(tx, &user_id, organization_id, r).await?;
-        }
-
-        Ok((user, invite_code))
-    }
-
-    /// Claims an invite code with an authenticated Identity subject:
-    /// verifies the code is unused and unexpired, checks subject uniqueness,
-    /// sets auth_subject, sets status = ACTIVE, bumps version, and marks code used.
-    pub async fn claim(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        invite_code: &str,
-        auth_subject: &str,
-        now: DateTime<Utc>,
-    ) -> Result<User, ClaimError> {
-        let code_hash = sha256_hex(invite_code);
-
-        // Spend the invite atomically as the FIRST statement in the claim transaction.
-        // Takes row-level lock on user_invites. If already used, expired, or claimed concurrently,
-        // returns None and is refused immediately.
-        let user_id = self
-            .repo
-            .spend_invite(tx, &code_hash, now)
-            .await?
-            .ok_or(ClaimError::Refused(InviteRefusal::InviteInvalid))?;
-
-        if self
-            .repo
-            .find_by_auth_subject(tx, auth_subject)
-            .await?
-            .is_some()
-        {
-            return Err(ClaimError::Refused(InviteRefusal::AlreadyLinked));
-        }
-
-        let mut user = self
-            .repo
-            .find_by_id(tx, &user_id)
-            .await?
-            .ok_or(ClaimError::Refused(InviteRefusal::UserNotFound))?;
-
-        if user.status == UserStatus::Disabled {
-            return Err(ClaimError::Refused(InviteRefusal::UserDisabled));
-        }
-
-        self.repo
-            .set_auth_subject(tx, &user.id, auth_subject)
-            .await?;
-        self.repo
-            .set_status(tx, &user.id, UserStatus::Active)
-            .await?;
-
-        user.auth_subject = Some(auth_subject.to_string());
-        user.status = UserStatus::Active;
-        user.version += 1;
-
-        Ok(user)
-    }
-
     /// Grants a new scoped role to a user:
     /// checks ScopeRule against current active roles before writing,
     /// writes user_roles row, and bumps users.version.
@@ -301,5 +156,246 @@ impl<R: UserRepository> UserService<R> {
         subject: &str,
     ) -> AppResult<Option<User>> {
         self.repo.find_by_auth_subject(tx, subject).await
+    }
+}
+
+/// What `create_staff` needs (#1157 §7). The password goes to Identity only; xchange never stores it.
+#[derive(Debug, Clone)]
+pub struct StaffCreate<'a> {
+    pub name: &'a str,
+    pub username: Option<&'a str>,
+    pub phone: &'a str,
+    pub email: Option<&'a str>,
+    pub password: &'a str,
+    pub roles: Vec<ScopedRole>,
+    /// Identity's `must_change_password`: false for `userCreate`, true for `create-owner`.
+    pub must_change_password: bool,
+    /// Complete an existing `PENDING` user (the retry after Identity refused or was down).
+    pub retry_user_id: Option<&'a str>,
+    pub created_by: &'a str,
+    /// The creator's roles: each role the new user gets must be inside the creator's own ADMIN scope.
+    /// `None` only for `create-owner`, which runs on the server with no signed-in creator.
+    pub creator_roles: Option<&'a [ScopedRole]>,
+}
+
+/// Whether a creator holding `creator` may give every role in `wanted` (#1157 review): an
+/// organisation-wide role needs ADMIN organisation-wide; a branch role needs ADMIN organisation-wide
+/// or ADMIN on that same branch. Only roles valid at `now` count.
+pub fn creator_may_grant(
+    creator: &[ScopedRole],
+    wanted: &[ScopedRole],
+    now: DateTime<Utc>,
+) -> bool {
+    let admin_scopes: Vec<Option<&BranchId>> = creator
+        .iter()
+        .filter(|r| {
+            r.role == Role::Admin && r.valid_from <= now && r.valid_to.is_none_or(|to| to > now)
+        })
+        .map(|r| r.branch.as_ref())
+        .collect();
+    let org_wide = admin_scopes.iter().any(Option::is_none);
+    wanted.iter().all(|w| match &w.branch {
+        None => org_wide,
+        Some(b) => org_wide || admin_scopes.contains(&Some(b)),
+    })
+}
+
+/// Why a staff create is refused. Nothing is bound in xchange for any of these.
+#[derive(Debug)]
+pub enum CreateStaffError {
+    /// A field is missing or wrong (`validationFailed` on that field).
+    Validation {
+        field: &'static str,
+        message: String,
+    },
+    /// Identity refused or is down; the user row stays `PENDING`.
+    Identity(IdentityError),
+    /// Identity made the account but the bind failed; `identity_id` is in `user_audit`.
+    BindFailed {
+        user_id: String,
+        identity_id: String,
+    },
+    /// A role asked for is outside the creator's own ADMIN scope; nothing is written, Identity is not called.
+    OutOfScope,
+    App(AppError),
+}
+
+impl From<AppError> for CreateStaffError {
+    fn from(e: AppError) -> Self {
+        Self::App(e)
+    }
+}
+
+impl<R: UserRepository> UserService<R> {
+    /// Creates a staff member and their Identity account (#1157, design §5.3):
+    /// 1. insert `users` as `PENDING` with its roles, and commit;
+    /// 2. call Identity register outside any transaction;
+    /// 3. in a new transaction, bind `auth_subject` and set `ACTIVE`.
+    ///
+    /// Identity refused or down → the row stays `PENDING` (retry with `retry_user_id`).
+    /// Registered but the bind fails → the returned id is written to `user_audit` and returned.
+    pub async fn create_staff(
+        &self,
+        pool: &PgPool,
+        identity: &dyn IdentityClient,
+        organization_id: &str,
+        input: &StaffCreate<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<User, CreateStaffError> {
+        if input.name.trim().is_empty() {
+            return Err(CreateStaffError::Validation {
+                field: "name",
+                message: "กรุณากรอกชื่อ".to_string(),
+            });
+        }
+        if input.phone.trim().is_empty() {
+            return Err(CreateStaffError::Validation {
+                field: "phone",
+                message: "กรุณากรอกเบอร์โทรศัพท์".to_string(),
+            });
+        }
+        if input.password.is_empty() {
+            return Err(CreateStaffError::Validation {
+                field: "password",
+                message: "กรุณากรอกรหัสผ่าน".to_string(),
+            });
+        }
+
+        // 1. the PENDING row and its roles, committed before Identity is called.
+        let mut tx = pool.begin().await.map_err(AppError::Database)?;
+        let mut user = match input.retry_user_id {
+            Some(id) => {
+                let user = self.repo.find_by_id(&mut tx, id).await?.ok_or_else(|| {
+                    CreateStaffError::Validation {
+                        field: "userId",
+                        message: "ไม่พบผู้ใช้งาน".to_string(),
+                    }
+                })?;
+                if user.organization_id != organization_id || user.status != UserStatus::Pending {
+                    return Err(CreateStaffError::Validation {
+                        field: "userId",
+                        message: "ผู้ใช้นี้สร้างเสร็จแล้ว".to_string(),
+                    });
+                }
+                if let Some(creator) = input.creator_roles
+                    && !creator_may_grant(creator, &user.roles, now)
+                {
+                    return Err(CreateStaffError::OutOfScope);
+                }
+                user
+            }
+            None => {
+                if let Some(creator) = input.creator_roles
+                    && !creator_may_grant(creator, &input.roles, now)
+                {
+                    return Err(CreateStaffError::OutOfScope);
+                }
+                let mut accumulated: Vec<ScopedRole> = Vec::new();
+                for r in &input.roles {
+                    ScopeRule::check(r.role, r.branch.as_ref(), &accumulated).map_err(|e| {
+                        CreateStaffError::Validation {
+                            field: "roles",
+                            message: format!("Scope rule rejected role {:?}: {e}", r.role),
+                        }
+                    })?;
+                    accumulated.push(r.clone());
+                }
+                let user = User {
+                    id: generate_uuid(),
+                    organization_id: organization_id.to_string(),
+                    auth_subject: None,
+                    name: input.name.trim().to_string(),
+                    status: UserStatus::Pending,
+                    version: 1,
+                    created_at: now,
+                    created_by: input.created_by.to_string(),
+                    legacy_employee_id: None,
+                    roles: input.roles.clone(),
+                };
+                self.repo.create_user(&mut tx, &user).await?;
+                for r in &input.roles {
+                    self.repo
+                        .add_role(&mut tx, &user.id, organization_id, r)
+                        .await?;
+                }
+                self.repo
+                    .append_audit(
+                        &mut tx,
+                        input.created_by,
+                        &user.id,
+                        "userCreate",
+                        organization_id,
+                    )
+                    .await?;
+                user
+            }
+        };
+        tx.commit().await.map_err(AppError::Database)?;
+
+        // 2. Identity, outside any transaction.
+        let registered = identity
+            .register(&IdentityRegisterRequest {
+                username: input.username,
+                phone: input.phone.trim(),
+                email: input.email,
+                password: input.password,
+                must_change_password: input.must_change_password,
+            })
+            .await
+            .map_err(CreateStaffError::Identity)?;
+        let identity_id = registered.identity_id.ok_or_else(|| {
+            CreateStaffError::Identity(IdentityError::unavailable(
+                "/auth/register",
+                201,
+                "no_identity_id",
+            ))
+        })?;
+
+        // 3. bind and activate in a new transaction; a failed bind never loses the identity id.
+        let bound: AppResult<()> = async {
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
+            if self
+                .repo
+                .find_by_auth_subject(&mut tx, &identity_id)
+                .await?
+                .is_some()
+            {
+                return Err(AppError::Domain(
+                    "identity already bound to another user".to_string(),
+                ));
+            }
+            self.repo
+                .set_auth_subject(&mut tx, &user.id, &identity_id)
+                .await?;
+            self.repo
+                .set_status(&mut tx, &user.id, UserStatus::Active)
+                .await?;
+            tx.commit().await.map_err(AppError::Database)?;
+            Ok(())
+        }
+        .await;
+
+        if bound.is_err() {
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
+            self.repo
+                .append_audit(
+                    &mut tx,
+                    input.created_by,
+                    &user.id,
+                    &format!("userCreateBindFailed:{identity_id}"),
+                    organization_id,
+                )
+                .await?;
+            tx.commit().await.map_err(AppError::Database)?;
+            return Err(CreateStaffError::BindFailed {
+                user_id: user.id,
+                identity_id,
+            });
+        }
+
+        user.auth_subject = Some(identity_id);
+        user.status = UserStatus::Active;
+        user.version += 1;
+        Ok(user)
     }
 }

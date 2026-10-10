@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, type JSX } from 'solid-js';
+import { createSignal, onMount, type JSX } from 'solid-js';
 import { ApiError } from '../../shared/api/client';
 import { AuthLayout } from '../../shared/ui/AuthLayout';
 import { PasswordField } from '../../shared/ui/PasswordField';
@@ -13,13 +13,6 @@ const t = screenT('login', loginI18n);
 
 function toErrorKey(err: unknown): keyof typeof loginI18n.th {
   if (err instanceof ApiError) {
-    if (err.code === 'inviteRefused' && err.reason) {
-      const reasonKey = `err_inviteRefused_${err.reason}` as keyof typeof loginI18n.th;
-      if (reasonKey in loginI18n.th) {
-        return reasonKey;
-      }
-      return 'err_inviteRefused';
-    }
     const key = `err_${err.code}` as keyof typeof loginI18n.th;
     if (key in loginI18n.th) {
       return key;
@@ -36,7 +29,6 @@ export function LoginScreen(props: {
   const form = useForm();
   let formEl: HTMLFormElement | undefined;
   const [pending, setPending] = createSignal(false);
-  const [showInvite, setShowInvite] = createSignal(false);
   const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
 
   onMount(async () => {
@@ -57,23 +49,14 @@ export function LoginScreen(props: {
     const data = new FormData(formEl);
     const identifier = String(data.get('identifier') ?? '');
     const password = String(data.get('password') ?? '');
-    const inviteCode = String(data.get('inviteCode') ?? '');
 
     setPending(true);
     setErrorKey(undefined);
 
     try {
-      if (showInvite()) {
-        const res = await props.auth.claim({ identifier, password, inviteCode });
-        props.navigate(homeOf(res.user));
-      } else {
-        const res = await props.auth.login({ identifier, password });
-        props.navigate(homeOf(res.user));
-      }
+      const res = await props.auth.login({ identifier, password });
+      props.navigate(homeOf(res.user));
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'signIn') {
-        setShowInvite(true);
-      }
       setErrorKey(toErrorKey(err));
     } finally {
       setPending(false);
@@ -112,21 +95,6 @@ export function LoginScreen(props: {
           required
           maxLength={128}
         />
-        <Show when={showInvite()}>
-          <TextField
-            field={form.field('inviteCode')}
-            label={t('inviteCode')}
-            required={showInvite()}
-          />
-        </Show>
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowInvite(true)}
-          >
-            {t('haveInvite')}
-          </button>
-        </div>
         <div>
           <button type="submit" disabled={pending()}>
             {t('submit')}

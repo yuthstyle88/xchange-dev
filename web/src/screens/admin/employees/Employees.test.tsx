@@ -3,6 +3,9 @@
 // page (ticket §7, §9, §10 rows E1–E3; design §12.3, §12.6, §12.7 in PR 474). Written before the
 // implementation by the lane controller (claude/7ca80c). Do not edit, delete or weaken; add tests in
 // a file of your own.
+// Amended by #1157 (claude/08f7f46f; owner: the shop owner creates staff accounts, no invite): the create
+// dialog posts `userCreate` (`POST /api/users`) with a required phone and the org's roles, instead of v2's
+// `{action: "create"}`; the other writes still go to `/api/employees`, unchanged.
 //
 // Source of truth (W9): xchange-v2-source@4d0bdbb `src/online/public/employees.js:2-12`, the
 // section `admin-html:19` (decoded admin page, ticket §2) and the served regrouping
@@ -22,7 +25,9 @@
 //   gives the table its branch names and the create dialog its branch choices (v2 reads both from
 //   the snapshot's `branches`, `employees.js:6-7`);
 // - `POST /api/employees` `{action, payload}` — v2's door, unchanged (ticket §8): `{saved: true}`,
-//   or v2's refusal `{"error": "<sentence>"}`; `entity` and `enable` move the branch's version.
+//   or v2's refusal `{"error": "<sentence>"}`; `entity` and `enable` move the branch's version;
+// - `POST /api/users` (#1157 `userCreate`) — recorded as the action `create` with the body as payload:
+//   `{userId, status, version}`, or the refusal `{"error": {"code", "message"}}`.
 // Every other request is recorded and fails the test. AppShell's page-wide reads
 // (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted.
 //
@@ -85,11 +90,13 @@ const T = {
   // create (employees.js:7)
   createTitle: 'สร้างบัญชีพนักงาน',
   name: 'ชื่อพนักงาน',
-  username: 'รหัสบัญชี',
+  username: 'รหัสบัญชี (ไม่บังคับ)',
+  phone: 'เบอร์โทรศัพท์ (ใช้เข้าสู่ระบบ)',
+  email: 'อีเมล (ไม่บังคับ)',
   role: 'บทบาท',
   branch: 'สาขา',
   password: 'รหัสผ่านชั่วคราว',
-  handOver: 'ส่งมอบรหัสผ่านให้พนักงานโดยตรง ต้องเปลี่ยนรหัสผ่านก่อนเริ่มงาน',
+  handOver: 'ส่งมอบรหัสผ่านให้พนักงานโดยตรง',
   createSubmit: 'สร้างบัญชี',
   // reset (employees.js:10)
   resetTitle: 'รีเซ็ตรหัสผ่าน',
@@ -119,7 +126,7 @@ const T = {
 } as const;
 
 /** The create dialog's role choices, in v2's order (employees.js:7). */
-const ROLES = ['FRONT', 'BACKEND', 'MANAGER', 'RATES', 'MONITOR', 'FINANCE', 'SYSTEM', 'DOCUMENTS', 'DOCUMENT_REVIEW'];
+const ROLES = ['TELLER', 'BRANCH_MANAGER', 'RATE_MANAGER', 'FINANCE', 'VERIFICATION_REVIEWER', 'ADMIN'];
 
 // ── the fake server ──────────────────────────────────────────────────────────
 
@@ -232,6 +239,17 @@ class Server {
       const sentence = this.refuse[body.action];
       if (sentence !== undefined) return json({ error: sentence }, 400);
       return json(this.apply(body.action, body.payload));
+    }
+    if (method === 'POST' && url.pathname === '/api/users') {
+      const headers = new Headers(init?.headers);
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      this.posts.push({ method, marker: headers.get('x-xchange-request'), action: 'create', payload: body });
+      this.onPost?.('create');
+      const sentence = this.refuse.create;
+      if (sentence !== undefined) return json({ error: { code: 'validationFailed', message: sentence } }, 400);
+      const roles = body.roles as { role: string; branch: string }[];
+      this.employees.push({ id: `e-${this.employees.length + 1}`, username: String(body.username), name: String(body.name), role: roles[0]!.role, branchId: roles[0]!.branch, active: true, mustChange: false });
+      return json({ userId: `u-${this.employees.length}`, status: 'ACTIVE', version: 2 });
     }
     this.others.push(`${method} ${raw}`);
     return json({ error: { code: 'notFound', message: 'not found' } }, 404);
@@ -591,7 +609,7 @@ function expectBothReRead(mark: number, what: string): void {
 }
 
 describe("V2-employees E1: create, reset and disable through v2's door", () => {
-  it("creates an account from v2's dialog and posts exactly v2's payload to /api/employees", async () => {
+  it("creates an account from v2's dialog and posts exactly the userCreate payload to /api/users (#1157)", async () => {
     await mount({ branch: 'A1' });
     button(page(), T.add).click();
     await settle();
@@ -611,8 +629,9 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
     expect(password.type, 'the temporary password is concealed').toBe('password');
 
     type(field(d, T.name), 'New Person');
+    type(field(d, T.phone), '0812345678');
     type(field(d, T.username), 'new01');
-    choose(role, 'MONITOR');
+    choose(role, 'TELLER');
     choose(branch, 'MAIN');
     type(password, 'temporary-pass-01');
     const mark = server.reads.length;
@@ -624,7 +643,14 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
         method: 'POST',
         marker: '1',
         action: 'create',
-        payload: { name: 'New Person', username: 'new01', role: 'MONITOR', branchId: 'MAIN', password: 'temporary-pass-01' },
+        payload: {
+          name: 'New Person',
+          username: 'new01',
+          phone: '0812345678',
+          email: null,
+          password: 'temporary-pass-01',
+          roles: [{ role: 'TELLER', branch: 'MAIN' }],
+        },
       },
     ]);
     expect(openDialogEl(), 'the dialog closes once saved').toBeNull();
@@ -711,6 +737,7 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
         button(page(), T.add).click();
         await settle();
         type(field(theDialog(), T.name), 'Somebody');
+        type(field(theDialog(), T.phone), '0812345678');
         type(field(theDialog(), T.username), 'some01');
         type(field(theDialog(), T.password), 'temporary-pass-01');
         button(theDialog(), T.createSubmit).click();

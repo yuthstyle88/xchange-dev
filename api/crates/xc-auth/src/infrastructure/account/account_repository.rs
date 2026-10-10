@@ -302,7 +302,7 @@ impl AccountRepository for PgAccountRepository {
         let user_id: String = sqlx::query_scalar(
             r#"
             INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id)
-            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'INVITED', 1, $3, $4, $5)
+            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'PENDING', 1, $3, $4, $5)
             RETURNING id::text
             "#,
         )
@@ -561,7 +561,7 @@ impl AccountRepository for PgAccountRepository {
         let user_id: String = sqlx::query_scalar(
             r#"
             INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id)
-            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'INVITED', 1, $3, 'owner', NULL)
+            VALUES (gen_random_uuid(), $1::uuid, NULL, $2, 'PENDING', 1, $3, 'owner', NULL)
             RETURNING id::text
             "#,
         )

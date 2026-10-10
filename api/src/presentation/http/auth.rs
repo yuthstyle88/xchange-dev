@@ -8,7 +8,6 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService};
-use xc_auth::application::user::user_service::InviteRefusal;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
@@ -83,11 +82,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
             .route(web::post().to(v3_login)),
     );
     cfg.service(
-        web::resource("/api/auth/invite/claim")
-            .app_data(body())
-            .route(web::post().to(v3_claim)),
-    );
-    cfg.service(
         web::resource("/api/auth/otp/request")
             .app_data(body())
             .route(web::post().to(v3_otp_request)),
@@ -139,25 +133,10 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
 }
 
 fn refusal_response(status: u16, code: &str, message: &str) -> HttpResponse {
-    refusal_response_with_reason(status, code, message, None)
-}
-
-fn refusal_response_with_reason(
-    status: u16,
-    code: &str,
-    message: &str,
-    reason: Option<InviteRefusal>,
-) -> HttpResponse {
-    let mut err_obj = serde_json::Map::new();
-    err_obj.insert("code".to_string(), json!(code));
-    if let Some(reason) = reason {
-        err_obj.insert("reason".to_string(), json!(reason));
-    }
-    err_obj.insert("message".to_string(), json!(message));
     HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap())
         .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
         .json(json!({
-            "error": err_obj
+            "error": { "code": code, "message": message }
         }))
 }
 
@@ -170,9 +149,8 @@ fn handle_session_error(err: SessionError) -> HttpResponse {
             "Identity unavailable"
         );
     }
-    let reason = err.reason();
     let (status, code, msg) = err.refusal();
-    refusal_response_with_reason(status, code, &msg, reason)
+    refusal_response(status, code, &msg)
 }
 
 fn attach_signin_cookies(builder: &mut actix_web::HttpResponseBuilder, session_token: &str) {
@@ -234,55 +212,6 @@ async fn v3_login(
     let ip = client_address(&req);
     let now = Utc::now();
     match session.login(identifier, password, Some(ip), now).await {
-        Ok(tail) => {
-            let mut resp = HttpResponse::Ok();
-            attach_signin_cookies(&mut resp, &tail.session_token);
-            resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-                .json(json!({ "user": tail.user }))
-        }
-        Err(err) => handle_session_error(err),
-    }
-}
-
-async fn v3_claim(
-    req: HttpRequest,
-    bytes: web::Bytes,
-    session: web::Data<SessionService>,
-) -> HttpResponse {
-    if !same_origin(&req) {
-        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
-    }
-    if !session.is_configured() {
-        tracing::error!(
-            path = "/api/auth/invite/claim",
-            status = 0,
-            code = "not_configured",
-            "Identity is not configured"
-        );
-        return refusal_response(503, "identityUnavailable", UNAVAILABLE_MESSAGE);
-    }
-    let body: Value = match serde_json::from_slice(&bytes) {
-        Ok(v) => v,
-        Err(_) => return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"),
-    };
-    let identifier = body
-        .get("identifier")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("");
-    let invite_code = body
-        .get("inviteCode")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if identifier.is_empty() || password.is_empty() || invite_code.is_empty() {
-        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
-    }
-    let ip = client_address(&req);
-    let now = Utc::now();
-    match session
-        .claim_invite(identifier, password, invite_code, Some(ip), now)
-        .await
-    {
         Ok(tail) => {
             let mut resp = HttpResponse::Ok();
             attach_signin_cookies(&mut resp, &tail.session_token);

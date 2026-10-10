@@ -6,7 +6,6 @@ use sqlx::{Postgres, Row, Transaction};
 use xc_kernel::ids::BranchId;
 
 use crate::domain::access::{Role, ScopedRole};
-use crate::domain::user::invite::Invite;
 use crate::domain::user::user::User;
 use crate::domain::user::user_repository::UserRepository;
 use crate::domain::user::user_status::UserStatus;
@@ -45,7 +44,7 @@ impl UserRepository for PgUserRepository {
         let user_id: String = row.get("id");
         let roles = self.find_roles_by_user_id(tx, &user_id).await?;
         let status_str: String = row.get("status");
-        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Invited);
+        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Pending);
 
         Ok(Some(User {
             id: user_id,
@@ -85,7 +84,7 @@ impl UserRepository for PgUserRepository {
         let user_id: String = row.get("id");
         let roles = self.find_roles_by_user_id(tx, &user_id).await?;
         let status_str: String = row.get("status");
-        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Invited);
+        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Pending);
 
         Ok(Some(User {
             id: user_id,
@@ -146,6 +145,28 @@ impl UserRepository for PgUserRepository {
         Ok(())
     }
 
+    async fn append_audit(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor_id: &str,
+        subject_id: &str,
+        action: &str,
+        organization_id: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO user_audit (actor_id, subject_id, action, organization_id) \
+             VALUES ($1, $2, $3, $4::uuid)",
+        )
+        .bind(actor_id)
+        .bind(subject_id)
+        .bind(action)
+        .bind(organization_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(())
+    }
+
     async fn set_auth_subject(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -183,125 +204,6 @@ impl UserRepository for PgUserRepository {
         .map_err(AppError::Database)?;
 
         Ok(version)
-    }
-
-    async fn create_invite(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        invite: &Invite,
-    ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO user_invites (user_id, code_hash, expires_at, used_at)
-            VALUES ($1::uuid, $2, $3, $4)
-            "#,
-        )
-        .bind(&invite.user_id)
-        .bind(&invite.code_hash)
-        .bind(invite.expires_at)
-        .bind(invite.used_at)
-        .execute(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(())
-    }
-
-    async fn find_invite_by_user_id(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        user_id: &str,
-    ) -> AppResult<Option<Invite>> {
-        let row = sqlx::query(
-            r#"
-            SELECT user_id::text, code_hash, expires_at, used_at
-            FROM user_invites
-            WHERE user_id = $1::uuid
-            "#,
-        )
-        .bind(user_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(row.map(|r| Invite {
-            user_id: r.get("user_id"),
-            code_hash: r.get("code_hash"),
-            expires_at: r.get("expires_at"),
-            used_at: r.get("used_at"),
-        }))
-    }
-
-    async fn find_invite_by_code_hash(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        code_hash: &str,
-    ) -> AppResult<Option<Invite>> {
-        let row = sqlx::query(
-            r#"
-            SELECT user_id::text, code_hash, expires_at, used_at
-            FROM user_invites
-            WHERE code_hash = $1
-            "#,
-        )
-        .bind(code_hash)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(row.map(|r| Invite {
-            user_id: r.get("user_id"),
-            code_hash: r.get("code_hash"),
-            expires_at: r.get("expires_at"),
-            used_at: r.get("used_at"),
-        }))
-    }
-
-    async fn mark_invite_used(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        user_id: &str,
-        now: DateTime<Utc>,
-    ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE user_invites
-            SET used_at = $1
-            WHERE user_id = $2::uuid
-            "#,
-        )
-        .bind(now)
-        .bind(user_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(())
-    }
-
-    async fn spend_invite(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        code_hash: &str,
-        now: DateTime<Utc>,
-    ) -> AppResult<Option<String>> {
-        let user_id: Option<String> = sqlx::query_scalar(
-            r#"
-            UPDATE user_invites
-            SET used_at = $1
-            WHERE code_hash = $2
-              AND used_at IS NULL
-              AND expires_at > $1
-            RETURNING user_id::text
-            "#,
-        )
-        .bind(now)
-        .bind(code_hash)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(user_id)
     }
 
     async fn add_role(

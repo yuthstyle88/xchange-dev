@@ -228,11 +228,15 @@ impl Db {
     }
 
     /// A user as OR-2's mirror writes it; `legacy` is the employee id (`None` for the owner's user).
+    /// Amended by #1157 (claude/08f7f46f): the not-yet-bound status is `INVITED` before #1157's migration
+    /// (which drops `user_invites`) and `PENDING` after it; this file runs at both stages.
     async fn user(&self, legacy: Option<&str>) -> String {
         let org = self.org().await;
         sqlx::query_scalar(
             "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             VALUES ($1::uuid, 'u', 'INVITED', 'test', $2) RETURNING id::text",
+             VALUES ($1::uuid, 'u', \
+                     CASE WHEN to_regclass('user_invites') IS NULL THEN 'PENDING' ELSE 'INVITED' END, \
+                     'test', $2) RETURNING id::text",
         )
         .bind(&org)
         .bind(legacy)

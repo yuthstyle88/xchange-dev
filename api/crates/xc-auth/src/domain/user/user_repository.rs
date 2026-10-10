@@ -7,7 +7,6 @@ use pos_error::AppResult;
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
-use super::invite::Invite;
 use super::user::User;
 use super::user_status::UserStatus;
 use crate::domain::access::{Role, ScopedRole};
@@ -51,38 +50,6 @@ pub trait UserRepository: Send + Sync + 'static {
         id: &str,
     ) -> impl Future<Output = AppResult<i32>> + Send;
 
-    fn create_invite(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        invite: &Invite,
-    ) -> impl Future<Output = AppResult<()>> + Send;
-
-    fn find_invite_by_user_id(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        user_id: &str,
-    ) -> impl Future<Output = AppResult<Option<Invite>>> + Send;
-
-    fn find_invite_by_code_hash(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        code_hash: &str,
-    ) -> impl Future<Output = AppResult<Option<Invite>>> + Send;
-
-    fn mark_invite_used(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        user_id: &str,
-        now: DateTime<Utc>,
-    ) -> impl Future<Output = AppResult<()>> + Send;
-
-    fn spend_invite(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        code_hash: &str,
-        now: DateTime<Utc>,
-    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
-
     fn add_role(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -105,4 +72,15 @@ pub trait UserRepository: Send + Sync + 'static {
         tx: &mut Transaction<'_, Postgres>,
         user_id: &str,
     ) -> impl Future<Output = AppResult<Vec<ScopedRole>>> + Send;
+
+    /// Appends one `user_audit` row: who did what to whom (#1157: a create, and the Identity id
+    /// of a register whose bind failed, so it is never lost).
+    fn append_audit(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor_id: &str,
+        subject_id: &str,
+        action: &str,
+        organization_id: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send;
 }

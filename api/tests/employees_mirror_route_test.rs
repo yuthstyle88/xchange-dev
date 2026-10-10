@@ -4,7 +4,7 @@
 //!
 //! Design: `docs/design/blueprint/org-roles-branches.md` (#550, merged f0ec3ca) §9 item 2, "Mirroring": the
 //! `employees` route (`api/src/presentation/http/employees.rs:43`) is the only writer of accounts until OR-5; a
-//! create through it leaves one `users` row (`INVITED`, `legacy_employee_id` = the new id) with its one
+//! create through it leaves one `users` row (`PENDING`, `legacy_employee_id` = the new id) with its one
 //! `user_roles` row, mapped by §3.3; every disable reaches `disable_employee_in`, which sets
 //! `users.status = 'DISABLED'` in the caller's transaction — the route's `DisableEmployee`
 //! (`api/src/application/workflows/disable_employee.rs:74`) included. A refused disable (the employee holds cash)
@@ -164,10 +164,10 @@ async fn is_active(desk: &Desk, id: &str) -> bool {
 
 // ── the tests ────────────────────────────────────────────────────────────────
 
-/// A create through `POST /api/employees` leaves one `INVITED` user (`legacy_employee_id` = the new id) with its
+/// A create through `POST /api/employees` leaves one `PENDING` user (`legacy_employee_id` = the new id) with its
 /// one role, mapped by §3.3, at the branch named.
 #[actix_web::test]
-async fn a_create_through_the_route_leaves_one_invited_user_with_its_role() {
+async fn a_create_through_the_route_leaves_one_pending_user_with_its_role() {
     let desk = Desk::start().await;
     let app = desk_app_without_custody!(desk);
     let owner = owner_signs_in(&app).await;
@@ -184,8 +184,8 @@ async fn a_create_through_the_route_leaves_one_invited_user_with_its_role() {
         .collect();
     assert_eq!(
         mirrored,
-        vec![("INVITED".to_owned(), None, "คุณ ann".to_owned())],
-        "one INVITED, unclaimed user with the employee's name"
+        vec![("PENDING".to_owned(), None, "คุณ ann".to_owned())],
+        "one PENDING, unclaimed user with the employee's name"
     );
     assert_eq!(
         roles_of(&desk, &ann).await,
@@ -200,7 +200,7 @@ async fn a_create_through_the_route_leaves_one_invited_user_with_its_role() {
         vec![("ADMIN".to_owned(), Some(B2.to_owned()))]
     );
     for id in [&ben, &sys] {
-        assert_eq!(status_of(&desk, id).await, "INVITED");
+        assert_eq!(status_of(&desk, id).await, "PENDING");
     }
     drop(app);
     desk.drop_schema().await;

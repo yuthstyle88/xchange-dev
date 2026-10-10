@@ -22,16 +22,15 @@ import './employees.css';
 
 const t = screenT('admin.employees', table);
 
+// #1157: the roles a shop owner gives a staff member at a branch (`userCreate`, ScopeRule allows a branch
+// for each). The account is created in Identity server-side; the person signs in with the phone.
 const ROLES = [
-  'FRONT',
-  'BACKEND',
-  'MANAGER',
-  'RATES',
-  'MONITOR',
+  'TELLER',
+  'BRANCH_MANAGER',
+  'RATE_MANAGER',
   'FINANCE',
-  'SYSTEM',
-  'DOCUMENTS',
-  'DOCUMENT_REVIEW',
+  'VERIFICATION_REVIEWER',
+  'ADMIN',
 ] as const;
 
 export function Employees(props: AdminMenuProps): JSX.Element {
@@ -149,15 +148,20 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       setSubmitting(true);
       try {
         const data = new FormData(formEl);
-        await api.post('/api/employees', {
-          action: 'create',
-          payload: {
-            name: String(data.get('name') ?? ''),
-            username: String(data.get('username') ?? ''),
-            role: String(data.get('role') ?? 'FRONT'),
-            branchId: String(data.get('branchId') ?? props.branch()),
-            password: String(data.get('password') ?? ''),
-          },
+        const email = String(data.get('email') ?? '').trim();
+        const username = String(data.get('username') ?? '').trim();
+        await api.post('/api/users', {
+          name: String(data.get('name') ?? ''),
+          username: username === '' ? null : username,
+          phone: String(data.get('phone') ?? '').trim(),
+          email: email === '' ? null : email,
+          password: String(data.get('password') ?? ''),
+          roles: [
+            {
+              role: String(data.get('role') ?? 'TELLER'),
+              branch: String(data.get('branchId') ?? props.branch()),
+            },
+          ],
         });
         closeDialog();
         await reReadBoth();
@@ -179,9 +183,17 @@ export function Employees(props: AdminMenuProps): JSX.Element {
             {t('name')}
             <input id="create-name" name="name" required />
           </label>
+          <label for="create-phone">
+            {t('phone')}
+            <input id="create-phone" name="phone" type="tel" autocomplete="off" required />
+          </label>
           <label for="create-username">
             {t('username')}
-            <input id="create-username" name="username" required />
+            <input id="create-username" name="username" />
+          </label>
+          <label for="create-email">
+            {t('email')}
+            <input id="create-email" name="email" type="email" />
           </label>
           <label for="create-role">
             {t('role')}

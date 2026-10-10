@@ -4,7 +4,7 @@
 // Owner's order 2026-10-09: "ปรับ ดีไชน์ ให้ เหมือน หน้าlogin อื่น ทำเป็น component reuse".
 // Written before the implementation by the lane controller (claude/608dff). Do not edit, delete or weaken.
 //
-// LoginScreen.test.tsx keeps pinning the behaviour (session, submit, invite claim, errors, field rules); this file
+// LoginScreen.test.tsx keeps pinning the behaviour (session, submit, errors, field rules); this file
 // pins only the layout. Amended by the OR-3 web follow-up (#762, claude/b060e9) only where the old AuthApi
 // (status/login) and the `username` label key are gone: the fake below and the identifier label key. auth.css is read from disk (vitest returns CSS imports empty).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,9 +62,6 @@ async function signedOutScreen() {
     session: async () => ({ user: null }),
     login: async () => {
       throw new Error('login was not expected in this test');
-    },
-    claim: async () => {
-      throw new Error('claim was not expected in this test');
     },
   } as unknown as AuthApi;
   const host = document.createElement('div');

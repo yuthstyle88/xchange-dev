@@ -3,7 +3,7 @@
 //! the ticket author (claude/e5ab6c). Do not edit, delete or weaken; add tests in a file of your own.
 //!
 //! Design: `docs/design/blueprint/org-roles-branches.md` (#550, merged f0ec3ca) §9 item 2, "Mirroring":
-//! - `create_employee` inserts the `users` row (`INVITED`, `legacy_employee_id = <new id>`) and its one
+//! - `create_employee` inserts the `users` row (`PENDING`, `legacy_employee_id = <new id>`) and its one
 //!   `user_roles` row, mapped by §3.3, before the commit;
 //! - `disable_employee_in` sets `users.status = 'DISABLED'` where `legacy_employee_id = id`, in the caller's tx;
 //!   `employees("disable")` → `disable_employee` wraps it;
@@ -16,7 +16,7 @@
 //!    row, and refuses with `AppError::Domain(NO_SUCH_BRANCH)`, the route's sentence
 //!    (`xc-rate/src/domain/validation.rs:8`, used by `BranchService::require`). xc-auth does not depend on
 //!    xc-rate, so the sentence text is asserted here.
-//! 2. `create_owner` is mirrored: in its transaction it inserts the owner's `users` row (`INVITED`,
+//! 2. `create_owner` is mirrored: in its transaction it inserts the owner's `users` row (`PENDING`,
 //!    `legacy_employee_id` NULL) with EXECUTIVE and ADMIN, both organisation-wide (`branch_id` NULL).
 //!
 //! The route's `DisableEmployee` workflow (root crate) is held in `api/tests/employees_mirror_route_test.rs`.
@@ -110,10 +110,10 @@ async fn employee_at(service: &Service, username: &str, role: &str, branch: &str
 
 // ── create ───────────────────────────────────────────────────────────────────
 
-/// A create through `employees("create")` leaves one `INVITED` user whose `legacy_employee_id` is the new id,
+/// A create through `employees("create")` leaves one `PENDING` user whose `legacy_employee_id` is the new id,
 /// with its one role, mapped by §3.3, at the employee's branch.
 #[tokio::test]
-async fn a_create_leaves_one_invited_user_with_its_one_mapped_role() {
+async fn a_create_leaves_one_pending_user_with_its_one_mapped_role() {
     let db = TestDb::start().await;
     let service = db.service();
     let org = organization(&db).await;
@@ -125,8 +125,8 @@ async fn a_create_leaves_one_invited_user_with_its_one_mapped_role() {
         let (status, subject, name, _, user_org) = the_user_of(&db, &id).await;
         assert_eq!(
             (status.as_str(), subject, name, user_org),
-            ("INVITED", None, format!("คุณ {username}"), org.clone()),
-            "{v3}: INVITED, unclaimed, the employee's name, the one organisation"
+            ("PENDING", None, format!("คุณ {username}"), org.clone()),
+            "{v3}: PENDING, unclaimed, the employee's name, the one organisation"
         );
         assert_eq!(
             roles_of(&db, &id).await,
@@ -238,7 +238,7 @@ async fn a_committed_disable_in_the_callers_transaction_disables_the_user() {
     );
     assert_eq!(
         the_user_of(&db, &id).await.0,
-        "INVITED",
+        "PENDING",
         "not seen outside it before the commit"
     );
     tx.commit().await.expect("commit");
@@ -354,14 +354,14 @@ async fn a_create_at_an_unknown_branch_is_refused_and_writes_nothing() {
     // The same create at a branch that has its row goes through.
     db.seed_branch("NOWHERE").await;
     let id = employee_at(&service, "ghost", "FRONT", "NOWHERE").await;
-    assert_eq!(the_user_of(&db, &id).await.0, "INVITED");
+    assert_eq!(the_user_of(&db, &id).await.0, "PENDING");
     db.drop_schema().await;
 }
 
 // ── follow-up decision 2: the owner ──────────────────────────────────────────
 
 /// An owner created after migration 2 (`create-owner` runs after the migrations on a fresh install) has one
-/// `users` row, `INVITED`, with no `legacy_employee_id`, holding EXECUTIVE and ADMIN, both `branch_id` NULL. A
+/// `users` row, `PENDING`, with no `legacy_employee_id`, holding EXECUTIVE and ADMIN, both `branch_id` NULL. A
 /// refused second owner adds no user.
 #[tokio::test]
 async fn an_owner_created_after_migration_2_is_executive_and_admin_organisation_wide() {
@@ -385,7 +385,7 @@ async fn an_owner_created_after_migration_2_is_executive_and_admin_organisation_
     let (user, status, name, subject) = &owners[0];
     assert_eq!(
         (status.as_str(), name.as_str(), subject.clone()),
-        ("INVITED", "boss", None)
+        ("PENDING", "boss", None)
     );
     let roles: Vec<(String, Option<String>, String, bool)> = sqlx::query_as(
         "SELECT role_code::text, branch_id::text, organization_id::text, valid_to IS NULL \

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UserStatus {
-    Invited,
+    Pending,
     Active,
     Disabled,
 }
@@ -12,7 +12,7 @@ pub enum UserStatus {
 impl UserStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Invited => "INVITED",
+            Self::Pending => "PENDING",
             Self::Active => "ACTIVE",
             Self::Disabled => "DISABLED",
         }
@@ -20,7 +20,7 @@ impl UserStatus {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "INVITED" => Some(Self::Invited),
+            "PENDING" => Some(Self::Pending),
             "ACTIVE" => Some(Self::Active),
             "DISABLED" => Some(Self::Disabled),
             _ => None,

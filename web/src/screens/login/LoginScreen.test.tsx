@@ -1,23 +1,23 @@
 // OR-3 web follow-up (#762 §7 `LoginScreen.tsx` [required], §9 edge cases): the sign-in screen signs in
-// through the Identity BFF that OR-3 (#752, merged 8234e77) added, and a first-time staff member claims
-// their invite code (design docs/design/blueprint/org-roles-branches.md §5.1, §5.3).
+// through the Identity BFF that OR-3 (#752, merged 8234e77) added (design docs/design/blueprint/org-roles-branches.md
+// §5.1).
 // Replaces the #396/#480 pins of the old `/api/auth {action}` flow (status, login({username}), mustChange → /staff).
 // Written before the implementation by the ticket author (claude/b060e9). Do not edit, delete or weaken.
+// Amended by #1157 (claude/08f7f46f; owner: "ไม่มีระบบเชิญสำหรับพนักงาน"): the one-time-code step is removed with
+// its route, so E5/E6 and the code-step assertions go; E2 now pins one submit and no code-step button or text.
 //
 // The API this test pins, in `web/src/screens/login/LoginScreen.tsx`:
 //
 //   export function LoginScreen(props: { auth: AuthApi; navigate: (url: string) => void }): JSX.Element;
 //
-// with `AuthApi` as pinned in ./auth-api.test.ts (session, login, claim).
+// with `AuthApi` as pinned in ./auth-api.test.ts (session, login).
 //
 // What it pins, row by row (the ticket's §9 numbers):
 // - E1 on load `session()` once; a user → navigate(homeOf(user)) (TELLER → /desk, owner → /, else /).
 // - E2 signed out: an identifier field (name identifier, autocomplete username, type text, required, maxlength 254,
-//   NO pattern), the password field as before, the submit button, and a `haveInvite` button; no invite field yet.
+//   NO pattern), the password field as before, and the submit button: the form's only button.
 // - E3 a failed `session()` shows the screen's own sentence for its code; a network failure shows errNetwork.
 // - E4 submit → `login({identifier, password})` exactly once; e-mail and phone identifiers are not blocked.
-// - E5 `haveInvite` reveals the invite field (name inviteCode, required); submit then → `claim(...)`, never `login`.
-// - E6 a `signIn` refusal from login reveals the invite field and keeps what was typed.
 // - E7 every refusal shows the sentence for its CODE from ./i18n, never err.message and never by HTTP status;
 //   an unknown code → errUnknown; a non-ApiError → errNetwork.
 // - E8 one request while pending; the password is concealed again after a refusal.
@@ -41,13 +41,9 @@ interface Creds {
   identifier: string;
   password: string;
 }
-interface ClaimCreds extends Creds {
-  inviteCode: string;
-}
 interface NewAuthApi {
   session(): Promise<{ user: SessionUser | null }>;
   login(p: Creds): Promise<{ user: SessionUser }>;
-  claim(p: ClaimCreds): Promise<{ user: SessionUser }>;
 }
 type Screen = (props: { auth: NewAuthApi; navigate: (url: string) => void }) => JSX.Element;
 
@@ -112,12 +108,10 @@ const notExpected = (name: string) => async () => {
 function fakeAuth(over: {
   session?: () => Promise<{ user: SessionUser | null }>;
   login?: (p: Creds) => Promise<{ user: SessionUser }>;
-  claim?: (p: ClaimCreds) => Promise<{ user: SessionUser }>;
 }) {
-  const calls = { session: 0, login: [] as Creds[], claim: [] as ClaimCreds[] };
+  const calls = { session: 0, login: [] as Creds[] };
   const session = over.session ?? (async () => ({ user: null }));
   const login = over.login ?? notExpected('login');
-  const claim = over.claim ?? notExpected('claim');
   const auth: NewAuthApi = {
     session: () => {
       calls.session += 1;
@@ -126,10 +120,6 @@ function fakeAuth(over: {
     login: (p) => {
       calls.login.push({ ...p });
       return login(p);
-    },
-    claim: (p) => {
-      calls.claim.push({ ...p });
-      return claim(p);
     },
   };
   return { auth, calls };
@@ -161,10 +151,6 @@ function passwordInput(host: HTMLElement): HTMLInputElement {
   const el = host.querySelector<HTMLInputElement>('input[autocomplete="current-password"]');
   if (!el) throw new Error('no password input (autocomplete="current-password")');
   return el;
-}
-
-function inviteInput(host: HTMLElement): HTMLInputElement | null {
-  return host.querySelector<HTMLInputElement>('input[name="inviteCode"]');
 }
 
 function buttonWithText(host: HTMLElement, text: string): HTMLButtonElement {
@@ -250,9 +236,14 @@ describe('LoginScreen — on load (E1, E2, E3)', () => {
     expect(id.form).toBe(button.form);
     expect(pw.form).toBe(button.form);
 
-    expect(inviteInput(host), 'no invite field until asked for').toBeNull();
-    const have = buttonWithText(host, tx('haveInvite'));
-    expect(have.type, 'the invite toggle never submits').toBe('button');
+    const submits = Array.from(host.querySelectorAll('form button[type="submit"]'));
+    expect(submits, 'the form has one submit').toEqual([button]);
+    const others = Array.from(host.querySelectorAll('form button:not([type="submit"])'));
+    expect(
+      others.every((b) => b.closest('label, .field, div')?.querySelector('input[type="password"], input[type="text"]')),
+      'every other button belongs to a field (the password show/hide), none opens a code step',
+    ).toBe(true);
+    expect(host.textContent ?? '', 'no code step text').not.toMatch(/รหัสเชิญ|invite/i);
   });
 
   it('a refused session() shows the sentence for its code and the form stays usable (E3)', async () => {
@@ -285,12 +276,11 @@ describe('LoginScreen — on load (E1, E2, E3)', () => {
 
 describe('LoginScreen — signing in (E4, E8, E9)', () => {
   it.each(['nok', 'nok@example.com', '+66812345678', '0812345678'])(
-    'sends exactly {identifier: %j, password} once and never claim',
+    'sends exactly {identifier: %j, password} once',
     async (identifier) => {
       const { host, navigate, calls } = await signedOutScreen({ login: async () => ({ user: TELLER }) });
       await fillAndSubmit(host, identifier, 'secret-pw-1');
       expect(calls.login).toEqual([{ identifier, password: 'secret-pw-1' }]);
-      expect(calls.claim).toEqual([]);
       expect(navigate.mock.calls).toEqual([['/desk']]);
     },
   );
@@ -431,83 +421,6 @@ describe('LoginScreen — refusals by code (E7)', () => {
   });
 });
 
-describe('LoginScreen — first sign-in with an invite code (E5, E6; design §5.3)', () => {
-  it('haveInvite reveals a required invite field in the same form; submit then claims, never logs in', async () => {
-    const { host, navigate, calls } = await signedOutScreen({ claim: async () => ({ user: TELLER }) });
-    buttonWithText(host, tx('haveInvite')).click();
-    await settle();
-    const code = inviteInput(host);
-    expect(code, 'the invite field (name="inviteCode")').not.toBeNull();
-    expect(code!.required).toBe(true);
-    expect(code!.form).toBe(submitButton(host).form);
-    expect(labelOf(host, code!)).toBe(tx('inviteCode'));
-
-    type(identifierInput(host), 'nok@example.com');
-    type(passwordInput(host), 'secret-pw-1');
-    type(code!, 'INV-7Q2K');
-    submitButton(host).click();
-    await settle();
-    expect(calls.claim).toEqual([{ identifier: 'nok@example.com', password: 'secret-pw-1', inviteCode: 'INV-7Q2K' }]);
-    expect(calls.login).toEqual([]);
-    expect(navigate.mock.calls).toEqual([['/desk']]);
-  });
-
-  it('an empty invite code sends nothing; the invite field is marked and focused', async () => {
-    const { host, calls } = await signedOutScreen({ claim: async () => ({ user: TELLER }) });
-    buttonWithText(host, tx('haveInvite')).click();
-    await settle();
-    type(identifierInput(host), 'nok');
-    type(passwordInput(host), 'secret-pw-1');
-    submitButton(host).form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    expect(calls.claim).toHaveLength(0);
-    expect(calls.login).toHaveLength(0);
-    const code = inviteInput(host)!;
-    expect(code.getAttribute('aria-invalid')).toBe('true');
-    expect(document.activeElement).toBe(code);
-  });
-
-  it('a signIn refusal from login shows err_signIn, reveals the invite field and keeps what was typed (E6)', async () => {
-    const { host, navigate, calls } = await signedOutScreen({
-      login: async () => {
-        throw refusal('signIn', 401);
-      },
-      claim: async () => ({ user: RATES }),
-    });
-    await fillAndSubmit(host, '0812345678', 'secret-pw-1');
-    expect(messageLine(host)).toBe(tx('err_signIn'));
-    const code = inviteInput(host);
-    expect(code, 'the invite field appears after signIn').not.toBeNull();
-    expect(identifierInput(host).value).toBe('0812345678');
-
-    type(passwordInput(host), 'secret-pw-1');
-    type(code!, 'INV-1');
-    submitButton(host).click();
-    await settle();
-    expect(calls.login).toHaveLength(1);
-    expect(calls.claim).toEqual([{ identifier: '0812345678', password: 'secret-pw-1', inviteCode: 'INV-1' }]);
-    expect(navigate.mock.calls).toEqual([['/']]);
-  });
-
-  it('a refused claim shows err_inviteRefused and the invite field stays', async () => {
-    const { host, navigate } = await signedOutScreen({
-      claim: async () => {
-        throw refusal('inviteRefused', 400, 'ผู้ใช้นี้ลงทะเบียนแล้ว');
-      },
-    });
-    buttonWithText(host, tx('haveInvite')).click();
-    await settle();
-    type(identifierInput(host), 'nok');
-    type(passwordInput(host), 'secret-pw-1');
-    type(inviteInput(host)!, 'INV-OLD');
-    submitButton(host).click();
-    await settle();
-    expect(messageLine(host)).toBe(tx('err_inviteRefused'));
-    expect(inviteInput(host)).not.toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
-  });
-});
-
 describe('LoginScreen — language (E10, W10)', () => {
   it('its texts and its error sentences follow setLang', async () => {
     setLang('en');
@@ -519,7 +432,6 @@ describe('LoginScreen — language (E10, W10)', () => {
     expect(host.querySelector('header h1')?.textContent?.trim()).toBe(tx('title', EN));
     expect(labelOf(host, identifierInput(host))).toBe(tx('identifier', EN));
     expect(labelOf(host, passwordInput(host))).toBe(tx('password', EN));
-    buttonWithText(host, tx('haveInvite', EN));
     type(identifierInput(host), 'nok');
     type(passwordInput(host), 'wrong-pw-1');
     submitButton(host, EN).click();

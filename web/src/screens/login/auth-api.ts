@@ -15,7 +15,6 @@ export interface SessionUser {
 export interface AuthApi {
   session(): Promise<{ user: SessionUser | null }>;
   login(p: { identifier: string; password: string }): Promise<{ user: SessionUser }>;
-  claim(p: { identifier: string; password: string; inviteCode: string }): Promise<{ user: SessionUser }>;
 }
 
 export function authApi(api: Pick<ApiClient, 'post'>): AuthApi {
@@ -25,13 +24,6 @@ export function authApi(api: Pick<ApiClient, 'post'>): AuthApi {
     },
     login(p: { identifier: string; password: string }): Promise<{ user: SessionUser }> {
       return api.post('/api/auth/login', { identifier: p.identifier, password: p.password });
-    },
-    claim(p: { identifier: string; password: string; inviteCode: string }): Promise<{ user: SessionUser }> {
-      return api.post('/api/auth/invite/claim', {
-        identifier: p.identifier,
-        password: p.password,
-        inviteCode: p.inviteCode,
-      });
     },
   };
 }

@@ -10,12 +10,14 @@
 //   user_service.rs    = api/crates/xc-auth/src/application/user/user_service.rs
 // The screen's other tests assert its text through this table.
 // Written before the implementation by the ticket author (claude/b060e9). Do not edit, delete or weaken.
+// Amended by #1157 (claude/08f7f46f): the one-time-code keys are removed with the code path; err_signIn now
+// tells the person the shop owner creates their account.
 //
 // The table this test pins, in `web/src/screens/login/i18n.ts`:
 //
-//   export const th = { title, identifier, password, submit, haveInvite, inviteCode,
+//   export const th = { title, identifier, password, submit,
 //                       err_invalidCredentials, err_accountLocked, err_tooManyAttempts, err_identityDisabled,
-//                       err_userDisabled, err_signIn, err_inviteRefused, err_identityUnavailable,
+//                       err_userDisabled, err_signIn, err_identityUnavailable,
 //                       err_invalidRequest, errUnknown, errNetwork, ...any further keys } as const;
 //   export const en: Record<keyof typeof th, string>;
 //
@@ -34,15 +36,12 @@ const PINNED_TH: Record<string, string> = {
   password: 'รหัสผ่าน', // v2 login.html:1
   submit: 'เข้าสู่ระบบ', // v2 login.html:1
   identifier: 'อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้',
-  haveInvite: 'มีรหัสเชิญ',
-  inviteCode: 'รหัสเชิญ',
   err_invalidCredentials: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', // identity_client.rs:84
   err_accountLocked: 'บัญชีถูกล็อกชั่วคราว กรุณาลองใหม่ภายหลัง', // identity_client.rs:85
   err_tooManyAttempts: 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่', // identity_client.rs:86-90
   err_identityDisabled: 'บัญชีนี้ถูกระงับที่ระบบยืนยันตัวตน', // identity_client.rs:91
   err_userDisabled: 'บัญชีถูกระงับ', // session_service.rs:71
-  err_signIn: 'บัญชีนี้ยังไม่ได้ผูกกับผู้ใช้ของ XCHANGE กรุณาใช้รหัสเชิญ', // session_service.rs:72-76 (UserNotBound)
-  err_inviteRefused: 'รหัสเชิญไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุแล้ว', // user_service.rs:141
+  err_signIn: 'บัญชีนี้ยังไม่มีผู้ใช้ใน XCHANGE ให้เจ้าของร้านสร้างบัญชีให้', // session_service.rs (UserNotBound, #1157)
   err_identityUnavailable: 'ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง', // identity_client.rs:4
   err_invalidRequest: 'คำขอไม่ถูกต้อง', // auth.rs:202
   errUnknown: 'เกิดข้อผิดพลาด กรุณาลองใหม่',

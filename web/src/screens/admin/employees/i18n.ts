@@ -28,11 +28,13 @@ export const th = {
 
   createTitle: 'สร้างบัญชีพนักงาน',
   name: 'ชื่อพนักงาน',
-  username: 'รหัสบัญชี',
+  username: 'รหัสบัญชี (ไม่บังคับ)',
+  phone: 'เบอร์โทรศัพท์ (ใช้เข้าสู่ระบบ)',
+  email: 'อีเมล (ไม่บังคับ)',
   role: 'บทบาท',
   branch: 'สาขา',
   password: 'รหัสผ่านชั่วคราว',
-  handOver: 'ส่งมอบรหัสผ่านให้พนักงานโดยตรง ต้องเปลี่ยนรหัสผ่านก่อนเริ่มงาน',
+  handOver: 'ส่งมอบรหัสผ่านให้พนักงานโดยตรง',
   createSubmit: 'สร้างบัญชี',
 
   resetTitle: 'รีเซ็ตรหัสผ่าน',
@@ -93,12 +95,13 @@ export const en = {
 
   createTitle: 'Create Staff Account',
   name: 'Staff Name',
-  username: 'Account ID',
+  username: 'Account ID (optional)',
+  phone: 'Phone (used to sign in)',
+  email: 'Email (optional)',
   role: 'Role',
   branch: 'Branch',
   password: 'Temporary Password',
-  handOver:
-    'Hand over the password directly to the staff member. Password must be changed before starting work.',
+  handOver: 'Hand over the password directly to the staff member.',
   createSubmit: 'Create Account',
 
   resetTitle: 'Reset Password',
