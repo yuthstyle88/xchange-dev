@@ -15,12 +15,26 @@ class QuotePage extends ConsumerWidget {
     final c = ref.read(kioskControllerProvider.notifier);
     final l = ref.watch(kioskTextsProvider);
     final quote = s.quote!;
+    final width = MediaQuery.sizeOf(context).width;
+    final narrow = width <= 760;
+    final backButton = SecondaryButton(
+      key: const Key('back'),
+      label: l.text('back'),
+      onPressed: s.busy ? null : c.backToSelect,
+    );
+    final confirmButton = PrimaryButton(
+      key: const Key('confirm'),
+      label: s.secondsLeft > 0
+          ? l.text('wait', {'n': s.secondsLeft})
+          : l.text('confirm'),
+      onPressed: s.canConfirm ? c.confirm : null,
+    );
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 880),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(30),
+          padding: EdgeInsets.all(narrow ? 20 : 30),
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: KioskColors.line),
@@ -53,27 +67,23 @@ class QuotePage extends ConsumerWidget {
                 style: const TextStyle(fontSize: 17, color: KioskColors.muted),
               ),
               const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: SecondaryButton(
-                      key: const Key('back'),
-                      label: l.text('back'),
-                      onPressed: s.busy ? null : c.backToSelect,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: PrimaryButton(
-                      key: const Key('confirm'),
-                      label: s.secondsLeft > 0
-                          ? l.text('wait', {'n': s.secondsLeft})
-                          : l.text('confirm'),
-                      onPressed: s.canConfirm ? c.confirm : null,
-                    ),
-                  ),
-                ],
-              ),
+              if (narrow)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    backButton,
+                    const SizedBox(height: 10),
+                    confirmButton,
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: backButton),
+                    const SizedBox(width: 14),
+                    Expanded(child: confirmButton),
+                  ],
+                ),
             ],
           ),
         ),

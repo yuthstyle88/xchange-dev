@@ -30,12 +30,15 @@ class ReceiptPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final width = MediaQuery.sizeOf(context).width;
+    final narrow = width <= 760;
     final s = ref.watch(kioskControllerProvider);
     final l = ref.watch(kioskTextsProvider);
     final id = s.identity!;
     final image = s.receiptImage!;
     final bytes = decode(image);
     return _DoneCard(
+      padding: EdgeInsets.all(narrow ? 20 : 30),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -99,8 +102,12 @@ class ReceiptPage extends ConsumerWidget {
 }
 
 class _DoneCard extends StatelessWidget {
-  const _DoneCard({required this.child});
+  const _DoneCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(30),
+  });
   final Widget child;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -108,7 +115,7 @@ class _DoneCard extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 880),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(30),
+        padding: padding,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),

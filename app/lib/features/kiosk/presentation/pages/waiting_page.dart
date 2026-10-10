@@ -14,10 +14,67 @@ class WaitingPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final width = MediaQuery.sizeOf(context).width;
+    final narrow = width <= 760;
+    final small = width <= 600;
     final s = ref.watch(kioskControllerProvider);
     final l = ref.watch(kioskTextsProvider);
     final id = s.identity!;
+    final qrImage = Image.asset(
+      'assets/img/telegram_qr.png',
+      width: 120,
+      height: 120,
+      filterQuality: FilterQuality.none,
+      fit: BoxFit.contain,
+      semanticLabel: 'QR code linking to $telegramUrl',
+    );
+    final textBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l.text('usdtTitle'),
+          textAlign: TextAlign.start,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        Text(
+          l.text('usdtScan'),
+          textAlign: TextAlign.start,
+          style: const TextStyle(fontSize: 18),
+        ),
+        TextButton(
+          onPressed: () async {
+            // Read before the await: the page may be gone when
+            // it fails.
+            final actions = ref.read(deviceActionsProvider);
+            final kiosk = ref.read(kioskControllerProvider.notifier);
+            try {
+              await actions.openExternal(telegramUrl);
+            } on DeviceActionException {
+              kiosk.reportError('errGeneric');
+            }
+          },
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            foregroundColor: KioskColors.brand,
+            textStyle: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          child: const Text(
+            '@XCHANGEXTK',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+        ),
+        Text(
+          l.text('usdtNote'),
+          textAlign: TextAlign.start,
+          style: const TextStyle(fontSize: 18),
+        ),
+      ],
+    );
     return _DoneCard(
+      padding: EdgeInsets.all(narrow ? 20 : 30),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -77,71 +134,18 @@ class WaitingPage extends ConsumerWidget {
           const SizedBox(height: 28),
           KioskCard(
             color: const Color(0xFFFAF9FB),
-            child: Row(
-              children: [
-                Image.asset(
-                  'assets/img/telegram_qr.png',
-                  width: 120,
-                  height: 120,
-                  filterQuality: FilterQuality.none,
-                  fit: BoxFit.contain,
-                  semanticLabel: 'QR code linking to $telegramUrl',
-                ),
-                const SizedBox(width: 24),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: small
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [qrImage, const SizedBox(height: 24), textBlock],
+                  )
+                : Row(
                     children: [
-                      Text(
-                        l.text('usdtTitle'),
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        l.text('usdtScan'),
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          // Read before the await: the page may be gone when
-                          // it fails.
-                          final actions = ref.read(deviceActionsProvider);
-                          final kiosk = ref.read(
-                            kioskControllerProvider.notifier,
-                          );
-                          try {
-                            await actions.openExternal(telegramUrl);
-                          } on DeviceActionException {
-                            kiosk.reportError('errGeneric');
-                          }
-                        },
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          foregroundColor: KioskColors.brand,
-                          textStyle: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        child: const Text(
-                          '@XCHANGEXTK',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        l.text('usdtNote'),
-                        style: const TextStyle(fontSize: 18),
-                      ),
+                      qrImage,
+                      const SizedBox(width: 24),
+                      Expanded(child: textBlock),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -150,8 +154,12 @@ class WaitingPage extends ConsumerWidget {
 }
 
 class _DoneCard extends StatelessWidget {
-  const _DoneCard({required this.child});
+  const _DoneCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(30),
+  });
   final Widget child;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -159,7 +167,7 @@ class _DoneCard extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 880),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(30),
+        padding: padding,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
