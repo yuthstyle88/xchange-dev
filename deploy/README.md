@@ -47,6 +47,7 @@ from the env file, so a later run without the same overrides does not move them.
 | `/opt/xc-v3/configuration/` | root, 644 | `api/configuration/*.yaml` |
 | `/opt/xc-v3/web/` | root, read-only | pages and static files extracted from the v2 bundle on this host |
 | `/etc/xc-v3/env` | root:xc-v3, 640 | settings, including the database password |
+| `/etc/xc-v3/pii.key` | root:xc-v3, 640 | PII encryption key (`k1:<base64-32-bytes>`); losing it makes encrypted customer identities unreadable |
 | `/var/lib/xc-v3/uploads/` | xc-v3, 700 | uploaded files — the only place the service can write |
 | parents the install had to create (e.g. `/var/lib/xc-v3`) | root, 755 | nothing else |
 | database `xc_v3`, role `xc_v3` | — | PostgreSQL on the same host |
@@ -68,7 +69,10 @@ from the env file, so a later run without the same overrides does not move them.
    the installation's own directories with an unexpected owner or mode stops
    the script; `/var/lib`, `/opt`, `/etc` and the like are refused as targets),
    the env file (database password
-   generated on the host, never printed), the role and database, installs the
+   generated on the host, never printed), the PII encryption key file
+   `/etc/xc-v3/pii.key` (mode 0640 `root:<service group>`, generated via
+   `openssl rand -base64 32` if missing, kept intact if existing, never printed),
+   the role and database, installs the
    binary and configuration, extracts the pages from the v2 bundle, installs and
    starts the unit, and ends with the smoke check. `APP_ENVIRONMENT=production`
    makes the server report channel `release`; anything else reports `staging`.
@@ -126,7 +130,11 @@ Build, stage, copy and verify as for an install, then on the target:
 cd ~/xc-v3-stage && ./update.sh
 ```
 
-Before stopping the service, it takes a backup of the database and uploads directory
+Before taking a backup or stopping the service, `update.sh` performs two preflight gates:
+1. **PII key check**: it verifies `/etc/xc-v3/pii.key` exists and is readable by the service group (`sudo -u <service user> test -r`). If missing, it refuses before any `systemctl` invocation or backup, printing the file path and instructions to create it.
+2. **Migration rehearsal on scratch database**: it requires the stage to carry `migrations/` (with every `.sql` listed in `SHA256SUMS`). It creates a temporary scratch database `${DB_NAME}_rehearsal`, dumps the live database into it via plain `pg_dump "$DB_NAME" | pg -d <scratch>` (never `pg_restore`), queries `_sqlx_migrations (where success)`, and rehearses every pending migration in version order with `pg -d <scratch> --single-transaction -f - < "$f"`. If any migration fails, it prints the failing migration file and psql's error, drops the scratch database, and stops before the backup or touching the live database. The scratch database is cleaned up on every exit path via a trap.
+
+Once the rehearsal succeeds and the scratch database is dropped, it takes a backup of the database and uploads directory
 by running `sudo systemctl start xc-v3-backup.service`. It strictly refuses to
 update if `xc-v3-backup.service` is not installed (pointing to §5 below, per BK).
 It checks that a new backup set was created under `$XC_BACKUP_DIR`, verifies
@@ -370,6 +378,16 @@ A real restore replaces live data and must be performed with the service stopped
    sudo systemctl start xc-v3.service
    sudo rm -rf /run/xc-v3-restore
    ```
+
+### PII key and offline backup
+
+Customer identities in the database are encrypted at rest using a symmetric key stored at `/etc/xc-v3/pii.key`.
+
+- **Fixed path**: `/etc/xc-v3/pii.key` (hard-coded in `api/src/bootstrap/mod.rs:177`).
+- **Owner and mode**: `root:xc-v3`, mode `0640`. The service user must be in the group that can read the file (`update.sh` preflight checks this with `sudo -u <service user> test -r`).
+- **Format**: lines of `k<version>:<base64-32-bytes>`. Comments starting with `#` and blank lines are ignored.
+- **Rotation**: To rotate the encryption key, append a new version line (e.g. `k2:...`) to the end of `/etc/xc-v3/pii.key`. Existing customer records remain decryptable using earlier keys in the file.
+- **Off-host backup requirement**: Automated backup sets (`backup.sh`) intentionally exclude `/etc/xc-v3/pii.key` to keep encryption keys strictly segregated from encrypted database dumps. **Losing `/etc/xc-v3/pii.key` renders encrypted customer identities permanently unreadable.** The host owner must back up `/etc/xc-v3/pii.key` to a secure off-host location (such as an encrypted password manager or offline vault).
 
 ### Log retention
 
