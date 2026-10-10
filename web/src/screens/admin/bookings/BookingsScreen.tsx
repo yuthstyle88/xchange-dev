@@ -344,11 +344,9 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <Show when={dialogError()}>
           <p class="error">{dialogError()}</p>
         </Show>
-        <div class="dialog-actions">
-          <button type="button" class="primary" onClick={saveSettings}>
-            {t('save')}
-          </button>
-        </div>
+        <button type="button" class="primary" onClick={saveSettings}>
+          {t('save')}
+        </button>
       </div>
     ));
   }
@@ -550,7 +548,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <p>{t('loading')}</p>
       </Show>
       <Show when={error()}>
-        <p class="error">{error()}</p>
+        <p>{error()}</p>
       </Show>
       <Show when={!loading() && !error() && rows().length === 0}>
         <div class="empty">{t('emptySearch')}</div>
