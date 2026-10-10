@@ -1,69 +1,36 @@
-/* LK-SD (#716): admin slips screen look ported from v2 admin-html.ts & slips.js */
+/* v2 admin-html.ts:19 & slips.js look (#794) */
 
-.xc-admin .xc-content .slips-screen {
-  background: white;
-  border: 1px solid var(--line, #e5e6ea);
-  border-radius: 10px;
-  margin-bottom: 24px;
-  overflow: hidden;
-}
-
+/* v2 admin-html.ts:19 #slips-view .card > div */
 .xc-admin .xc-content .slips-screen .filter-controls {
   padding: 20px;
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
-  align-items: flex-end;
-  border-bottom: 1px solid var(--line, #e5e6ea);
 }
 
-.xc-admin .xc-content .slips-screen .filter-controls label {
+/* v2 admin-html.ts:19 #slips-view label[style*="flex:1"] */
+.xc-admin .xc-content .slips-screen .filter-search {
   flex: 1;
   min-width: 200px;
-  font-size: 14px;
-  font-weight: 500;
 }
 
-.xc-admin .xc-content .slips-screen .filter-controls select {
-  min-width: 180px;
+/* v2 admin-html.ts:19 #slips-view input, select */
+.xc-admin .xc-content .slips-screen .filter-controls label input,
+.xc-admin .xc-content .slips-screen .filter-controls label select {
+  margin-top: 8px;
 }
 
+/* v2 admin-html.ts:19 #slip-summary */
 .xc-admin .xc-content .slips-screen .summary-line {
-  padding: 12px 20px;
-  color: var(--muted, #676a73);
-  font-size: 13px;
-  min-height: 20px;
+  width: 100%;
 }
 
-.xc-admin .xc-content .slips-screen .slips-error {
-  color: var(--brand, #a5003c);
-  font-size: 14px;
-  padding: 14px 20px;
-  background: var(--soft, #fbf0f4);
-  border-radius: 8px;
-  margin: 12px 20px;
-}
-
-.xc-admin .xc-content .slips-screen .empty-state {
-  padding: 45px 24px;
-  text-align: center;
-  color: var(--muted, #676a73);
-}
-
-.xc-admin .xc-content .slips-screen .empty-state p {
-  font-size: 14px;
-  margin: 4px 0;
-}
-
-.xc-admin .xc-content .slips-screen .empty-state p:first-child {
-  font-weight: 600;
-  color: var(--ink, #17181b);
-}
-
+/* v2 admin-html.ts:62 table */
 .xc-admin .xc-content .slips-screen .data-table {
   width: 100%;
 }
 
+/* v2 slips.js:11 button.ref */
 .xc-admin .xc-content .slips-screen .link-button {
   font-family: Arial, sans-serif;
   color: var(--brand, #a5003c);
@@ -76,39 +43,21 @@
   cursor: pointer;
 }
 
+/* v2 slips.js:11 td[style="white-space:nowrap"] */
+.xc-admin .xc-content .slips-screen .slip-actions {
+  white-space: nowrap;
+}
+
+/* v2 admin-html.ts:19 #slip-pagination */
 .xc-admin .xc-content .slips-screen .pagination {
-  padding: 16px 20px;
   display: flex;
-  gap: 12px;
   align-items: center;
   justify-content: center;
+  gap: 16px;
+  padding: 18px;
 }
 
-.xc-admin .xc-content .slips-screen .pagination button {
-  min-height: 36px;
-  padding: 6px 16px;
-  font-size: 13px;
-  background: white;
-  border: 1px solid var(--line, #e5e6ea);
-  color: var(--ink, #17181b);
-  border-radius: 7px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.xc-admin .xc-content .slips-screen .pagination button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
+/* v2 admin-html.ts:19 #slip-pagination span */
 .xc-admin .xc-content .slips-screen .page-indicator {
-  font-size: 14px;
-  color: var(--muted, #676a73);
-}
-
-@media (max-width: 720px) {
-  .xc-admin .xc-content .slips-screen .filter-controls {
-    padding: 14px;
-    gap: 10px;
-  }
+  color: var(--ink);
 }

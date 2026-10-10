@@ -12,6 +12,7 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { errorText, screenT } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
+import { Card } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
@@ -179,9 +180,9 @@ export function Slips(props: AdminMenuProps): JSX.Element {
   };
 
   return (
-    <div class="slips-screen">
+    <Card class="slips-screen">
       <div class="filter-controls">
-        <label>
+        <label class="filter-search">
           <span>{t('search')}</span>
           <input
             type="search"
@@ -203,86 +204,93 @@ export function Slips(props: AdminMenuProps): JSX.Element {
             <option value="CANCELLED">{t('cancelled')}</option>
           </select>
         </label>
-      </div>
-
-      <div role="status" class="summary-line">
-        {summaryText()}
+        <p role="status" class="summary-line">
+          {summaryText()}
+        </p>
       </div>
 
       <Show when={error()}>
-        <div class="slips-error" role="alert">
-          <div>{t('notLoaded')}</div>
-          <div>{error()}</div>
+        <div class="empty" role="alert">
+          <strong>{t('notLoaded')}</strong>
+          <p>{error()}</p>
         </div>
       </Show>
 
       <Show when={loaded() && rows().length === 0 && !error()}>
-        <div class="empty-state">
-          <p>{t('empty')}</p>
+        <div class="empty">
+          <strong>{t('empty')}</strong>
           <p>{t('emptyNote')}</p>
         </div>
       </Show>
 
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{t('headerTime')}</th>
-            <th>{t('headerId')}</th>
-            <th>{t('headerCustomer')}</th>
-            <th class="num">{t('headerSettlement')}</th>
-            <th>{t('headerPaymentRef')}</th>
-            <th>{t('headerStatus')}</th>
-            <th>{t('headerSlip')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={rows()}>
-            {(row) => (
+      <Show when={rows().length > 0}>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td>
-                  <div>{row.date}</div>
-                  <div>{formatBangkokTime(row.created)}</div>
-                </td>
-                <td>
-                  <div>
-                    <button
-                      type="button"
-                      class="link-button"
-                      onClick={() => handleOpenDetail(row)}
-                    >
-                      {row.id}
-                    </button>
-                  </div>
-                  <div>
-                    {row.currency} · {row.type === 'BUY' ? t('typeBuy') : t('typeSell')}
-                  </div>
-                </td>
-                <td>{row.customer}</td>
-                <td class="num">{formatMoney(row.settlement)}</td>
-                <td>{row.paymentRef || '—'}</td>
-                <td>{statusLabel(row.status)}</td>
-                <td>
-                  <a
-                    href={row.slipUrl ?? '#'}
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    {t('openSlip')}
-                  </a>
-                  {' '}
-                  <a href={`${row.slipUrl ?? ''}?download=1`}>
-                    {t('download')}
-                  </a>
-                </td>
+                <th>{t('headerTime')}</th>
+                <th>{t('headerId')}</th>
+                <th>{t('headerCustomer')}</th>
+                <th class="num">{t('headerSettlement')}</th>
+                <th>{t('headerPaymentRef')}</th>
+                <th>{t('headerStatus')}</th>
+                <th>{t('headerSlip')}</th>
               </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              <For each={rows()}>
+                {(row) => (
+                  <tr>
+                    <td>
+                      {row.date} {formatBangkokTime(row.created)}
+                    </td>
+                    <td>
+                      <div>
+                        <button
+                          type="button"
+                          class="link-button"
+                          onClick={() => handleOpenDetail(row)}
+                        >
+                          {row.id}
+                        </button>
+                      </div>
+                      <div>
+                        {row.currency} · {row.type === 'BUY' ? t('typeBuy') : t('typeSell')}
+                      </div>
+                    </td>
+                    <td>{row.customer}</td>
+                    <td class="num">{formatMoney(row.settlement)}</td>
+                    <td>{row.paymentRef || '—'}</td>
+                    <td>{statusLabel(row.status)}</td>
+                    <td class="slip-actions">
+                      <a
+                        class="secondary"
+                        href={row.slipUrl ?? '#'}
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        {t('openSlip')}
+                      </a>
+                      {' '}
+                      <a
+                        class="text-button"
+                        href={`${row.slipUrl ?? ''}?download=1`}
+                      >
+                        {t('download')}
+                      </a>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      </Show>
 
       <div class="pagination">
         <button
           type="button"
+          class="secondary"
           onClick={handlePrev}
           disabled={page() <= 1}
         >
@@ -291,12 +299,13 @@ export function Slips(props: AdminMenuProps): JSX.Element {
         <span class="page-indicator">{t('page', { page: page() })}</span>
         <button
           type="button"
+          class="secondary"
           onClick={handleNext}
           disabled={rows().length < 50}
         >
           {t('next')}
         </button>
       </div>
-    </div>
+    </Card>
   );
 }
