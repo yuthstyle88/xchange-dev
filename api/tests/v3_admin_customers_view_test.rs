@@ -95,7 +95,7 @@ const CUSTOMER_FIELDS: [&str; 8] = [
 ];
 
 /// `TransactionRow`'s fields (design §12.2), the shape every row of the history has.
-const ROW_FIELDS: [&str; 25] = [
+const ROW_FIELDS: [&str; 26] = [
     "id",
     "date",
     "created",
@@ -103,6 +103,7 @@ const ROW_FIELDS: [&str; 25] = [
     "currency",
     "amount",
     "rate",
+    "unitSize",
     "principal",
     "fee",
     "bankFee",

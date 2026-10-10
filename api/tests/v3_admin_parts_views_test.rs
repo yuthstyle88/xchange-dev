@@ -21,7 +21,7 @@
 //!   close (`/api/rpc`). The plain upload (`file_service.rs` `upload`) writes a file row that no
 //!   exchange names yet, so it changes nothing these views answer and is not one of them.
 //! - `TransactionRow` (`dto/v3/transaction_row.rs` → `generated/transaction_row.ts`): the
-//!   ticket's 25 fields, money and rates decimal strings, `null` where v2 shows `—` / nothing. Read
+//!   ticket's 25 fields and #781's `unitSize`, money and rates decimal strings, `null` where v2 shows `—` / nothing. Read
 //!   from the committed generated file, so this target compiles before the type exists; the drift
 //!   test of `v3_types_test.rs` keeps that file equal to what the Rust type generates.
 //!
@@ -76,7 +76,7 @@ const JPEG: &[u8] = &[
 const PDF: &[u8] = b"%PDF-1.7 a slip\n";
 
 /// `TransactionRow`'s fields (ticket §7, design §12.2).
-const ROW_FIELDS: [&str; 25] = [
+const ROW_FIELDS: [&str; 26] = [
     "id",
     "date",
     "created",
@@ -84,6 +84,7 @@ const ROW_FIELDS: [&str; 25] = [
     "currency",
     "amount",
     "rate",
+    "unitSize",
     "principal",
     "fee",
     "bankFee",

@@ -94,6 +94,7 @@ function row(id: string, created: string, over: Partial<TransactionRow> = {}): T
     currency: 'USD',
     amount: '100.00',
     rate: '30.0000',
+    unitSize: '1',
     principal: '3000.00',
     fee: '50.00',
     bankFee: '0.00',
