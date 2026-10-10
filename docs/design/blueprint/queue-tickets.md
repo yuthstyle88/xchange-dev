@@ -68,7 +68,7 @@
 
 ## 4. Model
 
-### 4.1 Tables (migration `api/migrations/20261018100000_queue.sql`)
+### 4.1 Tables (migration `api/migrations/20261101100000_queue.sql`)
 
 Every table has `organization_id uuid NOT NULL` with PR 589 D-1's composite FK `(organization_id, branch_id) →
 branches(organization_id, id)`, and `created_at`. Mutable tables also have `updated_at`. Person columns are
@@ -260,7 +260,9 @@ The owner approved v3's migrations until its first install (2026-10-06). Version
 the queue's feature block is `20261018*`, and transitional drops go in the cleanup block `20261030*` (#564
 issuecomment-6074383060).
 
-**M1. `api/migrations/20261018100000_queue.sql` (QU-1): create only.**
+**M1. `api/migrations/20261101100000_queue.sql` (QU-1): create only.**
+
+*Versions (lane controller, 2026-10-10, on #879):* M1 is `20261101100000` and M2 is proposed at `20261102100000`. The `migration-order` gate refuses any version at or below main's highest, which was `20261030160000` when QU-A1 was cut, so the earlier `20261018100000` / `20261030140000` would fail CI.
 1. *Existing rows.* Nothing existing changes. The new tables start empty. `branch_service_status` gets one row per
    existing branch with `queue_open = false`, `active_counters = 0` and NULL estimate. An existing WAITING kiosk
    request gets no ticket: requests in flight at deploy finish on the old path, and the next `confirm` issues tickets.
@@ -272,7 +274,7 @@ issuecomment-6074383060).
    it never reads the new tables.
 4. *`down` loses* the new tables and their rows.
 
-**M2. `api/migrations/20261030140000_retire_kiosk_work_times.sql` (QU-8): drop `kiosk_requests.started_at` and
+**M2. `api/migrations/20261102100000_retire_kiosk_work_times.sql` (QU-8): drop `kiosk_requests.started_at` and
 `completed_at`.**
 1. *Existing rows.* The two columns go. Their values are already on each request's ticket for every request issued
    since M1. Older requests lose their work times (test data only).
@@ -290,14 +292,14 @@ start dependencies are merged.
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| QU-1 | schema (§4.1) and M1 | `api/migrations/20261018100000_queue.sql` | this design, PR 589 OR-1/OR-2, PR 590 CA-1 |
+| QU-1 | schema (§4.1) and M1 | `api/migrations/20261101100000_queue.sql` | this design, PR 589 OR-1/OR-2, PR 590 CA-1 |
 | QU-2 | the crate, the ticket machine and issuance; the `QueueTickets` port; the kiosk source | `api/crates/xc-queue/{Cargo.toml,src/lib.rs}`, workspace `Cargo.toml` (one line), `xc-queue/src/domain/ticket/**`, `xc-queue/src/domain/repository.rs`, `xc-queue/src/infrastructure/repository.rs`, `xc-queue/src/application/issue/**`, `xc-kernel/src/queue_tickets.rs`, `xc-kiosk/src/application/kiosk/customer.rs` (`confirm` → issue) | QU-1 |
 | QU-3 | the desk: call next, call, recall, skip, start, finish, cancel; `CallOrder` | `xc-queue/src/application/desk/**`, `xc-queue/src/domain/ticket/call_order.rs` | QU-2, PR 589's permission ticket |
 | QU-4 | counters and pause | `xc-queue/src/domain/counter/**`, `xc-queue/src/application/counter/**`, the shift-open/close calls in `xc-shift/src/application/shift/service.rs` (two lines, after PR 590 CA-3 merges) | QU-2, PR 590 CA-3 |
 | QU-5 | service status, estimate, open/close, day close | `xc-queue/src/domain/status/**`, `xc-queue/src/application/status/**`, `xc-queue/src/application/day/**`, the `QueueDayHook` call in PR 590's `branch_day.rs` (one line) | QU-3, QU-4, PR 590 CA-7 |
 | QU-6 | kiosk `accept` on the ticket; the queue card, panel and admin bar on `queue_board` | `xc-kiosk/src/application/kiosk/desk.rs`, `web/src/shared/queue/**`, `web/src/shared/ui/{QueueCard,QueuePanel}.tsx`, `web/src/screens/admin/queue/**` | QU-7 |
 | QU-7 | commands and views (§4.4) | `api/src/presentation/http/v3/commands/queue/**` (with its own `permissions.rs`, as PR 590 §4.4), `views/{queue_board,branch_service_status,my_queue_ticket}.rs`, their DTOs and generated TS | QU-3, QU-5, PR 570 CM-1, PR 589 OR-4 |
-| QU-8 | retire the old queue reads and the request work times (M2) | `views/{kiosk_notifications,kiosk_queue}.rs` and their DTOs/TS, `xc-kiosk` readers of `started_at/completed_at`, `api/migrations/20261030140000_retire_kiosk_work_times.sql`, the retired tests and fixtures | QU-6 |
+| QU-8 | retire the old queue reads and the request work times (M2) | `views/{kiosk_notifications,kiosk_queue}.rs` and their DTOs/TS, `xc-kiosk` readers of `started_at/completed_at`, `api/migrations/20261102100000_retire_kiosk_work_times.sql`, the retired tests and fixtures | QU-6 |
 
 The booking source (check-in → `QueueTickets::issue_in`) and the B06 desk screen are not tickets here. The first
 belongs to #555's check-in ticket. The second is a desk screen ticket that reads `queue_board`. The customer views are
