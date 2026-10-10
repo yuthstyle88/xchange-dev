@@ -465,3 +465,190 @@ design is reviewed and merged (📐).
 | Q-7 | Which branches take their price from the board? | **Answered — R-7: per branch** (§3.5) |
 | Q-8 | What triggers `FeedPublisher`? | **Answered — R-8: v3's own timer, ~1 minute, configurable** (§3.6) |
 | Q-9 | Does an unreachable board stop the counter at once, like a paused one (R-6)? | **Answered — R-9: no; the stale policy decides** (§3.6) |
+
+## 8. BoT reference rates from the official BoT API (amendment, 2026-10-10)
+
+> designed-by: claude/5edf7bb5 · 2026-10-10 · measured on `main` at `3c2b56ca` · `file:line` in this section is at that sha
+> (F1's files are cited from PR 1060 head `9002aac3`, which had not merged when this was written)
+
+### 8.0 Decided
+
+| # | Decision | Source |
+|---|---|---|
+| B-1 | BoT reference rates come from the **official BoT API**. The website scraper (`BotRateSource`) stays as the fallback until the API is proven (§8.7) | owner, 2026-10-10, in the xchange controller's session (option "Switch to official API") |
+| B-2 | The app is registered on the BoT API portal: name **"Xchange"**, portal **APP ID 5669** (an internal id, not a secret), redirect URL `https://xc-v3.spacing.cloud/`. `xc-v3.spacing.cloud` is the host the owner registered for this app | owner, 2026-10-10 |
+| B-3 | Portal product **"Exchange Rates"**, plan **"Exchange Rates Plan"**: quota unlimited, **rate limit 200 calls per hour**. Credential 1: auth method `authToken`, expires never | owner, 2026-10-10 (portal screen; values masked) |
+| B-4 | Config names: section `bot`, keys `api_token` and `api_base` ⇒ env vars **`APP_BOT__API_TOKEN`** and **`APP_BOT__API_BASE`** | controller claude/5edf7bb5, 2026-10-10, to fit `APP_<SECTION>__<KEY>` (`deploy/server/env.example:6-7`, `api/src/config/mod.rs:177-183`) |
+
+This answers `docs/design/blueprint/rates.md` §10 **O-1** (which product, usage rights, how often).
+
+### 8.1 The API (owner-supplied OpenAPI 3.0.1, "Average Exchange Rate - THB / Foreign Currency" v2.0.2)
+
+- Server `https://gateway.api.bot.or.th/Stat-ExchangeRate/v2`, call `GET /DAILY_AVG_EXG_RATE/?start_period=YYYY-MM-DD&end_period=YYYY-MM-DD[&currency=XXX]`.
+- Auth: `securitySchemes.clientIdHeader` = `apiKey` **in the header named `Authorization`**. The value is sent as is (no `Bearer ` prefix; the spec defines none).
+- Response: `result.timestamp`, `result.data.data_header.last_updated`, and `result.data.data_detail[]`, each
+  `{ period, currency_id, currency_name_th, currency_name_eng, buying_sight, buying_transfer, selling, mid_rate }`, every rate a **decimal string** (spec example `"43.7425000"`, 7 decimals).
+- Released **every business day at 18:00 Bangkok**. It is the daily average of commercial banks, not a live price — the same data the website table shows today (`bot_rate_source.rs:259` already labels it `DAILY_COMMERCIAL_BANK_AVERAGE`).
+
+### 8.2 Why this is a `RateSource`, not a `ReferenceProvider`
+
+The first idea was a `BotApiProvider` beside F1's `BotProvider`. It is the wrong seam:
+
+1. **The row shape is a contract with four readers, not just the writer.** `BotRateSource` emits rows
+   `{ code, date, unit, buyingSight, buyingTransfer, selling, original }` (`bot_rate_source.rs:227-235`). They are read by
+   - the v3 writer (`reference_batch_writer.rs:102-156`; after F1, `BotProvider::parse`),
+   - the rate-save service, which filters on `code` (`api/crates/xc-rate/src/application/rate/service.rs:201-207`),
+   - the reference view, which reads `code`/`date`/`unit`/`buyingSight`/`buyingTransfer`/`selling` (`api/src/presentation/http/v3/views/rates_reference.rs:50-86`),
+   - `/api/reference-rates` (`api/src/presentation/http/reference_rates.rs:67`).
+   A `ReferenceProvider` would serve only the first; the other three would stay on the scraper.
+2. **The API's rows have the same field names as the website's table** (`currency_id`, `period`, `buying_sight`, `buying_transfer`, `selling`; compare `bot_rate_source.rs:178-205`). Only the transport differs: URL, `Authorization` header, the `result.data.data_detail` envelope, and a date window.
+
+So the API is a second `RateSource` that emits **exactly the rows `BotRateSource` emits**. `BotProvider` (F1) parses them unchanged, `provider`/`reference_type` stay `"BOT"`, and nothing downstream changes. This work therefore **does not need F1 (#1050)**. ♻️: the row validation and mapping (`bot_rate_source.rs:175-254`) moves into one shared function both sources call; it is not copied.
+
+### 8.3 Class diagram
+
+```mermaid
+classDiagram
+    direction LR
+    class RateSource {
+        <<trait>>
+        +fetch() BoxFuture~AppResult~ReferenceRates~~
+    }
+    class BotRows {
+        <<module fn>>
+        +bot_rows(detail: &[Value]) AppResult~Vec~Value~~
+    }
+    class BotRateSource {
+        +bot() Self
+    }
+    class BotApiRateSource {
+        +new(config: BotApiConfig, timeout: Duration, clock: Clock) Self
+        -last_call: Mutex~Option~CachedAnswer~~
+    }
+    class BotApiConfig {
+        +base: String
+        +token: String  (Debug redacted)
+    }
+    class FallbackRateSource {
+        +new(primary: Arc~dyn RateSource~, fallback: Arc~dyn RateSource~) Self
+    }
+    class BotSettings {
+        +api_token: Option~String~
+        +api_base: String
+    }
+    class AppState {
+        +rate_source: Arc~dyn RateSource~
+    }
+    RateSource <|.. BotRateSource
+    RateSource <|.. BotApiRateSource
+    RateSource <|.. FallbackRateSource
+    BotRateSource ..> BotRows : rows of the website table
+    BotApiRateSource ..> BotRows : rows of the chosen period
+    BotApiRateSource --> BotApiConfig
+    FallbackRateSource --> RateSource : primary, then fallback
+    AppState --> FallbackRateSource : token present
+    AppState --> BotRateSource : token absent
+    AppState ..> BotSettings : reads at start
+```
+
+| Class / item | File | Kind |
+|---|---|---|
+| `bot_rows` (moved from `bot_rate_source.rs:175-254`, plus `ALLOWED_CURRENCIES`, `parse_rate`, `decimal_to_number`) | `api/crates/xc-rate/src/infrastructure/reference_source/bot_rows.rs` (new) | `[required]` |
+| `BotApiRateSource`, `BotApiConfig` | `api/crates/xc-rate/src/infrastructure/reference_source/bot_api_rate_source.rs` (new) | `[required]` |
+| `FallbackRateSource` | `api/crates/xc-rate/src/infrastructure/reference_source/fallback_rate_source.rs` (new) | `[required]` |
+| module | `api/crates/xc-rate/src/infrastructure/reference_source/mod.rs` (new) + one `pub mod reference_source;` line in `api/crates/xc-rate/src/infrastructure/mod.rs` | `[required]` |
+| `BotRateSource` calls `bot_rows` (pure move, behaviour unchanged) | `api/crates/xc-rate/src/infrastructure/rate/bot_rate_source.rs` | `[required]` |
+| `BotSettings` in `Settings` | `api/src/config/mod.rs` | `[required]` |
+| choosing the source | `api/src/bootstrap/mod.rs:63` | `[required]` |
+| one instance for every reader | `api/src/presentation/http/reference_rates.rs:24` registers `state.rate_source.clone()` instead of a new `BotRateSource::bot()` | `[required]` |
+| the reference view's cache reads the shared source | `api/src/presentation/http/v3/views/rates_reference.rs:226-233`: `static CACHE` builds its own `BotRateSource::bot()` and `register` ignores `_state`. It becomes a cache built from `state.rate_source` (a `OnceLock` set in `register`, or the cache held by the view) | `[required]` |
+| commented `#APP_BOT__API_TOKEN=` / `#APP_BOT__API_BASE=` lines | `deploy/server/env.example`, **added by PR 1064** (`chore/set-bot-token-script`), not by this work | provided |
+
+**Order with #1030 (controller ruling, 2026-10-10).** `rates_reference.rs` is also in the scope of OR-7.7 #1030.
+The work in this section (#1066) goes **first**, because it is ready sooner and #1030 waits on #767 and #837. #1030 rebases over
+#1066's change to `rates_reference.rs`.
+
+**Constructions left on the scraper on purpose.** `BotRateSource::bot()` is also built at `v3/desk/config.rs:60`,
+`views/admin_rates.rs:112`, `views/kiosk_currencies.rs:94`, `views/kiosk_notifications.rs:98`, `views/kiosk_queue.rs:141`
+and `rpc.rs:371`. Those paths reach only `RateService::current`/`rate_in` or the kiosk ports, which never call `fetch()`
+(review of PR 1065, `git grep -n 'source\.fetch()'` at `3c2b56ca`: the only callers are `service.rs:201`,
+`reference_batch_writer.rs:54` and `rates_reference.rs:133`). They stay as they are; this work does not rewire them.
+
+**Why a new directory.** `infrastructure/rate/mod.rs` belongs to F4 (§2) and `infrastructure/reference/mod.rs` to F1. A new
+`infrastructure/reference_source/` (whole subtree owned by this work) touches neither; the only shared edit is one line in
+`infrastructure/mod.rs`, which no F-ticket edits.
+
+**Who provides, who uses**
+
+| Provider | Used by | Fallback if not landed |
+|---|---|---|
+| `bot_rows` | `BotRateSource`, `BotApiRateSource` | none needed: same ticket |
+| `FallbackRateSource` | `AppState::new` | same ticket; reusable later for the rate board (F4) |
+| `AppState.rate_source` | the reference view's cache (`rates_reference.rs:226-233`, rewired here), v3 `rateReferenceFetch` (`commands/rate_reference_fetch.rs:73`), `/api/reference-rates`, v2 rpc (`rpc.rs:210`), kiosk (`kiosk.rs:317-322`) — the last two read the `app_data` that `reference_rates.rs:24` registers | `rpc.rs:212` and `kiosk.rs:322` keep their `BotRateSource::bot()` default for tests that register no source |
+
+### 8.4 Configuration and the token
+
+| Portal value | Goes into | Used for |
+|---|---|---|
+| **Token** ("unique ID used to identify the application") | **`APP_BOT__API_TOKEN`** in `/etc/xc-v3/env` (the unit's only `EnvironmentFile`, `deploy/server/xc-v3.service:19`; root:xc-v3 640 per `env.example:3`) | sent as the `Authorization` header value on every call |
+| **Token Hash** ("unique password … do not share") | **not stored by xchange** | nothing. The spec has one security scheme, `clientIdHeader` (a single header), and no call that takes a second value |
+| APP ID 5669 | this document only | the portal's own id; never sent |
+| — | `APP_BOT__API_BASE` (optional) | default `https://gateway.api.bot.or.th/Stat-ExchangeRate/v2` |
+
+- **Never in the repo, tickets, logs or errors.** `BotApiConfig`'s `Debug` prints `token: "<redacted>"` (same pattern as `IdentitySettings`, `api/crates/xc-auth/src/infrastructure/identity/identity_settings.rs:11`). Error messages never include the request headers.
+- **Setting it on the host** is `deploy/server/set-bot-token.sh`, written by the controller in PR 1064, which also adds the commented names to `deploy/server/env.example`. That file is not part of this work.
+- **State on 2026-10-10:** the Token is set on the do-sgp1 server, and the API answered HTTP 200 (controller, on #1066).
+- **Rotate / revoke** in the BoT portal. Rotating = put the new Token in `APP_BOT__API_TOKEN` and restart the service. No code change.
+- 🔴 **Trap: config values are type-parsed.** `Settings::load_from` uses `.try_parsing(true)` (`api/src/config/mod.rs:181`), and `env.example:32` already warns that an all-digit value "is not text". A Token made only of digits (or with leading zeros) must not become a number. So:
+  - `BotSettings.api_token` is `Option<String>`, and `load_from` takes it **raw from `env_map`** (the way `IDENTITY_*` are taken, `config/mod.rs:113-145`) and overwrites what the builder parsed. The value is never type-coerced.
+  - An empty or all-whitespace value means "absent".
+  - Pinned by a test: `APP_BOT__API_TOKEN=0012345` loads as the string `"0012345"`.
+
+### 8.5 Choosing the source (at start)
+
+- `APP_BOT__API_TOKEN` absent ⇒ `AppState.rate_source = BotRateSource::bot()` (today's behaviour) and one `tracing::warn!` at start: `BoT API token not set (APP_BOT__API_TOKEN); reference rates come from the website scraper`.
+- Present ⇒ `FallbackRateSource::new(BotApiRateSource, BotRateSource::bot())`.
+
+### 8.6 `BotApiRateSource::fetch`
+
+1. **Window.** `today` = the date in Asia/Bangkok (UTC+7, no DST) from the injected clock. Request `start_period = today − 14 days`, `end_period = today`, **no `currency`** (one call returns every currency).
+2. **Which day.** From `data_detail`, take the **latest `period` that has all six currencies** (`USD EUR GBP JPY CNY AUD`). This one rule covers everything:
+   - before 18:00 Bangkok, today is not released yet ⇒ the previous business day;
+   - weekends and BoT holidays have no rows ⇒ the last business day before them;
+   - 14 days covers the longest Thai holiday run (Songkran + weekend).
+   No row set qualifies ⇒ error `BOT_UNAVAILABLE` (same text as today, `bot_rate_source.rs:17`).
+3. **Rows.** The six rows of that period go through `bot_rows`, so the result is byte-for-byte the shape `BotRateSource` returns (`code`, `date` = `period`, `unit`, `buyingSight`, `buyingTransfer`, `selling`, `original` with the strings as received). `source` = the API base URL (never the token); `kind` = `"DAILY_COMMERCIAL_BANK_AVERAGE"`; `fetched_at` = now.
+4. **Precision.** Rates are parsed from the decimal strings with `xc_kernel::money::plain_decimal` (via `parse_rate`), never through `f64`. They then become JSON numbers through `decimal_to_number` exactly as today (`bot_rate_source.rs:89-93`); BoT's values (≤ 7 decimals, ≤ 11 significant digits) print back unchanged, and `original` keeps the received strings. A rate ≤ 0 or unparsable fails the fetch, as today (`bot_rate_source.rs:207-213`).
+5. **Which columns the writer uses** — unchanged: `buy` = `buyingTransfer`, `sell` = `selling` (`reference_batch_writer.rs:147-156`; F1 `bot_provider.rs`, same keys). `buyingSight` is kept in the row and shown by the reference view; `mid_rate` is not used.
+
+**Call budget (B-3: 200 calls/hour).** Several readers call `fetch()`: the reference view every 60 s or on demand (`rates_reference.rs:121-133`), every rate save (`service.rs:201`), `/api/reference-rates`, the kiosk, the v3 command. So `BotApiRateSource` itself limits upstream calls:
+- It keeps its last answer (success **or** error) with the time it was obtained, and returns it without a call while it is younger than **15 minutes** (`BOT_API_MIN_INTERVAL`, `[proposed]` constant). The data changes once a day, so this delays a new day's rates by at most 15 minutes.
+- One fetch = one HTTP call, plus **at most one retry**, only on timeout / connection error / 5xx (never on 4xx).
+- ⇒ at most **4 fetches per hour, ≤ 8 HTTP calls per hour, ≤ 192 calls per day** (96 per day when no retry is needed), whatever the number of readers. That is ≤ 4% of the 200/hour limit.
+- The cache is per process. One server runs today (`deploy/server/xc-v3.service`); a second instance would double the numbers, still far under the limit.
+
+### 8.7 Errors and fallback (`FallbackRateSource`)
+
+| Case | API source answer | What the caller gets | Log |
+|---|---|---|---|
+| Token present, HTTP 200, a complete period | rows | API rows | — |
+| HTTP **401 / 403** | error | **scraper rows** (fallback called once) | `tracing::error!` with the fixed message `BOT_API_AUTH_REJECTED` and the status (never the token). This is the alert: there is no alert channel in the server today (searched `api/src` for alert/notify at `3c2b56ca`), so it lands in journald (`deploy/server/journald-xc-v3.conf`) |
+| `data_detail` empty, or no period with all six | error | scraper rows | `warn` |
+| Timeout / 5xx after the one retry, unreadable body | error | scraper rows | `warn` |
+| HTTP 429 (over the limit) | error, no retry | scraper rows | `error` — means §8.6's budget is broken |
+| API fails **and** scraper fails | error `BOT_UNAVAILABLE` | error, as today | `warn` |
+
+- **Nothing is ever written from an empty answer.** Every failure is an `Err` from `fetch()`, and `ReferenceBatchWriter::fetch_and_write` returns `RateUnavailable` before it writes (`reference_batch_writer.rs:52-56`). The previous batch and the current publication stay.
+- Which source answered is visible in `ReferenceRates.source` (API base URL vs `BOT_SOURCE_PAGE`), which the rate-save service stores (`service.rs:203-207`).
+- **"Proven"** (B-1) means: once the Token is set, a live comparison of API vs scraper for the same `period` gives equal `buyingSight`/`buyingTransfer`/`selling` for all six currencies (an `#[ignore]` test that runs only when `APP_BOT__API_TOKEN` is set in the test environment). Removing the scraper fallback after that is a separate decision; it is not part of this work.
+
+### 8.8 Answered
+
+| # | Question | Answer |
+|---|---|---|
+| QB-1 | **JPY unit in the API.** The website table quotes JPY per 100 yen (fixture `api/crates/xc-rate/tests/fixtures/v2_bot_source_cases.json`: JPY `buying_transfer` `"21.0100"`), which is why `bot_rate_source.rs:215` sets `unit 100`. The spec's header example says "Baht / 1 Unit of Foreign Currency" and shows no JPY row | **Per 100 yen, same as the scraper.** The live API returned JPY as `"JAPAN : YEN (100 YEN)"` at 20.999 / 21.5926 for 2026-10-09 (controller's comment on #1066, 2026-10-10). `bot_rows` keeps `JPY ⇒ 100` for both sources; no per-source unit is needed |
+
+### 8.9 No database change
+
+Nothing here adds or changes a table, column, constraint or value: batches are still `provider = 'BOT'`,
+`reference_type = 'BOT'`, rows in the same shape. No data-migration section is needed.

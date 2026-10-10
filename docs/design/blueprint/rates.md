@@ -1358,7 +1358,7 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 
 | # | Question | Blocks |
 |---|---|---|
-| O-1 | BoT API: which product, its usage rights, and how often to read it (today: on demand when a draft asks) | the schedule only. RE-2 keeps on-demand reading until answered |
+| O-1 | BoT API: which product, its usage rights, and how often to read it (today: on demand when a draft asks) | **Answered 2026-10-10** (owner): the official BoT API, product "Exchange Rates", 200 calls/hour; reads are on demand, capped by the source itself. Design: [`../rate-feed-connector.md`](../rate-feed-connector.md) §8 |
 | O-2 | The guard and stale **values**, and the stale cap amount | nothing in code: OWNER enters them in `POST /api/rate-policies` (A3, A7) |
 | O-3 | The approval matrix for reversal, campaign, cash variance and transfer | those areas' designs (#552, #560, #553), not this one |
 | O-4 | Moving the existing audit tables into `audit_events` | nothing now; a later cleanup |
