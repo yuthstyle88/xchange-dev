@@ -1,14 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dir="${1:-}"
-workflow_file="${2:-}"
-event="${3:-}"
-base="${4:-}"
-head="${5:-}"
+is_pathspec=false
+if [ "${1:-}" = "--pathspec" ] || [ "${1:-}" = "--paths" ] || [ "${1:-}" = "--pathspecs" ]; then
+  is_pathspec=true
+  shift
+  target_paths="${1:-}"
+  workflow_file="${2:-}"
+  event="${3:-}"
+  base="${4:-}"
+  head="${5:-}"
+  target_label="$target_paths"
+  read -r -a watched_target <<< "${target_paths//,/ }"
+elif [[ "${1:-}" == --pathspec=* ]] || [[ "${1:-}" == --paths=* ]] || [[ "${1:-}" == --pathspecs=* ]]; then
+  is_pathspec=true
+  target_paths="${1#*=}"
+  workflow_file="${2:-}"
+  event="${3:-}"
+  base="${4:-}"
+  head="${5:-}"
+  target_label="$target_paths"
+  read -r -a watched_target <<< "${target_paths//,/ }"
+else
+  dir="${1:-}"
+  workflow_file="${2:-}"
+  event="${3:-}"
+  base="${4:-}"
+  head="${5:-}"
+  if [ -n "$dir" ]; then
+    if [[ "$dir" == *" "* ]] || [[ "$dir" == *","* ]]; then
+      target_label="$dir"
+      read -r -a watched_target <<< "${dir//,/ }"
+    else
+      dir_norm="${dir%/}"
+      target_label="$dir_norm/"
+      watched_target=("$dir_norm/")
+    fi
+  else
+    target_label=""
+    watched_target=()
+  fi
+fi
 
-if [ -z "$dir" ] || [ -z "$workflow_file" ] || [ -z "$event" ]; then
-  echo "Usage: $0 <dir> <workflow-file> <event> [base] [head]" >&2
+if [ -z "$target_label" ] || [ -z "$workflow_file" ] || [ -z "$event" ]; then
+  echo "Usage: $0 <dir|--pathspec \"paths...\"> <workflow-file> <event> [base] [head]" >&2
   echo "true"
   exit 0
 fi
@@ -41,12 +76,12 @@ range="$base...$head"
 # Exit 1 => watched path changed => true
 # Any exit other than 0 or 1 => git diff error => true
 set +e
-git diff --quiet --no-renames "$range" -- "$dir/" "$workflow_file" .github/scripts/
+git diff --quiet --no-renames "$range" -- "${watched_target[@]}" "$workflow_file" .github/scripts/
 diff_status=$?
 set -e
 
 if [ "$diff_status" -eq 1 ]; then
-  echo "Changes detected under watched paths ($dir/, $workflow_file, or .github/scripts/) — running build." >&2
+  echo "Changes detected under watched paths ($target_label, $workflow_file, or .github/scripts/) — running build." >&2
   echo "true"
   exit 0
 elif [ "$diff_status" -ne 0 ]; then
@@ -96,10 +131,10 @@ if [ "$event" = "pull_request" ]; then
     echo "Diff contains only docs/ or *.md — skipping build." >&2
     echo "false"
   else
-    echo "No changes under $dir/ or shared CI files — skipping build." >&2
+    echo "No changes under $target_label or shared CI files — skipping build." >&2
     echo "false"
   fi
 elif [ "$event" = "push" ]; then
-  echo "Push does not touch $dir/ or shared CI file — skipping build." >&2
+  echo "Push does not touch $target_label or shared CI file — skipping build." >&2
   echo "false"
 fi

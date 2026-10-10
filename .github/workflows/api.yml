@@ -73,7 +73,7 @@ jobs:
             skip_build=false
           else
             should_build_api=$(bash .github/scripts/should-build.sh api .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
-            should_build_web=$(bash .github/scripts/should-build.sh web .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
+            should_build_web=$(bash .github/scripts/should-build.sh --pathspec "web/pages/ web/vite.config.ts web/package.json web/package-lock.json api/web/forms/ web/src/shared/api/generated/" .github/workflows/api.yml "$EVENT_NAME" "$BASE" "$HEAD")
             echo "should_build_api=$should_build_api should_build_web=$should_build_web"
             if [ "$should_build_api" = "true" ] || [ "$should_build_web" = "true" ]; then
               skip_build=false
