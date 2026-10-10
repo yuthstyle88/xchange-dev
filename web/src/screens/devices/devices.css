@@ -174,7 +174,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.xc-devices .xc-shell-main .metric > span:last-child {
+.xc-devices .xc-shell-main .metric > span + span {
   display: block;
   font-size: 27px;
   font-weight: bold;
@@ -493,6 +493,16 @@
 
 .xc-devices .xc-shell-nav {
   align-items: center;
+  flex: 1 1 auto;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+@media (max-width: 640px) {
+  .xc-devices .xc-shell-nav {
+    align-items: flex-start;
+    gap: 15px;
+  }
 }
 
 .xc-devices .xc-shell-brand {
