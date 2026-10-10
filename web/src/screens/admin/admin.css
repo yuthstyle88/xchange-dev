@@ -107,7 +107,7 @@
 .xc-admin .xc-content.xc-content .sidebar, .xc-admin .xc-content .admin-sidebar {
   position:fixed;
   inset:0 auto 0 0;
-  width:236px;
+  width:248px;
   background:#fff;
   border-right:1px solid var(--line);
   display:flex;
@@ -187,10 +187,6 @@
 .xc-admin .xc-content.xc-content .desk-link {
   font-size:14px;
   color:var(--brand);
-}
-
-.xc-admin .xc-content.xc-content .shell, .xc-admin .xc-content .admin-shell-container {
-  margin-left:236px;
 }
 
 .xc-admin .xc-shell-header {
@@ -729,17 +725,8 @@
 
 
 @media(max-width:1150px) {
-  .xc-admin .xc-content.xc-content .sidebar, .xc-admin .xc-content .admin-sidebar {
-    width:205px;
-    padding-inline:12px;
-  }
-
   .xc-admin .xc-content.xc-content .brand {
     margin-inline:8px;
-  }
-
-  .xc-admin .xc-content.xc-content .shell, .xc-admin .xc-content .admin-shell-container {
-    margin-left:205px;
   }
 
   .xc-admin .xc-content.xc-content main, .xc-admin .xc-content .admin-main {
@@ -1146,6 +1133,15 @@
   gap: 16px;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.xc-admin .xc-shell-header,
+.xc-admin .xc-shell-alert,
+.xc-admin .xc-shell-footer,
+.xc-admin .xc-content .admin-shell-container,
+.xc-admin .admin-shell-container,
+.xc-admin .xc-content .xc-workspace .shell {
+  margin-left: 248px;
 }
 
 .xc-admin .xc-content .branch-manager {
@@ -1984,8 +1980,12 @@
     transform: none;
     display: flex;
   }
-  .xc-admin .xc-content .xc-workspace .shell,
-  .xc-admin .xc-content .admin-shell-container {
+  .xc-admin .xc-shell-header,
+  .xc-admin .xc-shell-alert,
+  .xc-admin .xc-shell-footer,
+  .xc-admin .xc-content .admin-shell-container,
+  .xc-admin .admin-shell-container,
+  .xc-admin .xc-content .xc-workspace .shell {
     margin-left: 0;
   }
   .xc-admin .xc-content .workspace-menu-button {
