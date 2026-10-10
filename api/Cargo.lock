@@ -4058,9 +4058,12 @@ dependencies = [
  "futures",
  "pos-error",
  "rust_decimal",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",
+ "xc-approval",
+ "xc-outbox",
 ]
 
 [[package]]

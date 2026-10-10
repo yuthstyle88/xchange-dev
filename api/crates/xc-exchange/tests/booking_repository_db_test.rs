@@ -856,7 +856,7 @@ async fn confirmed_needs_an_expiry_and_used_needs_its_save() {
     shop.finish().await;
 }
 
-/// Item 4: dropping the two tables by hand, `bookings` first once the queue's key to it is dropped,
+/// Item 4: dropping the two tables by hand, `bookings` first once the queue's and referral's keys to it are dropped,
 /// needs no `CASCADE`; the rest of the database stays as it was, and the `bookingRules` documents
 /// go only with the two `DELETE`s of the design.
 #[tokio::test]
@@ -900,6 +900,18 @@ async fn dropping_the_two_tables_by_hand_loses_only_them() {
         run(
             db,
             "ALTER TABLE queue_tickets DROP CONSTRAINT queue_tickets_booking_id_fkey"
+        )
+        .await,
+        Ok(())
+    );
+    assert!(
+        run(db, "DROP TABLE bookings").await.is_err(),
+        "referral_attributions.booking_id refers to bookings (#979), so its key goes first"
+    );
+    assert_eq!(
+        run(
+            db,
+            "ALTER TABLE referral_attributions DROP CONSTRAINT referral_attributions_booking_id_fkey"
         )
         .await,
         Ok(())
