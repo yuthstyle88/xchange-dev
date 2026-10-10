@@ -235,9 +235,27 @@ views and QR.
 | C04 history `/app/history` | `web/pages/app-history.html` | `web/src/screens/customer/history/` | `my_transactions`, receipt |
 | C08 branches `/app/branches` | `web/pages/app-branches.html` | `web/src/screens/customer/branches/` | `public_branches` (+ #555 slots once designed) |
 | C09 journey `/app/journey` | `web/pages/app-journey.html` | `web/src/screens/customer/journey/` | `my_planner_drafts`, #555 bookings + QR, `my_queue_ticket` |
+| C02 book `/app/book` (added 2026-10-10, below) | `web/pages/app-book.html` | `web/src/screens/customer/book/` | `public_branches` (APP-5), #555's `booking_slots`, `planner_preview` (APP-4: an estimate only, no Quote is made, P5), `bookingCreate` with an optional `referralCode` and **no `quoteId`** |
+| C03 my bookings `/app/bookings` (added 2026-10-10, below) | `web/pages/app-bookings.html` | `web/src/screens/customer/bookings/` | #555's `my_bookings`, `my_booking` (QR), `bookingCancel`, `bookingReschedule` |
 | C12 assistant `/app/assistant` | `web/pages/app-assistant.html` | `web/src/screens/customer/assistant/` | `assistantAsk`, `my_assistant_conversation` |
 | C13 notifications `/app/notifications` | `web/pages/app-notifications.html` | `web/src/screens/customer/notifications/` | `my_notifications`, `notificationRead*` |
 | C14 sign-in / sign-up `/app/sign-in`, `/app/sign-up` | `web/pages/app-sign-in.html`, `app-sign-up.html` | `web/src/screens/customer/sign-in/` | OR-3 `/api/auth/*`, `consent_texts`, `customerRegister` |
+
+**C02 and C03 were missing (amendment, 2026-10-10, claude/89bd61d9).** `booking-slots.md` (#555) gives
+the customer's booking screens to this design (*"C02/C03/C08 customer screens are #558's"*), but this design built
+only C08 and C09. So nobody built the screen where a customer books, or the place where a customer's broker
+referral code goes in (`broker-seam.md` §4.2: *"#558 (customer app) adds it to C02 `/app/book`"*). The two rows
+above close that gap. The routes and views are #555's; this design adds only the pages.
+- **The referral field on C02** is optional. It is sent as `bookingCreate.referralCode`, and #555's BK-3 captures it
+  on the booking in the same transaction (`booking-slots.md`: optional for DESK/APP). The server normalises it
+  (`ReferralCode`, the referral capture #979: trim, upper-case, `[A-Z0-9]{6,12}`). A bad code comes back as `validationFailed` on the field.
+- **C02 sends no `quoteId`, for now.** `planner_preview` makes no Quote (P5).
+  - Blueprint §10 lists C02 as a caller of `POST /api/quotes` (`quote-transaction.md:14`), but that design grants the route only to the desk (`ExchangeTransact`) and the kiosk (`quote-transaction.md:289`). No permission lets a CUSTOMER make a quote.
+  - Until a ticket grants it (an amendment of `quote-transaction.md` for the lane controller), `bookingCreate`'s optional `quoteId` stays empty from the app.
+  - The estimate is shown as an estimate (*"เรทสุดท้ายยืนยันเมื่อทำรายการ"*), and the rate is fixed at the desk.
+- **A broker's link** `/app/book?ref=AB12CD` prefills the field from the page's own URL. Nothing is stored: no
+  cookie and no local storage. Broker keeps the attribution window (Broker §6), and v3 only captures what the booking
+  carries. Remembering a code across visits would be a retention rule nobody has decided, so it is not done.
 
 Every page: `xc-gate` `anyone` (the server checks every read and write); `main.tsx` calls `setAudience('customer')`
 before `render` (`languages.md` §3.1); `i18n.ts` exports complete `th`, `en`, `zh` (L4); the `zh` draft is checked by a
@@ -437,6 +455,8 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-13 | C09 journey screen (drafts + ticket; bookings when #555 lands) | `web/pages/app-journey.html`, `web/src/screens/customer/journey/**` | APP-4, APP-7, QU-7 |
 | APP-14 | C12 assistant screen | `web/pages/app-assistant.html`, `web/src/screens/customer/assistant/**` | APP-6, APP-7 |
 | APP-15 | C13 notifications screen | `web/pages/app-notifications.html`, `web/src/screens/customer/notifications/**` | APP-3, APP-7 |
+| APP-16 | C02 book screen, with the optional referral-code field (prefilled from `?ref=`) | `web/pages/app-book.html`, `web/src/screens/customer/book/**` | APP-4 (`planner_preview`), APP-5 (`public_branches`), APP-7 (shell, sign-in), #555 BK-6 (routes), BK-3 (the capture) |
+| APP-17 | C03 my bookings screen (list, QR, cancel, reschedule) | `web/pages/app-bookings.html`, `web/src/screens/customer/bookings/**` | APP-7, #555 BK-6 |
 
 ### 9.1 Tests written before implementation
 
@@ -450,6 +470,8 @@ Each ticket adds only its own line, and on a rebase conflict keeps both sides:
 | APP-6 | each of the prototype's sample sentences in TH, EN and ZH parses to the same `Intent` (the fixture is the ticket author's, from §14's prototype tests); an unknown sentence → `UNKNOWN`; the stored `redacted_text` of a message holding a phone and an OTP holds neither; `assistantAsk` writes no draft, quote or booking; the same `Idempotency-Key` gives one message; a conversation's `expires_at` is NULL when no period is set |
 | APP-7 | sign-up refuses without a published `TERMS` text in the page language (`consentTextMissing`, CI rule); after sign-in the session's drafts are the customer's; the built `web/dist` contains neither `246810` nor `demo-login`; every customer `main.tsx` calls `setAudience('customer')` before `render` (LN-1's guard test, now non-vacuous); the human check of `zh.ts` is recorded on the ticket (#558 controller comment) |
 | APP-8, APP-11..15 | vitest per screen: loading, empty, error and retry states; the language switch shows TH / EN / 中文; amounts render with `MoneyText` and do not change with the locale; C04 shows only the reader's own transactions (the view is mocked to return one, the screen asks with no customer id); C09 shows "unknown" when the estimate is NULL, never a number; C13 marks read optimistically and rolls back on error |
+| APP-16 | vitest: the referral field is optional (an empty one sends no `referralCode`); its value is sent as typed (the server normalises it); `?ref=AB12CD` prefills it, and a page without `?ref=` starts empty; no storage API is called for the code; a `validationFailed` on `referralCode` shows beside the field and keeps the form; booking sends `Idempotency-Key` |
+| APP-17 | vitest: lists only the reader's bookings (the view is mocked, and the screen sends no customer id); cancel and reschedule are hidden after the cutoff the view returns; the QR renders from `my_booking` |
 | APP-9 | (only if cut later, C3) a delivery failing twice then succeeding is one notification, one delivery row with `attempt_no = 3`; the push payload has no amount, name or document number; no handler is registered when its env is unset |
 | APP-10 | calling a ticket whose customer has a user writes one "called" notification; a recall writes a second (event id carries the recall number); a ticket with no customer writes none; a rollback of the call writes none |
 
