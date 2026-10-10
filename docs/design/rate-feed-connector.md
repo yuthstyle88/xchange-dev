@@ -323,9 +323,10 @@ F2 `domain/publication/mod.rs`; F3 `domain/currency/mod.rs`, `infrastructure/cur
 - **One loop.** A single background task in the server runs `tick()` every `RATE_FEED_INTERVAL_SECS` (default 60; a setting, R-8).
 - **Each tick:**
   1. **Skip if another tick is running.** It takes a Postgres advisory lock (`pg_try_advisory_lock`) and returns at once if another tick, or another server instance, holds it. No overlapping runs.
+     - **Lock scope** (PR 1038 review follow-up): a session lock (`pg_try_advisory_lock`) taken on a pooled connection stays held if the tick errors before unlocking, and every later tick then skips silently. Use `pg_try_advisory_xact_lock` inside an outer transaction, so the lock ends with the transaction on every path. Or use a dedicated connection that unlocks on every path. F10's tests include: a tick that fails does not block the next one.
   2. **Fetch once.** `ReferenceBatchWriter::fetch_and_write` with the board's source and provider. A repeat checksum writes nothing (§3.1).
   3. **Publish per branch.** `FeedPublisher::publish_latest` for every branch whose `price_source = 'RATE_BOARD'`, one transaction per branch, so one branch's failure does not stop the others.
-- **Board unreachable.** The fetch fails, nothing is written, and the current publication stays. Its freshness is measured from `source_published_at`, so the branch's stale policy (`rates.md` §4.3, `on_stale`) decides when quotes stop. Each failed tick is logged with the error. **Whether an unreachable board should stop the counter at once, like a paused one (R-6), is not decided here.**
+- **Board unreachable.** The fetch fails, nothing is written, and the current publication stays. Its freshness is measured from `source_published_at`, so the branch's stale policy (`rates.md` §4.3, `on_stale`) decides when quotes stop. Each failed tick is logged with the error. Whether an unreachable board should stop the counter at once, like a paused one (R-6), is **Q-9** (§7).
 - **Where it runs.** v3 had no scheduler at `875f7e8` (§7 Q-8 sweep), so this is the first background task. It starts with the server and stops with it.
 
 ### 3.7 Input / output and errors
@@ -462,3 +463,4 @@ design is reviewed and merged (📐).
 | Q-6 | When the board is paused, does the counter stop selling? | **Answered — R-6: it stops** (§3.3 step 2) |
 | Q-7 | Which branches take their price from the board? | **Answered — R-7: per branch** (§3.5) |
 | Q-8 | What triggers `FeedPublisher`? | **Answered — R-8: v3's own timer, ~1 minute, configurable** (§3.6) |
+| Q-9 | When the board is **unreachable** (fetches fail), does the counter stop at once, like a paused board (R-6)? Or keep the last publication until the branch's stale policy stops it (§3.6, today's design)? | Proposed to the owner 2026-10-10: keep the stale policy, so a brief network drop does not stop the counter. Not yet answered |
