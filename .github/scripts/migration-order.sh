@@ -60,6 +60,8 @@ while IFS= read -r file; do
 done <<< "$added_files"
 
 if [ "$has_error" -ne 0 ]; then
+  pr="${PR_NUMBER:-<pr-number>}"
+  echo "scripts/migration-slot.sh renumber $pr"
   exit 1
 fi
 
