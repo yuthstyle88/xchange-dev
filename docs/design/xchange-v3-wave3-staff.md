@@ -213,7 +213,7 @@ Replaces the first version's S-1…S-8 (issues #573, #574, #575, #577, #578, #57
 | **S-6** transfers card | B8, C8–C9 | `web/src/screens/staff/transfers/**` | S-3, #582 CA-8 |
 | **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 CA-8 |
 | **S-8** RATES card, read only | B11, S10 | `web/src/screens/staff/rates/**` | S-3 and RE-3 (`staff_published_rates`, `rates.md:950`) |
-| **S-9** sign-in returns to `/staff` | S1's "and back to `/staff` after it" | `web/src/screens/login/home.ts`, `web/src/screens/login/LoginScreen.tsx`, `web/src/screens/login/main.tsx` and their tests | S-3 |
+| **S-9** sign-in returns to `/staff` | S1's "and back to `/staff` after it" | `web/src/screens/login/home.ts`, `web/src/screens/login/LoginScreen.tsx`, `web/src/screens/login/main.tsx` and their tests | — (independent of S-3: no shared file, and the return leg works whether or not `/staff` has merged; #1223 ruling issuecomment-6103493211) |
 
 S-9 exists because S1 is `[required]` and OR-3's sign-in screen on `main` `08c94225` ignores `next`: `LoginScreen` navigates to `homeOf(user)` (`web/src/screens/login/home.ts`), which answers `/desk` or `/` only. S-3 pins only the redirect to `/login?next=%2Fstaff` (lane controller ruling on #575, 2026-10-11); the return leg is S-9's. `next` must be a same-origin path so the sign-in screen is not an open redirect.
 
