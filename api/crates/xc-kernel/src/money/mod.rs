@@ -3,6 +3,7 @@
 mod compat_rate;
 mod currency_code;
 mod currency_units;
+mod customer_side;
 mod exchange_arithmetic;
 mod foreign_amount;
 mod minor_unit;
@@ -20,6 +21,7 @@ mod unit_size;
 pub use compat_rate::{CompatRate, CompatRateError};
 pub use currency_code::{CurrencyCode, UnknownCurrency};
 pub use currency_units::CurrencyUnits;
+pub use customer_side::CustomerSide;
 pub use exchange_arithmetic::ExchangeArithmetic;
 pub use foreign_amount::ForeignAmount;
 pub use minor_unit::MinorUnit;
