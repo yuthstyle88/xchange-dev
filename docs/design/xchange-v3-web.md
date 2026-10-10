@@ -1229,6 +1229,7 @@ number or a name use `{placeholders}`.
 - `QueuePanel` inside its dialog (`admin-queue.js:8`), with `onClaimed` where it needs it;
 - `dockQueueCard(): () => void` [proposed] exported by `QueueCard.tsx`: while docked the card renders nothing but keeps
   C4–C9 running (v2 hid the card on the admin page, `admin-queue.js:12`); the returned function undocks;
+  **superseded on admin by §12.18.12 (#786): admin no longer docks the card;**
 - `QueueSoundControls` [proposed], `web/src/shared/ui/QueueSoundControls.tsx`: the sound buttons and hint of C7, which
   #471 renders in its bar (`admin-queue.js:12` moved v2's controls there). The card renders the same component.
 
@@ -1316,7 +1317,6 @@ classDiagram
   AdminQueueBar --> QueueStore
   AdminQueueBar --> QueuePanel
   AdminQueueBar --> QueueSoundControls
-  AdminQueueBar --> QueueCard : dockQueueCard
 ```
 
 | Class / module | File | Ticket | Used by |
@@ -1347,6 +1347,31 @@ No file is in two tickets. #471 owns only `web/src/screens/admin/queue/` and edi
 | #471 V2-queue | `web/src/screens/admin/queue/` | #460 (V2-shell), V1-kiosk-queue-panel, V1-queue-card | — |
 
 The up-front tests of each ticket are written by the controller on that ticket's branch before dispatch (🧪 rule).
+
+#### 12.18.12 Admin: the card floats, the in-page bar goes (#786)
+
+> decided-by: claude/608dff (lane controller), ruling **B** on #786, 2026-10-10. Written by claude/b060e9. Measured on `main`
+> `73474959e1ffcba66843b5affa7ed1d9086e6552` and `xchange-v2-source@4d0bdbb`. The owner: *"มัน ต้อง ลอย ไปมา"* ("it should float around"),
+> then on build `23a9e5e` *"ยังไม่ ลอย"* ("it still doesn't float").
+
+v3 has two copies of v2's queue notice: `QueueCard` (the floating `aside.xc-queue` of `account-bar.js`, rows C1–C9) and #471's in-page
+bar (`aside.admin-queue-bar`, v2's `section.queue-hub` of `admin-queue.js:6`). On admin the bar docks the card
+(`QueueBar.tsx:41`). This mirrors `admin-queue.js` @2123 (`e.detail.notice.hidden=true`). So admin shows a static card and nothing
+floats. There is one floating widget, the card, on every screen admin included, styled once.
+
+| # | Decision | Status |
+|---|---|---|
+| QF1 | **Admin stops docking.** `QueueBar` no longer calls `dockQueueCard()`, so `AccountBar`'s `QueueCard` (portalled to `body`) shows on admin as everywhere. `dockQueueCard` stays exported (C-dock tests pin it), with no caller | decided |
+| QF2 | **Admin drops only the in-page card**: `QueueBar` renders no `aside.admin-queue-bar` (title, status, open button, sound controls, workers list). It keeps the store subscription (`setQueueBranch`), the `/kiosk-queue.html` link interception, the toast and the dialog | decided |
+| QF3 | **The card's action opens the same dialog on admin.** The card's link `เปิดคิว / รับเรื่อง →` (`/kiosk-queue.html?branch=…`, C3) is caught by `QueueBar`'s capture-phase interception (Q9), which opens the queue dialog. Offline, a session end or a branch awaiting its answer: the click is prevented and opens nothing (the old button's `disabled`). Closing the dialog returns focus to the link that opened it. Elsewhere the link still opens the page in a new tab | decided |
+| QF4 | **Titles.** The dialog keeps `คิวลูกค้า · <branch label>` (Q7, Q19). The card keeps its own `XC · <branchName>` (C4, `account-bar.js` @10677). The bar's in-page title `คิวลูกค้า · <branchName>` (Q2) goes with the bar | decided by this row; the controller may override |
+| QF5 | **One CSS file for the card**, `web/src/shared/ui/queue-card.css`, imported by `QueueCard.tsx` (look rule 6). It holds v2 `account-bar.js`'s `.xc-queue*` rules (base @2212, `≤600` @3685, `≤700` @4526) on the card's own classes, plus `admin-workspace.css:29` / `:34`'s `.xc-workspace .xc-queue*` overrides (≤600 included). No `body{padding-bottom:84px}` (@4739) | decided |
+| QF6 | **Scoping.** The card is portalled to `body`, outside `.xc-shell`, so look rule 3's `.xc-<look> …` cannot reach it. Base rules use the card's classes alone (`.queue-card`, `.queue-card-*`). Admin overrides use `body:has(.xc-admin) .queue-card…`, v3's equivalent of v2's `.xc-workspace` ancestor. This is the second rule outside `.xc-shell`, after `shell.css`'s `body:has(.xc-shell)`. It is not `.xc-admin` followed by a class, so it keeps gate rule 3. Specificity matches v2: `body:has(.xc-admin) .queue-card` (0,2,1) beats the base `.queue-card` (0,1,0) in every media query, as `.xc-workspace .xc-queue` beat `.xc-queue` | decided |
+| QF7 | **Classes on the card** [required: the two the CSS keys on]: `queue-card` on the `aside`, and `minimized` on it while folded (v2 sizes the folded card by that class: 280px, 260px at ≤600). [proposed]: `queue-card-badge`, `queue-card-title`, `queue-card-toggle`, `queue-card-status`, `queue-card-body` (the part `hidden` when folded), `queue-card-action` (the link). The existing `queue-card-top` stays. `QueueSoundControls` keeps `.queue-sound-controls` and is styled as `.queue-card .queue-sound-controls` (v2 `.xc-queue-tools` + `small`) | decided |
+| QF8 | **What admin loses**: the workers list (`<staff> กำลังทำรายการ <queue> · เริ่ม <time>`, v2 hub `admin-queue.js:16`) has no place in v2's floating notice. It is not shown on admin after this row | open for the owner; this row does not move it |
+
+Files: `web/src/shared/ui/QueueCard.tsx` (the classes), `web/src/shared/ui/queue-card.css` (new), `web/src/screens/admin/queue/QueueBar.tsx`
+(QF1–QF3), `web/src/screens/admin/queue/queue.css` (drop the bar's rules). `AdminShell.tsx`, `AccountBar.tsx` and `queue-panel.css` do not change.
 
 ### 12.19 Session end — `SessionStore.ended`, the `me` view's own version and AppShell's lock (V0-B-session-end)
 
