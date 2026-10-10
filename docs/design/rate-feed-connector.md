@@ -793,7 +793,7 @@ The view reads existing tables only. No data-migration section is needed.
 > `docs/design/xchange-system-blueprint-v3.html` §12
 
 **How to read it.** *Conforms* = this design does what the Blueprint row says. *Differs* = it does something else; the
-cell cites the owner's ruling on #986 that allows it (R-1…R-10, all decided — R-4/R-5 confirmed again on 2026-10-11,
+cell cites the owner's ruling on #986 that allows it (R-1…R-11, all decided — R-4/R-5 confirmed again on 2026-10-11,
 https://github.com/108-Plaza/xchange/issues/986#issuecomment-6101147707), or says **no ruling**. *Open* = neither the
 Blueprint nor a ruling settles it yet. Rows apply to a branch priced from the board (`price_source = 'RATE_BOARD'`, F9); a
 `BOT_DRAFT` branch keeps the existing rate engine unchanged (`rates.md`), which this design does not touch.
@@ -822,25 +822,25 @@ Blueprint nor a ruling settles it yet. Rows apply to a branch priced from the bo
 |---|---|---|---|
 | A1 unit_size | JPY 100, KRW 1000, others 1; scale 8 | used as is (§3.1) | Conforms |
 | A2 who approves a publication | policy in bound; EXECUTIVE out of bound | board publications: SYSTEM self-decision, OWNER cannot decide them (`RateFeedPublicationPolicy`) | Differs — **R-5** |
-| A3 guards and reference age are owner data | `RatePolicyVersion` | guards: not applied to board prices (R-2, R-5); reference age: the branch's current policy is carried on every board line (F5) | guards: Differs — **R-2**, **R-5** · age: Conforms |
+| A3 guards and reference age are owner data | `RatePolicyVersion` | guards: not applied to board prices (R-2, R-5); reference age: the branch's current policy is carried on every board line (F5, PR 1120 at `97eec04`, `feed_publisher.rs` snapshot) | guards: Differs — **R-2**, **R-5** · age: Conforms |
 | A4 banknote group `ALL` only | replaced by R-3 on 10 Oct | owner/admin groups (F3, F3w) | Conforms (**R-3**) |
 | A5 owner draft out of bound publishes at once | `decide_self` | unchanged on BoT-draft branches; F9 refuses a BoT publish on a board branch | Conforms |
 | A6 BoT base: buy = buying transfer, sell = selling | separate adapter | unchanged; the board is a second, separate source (§2, §8) | Conforms — board source by **R-1** |
-| A7 stale: LIMIT with `stale_limit_thb`, or STOP | `StalePolicy` | applies to board lines through the carried policy (F5); an unreachable board is left to it | Conforms — **R-9** |
+| A7 stale: LIMIT with `stale_limit_thb`, or STOP | `StalePolicy` | applies to board lines through the carried policy (F5, PR 1120 at `97eec04`); an unreachable board is left to it | Conforms — **R-9** |
 
 ### 12.4 Blueprint v3 §12 — delivery plan and decision points
 | v3 §12 | Blueprint says | This design | Verdict |
 |---|---|---|---|
 | P0 | compare the real schema/API with the Blueprint; rounding/conflict policy; contract, unit scale, precision, meaning of pause | the board's API, credential and payload are **Q-4**, isolated in `RateBoardPayload` (§2, §7); unit scale and precision as §12.1; pause = every board-priced side `NULL` (**R-6**) | API contract: **Open (Q-4)** · pause: Conforms (**R-6**) · rounding/conflict: as v2 §05, **no ruling** specific to the board |
-| P1 | move refresh/sheet sync to a server scheduler with lock, retry, run log, failure alert | that is the board system's own refresh; v3's side is F10 (§3.6): lock, one fetch per tick, every failure logged. **No failure alert** is designed | lock/log: Conforms · alert: **no ruling** (gap, see 12.5) |
+| P1 | move refresh/sheet sync to a server scheduler with lock, retry, run log, failure alert | that is the board system's own refresh; v3's side is F10 (§3.6): lock, one fetch per tick, every failure logged. **Retry:** the next tick is the retry (every `RATE_FEED_INTERVAL_SECS`, ~1 min, R-8); there is no retry inside a tick. **No failure alert** is designed | lock/log: Conforms · retry: by the next tick (**R-8**); in-tick retry **no ruling** · alert: **no ruling** (gap G-2) |
 | P2 | UAT Telegram → price → branch screen | the board system's flow; v3's screens show the first tier (**R-10**) | Not v3's part · screens: **R-10** |
-| P3 | Rate API adapter + snapshot in the XC quote; auditable; transaction ledger apart from publication | adapter F4 (Q-4); snapshot on every published line (F5); quotes cite the tier line (F6); the ledger is untouched | Conforms (adapter waits for **Q-4**) |
+| P3 | Rate API adapter + snapshot in the XC quote; auditable; transaction ledger apart from publication | adapter F4 (Q-4); snapshot on every published line (F5, PR 1120 at `97eec04`); quotes cite the tier line (F6); the ledger is untouched | Conforms (adapter waits for **Q-4**) |
 | Decision 1 | rate precision/rounding and THB amount | v2 §05 precision and HALF_UP | Conforms to v2 · **no ruling** for the board |
 | Decision 2 | threshold for override conflict, buy and sell | no override on a board branch | **R-2** |
 | Decision 3 | how long stale is allowed | the branch's stale policy (A7) | **R-9** |
 | Decision 4 | which level each branch screen shows; scope of pause | screens show the first tier; pause stops the whole board's prices | **R-10**, **R-6** |
 | Decision 5 | multi-currency / THB-input tier | tier picked on the base value of the foreign amount (§3.4); a THB-input kiosk SELL reprices until the tier settles (§9.3) | tiers: **R-4** · THB-input rule: **no ruling** (designer's rule, §9.3) |
-| Decision 6 | quote TTL; service auth | quote TTL as v2 §19 T1 (300 s, admin-settable); the credential to the board is **Q-4** | TTL: Conforms · auth: **Open (Q-4)** |
+| Decision 6 | quote TTL; service auth | quote TTL as v2 §19 T1 (300 s, admin-settable); T1's "expires the moment a new rate is published" also holds on a board branch: every board publication, a pause included, expires that branch's open quotes. No code is needed: `Quote::is_valid` (`api/crates/xc-exchange/src/domain/quote/quote.rs:104-105`) requires the quote's publication to be the current one. An unchanged board publishes nothing (F5's checksum skip), so quotes expire only on a real price change. The credential to the board is **Q-4** | TTL and expiry: Conforms — **R-11** · auth: **Open (Q-4)** |
 | Decision 7 | retention of audit/events; how scheduler failures are reported | audit through `audit_events` (existing retention); failed ticks logged only | **no ruling** |
 
 ### 12.5 What has no ruling yet
@@ -850,4 +850,5 @@ Blueprint nor a ruling settles it yet. Rows apply to a branch priced from the bo
 | G-2 | an alert when the feed fails repeatedly (v3 §12 P1, decision 7) | not designed; a log line per failed tick only |
 | G-3 | the THB-input tier rule at the kiosk (v3 decision 5) | designer's rule in §9.3; the owner may override |
 | G-4 | rounding/conflict policy specific to board prices (v3 P0, decision 1) | v2 §05 applies as is |
+| G-5 | do board publications expire open quotes (v2 §19 T1 on a board branch)? | **decided — R-11**, owner 2026-10-11: *"หมดทันทีตาม T1 (แนะนำ)"* (https://github.com/108-Plaza/xchange/issues/986#issuecomment-6101215900); no code change, see Decision 6 |
 
