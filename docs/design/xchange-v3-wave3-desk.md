@@ -564,22 +564,20 @@ that ticket also:
 |---|---|---|---|
 | **DK-A** (#537) desk views — **held for #547/#548** | `api/src/presentation/http/v3/desk/mod.rs` (new), `desk/config.rs` (new), `views/desk_config.rs`, `views/staff_desk_config.rs`, `dto/v3/desk_config.rs`, `http/v3/mod.rs` (`pub mod desk;` only), `generated/desk_config.ts`, `api/tests/v3_desk_config_view_test.rs`, `api/tests/v3_types_test.rs` (the author's amendment, below) | this document | first among DK-A/DK-B (it creates `desk/mod.rs`) |
 | **DK-B** (#538) — **superseded by #551** | nothing: the quote and complete routes are #551's server work (§4.2) | — | — |
-| **DK-C** (#539) desk shell | `web/src/screens/desk/` root files (`main.tsx`, `DeskPage.tsx`, `Summary.tsx`, `desk-store.ts`, `desk-path.ts`, `save.ts`, `steps.ts`, `entries.ts`, `i18n.ts`, `desk.css`) and their tests | this document | after DK-A and DK-B (rebases to re-export the generated types, §6) |
-| **DK-D** (#540) rate step | `web/src/screens/desk/steps/rate/**` | DK-C | — |
-| **DK-E** (#541) customer step | `web/src/screens/desk/steps/customer/**` | DK-C | — |
-| **DK-F** (#542) OCR screen — **held for Recognize-Platform#150 and #557** | `web/src/screens/desk/ocr/**` | the Recognize service is deployed (Recognize-Platform#150's code tickets) and the v3 endpoint of #557 (R-2) is merged | — |
-| **DK-G** (#543) booking and payment steps | `web/src/screens/desk/steps/booking/**`, `steps/payment/**` | DK-C | — |
-| **DK-H** (#544) receipt step | `web/src/screens/desk/steps/receipt/**` | DK-C | — |
-| **DK-I** (#545) entries | `web/src/screens/desk/entries/**` | DK-C | — |
-| **DK-J** (#546) switch | `web/pages/desk.html`, `web/pages/staff-desk.html`, the page tests of §7, `docs/design/xchange-v3-known-differences.md` (the KD rows) | DK-C … DK-I | last |
+| **DK-C+D+E** (#539) desk shell, step 0 (rate) and step 1 (customer); #540 and #541 were folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/` root files (`main.tsx`, `DeskPage.tsx`, `Summary.tsx`, `desk-store.ts`, `desk-path.ts`, `save.ts`, `steps.ts`, `entries.ts`, `i18n.ts`, `desk.css`) and their tests, `web/src/screens/desk/steps/rate/**`, `web/src/screens/desk/steps/customer/**`; #539's `## File scope` is the exact list | this document | after DK-A and DK-B (rebases to re-export the generated types, §6) |
+| **DK-F+J** (#542) OCR screen, then the switch — **held for Recognize-Platform#150 and #557**; #546 (DK-J) was folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/ocr/**`, then DK-J's files: `web/pages/desk.html`, `web/pages/staff-desk.html`, the page tests of §7, `docs/design/xchange-v3-known-differences.md` (the KD rows) | the OCR part: the Recognize service is deployed (Recognize-Platform#150's code tickets) and the v3 endpoint of #557 (R-2) is merged; the switch part: #539 and #543 | last (the switch ships with the OCR screen, behind the same hold) |
+| **DK-G+H+I** (#543) steps 2–4 (booking, payment, receipt) and the `?booking=`/`?kiosk=` entries; #544 and #545 were folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/steps/booking/**`, `steps/payment/**`, `steps/receipt/**`, `web/src/screens/desk/entries/**` | DK-C+D+E | — |
+| **DK-R** (#983) the broker referral-code field on the saved exchange (step 4) | `web/src/screens/desk/referral/**` (new), plus **the one receipt-step file it embeds into, named by its concrete path** once #543 has merged (it is #543's until then, so #983 starts after #543 and reserves that file; an unreserved edit is not allowed) | #543 and RA-3 #981 (`attachReferral`) | after #543 |
 
 **Held (2026-10-09, lane controller):** a ticket that touches rates waits for this revision **and** for the Blueprint rate
 design it names. DK-A waits for #547/#548 (published rates, `unit_size`). DK-B waits for #547/#548 and for #551's quote
 decision (O-6). DK-C, DK-D and DK-I read rates only through DK-A's and DK-B's DTOs, so they keep their order behind them.
 DK-E, DK-F, DK-G and DK-H do not read a rate.
 
-V4 (`xchange-v3-wave3-report-documents.md`) is blocked by DK-J (#546). Nothing here waits for #472 (V2-switch): the desk files
+V4 (`xchange-v3-wave3-report-documents.md`) is blocked by DK-J, which is part of #542 (DK-F+J). Nothing here waits for #472 (V2-switch): the desk files
 touch none of #472's.
+
+**DK-R's source (2026-10-11 lane controller).** #983 was cut on the owner's direct order of 2026-10-10 (*"ตัดใบหน้าใส่โค้ดแนะนำ booking กับ desk"*), following owner decision O-2 on #563 (*"Teller attaches, OWNER replaces"*) and `blueprint/broker-seam.md` §4.3 (`attachReferral`). The row above puts it in this design's list, per the owner's order A of 2026-10-11 (no ticket outside its design's list). It is the Broker seam's capture, not a port of v2's `desk-referrals.js` (§3, *"Referrals are not ported"*).
 
 ## 10. Tests written before implementation (🧪)
 
