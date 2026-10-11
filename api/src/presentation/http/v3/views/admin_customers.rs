@@ -66,7 +66,7 @@ impl PagedView for AdminCustomersPagedView {
                 if let Some(before_id) = before {
                     let cursor = sqlx::query_as::<_, CustomerCursor>(
                         "SELECT \
-                         (SELECT MAX(t.recorded_at) FROM transactions t WHERE t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE') AS last_at, \
+                         (SELECT MAX(t.recorded_at) FROM transactions t WHERE t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' AND t.status = 'COMPLETED') AS last_at, \
                          c.display_name AS name, c.created_at, c.id \
                          FROM customers c \
                          JOIN branches b ON b.organization_id = c.organization_id \
@@ -94,12 +94,13 @@ impl PagedView for AdminCustomersPagedView {
                      COALESCE((SELECT ci.nationality FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' LIMIT 1), '') AS nationality, \
                      c.created_at, \
                      EXISTS(SELECT 1 FROM members m WHERE m.branch_id = b.id AND m.customer_id = c.id) AS member, \
-                     COUNT(t.id) AS completed, \
-                     COALESCE(SUM(t.principal)::text, '0.00') AS volume, \
+                     COUNT(DISTINCT t.id) AS completed, \
+                     COALESCE(SUM(tl.thb_amount)::text, '0.00') AS volume, \
                      MAX(t.recorded_at) AS last_at \
                  FROM customers c \
                  JOIN branches b ON b.organization_id = c.organization_id \
-                 LEFT JOIN transactions t ON t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' \
+                 LEFT JOIN transactions t ON t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
+                 LEFT JOIN transaction_lines tl ON tl.transaction_id = t.id \
                  WHERE b.id = ",
             );
             builder.push_bind(branch.as_str());
