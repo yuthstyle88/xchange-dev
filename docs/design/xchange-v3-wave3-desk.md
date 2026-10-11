@@ -476,7 +476,7 @@ Everything the step does traces to one of: the owner quote above, Blueprint B03 
 | R-1: request **and** post refused `reversalWindowClosed` after the original's business date; an APPROVED reversal not posted in time stays APPROVED, is shown "expired" (derived) and **can never be posted** | `reversal.md:31`, `:129-131` |
 | Post: command, permission `ReversalRequest`, the poster's **own open shift**, one `BranchTx`, §09 in order | `reversal.md:143-160` |
 | RV-3 answers `ReversalDto` (RV-2's) with the document number; errors `staleVersion` (not APPROVED), `reversalWindowClosed`, `noOpenShift`, `stockInsufficient`, `idempotencyConflict` | #684 §8 |
-| `reversalRequest` is a policy row on `EntryPath::Rpc` only: legacy roles FRONT, MANAGER, BACKEND; permission `ReversalRequest` (TELLER, BRANCH_MANAGER). There is **no `EntryPath::StaffRpc` row** for it | `api/crates/xc-auth/src/domain/policy/entities/policy.rs:94-96`, `:570`; `role_permissions.rs:56`, `:79` |
+| `reversalRequest` is a policy row on `EntryPath::Rpc` only: legacy roles FRONT, MANAGER, BACKEND; permission `ReversalRequest` (TELLER, BRANCH_MANAGER). There is **no `EntryPath::StaffRpc` row** for it | `api/crates/xc-auth/src/domain/policy/entities/policy.rs:94-96`, `:570`; `api/crates/xc-auth/src/domain/access/role_permissions.rs:56`, `:79` |
 | **No read lists a branch's APPROVED, unposted reversals.** RV-4 (#685) reads **one** reversal by id (`GET /api/v3/views/reversal?id=`, `ReversalSummaryDto`, derived `EXPIRED`) and the B04 field; F01's `reversals_pending()` (FN-2 #1069) lists **REQUESTED** approval requests for FINANCE to decide, not approved ones waiting at the counter; `approval_requests` is `INHERITS (Rpc, "approvalRead")`, an approver's read. `views/` on `main` has no reversal file at all | #685 §7; `executive-finance.md:223-224`, `:382`; `api/src/presentation/http/v3/views/approval_requests.rs:41`; `ls api/src/presentation/http/v3/views/` |
 | The desk frame on `main` (DK-C0, #613): `steps.ts` fixes `StepIndex = 0..4` and `DESK_FLOW` (*"quote → ตรวจ → ยืนยันรายการ"*, test F3); `collectSteps` refuses any index outside it; `canGo` allows back, or forward to the next step only; `DeskPage` renders the current step in `#panel` and an optional `aside` | `web/src/screens/desk/steps.ts:3-13`, `:43-46`, `:79-88`; `DeskPage.tsx:7-53` |
 | `ApiClient.command(method, path, body, key)` sends `Idempotency-Key` and refuses an empty key | `web/src/shared/api/client.ts:182-205` |
@@ -496,7 +496,7 @@ The step needs the branch's APPROVED reversals that can still be posted. No read
   the same reasoning as B04's D2. A branch version would not be a correct cursor anyway: the row appears when FINANCE
   decides through AP-1, and a command's `BranchTx` is the request's branch (`api/src/presentation/http/v3/command.rs:346`;
   `commands/approval_decide.rs:58-62` ignores `_branch`), which for an organisation-wide FINANCE need not be the
-  reversal's branch. A live count is a Must-ask (§12.1 M-R1), not designed here.
+  reversal's branch. A live count is not designed: n updates on open and refresh only (M-R1 A).
 - [required] Rows: the branch's `reversals` with stored `status = 'APPROVED'` **and** the R-1 window still open
   (`ReversalWindow::is_open`, RV-1, `reversal.md:194`). An expired one is left out because it can never be posted
   (`reversal.md:129-131`); B04 shows it as `EXPIRED`. REQUESTED, REJECTED and POSTED are never listed. Another branch's
@@ -533,7 +533,7 @@ pub struct DeskRefundPayment { pub method: String, pub amount_thb: String }
 - [required] Folder `web/src/screens/desk/steps/refunds/` (new; it reserves its own subtree on purpose). It holds
   `RefundsStep.tsx` (the component), `refunds-store.ts` (the list, the chosen row, the post outcome), `post.ts` (the
   one call to RV-3), `i18n.ts` (namespace `desk.steps.refunds.*`, `th` + `en`, **no `zh`**, L4) and their tests. The file is
-  **not** named `step.tsx` unless the owner picks M-R1 B, so `collectSteps`' glob (`./steps/*/step.tsx`) does not
+  **not** named `step.tsx` (owner M-R1 A: beside the flow, not in it), so `collectSteps`' glob (`./steps/*/step.tsx`) does not
   collect it as an exchange step.
 - [required] Shown only when `can(me, 'ReversalRequest')`, with `me` from one `staff_me` read (S-3's `parts/can.ts`,
   imported, not copied; no role name in the folder, a grep test). If `staff_me` fails, the step is hidden. On `STAFF_DESK`
@@ -551,14 +551,17 @@ pub struct DeskRefundPayment { pub method: String, pub amount_thb: String }
     key (DK-1's rule, §5.4 step 4, decided by status and code, never by message text).
 - [required] The screen judges nothing the server judges: not the window (R-1), not the shift (V-3, `noOpenShift`), not the
   stock, not the drawer-or-bank place (R-4). It does no date arithmetic.
-- **Registration — depends on §12.1 M-R1, cut only after the answer and after #539 merges:**
-  - M-R1 A (recommended), a step beside the exchange flow: one optional mount of `./steps/refunds/task.tsx` through
-    `import.meta.glob(…, { eager: true })` in the desk's page frame, rendering nothing when the file is absent (the same
-    pattern as `CustomerStep` mounting `PassportOcr`, §6). The frame file is #539's (`web/src/screens/desk/DeskPage.tsx`
-    at `647860f8`). DK-L reserves it **by that concrete path** after #539 merges; no unreserved edit.
-  - M-R1 B, a numbered step in the flow: the file is `steps/refunds/step.tsx`, and `steps.ts` (#539's) gains the index and
-    its phase; DK-L reserves `web/src/screens/desk/steps.ts` by path after #539 merges.
-  - M-R1 C, a section always on the page: the mount goes in the same frame file as A.
+- **Registration (owner M-R1 A, 2026-10-11):** a step beside the exchange flow. One optional mount of
+  `./steps/refunds/task.tsx` through `import.meta.glob(…, { eager: true })` in the desk's page frame, rendering nothing
+  when the file is absent (the same pattern as `CustomerStep` mounting `PassportOcr`, §6). The frame file is #539's
+  (`web/src/screens/desk/DeskPage.tsx` at `647860f8`). DK-L reserves it **by that concrete path** after #539 merges; no
+  unreserved edit. `steps.ts`, `DESK_FLOW` and test F3 are not touched.
+- **An exchange in progress (owner M-R2 A):** opening the step leaves the desk store as it is; closing it returns the
+  teller to the same exchange step with every field kept. The step has its own `Idempotency-Key` per post and never
+  writes the exchange's state.
+- **After a successful post (owner M-R3 A):** a print button prints the reversal's new document (R-2, revision 2)
+  through B04's shared `ReceiptFrame` (`web/src/shared/receipt/`, TD-3) over TD-2's `receipt_document?number=`. No
+  second print path is written.
 
 #### 5.5.4 Behaviour table (up-front tests pin these rows)
 
@@ -580,13 +583,15 @@ pub struct DeskRefundPayment { pub method: String, pub amount_thb: String }
 | RF-14 | the post answers `reversalWindowClosed` / `noOpenShift` / `stockInsufficient` / `staleVersion` / `idempotencyConflict` | `t('error.<code>')` shown (TH and EN both present); no other request | DK-L |
 | RF-15 | the post succeeds | the document number shown; `desk_refunds` read once more | DK-L |
 | RF-16 | the folder's `i18n.ts` | exports `th` and `en` with the same keys and no `zh` | DK-L |
-| RF-17 | M-R1/M-R2's answer | the rows for where the step sits and what happens to an exchange in progress are added once the owner answers; none is written before | DK-L |
+| RF-17 | a teller with `ReversalRequest` on `OWNER_DESK` | a nav item *คืนเงินที่รอบันทึก (n)* beside `01 … 05`, n = the list's length at the last read; n = 0 shows the item and an empty state in the panel (M-R1 A) | DK-L |
+| RF-18 | the exchange is at step 2 with fields filled; the teller opens the refunds step, then closes it | the desk returns to step 2 with every field unchanged; the desk store was never written by the step (M-R2 A) | DK-L |
+| RF-19 | a post succeeds | a print button; click → `receipt_document?number=<the reversal's document>` read once → `ReceiptFrame` prints it; no other print code in `steps/refunds/` (M-R3 A) | DK-L |
 
 #### 5.5.5 Blueprint conformance
 
 | Blueprint / owner | Here | Status |
 |---|---|---|
-| Owner 2026-10-11 *"ขั้นในหน้าเดสก์ B03"*; B03 `/desk/exchange`, TELLER (BP:128-133) | the post happens on `/desk`, by a teller, not on B04 | kept; placement on the page is M-R1 |
+| Owner 2026-10-11 *"ขั้นในหน้าเดสก์ B03"*; B03 `/desk/exchange`, TELLER (BP:128-133) | the post happens on `/desk`, by a teller, not on B04 | kept; placement beside the exchange flow (M-R1 A) |
 | §06 APPROVED → POSTED (BP:387-389) | the step lists APPROVED and posts; it stores no state of its own | kept |
 | §09 opposite posting + adjustments + events, one transaction (BP:559-560) | RV-3's; the step calls it once | kept (server's) |
 | Idempotency-Key for reversal (BP:564) | one key until success | kept |
@@ -653,7 +658,7 @@ classDiagram
   refundsPost ..> PostReversalCommand : command + Idempotency-Key
   RefundsStep ..> StaffParts : can, ConfirmDialog
   refundsPost ..> StaffParts : command.ts
-  DeskPage ..> RefundsStep : optional mount (M-R1)
+  DeskPage ..> RefundsStep : optional mount (M-R1 A)
 ```
 
 | Provides | File | Ticket | Used by |
@@ -668,7 +673,7 @@ classDiagram
 | `DeskRefundsView`, `DeskRefunds` (§5.5.2) | `views/desk_refunds.rs`, `dto/v3/desk_refunds.rs`, `web/src/shared/api/generated/desk_refunds.ts` | DK-K | DK-L |
 | `ReversalSummaryDto` and its row mapping; `ReversalWindow`; the post command | `dto/v3/reversal.rs`; `xc-exchange/src/domain/reversal/window.rs`; `http/v3/commands/exchange/reversal_post.rs` | RV-4 #685; RV-1 #682; RV-3 #684 | DK-K; DK-K; DK-L |
 | `can`, `command.ts`, `ConfirmDialog` | `web/src/screens/staff/parts/` | S-3 #575 | DK-L |
-| the pending-refunds step (§5.5.3) | `web/src/screens/desk/steps/refunds/**`, plus the one registration file M-R1 names | DK-L | the desk page |
+| the pending-refunds step (§5.5.3) | `web/src/screens/desk/steps/refunds/**`, plus `web/src/screens/desk/DeskPage.tsx` (M-R1 A) | DK-L | the desk page |
 
 [required] `PassportOcr(props: { file: Accessor<File | undefined>; values: Accessor<PassportFields>; fill(k: keyof PassportFields, v: string): void; clearIdentity(): void; onBusy(busy: boolean): void }): JSX.Element`.
 It keeps v2's rule exactly (`dh:55-84`): it snapshots `values()` when a read starts, and at the end it fills a field only if
@@ -736,7 +741,7 @@ that ticket also:
 | **DK-G+H+I** (#543) steps 2–4 (booking, payment, receipt) and the `?booking=`/`?kiosk=` entries; #544 and #545 were folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/steps/booking/**`, `steps/payment/**`, `steps/receipt/**`, `web/src/screens/desk/entries/**` | DK-C+D+E | — |
 | **DK-R** (#983) the broker referral-code field on the saved exchange (step 4) | `web/src/screens/desk/referral/**` (new), plus **the one receipt-step file it embeds into, named by its concrete path** once #543 has merged (it is #543's until then, so #983 starts after #543 and reserves that file; an unreserved edit is not allowed) | #543 and RA-3 #981 (`attachReferral`) | after #543 |
 | **DK-K** (to be cut) the `desk_refunds` view (§5.5.2) — backend, `class:logic` | `api/src/presentation/http/v3/views/desk_refunds.rs`, `api/src/presentation/dto/v3/desk_refunds.rs`, `web/src/shared/api/generated/desk_refunds.ts`, `api/tests/v3_desk_refunds_view_test.rs` (all new; one-line `mod.rs` registrations are not reserved, #564 lane rule) | RV-1+RV-2 #682 (`reversals`, `ReversalWindow`), RV-4 #685 (`ReversalSummaryDto` and its mapping, §12 O-7) | after #685 |
-| **DK-L** (to be cut) the pending-refunds step (§5.5.3) — web, `class:logic` | `web/src/screens/desk/steps/refunds/` (new folder, reserves its subtree on purpose), plus **one** registration file by concrete path per M-R1: `web/src/screens/desk/DeskPage.tsx` (A or C) or `web/src/screens/desk/steps.ts` (B) — both #539's until it merges, so DK-L starts after #539 and reserves that file; no unreserved edit | the owner's answer to M-R1 and M-R2 (§12.1); #539; DK-K; RV-3 #684 (the post command); S-3 #575 (`can`, `command.ts`, `ConfirmDialog`) | after #539 and DK-K |
+| **DK-L** (to be cut) the pending-refunds step (§5.5.3) — web, `class:logic` | `web/src/screens/desk/steps/refunds/` (new folder, reserves its subtree on purpose), plus **one** registration file by concrete path per M-R1: `web/src/screens/desk/DeskPage.tsx` (owner M-R1 A) — #539's until it merges, so DK-L starts after #539 and reserves that file; no unreserved edit | #539; DK-K #1265; RV-3 #684 (the post command); S-3 #575 (`can`, `command.ts`, `ConfirmDialog`); TD-2 and TD-3 of `blueprint/desk-transaction-detail.md` (`receipt_document`, `ReceiptFrame`; owner M-R3 A) | after #539, DK-K #1265, TD-2 and TD-3 |
 
 **Held (2026-10-09, lane controller):** a ticket that touches rates waits for this revision **and** for the Blueprint rate
 design it names. DK-A waits for #547/#548 (published rates, `unit_size`). DK-B waits for #547/#548 and for #551's quote
@@ -774,7 +779,7 @@ The ticket author writes them on each ticket's branch (`feat/v3-desk-<part>-<n>`
 - **DK-K**: rows RF-1 … RF-8 of §5.5.4, against a seeded branch with one reversal in each state, one past its window and one of
   another branch (the window across the branch timezone's midnight, as RV-1's test).
 - **DK-L**: rows RF-9 … RF-17 of §5.5.4, vitest against a fake `ApiClient` and a fake `staff_me`, on both `OWNER_DESK` and
-  `STAFF_DESK`. RF-17's rows are written once the owner answers M-R1 and M-R2.
+  `STAFF_DESK`. RF-17 … RF-19 pin the owner's M-R1, M-R2 and M-R3 answers.
 
 ## 11. Data migration
 
@@ -802,10 +807,10 @@ backfill, any deploy order (an older binary has no `desk_refunds` route and the 
 | O-7 | DK-K reuses RV-4's `reversals` row → `ReversalSummaryDto` mapping (♻️). #685's scope already holds `dto/v3/reversal.rs`; the lane controller adds to #685 that the mapping is a `pub(crate)` function there (e.g. `ReversalSummaryDto::from_row`), so DK-K imports it and writes no second copy | lane controller | DK-K |
 | O-8 | `/staff/desk` and refunds: `reversalRequest` exists only on `EntryPath::Rpc` (`policy.rs:94-96`, `:570`) and RV-3's command is on `Rpc`, so a FRONT staff session on `/staff/desk` reaches neither. The same question §4.2 leaves to #550/#551 for the quote routes. Until it is answered the step is hidden on `STAFF_DESK` and no `staff_desk_refunds` file is cut | lane controller with #550/#874 | DK-L's `STAFF_DESK` half only |
 
-### 12.1 Must ask the owner (§5.5)
+### 12.1 Owner answers (§5.5, 2026-10-11, asked by claude/5edf7bb5)
 
-| # | Question | Options | Recommendation |
+| # | Question | Answer (verbatim) | Where it lands |
 |---|---|---|---|
-| M-R1 | Where on `/desk` does the pending-refunds step sit, and is it shown when there is nothing to refund? | **A.** A step beside the numbered exchange steps (`01 Rate … 05 Receipt`): a nav item *คืนเงินที่รอบันทึก (n)* that opens the list in the panel; shown to a teller with `ReversalRequest`, with an empty state when n = 0. Registration: the frame file. **B.** A numbered step in the exchange flow (index 5, after the receipt): the flow becomes *quote → ตรวจ → ยืนยัน → คืนเงิน*, reached only by walking through an exchange; `steps.ts`'s `DESK_FLOW` and its F3 test change. **C.** A section always on the page (below or beside the panel), visible at every step. Any option: the count (n) updates on open/refresh only; a live count needs a version that moves when FINANCE decides, which is a server change not designed here | **A** — a refund is not an exchange (it has no quote), so it should not sit inside B03's *quote → ตรวจ → ยืนยันรายการ* flow (B), and A keeps `DESK_FLOW` and its test unchanged; A also keeps the list out of the way during an exchange, which C does not |
-| M-R2 | A teller is half-way through an exchange (steps 1–4) when a refund customer arrives. What happens when the step is opened? | **A.** The exchange stays as it is (the desk store is untouched) and the teller returns to the same step afterwards. **B.** Opening the step asks to abandon the exchange, as *ทำรายการใหม่* does (`dh:118`). **C.** The step can be opened only at step 0 or after a saved exchange | **A** — the store already holds the exchange (§5.3), the refund touches none of its fields, and the post is a separate command with its own key; B loses typed passport data, C blocks the counter |
-| M-R3 | After a successful post, does the step print the cancellation document (R-2's new document, revision 2) at the counter? | **A.** Yes: a print button using B04's shared `ReceiptFrame` (TD-3) over TD-2's `receipt_document?number=`; DK-L then also starts after TD-2/TD-3. **B.** No: the step shows the document number and the B04 link, where reprint already exists (B04 D5) | **A** — the customer leaves with the refund and R-2 issues the document for them; the frame is shared (♻️) so DK-L writes no print code of its own. If the owner prefers B, DK-L does not wait for TD-2/TD-3 |
+| M-R1 | Where on `/desk` does the pending-refunds step sit, and is it shown when n = 0? | **A**, *"เมนูข้างขั้นแลกเงิน"*: a nav item beside `01 … 05`, with an empty state at n = 0 | §5.5.3 registration, RF-17, DK-L |
+| M-R2 | An exchange is in progress when the step is opened | **A**, *"รายการค้างอยู่ กลับมาทำต่อได้"* | §5.5.3, RF-18 |
+| M-R3 | Print the cancellation document after a post? | **A**, *"พิมพ์ได้เลย"*: B04's shared `ReceiptFrame` over TD-2's `receipt_document` | §5.5.3, RF-19, DK-L's start-after |
