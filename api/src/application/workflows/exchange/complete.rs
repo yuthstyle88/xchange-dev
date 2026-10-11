@@ -47,6 +47,9 @@ use crate::application::workflows::save_step::{
 };
 use crate::infrastructure::devices::device_service::DeviceService;
 use crate::infrastructure::files::file_service::FileService;
+use serde_json::json;
+use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 
 // ------------------------------------------------------------ the effect seam (XS-0's, stubbed here)
 
@@ -159,6 +162,7 @@ pub struct CompleteExchange {
     postings: Arc<dyn CashPostings>,
     steps: Vec<Arc<dyn SaveStep>>,
     effects: Arc<ExchangeEffects>,
+    audit: PgAuditLog,
 }
 
 fn stale<T>(m: String) -> AppResult<T> {
@@ -269,11 +273,12 @@ impl CompleteExchange {
                 Arc::new(PgShiftRepository::new(pool.clone())),
                 BranchTx::new(Transactor::new(pool.clone())),
             ),
-            saved: PgTransactionRepository::new(pool),
+            saved: PgTransactionRepository::new(pool.clone()),
             files,
             postings,
             steps,
             effects,
+            audit: PgAuditLog::new(pool),
         }
     }
 
@@ -410,6 +415,33 @@ impl CompleteExchange {
                 id.0
             )));
         };
+        let completed_at = transaction
+            .completed_at
+            .ok_or_else(|| AppError::Internal("completed transaction missing completed_at".into()))?
+            .to_rfc3339();
+        let doc_ref = transaction
+            .document_ref
+            .as_deref()
+            .unwrap_or(document_ref.as_str());
+        self.audit
+            .append(
+                tx,
+                &AuditEvent {
+                    actor_id: who.id.clone(),
+                    actor_role: who.role.as_str().to_string(),
+                    scope: "branch".to_string(),
+                    action: "transaction.completed".to_string(),
+                    object_ref: id.0.to_string(),
+                    branch_id: Some(t.branch_id.as_str().to_string()),
+                    before: Some(json!({ "status": "CONFIRMED" })),
+                    after: Some(json!({
+                        "status": "COMPLETED",
+                        "documentRef": doc_ref,
+                        "completedAt": completed_at,
+                    })),
+                },
+            )
+            .await?;
         Ok(CompletedExchange {
             transaction,
             receipt,
