@@ -95,3 +95,35 @@
   color: var(--xc-text, #111827);
   text-align: right;
 }
+
+.xc-rates-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.xc-rates-error-message {
+  margin: 0;
+  color: var(--xc-danger, #ef4444);
+  font-size: 0.875rem;
+}
+
+.xc-rates-retry-button {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xc-text, #111827);
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.xc-rates-retry-button:hover {
+  background: var(--xc-surface-hover, #f9fafb);
+}
+

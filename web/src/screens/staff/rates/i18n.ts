@@ -8,6 +8,7 @@ export const th = {
   sell: 'ขายออก',
   empty: 'ไม่มีรายการอัตราแลกเปลี่ยน',
   unavailable: '—',
+  retry: 'ลองใหม่',
 };
 
 export const en = {
@@ -19,4 +20,6 @@ export const en = {
   sell: 'Sell',
   empty: 'No exchange rate lines',
   unavailable: '—',
+  retry: 'Retry',
 };
+
