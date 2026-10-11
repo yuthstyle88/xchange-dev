@@ -51,6 +51,63 @@ pub struct TransactionForm {
 }
 
 impl TransactionForm {
+    /// TX-4 #672 G5: the steps' form rebuilt from a stored exchange (design §4.5). Every figure is
+    /// the stored one: the first line's (TX-1 keeps one line, §9.1) and the payment's. The stored
+    /// `rate_snapshot` and `reference_rate` are per `unit_size` (RE-4c #757); the form's are per 1.
+    /// The exchange keeps no plain passport (#554 K4), so `passport_no` and the dates stay empty.
+    pub fn from_transaction(
+        t: &crate::domain::transaction::transaction::ExchangeTransaction,
+    ) -> TransactionForm {
+        let line = &t.lines[0];
+        let unit = line.unit_size.value();
+        let client_rate = line.rate_snapshot.value() / unit;
+        let client_reference_rate = line.reference_rate.map(|r| r.value() / unit);
+        let quote = match line.shop_side {
+            Side::Sell => Quote {
+                principal: line.thb_amount,
+                received: line.settle_thb,
+                paid: Money::ZERO,
+            },
+            Side::Buy => Quote {
+                principal: line.thb_amount,
+                received: Money::ZERO,
+                paid: line.settle_thb,
+            },
+        };
+        TransactionForm {
+            customer: CustomerDetails {
+                name: t.customer_name.clone(),
+                passport_no: String::new(),
+                nationality: t.nationality.clone(),
+                birth_date: None,
+                passport_expiry: None,
+                mode: t.mode,
+            },
+            submission_id: t.submission_id.clone(),
+            customer_id: t.customer_id.clone(),
+            side: line.shop_side,
+            currency: line.currency.as_str().to_owned(),
+            amount: money_of(line.quantity.value()),
+            rate: per_one_rate(client_rate),
+            client_rate,
+            fee: line.fee_thb,
+            bank_fee: t.payment.bank_fee_thb,
+            method: t.payment.method,
+            payment_ref: t.payment.reference.clone(),
+            account: t.payment.account.clone(),
+            staff: t.staff_id.clone(),
+            booking: t.booking_no.clone(),
+            notes: t.notes.clone(),
+            value_date: t.value_date,
+            paid_at: t.payment.paid_at,
+            passport: t.passport_file_key.clone(),
+            slip: t.payment.slip_file_key.clone(),
+            reference_rate: client_reference_rate.map(per_one_rate),
+            client_reference_rate,
+            quote,
+        }
+    }
+
     pub fn parse(cmd: &SaveTransaction) -> AppResult<Self> {
         // Step 1: Customer details
         let customer = CustomerDetails::parse(&cmd.customer)?;
@@ -242,6 +299,19 @@ impl TransactionForm {
             quote,
         })
     }
+}
+
+/// A stored exact per-1 rate as the form's `Rate`, as `parse` falls back to it: at most 8 places.
+fn per_one_rate(per_one: Decimal) -> Rate {
+    Rate::parse(&per_one.normalize().to_string())
+        .or_else(|_| Rate::parse(&format!("{:.8}", per_one)))
+        .unwrap_or_else(|_| Rate::parse("1").expect("1 is a rate"))
+}
+
+/// A stored quantity as the form's amount (two places, half up, as `parse` reads it).
+fn money_of(value: Decimal) -> Money {
+    let rounded = value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    Money::parse(&rounded.normalize().to_string()).unwrap_or(Money::ZERO)
 }
 
 /// The form's sentence for a per-1 rate `CompatRate::parse_per_one` refuses (#770).

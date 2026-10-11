@@ -181,6 +181,61 @@ impl CustomerService {
         PgCustomerRepository::confirm_customer_in_tx(tx, branch, customer_id, details).await
     }
 
+    /// TX-4 #672 Q1 = B: the exchange's customer, read without decrypting. Only the clear
+    /// columns are read (`customers.mode`, `.display_name`, the ACTIVE PASSPORT identity's
+    /// `nationality`); a value is shown only through `reveal` (K8).
+    /// Refuses a customer that is not the branch's organisation's (or no such customer) as
+    /// `outOfScope`, a CLOSED one as `validationFailed`, and one with no ACTIVE PASSPORT identity
+    /// with [`NOT_THIS_PASSPORT`].
+    pub async fn exchange_customer_in(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        customer_id: &str,
+    ) -> AppResult<ExchangeCustomer> {
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT c.mode, c.display_name, c.status FROM customers c \
+             JOIN branches b ON b.organization_id = c.organization_id \
+             WHERE b.id = $1 AND c.id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(customer_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        let Some((mode, display_name, status)) = row else {
+            return Err(AppError::Domain(format!(
+                "outOfScope: customer {customer_id} is not this branch's organisation's"
+            )));
+        };
+        if status == "CLOSED" {
+            return Err(AppError::Domain(format!(
+                "validationFailed: customer {customer_id} is closed"
+            )));
+        }
+        let mode = match mode.as_str() {
+            "LIVE" => Mode::Live,
+            "DEMO" => Mode::Demo,
+            other => return Err(AppError::Internal(format!("customers.mode {other}"))),
+        };
+        let nationality: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT nationality FROM customer_identities \
+             WHERE customer_id = $1 AND type = 'PASSPORT' AND status = 'ACTIVE' LIMIT 1",
+        )
+        .bind(customer_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        let Some(nationality) = nationality else {
+            return Err(AppError::Domain(NOT_THIS_PASSPORT.to_owned()));
+        };
+        Ok(ExchangeCustomer {
+            id: customer_id.to_owned(),
+            mode,
+            display_name,
+            nationality: nationality.unwrap_or_default(),
+        })
+    }
+
     pub async fn record_exchange_in(
         tx: &mut Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
@@ -271,4 +326,13 @@ impl CustomerService {
 
         Ok(passport_number)
     }
+}
+
+/// TX-4 #672 Q1 = B: what create needs of a customer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExchangeCustomer {
+    pub id: String,
+    pub mode: Mode,
+    pub display_name: String,
+    pub nationality: String,
 }

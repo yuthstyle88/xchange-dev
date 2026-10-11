@@ -226,4 +226,48 @@ impl QuoteRepository for PgQuoteRepository {
             stale: false,
         }))
     }
+
+    async fn accept_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        id: Uuid,
+        transaction_id: Uuid,
+    ) -> AppResult<()> {
+        let done = sqlx::query(
+            "UPDATE quotes SET status = 'ACCEPTED', accepted_by_transaction_id = $2, \
+             updated_at = now() WHERE id = $1 AND status = 'ACTIVE'",
+        )
+        .bind(id)
+        .bind(transaction_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+        if done.rows_affected() == 0 {
+            return Err(pos_error::AppError::Domain(format!(
+                "staleVersion: quote {id} is not ACTIVE"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn cancel_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        id: Uuid,
+    ) -> AppResult<()> {
+        let done = sqlx::query(
+            "UPDATE quotes SET status = 'CANCELLED', accepted_by_transaction_id = NULL, \
+             updated_at = now() WHERE id = $1 AND status IN ('ACTIVE', 'ACCEPTED')",
+        )
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+        if done.rows_affected() == 0 {
+            return Err(pos_error::AppError::Domain(format!(
+                "staleVersion: quote {id} is neither ACTIVE nor ACCEPTED"
+            )));
+        }
+        Ok(())
+    }
 }
