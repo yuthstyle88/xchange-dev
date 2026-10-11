@@ -245,7 +245,7 @@ async fn answer(
 
 /// The save steps confirm runs, in the order and with the services the compat save registers them
 /// (`rpc.rs::registered_actions`): device, kiosk, custody, payment, booking, broker feed (D-7).
-fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
+pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
     let pool = &state.db;
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = ShiftService::new(

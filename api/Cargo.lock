@@ -3978,6 +3978,7 @@ name = "xc-exchange"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "futures",
  "pos-error",
  "pos-infra",
