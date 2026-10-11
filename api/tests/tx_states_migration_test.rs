@@ -879,9 +879,9 @@ async fn the_child_tables_refuse_rows_the_design_forbids() {
     let receipt = |revision: &str, number: &str, file: &str| {
         format!(
             "INSERT INTO receipts (id, organization_id, transaction_id, number, revision, issued_at, \
-                document_ref, created_at, updated_at) \
+                document_ref, created_at, updated_at, kind) \
              VALUES (gen_random_uuid(), '{ORG_1}', '{id}', '{number}', {revision}, now(), '{file}', \
-                now(), now())"
+                now(), now(), CASE WHEN {revision} = 1 THEN 'RECEIPT' ELSE 'REVERSAL' END)"
         )
     };
     assert_eq!(
