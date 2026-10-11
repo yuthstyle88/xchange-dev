@@ -88,7 +88,7 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 | Review and release a hold | **VERIFICATION_REVIEWER** | `VerificationReview` | MONITOR |
 | Set the cash target | **FINANCE** | `CashTargetSet` (FINANCE) | FINANCE |
 | Start service, cut-off | **BRANCH_MANAGER** | `BranchDayOperate` (BRANCH_MANAGER) | BACKEND |
-| Begin a draft after cut-off (`draftBegin`, §4.4) | **TELLER**, own OPEN shift (§4.4) | **not decided: ask the owner** (§10 Q11). A4's table had no row for drafts, so no A-rule names its permission | FRONT (`custody_machine.rs`, `BeginTransaction` arm) |
+| Begin a transaction draft after cut-off (`draftBegin`, §4.4) | **TELLER** or **BRANCH_MANAGER** (owner, 2026-10-11, §10 Q11), on their own OPEN shift (§4.4) | → `ShiftOperate`; the saver's own OPEN shift. No new permission is needed: `ShiftOperate` is held by exactly these two roles (`role_permissions.rs:52`, `:74`) and already means acting on one's own shift (§3.1) | FRONT (`custody_machine.rs`, `BeginTransaction` arm) |
 | Safe opening count / verify | **FINANCE** / **BRANCH_MANAGER** | `CashManage` / `ShiftCloseCertify`; not the counter | FINANCE + MONITOR signature |
 | Drawer↔safe, external in/out: create, dispatch | **BRANCH_MANAGER** or **FINANCE** | `CashManage` | FRONT propose, BACKEND dispatch |
 | … approve | per A5 | `ApprovalsDecide` + `TransferApprovalPolicy` | signatures |
@@ -224,7 +224,7 @@ these are [proposed] and may be renamed in review without changing logic.
 | `dayStartService` / `dayCutoff` / `dayTarget` | `POST /api/branch-day/start` · `/cutoff` · `/target` | §3.2 |
 | `clock` | `POST /api/attendance` | every staff role |
 | `holdCreate` / `holdRelease` | `POST /api/customer-holds` · `/{id}/release` | §3.2 |
-| `draftBegin` | `POST /api/tx-drafts` | TELLER, own open shift, after cut-off; permission: §10 Q11 |
+| `draftBegin` | `POST /api/tx-drafts` | TELLER or BRANCH_MANAGER, own open shift, after cut-off: `ShiftOperate` (§3.2) |
 
 Approval decisions use PR 570's `POST /api/approvals/{id}/decide`.
 
@@ -362,7 +362,7 @@ impl BranchDayService {
   - `clock`: `AttendanceClock`;
   - `hold`: `CustomerHoldPlace`;
   - `release`: `VerificationReview`;
-  - `begin_draft`: the saver's own OPEN shift (§4.4), and its permission per §10 Q11.
+  - `begin_draft`: `ShiftOperate` (§3.2), on the saver's own OPEN shift (§4.4).
 - **Phase changes.** `start_service` and `cut_off` call `BranchDay::start_service` / `cut_off`. The window check
   (`BranchHours`, PR 589 OR-6) stays here, outside `BranchDay` (#623 §7).
 - **Other rules.** Every v2 rule that is not about roles stays as v2 has it (C9):
@@ -583,7 +583,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-7 | the branch day rebound (C9), exchange save on the saver's shift | `xc-shift/src/domain/custody/branch_day.rs` (new, from the kept half of `custody_machine.rs`), `api/src/application/workflows/save_transaction.rs`, `custody_save_step.rs` | CA-3, PR 589 OR-6 |
 | CA-7b | the branch-day service (§4.8): the kept features of C9 on `access::Actor`, persisted | `api/crates/xc-shift/src/application/branch_day/**` (new), `xc-shift/src/application/mod.rs` (one line), `api/crates/xc-shift/tests/branch_day_service_test.rs` (new) | CA-7 (#623: `BranchDay::start_service` / `cut_off`), PR 589 OR-2 and OR-6 |
 | CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the four views of §4.7 | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
-| CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. **`draftBegin` alone** waits for the owner's answer to §10 Q11. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
+| CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. `draftBegin` starts with the rest of CA-8b; its area row (`ShiftOperate`) is in `areas/branch_day.rs`. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
 | CA-9 | admin cash menu (B05) and transfer policy screen | `web/src/screens/admin/cash/**`, `web/src/screens/admin/cash-policy/**` | CA-8 (the policy screen: including `transferPolicySave`) |
 | CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model |
 
@@ -610,11 +610,11 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
 
-## 10. Must ask the owner (not decided here)
+## 10. Must ask the owner (not decided here; answered questions stay, marked)
 
 | # | Question | Why |
 |---|---|---|
-| Q11 | Which permission may begin a transaction draft after cut-off (`draftBegin`)? §4.4 says TELLER, on their own OPEN shift. In the role table, TELLER alone holds `ExchangeTransact` (`role_permissions.rs`). | A4 approved §3.2's table, and it had no row for drafts, so no owner answer names this permission. CA-8b's `draftBegin` waits for it; the other six CA-8b commands do not |
+| Q11 | Which permission may begin a transaction draft after cut-off (`draftBegin`)? §4.4 says TELLER, on their own OPEN shift. In the role table, TELLER alone holds `ExchangeTransact` (`role_permissions.rs`). | A4 approved §3.2's table, and it had no row for drafts, so no owner answer named this permission. **Answered — owner, 2026-10-11: TELLER and BRANCH_MANAGER.** Recorded as `ShiftOperate` (§3.2), which exactly those two roles hold; no new permission |
 
 Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not carried.
 
@@ -635,7 +635,8 @@ Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not 
 | §12 Cash & cost: method, limits, certifier | certifier A1/A6, limits A5 as data; cost method is #553's (Q10 of the mapping) |
 | §07 Handover(status): the receiver certifies or refuses | `handoverAccept` / `handoverReject` (§4.4) expose §4.2's two transitions, which CA-4's `HandoverService` already implements. Reject carries no reason because the Blueprint's Handover has no reason column, and none is added. **No schema change** |
 | §12 limits as data, set by EXECUTIVE (A5) | `transferPolicySave` writes a version row into the existing `cash_transfer_policy_versions` (M1). Its permission `CashTransferPolicySet` is held by EXECUTIVE only (§3.1). **No schema change**; the permission is code, added by CA-0p |
-| A2/A4 kept features (attendance, holds, cash target, start-service, cut-off, drafts) on the Blueprint's roles | CA-7b's `BranchDayService` (§4.8) checks §3.2's permissions on `access::Actor`; CA-8b exposes it. `draftBegin`'s permission waits for §10 Q11. **No schema change**: the tables are §4.1's kept ones |
+| A2/A4 kept features (attendance, holds, cash target, start-service, cut-off, drafts) on the Blueprint's roles | CA-7b's `BranchDayService` (§4.8) checks §3.2's permissions on `access::Actor`; CA-8b exposes it. **No schema change**: the tables are §4.1's kept ones |
+| A2/A4 kept feature: drafts after cut-off, on the Blueprint's roles (owner's answer to §10 Q11, 2026-10-11) | `ShiftOperate`, held by exactly TELLER and BRANCH_MANAGER (§3.2), checked by CA-7b's `begin_draft` and by `draftBegin`'s row in CA-8b's `areas/branch_day.rs`, plus the saver's own OPEN shift. **No schema change**: `tx_drafts` is §4.1's kept table, and no permission is added |
 | — (build mechanics, no Blueprint item) | each command group lives in one flat file under `commands/`, as `denomination_groups.rs` does (§4.4, G6); logic unchanged. **No schema change** |
 | §07 organization_id on every row; created_at/updated_at on every table | created by CA-1's M1 on every new table, with PR 589 D-1's composite FK (§4.1) |
 | §07 Shift.user_id | named `teller_id` here (look only); references `users(id)` |
