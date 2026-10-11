@@ -18,7 +18,7 @@ use crate::presentation::dto::v3::admin_transactions::{
     AdminTransactionStatus, AdminTransactionType, AdminTransactionsFilter,
 };
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRecord, TransactionRow, TxSqlRow,
+    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
 };
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
@@ -64,22 +64,27 @@ impl PagedView for AdminTransactionsPagedView {
         let filter = filter.clone();
 
         async move {
-            // In v3, only completed exchanges are stored; cancelled or pending filter matches nothing.
-            if let Some(ref status) = filter.status
-                && (status == "CANCELLED" || status == "PENDING")
-            {
-                return Ok(vec![]);
-            }
-
             let before_cursor: Option<(DateTime<Utc>, i64)> = if let Some(before_id) = before {
-                let cursor: Option<(DateTime<Utc>, i64)> = sqlx::query_as(
-                    "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND document_ref = $2",
-                )
-                .bind(branch.as_str())
-                .bind(&before_id)
-                .fetch_optional(&pool)
-                .await
-                .map_err(AppError::Database)?;
+                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) = uuid::Uuid::parse_str(&before_id) {
+                    sqlx::query_as(
+                        "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND (document_ref = $2 OR id = $3)",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&before_id)
+                    .bind(uuid)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                } else {
+                    sqlx::query_as(
+                        "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND document_ref = $2",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&before_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                };
 
                 let Some(cursor) = cursor else {
                     return Ok(vec![]);
@@ -89,18 +94,27 @@ impl PagedView for AdminTransactionsPagedView {
                 None
             };
 
-            let mut builder = sqlx::QueryBuilder::new(
-                "SELECT t.document_ref, t.value_date, t.recorded_at, t.type, t.code::text AS code, \
-                 t.amount::text AS amount, t.rate::text AS rate, t.reference_rate::text AS reference_rate, \
-                 t.unit_size::text AS unit_size, \
-                 t.fee::text AS fee, t.bank_fee::text AS bank_fee, t.method, t.payment_ref, \
-                 t.customer_id, t.customer_name, t.staff_id, t.notes, t.shift_id, \
-                 (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1) AS slip_key \
-                 FROM transactions t \
-                 WHERE t.branch_id = ",
-            );
+            let mut builder = sqlx::QueryBuilder::new(format!(
+                "SELECT {ROW_COLUMNS} FROM {ROW_FROM} WHERE t.branch_id = "
+            ));
             builder.push_bind(branch.as_str());
             builder.push(" AND t.mode = 'LIVE'");
+
+            match filter.status.as_deref() {
+                Some("CANCELLED") => {
+                    builder.push(" AND t.status = 'CANCELLED'");
+                }
+                Some("PENDING") => {
+                    builder.push(" AND t.status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED')");
+                }
+                Some("COMPLETED") | None => {
+                    builder.push(" AND t.status = 'COMPLETED'");
+                }
+                Some(other) => {
+                    builder.push(" AND t.status = ");
+                    builder.push_bind(other);
+                }
+            }
 
             if let Some((before_recorded_at, before_seq)) = before_cursor {
                 builder.push(" AND (t.recorded_at < ");
@@ -132,11 +146,11 @@ impl PagedView for AdminTransactionsPagedView {
                 && !q.is_empty()
             {
                 let pattern = format!("%{}%", escape_like(&q.to_lowercase()));
-                builder.push(" AND (lower(t.document_ref) LIKE ");
+                builder.push(" AND ((t.document_ref IS NOT NULL AND lower(t.document_ref) LIKE ");
                 builder.push_bind(pattern.clone());
-                builder.push(" ESCAPE '\\' OR lower(t.customer_name) LIKE ");
+                builder.push(" ESCAPE '\\') OR lower(t.customer_name) LIKE ");
                 builder.push_bind(pattern.clone());
-                builder.push(" ESCAPE '\\' OR lower(t.code) LIKE ");
+                builder.push(" ESCAPE '\\' OR lower(l.currency::text) LIKE ");
                 builder.push_bind(pattern);
                 builder.push(" ESCAPE '\\')");
             }
@@ -144,7 +158,7 @@ impl PagedView for AdminTransactionsPagedView {
             if let Some(ref r#type) = filter.r#type
                 && (r#type == "BUY" || r#type == "SELL")
             {
-                builder.push(" AND t.type = ");
+                builder.push(" AND l.shop_side = ");
                 builder.push_bind(r#type);
             }
 
@@ -172,8 +186,7 @@ impl PagedView for AdminTransactionsPagedView {
 
             let mut rows = Vec::with_capacity(sql_rows.len());
             for r in sql_rows {
-                let record = TransactionRecord::try_from(r)?;
-                rows.push(TransactionRow::from_record(&record));
+                rows.push(TransactionRow::from_sql_row(r)?);
             }
 
             Ok(rows)
