@@ -215,7 +215,7 @@ render_unit() {
     -e "s|^User=.*|User=$SERVICE_USER|" \
     -e "s|^Group=.*|Group=$SERVICE_USER|" \
     -e "s|^WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|" \
-    -e "s|^EnvironmentFile=.*|EnvironmentFile=$ENV_FILE|" \
+    -e "s|^EnvironmentFile=/etc/xc-v3/env$|EnvironmentFile=$ENV_FILE|" \
     -e "s|^ExecStart=.*|ExecStart=$BIN|" \
     -e "s|^ReadWritePaths=.*|ReadWritePaths=$UPLOADS_DIR|" \
     "$HERE/xc-v3.service"

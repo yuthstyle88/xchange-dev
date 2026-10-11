@@ -167,7 +167,7 @@ async fn an_accepted_answer_is_v2s_text_byte_for_byte() {
     assert!(
         cash.text.ends_with(
             "\"],[\"ใบเสร็จ\",\"/api/staff/file/receipt-\
-             58f20eb8a792992c1fa9e01a9aa2da087b19242a9591c32f8e4e64275f7f9413\"]]}"
+             f3afb29a5351012c19c005d98e139a0e6c5aacc94bc57963342e455e6032e567\"]]}"
         ),
         "{}",
         cash.text

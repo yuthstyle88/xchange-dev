@@ -20,6 +20,9 @@
 #        service user cannot enter, and return 0 either way
 #   T6   ensure_dir on an existing directory of another mode still refuses
 #        and changes nothing (today's behaviour, kept)
+#   T7/T7b  render_unit (#1204): the unit loads the server's env file and the
+#        optional Identity file; a non-default ENV_FILE rewrites only the
+#        server's env line, never the Identity line
 #
 # Cases B1-B9 are the backups of #121 (docs/design/xchange-v3.md §7b, row
 # BK), run against backup.sh / restore.sh with pg_dump, pg_restore, tar,
@@ -484,6 +487,27 @@ printf '%s\n' "$OUT" >"$LOGS/t6.out"
 ck "ensure_dir refused" test "$RC" -ne 0
 ckeq "directory left unchanged" "755" "$(stat -c '%a' "$t6")"
 report T6 "ensure_dir still refuses an existing directory of another mode"
+
+# ---- T7: the rendered unit loads both env files (#1204) ---------------------
+run_fn "$ROOT/empty-stage" "$ROOT/t7inst" "" render_unit
+printf '%s\n' "$OUT" >"$LOGS/t7.out"
+ck "render_unit succeeded" test "$RC" -eq 0
+ck "the unit reads the server's env file" grep -qsx 'EnvironmentFile=/etc/xc-v3/env' "$LOGS/t7.out"
+ck "the unit reads the optional Identity file" grep -qsx 'EnvironmentFile=-/etc/xc-v3/identity-client.env' "$LOGS/t7.out"
+ckeq "exactly two EnvironmentFile lines" "2" "$(grep -c '^EnvironmentFile=' "$LOGS/t7.out")"
+report T7 "the rendered unit loads the server's env file and the optional Identity file"
+
+# ---- T7b: a non-default ENV_FILE leaves the Identity line alone (#1204) -----
+t7b="$ROOT/t7b"
+mkdir -p "$t7b"
+printf 'ENV_FILE=/tmp/x.env\n' >"$t7b/pre.sh"
+run_fn "$ROOT/empty-stage" "$ROOT/t7binst" "$t7b/pre.sh" render_unit
+printf '%s\n' "$OUT" >"$LOGS/t7b.out"
+ck "render_unit succeeded" test "$RC" -eq 0
+ck "the server's env file is the one given" grep -qsx 'EnvironmentFile=/tmp/x.env' "$LOGS/t7b.out"
+ck "the Identity line is unchanged" grep -qsx 'EnvironmentFile=-/etc/xc-v3/identity-client.env' "$LOGS/t7b.out"
+ckeq "no line still names the default env file" "0" "$(grep -cx 'EnvironmentFile=/etc/xc-v3/env' "$LOGS/t7b.out")"
+report T7b "a non-default ENV_FILE rewrites only the server's env line"
 
 # ==== backups (#121, design §7b, row BK) ====================================
 # ---- stubs of the backup tools ---------------------------------------------

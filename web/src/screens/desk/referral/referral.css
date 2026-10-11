@@ -1,0 +1,69 @@
+/* ReferralCodeField styling (LK-6) */
+
+.desk-referral-field {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--xc-border, #e5e7eb);
+}
+
+.desk-referral-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xc-text, #111827);
+  margin-bottom: 0.25rem;
+}
+
+.desk-referral-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.desk-referral-input {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--xc-border, #d1d5db);
+  border-radius: 0.375rem;
+  background: var(--xc-surface, #ffffff);
+  color: var(--xc-text, #111827);
+}
+
+.desk-referral-input:disabled {
+  background: var(--xc-bg-muted, #f3f4f6);
+  color: var(--xc-text-muted, #6b7280);
+  cursor: not-allowed;
+}
+
+.desk-referral-btn {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid var(--xc-border, #cbd5e1);
+  background: var(--xc-surface, #ffffff);
+  color: var(--xc-text, #111827);
+  cursor: pointer;
+}
+
+.desk-referral-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.desk-referral-error {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--xc-danger, #ef4444);
+}
+
+.desk-referral-success {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--xc-success, #10b981);
+}
+
+.desk-referral-code {
+  font-family: var(--xc-font-mono, ui-monospace, monospace);
+  font-weight: 600;
+}

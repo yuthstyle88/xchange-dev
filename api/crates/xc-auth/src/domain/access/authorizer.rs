@@ -8,6 +8,7 @@ use super::actor::Actor;
 use super::permission::Permission;
 use super::role::Role;
 use super::role_permissions::RolePermissions;
+use super::scoped_role::ScopedRole;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
@@ -51,6 +52,20 @@ impl Refusal {
 
 pub struct Authorizer;
 
+/// The actor's roles that count for `permission` at `now`: valid then (`valid_from <= now < valid_to`) and
+/// holding the permission. The one rule `Authorizer::check` and `BranchScope::of` both use (EX-1 #1070).
+pub(crate) fn qualifying(
+    actor: &Actor,
+    permission: Permission,
+    now: DateTime<Utc>,
+) -> impl Iterator<Item = &ScopedRole> {
+    actor.roles.iter().filter(move |r| {
+        r.valid_from <= now
+            && r.valid_to.is_none_or(|to| now < to)
+            && RolePermissions::of(r.role).contains(&permission)
+    })
+}
+
 impl Authorizer {
     pub fn check(
         actor: Option<&Actor>,
@@ -67,15 +82,7 @@ impl Authorizer {
         }
 
         // 3. Permission and branch
-        let qualifying: Vec<_> = actor
-            .roles
-            .iter()
-            .filter(|r| {
-                r.valid_from <= now
-                    && r.valid_to.is_none_or(|to| now < to)
-                    && RolePermissions::of(r.role).contains(&permission)
-            })
-            .collect();
+        let qualifying: Vec<_> = qualifying(actor, permission, now).collect();
 
         if qualifying.is_empty() {
             return Err(Refusal::RoleNotAllowed);

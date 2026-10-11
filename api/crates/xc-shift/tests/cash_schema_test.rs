@@ -519,12 +519,12 @@ async fn person_columns_reference_users_never_employees() {
     ] {
         let target = db
             .text(&format!(
-                "SELECT ccu.table_name::text FROM information_schema.key_column_usage kcu \
-                 JOIN information_schema.referential_constraints rc \
-                   ON rc.constraint_name = kcu.constraint_name AND rc.constraint_schema = kcu.constraint_schema \
-                 JOIN information_schema.constraint_column_usage ccu \
-                   ON ccu.constraint_name = rc.unique_constraint_name AND ccu.constraint_schema = rc.unique_constraint_schema \
-                 WHERE kcu.table_schema = current_schema() AND kcu.table_name = '{table}' AND kcu.column_name = '{column}'"
+                "SELECT ft.relname::text \
+                 FROM pg_constraint c \
+                 JOIN pg_class t  ON t.oid  = c.conrelid  AND t.relnamespace = to_regnamespace(current_schema()) \
+                 JOIN pg_class ft ON ft.oid = c.confrelid \
+                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) \
+                 WHERE c.contype = 'f' AND t.relname = '{table}' AND a.attname = '{column}'"
             ))
             .await;
         assert_eq!(

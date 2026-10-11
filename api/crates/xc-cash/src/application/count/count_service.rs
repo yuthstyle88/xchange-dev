@@ -116,164 +116,14 @@ impl CashCountService {
         cmd: SubmitCount,
         now: DateTime<Utc>,
     ) -> AppResult<CashCount> {
-        let permission = match cmd.kind {
-            CountKind::Open | CountKind::HandoverOut | CountKind::Close => Permission::ShiftOperate,
-            CountKind::SafeOpen | CountKind::Safe => Permission::CashManage,
-        };
-        let target = Target::new(&actor.organization_id, Some(cmd.branch.clone()), None);
-        Authorizer::check(Some(actor), permission, &target, now)
-            .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
-
-        if let Some(ref s_id) = cmd.shift_id {
-            let shift_teller: Option<String> =
-                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                    .bind(s_id)
-                    .fetch_optional(&self.pool)
-                    .await?;
-            let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
-            PersonRules::teller_owns_shift(&teller_id, actor)
-                .map_err(|e| AppError::Domain(e.to_string()))?;
-        }
-
         let mut tx = self.pool.begin().await?;
-
-        if let Some(existing) = self
-            .repo
-            .find_count_by_idempotency_key(&mut tx, &cmd.branch, &cmd.idempotency_key)
-            .await?
-        {
-            tx.commit().await?;
-            return Ok(existing);
-        }
-
-        let mut totals_map: std::collections::BTreeMap<String, Decimal> =
-            std::collections::BTreeMap::new();
-        let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
-
-        for line in &cmd.lines {
-            if line.qty < 0 {
-                return Err(AppError::Validation(format!(
-                    "line qty cannot be negative: {}",
-                    line.qty
-                )));
-            }
-
-            let row: Option<(Decimal, String)> =
-                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
-                    .bind(line.denomination_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-
-            let (face_value, denom_currency) = match row {
-                Some(r) => r,
-                None => {
-                    return Err(AppError::NotFound {
-                        entity: "denomination",
-                        id: line.denomination_id.to_string(),
-                    });
-                }
-            };
-
-            let denom_currency = denom_currency.trim();
-            let line_currency = line.currency.trim();
-            if !denom_currency.eq_ignore_ascii_case(line_currency) {
-                return Err(AppError::Validation(format!(
-                    "line currency '{line_currency}' does not match denomination currency '{denom_currency}'"
-                )));
-            }
-
-            let line_total = Decimal::from(line.qty) * face_value;
-            *totals_map
-                .entry(denom_currency.to_string())
-                .or_insert(Decimal::ZERO) += line_total;
-
-            sanitized_lines.push(CountLine {
-                currency: denom_currency.to_string(),
-                denomination_id: line.denomination_id,
-                qty: line.qty,
-            });
-        }
-
-        if cmd.kind == CountKind::Close {
-            if let Some(ref s_id) = cmd.shift_id {
-                let held_codes: Vec<String> =
-                    sqlx::query_scalar("SELECT code FROM shift_balances WHERE shift_id = $1")
-                        .bind(s_id)
-                        .fetch_all(&mut *tx)
-                        .await?;
-
-                for code in held_codes {
-                    totals_map.entry(code).or_insert(Decimal::ZERO);
-                }
-            }
-        }
-
-        for (curr, counted) in &totals_map {
-            let minor_unit: Option<i16> =
-                sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
-                    .bind(curr)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-
-            let minor = minor_unit.ok_or_else(|| {
-                AppError::Internal(format!("currency not found in register: {curr}"))
-            })?;
-
-            let max_scale = (minor as u32).min(2);
-            if counted.normalize().scale() > max_scale {
-                return Err(CashError::TooManyDecimals.into());
-            }
-        }
-
-        let mut totals = Vec::new();
-        for (curr, counted) in totals_map {
-            let expected = if let Some(ref s_id) = cmd.shift_id {
-                let exp: Option<Decimal> = sqlx::query_scalar(
-                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-                )
-                .bind(s_id)
-                .bind(&curr)
-                .fetch_optional(&mut *tx)
-                .await?;
-                exp
-            } else {
-                None
-            };
-
-            totals.push(CountTotal {
-                currency: curr,
-                counted,
-                expected,
-                difference: None,
-            });
-        }
-
-        let count_id = uuid::Uuid::new_v4().to_string();
-        let cash_count = CashCount {
-            id: count_id,
-            organization_id: actor.organization_id.clone(),
-            branch_id: cmd.branch,
-            shift_id: cmd.shift_id,
-            kind: cmd.kind,
-            counted_by: actor.user_id.clone(),
-            counted_at: now,
-            verified_by: None,
-            verified_at: None,
-            note: cmd.note,
-            idempotency_key: cmd.idempotency_key,
-            created_at: now,
-            updated_at: now,
-        };
-
-        self.repo
-            .insert_count(&mut tx, &cash_count, &sanitized_lines, &totals)
-            .await?;
-
+        let count = self.submit_in(&mut tx, actor, cmd, now).await?;
         tx.commit().await?;
-
-        Ok(cash_count)
+        Ok(count)
     }
 
+    /// Verifies a count. Awaiting FINANCE commits the request and answers
+    /// `Err(CashError::AwaitingFinance(id))`, as before CA-7c; `verify_in` answers it as a value.
     pub async fn verify(
         &self,
         actor: &Actor,
@@ -281,276 +131,16 @@ impl CashCountService {
         now: DateTime<Utc>,
     ) -> AppResult<CashCount> {
         let mut tx = self.pool.begin().await?;
-
-        let count = self
-            .repo
-            .find_count_by_id(&mut tx, count_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound {
-                entity: "cash_count",
-                id: count_id.to_string(),
-            })?;
-
-        if count.kind == CountKind::HandoverOut {
-            return Err(AppError::Domain(
-                crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
-            ));
+        match self.verify_in(&mut tx, actor, count_id, now).await? {
+            CountVerified::Verified(count) => {
+                tx.commit().await?;
+                Ok(*count)
+            }
+            CountVerified::AwaitingFinance(request_id) => {
+                tx.commit().await?;
+                Err(CashError::AwaitingFinance(request_id).into())
+            }
         }
-
-        let permission = match count.kind {
-            CountKind::HandoverOut => Permission::ShiftOperate,
-            _ => Permission::ShiftCloseCertify,
-        };
-        let target = Target::new(&actor.organization_id, Some(count.branch_id.clone()), None);
-        Authorizer::check(Some(actor), permission, &target, now)
-            .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
-
-        PersonRules::verifier_is_not_counter(&count.counted_by, actor)
-            .map_err(|e| AppError::Domain(e.to_string()))?;
-
-        if !self.repo.is_newest_count(&mut tx, &count).await? {
-            return Err(CashError::NotNewestCount.into());
-        }
-
-        if count.kind == CountKind::Open {
-            let open_shift_count: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM shifts \
-                 WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL",
-            )
-            .bind(&count.counted_by)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            if open_shift_count > 0 {
-                return Err(CashError::ShiftAlreadyOpen.into());
-            }
-
-            let totals = self.repo.get_count_totals(&mut tx, count_id).await?;
-            let mut opening_pairs = Vec::new();
-            for t in &totals {
-                CurrencyCode::parse(t.currency.trim()).map_err(|_| {
-                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
-                })?;
-                if !t.counted.is_zero() {
-                    opening_pairs.push((t.currency.clone(), t.counted));
-                }
-            }
-            let shift = self
-                .shifts
-                .open_on_verified(
-                    &mut tx,
-                    &count.branch_id,
-                    &count.counted_by,
-                    count_id,
-                    &opening_pairs,
-                    now,
-                )
-                .await?;
-
-            self.repo
-                .update_count_verified(
-                    &mut tx,
-                    count_id,
-                    &actor.user_id,
-                    now,
-                    Some(&shift.id),
-                    &totals,
-                )
-                .await?;
-
-            tx.commit().await?;
-
-            let mut verified_count = count;
-            verified_count.verified_by = Some(actor.user_id.clone());
-            verified_count.verified_at = Some(now);
-            verified_count.shift_id = Some(shift.id);
-            return Ok(verified_count);
-        }
-
-        if count.kind == CountKind::Close {
-            let shift_id = count.shift_id.as_deref().ok_or(ShiftError::NoOpenShift)?;
-            let totals = self.repo.get_count_totals(&mut tx, count_id).await?;
-
-            let held: Vec<(String, Decimal)> =
-                sqlx::query_as("SELECT code, expected FROM shift_balances WHERE shift_id = $1")
-                    .bind(shift_id)
-                    .fetch_all(&mut *tx)
-                    .await?;
-
-            for (code, _exp) in held {
-                if !totals
-                    .iter()
-                    .any(|t| t.currency.eq_ignore_ascii_case(&code))
-                {
-                    return Err(CashError::BalancesChanged.into());
-                }
-            }
-
-            for t in &totals {
-                let current_exp: Option<Decimal> = sqlx::query_scalar(
-                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-                )
-                .bind(shift_id)
-                .bind(&t.currency)
-                .fetch_optional(&mut *tx)
-                .await?;
-
-                if current_exp != t.expected {
-                    return Err(CashError::BalancesChanged.into());
-                }
-            }
-
-            let mut updated_totals = Vec::new();
-            for t in totals {
-                CurrencyCode::parse(t.currency.trim()).map_err(|_| {
-                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
-                })?;
-                let exp = t.expected.unwrap_or(Decimal::ZERO);
-                let diff = t.counted - exp;
-                updated_totals.push(CountTotal {
-                    currency: t.currency.clone(),
-                    counted: t.counted,
-                    expected: t.expected,
-                    difference: Some(diff),
-                });
-            }
-
-            for t in &updated_totals {
-                sqlx::query(
-                    "UPDATE cash_count_totals \
-                     SET difference = $1::numeric \
-                     WHERE count_id = $2::uuid AND currency = $3",
-                )
-                .bind(t.difference)
-                .bind(count_id)
-                .bind(&t.currency)
-                .execute(&mut *tx)
-                .await?;
-            }
-
-            let key = format!("count-difference:{}", count_id);
-            let existing_req = self
-                .approvals_repo
-                .find_by_type_and_key(&mut tx, COUNT_DIFFERENCE, &key)
-                .await?;
-
-            if let Some(req) = existing_req {
-                match req.status.as_str() {
-                    "APPROVED" => {}
-                    "REJECTED" => {
-                        tx.rollback().await?;
-                        return Err(CashError::RejectedByFinance(req.id.to_string()).into());
-                    }
-                    "PENDING" => {
-                        tx.commit().await?;
-                        return Err(CashError::AwaitingFinance(req.id.to_string()).into());
-                    }
-                    other => {
-                        return Err(AppError::Internal(format!(
-                            "unexpected approval request status: {other}"
-                        )));
-                    }
-                }
-            } else {
-                let by = PolicyActor::staff(
-                    &actor.user_id,
-                    PolicyRole::Manager,
-                    count.branch_id.clone(),
-                )
-                .ok_or_else(|| {
-                    AppError::Internal(
-                        "failed to construct policy actor for count difference gate".to_string(),
-                    )
-                })?;
-
-                match self.gate.check_in(&mut tx, &count, &by).await? {
-                    GateResult::Clear => {}
-                    GateResult::AwaitingFinance(req_id) => {
-                        tx.commit().await?;
-                        return Err(CashError::AwaitingFinance(req_id.to_string()).into());
-                    }
-                }
-            }
-
-            let mut close_balances = Vec::new();
-            for t in &updated_totals {
-                let diff = t.difference.unwrap_or(Decimal::ZERO);
-                if !diff.is_zero() {
-                    let exc_id = format!("EX-{}", uuid::Uuid::new_v4());
-                    let pos: i32 = sqlx::query_scalar(
-                        "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
-                    )
-                    .bind(count.branch_id.as_str())
-                    .fetch_one(&mut *tx)
-                    .await?;
-
-                    let exc_data = serde_json::json!({
-                        "countId": count_id,
-                        "currency": t.currency.trim(),
-                        "difference": diff.to_string(),
-                    });
-
-                    sqlx::query(
-                        "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
-                    )
-                    .bind(exc_id)
-                    .bind(count.branch_id.as_str())
-                    .bind(pos)
-                    .bind(exc_data)
-                    .execute(&mut *tx)
-                    .await?;
-                }
-
-                close_balances.push((t.currency.clone(), t.counted, diff));
-            }
-
-            self.shifts
-                .close_on_verified(
-                    &mut tx,
-                    shift_id,
-                    &actor.user_id,
-                    &close_balances,
-                    count.note.as_deref().unwrap_or(""),
-                    now,
-                )
-                .await?;
-
-            self.repo
-                .update_count_verified(
-                    &mut tx,
-                    count_id,
-                    &actor.user_id,
-                    now,
-                    None,
-                    &updated_totals,
-                )
-                .await?;
-
-            tx.commit().await?;
-
-            let mut verified_count = count;
-            verified_count.verified_by = Some(actor.user_id.clone());
-            verified_count.verified_at = Some(now);
-            return Ok(verified_count);
-        }
-
-        // For other count kinds:
-        let totals = self.repo.get_count_totals(&mut tx, count_id).await?;
-        for t in &totals {
-            CurrencyCode::parse(t.currency.trim()).map_err(|_| {
-                AppError::Internal(format!("unknown currency code in count: {}", t.currency))
-            })?;
-        }
-        self.repo
-            .update_count_verified(&mut tx, count_id, &actor.user_id, now, None, &totals)
-            .await?;
-
-        tx.commit().await?;
-
-        let mut verified_count = count;
-        verified_count.verified_by = Some(actor.user_id.clone());
-        verified_count.verified_at = Some(now);
-        Ok(verified_count)
     }
 }
 
@@ -1120,5 +710,449 @@ mod tests {
             Decimal::from_str(exceptions[0].1["difference"].as_str().unwrap()).unwrap(),
             Decimal::from(-1000)
         );
+    }
+}
+
+/// What `verify_in` answers (CA-7c #1290, design §4.9): the count verified, or the count's difference waiting for
+/// FINANCE under the approval request it recorded. Awaiting FINANCE is a value, not an error, so the request
+/// commits with the caller's transaction.
+#[derive(Debug, Clone)]
+pub enum CountVerified {
+    /// Boxed: `CashCount` is far larger than the other variant (`clippy::large_enum_variant`).
+    Verified(Box<CashCount>),
+    /// The approval request's id.
+    AwaitingFinance(String),
+}
+
+/// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
+/// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
+impl CashCountService {
+    pub async fn submit_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        cmd: SubmitCount,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashCount> {
+        let permission = match cmd.kind {
+            CountKind::Open | CountKind::HandoverOut | CountKind::Close => Permission::ShiftOperate,
+            CountKind::SafeOpen | CountKind::Safe => Permission::CashManage,
+        };
+        let target = Target::new(&actor.organization_id, Some(cmd.branch.clone()), None);
+        Authorizer::check(Some(actor), permission, &target, now)
+            .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
+
+        if let Some(ref s_id) = cmd.shift_id {
+            let shift_teller: Option<String> =
+                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
+                    .bind(s_id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+            PersonRules::teller_owns_shift(&teller_id, actor)
+                .map_err(|e| AppError::Domain(e.to_string()))?;
+        }
+
+        if let Some(existing) = self
+            .repo
+            .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
+            .await?
+        {
+            return Ok(existing);
+        }
+
+        let mut totals_map: std::collections::BTreeMap<String, Decimal> =
+            std::collections::BTreeMap::new();
+        let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+
+        for line in &cmd.lines {
+            if line.qty < 0 {
+                return Err(AppError::Validation(format!(
+                    "line qty cannot be negative: {}",
+                    line.qty
+                )));
+            }
+
+            let row: Option<(Decimal, String)> =
+                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
+                    .bind(line.denomination_id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+
+            let (face_value, denom_currency) = match row {
+                Some(r) => r,
+                None => {
+                    return Err(AppError::NotFound {
+                        entity: "denomination",
+                        id: line.denomination_id.to_string(),
+                    });
+                }
+            };
+
+            let denom_currency = denom_currency.trim();
+            let line_currency = line.currency.trim();
+            if !denom_currency.eq_ignore_ascii_case(line_currency) {
+                return Err(AppError::Validation(format!(
+                    "line currency '{line_currency}' does not match denomination currency '{denom_currency}'"
+                )));
+            }
+
+            let line_total = Decimal::from(line.qty) * face_value;
+            *totals_map
+                .entry(denom_currency.to_string())
+                .or_insert(Decimal::ZERO) += line_total;
+
+            sanitized_lines.push(CountLine {
+                currency: denom_currency.to_string(),
+                denomination_id: line.denomination_id,
+                qty: line.qty,
+            });
+        }
+
+        if cmd.kind == CountKind::Close {
+            if let Some(ref s_id) = cmd.shift_id {
+                let held_codes: Vec<String> =
+                    sqlx::query_scalar("SELECT code FROM shift_balances WHERE shift_id = $1")
+                        .bind(s_id)
+                        .fetch_all(&mut **tx)
+                        .await?;
+
+                for code in held_codes {
+                    totals_map.entry(code).or_insert(Decimal::ZERO);
+                }
+            }
+        }
+
+        for (curr, counted) in &totals_map {
+            let minor_unit: Option<i16> =
+                sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
+                    .bind(curr)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+
+            let minor = minor_unit.ok_or_else(|| {
+                AppError::Internal(format!("currency not found in register: {curr}"))
+            })?;
+
+            let max_scale = (minor as u32).min(2);
+            if counted.normalize().scale() > max_scale {
+                return Err(CashError::TooManyDecimals.into());
+            }
+        }
+
+        let mut totals = Vec::new();
+        for (curr, counted) in totals_map {
+            let expected = if let Some(ref s_id) = cmd.shift_id {
+                let exp: Option<Decimal> = sqlx::query_scalar(
+                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
+                )
+                .bind(s_id)
+                .bind(&curr)
+                .fetch_optional(&mut **tx)
+                .await?;
+                exp
+            } else {
+                None
+            };
+
+            totals.push(CountTotal {
+                currency: curr,
+                counted,
+                expected,
+                difference: None,
+            });
+        }
+
+        let count_id = uuid::Uuid::new_v4().to_string();
+        let cash_count = CashCount {
+            id: count_id,
+            organization_id: actor.organization_id.clone(),
+            branch_id: cmd.branch,
+            shift_id: cmd.shift_id,
+            kind: cmd.kind,
+            counted_by: actor.user_id.clone(),
+            counted_at: now,
+            verified_by: None,
+            verified_at: None,
+            note: cmd.note,
+            idempotency_key: cmd.idempotency_key,
+            created_at: now,
+            updated_at: now,
+        };
+
+        self.repo
+            .insert_count(&mut *tx, &cash_count, &sanitized_lines, &totals)
+            .await?;
+
+        Ok(cash_count)
+    }
+
+    pub async fn verify_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        count_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CountVerified> {
+        let count = self
+            .repo
+            .find_count_by_id(&mut *tx, count_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "cash_count",
+                id: count_id.to_string(),
+            })?;
+
+        if count.kind == CountKind::HandoverOut {
+            return Err(AppError::Domain(
+                crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
+            ));
+        }
+
+        let permission = match count.kind {
+            CountKind::HandoverOut => Permission::ShiftOperate,
+            _ => Permission::ShiftCloseCertify,
+        };
+        let target = Target::new(&actor.organization_id, Some(count.branch_id.clone()), None);
+        Authorizer::check(Some(actor), permission, &target, now)
+            .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
+
+        PersonRules::verifier_is_not_counter(&count.counted_by, actor)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
+        if !self.repo.is_newest_count(&mut *tx, &count).await? {
+            return Err(CashError::NotNewestCount.into());
+        }
+
+        if count.kind == CountKind::Open {
+            let open_shift_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM shifts \
+                 WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL",
+            )
+            .bind(&count.counted_by)
+            .fetch_one(&mut **tx)
+            .await?;
+
+            if open_shift_count > 0 {
+                return Err(CashError::ShiftAlreadyOpen.into());
+            }
+
+            let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
+            let mut opening_pairs = Vec::new();
+            for t in &totals {
+                CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
+                })?;
+                if !t.counted.is_zero() {
+                    opening_pairs.push((t.currency.clone(), t.counted));
+                }
+            }
+            let shift = self
+                .shifts
+                .open_on_verified(
+                    &mut *tx,
+                    &count.branch_id,
+                    &count.counted_by,
+                    count_id,
+                    &opening_pairs,
+                    now,
+                )
+                .await?;
+
+            self.repo
+                .update_count_verified(
+                    &mut *tx,
+                    count_id,
+                    &actor.user_id,
+                    now,
+                    Some(&shift.id),
+                    &totals,
+                )
+                .await?;
+
+            let mut verified_count = count;
+            verified_count.verified_by = Some(actor.user_id.clone());
+            verified_count.verified_at = Some(now);
+            verified_count.shift_id = Some(shift.id);
+            return Ok(CountVerified::Verified(Box::new(verified_count)));
+        }
+
+        if count.kind == CountKind::Close {
+            let shift_id = count.shift_id.as_deref().ok_or(ShiftError::NoOpenShift)?;
+            let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
+
+            let held: Vec<(String, Decimal)> =
+                sqlx::query_as("SELECT code, expected FROM shift_balances WHERE shift_id = $1")
+                    .bind(shift_id)
+                    .fetch_all(&mut **tx)
+                    .await?;
+
+            for (code, _exp) in held {
+                if !totals
+                    .iter()
+                    .any(|t| t.currency.eq_ignore_ascii_case(&code))
+                {
+                    return Err(CashError::BalancesChanged.into());
+                }
+            }
+
+            for t in &totals {
+                let current_exp: Option<Decimal> = sqlx::query_scalar(
+                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
+                )
+                .bind(shift_id)
+                .bind(&t.currency)
+                .fetch_optional(&mut **tx)
+                .await?;
+
+                if current_exp != t.expected {
+                    return Err(CashError::BalancesChanged.into());
+                }
+            }
+
+            let mut updated_totals = Vec::new();
+            for t in totals {
+                CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
+                })?;
+                let exp = t.expected.unwrap_or(Decimal::ZERO);
+                let diff = t.counted - exp;
+                updated_totals.push(CountTotal {
+                    currency: t.currency.clone(),
+                    counted: t.counted,
+                    expected: t.expected,
+                    difference: Some(diff),
+                });
+            }
+
+            for t in &updated_totals {
+                sqlx::query(
+                    "UPDATE cash_count_totals \
+                     SET difference = $1::numeric \
+                     WHERE count_id = $2::uuid AND currency = $3",
+                )
+                .bind(t.difference)
+                .bind(count_id)
+                .bind(&t.currency)
+                .execute(&mut **tx)
+                .await?;
+            }
+
+            let key = format!("count-difference:{}", count_id);
+            let existing_req = self
+                .approvals_repo
+                .find_by_type_and_key(&mut *tx, COUNT_DIFFERENCE, &key)
+                .await?;
+
+            if let Some(req) = existing_req {
+                match req.status.as_str() {
+                    "APPROVED" => {}
+                    "REJECTED" => {
+                        return Err(CashError::RejectedByFinance(req.id.to_string()).into());
+                    }
+                    "PENDING" => {
+                        return Ok(CountVerified::AwaitingFinance(req.id.to_string()));
+                    }
+                    other => {
+                        return Err(AppError::Internal(format!(
+                            "unexpected approval request status: {other}"
+                        )));
+                    }
+                }
+            } else {
+                let by = PolicyActor::staff(
+                    &actor.user_id,
+                    PolicyRole::Manager,
+                    count.branch_id.clone(),
+                )
+                .ok_or_else(|| {
+                    AppError::Internal(
+                        "failed to construct policy actor for count difference gate".to_string(),
+                    )
+                })?;
+
+                match self.gate.check_in(&mut *tx, &count, &by).await? {
+                    GateResult::Clear => {}
+                    GateResult::AwaitingFinance(req_id) => {
+                        return Ok(CountVerified::AwaitingFinance(req_id.to_string()));
+                    }
+                }
+            }
+
+            let mut close_balances = Vec::new();
+            for t in &updated_totals {
+                let diff = t.difference.unwrap_or(Decimal::ZERO);
+                if !diff.is_zero() {
+                    let exc_id = format!("EX-{}", uuid::Uuid::new_v4());
+                    let pos: i32 = sqlx::query_scalar(
+                        "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
+                    )
+                    .bind(count.branch_id.as_str())
+                    .fetch_one(&mut **tx)
+                    .await?;
+
+                    let exc_data = serde_json::json!({
+                        "countId": count_id,
+                        "currency": t.currency.trim(),
+                        "difference": diff.to_string(),
+                    });
+
+                    sqlx::query(
+                        "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
+                    )
+                    .bind(exc_id)
+                    .bind(count.branch_id.as_str())
+                    .bind(pos)
+                    .bind(exc_data)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+
+                close_balances.push((t.currency.clone(), t.counted, diff));
+            }
+
+            self.shifts
+                .close_on_verified(
+                    &mut *tx,
+                    shift_id,
+                    &actor.user_id,
+                    &close_balances,
+                    count.note.as_deref().unwrap_or(""),
+                    now,
+                )
+                .await?;
+
+            self.repo
+                .update_count_verified(
+                    &mut *tx,
+                    count_id,
+                    &actor.user_id,
+                    now,
+                    None,
+                    &updated_totals,
+                )
+                .await?;
+
+            let mut verified_count = count;
+            verified_count.verified_by = Some(actor.user_id.clone());
+            verified_count.verified_at = Some(now);
+            return Ok(CountVerified::Verified(Box::new(verified_count)));
+        }
+
+        // For other count kinds:
+        let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
+        for t in &totals {
+            CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                AppError::Internal(format!("unknown currency code in count: {}", t.currency))
+            })?;
+        }
+        self.repo
+            .update_count_verified(&mut *tx, count_id, &actor.user_id, now, None, &totals)
+            .await?;
+
+        let mut verified_count = count;
+        verified_count.verified_by = Some(actor.user_id.clone());
+        verified_count.verified_at = Some(now);
+        Ok(CountVerified::Verified(Box::new(verified_count)))
     }
 }

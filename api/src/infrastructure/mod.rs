@@ -10,4 +10,5 @@ pub mod files;
 pub mod finance;
 pub mod idempotency;
 pub mod kiosk;
+pub mod rate_feed;
 pub mod settings;

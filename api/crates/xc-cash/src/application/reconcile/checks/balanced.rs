@@ -20,6 +20,10 @@ HAVING sum(e.quantity_signed) <> 0 \
 ORDER BY e.posting_id, e.currency \
 LIMIT 101";
 
+pub fn check() -> std::sync::Arc<dyn super::ReconcileCheck> {
+    std::sync::Arc::new(BalancedCheck)
+}
+
 /// Check 1: `Σ quantity_signed` per (posting, currency) is 0.
 pub struct BalancedCheck;
 

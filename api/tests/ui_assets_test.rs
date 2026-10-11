@@ -366,7 +366,7 @@ async fn the_signed_in_gate_redirects_nobody_as_v2s_page_did() {
     assert_eq!(v2.status, StatusCode::SEE_OTHER, "v2: status");
     assert_eq!(
         v2.location.as_deref(),
-        Some("http://xc.test/login"),
+        Some("http://xc.test/login?next=%2Fstaff-guide"),
         "v2: Location"
     );
     assert_eq!(v3.status, v2.status, "v3: status as v2's");

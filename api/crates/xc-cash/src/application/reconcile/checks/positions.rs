@@ -41,6 +41,10 @@ struct OffenderRow {
     sum_cost: Decimal,
 }
 
+pub fn check() -> std::sync::Arc<dyn super::ReconcileCheck> {
+    std::sync::Arc::new(PositionsCheck)
+}
+
 /// Check 2: a position equals Σ of its movements (quantity and cost).
 pub struct PositionsCheck;
 

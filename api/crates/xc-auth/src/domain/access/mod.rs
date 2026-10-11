@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod authorizer;
+pub mod branch_scope;
 pub mod permission;
 pub mod role;
 pub mod role_permissions;
@@ -10,6 +11,7 @@ pub mod v3_roles;
 
 pub use actor::Actor;
 pub use authorizer::{Authorizer, Grant, Refusal, Target};
+pub use branch_scope::BranchScope;
 pub use permission::Permission;
 pub use role::Role;
 pub use role_permissions::RolePermissions;

@@ -19,6 +19,10 @@ HAVING sum(e.valuation_thb) <> 0 \
 ORDER BY p.id \
 LIMIT 101";
 
+pub fn check() -> std::sync::Arc<dyn super::ReconcileCheck> {
+    std::sync::Arc::new(ValuationCheck)
+}
+
 /// Check 5: `Σ valuation_thb` per posting is 0.
 pub struct ValuationCheck;
 

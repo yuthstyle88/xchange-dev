@@ -55,4 +55,9 @@ pub enum Permission {
     /// LG-3b (#926, ledger design §11 Q-2): set a branch's `cash_limits`. FINANCE and ADMIN only,
     /// not BRANCH_MANAGER, whose own counts the limit decides on.
     CashLimitsManage,
+    /// EX-1 (#1070, executive-finance design §7.1, owner decision E-2): export a report or a table.
+    /// EXECUTIVE and FINANCE.
+    ReportsExport,
+    /// EX-1 (#1070, §7.1, owner decision E-6): edit the alert thresholds. EXECUTIVE and ADMIN.
+    AlertSettingsSave,
 }
