@@ -30,7 +30,11 @@ import * as table from './i18n';
 import { kindLabel, statusLabel } from './labels';
 import './devices.css';
 
-if (typeof window !== 'undefined' && (import.meta as unknown as { env?: { MODE?: string } }).env?.MODE === 'test') {
+if (
+  typeof window !== 'undefined' &&
+  (import.meta as unknown as { env?: { MODE?: string } }).env?.MODE === 'test' &&
+  !document.getElementById('app')
+) {
   sharedSession().dispose();
 }
 
@@ -64,7 +68,6 @@ function formatTimestamp(iso: string, currentLocale: Locale): string {
 export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   const t = screenT('devices', table);
 
-  const [selectedBranch, setSelectedBranch] = createSignal(props.branch || 'MAIN');
   const [overview, setOverview] = createSignal<DevicesOverview | undefined>(undefined);
   const [jobs, setJobs] = createSignal<DeviceJobRow[]>([]);
   const [events, setEvents] = createSignal<DeviceEventRow[]>([]);
@@ -85,7 +88,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     }
   });
 
-  const effectiveBranch = () => overview()?.branchId ?? selectedBranch();
+  const effectiveBranch = () => overview()?.branchId ?? props.branch;
   const displayedEvents = () => [...events(), ...olderEvents()];
 
   let devicesPoller: ViewPoller<DevicesOverview> | undefined;
@@ -206,7 +209,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   onMount(() => {
-    void initBranch(selectedBranch());
+    void initBranch(props.branch);
   });
 
   onCleanup(() => {
@@ -218,17 +221,6 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       visibilityListener = undefined;
     }
   });
-
-  function handleBranchChange(e: Event & { currentTarget: HTMLSelectElement }): void {
-    const newBranch = e.currentTarget.value;
-    setSelectedBranch(newBranch);
-    try {
-      window.history.replaceState(null, '', `/devices?branch=${newBranch}`);
-    } catch {
-      // ignore
-    }
-    void initBranch(newBranch, true);
-  }
 
   async function runAction(fn: () => Promise<void>): Promise<void> {
     if (busy()) return;
@@ -404,21 +396,6 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               <div class="eyebrow">{t('eyebrow')}</div>
               <h2>{t('heading')}</h2>
               <p>{t('intro')}</p>
-            </div>
-
-            <div class="branch-select">
-              <label>
-                {t('branch')}
-                <select
-                  value={overview()?.branchId ?? selectedBranch()}
-                  onChange={handleBranchChange}
-                  disabled={busy()}
-                >
-                  <For each={overview()?.branches ?? []}>
-                    {(b) => <option value={b.id}>{b.name}</option>}
-                  </For>
-                </select>
-              </label>
             </div>
           </div>
 

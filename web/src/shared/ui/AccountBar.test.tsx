@@ -21,6 +21,12 @@
 //
 // The `{name} · {username} · {role}` line is the account's own data, not a translated text.
 // When the account's row is gone (`name` and `username` null) the line is the role alone.
+//
+// Amended by SB-2 (design docs/design/blueprint/org-roles-branches.md §14.0 R1, §14.4), by its ticket
+// author claude/dell-claude-3: the branch line shows the session branch's **name** (`Me.branchName`,
+// SB-1), no longer its id. Changed: the fixtures gain `branchName`; the four branch-line
+// expectations (owner, staff, row gone, setLang) expect the name. The switch menu is pinned in
+// AccountBar.branch.test.tsx.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -40,8 +46,16 @@ afterEach(() => {
   setLang('th');
 });
 
-const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
-const NOK: Me = { kind: 'staff', id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok', username: 'nok', branchName: 'B2', branches: [] };
+type MeSB = Me & { branchName: string; branches: { id: string; code: string; name: string }[] };
+
+const OWNER: MeSB = {
+  kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1',
+  branchName: 'สำนักงานใหญ่', branches: [{ id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' }],
+};
+const NOK: MeSB = {
+  kind: 'staff', id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok', username: 'nok',
+  branchName: 'สาขาสอง', branches: [{ id: 'B2', code: 'XC-02', name: 'สาขาสอง' }],
+};
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -54,8 +68,8 @@ function deferred<T>() {
 }
 
 /** A fake SessionStore: `me` is a signal the test sets; `signOut` answers through the function given. */
-function fakeSession(initial: Me | undefined, signOut: () => Promise<void> = async () => undefined) {
-  const [me, setMe] = createSignal<Me | undefined>(initial);
+function fakeSession(initial: MeSB | undefined, signOut: () => Promise<void> = async () => undefined) {
+  const [me, setMe] = createSignal<MeSB | undefined>(initial);
   const calls = { signOut: 0 };
   const session: SessionStore = {
     me,
@@ -127,18 +141,18 @@ describe('AccountBar (#402)', () => {
     const { host, navigate } = mount(session);
     await settle();
     expect(text(host)).toContain('Somchai · owner1 · OWNER');
-    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'MAIN' }));
+    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'สำนักงานใหญ่' }));
     const button = signOutButton(host);
     expect(button.disabled).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('a staff member: "Nok · nok · FRONT" and "สาขา B2" (V1, V6)', async () => {
+  it('a staff member: "Nok · nok · FRONT" and "สาขา สาขาสอง" (V1, V6; SB-2: the name, not B2)', async () => {
     const { session } = fakeSession(NOK);
     const { host } = mount(session);
     await settle();
     expect(text(host)).toContain('Nok · nok · FRONT');
-    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'B2' }));
+    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'สาขาสอง' }));
     expect(text(host)).not.toContain('Somchai');
     signOutButton(host);
   });
@@ -151,7 +165,7 @@ describe('AccountBar (#402)', () => {
     expect(shown).toContain('OWNER');
     expect(shown).not.toContain('null');
     expect(shown).not.toContain('·');
-    expect(shown).toContain(fill(th['shell.account.branch'], { branch: 'MAIN' }));
+    expect(shown).toContain(fill(th['shell.account.branch'], { branch: 'สำนักงานใหญ่' }));
     signOutButton(host);
   });
 
@@ -226,13 +240,13 @@ describe('AccountBar (#402)', () => {
     const { session } = fakeSession(NOK);
     const { host } = mount(session);
     await settle();
-    expect(text(host)).toContain(fill(en['shell.account.branch'], { branch: 'B2' }));
+    expect(text(host)).toContain(fill(en['shell.account.branch'], { branch: 'สาขาสอง' }));
     expect(buttonNamed(host, en['shell.account.signOut'])).toBeDefined();
     expect(text(host)).toContain('Nok · nok · FRONT');
 
     setLang('th');
     await settle();
-    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'B2' }));
+    expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'สาขาสอง' }));
     signOutButton(host);
   });
 });

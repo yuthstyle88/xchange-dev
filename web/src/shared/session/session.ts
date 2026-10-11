@@ -3,19 +3,23 @@ import { ApiClient, type Fetch, type ViewAnswer, type ViewParams } from '../api/
 import type { Me } from '../api/generated/common';
 import { ViewPoller } from '../live/view-poller';
 
-export type EndReason = 'expired' | 'switched';
+export type EndReason = 'expired' | 'switched' | 'branchChanged';
 
 export interface SessionStore {
   me: Accessor<Me | undefined>;
   ended?: Accessor<EndReason | undefined>;
   end?: (reason: EndReason) => void;
+  switchBranch?(branch: string): Promise<void>;
   signOut(): Promise<void>;
   dispose(): void;
+  updateMe?(me: Me): void;
 }
 
 export interface EndingSessionStore extends SessionStore {
   ended: Accessor<EndReason | undefined>;
   end(reason: EndReason): void;
+  switchBranch(branch: string): Promise<void>;
+  updateMe(me: Me): void;
 }
 
 export function endsSession(status: number, code: string | undefined): boolean {
@@ -74,8 +78,12 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
         if (name === 'me' && answer.changed && answer.data !== undefined) {
           const held = poller.data();
           const next = answer.data as unknown as Me;
-          if (held !== undefined && (next.id !== held.id || next.role !== held.role)) {
-            end('switched');
+          if (held !== undefined) {
+            if (next.id !== held.id || next.role !== held.role) {
+              end('switched');
+            } else if (next.branch !== held.branch) {
+              end('branchChanged');
+            }
           }
         }
         return answer;
@@ -96,15 +104,20 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
   });
   poller.start();
 
+  const [manualMe, setManualMe] = createSignal<Me | undefined>(undefined);
+
   const me: Accessor<Me | undefined> = () => {
     if (signedOut()) return undefined;
-    return poller.data();
+    return manualMe() ?? poller.data();
   };
 
-  return {
+  const store: EndingSessionStore = {
     me,
     ended,
     end,
+    async switchBranch(branch: string): Promise<void> {
+      await api.post('/api/auth/session/branch', { branch });
+    },
     async signOut(): Promise<void> {
       await api.post('/api/auth/logout', {});
       poller.stop();
@@ -113,7 +126,11 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
     dispose(): void {
       poller.stop();
     },
+    updateMe(m: Me): void {
+      setManualMe(m);
+    },
   };
+  return store;
 }
 
 let sharedClient: ApiClient | undefined;

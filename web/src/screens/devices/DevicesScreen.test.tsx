@@ -11,6 +11,15 @@
 // Money (W7): the balances and the count are the `devices` view's; the picker's rows add up to
 // something else, so a screen that sums or counts in the browser shows the wrong figure, and the
 // THB balance is one a JavaScript number cannot hold to the satang.
+//
+// Amended by SB-2 (design docs/design/blueprint/org-roles-branches.md §14.0 R2, §14.4 "Devices"), by
+// its ticket author claude/dell-claude-3: the session has one branch, switched from the account bar,
+// so the screen keeps no branch select. Each change:
+//   - D4 "the branch select lists every branch…" → the screen has no branch select, and shows the
+//     branchId the devices view answers in its links;
+//   - D19 "choosing another branch…" → it reads only the branch it is given and names it in every
+//     write; the switch, the URL rewrite and the B1 → B2 move go with the select.
+// Where the branch comes from (`me.branch`, or `?branch=`) is pinned in main.branch.test.tsx.
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { render } from 'solid-js/web';
 import {
@@ -590,14 +599,18 @@ describe('DevicesScreen reading (#404 §7 Reading, V2, V5)', () => {
     expect(link(th.deskLink)?.getAttribute('href')).toBe('/desk?branch=B1');
   });
 
-  it('the branch select lists every branch by name and shows the branchId the devices view answers (D4, §9)', async () => {
+  it('has no branch select, and its links follow the branchId the devices view answers (D4, §9; SB-2 §14.4)', async () => {
     const server = new FakeServer({ B1: b1(), B2: branchData('B2') });
     server.pinned = 'B1'; // a staff member of B1 naming B2 is answered for B1
     mount(server, 'B2');
     await loaded();
-    const select = control<HTMLSelectElement>(th.branch);
-    expect(options(select)).toEqual(BRANCHES.map((b) => [b.id, b.name]));
-    await vi.waitFor(() => expect(select.value).toBe('B1'));
+    expect(() => control<HTMLSelectElement>(th.branch)).toThrow();
+    const branchSelects = [...host.querySelectorAll('select')].filter((s) =>
+      [...s.options].some((o) => BRANCHES.some((b) => b.id === o.value)),
+    );
+    expect(branchSelects).toEqual([]);
+    const link = (text: string) => [...host.querySelectorAll('a')].find((a) => textOf(a) === text);
+    await vi.waitFor(() => expect(link(th.adminLink)?.getAttribute('href')).toBe('/?branch=B1'));
   });
 });
 
@@ -992,11 +1005,10 @@ describe('DevicesScreen actions (#404 §7 Writing, §8, §9)', () => {
 
 // ── branches (D19, §9) ───────────────────────────────────────────────────────
 
-describe('DevicesScreen branch switch (#404 D19)', () => {
-  it("choosing another branch reads that branch's views, shows only its rows, puts it in the URL and in every write", async () => {
+describe('DevicesScreen one branch (#404 D19; SB-2 §14.4)', () => {
+  it('reads only the branch it is given, even after polls, and names it in every write', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const B2_JOBS = [job('J9', 'DRAWER_REQUEST', 'TX-9', 'QUEUED', 'front2')];
-    // the same version as B1 on purpose: a screen that carries B1's `since` over sees "unchanged"
     const server = new FakeServer({
       B1: b1(),
       B2: branchData('B2', {
@@ -1007,28 +1019,14 @@ describe('DevicesScreen branch switch (#404 D19)', () => {
         transactions: [tx('TX-9', 'BUY', '5.00', 'USD')],
       }),
     });
-    mount(server, 'B1');
-    await loaded();
-    const switched = server.reads.length;
-
-    choose(control<HTMLSelectElement>(th.branch), 'B2');
+    mount(server, 'B2');
     await vi.waitFor(() => expect(shownJobIds()).toEqual(['J9']));
     await vi.waitFor(() => expect(metric(th.metricThb)).toMatch(/^10\.00(\s|$)/));
-    await vi.waitFor(() => expect(options(picker()).map((o) => o[0])).toEqual(['', 'TX-9']));
-    expect(bodyRows(eventsTable()).map((tr) => textOf(tr.cells[1]))).toEqual(['front2']);
-    expect(metric(th.metricCompleted)).toBe('1');
 
-    const urls = [...replaceState.mock.calls.map((c) => String(c[2])), ...navigate.mock.calls.map((c) => String(c[0]))];
-    expect(urls).toContain('/devices?branch=B2');
-    const link = (text: string) => [...host.querySelectorAll('a')].find((a) => textOf(a) === text);
-    expect(link(th.adminLink)?.getAttribute('href')).toBe('/?branch=B2');
-    expect(link(th.deskLink)?.getAttribute('href')).toBe('/desk?branch=B2');
-
-    // B1 is not read again, not even by a poll
     await vi.advanceTimersByTimeAsync(30_000);
-    const after = server.reads.slice(switched);
-    expect(after.length).toBeGreaterThan(0);
-    expect(after.filter((r) => r.branch !== 'B2')).toEqual([]);
+    expect(server.reads.length).toBeGreaterThan(0);
+    expect(server.reads.filter((r) => r.branch !== 'B2')).toEqual([]);
+    expect(replaceState.mock.calls.map((c) => String(c[2])).filter((u) => u.includes('branch='))).toEqual([]);
 
     button(th.process, jobRow('J9')).click();
     await vi.waitFor(() => expect(server.posts).toHaveLength(1));

@@ -1,5 +1,5 @@
 // V2-shell (#460): implementer extra tests for decisions 3 and 6
-// - Decision 3: after add branch succeeds, the shell switches to the newly created branch
+// - SB-2 ruling 1 (#892, replaces Decision 3): after add branch succeeds, the shell does not switch branch
 // - Decision 6: document.title follows v2 (admin-html:158) from the shown menu's heading
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -123,18 +123,26 @@ afterEach(async () => {
 });
 
 describe('V2-shell: extra implementer tests (#460 decisions 3 and 6)', () => {
-  it('switches to the newly created branch after add branch succeeds (Controller Decision 3, admin-html:114)', async () => {
+  it('does not switch branch after add branch succeeds (SB-2 ruling 1, #892)', async () => {
     const menus = [
       makeMenu('overview', 1, 'ภาพรวมหน้าร้าน'),
       makeMenu('transactions', 2, 'รายการแลกเงิน'),
     ];
+    const postSpy = vi.spyOn(fakeApi, 'post');
+    const realFetch = globalThis.fetch;
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      fetched.push(String(input instanceof Request ? input.url : input));
+      return realFetch(input, init);
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     dispose = render(() => <AdminShell api={api} menus={menus} />, container);
     await settle();
 
-    const picker = container.querySelector('select')!;
-    expect(picker.value).toBe('MAIN');
+    expect(probes['overview']!.branch.at(-1)).toBe('MAIN');
+    const shownBefore = container.textContent ?? '';
+    expect(shownBefore).toContain('สำนักงานใหญ่');
 
     // Open add branch dialog
     const addBtn = Array.from(container.querySelectorAll('button')).find(
@@ -154,9 +162,24 @@ describe('V2-shell: extra implementer tests (#460 decisions 3 and 6)', () => {
     submitBtn.click();
     await settle();
 
-    // Decision 3: the shell switches to the newly created branch
-    expect(picker.value).toBe('B-XC-NEW');
-    expect(probes['overview']!.branch).toContain('B-XC-NEW');
+    // the add succeeded on the server
+    expect(
+      postSpy.mock.calls.some((c) => (c[1] as { action?: string }).action === 'adminCreateBranch'),
+    ).toBe(true);
+    expect(branches.map((b) => b.id)).toContain('B-XC-NEW');
+
+    // SB-2 ruling 1: no switch route is called, through the shell's api or any fetch of its own
+    const paths = postSpy.mock.calls.map((c) => String(c[0]));
+    expect(paths.filter((p) => p.includes('/api/auth/session/branch'))).toEqual([]);
+    expect(fetched.filter((u) => u.includes('/api/auth/session/branch'))).toEqual([]);
+
+    // and the session branch shown is unchanged: every menu still reads MAIN, never the new branch
+    expect(probes['overview']!.branch).not.toContain('B-XC-NEW');
+    expect(probes['overview']!.branch.at(-1)).toBe('MAIN');
+    expect(container.textContent ?? '').toContain('สำนักงานใหญ่');
+
+    postSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it('sets document.title from the active menu heading and updates on hash change (Controller Decision 6, admin-html:158)', async () => {
