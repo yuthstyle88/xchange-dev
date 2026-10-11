@@ -357,8 +357,24 @@ async fn the_gate_is_the_devices_pages() {
     let preview = room.get("", &path).await;
     assert_eq!(page.status, 303, "/devices sends nobody to sign in");
     assert_eq!(preview.status, page.status, "nobody: {:.300}", preview.text);
-    assert_eq!(preview.header("location"), page.header("location"));
-    assert_eq!(preview.header("location"), Some("http://desk.test/login"));
+    assert_eq!(
+        page.header("location"),
+        Some("http://desk.test/login?next=%2Fdevices")
+    );
+    assert_eq!(
+        preview.header("location"),
+        Some(
+            format!(
+                "http://desk.test/login?next={}",
+                path.replace('%', "%25")
+                    .replace('/', "%2F")
+                    .replace('?', "%3F")
+                    .replace('=', "%3D")
+                    .replace('&', "%26")
+            )
+            .as_str()
+        )
+    );
 
     let mut served = 0;
     for person in one_of_each_role() {

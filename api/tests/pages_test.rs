@@ -358,7 +358,7 @@ async fn every_page_answers_as_v2_does() {
                 assert_eq!(answer.status.as_u16(), 303, "{what}: status");
                 assert_eq!(
                     answer.header("location"),
-                    Some(format!("http://{HOST}/login").as_str()),
+                    Some(format!("http://{HOST}/login?next=%2Fstaff").as_str()),
                     "{what}: Location"
                 );
                 seen[2] += 1;
@@ -427,7 +427,21 @@ async fn every_page_answers_as_v2_does() {
                     let to = case["location"].as_str().unwrap();
                     assert_eq!(
                         answer.header("location"),
-                        Some(format!("http://{HOST}{to}").as_str()),
+                        Some(
+                            if status == 303 {
+                                format!(
+                                    "http://{HOST}{to}?next={}",
+                                    uri.replace('%', "%25")
+                                        .replace('/', "%2F")
+                                        .replace('?', "%3F")
+                                        .replace('=', "%3D")
+                                        .replace('&', "%26")
+                                )
+                            } else {
+                                format!("http://{HOST}{to}")
+                            }
+                            .as_str()
+                        ),
                         "{what}: Location"
                     );
                 }
@@ -484,8 +498,13 @@ async fn a_redirect_names_the_host_the_request_named() {
     ];
     for (proto, host, more, origin) in table {
         for (uri, who, status, to) in [
-            ("/desk", "none", 303, "/login"),
-            ("/?branch=XC-B02", "none", 303, "/login"),
+            ("/desk", "none", 303, "/login?next=%2Fdesk"),
+            (
+                "/?branch=XC-B02",
+                "none",
+                303,
+                "/login?next=%2F%3Fbranch%3DXC-B02",
+            ),
             ("/staff/desk", "none", 302, "/staff"),
             ("/staff/desk?x=1", "staff:FINANCE:XC-B01", 302, "/staff"),
         ] {
@@ -596,7 +615,17 @@ async fn without_a_session_reader_nobody_is_signed_in() {
             assert_eq!(answer.status.as_u16(), 303, "{what}");
             assert_eq!(
                 answer.header("location"),
-                Some(format!("http://{HOST}/login").as_str()),
+                Some(
+                    format!(
+                        "http://{HOST}/login?next={}",
+                        path.replace('%', "%25")
+                            .replace('/', "%2F")
+                            .replace('?', "%3F")
+                            .replace('=', "%3D")
+                            .replace('&', "%26")
+                    )
+                    .as_str()
+                ),
                 "{what}"
             );
         } else {

@@ -666,10 +666,32 @@ pub(crate) async fn sessions_of(req: &HttpRequest) -> Sessions {
     get_sessions(req).await
 }
 
+fn encode_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(*b as char);
+            }
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(out, "%{:02X}", b);
+            }
+        }
+    }
+    out
+}
+
 pub(crate) fn to_login(req: &HttpRequest) -> HttpResponse {
     let origin = redirect_origin(req);
+    let path = req.uri().path();
+    let target = match req.uri().query() {
+        Some(q) if !q.is_empty() => format!("{path}?{q}"),
+        _ => path.to_string(),
+    };
+    let next = encode_component(&target);
     HttpResponse::SeeOther()
-        .insert_header(("Location", format!("{origin}/login")))
+        .insert_header(("Location", format!("{origin}/login?next={next}")))
         .finish()
 }
 
