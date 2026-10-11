@@ -46,6 +46,12 @@ pub enum Permission {
     ReferenceRatesRead,
     /// Consent policy manage permission (§3, §5.1, CI-6).
     ConsentPolicyManage,
+    /// RA-3 (#981, O-2): attach a referral code to an exchange. TELLER and EXECUTIVE.
+    ReferralAttach,
+    /// RA-3 (#981, O-2): replace an ACTIVE referral code, with a reason. EXECUTIVE only.
+    ReferralSupersede,
+    /// RA-3 (#981, O-2): see the referral attributions of a branch. EXECUTIVE and TELLER.
+    ReferralRead,
     /// LG-3b (#926, ledger design §11 Q-2): set a branch's `cash_limits`. FINANCE and ADMIN only,
     /// not BRANCH_MANAGER, whose own counts the limit decides on.
     CashLimitsManage,
