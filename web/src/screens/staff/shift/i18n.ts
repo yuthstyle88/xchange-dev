@@ -1,0 +1,38 @@
+// S-5 #578: shift card texts (SD:S8).
+export const th: Record<string, string> = {
+  title: 'กะของฉัน',
+  openCount: 'นับเปิดกะ',
+  closeCount: 'นับปิดกะ',
+  handover: 'ส่งมอบเงิน',
+  verify: 'ยืนยัน',
+  accept: 'รับมอบ',
+  reject: 'ปฏิเสธ',
+  saved: 'บันทึกแล้ว',
+  countsToVerify: 'รายการนับที่รอยืนยัน',
+  handoversToMe: 'รายการส่งมอบถึงฉัน',
+  receiver: 'ผู้รับมอบ',
+  selectReceiver: 'เลือกผู้รับมอบ',
+  save: 'บันทึก',
+  cancel: 'ยกเลิก',
+  emptyCounts: 'ไม่มีรายการนับที่รอยืนยัน',
+  emptyHandovers: 'ไม่มีรายการส่งมอบ',
+};
+
+export const en: Record<string, string> = {
+  title: 'My Shift',
+  openCount: 'Open Count',
+  closeCount: 'Close Count',
+  handover: 'Hand Over',
+  verify: 'Verify',
+  accept: 'Accept',
+  reject: 'Reject',
+  saved: 'Saved',
+  countsToVerify: 'Counts to Verify',
+  handoversToMe: 'Handovers to Me',
+  receiver: 'Receiver',
+  selectReceiver: 'Select receiver',
+  save: 'Save',
+  cancel: 'Cancel',
+  emptyCounts: 'No counts to verify',
+  emptyHandovers: 'No handovers to me',
+};
