@@ -297,13 +297,56 @@ start dependencies are merged.
 | QU-3 | the desk: call next, call, recall, skip, start, finish, cancel; `CallOrder` | `xc-queue/src/application/desk/**`, `xc-queue/src/domain/ticket/call_order.rs` | QU-2, PR 589's permission ticket |
 | QU-4 | counters and pause | `xc-queue/src/domain/counter/**`, `xc-queue/src/application/counter/**`, the shift-open/close calls in `xc-shift/src/application/shift/service.rs` (two lines, after PR 590 CA-3 merges) | QU-2, PR 590 CA-3 |
 | QU-5 | service status, estimate, open/close, day close | `xc-queue/src/domain/status/**`, `xc-queue/src/application/status/**`, `xc-queue/src/application/day/**`, the `QueueDayHook` call in PR 590's `branch_day.rs` (one line) | QU-3, QU-4, PR 590 CA-7 |
-| QU-6 | kiosk `accept` on the ticket; the queue card, panel and admin bar on `queue_board` | `xc-kiosk/src/application/kiosk/desk.rs`, `web/src/shared/queue/**`, `web/src/shared/ui/{QueueCard,QueuePanel}.tsx`, `web/src/screens/admin/queue/**` | QU-7 |
+| QU-6 | kiosk `accept` on the ticket; the queue card, panel and admin bar on `queue_board` | `xc-kiosk/src/application/kiosk/desk.rs`, `web/src/shared/queue/**`, `web/src/shared/ui/{QueueCard,QueuePanel}.tsx`, `web/src/screens/admin/queue/**`, `web/src/shared/testing/page-wide.ts` (after QU-6a) | QU-7, QU-6a |
+| QU-6a | test-only, no behaviour change: every screen test that answers the shell's page-wide queue reads (`/api/v3/views/kiosk_notifications`, `kiosk_queue`) by hand takes them from one shared helper instead, `web/src/shared/testing/page-wide.ts` (new). QU-6 then changes that one helper, not 31 test files | `web/src/shared/testing/page-wide.ts` (new) and the 31 test files listed in §9.2 | OR-7.7 #1030 merged (its scope names 7 of the 31 test files) |
 | QU-7 | commands and views (§4.4) | `api/src/presentation/http/v3/commands/queue/**` (with its own `permissions.rs`, as PR 590 §4.4), `views/{queue_board,branch_service_status,my_queue_ticket}.rs`, their DTOs and generated TS | QU-3, QU-5, PR 570 CM-1, PR 589 OR-4 |
 | QU-8 | retire the old queue reads and the request work times (M2) | `views/{kiosk_notifications,kiosk_queue}.rs` and their DTOs/TS, `xc-kiosk` readers of `started_at/completed_at`, `api/migrations/20261102100000_retire_kiosk_work_times.sql`, the retired tests and fixtures | QU-6 |
 
 The booking source (check-in → `QueueTickets::issue_in`) and the B06 desk screen are not tickets here. The first
 belongs to #555's check-in ticket. The second is a desk screen ticket that reads `queue_board`. The customer views are
 #558's screens, and they speak TH/EN/ZH (PR 607).
+
+### 9.2 Why QU-6a exists (measured 2026-10-11 on `origin/main` after `d9cfa790`)
+
+The shell's queue card polls `kiosk_notifications` on every staff and admin page (`web/src/shared/queue/queue-store.ts:208`), and the panel reads `kiosk_queue` (`QueuePanel.tsx:97`, `:112`). So every screen test that mounts the shell answers those routes by hand, usually in a list of page-wide reads that a "no other request" assertion depends on (for example `Overview.test.tsx:60`, `:179`).
+
+`git grep -l "kiosk_notifications\|kiosk_queue" -- 'web/src/**/*.test.ts*'` finds 35 files. 4 are inside QU-6's own scope (`queue-store.test.ts`, `QueueCard.workers.test.tsx`, `QueuePanel.gaps.test.tsx`, `QueuePanel.test.tsx`); the other 31 are:
+
+```
+web/src/screens/admin/AdminShell.menu.test.tsx
+web/src/screens/admin/AdminShell.test.tsx
+web/src/screens/admin/alert-settings/AlertSettings.test.tsx
+web/src/screens/admin/approvals/Approvals.test.tsx
+web/src/screens/admin/bookings/bookings.freshness.test.tsx
+web/src/screens/admin/bookings/bookings.paging.test.tsx
+web/src/screens/admin/bookings/bookings.screen.test.tsx
+web/src/screens/admin/cash/Cash.extra.test.tsx
+web/src/screens/admin/cash/Cash.test.tsx
+web/src/screens/admin/cash/calculators/ProfitSummaryPanel.test.tsx
+web/src/screens/admin/cash/calculators/ShiftValuationPanel.test.tsx
+web/src/screens/admin/cash/calculators/calculators.test.tsx
+web/src/screens/admin/consent/Consent.test.tsx
+web/src/screens/admin/customers/Customers.test.tsx
+web/src/screens/admin/denomination-groups/DenominationGroups.test.tsx
+web/src/screens/admin/employees/Employees.test.tsx
+web/src/screens/admin/overview/Overview.extra.test.tsx
+web/src/screens/admin/overview/Overview.test.tsx
+web/src/screens/admin/payments/Payments.extra.test.tsx
+web/src/screens/admin/payments/Payments.test.tsx
+web/src/screens/admin/rates/Rates.freshness.test.tsx
+web/src/screens/admin/rates/Rates.test.tsx
+web/src/screens/admin/rates/RatesDraft.test.tsx
+web/src/screens/admin/reports/Reports.extra.test.tsx
+web/src/screens/admin/reports/Reports.test.tsx
+web/src/screens/admin/slips/Slips.test.tsx
+web/src/screens/admin/transactions/Transactions.test.tsx
+web/src/screens/admin/transactions/extra.test.tsx
+web/src/screens/kiosk-queue/KioskQueueScreen.test.tsx
+web/src/screens/kiosk-queue/main.branch.test.tsx
+web/src/shared/session/session.end.test.ts
+```
+
+If QU-6 moved the shell to `queue_board` directly, it would have to edit all of these, and they hold the file locks of nearly every admin ticket. That makes them one file set that many tickets must touch, the "diagram not finished" case. QU-6a is the split: a pure test refactor that puts the shell's page-wide reads in one helper, so QU-6 edits only that helper. QU-6a starts after OR-7.7 #1030, whose scope names 7 of the 31 files (`AdminShell.test.tsx`, `AdminShell.menu.test.tsx`, `Approvals`, `Consent`, `Customers`, `DenominationGroups`, `Employees`) to rewrite their menu pins.
 
 ### 9.1 Tests written before implementation
 
@@ -315,6 +358,7 @@ belongs to #555's check-in ticket. The second is a desk screen ticket that reads
 | QU-4 | opening a shift adds an ACTIVE counter, closing removes it; a PAUSED counter cannot call; pause and resume change `active_counters` by one |
 | QU-5 | Q-A5: with 2 completed today and 30 earlier the median of the 30 earlier; with 3 today the median of today's 3; with none today and none earlier NULL; zero active counters NULL; **the range (Q-A6):** with service times 60/120/180/240 s and 2 tickets ahead on 1 counter, estimate = 2×150, low = 2×105, high = 2×195 (`percentile_cont` 0.25/0.5/0.75), the three NULL together, and `low ≤ estimate ≤ high`; `estimate_as_of` set; closing the queue stops issuance and keeps serving; the day close cancels WAITING and CALLED with `dayClosed`; every transition raises the branch version |
 | QU-6 | `accept` on a WAITING request calls and starts its ticket; the queue card shows `queue_board`'s lines; QueueBar's provided tests (#471) are re-pointed in one commit per file before any behaviour change |
+| QU-6a | none up front, on purpose: a pure test refactor. The proof is that `npm run check` stays green with no assertion changed, and that the `git grep` above, outside QU-6's scope, then finds only `web/src/shared/testing/page-wide.ts` |
 | QU-7 | every route, permission refusals, `Idempotency-Key` replay and conflict, `since` → `{changed:false}`; `branch_service_status` carries no customer field; `branch_service_status` and `my_queue_ticket` carry `estimateLowSeconds`/`estimateHighSeconds` next to `estimateSeconds` and `estimateAsOf` |
 | QU-8 | the workspace builds and passes with the two views and columns gone; `git grep -n started_at -- api/crates/xc-kiosk` finds no reader |
 
