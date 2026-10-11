@@ -151,3 +151,75 @@ impl BranchRepository for PgBranchRepository {
         Ok(())
     }
 }
+
+/// The profile writes of `branchSave` (OR-5a #945). Inherent, not on `BranchRepository`: they run
+/// only inside a caller's transaction, which the trait's pool-based reads do not take.
+impl PgBranchRepository {
+    /// `id`'s branch read inside `tx`, locked `FOR UPDATE` until the caller commits.
+    pub async fn find_for_update_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &BranchId,
+    ) -> AppResult<Option<Branch>> {
+        let row = sqlx::query_as::<_, BranchRow>(
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(row.map(row_to_branch))
+    }
+
+    /// Whether another branch of `id`'s organisation already holds `code`.
+    pub async fn code_taken_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &BranchId,
+        code: &str,
+    ) -> AppResult<bool> {
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM branches o JOIN branches b ON b.id = $1 \
+             WHERE o.organization_id IS NOT DISTINCT FROM b.organization_id AND o.code = $2 AND o.id <> b.id)",
+        )
+        .bind(id.as_str())
+        .bind(code)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    /// Writes `id`'s profile columns inside `tx`. A code another branch of the organisation took
+    /// meanwhile (`branches_organization_id_code_key`) is `AppError::Conflict`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_profile_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &BranchId,
+        code: &str,
+        address: Option<&str>,
+        timezone: &str,
+        opening_hours: Option<&serde_json::Value>,
+        booking_enabled: bool,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE branches SET code = $2, address = $3, timezone = $4, opening_hours = $5, booking_enabled = $6 WHERE id = $1",
+        )
+        .bind(id.as_str())
+        .bind(code)
+        .bind(address)
+        .bind(timezone)
+        .bind(opening_hours)
+        .bind(booking_enabled)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
+                AppError::Conflict(format!("branch code {code:?} is taken in this organisation"))
+            }
+            _ => AppError::Database(e),
+        })?;
+        Ok(())
+    }
+}
