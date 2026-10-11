@@ -52,13 +52,18 @@ impl HandoverService {
         }
     }
 
-    async fn load(&self, id: &str) -> AppResult<Handover> {
+    /// The hand-over as this transaction sees it (CA-7c: never through the pool).
+    async fn load_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &str,
+    ) -> AppResult<Handover> {
         let r: Row = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
              FROM handovers WHERE id = $1::uuid",
         )
         .bind(id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx)
         .await?;
         Ok(Handover {
             id: r.0,
@@ -77,6 +82,37 @@ impl HandoverService {
         cmd: StartHandover,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
+        let mut tx = self.pool.begin().await?;
+        let handover = self.start_in(&mut tx, actor, cmd, now).await?;
+        tx.commit().await?;
+        Ok(handover)
+    }
+
+    pub async fn reject(&self, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover> {
+        let mut tx = self.pool.begin().await?;
+        let handover = self.reject_in(&mut tx, actor, id, now).await?;
+        tx.commit().await?;
+        Ok(handover)
+    }
+
+    pub async fn accept(&self, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover> {
+        let mut tx = self.pool.begin().await?;
+        let handover = self.accept_in(&mut tx, actor, id, now).await?;
+        tx.commit().await?;
+        Ok(handover)
+    }
+}
+
+/// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
+/// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
+impl HandoverService {
+    pub async fn start_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        cmd: StartHandover,
+        now: DateTime<Utc>,
+    ) -> AppResult<Handover> {
         if cmd.receiver_id == actor.user_id {
             return Err(dom(CashError::SameCounter));
         }
@@ -89,29 +125,26 @@ impl HandoverService {
         let shift_teller: Option<String> =
             sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
                 .bind(&cmd.from_shift_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **tx)
                 .await?;
         let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
         PersonRules::teller_owns_shift(&teller_id, actor)
             .map_err(|e| AppError::Domain(e.to_string()))?;
 
-        let mut tx = self.pool.begin().await?;
-
         if let Some(existing_count) = self
             .counts
             .repo()
-            .find_count_by_idempotency_key(&mut tx, &cmd.branch, &cmd.idempotency_key)
+            .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
             .await?
         {
             let handover_id: Option<String> =
                 sqlx::query_scalar("SELECT id::text FROM handovers WHERE count_id = $1::uuid")
                     .bind(&existing_count.id)
-                    .fetch_optional(&mut *tx)
+                    .fetch_optional(&mut **tx)
                     .await?;
 
             if let Some(h_id) = handover_id {
-                tx.commit().await?;
-                return self.load(&h_id).await;
+                return self.load_in(tx, &h_id).await;
             }
         }
 
@@ -130,7 +163,7 @@ impl HandoverService {
             let row: Option<(Decimal, String)> =
                 sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
                     .bind(line.denomination_id)
-                    .fetch_optional(&mut *tx)
+                    .fetch_optional(&mut **tx)
                     .await?;
 
             let (face_value, denom_currency) = match row {
@@ -167,7 +200,7 @@ impl HandoverService {
             let minor_unit: Option<i16> =
                 sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
                     .bind(curr)
-                    .fetch_optional(&mut *tx)
+                    .fetch_optional(&mut **tx)
                     .await?;
 
             let minor = minor_unit.ok_or_else(|| {
@@ -187,7 +220,7 @@ impl HandoverService {
             )
             .bind(&cmd.from_shift_id)
             .bind(&curr)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?;
 
             totals.push(CountTotal {
@@ -217,7 +250,7 @@ impl HandoverService {
 
         self.counts
             .repo()
-            .insert_count(&mut tx, &cash_count, &sanitized_lines, &totals)
+            .insert_count(&mut *tx, &cash_count, &sanitized_lines, &totals)
             .await?;
 
         let id: String = sqlx::query_scalar(
@@ -230,26 +263,161 @@ impl HandoverService {
         .bind(&cmd.from_shift_id)
         .bind(&count_id)
         .bind(&cmd.receiver_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
 
-        tx.commit().await?;
-        self.load(&id).await
+        self.load_in(tx, &id).await
     }
 
-    pub async fn reject(
+    pub async fn accept_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         id: &str,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let mut tx = self.pool.begin().await?;
         let r: Row = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
              FROM handovers WHERE id = $1::uuid FOR UPDATE",
         )
         .bind(id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        let h = Handover {
+            id: r.0,
+            branch_id: BranchId::new(r.1),
+            from_shift_id: r.2,
+            to_shift_id: r.3,
+            count_id: r.4,
+            receiver_id: r.5,
+            status: HandoverStatus::parse(&r.6),
+        };
+
+        if h.status != HandoverStatus::Pending {
+            return Err(dom(HandoverError::NotPending));
+        }
+
+        PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+
+        let repo = self.counts.repo().clone();
+        let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
+        let held: Vec<(String, Decimal)> = sqlx::query_as(
+            "SELECT code, expected FROM shift_balances WHERE shift_id = $1 AND expected <> 0",
+        )
+        .bind(&h.from_shift_id)
+        .fetch_all(&mut **tx)
+        .await?;
+        for (code, exp) in held {
+            if !totals.iter().any(|t| t.currency.trim() == code.trim()) {
+                totals.push(CountTotal {
+                    currency: code,
+                    counted: Decimal::ZERO,
+                    expected: Some(exp),
+                    difference: None,
+                });
+            }
+        }
+        for t in &totals {
+            let cur: Option<Decimal> = sqlx::query_scalar(
+                "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
+            )
+            .bind(&h.from_shift_id)
+            .bind(&t.currency)
+            .fetch_optional(&mut **tx)
+            .await?;
+            if cur != t.expected {
+                return Err(dom(CashError::BalancesChanged));
+            }
+        }
+        let open: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL \
+             AND id <> $2",
+        )
+        .bind(&h.receiver_id)
+        .bind(&h.from_shift_id)
+        .fetch_one(&mut **tx)
+        .await?;
+        if open > 0 {
+            return Err(dom(CashError::ShiftAlreadyOpen));
+        }
+        let mut updated = Vec::new();
+        let (mut counted, mut diffs) = (Vec::new(), Vec::new());
+        for t in totals {
+            let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
+            if !diff.is_zero() {
+                let pos: i32 = sqlx::query_scalar(
+                    "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
+                )
+                .bind(h.branch_id.as_str())
+                .fetch_one(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
+                )
+                .bind(format!("EX-{}", uuid::Uuid::new_v4()))
+                .bind(h.branch_id.as_str())
+                .bind(pos)
+                .bind(serde_json::json!({
+                    "countId": h.count_id,
+                    "currency": t.currency.trim(),
+                    "difference": diff.to_string(),
+                }))
+                .execute(&mut **tx)
+                .await?;
+            }
+            CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
+            if !t.counted.is_zero() {
+                counted.push((t.currency.clone(), t.counted));
+            }
+            diffs.push((t.currency.clone(), t.counted, diff));
+            updated.push(CountTotal {
+                difference: Some(diff),
+                ..t
+            });
+        }
+        let shifts = self.counts.shifts();
+        shifts
+            .close_on_verified(&mut *tx, &h.from_shift_id, &actor.user_id, &diffs, "", now)
+            .await?;
+        let b = shifts
+            .open_on_verified(
+                &mut *tx,
+                &h.branch_id,
+                &h.receiver_id,
+                &h.count_id,
+                &counted,
+                now,
+            )
+            .await?;
+        repo.update_count_verified(&mut *tx, &h.count_id, &actor.user_id, now, None, &updated)
+            .await?;
+        let res = sqlx::query(
+            "UPDATE handovers SET status = 'ACCEPTED', to_shift_id = $2, updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
+        )
+        .bind(id)
+        .bind(&b.id)
+        .execute(&mut **tx)
+        .await?;
+        if res.rows_affected() == 0 {
+            return Err(dom(HandoverError::NotPending));
+        }
+        self.load_in(tx, id).await
+    }
+
+    pub async fn reject_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        id: &str,
+        _now: DateTime<Utc>,
+    ) -> AppResult<Handover> {
+        let r: Row = sqlx::query_as(
+            "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
+             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_one(&mut **tx)
         .await?;
 
         let h = Handover {
@@ -272,146 +440,13 @@ impl HandoverService {
             "UPDATE handovers SET status = 'REJECTED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
         )
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
         if res.rows_affected() == 0 {
             return Err(dom(HandoverError::NotPending));
         }
 
-        tx.commit().await?;
-        self.load(id).await
-    }
-
-    pub async fn accept(&self, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover> {
-        let mut tx = self.pool.begin().await?;
-        let r: Row = sqlx::query_as(
-            "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        let h = Handover {
-            id: r.0,
-            branch_id: BranchId::new(r.1),
-            from_shift_id: r.2,
-            to_shift_id: r.3,
-            count_id: r.4,
-            receiver_id: r.5,
-            status: HandoverStatus::parse(&r.6),
-        };
-
-        if h.status != HandoverStatus::Pending {
-            return Err(dom(HandoverError::NotPending));
-        }
-
-        PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
-
-        let repo = self.counts.repo().clone();
-        let mut totals = repo.get_count_totals(&mut tx, &h.count_id).await?;
-        let held: Vec<(String, Decimal)> = sqlx::query_as(
-            "SELECT code, expected FROM shift_balances WHERE shift_id = $1 AND expected <> 0",
-        )
-        .bind(&h.from_shift_id)
-        .fetch_all(&mut *tx)
-        .await?;
-        for (code, exp) in held {
-            if !totals.iter().any(|t| t.currency.trim() == code.trim()) {
-                totals.push(CountTotal {
-                    currency: code,
-                    counted: Decimal::ZERO,
-                    expected: Some(exp),
-                    difference: None,
-                });
-            }
-        }
-        for t in &totals {
-            let cur: Option<Decimal> = sqlx::query_scalar(
-                "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-            )
-            .bind(&h.from_shift_id)
-            .bind(&t.currency)
-            .fetch_optional(&mut *tx)
-            .await?;
-            if cur != t.expected {
-                return Err(dom(CashError::BalancesChanged));
-            }
-        }
-        let open: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL \
-             AND id <> $2",
-        )
-        .bind(&h.receiver_id)
-        .bind(&h.from_shift_id)
-        .fetch_one(&mut *tx)
-        .await?;
-        if open > 0 {
-            return Err(dom(CashError::ShiftAlreadyOpen));
-        }
-        let mut updated = Vec::new();
-        let (mut counted, mut diffs) = (Vec::new(), Vec::new());
-        for t in totals {
-            let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
-            if !diff.is_zero() {
-                let pos: i32 = sqlx::query_scalar(
-                    "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
-                )
-                .bind(h.branch_id.as_str())
-                .fetch_one(&mut *tx)
-                .await?;
-                sqlx::query(
-                    "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
-                )
-                .bind(format!("EX-{}", uuid::Uuid::new_v4()))
-                .bind(h.branch_id.as_str())
-                .bind(pos)
-                .bind(serde_json::json!({
-                    "countId": h.count_id,
-                    "currency": t.currency.trim(),
-                    "difference": diff.to_string(),
-                }))
-                .execute(&mut *tx)
-                .await?;
-            }
-            CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
-            if !t.counted.is_zero() {
-                counted.push((t.currency.clone(), t.counted));
-            }
-            diffs.push((t.currency.clone(), t.counted, diff));
-            updated.push(CountTotal {
-                difference: Some(diff),
-                ..t
-            });
-        }
-        let shifts = self.counts.shifts();
-        shifts
-            .close_on_verified(&mut tx, &h.from_shift_id, &actor.user_id, &diffs, "", now)
-            .await?;
-        let b = shifts
-            .open_on_verified(
-                &mut tx,
-                &h.branch_id,
-                &h.receiver_id,
-                &h.count_id,
-                &counted,
-                now,
-            )
-            .await?;
-        repo.update_count_verified(&mut tx, &h.count_id, &actor.user_id, now, None, &updated)
-            .await?;
-        let res = sqlx::query(
-            "UPDATE handovers SET status = 'ACCEPTED', to_shift_id = $2, updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
-        )
-        .bind(id)
-        .bind(&b.id)
-        .execute(&mut *tx)
-        .await?;
-        if res.rows_affected() == 0 {
-            return Err(dom(HandoverError::NotPending));
-        }
-        tx.commit().await?;
-        self.load(id).await
+        self.load_in(tx, id).await
     }
 }
