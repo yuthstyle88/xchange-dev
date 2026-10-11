@@ -413,14 +413,28 @@ impl Shop {
         )
     }
 
-    /// The document counters, `key -> value`.
+    /// The document counters, `key -> value`, keyed as v2 keys them (`document-<mode>-<date>`).
+    ///
+    /// Ticket #670 (TX-2, D-4; changed by its ticket author claude/f03345fe on the lane
+    /// controller's ruling of 2026-10-10): v3 stores `document-<organization_id>-<mode>-<date>`.
+    /// The v2 fixture records v2's key, so the organisation is taken out here, and only the
+    /// organisation every save of these tests belongs to (OR-1's first) is accepted.
+    /// `tx_compat_children_test.rs` pins the stored key itself.
     pub async fn counters(&self) -> BTreeMap<String, String> {
+        const ORG_1: &str = "00000000-0000-0000-0000-000000000001";
         let rows: Vec<(String, i64)> =
             sqlx::query_as("SELECT key, value FROM counters WHERE key LIKE 'document-%'")
                 .fetch_all(&self.pool)
                 .await
                 .expect("read counters");
-        rows.into_iter().map(|(k, v)| (k, v.to_string())).collect()
+        rows.into_iter()
+            .map(|(k, v)| {
+                let rest = k
+                    .strip_prefix(&format!("document-{ORG_1}-"))
+                    .unwrap_or_else(|| panic!("counter {k} is not keyed by organisation {ORG_1}"));
+                (format!("document-{rest}"), v.to_string())
+            })
+            .collect()
     }
 
     pub async fn refs(&self, branch_id: &str, mode: Mode) -> Vec<String> {
@@ -447,6 +461,10 @@ impl Shop {
             ("counters", "key"),
             ("transactions", "document_ref"),
             ("transaction_files", "file_key, kind"),
+            // ticket #670 (TX-2): a save writes these too, and a refused save none of them
+            ("transaction_lines", "transaction_id, line_no"),
+            ("transaction_payments", "transaction_id, payment_no"),
+            ("receipts", "transaction_id, revision"),
             ("files", "key"),
             ("customers", "id"),
             ("shift_balances", "shift_id, code"),

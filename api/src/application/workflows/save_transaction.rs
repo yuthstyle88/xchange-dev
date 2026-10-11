@@ -448,9 +448,10 @@ impl SaveTransactionWorkflow {
                         form.reference_rate
                     };
 
+                    let org = PgTransactionRepository::organization_of_in(tx, &branch).await?;
                     let number = this
                         .transactions
-                        .next_number_in(tx, &DocumentRef::counter_key(mode, now))
+                        .next_number_in(tx, &DocumentRef::counter_key(org, mode, now))
                         .await?;
                     let document_ref = DocumentRef::format(mode, now, number);
                     let html = receipt_html(&form, &document_ref, &branch_name);
@@ -496,20 +497,42 @@ impl SaveTransactionWorkflow {
                         .await?;
                     if let Some(line_id) = stored_line_id {
                         sqlx::query(
-                            "UPDATE transactions SET published_rate_line_id = $1, unit_size = $2::numeric WHERE document_ref = $3",
+                            "UPDATE transactions SET published_rate_line_id = $1, unit_size = $2::numeric WHERE document_ref = $3 AND branch_id = $4",
                         )
                         .bind(line_id)
                         .bind(stored_unit_size.value())
                         .bind(&document_ref)
+                        .bind(branch.as_str())
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+                        sqlx::query(
+                            "UPDATE transaction_lines SET unit_size = $1::numeric \
+                             WHERE transaction_id = (SELECT id FROM transactions WHERE document_ref = $2 AND branch_id = $3)",
+                        )
+                        .bind(stored_unit_size.value())
+                        .bind(&document_ref)
+                        .bind(branch.as_str())
                         .execute(&mut **tx)
                         .await
                         .map_err(AppError::Database)?;
                     } else if stored_unit_size != UnitSize::ONE {
                         sqlx::query(
-                            "UPDATE transactions SET unit_size = $1::numeric WHERE document_ref = $2",
+                            "UPDATE transactions SET unit_size = $1::numeric WHERE document_ref = $2 AND branch_id = $3",
                         )
                         .bind(stored_unit_size.value())
                         .bind(&document_ref)
+                        .bind(branch.as_str())
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+                        sqlx::query(
+                            "UPDATE transaction_lines SET unit_size = $1::numeric \
+                             WHERE transaction_id = (SELECT id FROM transactions WHERE document_ref = $2 AND branch_id = $3)",
+                        )
+                        .bind(stored_unit_size.value())
+                        .bind(&document_ref)
+                        .bind(branch.as_str())
                         .execute(&mut **tx)
                         .await
                         .map_err(AppError::Database)?;

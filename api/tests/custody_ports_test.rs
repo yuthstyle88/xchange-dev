@@ -558,6 +558,15 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
         .execute(&mut *tx)
         .await
         .expect("delete the files of the exchange");
+    // TX-2 (#670, design §3.3–§3.5): a save also writes a line, a payment and a receipt, which
+    // refer to the exchange. Added by #670's ticket author (claude/f03345fe), lane controller's
+    // ruling of 2026-10-10; what this test asserts is unchanged.
+    for children in ["receipts", "transaction_payments", "transaction_lines"] {
+        sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {children}")))
+            .execute(&mut *tx)
+            .await
+            .unwrap_or_else(|e| panic!("delete the exchange's {children}: {e}"));
+    }
     sqlx::query("DELETE FROM transactions")
         .execute(&mut *tx)
         .await

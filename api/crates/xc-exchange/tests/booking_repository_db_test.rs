@@ -314,10 +314,10 @@ async fn seed_transaction(db: &TestDb, branch_id: &str, document_ref: &str, cust
         "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
              customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
              bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by) \
+             value_date, paid_at, recorded_at, recorded_by, completed_at) \
          VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'SELL', 'USD', \
              1000.50, 32.6, 32616.30, 0, 0, 32616.30, 0, 'Cash', '', '', 'owner', '', '', \
-             DATE '2026-10-06', $5, $5, 'owner')",
+             DATE '2026-10-06', $5, $5, 'owner', $5)",
     )
     .bind(document_ref)
     .bind(branch_id)
@@ -904,6 +904,13 @@ async fn dropping_the_two_tables_by_hand_loses_only_them() {
         .await,
         Ok(())
     );
+    // Downs run newest first: TX-2's migration 2 (#670, design §3.2) adds
+    // `transactions.booking_id REFERENCES bookings`, and its down drops that column before this
+    // migration's down runs. Added by #670's ticket author (claude/f03345fe), lane controller's
+    // ruling of 2026-10-10; what this test asserts about the two tables is unchanged.
+    run(db, "ALTER TABLE transactions DROP COLUMN booking_id")
+        .await
+        .expect("migration 2's down: transactions.booking_id goes first");
     assert!(
         run(db, "DROP TABLE bookings").await.is_err(),
         "referral_attributions.booking_id refers to bookings (#979), so its key goes first"
@@ -916,6 +923,7 @@ async fn dropping_the_two_tables_by_hand_loses_only_them() {
         .await,
         Ok(())
     );
+
     assert_eq!(run(db, "DROP TABLE bookings").await, Ok(()));
     assert_eq!(run(db, "DROP TABLE members").await, Ok(()));
     assert_eq!(shop.count("SELECT count(*) FROM branches").await, branches);
