@@ -402,7 +402,8 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
         Arc::new(
             SaveAction::new(save, devices, kiosk, custody)
                 .with_payment_check(payments)
-                .with_booking_check(bookings),
+                .with_booking_check(bookings)
+                .with_broker_feed(),
         ),
     ]
 }
