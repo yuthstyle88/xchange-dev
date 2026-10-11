@@ -150,7 +150,7 @@ impl BranchView for DevicesBranchView {
 
             // 5. Completed count (LIVE only)
             let completed_count: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM transactions WHERE branch_id = $1 AND mode = 'LIVE'",
+                "SELECT count(*) FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND status = 'COMPLETED'",
             )
             .bind(branch.as_str())
             .fetch_one(&pool)

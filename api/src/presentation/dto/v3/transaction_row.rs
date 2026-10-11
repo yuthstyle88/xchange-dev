@@ -5,7 +5,41 @@ use pos_error::AppError;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
+
+/// Select list for transaction list views (§7, §8).
+pub const ROW_COLUMNS: &str = "\
+    t.id, \
+    t.status, \
+    t.cancel_reason, \
+    t.document_ref, \
+    t.value_date, \
+    t.recorded_at, \
+    l.shop_side AS type, \
+    l.currency::text AS code, \
+    l.quantity::text AS amount, \
+    l.rate_snapshot::text AS rate, \
+    l.reference_rate::text AS reference_rate, \
+    l.unit_size::text AS unit_size, \
+    l.fee_thb::text AS fee, \
+    p.bank_fee_thb::text AS bank_fee, \
+    l.thb_amount::text AS principal, \
+    l.settle_thb::text AS settlement, \
+    p.method, \
+    p.reference AS payment_ref, \
+    t.customer_id, \
+    t.customer_name, \
+    t.staff_id, \
+    t.notes, \
+    t.shift_id, \
+    p.slip_file_key AS slip_key";
+
+/// From clause with joins for transaction list views (§7, §8).
+pub const ROW_FROM: &str = "\
+    transactions t \
+    JOIN transaction_lines l ON l.transaction_id = t.id AND l.line_no = 1 \
+    JOIN transaction_payments p ON p.transaction_id = t.id AND p.payment_no = 1";
 
 /// An exchange record as stored in the database / domain.
 #[derive(Debug, Clone)]
@@ -34,7 +68,10 @@ pub struct TransactionRecord {
 /// SQL row mapped from the `transactions` table (with joined slip key).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct TxSqlRow {
-    pub document_ref: String,
+    pub id: Uuid,
+    pub status: String,
+    pub cancel_reason: Option<String>,
+    pub document_ref: Option<String>,
     pub value_date: NaiveDate,
     pub recorded_at: DateTime<Utc>,
     pub r#type: String,
@@ -45,6 +82,8 @@ pub struct TxSqlRow {
     pub unit_size: String,
     pub fee: String,
     pub bank_fee: String,
+    pub principal: String,
+    pub settlement: String,
     pub method: String,
     pub payment_ref: String,
     pub customer_id: String,
@@ -68,23 +107,24 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
     type Error = AppError;
 
     fn try_from(r: TxSqlRow) -> Result<Self, Self::Error> {
+        let doc_ref = r.document_ref.clone().unwrap_or_else(|| r.id.to_string());
         let amount = r.amount.parse::<Decimal>().map_err(|e| {
             AppError::Internal(format!(
                 "invalid amount {:?} in transaction {}: {e}",
-                r.amount, r.document_ref
+                r.amount, doc_ref
             ))
         })?;
         let rate = Rate::parse(r.rate.trim()).map_err(|e| {
             AppError::Internal(format!(
                 "invalid rate {:?} in transaction {}: {e}",
-                r.rate, r.document_ref
+                r.rate, doc_ref
             ))
         })?;
         let reference_rate = match r.reference_rate {
             Some(ref s) if !s.trim().is_empty() => Some(Rate::parse(s.trim()).map_err(|e| {
                 AppError::Internal(format!(
                     "invalid reference_rate {:?} in transaction {}: {e}",
-                    s, r.document_ref
+                    s, doc_ref
                 ))
             })?),
             _ => None,
@@ -92,24 +132,24 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
         let unit_size = UnitSize::parse(r.unit_size.trim()).map_err(|e| {
             AppError::Internal(format!(
                 "invalid unit_size {:?} in transaction {}: {e}",
-                r.unit_size, r.document_ref
+                r.unit_size, doc_ref
             ))
         })?;
         let fee = r.fee.parse::<Decimal>().map_err(|e| {
             AppError::Internal(format!(
                 "invalid fee {:?} in transaction {}: {e}",
-                r.fee, r.document_ref
+                r.fee, doc_ref
             ))
         })?;
         let bank_fee = r.bank_fee.parse::<Decimal>().map_err(|e| {
             AppError::Internal(format!(
                 "invalid bank_fee {:?} in transaction {}: {e}",
-                r.bank_fee, r.document_ref
+                r.bank_fee, doc_ref
             ))
         })?;
 
         Ok(Self {
-            document_ref: r.document_ref,
+            document_ref: doc_ref,
             recorded_at: r.recorded_at,
             value_date: r.value_date,
             side: r.r#type,
@@ -276,6 +316,25 @@ impl TransactionRow {
             slip_url,
         }
     }
+
+    /// Builds a row from a SQL row and child lines/payments.
+    pub fn from_sql_row(r: TxSqlRow) -> Result<Self, AppError> {
+        let status = r.status.clone();
+        let cancel_reason = r.cancel_reason.clone();
+        let principal_str = r.principal.clone();
+        let settlement_str = r.settlement.clone();
+        let record = TransactionRecord::try_from(r)?;
+        let mut row = Self::from_record(&record);
+        row.status = status;
+        row.cancel_reason = cancel_reason;
+        if let Ok(p) = principal_str.parse::<Decimal>() {
+            row.principal = format!("{:.2}", p);
+        }
+        if let Ok(s) = settlement_str.parse::<Decimal>() {
+            row.settlement = format!("{:.2}", s);
+        }
+        Ok(row)
+    }
 }
 
 #[cfg(test)]
@@ -284,7 +343,10 @@ mod tests {
 
     fn sample_sql_row() -> TxSqlRow {
         TxSqlRow {
-            document_ref: "XC-TEST-001".into(),
+            id: Uuid::nil(),
+            status: "COMPLETED".into(),
+            cancel_reason: None,
+            document_ref: Some("XC-TEST-001".into()),
             value_date: NaiveDate::from_ymd_opt(2026, 10, 8).unwrap(),
             recorded_at: Utc::now(),
             r#type: "BUY".into(),
@@ -295,6 +357,8 @@ mod tests {
             unit_size: "1".into(),
             fee: "0.00".into(),
             bank_fee: "0.00".into(),
+            principal: "3210.00".into(),
+            settlement: "3210.00".into(),
             method: "Cash".into(),
             payment_ref: "".into(),
             customer_id: "C-1".into(),

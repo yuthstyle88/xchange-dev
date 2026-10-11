@@ -28,6 +28,9 @@ impl RolePermissions {
                 Permission::DrawerPassport,
                 Permission::SignedIn,
                 Permission::ConsentPolicyManage,
+                Permission::ReferralAttach,
+                Permission::ReferralSupersede,
+                Permission::ReferralRead,
             ],
             Role::Admin => &[
                 Permission::BranchesManage,
@@ -89,6 +92,8 @@ impl RolePermissions {
                 Permission::DeviceProcess,
                 Permission::DrawerPassport,
                 Permission::SignedIn,
+                Permission::ReferralAttach,
+                Permission::ReferralRead,
             ],
             Role::Finance => &[
                 Permission::CashManage,

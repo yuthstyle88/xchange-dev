@@ -16,7 +16,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_slips::{AdminSlipStatus, AdminSlipsFilter};
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRecord, TransactionRow, TxSqlRow,
+    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
 };
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
@@ -70,14 +70,26 @@ impl PagedView for AdminSlipsPagedView {
             }
 
             let before_cursor: Option<(DateTime<Utc>, i64)> = if let Some(before_id) = before {
-                let cursor: Option<(DateTime<Utc>, i64)> = sqlx::query_as(
-                    "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND document_ref = $2",
-                )
-                .bind(branch.as_str())
-                .bind(&before_id)
-                .fetch_optional(&pool)
-                .await
-                .map_err(AppError::Database)?;
+                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) = uuid::Uuid::parse_str(&before_id) {
+                    sqlx::query_as(
+                        "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND (document_ref = $2 OR id = $3)",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&before_id)
+                    .bind(uuid)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                } else {
+                    sqlx::query_as(
+                        "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND document_ref = $2",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&before_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                };
 
                 let Some(cursor) = cursor else {
                     return Ok(vec![]);
@@ -87,19 +99,11 @@ impl PagedView for AdminSlipsPagedView {
                 None
             };
 
-            let mut builder = sqlx::QueryBuilder::new(
-                "SELECT t.document_ref, t.value_date, t.recorded_at, t.type, t.code::text AS code, \
-                 t.amount::text AS amount, t.rate::text AS rate, t.reference_rate::text AS reference_rate, \
-                 t.unit_size::text AS unit_size, \
-                 t.fee::text AS fee, t.bank_fee::text AS bank_fee, t.method, t.payment_ref, \
-                 t.customer_id, t.customer_name, t.staff_id, t.notes, t.shift_id, \
-                 f.file_key AS slip_key \
-                 FROM transactions t \
-                 JOIN transaction_files f ON f.transaction_id = t.id AND f.kind = 'SLIP' \
-                 WHERE t.branch_id = ",
-            );
+            let mut builder = sqlx::QueryBuilder::new(format!(
+                "SELECT {ROW_COLUMNS} FROM {ROW_FROM} WHERE t.branch_id = "
+            ));
             builder.push_bind(branch.as_str());
-            builder.push(" AND t.mode = 'LIVE'");
+            builder.push(" AND t.mode = 'LIVE' AND t.status = 'COMPLETED' AND p.slip_file_key IS NOT NULL");
 
             if let Some((before_recorded_at, before_seq)) = before_cursor {
                 builder.push(" AND (t.recorded_at < ");
@@ -142,10 +146,10 @@ impl PagedView for AdminSlipsPagedView {
                      OR lower(normalize(t.customer_id, NFKC)) LIKE lower(normalize(");
                 builder.push_bind(pattern.clone());
                 builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(t.code::text, NFKC)) LIKE lower(normalize(");
+                     OR lower(normalize(l.currency::text, NFKC)) LIKE lower(normalize(");
                 builder.push_bind(pattern.clone());
                 builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(t.payment_ref, NFKC)) LIKE lower(normalize(");
+                     OR lower(normalize(p.reference, NFKC)) LIKE lower(normalize(");
                 builder.push_bind(pattern);
                 builder.push(", NFKC)) ESCAPE '\\')");
             }
@@ -158,8 +162,7 @@ impl PagedView for AdminSlipsPagedView {
 
             let mut rows = Vec::with_capacity(sql_rows.len());
             for r in sql_rows {
-                let record = TransactionRecord::try_from(r)?;
-                rows.push(TransactionRow::from_record(&record));
+                rows.push(TransactionRow::from_sql_row(r)?);
             }
 
             Ok(rows)

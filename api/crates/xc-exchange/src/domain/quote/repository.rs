@@ -17,4 +17,17 @@ pub trait QuoteRepository: Send + Sync {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
     ) -> impl std::future::Future<Output = AppResult<Option<Quote>>> + Send + 'a;
+
+    fn accept_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        transaction_id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
+
+    fn cancel_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
 }

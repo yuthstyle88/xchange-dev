@@ -109,7 +109,10 @@ impl SnapshotSources for ServiceSnapshotSources {
                 return Ok(Vec::new());
             }
             let unit_rows: Vec<(String, rust_decimal::Decimal)> = sqlx::query_as(
-                "SELECT document_ref, unit_size FROM transactions WHERE branch_id = $1 AND mode = 'LIVE'",
+                "SELECT t.document_ref, l.unit_size \
+                 FROM transactions t \
+                 JOIN transaction_lines l ON l.transaction_id = t.id \
+                 WHERE t.branch_id = $1 AND t.mode = 'LIVE' AND t.status = 'COMPLETED'",
             )
             .bind(branch.as_str())
             .fetch_all(&self.pool)

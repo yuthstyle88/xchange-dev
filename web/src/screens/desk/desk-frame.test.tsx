@@ -450,13 +450,13 @@ describe("the frame names no domain field and calls no network (controller condi
     },
   );
 
-  it("S5 main.tsx boots the frame: it collects the steps and renders DeskPage on the stub store", () => {
+  it("S5 main.tsx boots the frame: it collects the steps and renders DeskPage on the desk store", () => {
     const src = code(FRAME_SOURCES["./main.tsx"] ?? "");
     expect(src).toMatch(/collectSteps\s*\(/);
     expect(src).toMatch(
       /import\.meta\.glob\(\s*['"]\.\/steps\/\*\/step\.tsx['"]/,
     );
-    expect(src).toMatch(/createFrameStore\s*\(/);
+    expect(src).toMatch(/createDeskStore\s*\(/);
     expect(src).toMatch(/<DeskPage\b/);
   });
 });

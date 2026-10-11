@@ -1,0 +1,289 @@
+/* A05 users admin screen styling (OR-5b, LK-6) */
+
+.users-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+}
+
+.users-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.users-intro {
+  margin: 0;
+  color: #676a73;
+  font-size: 14px;
+}
+
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.users-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.users-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 6px 14px;
+  border: 1px solid #cdd0d7;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.users-btn-primary {
+  background: #a5003c;
+  color: #fff;
+  border-color: #a5003c;
+}
+
+.users-btn-secondary {
+  background: #f5f6f8;
+  color: #17181b;
+  border-color: #cdd0d7;
+}
+
+.users-btn-activate {
+  background: #187151;
+  color: #fff;
+  border-color: #187151;
+}
+
+.users-btn-grant {
+  background: #fff;
+  color: #187151;
+  border-color: #187151;
+}
+
+.users-btn-revoke {
+  background: #fff;
+  color: #c81e1e;
+  border-color: #f8b4b4;
+  padding: 2px 8px;
+  font-size: 12px;
+  min-height: 28px;
+}
+
+.users-btn-disable {
+  background: #fff;
+  color: #c81e1e;
+  border-color: #cdd0d7;
+}
+
+.users-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.users-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.users-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #676a73;
+}
+
+.users-table-scroll {
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.users-th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f9f9fa;
+  border-bottom: 2px solid #e5e6ea;
+  font-weight: 600;
+  color: #676a73;
+}
+
+.users-td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e6ea;
+  vertical-align: middle;
+}
+
+.users-roles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.users-role-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #f0f4f8;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.users-role-name {
+  font-weight: 600;
+}
+
+.users-role-branch {
+  color: #676a73;
+}
+
+.users-status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.users-status-active {
+  background: #edf7ed;
+  color: #276749;
+}
+
+.users-status-invited {
+  background: #fefcbf;
+  color: #744210;
+}
+
+.users-status-pending {
+  background: #feebc8;
+  color: #7b341e;
+}
+
+.users-status-disabled {
+  background: #fed7d7;
+  color: #9b2c2c;
+}
+
+.users-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.users-dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.users-dialog {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.users-dialog-title {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.users-dialog-intro {
+  margin: 0 0 16px 0;
+  color: #676a73;
+  font-size: 14px;
+}
+
+.users-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.users-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.users-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.users-input {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cdd0d7;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+.users-select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cdd0d7;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+.users-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.users-form-error {
+  padding: 10px 14px;
+  background: #fdf2f2;
+  border: 1px solid #f8b4b4;
+  border-radius: 6px;
+  color: #c81e1e;
+  font-size: 14px;
+}
+
+.users-form-success {
+  padding: 10px 14px;
+  background: #edf7ed;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  color: #276749;
+  font-size: 14px;
+}

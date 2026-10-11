@@ -15,6 +15,11 @@
 //!   actions in `http/v3/actions/` (V0-D, #508, §12.20.3 *Types*); each entry
 //!   writes its DTOs the same way, under the same rules. It may be empty until
 //!   the first action merges. (The controller's amendment for #508.)
+//! - `presentation::http::v3::COMMANDS` is the generated table of the commands in
+//!   `http/v3/commands/`; each entry writes its DTOs the same way, so a command's input and
+//!   answer types are committed too and cannot drift (#672, folded in by the xchange BE lane
+//!   controller claude/ad05bf8d on 2026-10-11 instead of a separate ticket, owner order A;
+//!   added by the #672 test writer claude/14cc24bd).
 //!
 //! No test here needs a database.
 
@@ -24,7 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use xchange::presentation::dto::v3::common;
-use xchange::presentation::http::v3::{ACTIONS, VIEWS};
+use xchange::presentation::http::v3::{ACTIONS, COMMANDS, VIEWS};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -73,6 +78,10 @@ fn export_everything(dir: &Path) {
     }
     for action in ACTIONS {
         (action.export_types)(dir).unwrap_or_else(|e| panic!("export action {}: {e}", action.name));
+    }
+    for command in COMMANDS {
+        (command.export_types)(dir)
+            .unwrap_or_else(|e| panic!("export command {}: {e}", command.name));
     }
 }
 

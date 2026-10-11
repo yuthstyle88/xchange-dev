@@ -40,9 +40,9 @@ impl CustodyPorts for PgCustodyPorts {
     /// - `rates_updated`: the `published_at` of the branch's current publication
     ///   (#604 ruling: no `rates` rows since RE-7), printed with milliseconds and
     ///   `Z`; empty when the branch has none;
-    /// - `pending_transactions`: always empty — an exchange is saved in one
-    ///   transaction and is never half there;
-    /// - `last_transaction`: the document number of the last live exchange of
+    /// - `pending_transactions`: the ids of the shift's unfinished exchanges
+    ///   (`DRAFT`, `PENDING_APPROVAL`, `CONFIRMED`), oldest first;
+    /// - `last_transaction`: the document number of the last COMPLETED live exchange of
     ///   `open_shift_id` in this branch.
     fn outside_facts<'a>(
         &'a self,
@@ -61,23 +61,40 @@ impl CustodyPorts for PgCustodyPorts {
             .await
             .map_err(AppError::Database)?;
 
-            let last_transaction: Option<String> = match open_shift_id {
-                Some(shift_id) => sqlx::query_scalar(
-                    "SELECT document_ref FROM transactions \
-                     WHERE branch_id = $1 AND shift_id = $2 ORDER BY seq DESC LIMIT 1",
-                )
-                .bind(branch.as_str())
-                .bind(shift_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?,
-                None => None,
+            let (last_transaction, pending_transactions) = match open_shift_id {
+                Some(shift_id) => {
+                    let last: Option<String> = sqlx::query_scalar(
+                        "SELECT document_ref FROM transactions \
+                         WHERE branch_id = $1 AND shift_id = $2 AND status = 'COMPLETED' \
+                         ORDER BY seq DESC LIMIT 1",
+                    )
+                    .bind(branch.as_str())
+                    .bind(shift_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    let pending: Vec<String> = sqlx::query_scalar(
+                        "SELECT id::text FROM transactions \
+                         WHERE branch_id = $1 AND shift_id = $2 \
+                           AND status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED') \
+                         ORDER BY seq ASC",
+                    )
+                    .bind(branch.as_str())
+                    .bind(shift_id)
+                    .fetch_all(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    (last, pending)
+                }
+                None => (None, Vec::new()),
             };
 
             Ok(OutsideFacts {
                 has_live_rate: published_at.is_some(),
                 rates_updated: published_at.map(format_iso).unwrap_or_default(),
-                pending_transactions: Vec::new(),
+                pending_transactions,
                 last_transaction,
             })
         })

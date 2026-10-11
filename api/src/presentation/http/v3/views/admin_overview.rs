@@ -14,7 +14,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{fixed2, round_cents, ExchangeArithmetic, ForeignAmount};
+use xc_kernel::money::{fixed2, round_cents};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
@@ -24,9 +24,16 @@ use crate::presentation::dto::v3::admin_overview::{
 };
 use crate::presentation::dto::v3::common::Period;
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRecord, TransactionRow, TxSqlRow,
+    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
+
+#[derive(sqlx::FromRow)]
+struct StatusCounts {
+    completed_count: i64,
+    pending_count: i64,
+    cancelled_count: i64,
+}
 
 struct AdminOverviewBranchView {
     pool: PgPool,
@@ -63,18 +70,46 @@ impl BranchView for AdminOverviewBranchView {
                 None => (false, None),
             };
 
-            let mut builder = sqlx::QueryBuilder::new(
-                "SELECT t.document_ref, t.value_date, t.recorded_at, t.type, t.code::text AS code, \
-                 t.amount::text AS amount, t.rate::text AS rate, t.reference_rate::text AS reference_rate, \
-                 t.unit_size::text AS unit_size, \
-                 t.fee::text AS fee, t.bank_fee::text AS bank_fee, t.method, t.payment_ref, \
-                 t.customer_id, t.customer_name, t.staff_id, t.notes, t.shift_id, \
-                 (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1) AS slip_key \
+            let mut count_builder = sqlx::QueryBuilder::new(
+                "SELECT \
+                 COALESCE(count(*) FILTER (WHERE t.status = 'COMPLETED'), 0) AS completed_count, \
+                 COALESCE(count(*) FILTER (WHERE t.status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED')), 0) AS pending_count, \
+                 COALESCE(count(*) FILTER (WHERE t.status = 'CANCELLED'), 0) AS cancelled_count \
                  FROM transactions t \
                  WHERE t.branch_id = ",
             );
+            count_builder.push_bind(branch.as_str());
+            count_builder.push(" AND t.mode = 'LIVE'");
+
+            if let Some(ref from) = filter.from
+                && !from.is_empty()
+                && let Ok(d) = NaiveDate::parse_from_str(from, "%Y-%m-%d")
+            {
+                count_builder.push(" AND t.value_date >= ");
+                count_builder.push_bind(d);
+            }
+
+            if let Some(ref to) = filter.to
+                && !to.is_empty()
+                && let Ok(d) = NaiveDate::parse_from_str(to, "%Y-%m-%d")
+            {
+                count_builder.push(" AND t.value_date <= ");
+                count_builder.push_bind(d);
+            }
+
+            let counts: StatusCounts = count_builder
+                .build_query_as()
+                .fetch_one(&pool)
+                .await
+                .map_err(AppError::Database)?;
+
+            let mut builder = sqlx::QueryBuilder::new("SELECT ");
+            builder.push(ROW_COLUMNS);
+            builder.push(" FROM ");
+            builder.push(ROW_FROM);
+            builder.push(" WHERE t.branch_id = ");
             builder.push_bind(branch.as_str());
-            builder.push(" AND t.mode = 'LIVE'");
+            builder.push(" AND t.mode = 'LIVE' AND t.status = 'COMPLETED'");
 
             if let Some(ref from) = filter.from
                 && !from.is_empty()
@@ -108,35 +143,46 @@ impl BranchView for AdminOverviewBranchView {
             let mut fees_cents = 0i128;
             let mut buy_count = 0u32;
             let mut sell_count = 0u32;
-            let mut completed_count = 0u32;
 
             let mut latest = Vec::with_capacity(std::cmp::min(5, sql_rows.len()));
 
             for sql_row in sql_rows {
-                let record = TransactionRecord::try_from(sql_row)?;
-                let is_buy = record.side == "BUY";
-                let foreign = ForeignAmount::from_decimal(record.amount);
-                let principal_cents =
-                    ExchangeArithmetic::thb(foreign, record.rate, record.unit_size).minor_i128();
-                let fee_cents = round_cents(record.fee)
+                let row = TransactionRow::from_sql_row(sql_row.clone())?;
+                let is_buy = sql_row.r#type == "BUY";
+                let principal = sql_row
+                    .principal
+                    .parse::<Decimal>()
+                    .map_err(|e| AppError::Internal(format!("invalid principal: {e}")))?;
+                let principal_cents = round_cents(principal)
+                    .ok_or_else(|| AppError::Internal("principal overflow".into()))?;
+                let fee = sql_row
+                    .fee
+                    .parse::<Decimal>()
+                    .map_err(|e| AppError::Internal(format!("invalid fee: {e}")))?;
+                let fee_cents = round_cents(fee)
                     .ok_or_else(|| AppError::Internal("fee overflow".into()))?;
+                let settlement = sql_row
+                    .settlement
+                    .parse::<Decimal>()
+                    .map_err(|e| AppError::Internal(format!("invalid settlement: {e}")))?;
+                let settle_cents = round_cents(settlement)
+                    .ok_or_else(|| AppError::Internal("settlement overflow".into()))?;
 
                 volume_cents += principal_cents;
                 fees_cents += fee_cents;
-                completed_count += 1;
 
                 if is_buy {
                     buy_principal_cents += principal_cents;
                     buy_count += 1;
-                    paid_cents += principal_cents - fee_cents;
+                    paid_cents += settle_cents;
                 } else {
                     sell_principal_cents += principal_cents;
                     sell_count += 1;
-                    received_cents += principal_cents + fee_cents;
+                    received_cents += settle_cents;
                 }
 
                 if latest.len() < 5 {
-                    latest.push(TransactionRow::from_record(&record));
+                    latest.push(row);
                 }
             }
 
@@ -170,9 +216,9 @@ impl BranchView for AdminOverviewBranchView {
                 sell_share,
                 buy_count,
                 sell_count,
-                completed_count,
-                cancelled_count: 0,
-                pending_count: 0,
+                completed_count: counts.completed_count as u32,
+                cancelled_count: counts.cancelled_count as u32,
+                pending_count: counts.pending_count as u32,
             };
 
             let period = Period {
@@ -182,7 +228,7 @@ impl BranchView for AdminOverviewBranchView {
 
             let status = AdminOverviewStatus {
                 shift_open,
-                pending_count: 0,
+                pending_count: counts.pending_count as u32,
                 opened_by,
             };
 
