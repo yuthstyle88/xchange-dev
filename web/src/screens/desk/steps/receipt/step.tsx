@@ -5,6 +5,7 @@ import { Match, Show, Switch, type JSX } from 'solid-js';
 import { screenT } from '../../../../shared/i18n';
 import type { DeskStore } from '../../desk-store';
 import type { DeskStep } from '../../steps';
+import { ReferralCodeField } from '../../referral/ReferralCodeField';
 import * as texts from './i18n';
 
 const t = screenT('desk.steps.receipt', texts);
@@ -36,6 +37,7 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
               <Show when={store.path.devicesLink}>
                 <a href={devicesHref()}>{t('devicesLink')}</a>
               </Show>
+              <ReferralCodeField transactionId={answer().id} api={store.api} />
             </div>
           )}
         </Match>
