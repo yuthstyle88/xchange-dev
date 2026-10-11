@@ -117,7 +117,7 @@ retention_policies(organization_id uuid NOT NULL, data_type text, period_days in
   rotating the encryption key never changes a lookup hash. Rotating the hash key is a re-hash of every row and is not
   part of this design (O-2).
 - **Data types for retention** (K6): `IDENTITY_VALUE` (a REVOKED identity row), `CONTACT` (a REVOKED phone or e-mail),
-  `CLOSED_CUSTOMER` (a CLOSED customer's identities and consents). #557 adds `VERIFICATION_DOCUMENT`. Transactions are
+  `CLOSED_CUSTOMER` (a CLOSED customer's identities and consents). #557 adds `VERIFICATION_PASSPORT` and `VERIFICATION_NATIONAL_ID` (`verification.md` V13). Transactions are
   financial records and are never purged by this job (§07 `:402` *"FK financial records ไม่ cascade delete"*).
 
 ### 4.2 States

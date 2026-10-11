@@ -48,7 +48,7 @@ like R-12's. The storage items S-1…S-5 (§12) are **not** decided.
 | Retention periods are settings, nothing is purged until a period is set | **decided by the owner** (for customer data) | `customer-identity-consent.md` U2 (`:16`) |
 | The PII key is a file on the v3 host, backups hold ciphertext only | **decided by the owner** (for identity values) | `customer-identity-consent.md` U3 (`:17`) |
 | One passport or Thai national ID per case (OQ-1); retention per document type as EXECUTIVE data (OQ-2); reviewer only, no provider (OQ-3); a VERIFIED case expires on the document's expiry date entered by the reviewer (OQ-4); a VERIFICATION_REVIEWER may review at the branch when the policy allows (OQ-5) | **decided by the owner** | #557 issuecomment-6103706908; #557 issuecomment-6095110325; §11 |
-| S-1…S-5: where the document store lives, encryption at rest, link lifetime, the desk's existing scans, the reason-code list | **open, storage part** (new work, BE fact *"no object store, no encryption at rest, no signed links"*) | §12 |
+| S-1…S-5: where the document store lives, encryption at rest, link lifetime, the desk's existing scans, the reason-code list | **S-1…S-4 decided by the owner 2026-10-11 (§12); S-5 open** (new work, BE fact *"no object store, no encryption at rest, no signed links"*) | §12 |
 
 ## 1. v3 today (measured at `b28725d1`)
 
@@ -604,10 +604,10 @@ and the lane controller chooses when to ask. Tickets that depend on them say so 
 
 | # | Item | Decided by the Blueprint | Needs the owner |
 |---|---|---|---|
-| S-1 | Where document bytes live | separate and private (§16 *"เก็บไฟล์แยก private object store"*); never in the database (hard constraint) | a directory on the v3 host outside `uploads/` (no new cost, ciphertext if S-2) **or** an object-store service (monthly cost, credentials, a deploy change) |
-| S-2 | Encrypt document bytes at rest | the field name `encrypted_object_ref` (§16) | whether to encrypt with the existing `PiiCipher` and `/etc/xc-v3/pii.key` (U3 decided this for identity values, not for files) |
-| S-3 | Link lifetime and binding | *"short-lived authorized download"* (§16) | the number of seconds [proposed 60 s], and whether a link is bound to the session |
-| S-4 | The desk's existing PASSPORT scans (`files` + `transaction_files`) | nothing: they are not `VerificationDocument`s | whether they move to class `IDENTITY` (read only with `IdentityDocumentRead`, which removes EXECUTIVE's access) and into the store; M2 and VF-11 exist only if "yes" |
+| S-1 | Where document bytes live | separate and private (§16 *"เก็บไฟล์แยก private object store"*); never in the database (hard constraint) | **decided (owner, 2026-10-11):** *"โฟลเดอร์บนเครื่อง v3 (แนะนำ)"*: a directory on the v3 host outside `uploads/` (#557, latest owner-answer comment) |
+| S-2 | Encrypt document bytes at rest | the field name `encrypted_object_ref` (§16) | **decided (owner, 2026-10-11):** *"เข้ารหัสด้วยกุญแจ PII เดิม (แนะนำ)"*: `PiiCipher` with `/etc/xc-v3/pii.key` (#557, latest owner-answer comment) |
+| S-3 | Link lifetime and binding | *"short-lived authorized download"* (§16) | **decided (owner, 2026-10-11):** *"60 วินาที ผูกกับ session (แนะนำ)"*: 60 s, bound to the session (#557, latest owner-answer comment) |
+| S-4 | The desk's existing PASSPORT scans (`files` + `transaction_files`) | nothing: they are not `VerificationDocument`s | **decided (owner, 2026-10-11):** *"ไม่ย้าย ตอนนี้ (แนะนำ)"*: the scans stay where they are; no M2, no VF-11 for now (#557, latest owner-answer comment) |
 | S-5 | The list of `decision_reason_code` values | the field (§16) | the codes [proposed: `DOCUMENT_UNREADABLE`, `DOCUMENT_EXPIRED`, `DETAILS_MISMATCH`, `DOCUMENT_NOT_ACCEPTED`, `SUSPECTED_FRAUD`, `OTHER`]; no free text is stored, because free text is where identity values leak |
 
 ## 13. Changes from the 2026-10-10 draft (`2beba1ea`)
