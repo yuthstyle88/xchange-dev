@@ -133,9 +133,9 @@ struct ShiftBalanceRow {
 
 #[derive(sqlx::FromRow)]
 struct TxRefRow {
-    type_: String,
-    principal: Decimal,
-    amount: Decimal,
+    shop_side: String,
+    thb_amount: Decimal,
+    quantity: Decimal,
     reference_rate: Option<Decimal>,
     unit_size: Decimal,
 }
@@ -321,7 +321,14 @@ impl BranchView for AdminCashBranchView {
                 .unwrap_or(Decimal::ZERO);
 
             let cash_received: Decimal = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(received), 0) FROM transactions WHERE shift_id = $1 AND method = 'Cash'",
+                "SELECT COALESCE(SUM(tl.settle_thb), 0) \
+                 FROM transaction_lines tl \
+                 JOIN transactions t ON t.id = tl.transaction_id \
+                 JOIN transaction_payments tp ON tp.transaction_id = t.id \
+                 WHERE t.shift_id = $1 \
+                   AND t.status = 'COMPLETED' \
+                   AND tl.shop_side = 'SELL' \
+                   AND tp.method = 'Cash'",
             )
             .bind(&shift_id)
             .fetch_one(&pool)
@@ -339,7 +346,14 @@ impl BranchView for AdminCashBranchView {
             let incoming = cash_received + thb_in;
 
             let cash_paid: Decimal = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(paid), 0) FROM transactions WHERE shift_id = $1 AND method = 'Cash'",
+                "SELECT COALESCE(SUM(tl.settle_thb), 0) \
+                 FROM transaction_lines tl \
+                 JOIN transactions t ON t.id = tl.transaction_id \
+                 JOIN transaction_payments tp ON tp.transaction_id = t.id \
+                 WHERE t.shift_id = $1 \
+                   AND t.status = 'COMPLETED' \
+                   AND tl.shop_side = 'BUY' \
+                   AND tp.method = 'Cash'",
             )
             .bind(&shift_id)
             .fetch_one(&pool)
@@ -366,7 +380,11 @@ impl BranchView for AdminCashBranchView {
 
             // 5. Reference summary over open shift's exchanges
             let tx_rows: Vec<TxRefRow> = sqlx::query_as(
-                "SELECT type as type_, principal, amount, reference_rate, unit_size FROM transactions WHERE shift_id = $1",
+                "SELECT tl.shop_side, tl.thb_amount, tl.quantity, tl.reference_rate, tl.unit_size \
+                 FROM transaction_lines tl \
+                 JOIN transactions t ON t.id = tl.transaction_id \
+                 WHERE t.shift_id = $1 \
+                   AND t.status = 'COMPLETED'",
             )
             .bind(&shift_id)
             .fetch_all(&pool)
@@ -382,11 +400,11 @@ impl BranchView for AdminCashBranchView {
                 if let Some(ref_rate) = tx.reference_rate {
                     with_reference += 1;
                     let (ref_principal, spread) = compute_reference_exchange(
-                        tx.amount,
+                        tx.quantity,
                         ref_rate,
                         tx.unit_size,
-                        tx.principal,
-                        tx.type_ == "BUY",
+                        tx.thb_amount,
+                        tx.shop_side == "BUY",
                     )?;
                     total_spread += spread;
                     total_ref_value += ref_principal;
