@@ -725,12 +725,17 @@ impl DeviceService {
         let now = cut_to_millis(now)?;
         let b = branch.as_str();
         if saved.cash {
-            let principal: Option<Decimal> =
-                sqlx::query_scalar("SELECT principal FROM transactions WHERE document_ref = $1")
-                    .bind(&saved.document_ref)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
+            let principal: Option<Decimal> = sqlx::query_scalar(
+                "SELECT SUM(l.thb_amount) \
+                 FROM transactions t \
+                 JOIN transaction_lines l ON l.transaction_id = t.id \
+                 WHERE t.document_ref = $1 AND t.branch_id = $2 AND t.status = 'COMPLETED'",
+            )
+            .bind(&saved.document_ref)
+            .bind(b)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
 
             let principal = principal.ok_or_else(|| {
                 AppError::Internal(format!("no stored transaction for {}", saved.document_ref))

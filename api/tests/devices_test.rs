@@ -116,6 +116,28 @@ async fn the_saved_row(
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("the saved row {document_ref}: {e}"));
+    sqlx::query(
+        "INSERT INTO transaction_lines ( \
+            id, organization_id, transaction_id, shop_side, currency, \
+            quantity, unit_size, rate_snapshot, thb_amount, fee_thb, \
+            settle_thb, line_no, created_at, updated_at \
+         ) \
+         SELECT \
+            gen_random_uuid(), t.organization_id, t.id, 'BUY', $3, \
+            $4::numeric, 1, $5::numeric, round($4::numeric * $5::numeric, 2), 0, \
+            round($4::numeric * $5::numeric, 2), 1, now(), now() \
+         FROM transactions t \
+         WHERE t.document_ref = $1 AND t.branch_id = $2 \
+         ON CONFLICT (transaction_id, line_no) DO NOTHING",
+    )
+    .bind(document_ref)
+    .bind(branch_id)
+    .bind(currency)
+    .bind(amount)
+    .bind(rate)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the saved row line {document_ref}: {e}"));
 }
 
 async fn db_has_branch(db: &Devices, branch_id: &str) -> bool {
