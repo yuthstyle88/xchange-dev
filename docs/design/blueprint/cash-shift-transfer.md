@@ -71,12 +71,13 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 | Open a shift: count (first of the day) | **TELLER** | `ShiftOperate`; counts for their own new shift |
 | Open a shift: verify | **BRANCH_MANAGER** (A6) | `ShiftCloseCertify`; not the counter |
 | Hand-over: count | outgoing **TELLER** | `ShiftOperate`; the shift's own teller |
-| Hand-over: verify | the **receiving TELLER** | `ShiftOperate`; is `handovers.receiver_id`, not the counter |
+| Hand-over: verify (accept) or reject | the **receiving TELLER** | `ShiftOperate`; is `handovers.receiver_id`, not the counter. Done with `handoverAccept` / `handoverReject` (§4.4), never `countVerify`: `countVerify` refuses a HANDOVER_OUT count (`OnlyThroughHandover`, `xc-cash/src/application/count/count_service.rs:294-297`) |
 | Close a shift: count / verify | **TELLER** / **BRANCH_MANAGER** (B01 *"ปิดและรับรอง"*) | `ShiftOperate` (own shift) / `ShiftCloseCertify`, not the counter |
 | Transfer: create, dispatch | **BRANCH_MANAGER** or **FINANCE** of the source branch | `CashManage` on the source branch |
 | Transfer: approve | within limit → a BRANCH_MANAGER of the source branch; above → EXECUTIVE; never the creator (A5) | `ApprovalsDecide` + `TransferApprovalPolicy` (PR 570 §5.2-§5.4) |
 | Transfer: receive (*"ผู้รับรับรองยอดจริง"*) | a person of the destination | `CashManage` on the destination branch; not the creator |
 | Transfer: reconcile | **FINANCE** | `FinanceReconcile`; not the creator or the receiver |
+| Transfer limit: save a policy version | **EXECUTIVE** (A5: *"the limit is data EXECUTIVE sets"*) | `CashTransferPolicySet`, **new**, EXECUTIVE only. No existing permission matches A5: `RatePolicySave` is also RATE_MANAGER's and `SystemSettings` also ADMIN's (`xc-auth/src/domain/access/role_permissions.rs`). Added by **CA-0p** (§9) |
 
 ### 3.2 Kept features (A2, A4)
 
@@ -87,6 +88,7 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 | Review and release a hold | **VERIFICATION_REVIEWER** | `VerificationReview` | MONITOR |
 | Set the cash target | **FINANCE** | `CashTargetSet` (FINANCE) | FINANCE |
 | Start service, cut-off | **BRANCH_MANAGER** | `BranchDayOperate` (BRANCH_MANAGER) | BACKEND |
+| Begin a draft after cut-off (`draftBegin`, §4.4) | **TELLER**, own OPEN shift (§4.4) | **not decided: ask the owner** (§10 Q11). A4's table had no row for drafts, so no A-rule names its permission | FRONT (`custody_machine.rs`, `BeginTransaction` arm) |
 | Safe opening count / verify | **FINANCE** / **BRANCH_MANAGER** | `CashManage` / `ShiftCloseCertify`; not the counter | FINANCE + MONITOR signature |
 | Drawer↔safe, external in/out: create, dispatch | **BRANCH_MANAGER** or **FINANCE** | `CashManage` | FRONT propose, BACKEND dispatch |
 | … approve | per A5 | `ApprovalsDecide` + `TransferApprovalPolicy` | signatures |
@@ -213,22 +215,65 @@ these are [proposed] and may be renamed in review without changing logic.
 | `countSubmit` | `POST /api/cash-counts` | per kind, §3 |
 | `countVerify` | `POST /api/cash-counts/{id}/verify` | §3.1 |
 | `handoverStart` | `POST /api/handovers` (creates the HANDOVER_OUT count) | TELLER |
+| `handoverAccept` | `POST /api/handovers/{id}/accept` `{id}` → `HandoverService::accept` (`handover_service.rs:286`): PENDING → ACCEPTED (§4.2) | the receiving TELLER (§3.1): `ShiftOperate` + `PersonRules` receiver |
+| `handoverReject` | `POST /api/handovers/{id}/reject` `{id}` → `HandoverService::reject` (`handover_service.rs:240`): PENDING → REJECTED (§4.2). **No reason field**: `reject` takes none and `handovers` has no column for one (§4.1) | the receiving TELLER (§3.1): `ShiftOperate` + `PersonRules` receiver |
 | `transferCreate` | `POST /api/cash-transfers` | BRANCH_MANAGER, FINANCE |
 | `transferSubmit` | `POST /api/cash-transfers/{id}/submit` (asks the approval core) | the creator |
 | `transferDispatch` / `transferReceive` / `transferReconcile` | `POST /api/cash-transfers/{id}/dispatch` · `/receive` · `/reconcile` | §3.1, §3.2 |
-| `transferPolicySave` | `PUT /api/cash-transfer-policy` | EXECUTIVE |
+| `transferPolicySave` | `PUT /api/cash-transfer-policy` `{limits: {CUR: str}}` | EXECUTIVE: `CashTransferPolicySet` (§3.1) |
 | `dayStartService` / `dayCutoff` / `dayTarget` | `POST /api/branch-day/start` · `/cutoff` · `/target` | §3.2 |
 | `clock` | `POST /api/attendance` | every staff role |
 | `holdCreate` / `holdRelease` | `POST /api/customer-holds` · `/{id}/release` | §3.2 |
-| `draftBegin` | `POST /api/tx-drafts` | TELLER, own open shift, after cut-off |
+| `draftBegin` | `POST /api/tx-drafts` | TELLER, own open shift, after cut-off; permission: §10 Q11 |
 
 Approval decisions use PR 570's `POST /api/approvals/{id}/decide`.
 
-**Where each command's permission is declared.** Not in `xc-auth/.../policy.rs`: PR 589's OR-4 owns that file and
-reduces it to the route → permission table of the compat routes. Each cash command and view names the `Permission`
-it requires in the shape PR 589 §4.1 gives v3 views (`REQUIRES: Permission`), read from one table of this design's
-own, `api/src/presentation/http/v3/commands/cash/permissions.rs` (`CASH_PERMISSIONS: &[(command NAME, Permission)]`,
-CA-8). Adding a cash command adds one row there and touches no file OR-4 owns.
+**Two tickets serve this table** (lane controller's rulings on #624, issuecomment-6104644196):
+- **CA-8:** the count, hand-over and transfer commands, including `handoverAccept`, `handoverReject` and
+  `transferPolicySave`.
+- **CA-8b:** the seven branch-day commands `dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`,
+  `holdRelease` and `draftBegin`. They wrap CA-7b's `BranchDayService` (§4.8), not v2's `CustodyService::command`,
+  whose machine still checks v2 roles (for example hold = FRONT or MONITOR) against A4.
+
+**`transferPolicySave` writes the version itself.** Nothing writes `cash_transfer_policy_versions` today: the table is
+CA-1's (`api/migrations/20261012100000_cash.sql:218`) and `xc-cash` only reads it
+(`xc-cash/src/infrastructure/transfer_repository.rs:390`). The command inserts one version row on the transaction the
+seam hands its `run`, as `ratePolicySave` writes `rate_policy_versions` (`api/src/presentation/http/v3/commands/rate_policy_save.rs`).
+The row holds `limits` `{CUR: max amount}` and `set_by` = the actor (§4.1). An amount with more places than its
+currency's `minor_unit` is refused (`TooManyDecimals`, §4.1 "Amounts"). It starts after **CA-0p** (§9), which adds the permission and this command's area row.
+
+**Where each command's permission is declared** (lane controller's ruling G2 on #624, the #573 precedent):
+- **Area rows.** Since OR-4b, a v3 command declares `INHERITS: (EntryPath, action)` (`api/src/presentation/http/v3/command.rs:37`).
+  `Policy::authorize` resolves the action through PL-0b's area rows.
+- **One area file per ticket**, never `policy.rs`:
+  - CA-0p: `api/crates/xc-auth/src/domain/policy/areas/cash_transfer_policy.rs` (the `transferPolicySave` row only);
+  - CA-8: `areas/cash.rs` (every other CA-8 command and view);
+  - CA-8b: `areas/branch_day.rs`.
+
+  `xc-auth/build.rs` scans the folder, so no `mod` line is needed.
+- **Each row is the union of what the service checks**, so the service's own refusal is still reached (rows in
+  #624's ruling).
+- **Entry path.** Every command and view here inherits `EntryPath::Rpc` (ruling G2a).
+  - Rpc takes the signed-in actor of either session (`extractors/actor.rs:204-236`, `view.rs:339-362`).
+  - StaffRpc refuses an Owner-kind EXECUTIVE+ADMIN, and `clock` and `transferPolicySave` need them.
+
+**How the commands are registered** (G6):
+- **Only flat files are registered.** `api/build.rs` registers only plain files directly in `http/v3/commands/`
+  (`build.rs:246-247`, `path.is_file()`), each with `pub fn register(` and `pub fn export_types(`
+  (`build_support/commands.rs:38-47`).
+- **No command subdirectory exists on main.** A group of commands is one flat file holding several `CommandAction`s,
+  e.g. `denomination_groups.rs` (three commands, `:51`, `:121`, `:196`; one `register` `:236`).
+- **Every file under `commands/` must hold a command.** `api/tests/or4_routes_guard_test.rs` walks `commands/`
+  recursively (`rust_files` `:38-46`, called from `v3_route_files` `:67-76`) and requires every non-`mod.rs` file
+  to declare `INHERITS` or `PUBLIC_ROUTE` (the test from `:78`).
+  A flat file holding only `register`/`export_types`, with the commands in child files, fails it (measured by the
+  reviewer of PR 1269, issuecomment-6104706651).
+- **So each ticket's commands all live in one flat file**, exactly as `denomination_groups.rs` does:
+  - CA-8: every CA-8 `CommandAction` in `api/src/presentation/http/v3/commands/cash.rs`;
+  - CA-8b: every CA-8b `CommandAction` in `api/src/presentation/http/v3/commands/branch_day.rs`.
+
+  Each file also holds the group's one `register` and `export_types`. Neither ticket creates a subdirectory of
+  `commands/`.
 
 ### 4.5 The shared transfer core (♻️)
 
@@ -277,6 +322,55 @@ filter `status`, `kind`), `handovers_pending` (branch), `my_shift` (the caller's
 balances). The staff page's `staff_floor` (`docs/design/xchange-v3-wave3-staff.md` §3.4) loses `mine`/custodian and
 gains `myShift`; its `staff_requests` view is replaced by these two lists (§10).
 
+### 4.8 The branch-day service (CA-7b)
+
+**Why it exists:**
+- The kept features of C9 need one application service that takes PR 589's `access::Actor` and persists what they
+  change.
+- CA-7's `BranchDay` (#623) is pure and stateless. It provides `start_service`, `cut_off`, `read_phase` and
+  `check_save` only (`xc-shift/src/domain/custody/branch_day.rs` on #623's branch), and persists nothing.
+- v2's `CustodyService::command` (`xc-shift/src/application/custody/service.rs:280`) takes a v2 `CustodyActor`. Its
+  machine checks v2 roles: `SetTarget` FINANCE, `Hold` FRONT or MONITOR, `Release` MONITOR, `BeginTransaction` FRONT
+  (`custody_machine.rs`). Several of these differ from A4 (§3.2).
+
+```rust
+// api/crates/xc-shift/src/application/branch_day/service.rs   [required names; proposed signatures]
+pub struct BranchDayService { /* the branch's transaction runner and the custody repository it already uses */ }
+impl BranchDayService {
+    pub async fn start_service(&self, who: &access::Actor, branch: &BranchId, input: StartService, now: DateTime<Utc>) -> AppResult<Phase>;
+    pub async fn cut_off(&self, who: &access::Actor, branch: &BranchId, now: DateTime<Utc>) -> AppResult<Phase>;
+    pub async fn set_target(&self, who: &access::Actor, branch: &BranchId, amounts: Balances, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn clock(&self, who: &access::Actor, branch: &BranchId, direction: ClockDirection, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn hold(&self, who: &access::Actor, branch: &BranchId, customer_id: &str, reason: &str, now: DateTime<Utc>) -> AppResult<String>;
+    pub async fn release(&self, who: &access::Actor, branch: &BranchId, hold_id: &str, note: &str, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn begin_draft(&self, who: &access::Actor, branch: &BranchId, input: BeginDraft, now: DateTime<Utc>) -> AppResult<String>;
+}
+```
+
+**What it persists, and how:**
+- **Tables.** It writes the tables §4.1 keeps as they are: `ops_state` (phase, target, cutoff, `service_opened_at`),
+  `attendance`, `customer_holds` and `tx_drafts`. It keeps v2's `ops_events` rows for the same steps.
+- **Transaction.** It writes on the transaction `BranchTx::run` hands its closure (§11 atomicity row).
+- **Inputs.** The inputs are v2's own (`xc-shift/src/domain/custody/commands/custody_command.rs`):
+  - `StartService {equipment_ready, rates_verified, rate_updated}`;
+  - `BeginDraft {side, currency, amount}`, from `BeginTransaction`.
+
+**Who may act:**
+- **Permissions.** Each method checks its permission through `Authorizer::check`, per §3.2. No role literal.
+  - `start_service`, `cut_off`: `BranchDayOperate`;
+  - `set_target`: `CashTargetSet`;
+  - `clock`: `AttendanceClock`;
+  - `hold`: `CustomerHoldPlace`;
+  - `release`: `VerificationReview`;
+  - `begin_draft`: the saver's own OPEN shift (§4.4), and its permission per §10 Q11.
+- **Phase changes.** `start_service` and `cut_off` call `BranchDay::start_service` / `cut_off`. The window check
+  (`BranchHours`, PR 589 OR-6) stays here, outside `BranchDay` (#623 §7).
+- **Other rules.** Every v2 rule that is not about roles stays as v2 has it (C9):
+  - a release needs an open hold and a non-empty note;
+  - clock-out needs a clock-in.
+
+No table, column or index changes (§8).
+
 ## 5. Class diagram
 
 ```mermaid
@@ -290,7 +384,11 @@ classDiagram
   class HandoverService { <<xc-cash application/handover/handover_service.rs>> }
   class CashTransfer { <<xc-cash domain/transfer/cash_transfer.rs  state machine>> }
   class TransferEnds { <<trait xc-cash domain/transfer/ends.rs  dyn-safe>> +kind() TransferKind }
-  class CashPermissions { <<api presentation/http/v3/commands/cash/permissions.rs  command → Permission>> }
+  class CashAreaRows { <<xc-auth domain/policy/areas/cash.rs  (EntryPath::Rpc, command) → Need  CA-8>> }
+  class BranchDayAreaRows { <<xc-auth domain/policy/areas/branch_day.rs  CA-8b>> }
+  class CashCommands { <<api presentation/http/v3/commands/cash.rs  every CA-8 command, one flat file>> }
+  class BranchDayCommands { <<api presentation/http/v3/commands/branch_day.rs  every CA-8b command, one flat file>> }
+  class BranchDayService { <<xc-shift application/branch_day/service.rs  CA-7b>> +start_service() +cut_off() +set_target() +clock() +hold() +release() +begin_draft() }
   class BranchTransfer { <<xc-cash domain/transfer/kinds/branch.rs>> }
   class SafeMove { <<xc-cash domain/transfer/kinds/safe.rs  DRAWER_TO_SAFE, SAFE_TO_DRAWER>> }
   class ExternalMove { <<xc-cash domain/transfer/kinds/external.rs  EXTERNAL_IN, EXTERNAL_OUT>> }
@@ -329,7 +427,14 @@ classDiagram
   CashCountService --> CashRepository
   TransferFlow --> CashRepository
   CashRepository <|.. PgCashRepository
-  CashPermissions --> Authorizer : each command's Permission
+  CashAreaRows --> Authorizer : each command's Need
+  BranchDayAreaRows --> Authorizer : each command's Need
+  CashCommands --> CashCountService
+  CashCommands --> HandoverService
+  CashCommands --> TransferFlow
+  BranchDayCommands --> BranchDayService
+  BranchDayService --> BranchDay : start_service, cut_off
+  BranchDayService --> Authorizer
 ```
 
 No service in this design writes a role name: access goes through PR 589's `Authorizer` (♻️: safety logic in one
@@ -342,7 +447,9 @@ the receiver of a hand-over, a teller's own shift).
 |---|---|---|
 | #550 / PR 589 `users` (migration 2, OR-2) | every person column (§4.1); CA-1's `teller_id` fill reads `users.legacy_employee_id` | none — CA-1 starts after OR-2, and **CA-1 merges before OR-7** (OR-7's cleanup migration `20261030100000` drops `legacy_employee_id`) |
 | #550 / PR 589 `access::Actor` (OR-2 type, supplied by OR-3's extractor) | every service signature (§4.5) | none — CA-2 starts after OR-2 and OR-3 |
-| #550 / PR 589 OR-4 `policy.rs` (the route table) | nothing: cash commands declare their permission in `commands/cash/permissions.rs` (§4.4) | not needed — CA-8 touches no file OR-4 owns; CA-8 starts after OR-4 so the `REQUIRES` shape is in place |
+| #550 / PR 589 OR-4 `policy.rs` (the route table) and OR-4b/PL-0b's area rows | nothing in `policy.rs`: CA-8 and CA-8b add their rows in `areas/cash.rs` and `areas/branch_day.rs` (§4.4) | not needed — neither touches a file OR-4 owns; both start after OR-4 |
+| CA-0p `CashTransferPolicySet` (§9) | `transferPolicySave`'s permission and its area row | none — `transferPolicySave` starts after it; the rest of CA-8 does not wait |
+| CA-7b `BranchDayService` (§4.8) | CA-8b's seven commands | none — CA-8b starts after CA-7b |
 | #550 / PR 589 `Role`, `Permission`, `RolePermissions`, `Authorizer` | every command | none — CA-2 onward start after PR 589's permission ticket. The four permissions this design needs beyond PR 589 §3.4's first list (`AttendanceClock`, `CustomerHoldPlace`, `CashTargetSet`, `BranchDayOperate`) are in PR 589 at `71f03ca`, owned by its OR-2 ticket |
 | #550 / PR 589 §6 `BranchHours::window(date)` | the branch day's time checks (today `custody_machine.rs:746`, `:804`, `:1195`) | ordering: PR 589's OR-6 edits those lines in `custody_machine.rs`; CA-7 moves them into `branch_day.rs`. **OR-6 merges first; CA-7 starts after it** and carries `BranchHours` along |
 | PR 570 AP-1 `xc-approval` | `TransferApprovalSubject` | none — CA-5 starts after AP-1 |
@@ -466,6 +573,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
+| CA-0p | the `CashTransferPolicySet` permission (§3.1): the variant, its role grant to EXECUTIVE only, and `transferPolicySave`'s area row. Same shape as `CashLimitsManage`: a variant in `permission.rs`, its grants in `role_permissions.rs`, and its rows in its own area file `areas/cash_limits.rs` | `api/crates/xc-auth/src/domain/access/permission.rs` (one variant), `api/crates/xc-auth/src/domain/access/role_permissions.rs` (the role grant: one line in EXECUTIVE's list), `api/crates/xc-auth/src/domain/policy/areas/cash_transfer_policy.rs` (new: `(EntryPath::Rpc, "transferPolicySave")` → `CashTransferPolicySet`), `api/crates/xc-auth/tests/cash_transfer_policy_permission_test.rs` (new) | this design; independent of CA-1…CA-8 |
 | CA-1 | schema (§4.1) and `denominations` face values (A7): migration M1, create only | `api/migrations/20261012100000_cash.sql`; `xc-shift/src/infrastructure/shift/shift_repository.rs` (`teller_id` read/write only, with the two-form opener lookup of §8 M1 item 3) | this design, PR 570 RU-1, PR 589 OR-2. **Merges before PR 589 OR-7** (§8 M1) |
 | CA-2 | the crate skeleton and `PersonRules` | `api/crates/xc-cash/{Cargo.toml,src/lib.rs}`, workspace `Cargo.toml` (one line), `xc-cash/src/domain/person_rules.rs`, its tests | PR 589 OR-2 (permissions incl. the four new ones, `access::Actor`, `Authorizer`). Not OR-3: CA-2/CA-3 take `access::Actor` as a value; only CA-8's routes need OR-3's extractor (lane controller's ruling, 2026-10-09) |
 | CA-3 | counts and shifts per teller | `xc-cash/src/domain/count/**`, `xc-cash/src/application/count/**`, `xc-cash/src/domain/repository.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-shift/src/application/shift/service.rs` (`open_on_verified`, `close_on_verified`, `apply_delta_for_teller_in`), `xc-shift/src/infrastructure/shift/shift_repository.rs` (`opened_by_count` on insert; v2's per-branch reads on `opened_by_count IS NULL`), `xc-cash/src/domain/posting.rs`, `xc-cash/src/infrastructure/interim_postings.rs`, `api/migrations/20261031080000_shift_per_teller.sql` (§8 M2) | CA-1, CA-2 |
@@ -473,9 +581,11 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-5 | the transfer core, BRANCH kind, approval subject and policy | `xc-cash/src/domain/transfer/{cash_transfer.rs,ends.rs,transfer_policy.rs,kinds/branch.rs,kinds/mod.rs}`, `xc-cash/src/application/transfer/**`, `xc-cash/src/application/approval/**` | CA-3, PR 570 AP-1 |
 | CA-6 | safe and external kinds | `xc-cash/src/domain/transfer/kinds/{safe.rs,external.rs}` | CA-5 |
 | CA-7 | the branch day rebound (C9), exchange save on the saver's shift | `xc-shift/src/domain/custody/branch_day.rs` (new, from the kept half of `custody_machine.rs`), `api/src/application/workflows/save_transaction.rs`, `custody_save_step.rs` | CA-3, PR 589 OR-6 |
-| CA-8 | commands and views (§4.4, §4.7) and their permissions | `api/src/presentation/http/v3/commands/cash/**` (including `permissions.rs`, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes) |
-| CA-9 | admin cash menu (B05) and transfer policy screen | `web/src/screens/admin/cash/**`, `web/src/screens/admin/cash-policy/**` | CA-8 |
-| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-9, and the `/staff` tickets moved to the new model |
+| CA-7b | the branch-day service (§4.8): the kept features of C9 on `access::Actor`, persisted | `api/crates/xc-shift/src/application/branch_day/**` (new), `xc-shift/src/application/mod.rs` (one line), `api/crates/xc-shift/tests/branch_day_service_test.rs` (new) | CA-7 (#623: `BranchDay::start_service` / `cut_off`), PR 589 OR-2 and OR-6 |
+| CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the four views of §4.7 | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
+| CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. **`draftBegin` alone** waits for the owner's answer to §10 Q11. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
+| CA-9 | admin cash menu (B05) and transfer policy screen | `web/src/screens/admin/cash/**`, `web/src/screens/admin/cash-policy/**` | CA-8 (the policy screen: including `transferPolicySave`) |
+| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model |
 
 **The `/staff` tickets** (#571, #572, #573–#580, `docs/design/xchange-v3-wave3-staff.md`) were cut against the request
 model. #572 is superseded (the new count commands take strings from the start). #571 keeps holds, attendance,
@@ -486,6 +596,7 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 
 | Ticket | Tests (red until implemented) |
 |---|---|
+| CA-0p | EXECUTIVE holds `CashTransferPolicySet`, and no other role does (RATE_MANAGER and ADMIN included); `Policy::authorize` on `(Rpc, "transferPolicySave")` grants EXECUTIVE and answers `roleNotAllowedHere` to every other role |
 | CA-1 | on a fixture DB with employee- and owner-opened shifts: every shift gets the right `teller_id` (employee → its user, owner → the EXECUTIVE + ADMIN user); an unmapped `opened_by` aborts; the binary's `teller_id` write resolves an employee id, `"owner"` and a plain `users.id` to the same user row, and an unknown id refuses the open (`tellerUnknown`); on a fresh database every migration applies in version order; `custody_requests` and `custodian_id` untouched; every new table has `organization_id` and its composite FK refuses another organisation's branch; face values seeded per A7; an amount with more places than `minor_unit` refused |
 | CA-2 | `PersonRules`: counter = verifier refused; hand-over verified only by its receiver; a teller acts only on their own shift. The role × permission matrix is PR 589's test, not this ticket's |
 | CA-3 | OPEN count verified by BRANCH_MANAGER opens the teller's shift; same person refused; two tellers hold two OPEN shifts; one teller cannot open a second shift at another branch (A8); a v2-opened shift does not count against A8, and two v2-opened OPEN shifts at one branch are still refused (M2's two indexes); a recount supersedes: only the newest count of (shift, kind) verifies; an exchange posts to the saver's shift only; CLOSE verify refused after a later exchange (`balancesChanged`); a non-zero difference writes an exception |
@@ -493,7 +604,9 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-5 | the five states in order, every illegal jump refused, no sixth state; a refused approval leaves the transfer DRAFT and it can be submitted again; `TransferEnds` held as `Arc<dyn TransferEnds>`; within limit approved by a BRANCH_MANAGER, above by EXECUTIVE only, never the creator; receipt with fewer notes writes an exception; dispatch beyond the drawer's expected refused |
 | CA-6 | each kept kind moves the right balances at dispatch and receipt (the money flow of `custody_machine.rs:420-634`, restated) |
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
-| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract |
+| CA-7b | each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on the branch transaction; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
+| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals` |
+| CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
 
@@ -501,7 +614,9 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 
 | # | Question | Why |
 |---|---|---|
-None open. Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not carried.
+| Q11 | Which permission may begin a transaction draft after cut-off (`draftBegin`)? §4.4 says TELLER, on their own OPEN shift. In the role table, TELLER alone holds `ExchangeTransact` (`role_permissions.rs`). | A4 approved §3.2's table, and it had no row for drafts, so no owner answer names this permission. CA-8b's `draftBegin` waits for it; the other six CA-8b commands do not |
+
+Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not carried.
 
 ## 11. Blueprint conformance (owner's rule: logic is fixed, only the look may change)
 
@@ -518,5 +633,9 @@ None open. Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old reques
 | §09 idempotency on mutations | `Idempotency-Key` per command (C8) |
 | §10 error codes | `CashError` maps to `VALIDATION_FAILED`, `OUT_OF_SCOPE`, `STALE_VERSION`, `STOCK_INSUFFICIENT`, `APPROVAL_REQUIRED`, `IDEMPOTENCY_CONFLICT` with Thai and English sentences (W10) |
 | §12 Cash & cost: method, limits, certifier | certifier A1/A6, limits A5 as data; cost method is #553's (Q10 of the mapping) |
+| §07 Handover(status): the receiver certifies or refuses | `handoverAccept` / `handoverReject` (§4.4) expose §4.2's two transitions, which CA-4's `HandoverService` already implements. Reject carries no reason because the Blueprint's Handover has no reason column, and none is added. **No schema change** |
+| §12 limits as data, set by EXECUTIVE (A5) | `transferPolicySave` writes a version row into the existing `cash_transfer_policy_versions` (M1). Its permission `CashTransferPolicySet` is held by EXECUTIVE only (§3.1). **No schema change**; the permission is code, added by CA-0p |
+| A2/A4 kept features (attendance, holds, cash target, start-service, cut-off, drafts) on the Blueprint's roles | CA-7b's `BranchDayService` (§4.8) checks §3.2's permissions on `access::Actor`; CA-8b exposes it. `draftBegin`'s permission waits for §10 Q11. **No schema change**: the tables are §4.1's kept ones |
+| — (build mechanics, no Blueprint item) | each command group lives in one flat file under `commands/`, as `denomination_groups.rs` does (§4.4, G6); logic unchanged. **No schema change** |
 | §07 organization_id on every row; created_at/updated_at on every table | created by CA-1's M1 on every new table, with PR 589 D-1's composite FK (§4.1) |
 | §07 Shift.user_id | named `teller_id` here (look only); references `users(id)` |

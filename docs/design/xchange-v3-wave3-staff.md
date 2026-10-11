@@ -20,7 +20,7 @@ the seam, which changes with this re-cut.
 | v2's roles (FRONT, BACKEND, MANAGER, MONITOR, FINANCE, RATES, SYSTEM…) and `StaffSight` keyed on them | The Blueprint's roles; every read and write checks a `Permission` through `Authorizer` | #550 §3.4, §4.2 |
 | Views inherit `(EntryPath::StaffRpc, "adminSnapshot")` | Views declare `REQUIRES: Permission` | #550 §4.1 (OR-4) |
 | Sign-in, first password and sign-out on `/api/staff/{login,password,logout,me}` | Identity for everyone: the BFF sign-in of OR-3; no password, no first-password card | #550 B2, §5 |
-| Writes on `POST /api/staff/rpc` (13 `ops*` actions) | `CommandAction`s with an `Idempotency-Key` (PR 570 CM-1), declared by CA-8 | #582 §4.4 |
+| Writes on `POST /api/staff/rpc` (13 `ops*` actions) | `CommandAction`s with an `Idempotency-Key` (PR 570 CM-1), declared by CA-8 (cash) and CA-8b (branch day, clock, holds, drafts) | #582 §4.4 |
 | Customer picked by plain passport number | Search through `xc-customer` by name, customer id, or a passport number matched by its keyed hash | #554 K4 |
 | A one-branch shift and a custodian | Shifts per teller; the floor shows **my** shift | #582 C1 |
 
@@ -88,10 +88,13 @@ once per call.
 
 ### 3.3 Writes
 
-None defined here. The page calls CA-8's commands (#582 §4.4): `clock`, `dayStartService`, `dayCutoff`, `dayTarget`,
-`countSubmit`, `countVerify`, `handoverStart`, `transferCreate`, `transferSubmit`, `transferDispatch`,
-`transferReceive`, `transferReconcile`, `holdCreate`, `holdRelease`. Approvals of a transfer are decided on PR 570's
-approvals screen, not here.
+None defined here. The page calls #582 §4.4's commands:
+- **CA-8's:** `countSubmit`, `countVerify`, `handoverStart`, `handoverAccept`, `handoverReject`, `transferCreate`,
+  `transferSubmit`, `transferDispatch`, `transferReceive`, `transferReconcile`.
+- **CA-8b's** (on CA-7b's branch-day service, #582 §4.8): `clock`, `dayStartService`, `dayCutoff`, `dayTarget`,
+  `holdCreate`, `holdRelease`.
+
+Approvals of a transfer are decided on PR 570's approvals screen, not here.
 
 ### 3.4 What does not change
 
@@ -130,7 +133,8 @@ classDiagram
   class CustomerService { <<xc-customer  #554 CI-4/CI-5>> +search(q) }
   class StaffViews { <<api v3/views: staff_me, staff_floor, staff_holds, staff_attendance, staff_customers>> }
   class CashViews { <<api v3/views  #582 CA-8: my_shift, cash_counts, cash_transfers, handovers_pending>> }
-  class CashCommands { <<api v3/commands/cash  #582 CA-8>> }
+  class CashCommands { <<api v3/commands/cash.rs  #582 CA-8>> }
+  class BranchDayCommands { <<api v3/commands/branch_day.rs  #582 CA-8b>> }
   class StaffPage { <<web screens/staff  shell + cards>> }
 
   StaffViews --> StaffFloorReader
@@ -143,6 +147,7 @@ classDiagram
   StaffPage --> StaffViews
   StaffPage --> CashViews
   StaffPage --> CashCommands
+  StaffPage --> BranchDayCommands
 ```
 
 ## 6. Behaviour tables (the contract the up-front tests pin)
@@ -157,8 +162,8 @@ classDiagram
 | B4 | start service / cut-off | `can(BranchDayOperate)`; start when `phase = READY`, cut-off when `phase = OPEN` |
 | B5 | target form; safe and target figures | form `can(CashTargetSet)`; figures when `staff_floor` answers them |
 | B6 | my shift: open / close count, hand-over | `can(ShiftOperate)` and clocked in; open when I have no OPEN shift, close and hand-over when I do |
-| B7 | counts to verify | `can(ShiftCloseCertify)` (open/close) or I am the hand-over's receiver; never my own count |
-| B8 | transfers | list `can(CashManage)`; create/dispatch/receive `can(CashManage)`; reconcile `can(FinanceReconcile)` |
+| B7 | counts to verify; hand-overs to accept | open/close counts: `can(ShiftCloseCertify)`, never my own count (C7). A hand-over whose receiver I am: accept or reject it (C7b), never through `countVerify`, which refuses a HANDOVER_OUT count (`OnlyThroughHandover`, `xc-cash/src/application/count/count_service.rs:294-297`) |
+| B8 | transfers | list `can(CashManage)`; create/dispatch/receive `can(CashManage)`; reconcile `can(FinanceReconcile)`. **Open (§11 O5):** a teller may receive a SAFE_TO_DRAWER move into their own drawer (`ShiftOperate` + own shift, #582 §3.2), but holds no `CashManage`, so this row gives them no list to find that move in |
 | B9 | hold form; holds list; release | form `can(CustomerHoldPlace)`; list `can(CustomerHoldPlace) \|\| can(VerificationReview)`; release `can(VerificationReview)` |
 | B10 | attendance log | `can(AttendanceClock)` (own rows; all rows for `BranchDayOperate`, server-decided) |
 | B11 | RATES card | the permission `staff_published_rates` requires, so the card is shown exactly to those the view answers: today `can(CompatRead)` (#550 `org-roles-branches.md:219`, the StaffRpc `adminSnapshot` row: T, BM, RM, VR, F, A). `CompatRead` retires with V4; whatever permission V4 gives that view replaces it here in the same change (no narrower audience is wanted) |
@@ -171,12 +176,13 @@ Every row sends a CA-8 command (#582 §4.4) with an `Idempotency-Key`; after suc
 | # | Control | Command | Body |
 |---|---|---|---|
 | C1 | `ลงเวลาเข้า` / `ลงเวลาออก` | `clock` | `{direction: IN \| OUT}` |
-| C2 | start service (ConfirmDialog, v2's sentence `S:22:2994`) | `dayStartService` | `{equipmentReady, ratesVerified, rateVersion}` per CA-8 |
+| C2 | start service (ConfirmDialog, v2's sentence `S:22:2994`) | `dayStartService` | `{equipmentReady, ratesVerified, rateVersion}` per CA-8b; `rateVersion` = the `published_at` (ISO-8601) of the branch's current rate publication that the page showed, v2's `rateUpdated` (#582 §9 CA-8b row) |
 | C3 | cut-off | `dayCutoff` | `{}` |
 | C4 | target | `dayTarget` | `{amounts: {CUR: str}}` |
 | C5 | open / close count | `countSubmit` | `{kind: OPEN \| CLOSE, lines: [{currency, denominationId, qty: str}]}` (S9) |
 | C6 | hand over to | `handoverStart` | `{receiverId, lines: [...]}` |
-| C7 | verify a count | `countVerify` | `{id}` |
+| C7 | verify an open or close count | `countVerify` | `{id}` |
+| C7b | accept / reject a hand-over I receive | `handoverAccept` / `handoverReject` | `{id}` / `{id}` (no reason: the hand-over has no column for one, #582 §4.4) |
 | C8 | new transfer / move | `transferCreate` then `transferSubmit` | `{kind, toBranchId?, lines: [...], note}` |
 | C9 | dispatch / receive / reconcile | `transferDispatch` / `transferReceive` / `transferReconcile` | `{id}` / `{id, lines: [{…, qtyReceived: str}]}` / `{id, note}` (ReasonDialog) |
 | C10 | place a hold | `holdCreate` | `{customerId, reason}` |
@@ -208,10 +214,10 @@ Replaces the first version's S-1…S-8 (issues #573, #574, #575, #577, #578, #57
 | **S-1** floor reader + views | §3.1 `staff_me`, `staff_floor`, `staff_holds`, `staff_attendance`; §3.2 | `api/src/application/staff_floor/**`, `api/src/application/mod.rs` (one line), the four views' view/DTO/generated files, `api/tests/v3_staff_views_test.rs` | #550 OR-2 and OR-4 (`Authorizer`, `REQUIRES`), OR-1 (`BranchHours`), #582 CA-3 (shifts per teller) |
 | **S-2** customer search view | `staff_customers` | its view/DTO/generated files, `api/tests/v3_staff_customers_view_test.rs` | #554 CI-5, S-1 |
 | **S-3** page shell | §4 root + `parts/` | `web/pages/staff.html`, `web/src/screens/staff/{main.tsx,StaffPage.tsx,staff.css,i18n.ts,cards.ts}` and their tests, `web/src/screens/staff/parts/**` | S-1, #550 OR-3 (sign-in screen) |
-| **S-4** floor card | B3–B5, C1–C4 | `web/src/screens/staff/floor/**` | S-3, #582 CA-8 |
-| **S-5** shift card | B6–B7, C5–C7 | `web/src/screens/staff/shift/**` | S-3, #582 CA-8 |
+| **S-4** floor card | B3–B5, C1–C4 | `web/src/screens/staff/floor/**` | S-3, #582 **CA-8b** (`clock`, `dayStartService`, `dayCutoff`, `dayTarget`) |
+| **S-5** shift card | B6–B7, C5–C7b | `web/src/screens/staff/shift/**` | S-3, #582 CA-8 |
 | **S-6** transfers card | B8, C8–C9 | `web/src/screens/staff/transfers/**` | S-3, #582 CA-8 |
-| **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 CA-8 |
+| **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 **CA-8b** (`holdCreate`, `holdRelease`) |
 | **S-8** RATES card, read only | B11, S10 | `web/src/screens/staff/rates/**` | S-3 and RE-3 (`staff_published_rates`, `rates.md:950`) |
 | **S-9** sign-in returns to `/staff` | S1's "and back to `/staff` after it" | `web/src/screens/login/home.ts`, `web/src/screens/login/LoginScreen.tsx`, `web/src/screens/login/main.tsx` and their tests | — (independent of S-3: no shared file, and the return leg works whether or not `/staff` has merged; #1223 ruling issuecomment-6103493211) |
 | **S-10** the server's sign-in redirect carries `next` (api) | S1, with S-9: `pages::to_login` (`api/src/presentation/pages.rs:666` at `a0778bae`) answers `303 Location: /login` with no `next`, so a signed-out visitor to a `signed-in`/`branch`-gated page (`screens.rs:130`/`:138`) never reaches S-9's return leg | `api/src/presentation/pages.rs`, `api/tests/login_redirect_next_test.rs` (new) | — (BE lane, claude/ad05bf8d dispatches) |
@@ -248,14 +254,17 @@ merged designs' views, and writes only through #582's commands.
 
 ## 11. Open items
 
-None of this page's own. Every former open item (O1–O4) was answered by the owner on 2026-10-09 (kept as S10, S9,
-S11, S12).
+| # | Open item | Who decides |
+|---|---|---|
+| O5 | B8: how does a teller find a SAFE_TO_DRAWER move they may receive? #582 §3.2 lets the receiving teller receive it (`ShiftOperate` + own shift), but B8's list needs `can(CashManage)`, which TELLER does not hold. Nothing in #582 or this design says where the teller sees that move, so no answer is written here. | the lane controller, or the owner if it is a business rule |
+
+Every former open item (O1–O4) was answered by the owner on 2026-10-09 (kept as S10, S9, S11, S12).
 
 ## 12. Checked against the XC Desk Blueprint v2
 
 | Blueprint item | Effect here |
 |---|---|
-| B01 `/desk/shift` — open/close/hand-over by currency and banknote, counted vs variance, certified | S9, B6–B7, C5–C7 over #582's counts and hand-overs |
+| B01 `/desk/shift` — open/close/hand-over by currency and banknote, counted vs variance, certified | S9, B6–B7, C5–C7b over #582's counts and hand-overs; the receiver certifies or refuses with C7b |
 | B05 `/desk/cash` — balances, transfers in transit | B8, C8–C9 over #582's transfers |
 | §02 roles and §03 scopes | S2: permissions through `Authorizer`, no role literal |
 | Identity for everyone | S1, S7 (OR-3) |
