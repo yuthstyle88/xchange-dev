@@ -11,6 +11,15 @@
 //! `api/migrations/` applied, so tests run in parallel and the migration is
 //! exercised from an empty schema every time. SQL in the migration and in the
 //! implementation must therefore name tables without a schema prefix.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `RateService::save_rate` and drops `rates` (`docs/design/blueprint/rates.md` §8 migration 6,
+//! §9). `play` no longer saves rates: a `saveRate` step is v2's direct save, whose replay is
+//! retired with `rates_test.rs`'s (§9 row "`rates_test.rs` … the direct save → publications"); the
+//! fixture keeps recording it. Two helpers are new: `TestDb::start_before_rates_drop` (every
+//! migration older than RE-7's drop, for tests of what an earlier migration did to `rates`) and
+//! `TestDb::publish` (a branch's next publication through the rate engine, draft → submit →
+//! publish, where a test used to save a counter rate).
 #![allow(dead_code)]
 
 use std::future::Future;
@@ -30,14 +39,25 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use tokio::sync::Semaphore;
+use xc_approval::application::approval_service::ApprovalService;
+use xc_approval::application::registry::ApprovalRegistry;
+use xc_approval::domain::approval_repository::ApprovalRepository;
+use xc_approval::domain::audit_log::AuditLog;
+use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Rate};
+use xc_rate::application::approval::rate_publication;
+use xc_rate::application::draft::rate_draft_service::RateDraftService;
+use xc_rate::application::publication::publish_service::PublishService;
+use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
 
 pub use xc_rate::application::branch::service::BranchService;
 pub use xc_rate::application::rate::service::RateService;
 pub use xc_rate::domain::branch::commands::create_branch::CreateBranch;
 pub use xc_rate::domain::branch::entities::branch::Branch;
-pub use xc_rate::domain::rate::commands::save_rate::SaveRate;
 pub use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 pub use xc_rate::domain::rate::entities::rate_change::RateChange;
 pub use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
@@ -136,9 +156,31 @@ pub struct TestDb {
 /// Schemas being migrated at once; every one opens its own pool.
 static STARTING: Semaphore = Semaphore::const_new(6);
 
+/// The description sqlx gives RE-7's migration 6 (`<version>_drop_rates.sql`, §8).
+const DROP_RATES: &str = "drop rates";
+
 impl TestDb {
     /// A pool confined to a fresh schema with `api/migrations/` applied.
     pub async fn start() -> Self {
+        Self::start_with(|_| true).await
+    }
+
+    /// The same, with only the migrations older than RE-7's `drop_rates` (all of them where it
+    /// does not exist yet): `rates` is there as every earlier migration left it.
+    pub async fn start_before_rates_drop() -> Self {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+        let all = Migrator::new(dir.as_path())
+            .await
+            .unwrap_or_else(|e| panic!("read migrations from {}: {e}", dir.display()));
+        let drop = all
+            .migrations
+            .iter()
+            .find(|m| m.description == DROP_RATES)
+            .map_or(i64::MAX, |m| m.version);
+        Self::start_with(move |version| version < drop).await
+    }
+
+    async fn start_with(keep: impl Fn(i64) -> bool) -> Self {
         let _slot = STARTING.acquire().await.expect("semaphore is never closed");
         let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
             panic!(
@@ -178,9 +220,17 @@ impl TestDb {
             .expect("connect to the test schema");
 
         let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-        Migrator::new(migrations.as_path())
+        let mut migrator = Migrator::new(migrations.as_path())
             .await
-            .unwrap_or_else(|e| panic!("read migrations from {}: {e}", migrations.display()))
+            .unwrap_or_else(|e| panic!("read migrations from {}: {e}", migrations.display()));
+        let kept: Vec<_> = migrator
+            .migrations
+            .iter()
+            .filter(|m| keep(m.version))
+            .cloned()
+            .collect();
+        migrator.migrations = std::borrow::Cow::Owned(kept);
+        migrator
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
@@ -204,6 +254,90 @@ impl TestDb {
     /// A rate service with a reference-rate source that always answers.
     pub fn rates(&self) -> RateService {
         self.rates_with(FakeSource::answering())
+    }
+
+    /// Publish `lines` (`(currency, buy, sell)`, MANUAL, each rate per the currency's
+    /// `unit_size`) as the next publication of `branch`, as the owner: draft → submit (an owner's
+    /// draft is approved at once) → publish, the only way rates are set since RE-7 #604. Answers
+    /// the new publication's id.
+    pub async fn publish(&self, branch_id: &str, lines: &[(&str, &str, &str)]) -> String {
+        let mut registry = ApprovalRegistry::new();
+        rate_publication::register(&mut registry, self.pool.clone());
+        let repository: Arc<dyn ApprovalRepository> =
+            Arc::new(PgApprovalRepository::new(self.pool.clone()));
+        let audit: Arc<dyn AuditLog> = Arc::new(PgAuditLog::new(self.pool.clone()));
+        let approvals = Arc::new(ApprovalService::new(registry, repository, audit));
+        let drafts = RateDraftService::new(self.pool.clone(), approvals);
+        let publisher = PublishService::new(self.pool.clone());
+        let owner = Actor::owner("owner");
+        let b = branch(branch_id);
+        let draft_lines: Vec<DraftLine> = lines
+            .iter()
+            .map(|(code, buy, sell)| {
+                let side = |t: &str| {
+                    LineSide::Manual(Rate::parse(t).unwrap_or_else(|e| panic!("{t}: {e:?}")))
+                };
+                DraftLine::new(
+                    CurrencyCode::parse(code).unwrap_or_else(|_| panic!("{code} is a currency")),
+                    side(buy),
+                    side(sell),
+                    Some("published by the test".to_owned()),
+                )
+            })
+            .collect();
+
+        let mut tx = self.pool.begin().await.expect("begin");
+        let draft = drafts
+            .create(&mut tx, &b, &owner, draft_lines)
+            .await
+            .unwrap_or_else(|e| panic!("create the draft: {}", e.code()));
+        tx.commit().await.expect("commit the draft");
+
+        let mut tx = self.pool.begin().await.expect("begin");
+        drafts
+            .submit(&mut tx, &b, &owner, &draft.id, &unique("key"))
+            .await
+            .unwrap_or_else(|e| panic!("submit the draft: {}", e.code()));
+        tx.commit().await.expect("commit the submit");
+
+        let mut tx = self.pool.begin().await.expect("begin");
+        let expected = self.current_version(&mut tx, branch_id).await;
+        let published = publisher
+            .publish(&mut tx, &b, &owner, &draft.id, expected)
+            .await
+            .unwrap_or_else(|e| panic!("publish the draft: {}", e.code()));
+        tx.commit().await.expect("commit the publish");
+        published.id.to_string()
+    }
+
+    async fn current_version(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch_id: &str,
+    ) -> Option<i32> {
+        sqlx::query_scalar(
+            "SELECT p.version FROM branches b JOIN rate_publications p \
+               ON p.id = b.current_publication_id WHERE b.id = $1",
+        )
+        .bind(branch_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .expect("read the current version")
+    }
+
+    /// `(currency, buy_rate, sell_rate)` of every line of `branch`'s current publication, by
+    /// currency; empty before its first publication.
+    pub async fn published_lines(&self, branch_id: &str) -> Vec<(String, String, String)> {
+        sqlx::query_as(
+            "SELECT trim(l.currency_code), l.buy_rate::text, l.sell_rate::text \
+               FROM branches b JOIN published_rate_lines l \
+                 ON l.publication_id = b.current_publication_id \
+              WHERE b.id = $1 ORDER BY l.currency_code",
+        )
+        .bind(branch_id)
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_else(|e| panic!("the published lines of {branch_id}: {e}"))
     }
 
     /// Mark a request id as abandoned in a branch, as `adminAbandonRequest` will.
@@ -492,7 +626,6 @@ pub fn as_fx_branch(b: &Branch) -> FxBranch {
 /// the services answered differently from v2.
 pub async fn play(scenario: &Scenario) -> Vec<String> {
     let db = TestDb::start().await;
-    let rates = db.rates();
     let branches = db.branches();
     let mut wrong = Vec::new();
 
@@ -507,62 +640,10 @@ pub async fn play(scenario: &Scenario) -> Vec<String> {
                     db.abandon(&step.branch, &step.request_id).await;
                 }
             }
-            "saveRate" => {
-                let code = step.code.trim().to_owned();
-                let previous_updated = match step.previous_updated.as_str() {
-                    "@stale" => STALE.to_owned(),
-                    "@current" => match rates.current(&branch_id).await {
-                        Ok(list) => list
-                            .iter()
-                            .find(|r| r.code.as_str() == code)
-                            .and_then(|r| r.updated_at)
-                            .map(iso)
-                            .unwrap_or_default(),
-                        Err(_) => String::new(),
-                    },
-                    literal => literal.to_owned(),
-                };
-                let cmd = SaveRate {
-                    request_id: step.request_id.clone(),
-                    code: step.code.clone(),
-                    buy: step.buy.clone(),
-                    sell: step.sell.clone(),
-                    partner_name: step.partner_name.clone().unwrap_or_default(),
-                    partner_cost: step.partner_cost.clone(),
-                    previous_updated,
-                };
-                let got = rates.save_rate(&branch_id, cmd, ACTOR, now).await;
-                compare_outcome(&mut wrong, &here, &step.v2_error, got.map(|_| ()));
-                if let Some(after) = &step.after {
-                    match rates.current(&branch_id).await {
-                        Ok(list) => {
-                            let row = list
-                                .iter()
-                                .find(|r| r.code.as_str() == code)
-                                .map(as_fx_rate);
-                            if row != after.rate {
-                                wrong.push(format!(
-                                    "{here}: current rate is {row:?}, v2 has {:?}",
-                                    after.rate
-                                ));
-                            }
-                        }
-                        Err(e) => wrong.push(format!("{here}: current() failed: {e:?}")),
-                    }
-                    match rates.history(&branch_id).await {
-                        Ok(list) => {
-                            let got: Vec<FxChange> = list.iter().map(as_fx_change).collect();
-                            if got != after.history {
-                                wrong.push(format!(
-                                    "{here}: history is {got:?}, v2 has {:?}",
-                                    after.history
-                                ));
-                            }
-                        }
-                        Err(e) => wrong.push(format!("{here}: history() failed: {e:?}")),
-                    }
-                }
-            }
+            "saveRate" => panic!(
+                "{here}: v2's direct save is not replayed since RE-7 #604 removed \
+                 `RateService::save_rate` (rates.md §9); rates come from publications"
+            ),
             "createBranch" => {
                 let cmd = CreateBranch {
                     request_id: step.request_id.clone(),

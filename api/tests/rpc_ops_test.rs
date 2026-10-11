@@ -81,6 +81,11 @@ const SWITCHED_ON_AT: usize = 15;
 /// answered these three by the state of the branch; v3 answers
 /// `คำขอไม่ถูกต้อง`. They are sent and held to that, not skipped.
 const UNKNOWN_NAME_BY_STATE: [usize; 3] = [2, 23, 40];
+/// Re-expected for RE-7 #604 by the ticket author: `adminSaveRate`, which RE-7 removes (known
+/// difference, design §9 removes the action). The harness holds it to the unknown-name answer
+/// (`rpc_common::Rule::Retired`) and publishes the rate v2 accepted, so the later steps keep
+/// their meaning; it is counted with the differences.
+const RETIRED_SAVE_RATE: [usize; 1] = [70];
 /// `saveTransaction`: ticket P2-S. Left to the harness's own rule.
 const SAVES: [usize; 3] = [99, 100, 101];
 /// The accepted uploads of the day, stored behind the routes.
@@ -210,7 +215,14 @@ async fn the_custody_day_is_answered_as_v2_answered_it() {
     } else {
         SAVES.to_vec()
     };
-    assert_eq!(tally.differences, UNKNOWN_NAME_BY_STATE);
+    let mut differences: Vec<usize> = UNKNOWN_NAME_BY_STATE
+        .iter()
+        .chain(RETIRED_SAVE_RATE.iter())
+        .copied()
+        .collect();
+    differences.sort_unstable();
+    assert_eq!(fixture.step(70).action.as_deref(), Some("adminSaveRate"));
+    assert_eq!(tally.differences, differences);
     assert_eq!(tally.part_two, saves_in_the_gap);
     let excluded: Vec<usize> = tally.excluded.iter().map(|(n, _)| *n).collect();
     let mut expected_excluded: Vec<usize> = OWNERS_DOOR.chain(UPLOADS).collect();
@@ -228,9 +240,10 @@ async fn the_custody_day_is_answered_as_v2_answered_it() {
     // OR-4b (#767, C3): #19, the owner's adminMoveStock, is refused by role
     assert_eq!(tally.blueprint, vec![19]);
     // 134 − 9 of the owner's door − 15 uploads − 3 saves − 3 differences − 1 refused by role
+    // − 1 retired save (RE-7)
     assert_eq!(
         tally.replayed.len(),
-        LAST - 9 - 15 - saves_in_the_gap.len() - 3 - 1
+        LAST - 9 - 15 - saves_in_the_gap.len() - 3 - 1 - RETIRED_SAVE_RATE.len()
     );
     let held_to_v2: Vec<usize> = custody_steps
         .iter()

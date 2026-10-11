@@ -19,10 +19,8 @@ use serde_json::Value;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::branch::repositories::branch_repository::BranchRepository;
-use xc_rate::domain::rate::repositories::rate_repository::RateRepository;
 use xc_rate::domain::validation::{BAD_TEXT, NO_SUCH_BRANCH, validate_request_id};
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
-use xc_rate::infrastructure::rate::rate_repository::PgRateRepository;
 use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
@@ -67,7 +65,6 @@ pub trait AbandonedRequests: Send + Sync + 'static {
 pub struct AbandonRequest {
     branch_tx: BranchTx,
     branches: PgBranchRepository,
-    rates: PgRateRepository,
     shifts: Arc<PgShiftRepository>,
     abandoned: PgAbandonedRequests,
 }
@@ -96,7 +93,6 @@ impl AbandonRequest {
         let pool = branch_tx.pool().clone();
         Self {
             branches: PgBranchRepository::new(pool.clone()),
-            rates: PgRateRepository::new(pool.clone()),
             shifts: Arc::new(PgShiftRepository::new(pool)),
             abandoned: PgAbandonedRequests,
             branch_tx,
@@ -154,7 +150,8 @@ impl AbandonRequest {
     }
 
     /// Whether a write was made with `request_id`: a branch anywhere, or in
-    /// `branch` a rate, a shift (opening or closing) or a stock movement.
+    /// `branch` a shift (opening or closing) or a stock movement. (A direct rate
+    /// save was one too, until RE-7 #604 retired it with the `rates` table.)
     pub(crate) async fn is_applied(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -164,14 +161,6 @@ impl AbandonRequest {
         if self
             .branches
             .find_by_request(tx, request_id)
-            .await?
-            .is_some()
-        {
-            return Ok(true);
-        }
-        if self
-            .rates
-            .find_by_request_tx(tx, branch.as_str(), request_id)
             .await?
             .is_some()
         {

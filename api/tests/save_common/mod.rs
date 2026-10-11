@@ -309,24 +309,14 @@ impl Shop {
     /// The counter rate of a currency from now on (the table is ticket T5a's).
     ///
     /// Amended for #757 (RE-4c, `docs/design/blueprint/rates.md` D-3, §4.9 R4): the counter rate is
-    /// the line of the branch's current publication, no longer the newest `rates` row. So, after
-    /// the row the direct save appends (per 1), the branch's newest row of every currency is
-    /// published as the next publication, per `unit_size` (× `currencies.unit_size`, as
-    /// migration 4 converts them) — the rate set the counter had before RE-4, now published.
+    /// the line of the branch's current publication, no longer the newest `rates` row.
+    ///
+    /// Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`): the
+    /// rate, per 1 as the direct save took it, is published × `currencies.unit_size` (as
+    /// migration 4 converts a row) over the branch's current publication, with no `rates` row —
+    /// the same rate set the newest rows published before.
     pub async fn set_rate(&self, branch_id: &str, currency: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
-        )
-        .bind(branch_id)
-        .bind(currency)
-        .bind(buy)
-        .bind(sell)
-        .bind(unique("rate"))
-        .execute(&self.pool)
-        .await
-        .expect("insert into rates");
-        rates_re4c_common::publish_newest_rates(&self.pool, branch_id).await;
+        rates_re4c_common::set_counter_rate(&self.pool, branch_id, currency, buy, sell).await;
     }
 
     pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {

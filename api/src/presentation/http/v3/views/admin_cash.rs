@@ -260,13 +260,28 @@ impl BranchView for AdminCashBranchView {
                 balance_map.insert(r.code, (r.opening, r.expected));
             }
 
-            let rated_codes: Vec<String> = sqlx::query_scalar(
-                "SELECT DISTINCT trim(code) FROM rates WHERE branch_id = $1",
+            // RE-7 #604 (ruling Q1 → B): the "rated" codes are the branch's current
+            // publication's lines; while the branch has no publication, the currency
+            // register, so the default list never empties before the first publication
+            let current_publication: Option<uuid::Uuid> = sqlx::query_scalar(
+                "SELECT current_publication_id FROM branches WHERE id = $1",
             )
             .bind(&branch_id)
-            .fetch_all(&pool)
+            .fetch_optional(&pool)
             .await
-            .map_err(AppError::Database)?;
+            .map_err(AppError::Database)?
+            .flatten();
+            let rated_codes: Vec<String> = match current_publication {
+                Some(publication) => sqlx::query_scalar(
+                    "SELECT DISTINCT trim(currency_code) FROM published_rate_lines \
+                     WHERE publication_id = $1",
+                )
+                .bind(publication)
+                .fetch_all(&pool)
+                .await
+                .map_err(AppError::Database)?,
+                None => register_currencies(),
+            };
 
             let codes_to_show = if show_all {
                 register_currencies()

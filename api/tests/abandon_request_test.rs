@@ -13,12 +13,19 @@
 //! The writes that apply a request are made through the services on main
 //! (`BranchService`, `RateService`, `ShiftService`), never by hand: what
 //! "applied" means is whatever those services store.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (design `docs/design/blueprint/rates.md` §8
+//! migration 6, §9): `RateService::save_rate` and `adminSaveRate` are gone, so a rate is no
+//! longer a write that carries a request id. Where a test applied a request with a rate, it
+//! applies it with another write of the branch (an open shift); a recorded `adminSaveRate` step
+//! is a known difference (design §9 removes the action): it is answered `RETIRED` and saves
+//! nothing, so a later abandon of its id is `CANCELLED` where v2 answered `APPLIED`. The two
+//! tests about the rate save itself are removed with it (see the notes where they stood).
 
 mod compat_common;
 
 use std::future::Future;
 use std::path::Path;
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,10 +43,7 @@ use tokio::sync::{Barrier, Semaphore, oneshot};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
-use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
-use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
@@ -64,6 +68,10 @@ const BAD_REQUEST_ID: &str = "รหัสคำขอไม่ถูกต้�
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
 const ABANDONED: &str = "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด";
 const NOT_YOUR_ROLE: &str = "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้";
+/// Re-expected for RE-7 #604: what this replay answers for a recorded `adminSaveRate`, which no
+/// use case takes any more (known difference: design §9 removes the action). The route's own
+/// answer, that of a name v2 does not know, is held by `rates_re7_retire_test.rs`.
+const RETIRED: &str = "adminSaveRate is retired (RE-7)";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -118,22 +126,6 @@ fn refusal<T: std::fmt::Debug>(result: AppResult<T>) -> String {
     match result {
         Err(AppError::Domain(sentence)) => sentence,
         other => panic!("expected Err(AppError::Domain(<sentence>)), got {other:?}"),
-    }
-}
-
-/// A reference-rate source that always answers, with no rows.
-struct QuietSource;
-
-impl RateSource for QuietSource {
-    fn fetch(&self) -> Pin<Box<dyn Future<Output = AppResult<ReferenceRates>> + Send + '_>> {
-        Box::pin(async {
-            Ok(ReferenceRates {
-                source: "test".to_string(),
-                fetched_at: "2026-10-06T00:00:00.000Z".to_string(),
-                kind: "test".to_string(),
-                rows: Vec::new(),
-            })
-        })
     }
 }
 
@@ -217,10 +209,6 @@ impl TestDb {
         BranchService::new(self.branch_tx())
     }
 
-    fn rates(&self) -> RateService {
-        RateService::new(self.branch_tx(), Arc::new(QuietSource))
-    }
-
     fn shifts(&self) -> ShiftService {
         ShiftService::new(
             Arc::new(PgShiftRepository::new(self.pool.clone())),
@@ -255,15 +243,6 @@ impl TestDb {
             .execute(&self.pool)
             .await
             .expect("insert into branches");
-    }
-
-    async fn save_rate(&self, branch_id: &str, id: &str) -> AppResult<()> {
-        within(
-            "save a rate",
-            self.rates()
-                .save_rate(&branch(branch_id), usd_rate(id), ACTOR, at(0)),
-        )
-        .await
     }
 
     async fn open_shift(&self, branch_id: &str, id: &str) -> AppResult<Shift> {
@@ -311,18 +290,6 @@ impl TestDb {
             .await
             .expect("drop the test schema");
         pool.close().await;
-    }
-}
-
-fn usd_rate(id: &str) -> SaveRate {
-    SaveRate {
-        request_id: id.to_string(),
-        code: "USD".to_string(),
-        buy: "32.1".to_string(),
-        sell: "32.6".to_string(),
-        partner_name: String::new(),
-        partner_cost: None,
-        previous_updated: String::new(),
     }
 }
 
@@ -394,21 +361,8 @@ async fn replay(db: &TestDb, step: &Step) -> Result<String, String> {
             .abandon(&branch, payload, ACTOR, now)
             .await
             .map(|r| r.as_str().to_string()),
-        Some("adminSaveRate") => {
-            let cmd = SaveRate {
-                request_id: field(payload, "requestId"),
-                code: field(payload, "code"),
-                buy: field(payload, "buy"),
-                sell: field(payload, "sell"),
-                partner_name: field(payload, "partnerName"),
-                partner_cost: None,
-                previous_updated: field(payload, "previousUpdated"),
-            };
-            db.rates()
-                .save_rate(&branch, cmd, ACTOR, now)
-                .await
-                .map(|()| "saved".to_string())
-        }
+        // re-expected for RE-7 #604: known difference (design §9 removes the action)
+        Some("adminSaveRate") => Err(AppError::Domain(RETIRED.to_string())),
         Some("adminOpenShift") => match OpenShift::from_payload(payload) {
             Ok(cmd) => db
                 .shifts()
@@ -520,11 +474,25 @@ async fn engine_actions_fixture_145_to_152_answer_as_v2_did() {
     let fixture = Fixture::load("rpc/engine_actions.json");
 
     // The two writes the recorded steps ask about: #23 saved a rate, #40 opened a shift.
+    // Re-expected for RE-7 #604 (known difference: design §9 removes the action): #23 saves
+    // nothing in v3, so #150, which asks about its id, is answered CANCELLED and writes a row.
     for n in [23, 40] {
-        let step = fixture.step(n);
-        assert_eq!(step.status, Some(200), "rpc/engine_actions.json#{n}");
-        assert_eq!(replay(&db, step).await, Ok("saved".to_string()), "#{n}");
+        assert_eq!(
+            fixture.step(n).status,
+            Some(200),
+            "rpc/engine_actions.json#{n}"
+        );
     }
+    assert_eq!(
+        replay(&db, fixture.step(23)).await,
+        Err(RETIRED.to_string()),
+        "#23"
+    );
+    assert_eq!(
+        replay(&db, fixture.step(40)).await,
+        Ok("saved".to_string()),
+        "#40"
+    );
 
     let steps: Vec<&Step> = (145..=152).map(|n| fixture.step(n)).collect();
     let actions: Vec<&str> = steps.iter().filter_map(|s| s.action.as_deref()).collect();
@@ -542,14 +510,21 @@ async fn engine_actions_fixture_145_to_152_answer_as_v2_did() {
         ]
     );
 
+    // re-expected for RE-7 #604: v3's answer where it differs from v2's, by step
+    let v3_differs = |n: usize| match n {
+        148 => Some(Err(RETIRED.to_string())),
+        150 => Some(Ok("CANCELLED".to_string())),
+        _ => None,
+    };
     let mut answers = Vec::new();
     for step in &steps[..7] {
         assert_eq!(step.sent_as, "owner", "#{}", step.n);
-        let expected = recorded(step);
+        let expected = v3_differs(step.n).unwrap_or_else(|| recorded(step));
         let actual = replay(&db, step).await;
         assert_eq!(actual, expected, "rpc/engine_actions.json#{}", step.n);
-        answers.push(expected);
+        answers.push(recorded(step));
     }
+    // what v2 answered, spelled out; #148 and #150 are the two v3 answers differently
     assert_eq!(
         answers,
         [
@@ -570,11 +545,14 @@ async fn engine_actions_fixture_145_to_152_answer_as_v2_did() {
     assert_ne!(by_front.sent_as, "owner");
     assert_eq!(recorded(by_front), Err(NOT_YOUR_ROLE.to_string()));
 
+    // re-expected for RE-7 #604: #150 wrote the row of #23's id; no rate is saved anywhere
     assert_eq!(
         db.keys().await,
-        vec![pair(MAIN, "00000000-0000-4000-8000-0000000a003f")]
+        vec![
+            pair(MAIN, "00000000-0000-4000-8000-0000000a0011"),
+            pair(MAIN, "00000000-0000-4000-8000-0000000a003f"),
+        ]
     );
-    assert_eq!(db.count("rates").await, 1);
     assert_eq!(db.count("shifts").await, 1);
     db.finish().await;
 }
@@ -745,7 +723,7 @@ async fn a_cancelled_request_is_refused_by_every_write_of_the_branch() {
     assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Cancelled);
     assert_eq!(db.abandon("B2", &id, 0).await.unwrap(), Cancelled);
 
-    assert_eq!(refusal(db.save_rate(MAIN, &id).await), ABANDONED);
+    // re-expected for RE-7 #604: the rate save is no longer a write of the branch
     assert_eq!(refusal(db.open_shift("B2", &id).await), ABANDONED);
     let movement = MoveStock::from_payload(&json!({
         "requestId": id, "shiftId": shift.id, "currency": "USD",
@@ -783,7 +761,6 @@ async fn a_cancelled_request_is_refused_by_every_write_of_the_branch() {
         ABANDONED
     );
 
-    assert_eq!(db.count("rates").await, 0);
     assert_eq!(db.count("stock_movements").await, 0);
     assert_eq!(db.count("shifts").await, 1);
     assert_eq!(db.count("branches").await, 2);
@@ -794,19 +771,10 @@ async fn a_cancelled_request_is_refused_by_every_write_of_the_branch() {
 // APPLIED
 // ---------------------------------------------------------------------------
 
-#[tokio::test(flavor = "multi_thread")]
-async fn an_applied_rate_request_is_applied_and_no_row_is_written() {
-    let db = TestDb::start().await;
-    let id = request_id();
-    db.save_rate(MAIN, &id).await.unwrap();
-    assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Applied);
-    assert_eq!(db.abandon(MAIN, &id, 1).await.unwrap(), Applied);
-    assert_eq!(db.rows().await, vec![]);
-    // and the request is still what it was: sent again, it is the same request
-    db.save_rate(MAIN, &id).await.unwrap();
-    assert_eq!(db.count("rates").await, 1);
-    db.finish().await;
-}
+// Re-expected for RE-7 #604 by the ticket author: `an_applied_rate_request_is_applied_and_no_row_
+// is_written` is removed. It applied a request by `RateService::save_rate`, which RE-7 removes
+// (design §9); no rate carries a request id any more. That a recorded rate save's id is then
+// CANCELLED is held by `engine_actions_fixture_145_to_152_answer_as_v2_did` (#150).
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_applied_open_shift_request_is_applied() {
@@ -883,9 +851,8 @@ async fn a_request_applied_in_another_branch_is_not_applied_here() {
     let db = TestDb::start().await;
     db.seed_branch("B2").await;
 
-    // a rate, an open shift, a movement and a closed shift — all in B2
-    let rate = request_id();
-    db.save_rate("B2", &rate).await.unwrap();
+    // an open shift, a movement and a closed shift — all in B2 (re-expected for RE-7 #604: a
+    // rate is no longer a write that carries a request id)
     let opened = request_id();
     let shift = db.open_shift("B2", &opened).await.unwrap();
     let moved = request_id();
@@ -909,7 +876,7 @@ async fn a_request_applied_in_another_branch_is_not_applied_here() {
         .await
         .unwrap();
 
-    let ids = [&rate, &opened, &moved, &closed];
+    let ids = [&opened, &moved, &closed];
     for id in ids {
         assert_eq!(db.abandon(MAIN, id, 3).await.unwrap(), Cancelled, "in MAIN");
         assert_eq!(db.abandon("B2", id, 4).await.unwrap(), Applied, "in B2");
@@ -927,11 +894,12 @@ async fn the_same_id_given_up_in_one_branch_is_free_in_another() {
     let id = request_id();
     assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Cancelled);
 
-    // B2 knows nothing of it: the id can be applied there …
-    db.save_rate("B2", &id).await.unwrap();
+    // B2 knows nothing of it: the id can be applied there … (re-expected for RE-7 #604: by an
+    // open shift, as the rate save is gone)
+    db.open_shift("B2", &id).await.unwrap();
     assert_eq!(db.abandon("B2", &id, 1).await.unwrap(), Applied);
     // … and stays given up in MAIN
-    assert_eq!(refusal(db.save_rate(MAIN, &id).await), ABANDONED);
+    assert_eq!(refusal(db.open_shift(MAIN, &id).await), ABANDONED);
     assert_eq!(db.abandon(MAIN, &id, 2).await.unwrap(), Cancelled);
     assert_eq!(db.keys().await, vec![pair(MAIN, &id)]);
     db.finish().await;
@@ -1074,55 +1042,9 @@ fn sentence_of<T>(result: AppResult<T>) -> Result<(), String> {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn abandoning_and_saving_a_rate_at_once_exactly_one_wins() {
-    let db = TestDb::start().await;
-    for round in 0..24 {
-        let branch_id = format!("R{round}");
-        db.seed_branch(&branch_id).await;
-        let id = request_id();
-        let start = Arc::new(Barrier::new(2));
-
-        let abandoning = {
-            let (use_case, start) = (db.abandoning(), Arc::clone(&start));
-            let (b, payload) = (branch(&branch_id), json!({ "requestId": id }));
-            tokio::spawn(async move {
-                start.wait().await;
-                use_case.abandon(&b, &payload, ACTOR, at(1)).await
-            })
-        };
-        let saving = {
-            let (rates, start) = (db.rates(), Arc::clone(&start));
-            let (b, cmd) = (branch(&branch_id), usd_rate(&id));
-            tokio::spawn(async move {
-                start.wait().await;
-                rates.save_rate(&b, cmd, ACTOR, at(1)).await
-            })
-        };
-        let abandoned = within("abandon", abandoning).await.expect("no panic");
-        let saved = within("save", saving).await.expect("no panic");
-
-        let rows_abandoned: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM abandoned_requests WHERE branch_id = $1")
-                .bind(&branch_id)
-                .fetch_one(&db.pool)
-                .await
-                .unwrap();
-        let rows_rates: i64 = sqlx::query_scalar("SELECT count(*) FROM rates WHERE branch_id = $1")
-            .bind(&branch_id)
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-        exactly_one_won(
-            &format!("round {round}"),
-            abandoned,
-            sentence_of(saved),
-            rows_abandoned,
-            rows_rates,
-        );
-    }
-    db.finish().await;
-}
+// Re-expected for RE-7 #604 by the ticket author: `abandoning_and_saving_a_rate_at_once_exactly_
+// one_wins` is removed with `RateService::save_rate` (design §9). The same race against the
+// writes that remain is held by the tests below.
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn abandoning_and_opening_a_shift_at_once_exactly_one_wins() {

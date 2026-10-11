@@ -1,47 +1,30 @@
 //! Rate repository trait.
+//!
+//! Since RE-7 #604 (rates.md §8 migration 6, §9) there is no `rates` table and no direct save:
+//! a branch's counter rates are its current publication's lines, read here per 1 unit for the
+//! v2 shapes that print rates per 1 (the snapshot, the desk config, the kiosk's `manage`).
 
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate};
+use xc_kernel::money::Rate;
 
-use crate::domain::rate::entities::rate_change::RateChange;
-
+/// One currency of a branch's current publication, per 1 unit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurrentRateRow {
     pub code: String,
-    pub buy: Rate,
-    pub sell: Rate,
+    /// `buy_rate / unit_size`; `None` when the side is not published.
+    pub buy: Option<Rate>,
+    /// `sell_rate / unit_size`; `None` when the side is not published.
+    pub sell: Option<Rate>,
+    /// The publication's `published_at`: one instant for every line.
     pub updated_at: DateTime<Utc>,
-    pub request_id: String,
+    /// `source_snapshot.partner.name`, `""` when the line has no partner.
     pub partner_name: String,
+    /// `source_snapshot.partner.cost`, `None` when the line has no partner or no cost.
     pub partner_cost: Option<Rate>,
-    pub reference: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SavedRateRecord {
-    pub code: String,
-    pub buy: Rate,
-    pub sell: Rate,
-    pub partner_name: String,
-    pub partner_cost: Option<Rate>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewRate<'a> {
-    pub branch_id: &'a str,
-    pub code: &'a str,
-    pub buy: Rate,
-    pub sell: Rate,
-    pub partner_name: &'a str,
-    pub partner_cost: Option<Rate>,
-    pub reference: serde_json::Value,
-    pub updated_at: DateTime<Utc>,
-    pub updated_by: &'a str,
-    pub request_id: &'a str,
 }
 
 pub trait RateRepository: Send + Sync {
@@ -49,57 +32,10 @@ pub trait RateRepository: Send + Sync {
         &self,
     ) -> impl Future<Output = AppResult<Vec<(String, String, Option<String>)>>> + Send;
 
+    /// The branch's current publication, one row per currency (the `ALL` group; of a tiered
+    /// currency, its first tier, as every list shows it). Empty when the branch has none.
     fn current_rates(
         &self,
         branch: &BranchId,
     ) -> impl Future<Output = AppResult<Vec<CurrentRateRow>>> + Send;
-
-    fn history(&self, branch: &BranchId)
-    -> impl Future<Output = AppResult<Vec<RateChange>>> + Send;
-
-    fn is_abandoned(
-        &self,
-        branch_id: &str,
-        request_id: &str,
-    ) -> impl Future<Output = AppResult<bool>> + Send;
-
-    fn is_abandoned_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch_id: &str,
-        request_id: &str,
-    ) -> impl Future<Output = AppResult<bool>> + Send;
-
-    fn find_by_request(
-        &self,
-        branch_id: &str,
-        request_id: &str,
-    ) -> impl Future<Output = AppResult<Option<SavedRateRecord>>> + Send;
-
-    fn find_by_request_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch_id: &str,
-        request_id: &str,
-    ) -> impl Future<Output = AppResult<Option<SavedRateRecord>>> + Send;
-
-    fn newest_updated_at(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch_id: &str,
-        code: &str,
-    ) -> impl Future<Output = AppResult<Option<DateTime<Utc>>>> + Send;
-
-    fn insert(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        rate: NewRate<'_>,
-    ) -> impl Future<Output = AppResult<()>> + Send;
-
-    fn rate_in(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
-        code: CurrencyCode,
-    ) -> impl Future<Output = AppResult<Option<(Rate, Rate)>>> + Send;
 }

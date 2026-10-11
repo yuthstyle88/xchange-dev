@@ -1,6 +1,5 @@
-//! What one exchange is worth in baht.
-
-use rust_decimal::RoundingStrategy;
+//! What one exchange is worth in baht. `Quote::per_unit` prices on the published line; the
+//! per-1 `Quote::compute` of the direct save was retired by RE-7 #604 (rates.md §9).
 
 use super::exchange_arithmetic::ExchangeArithmetic;
 use super::foreign_amount::ForeignAmount;
@@ -30,42 +29,6 @@ pub struct Quote {
 }
 
 impl Quote {
-    pub fn compute(side: Side, amount: Money, rate: Rate, fee: Money) -> Result<Quote, QuoteError> {
-        if amount.is_zero() {
-            return Err(QuoteError::ZeroAmount);
-        }
-
-        let raw_principal = amount.value() * rate.value();
-        let mut principal_dec =
-            raw_principal.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-        principal_dec.rescale(2);
-        let principal = Money::from_decimal(principal_dec);
-
-        match side {
-            Side::Buy => {
-                if fee > principal {
-                    return Err(QuoteError::FeeExceedsPrincipal);
-                }
-                let mut paid_dec = principal.value() - fee.value();
-                paid_dec.rescale(2);
-                Ok(Quote {
-                    principal,
-                    received: Money::ZERO,
-                    paid: Money::from_decimal(paid_dec),
-                })
-            }
-            Side::Sell => {
-                let mut received_dec = principal.value() + fee.value();
-                received_dec.rescale(2);
-                Ok(Quote {
-                    principal,
-                    received: Money::from_decimal(received_dec),
-                    paid: Money::ZERO,
-                })
-            }
-        }
-    }
-
     pub fn per_unit(
         side: Side,
         amount: ForeignAmount,

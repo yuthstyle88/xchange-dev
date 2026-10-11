@@ -24,6 +24,14 @@
 //!   `:437`, `:481`.
 //!
 //! A changed answer in an assertion below names its rule (C1–C9 of §4.2, or D-4).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
+//! (`docs/design/blueprint/rates.md` §9 row "`xc-auth/tests/policy_test.rs:386,705` |
+//! `adminSaveRate == ["RATES"]` | … `adminSaveRate` removed in RE-7"). Both fixtures record v2
+//! and its B1 mapping, which had the name, so they are unchanged; the three replays that ask
+//! Policy each recorded case skip it (`retired_by_re7`, still counted, so the totals stand).
+//! `what_each_role_may_write_on_both_paths`, `the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow`
+//! and `a_staff_path_admits_whoever_holds_its_role` now expect it refused. Nothing else changed.
 
 mod policy_common;
 
@@ -34,6 +42,14 @@ use xc_auth::domain::access::scope_rule::ScopeRule;
 
 const B2: &str = "B2";
 const B9: &str = "B9";
+/// How many mapped cases name adminSaveRate (RE-7 #604 retires them from the replay).
+const RETIRED_CASES: usize = 22;
+
+/// Known difference: RE-7 #604 removes adminSaveRate (rates.md §9). The fixtures keep v2's name;
+/// what Policy answers for it now is pinned by the hand-written tests below, not by the replay.
+fn retired_by_re7(name: &str) -> bool {
+    name == "adminSaveRate"
+}
 
 fn front() -> Actor {
     staff(Role::Teller, B2)
@@ -371,6 +387,7 @@ fn every_mapped_case_is_answered_as_mapped() {
     let m = mapped_fixture();
     let mut wrong = Vec::new();
     let mut asked_n = 0;
+    let mut retired = 0;
     for c in m
         .cases
         .iter()
@@ -379,6 +396,12 @@ fn every_mapped_case_is_answered_as_mapped() {
     {
         let who = caller(c.roles.as_deref());
         let name = asked(&c.route, &c.path, &c.action);
+        if retired_by_re7(&name) {
+            // known difference: RE-7 #604 removes adminSaveRate (rates.md §9)
+            asked_n += 1;
+            retired += 1;
+            continue;
+        }
         let named = c.named.as_deref().map(branch);
         let got = answer(Policy::authorize(
             who.as_ref(),
@@ -397,6 +420,7 @@ fn every_mapped_case_is_answered_as_mapped() {
         asked_n += 1;
     }
     assert_eq!(asked_n, 1425 - 402 + 285);
+    assert_eq!(retired, RETIRED_CASES, "the mapped cases of adminSaveRate");
     assert!(
         wrong.is_empty(),
         "{} of {} answers differ from the mapped fixture; the first ones:\n{}",
@@ -468,6 +492,15 @@ fn every_call_runs_on_the_branch_named_in_scope() {
         .chain(&m.branch_cases)
         .filter(|c| c.owner.is_none())
     {
+        if retired_by_re7(&asked(&c.route, &c.path, &c.action)) {
+            // known difference: RE-7 #604 removes adminSaveRate (rates.md §9); counted, not asked
+            if c.branch.is_some() {
+                ran += 1;
+            } else if c.change.as_deref() == Some("D4") {
+                refused += 1;
+            }
+            continue;
+        }
         let who = caller(c.roles.as_deref());
         let got = ask_on(
             who.as_ref(),
@@ -497,6 +530,8 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
         .cases
         .iter()
         .filter(|c| c.own.is_some() && c.owner.is_none())
+        // known difference: RE-7 #604 removes adminSaveRate (rates.md §9)
+        .filter(|c| !retired_by_re7(&asked(&c.route, &c.path, &c.action)))
     {
         for home in ["MAIN", B9, "B1700000000000-x"] {
             let rows: Vec<RoleRow> = c
@@ -797,10 +832,13 @@ fn what_each_role_may_write_on_both_paths() {
         // C2: ExchangeTransact is TELLER's alone (§03 B03)
         assert_eq!(allowed_roles(on, "reserveCustomer"), ["TELLER"]);
         assert_eq!(allowed_roles(on, "saveTransaction"), ["TELLER"]);
-        // RatesDraft: RATE_MANAGER, and EXECUTIVE per PR 570 A5 (on the bridge too: C1)
-        assert_eq!(
-            allowed_roles(on, "adminSaveRate"),
-            ["EXECUTIVE", "RATE_MANAGER"]
+        // RatesDraft was RATE_MANAGER, and EXECUTIVE per PR 570 A5 (on the bridge too: C1); RE-7
+        // #604 removes adminSaveRate (rates.md §9), so nobody may (rateDraft:
+        // `policy_rate_engine_test.rs`)
+        assert!(
+            allowed_roles(on, "adminSaveRate").is_empty(),
+            "RE-7 #604: adminSaveRate on {}",
+            path_name(on)
         );
         assert_eq!(allowed_roles(on, "adminSnapshot").len(), 7);
         assert_eq!(allowed_roles(on, "getConnectionStatus").len(), 7);
@@ -837,13 +875,17 @@ fn the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow() {
     for name in [
         "adminSnapshot",
         "adminDeskConfig",
-        "adminSaveRate",
         "adminCreateBranch", // C4: kept through ADMIN
         "adminAbandonRequest",
         "getConnectionStatus",
     ] {
         assert_eq!(ask(Some(&o), EntryPath::Rpc, name), Ok(()), "{name}");
     }
+    // RE-7 #604 removes adminSaveRate (rates.md §9): a name no Rpc row has
+    assert_eq!(
+        ask(Some(&o), EntryPath::Rpc, "adminSaveRate"),
+        Err(PolicyError::InvalidRequest)
+    );
     // C3 (adminMoveStock) and C2 (reserveCustomer, saveTransaction): EXECUTIVE is refused and
     // ADMIN holds neither
     for name in ["adminMoveStock", "reserveCustomer", "saveTransaction"] {
@@ -889,11 +931,15 @@ fn a_staff_path_admits_whoever_holds_its_role() {
     for (on, name) in [
         (EntryPath::StaffRpc, "adminSnapshot"),
         (EntryPath::StaffRpc, "getConnectionStatus"),
-        (EntryPath::StaffRpc, "adminSaveRate"),
         (EntryPath::StaffUpload, "upload"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));
     }
+    // RE-7 #604 removes adminSaveRate (rates.md §9): the bridge has no row for it any more
+    assert_eq!(
+        ask(Some(&o), EntryPath::StaffRpc, "adminSaveRate"),
+        Err(PolicyError::RoleNotAllowed)
+    );
     for (on, name, sentence) in [
         (EntryPath::StaffRpc, "reserveCustomer", ROLE_NOT_ALLOWED),
         (EntryPath::StaffRpc, "adminDeskConfig", FRONT_ONLY),

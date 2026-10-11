@@ -9,6 +9,11 @@
 //! × every action name the match spells (plus `opsProbe` for the `starts_with("ops")` arm and
 //! `zzNoSuchAction` for the catch-alls). PL-0b moves the match behind `need_table` unchanged, so
 //! `need_table`, and `need` with no area files, must answer exactly this.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
+//! from the match (`docs/design/blueprint/rates.md` §9), so its Rpc and StaffRpc rows of `TODAY`
+//! answer `None` (no row) instead of RatesDraft. On every other path it falls to the same
+//! catch-all as before, so those rows are unchanged; so is every other row.
 
 use xc_auth::domain::access::Permission;
 use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, duplicates, shadowed};
@@ -179,7 +184,7 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::Rpc, "adminDeskConfig", Some(Need::Permission(Permission::CompatRead))),
     (EntryPath::Rpc, "adminMoveStock", Some(Need::Permission(Permission::CashManage))),
     (EntryPath::Rpc, "adminOpenShift", Some(Need::Custody)),
-    (EntryPath::Rpc, "adminSaveRate", Some(Need::Permission(Permission::RatesDraft))),
+    (EntryPath::Rpc, "adminSaveRate", None), // RE-7 #604 (rates.md §9): was RatesDraft
     (EntryPath::Rpc, "adminSnapshot", Some(Need::Permission(Permission::CompatRead))),
     (EntryPath::Rpc, "approvalDecide", Some(Need::Permission(Permission::ApprovalsDecide))),
     (EntryPath::Rpc, "approvalRead", Some(Need::Permission(Permission::ApprovalsDecide))),
@@ -227,7 +232,7 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::StaffRpc, "adminDeskConfig", Some(Need::Permission(Permission::ExchangeTransact))),
     (EntryPath::StaffRpc, "adminMoveStock", None),
     (EntryPath::StaffRpc, "adminOpenShift", Some(Need::Custody)),
-    (EntryPath::StaffRpc, "adminSaveRate", Some(Need::Permission(Permission::RatesDraft))),
+    (EntryPath::StaffRpc, "adminSaveRate", None), // RE-7 #604 (rates.md §9): was RatesDraft
     (EntryPath::StaffRpc, "adminSnapshot", Some(Need::Permission(Permission::CompatRead))),
     (EntryPath::StaffRpc, "approvalDecide", None),
     (EntryPath::StaffRpc, "approvalRead", None),

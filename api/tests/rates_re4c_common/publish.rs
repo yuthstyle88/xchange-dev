@@ -2,7 +2,16 @@
 // rows of a branch as its next publication. Written before the implementation by the ticket
 // author (claude/e5ab6c). Do not edit, delete or weaken.
 //
-// Not a module: `include!`d by `save_common` (as its inline `rates_re4c_common`) and by
+// Re-expected for RE-7 #604 by the ticket author: migration 6 drops `rates`, so a harness can no
+// longer append a row and publish "the newest rows". `set_counter_rate` (per 1, as the retired
+// direct save took it) and `publish_over_current` (per `unit_size`) state the rates they publish
+// and carry the rest of the branch's current publication over, which is the rate set the newest
+// rows made when every rate was set this way. `publish_newest_rates` is kept only for its callers
+// outside this helper's files (`snapshot_common`, `rpc_common`, `snapshot_test`,
+// `v3_desk_config_view_test`); it reads `rates`, so it fails once migration 6 has run.
+//
+// Not a module: `include!`d by `save_common` (as its inline `rates_re4c_common`), by
+// `rates_re4e_publish` (as its inline `engine`, RE-7 #604) and by
 // `rates_re4c_common/mod.rs` (loaded by `snapshot_common`), so that no test binary loads one
 // file as a module twice (clippy::duplicate_mod) — not this one, and not `rates_re4_common`,
 // which `kiosk_http_common` and several test files load themselves. The rate engine is driven as
@@ -185,4 +194,70 @@ pub async fn publish_newest_rates(pool: &::sqlx::PgPool, branch: &str) -> Publis
         .map(|(c, b, s)| (c.as_str(), b.as_str(), s.as_str()))
         .collect();
     publish(pool, branch, &lines).await
+}
+
+/// RE-7 #604: publish `lines` (`(currency, buy, sell)`, per the currency's `unit_size`) as the
+/// next publication of `branch`, with every other `ALL` line of its current publication carried
+/// over unchanged. A line with an empty side is not carried (the draft takes a rate per side).
+pub async fn publish_over_current(
+    pool: &::sqlx::PgPool,
+    branch: &str,
+    lines: &[(&str, &str, &str)],
+) -> Published {
+    let kept: Vec<(String, ::rust_decimal::Decimal, ::rust_decimal::Decimal)> = ::sqlx::query_as(
+        "SELECT trim(l.currency_code), l.buy_rate, l.sell_rate \
+             FROM branches b JOIN published_rate_lines l \
+               ON l.publication_id = b.current_publication_id \
+             WHERE b.id = $1 AND l.denomination_group = 'ALL' \
+               AND l.buy_rate IS NOT NULL AND l.sell_rate IS NOT NULL \
+             ORDER BY 1",
+    )
+    .bind(branch)
+    .fetch_all(pool)
+    .await
+    .expect("read the branch's current lines");
+    let mut texts: Vec<(String, String, String)> = kept
+        .into_iter()
+        .filter(|(code, _, _)| lines.iter().all(|(c, _, _)| c != code))
+        .map(|(code, buy, sell)| {
+            (
+                code,
+                buy.normalize().to_string(),
+                sell.normalize().to_string(),
+            )
+        })
+        .collect();
+    texts.extend(
+        lines
+            .iter()
+            .map(|(c, b, s)| ((*c).to_owned(), (*b).to_owned(), (*s).to_owned())),
+    );
+    // in code order, as the newest `rates` rows were published (`DISTINCT ON (r.code)`)
+    texts.sort();
+    let all: Vec<(&str, &str, &str)> = texts
+        .iter()
+        .map(|(c, b, s)| (c.as_str(), b.as_str(), s.as_str()))
+        .collect();
+    publish(pool, branch, &all).await
+}
+
+/// RE-7 #604: the counter rate of `code` in `branch` from now on, given per 1 as the retired
+/// direct save took it: published × `currencies.unit_size` (JPY 0.2 per 1 is 20 per 100), as
+/// migration 4 converted a `rates` row, over the branch's current publication.
+pub async fn set_counter_rate(
+    pool: &::sqlx::PgPool,
+    branch: &str,
+    code: &str,
+    buy_per_one: &str,
+    sell_per_one: &str,
+) -> Published {
+    let unit: ::rust_decimal::Decimal =
+        ::sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
+            .bind(code)
+            .fetch_one(pool)
+            .await
+            .unwrap_or_else(|e| panic!("the unit size of {code}: {e}"));
+    let buy = (d(buy_per_one) * unit).normalize().to_string();
+    let sell = (d(sell_per_one) * unit).normalize().to_string();
+    publish_over_current(pool, branch, &[(code, buy.as_str(), sell.as_str())]).await
 }

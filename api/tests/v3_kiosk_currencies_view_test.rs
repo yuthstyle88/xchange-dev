@@ -787,6 +787,9 @@ async fn an_equal_since_is_unchanged_and_the_view_is_not_loaded() {
 /// reports `changed: true`. Writer 1: `configure` on `/api/kiosk`. Writer 2: `adminSaveRate` on
 /// `/api/rpc` by the owner. Writer 3: `adminSaveRate` on `/api/staff/rpc` by RATES.
 ///
+/// Re-expected for RE-7 #604 by the ticket author: writers 2 and 3 are retired (design §9); each
+/// is now held to the unknown-name answer and to a version that does not move.
+///
 /// Amended for #603: `configure` writes no rate (item 1) and the view reads the publication, not
 /// `rates` (item 3), so after each write the view still answers the published USD rate; the
 /// version still moves. The `adminSaveRate` writers send back `manage`'s `updated` (the newest
@@ -827,68 +830,41 @@ async fn every_writer_of_the_views_tables_moves_the_version_it_answers() {
     published(usd, "configure writes no rate");
     assert_eq!(usd["enabled"], json!(true), "configure: {usd}");
 
-    // writer 2
-    let previous = manage_updated(&room.manage(MAIN).await);
-    let v = room.version(MAIN).await;
-    room.ok(
-        "OWNER",
-        RPC,
-        "adminSaveRate",
-        json!({ "branchId": MAIN, "requestId": request_id(), "code": "USD", "buy": "33.3",
-                "sell": "33.6", "previousUpdated": previous, "partnerName": "",
-                "partnerCost": null }),
-    )
-    .await;
-    let body = room.view("OWNER", &format!("branch=MAIN&since={v}")).await;
-    let now = room.version(MAIN).await;
-    assert!(now > v, "adminSaveRate on /api/rpc moved MAIN's version");
-    assert_eq!(
-        body["version"],
-        json!(now),
-        "adminSaveRate on /api/rpc: {body}"
-    );
-    assert_eq!(
-        body["changed"],
-        json!(true),
-        "adminSaveRate on /api/rpc: {body}"
-    );
-    published(
-        currency(&body["data"], "USD"),
-        "adminSaveRate on /api/rpc: rates is not read",
-    );
-
-    // writer 3
-    let previous = manage_updated(&room.manage(MAIN).await);
-    let v = room.version(MAIN).await;
-    room.ok(
-        "RATES",
-        STAFF_RPC,
-        "adminSaveRate",
-        json!({ "branchId": MAIN, "requestId": request_id(), "code": "USD", "buy": "33.35",
-                "sell": "33.65", "previousUpdated": previous, "partnerName": "",
-                "partnerCost": null }),
-    )
-    .await;
-    let body = room.view("RATES", &format!("since={v}")).await;
-    let now = room.version(MAIN).await;
-    assert!(
-        now > v,
-        "adminSaveRate on /api/staff/rpc moved MAIN's version"
-    );
-    assert_eq!(
-        body["version"],
-        json!(now),
-        "adminSaveRate on /api/staff/rpc: {body}"
-    );
-    assert_eq!(
-        body["changed"],
-        json!(true),
-        "adminSaveRate on /api/staff/rpc: {body}"
-    );
-    published(
-        currency(&body["data"], "USD"),
-        "adminSaveRate on /api/staff/rpc: rates is not read",
-    );
+    // writers 2 and 3, re-expected for RE-7 #604 by the ticket author: a known difference
+    // (design §9 removes the action). `adminSaveRate` is no longer a writer: on either route it
+    // is answered as a name v2 does not know, and MAIN's version does not move.
+    for (who, route, buy, sell, query) in [
+        ("OWNER", RPC, "33.3", "33.6", "branch=MAIN&"),
+        ("RATES", STAFF_RPC, "33.35", "33.65", ""),
+    ] {
+        let previous = manage_updated(&room.manage(MAIN).await);
+        let v = room.version(MAIN).await;
+        let payload = json!({ "branchId": MAIN, "requestId": request_id(), "code": "USD",
+                              "buy": buy, "sell": sell, "previousUpdated": previous,
+                              "partnerName": "", "partnerCost": null });
+        let save = room
+            .post(who, route, "adminSaveRate", payload.clone())
+            .await;
+        let unknown = room
+            .post(who, route, rpc_common::NO_SUCH_NAME, payload)
+            .await;
+        assert_eq!(
+            (save.status, save.text.as_str()),
+            (unknown.status, unknown.text.as_str()),
+            "adminSaveRate on {route} as {who}: answered as a name v2 does not know"
+        );
+        assert_eq!(
+            room.version(MAIN).await,
+            v,
+            "adminSaveRate on {route} moved nothing"
+        );
+        let body = room.view(who, &format!("{query}since={v}")).await;
+        assert_eq!(
+            body["changed"],
+            json!(false),
+            "adminSaveRate on {route}: {body}"
+        );
+    }
     room.finish().await;
 }
 

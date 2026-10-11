@@ -979,21 +979,16 @@ async fn the_count_line_is_baht_to_two_places_half_up() {
 /// the counter rate. The device step runs on the save's transaction and finds the row just
 /// written. 1,007 × 0.235 = 236.645 exactly, so its count line is 236.65 HALF_UP, the saved row's
 /// principal, whether the row stores 0.235 per 1 (before RE-4c) or 23.5 per 100 (after RE-4c).
-/// Banker's rounding gives 236.64, and the exact product is 236.645. The rate is set both in `rates` (the
-/// direct save) and in a publication (23.5 / 25 per 100), so either save path prices it.
+/// Banker's rounding gives 236.64, and the exact product is 236.645. The rate is the publication's
+/// 23.5 / 25 per 100. (Re-expected for RE-7 #604 by the ticket author: before RE-7 it was also set
+/// through `adminSaveRate`, so a pre-RE-4c save path priced it too; RE-7 removes that action and
+/// the `rates` it wrote, and the publication is the only counter rate.)
 #[actix_web::test]
 async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
     // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's; FRONT (TELLER under B1) saves
     let teller = person("FR1", "FRONT", 1);
     let counter = Counter::open(std::slice::from_ref(&teller)).await;
     let pool = counter.desk.db.pool.clone();
-    counter
-        .owner_rpc(
-            "adminSaveRate",
-            json!({ "requestId": "00000000-0000-4000-8000-0000000e0001", "code": "JPY",
-                    "buy": 0.235, "sell": 0.25, "previousUpdated": "" }),
-        )
-        .await;
     publish(
         &pool,
         MAIN,

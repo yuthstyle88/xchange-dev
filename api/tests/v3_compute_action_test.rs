@@ -307,7 +307,7 @@ impl<const K: u8> Echoing<K> {
 
 /// `(Rpc, "adminSnapshot")`: the cash menu's row (CA4) — the owner and every staff role.
 type EchoSnapshot = Echoing<0>;
-/// `(Rpc, "adminSaveRate")`: a narrower row of the same path.
+/// `(Rpc, "rateDraft")` (re-expected for RE-7 #604: was `adminSaveRate`): a narrower row of the same path.
 type EchoSaveRate = Echoing<1>;
 /// `(StaffRpc, "adminDeskConfig")`: FRONT only, staff session only.
 type EchoDeskConfig = Echoing<2>;
@@ -330,7 +330,9 @@ impl ComputeAction for EchoSnapshot {
 
 impl ComputeAction for EchoSaveRate {
     const NAME: &'static str = "test-save-rate";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSaveRate");
+    // re-expected for RE-7 #604 by the ticket author: `adminSaveRate` is retired (design §9);
+    // `rateDraft` has the same rows of `Policy` (the owner, and RATES)
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
     type Request = AmountRequest;
     type Answer = Echo;
 
@@ -737,7 +739,7 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
     let mut refused = 0;
     for (uri, path, action) in [
         (ECHO, EntryPath::Rpc, "adminSnapshot"),
-        (SAVE_RATE, EntryPath::Rpc, "adminSaveRate"),
+        (SAVE_RATE, EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         (DESK_CONFIG, EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
         for who in every_caller() {

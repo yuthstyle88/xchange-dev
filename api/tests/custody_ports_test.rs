@@ -3,6 +3,10 @@
 //!
 //! Written before the implementation. Do not edit, delete or weaken.
 //!
+//! Re-expected for RE-7 #604 by the ticket author: `rates_updated` is the `published_at` of the
+//! branch's current publication (rates.md §8 migration 6 drops `rates`, whose last row it was);
+//! the rate tests publish instead of writing `rates` rows, and keep their scenarios.
+//!
 //! `xc_shift`'s `CustodyPorts` asks four things the shift context may not look
 //! up itself: the state of the rates and of the exchanges of a branch, whether a
 //! customer is known, whether files are the caller's evidence, what role an
@@ -74,19 +78,33 @@ async fn role(shop: &Shop, branch_id: &str, employee_id: &str) -> Option<Custody
     got
 }
 
-/// A rate row written at a given time (the table is ticket T5a's).
-async fn rate_at(shop: &Shop, branch_id: &str, currency: &str, updated_at: &str) {
+/// A publication of `currency` in `branch` dated `published_at`: published through the rate
+/// engine (over the branch's current publication), then its `published_at` set to the instant the
+/// test names, so each instant is the test's, to the millisecond.
+///
+/// Re-expected for RE-7 #604 by the ticket author: this was a `rates` row written at a given time;
+/// RE-7 drops `rates` (rates.md §8 migration 6) and `rates_updated` becomes the current
+/// publication's `published_at`.
+async fn publish_at(shop: &Shop, branch_id: &str, currency: &str, published_at: &str) {
+    rates_re4c_common::set_counter_rate(&shop.pool, branch_id, currency, "32.1", "33").await;
+    date_current(&shop.pool, branch_id, published_at).await;
+}
+
+/// Set `published_at` of `branch_id`'s current publication, through `executor`.
+async fn date_current<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    branch_id: &str,
+    published_at: &str,
+) {
     sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-         VALUES ($1, $2, 32.1, 33, $3::timestamptz, 'test', $4)",
+        "UPDATE rate_publications p SET published_at = $2::timestamptz \
+           FROM branches b WHERE b.id = $1 AND p.id = b.current_publication_id",
     )
     .bind(branch_id)
-    .bind(currency)
-    .bind(updated_at)
-    .bind(unique("rate"))
-    .execute(&shop.pool)
+    .bind(published_at)
+    .execute(executor)
     .await
-    .expect("insert into rates");
+    .expect("date the current publication");
 }
 
 /// An employee (the table is ticket T4b's).
@@ -116,10 +134,15 @@ async fn employee(
 
 // ---------------------------------------------------------------- the rates
 
+/// Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6, D-3): "the last rate
+/// row written" becomes the branch's current publication. The scenario is v2's, step by step:
+/// none yet; another branch's is not this one's; the time prints with milliseconds and `Z`; a
+/// newer publication moves it, whatever its currency, and also when its time is earlier.
 #[tokio::test]
-async fn the_rates_are_live_once_the_branch_has_one_and_dated_by_the_last_written() {
+async fn the_rates_are_live_once_the_branch_has_one_and_dated_by_the_current_publication() {
     // v2: a live rate is any currency with a buy and a sell rate; "updated" is
-    // the time of the last rate row written in the branch, as the screens print it
+    // the time of the branch's rates, as the screens print it — since RE-7 the
+    // `published_at` of the branch's current publication
     let shop = Shop::start().await;
     shop.seed_branch(B01, "Second").await;
 
@@ -127,8 +150,8 @@ async fn the_rates_are_live_once_the_branch_has_one_and_dated_by_the_last_writte
     assert!(!none.has_live_rate);
     assert_eq!(none.rates_updated, "", "no rate yet: the empty text");
 
-    // a rate of another branch is not this branch's
-    rate_at(&shop, B01, "USD", "2026-10-06T04:00:00.000Z").await;
+    // a publication of another branch is not this branch's
+    publish_at(&shop, B01, "USD", "2026-10-06T04:00:00.000Z").await;
     let still = outside(&shop, MAIN, None).await;
     assert_eq!(
         (still.has_live_rate, still.rates_updated.as_str()),
@@ -140,7 +163,7 @@ async fn the_rates_are_live_once_the_branch_has_one_and_dated_by_the_last_writte
         (true, "2026-10-06T04:00:00.000Z")
     );
 
-    rate_at(&shop, MAIN, "USD", "2026-10-06T05:00:00.123Z").await;
+    publish_at(&shop, MAIN, "USD", "2026-10-06T05:00:00.123Z").await;
     let one = outside(&shop, MAIN, None).await;
     assert!(one.has_live_rate);
     assert_eq!(
@@ -148,14 +171,14 @@ async fn the_rates_are_live_once_the_branch_has_one_and_dated_by_the_last_writte
         "milliseconds and Z, as v2 prints a time"
     );
 
-    // the last row written counts, whatever its currency — and even when its
-    // time is earlier than another row's
-    rate_at(&shop, MAIN, "JPY", "2026-10-06T12:30:00.5+07:00").await;
+    // the current publication counts, whatever currency it moved — and even
+    // when its time is earlier than the one before
+    publish_at(&shop, MAIN, "JPY", "2026-10-06T12:30:00.5+07:00").await;
     assert_eq!(
         outside(&shop, MAIN, None).await.rates_updated,
         "2026-10-06T05:30:00.500Z"
     );
-    rate_at(&shop, MAIN, "USD", "2026-10-06T01:02:03.004Z").await;
+    publish_at(&shop, MAIN, "USD", "2026-10-06T01:02:03.004Z").await;
     assert_eq!(
         outside(&shop, MAIN, None).await.rates_updated,
         "2026-10-06T01:02:03.004Z"
@@ -493,16 +516,13 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
     let b01 = branch(B01);
     let main = branch(MAIN);
 
+    // RE-7 #604 (re-expected by the ticket author): B01's rates are its current publication,
+    // committed before the transaction at 08:00; inside it only its date moves, so the port
+    // answering the new date read through the transaction, and after the rollback the old one
+    publish_at(&shop, B01, "USD", "2026-10-06T08:00:00.000Z").await;
     let mut tx = shop.pool.begin().await.expect("begin");
     // a rate
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-         VALUES ($1, 'USD', 1, 2, '2026-10-06T09:09:09.009Z', 'test', 'in-the-tx')",
-    )
-    .bind(B01)
-    .execute(&mut *tx)
-    .await
-    .expect("insert a rate");
+    date_current(&mut *tx, B01, "2026-10-06T09:09:09.009Z").await;
     let facts = ports.outside_facts(&mut tx, &b01, None).await.unwrap();
     assert_eq!(
         (facts.has_live_rate, facts.rates_updated.as_str()),
@@ -582,7 +602,11 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
     tx.rollback().await.expect("rollback");
 
     // nothing of it was committed, and asked afresh the answers are the old ones
-    assert!(!outside(&shop, B01, None).await.has_live_rate);
+    assert_eq!(
+        outside(&shop, B01, None).await.rates_updated,
+        "2026-10-06T08:00:00.000Z",
+        "RE-7 #604: the publication's committed date, not the one moved in the transaction"
+    );
     assert!(known(&shop, MAIN, &customer).await);
     assert!(owned(&shop, MAIN, OWNER, &[&passport]).await);
     assert_eq!(role(&shop, MAIN, "e-tx").await, None);

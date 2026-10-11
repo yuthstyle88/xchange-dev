@@ -21,6 +21,10 @@
 //!
 //! Edited by the author of ticket #756 (RE-4b, `docs/design/blueprint/rates.md` §4.9 R1, R4): the
 //! machine is handed the published line (`CounterFacts::line`) instead of a bare rate.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `KioskPorts::save_rate` (`docs/design/blueprint/rates.md` §9), so the `Switched` fake no longer
+//! forwards it. Nothing here tested the save; every assertion is unchanged.
 
 mod kiosk_service_common;
 
@@ -269,16 +273,6 @@ impl KioskPorts for Switched {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         self.inner.counter_in(tx, branch)
-    }
-
-    fn save_rate<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        rate: &'a SaveCounterRate,
-        actor: &'a str,
-        now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<()>> {
-        self.inner.save_rate(branch, rate, actor, now)
     }
 
     fn record_in<'a>(

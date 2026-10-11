@@ -35,10 +35,11 @@ type Answer<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 pub struct PgCustodyPorts;
 
 impl CustodyPorts for PgCustodyPorts {
-    /// - `has_live_rate`: the branch has a counter rate (every stored rate has a
-    ///   buy and a sell above zero);
-    /// - `rates_updated`: the time of the last rate row written in the branch,
-    ///   printed with milliseconds and `Z`; empty when there is none;
+    /// - `has_live_rate`: the branch has a current publication (its counter
+    ///   rates, rates.md D-3);
+    /// - `rates_updated`: the `published_at` of the branch's current publication
+    ///   (#604 ruling: no `rates` rows since RE-7), printed with milliseconds and
+    ///   `Z`; empty when the branch has none;
     /// - `pending_transactions`: always empty — an exchange is saved in one
     ///   transaction and is never half there;
     /// - `last_transaction`: the document number of the last live exchange of
@@ -50,8 +51,10 @@ impl CustodyPorts for PgCustodyPorts {
         open_shift_id: Option<&'a str>,
     ) -> Answer<'a, OutsideFacts> {
         Box::pin(async move {
-            let last_rate: Option<DateTime<Utc>> = sqlx::query_scalar(
-                "SELECT updated_at FROM rates WHERE branch_id = $1 ORDER BY id DESC LIMIT 1",
+            let published_at: Option<DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT p.published_at FROM branches b \
+                 JOIN rate_publications p ON p.id = b.current_publication_id \
+                 WHERE b.id = $1",
             )
             .bind(branch.as_str())
             .fetch_optional(&mut **tx)
@@ -72,8 +75,8 @@ impl CustodyPorts for PgCustodyPorts {
             };
 
             Ok(OutsideFacts {
-                has_live_rate: last_rate.is_some(),
-                rates_updated: last_rate.map(format_iso).unwrap_or_default(),
+                has_live_rate: published_at.is_some(),
+                rates_updated: published_at.map(format_iso).unwrap_or_default(),
                 pending_transactions: Vec::new(),
                 last_transaction,
             })

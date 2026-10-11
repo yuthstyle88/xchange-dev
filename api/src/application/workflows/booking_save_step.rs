@@ -163,14 +163,9 @@ mod tests {
         }
 
         async fn seed_setup(&self) {
-            // Seed counter rates for USD in MAIN: buy 32.2, sell 32.7
-            sqlx::query(
-                "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-                 VALUES ('MAIN', 'USD', 32.2, 32.7, now(), 'test', 'rate-1')",
-            )
-            .execute(&self.pool)
-            .await
-            .expect("insert rate");
+            // No counter rate is seeded: since RE-4c the counter rate is the branch's current
+            // publication, and MAIN has none here; the `rates` row this used to write was read
+            // by nothing and is gone with the table (RE-7 #604, rates.md §8 migration 6).
 
             // Open shift in MAIN
             sqlx::query(
@@ -308,7 +303,7 @@ mod tests {
             side: "BUY".to_string(),
             currency: "USD".to_string(),
             amount: "100".to_string(),
-            rate: "32.1".to_string(), // booked rate 32.1 != counter rate 32.2
+            rate: "32.1".to_string(), // booked rate 32.1: MAIN publishes no counter rate to match it
             fee: "0".to_string(),
             bank_fee: "0".to_string(),
             method: "Cash".to_string(),

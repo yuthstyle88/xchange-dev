@@ -1,0 +1,22 @@
+-- Migration 6 of the Blueprint rate design (docs/design/blueprint/rates.md §8): drop `rates` (RE-7 #604).
+--
+-- The direct save (`adminSaveRate`, `RateService::save_rate`, the kiosk port's `save_rate`) is gone
+-- with this release, and every reader moved to the branch's current publication (RE-4 to RE-6,
+-- RE-7's own readers). Nothing writes or reads `rates` any more.
+--
+-- Data migration:
+-- 1. Existing rows: every `rates` row is dropped with the table. A branch's counter rates are its
+--    current publication, so what a customer is quoted does not change. The rows saved before RE-1
+--    already live in publication 1's `source_snapshot` (migration 4's backfill); rows saved since
+--    then were read by nothing (§8 "Between RE-4 and RE-7"). Partner name and cost are no longer a
+--    column: a publish reads them from the newest 'PARTNER' reference line (§4.1 "Partner cost").
+-- 2. Backfill: none. Nothing moves out of `rates`: its readers already read publications, and the
+--    partner columns are replaced by reference data, which this migration does not touch.
+--    The rows dropped, measured before deploy:  SELECT count(*) FROM rates;
+-- 3. Deploy order: ships with the binary that stops reading `rates` (this release), applied at boot
+--    as every migration here is. A pre-RE-7 binary still reads `rates` when it publishes, so it must
+--    not run against this schema.
+-- 4. What down loses: v3 is forward-only. Recreating `rates` would give an empty table; the
+--    history it held is gone, except as the publications' `source_snapshot`s.
+
+DROP TABLE rates;

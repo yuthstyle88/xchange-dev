@@ -3,6 +3,10 @@
 //! Written before the implementation by the ticket author (claude/e5ab6c). Do not edit, delete or
 //! weaken; add tests in a file of your own.
 //!
+//! Re-expected for RE-7 #604 by the ticket author: rates.md §8 migration 6 drops `rates`, so the
+//! decoy rows written to it (`TestDb::old_rate`) are gone, and the test that renames the table
+//! away renames it only if it is still there.
+//!
 //! Design: `docs/design/blueprint/rates.md` §3.3 (a rate on the wire is the 8-place string the
 //! database holds; HALF_UP), §4.1 (`published_rate_lines`, a NULL side is unavailable,
 //! `source_snapshot.partner`), §4.8 (every reader reads the current publication), §9 RE-6.
@@ -21,8 +25,7 @@
 //!   unchanged), or `""` / `null` when `partner` is `null` or absent.
 //! - A currency with no line, and every currency before the branch's first publication: `buy`,
 //!   `sell`, `partnerCost` `null`, `partnerName` and `updated` `""`.
-//! - The old `rates` table is never read: rows in it change nothing, and the view answers with the
-//!   table renamed away.
+//! - The old `rates` table is never read: the view answers with the table gone.
 //! - KBank's file is "THB per 1": the shop side of each comparison is the published rate ÷ the
 //!   line's `unit_size` (JPY 23.4 per 100 compares as 0.234). The shop figure and the difference
 //!   (shop − bank, from the exact per-1 value, rounded once) keep five places, rounded HALF_UP
@@ -172,31 +175,6 @@ impl TestDb {
         Self { pool, schema }
     }
 
-    /// An old counter rate in `rates`, which the view must not read.
-    async fn old_rate(&self, branch: &str, code: &str, buy: &str, sell: &str, partner: &str) {
-        let cost: Option<&str> = if partner.is_empty() {
-            None
-        } else {
-            Some("1.5")
-        };
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, \
-             updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5, $6::numeric, $7, 'test', $8)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(partner)
-        .bind(cost)
-        .bind(time("2026-10-06T04:00:00.000Z"))
-        .bind(unique("req"))
-        .execute(&self.pool)
-        .await
-        .expect("insert an old counter rate");
-    }
-
     async fn finish(self) {
         let TestDb { pool, schema } = self;
         sqlx::query(AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
@@ -335,13 +313,11 @@ const T2_MS: &str = "2026-10-06T06:30:00.000Z";
 
 // ------------------------------------------------------------ before any publication
 
-/// Before the branch's first publication every currency has null rates, whatever `rates` holds;
-/// `unitSize` is the register's unit.
+/// Before the branch's first publication every currency has null rates; `unitSize` is the
+/// register's unit.
 #[actix_web::test]
 async fn before_the_first_publication_every_currency_has_null_rates() {
     let db = TestDb::start().await;
-    db.old_rate(MAIN, "USD", "32.1", "33", "SuperRich").await;
-    db.old_rate(MAIN, "JPY", "0.2105", "0.2205", "").await;
 
     let data = data(&db, "").await;
     let currencies = data["currencies"].as_array().expect("currencies");
@@ -381,9 +357,6 @@ async fn before_the_first_publication_every_currency_has_null_rates() {
 #[actix_web::test]
 async fn the_view_answers_the_current_publications_lines_as_stored() {
     let db = TestDb::start().await;
-    // rows in the old table that would answer otherwise
-    db.old_rate(MAIN, "USD", "30", "31", "Old Partner").await;
-    db.old_rate(MAIN, "AFN", "0.45", "0.5", "").await;
     publish(
         &db.pool,
         MAIN,
@@ -526,13 +499,14 @@ async fn each_branch_reads_its_own_publication() {
     db.finish().await;
 }
 
-/// The old `rates` table is never read: with it renamed away the view still answers, from the
-/// publication.
+/// The old `rates` table is never read: with it gone the view still answers, from the
+/// publication. (RE-7 #604: migration 6 drops it, so it is renamed away only where it is still
+/// there.)
 #[actix_web::test]
 async fn the_view_answers_with_the_rates_table_gone() {
     let db = TestDb::start().await;
     publish(&db.pool, MAIN, time(T1), &[both("USD", "32.1", "32.45")]).await;
-    sqlx::query("ALTER TABLE rates RENAME TO hidden_rates")
+    sqlx::query("ALTER TABLE IF EXISTS rates RENAME TO hidden_rates")
         .execute(&db.pool)
         .await
         .expect("rename rates");

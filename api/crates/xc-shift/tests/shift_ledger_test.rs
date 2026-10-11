@@ -8,10 +8,28 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::{balances, code, delta, fixture, money, shown_balances, shown_delta, signed};
-use xc_kernel::money::{CurrencyCode, Money, Quote, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
 use xc_shift::domain::shift::entities::shift_ledger::ShiftLedger;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta, StockError};
+
+/// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
+/// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
+fn per_one(
+    side: xc_kernel::money::Side,
+    amount: xc_kernel::money::Money,
+    rate: xc_kernel::money::Rate,
+    fee: xc_kernel::money::Money,
+) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
+    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
+    xc_kernel::money::Quote::per_unit(
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(amount),
+        rate,
+        xc_kernel::money::UnitSize::ONE,
+        fee,
+    )
+}
 
 fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -86,7 +104,7 @@ fn a_shift_with_no_activity_expects_its_opening() {
 fn a_balance_may_be_larger_than_a_person_may_type() {
     // 99,999,999.99 USD sold at 32.1 for cash: 3,209,999,999.68 baht comes in.
     let amount = Money::parse("99999999.99").unwrap();
-    let q = Quote::compute(
+    let q = per_one(
         Side::Sell,
         amount,
         Rate::parse("32.1").unwrap(),
@@ -124,7 +142,7 @@ fn every_shift_v2_summed_gets_the_same_balances() {
                 Side::Sell
             };
             let amount = Money::parse(&t.amount).unwrap();
-            let q = Quote::compute(
+            let q = per_one(
                 side,
                 amount,
                 Rate::parse(&t.rate).unwrap(),

@@ -41,6 +41,9 @@
 //! - [required] the `create`, `get`, `list` and `confirm` answers keep their keys (T15-f,
 //!   `bookings_http_test.rs`); `booking.rate` and `expectedRate` are per 1 (R3);
 //! - [required] the refusal sentence `เรทเปลี่ยน กรุณาโหลดใหม่` (T15-a `BookingError::RateMoved`).
+//!
+//! Re-expected for RE-7 #604 by the ticket author: the decoy `rates` row is gone with the table
+//! (rates.md §8 migration 6); every test still proves what it proved, on publications alone.
 
 mod common;
 mod compat_common;
@@ -107,8 +110,9 @@ struct Row {
 }
 
 impl Room {
-    /// `MAIN` with an open shift, a LIVE customer `C-MAIN-1`, and a direct-save USD 36.25 /
-    /// 36.75 the bookings must no longer read; the owner signed in; no publication yet.
+    /// `MAIN` with an open shift and a LIVE customer `C-MAIN-1`; the owner signed in; no
+    /// publication yet. (Before RE-7 a direct-save USD 36.25 / 36.75 sat in `rates` as a decoy the
+    /// bookings must not read; RE-7 #604 drops the table, so there is nothing left to decoy.)
     async fn open() -> Room {
         let desk = Desk::open().await;
         let app = rpc_app!(desk);
@@ -127,14 +131,6 @@ impl Room {
         .execute(&desk.db.pool)
         .await
         .expect("insert into shifts");
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ('MAIN', 'USD', 36.25, 36.75, $1, 'owner', 'rate-MAIN-USD')",
-        )
-        .bind(at("2026-10-06T04:00:00.000Z"))
-        .execute(&desk.db.pool)
-        .await
-        .expect("insert into rates");
         sqlx::query(
             // CI-4 (#651): a customer belongs to the organisation
             "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
@@ -405,8 +401,8 @@ fn id_of(ids: &[(String, String)], code: &str) -> String {
 
 // ── create (R1, R3, D-3) ─────────────────────────────────────────────────────
 
-/// D-3, R1: the direct save's 36.25 is not the counter rate any more; the publication's 36.5 is.
-/// A create at 36.25 is refused and writes nothing; at 36.5 it stores the USD line, its rate and
+/// D-3, R1: 36.25 (the retired direct save's rate before RE-7) is not the counter rate; the
+/// publication's 36.5 is. A create at 36.25 is refused and writes nothing; at 36.5 it stores the USD line, its rate and
 /// its unit, and answers the rate it stored.
 #[actix_web::test]
 async fn a_booking_is_created_at_the_published_line_and_stores_it() {
@@ -422,7 +418,7 @@ async fn a_booking_is_created_at_the_published_line_and_stores_it() {
 
     room.create(walk_in("re4d-usd-1", "USD", json!(1000), json!(36.25)))
         .await
-        .assert_refused(400, RATE_MOVED, "the direct save's rate");
+        .assert_refused(400, RATE_MOVED, "a rate other than the line");
     assert_eq!(room.bookings().await, 0, "the refusal wrote nothing");
 
     let answer = room
@@ -518,8 +514,8 @@ async fn a_per_unit_rate_on_the_v2_booking_wire_is_refused() {
     room.finish().await;
 }
 
-/// D-3: a currency the publication has no line for cannot be booked, though `rates` has it; nor
-/// can anything before the branch's first publication.
+/// D-3: a currency the publication has no line for cannot be booked; nor can anything before the
+/// branch's first publication.
 #[actix_web::test]
 async fn a_currency_without_a_published_line_cannot_be_booked() {
     let room = Room::open().await;

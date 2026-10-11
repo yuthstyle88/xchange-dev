@@ -19,6 +19,11 @@
 //! current publication has it on both sides (item 2). The two odd-text tests still hold (nothing
 //! is published, so the rates-first refusal comes and nothing is written).
 //! `plain_texts_are_saved_as_they_came` publishes CHF first and pins that no rate is saved.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `KioskPorts::save_rate` (`docs/design/blueprint/rates.md` §9), so the fake records no rate
+//! saves and the `rate_saves().is_empty()` checks are gone; "no rate is saved" is now held by the
+//! compiler (the port has no method to save with). The audit and switch checks are unchanged.
 
 mod kiosk_service_common;
 
@@ -57,10 +62,6 @@ async fn nothing_is_saved_for(cases: &[(&str, &str)]) {
         assert_eq!(
             sentence, RATES_FIRST,
             "buy {buy:?} / sell {sell:?}: not a plain decimal"
-        );
-        assert!(
-            ports.rate_saves().is_empty(),
-            "buy {buy:?} / sell {sell:?}: a rate was saved from a text that is not a plain decimal"
         );
         assert_eq!(
             db.count("test_audit").await,
@@ -103,10 +104,6 @@ async fn plain_texts_are_saved_as_they_came() {
         )
         .await
         .expect("a plain buy and sell are accepted");
-    assert!(
-        ports.rate_saves().is_empty(),
-        "#603 item 1: configure asks for no rate save"
-    );
     assert_eq!(db.count("test_audit").await, 1);
     assert_eq!(db.count("kiosk_currencies").await, 1);
     db.finish().await;

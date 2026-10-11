@@ -32,6 +32,11 @@
 //! a publication made behind the service (`kiosk_service_common`, `play`), step 14 of "the kiosk
 //! offers six currencies…" carries v3's refusal, and the hand-written cases that switch CHF on
 //! publish it first and expect no rate save.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `KioskPorts::save_rate` (`docs/design/blueprint/rates.md` §9), so the fake records no rate
+//! saves and the `rate_saves().is_empty()` checks are gone; "no rate is saved" is now held by the
+//! compiler (the port has no method to save with). Every other check is unchanged.
 
 mod kiosk_service_common;
 
@@ -348,10 +353,6 @@ async fn a_branch_that_does_not_exist_is_refused_whatever_is_asked() {
                 .await
         ),
         NO_SUCH_BRANCH
-    );
-    assert!(
-        ports.rate_saves().is_empty(),
-        "no rate is saved for a branch that does not exist"
     );
 
     assert_eq!(
@@ -670,10 +671,6 @@ async fn a_command_whose_audit_line_fails_stores_nothing() {
         db.count("kiosk_currencies").await,
         0,
         "the switch is not stored"
-    );
-    assert!(
-        ports.rate_saves().is_empty(),
-        "#603 item 1: configure asks for no rate save"
     );
     ports.audit_fails(false);
 

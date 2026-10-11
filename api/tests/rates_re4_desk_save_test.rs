@@ -4,6 +4,10 @@
 //! Written before the implementation by the ticket author (claude/e5ab6c). Do not edit,
 //! delete or weaken; add tests in a file of your own.
 //!
+//! Re-expected for RE-7 #604 by the ticket author: the three tests that also wrote a direct-save
+//! `rates` row as a decoy no longer write it (rates.md §8 migration 6 drops the table); each
+//! still proves the save refuses a rate that is not the current line's.
+//!
 //! Design: `docs/design/blueprint/rates.md`
 //! - §3.2: the one arithmetic, `ExchangeArithmetic::thb` (HALF_UP to 2 places once, at the end);
 //!   §3.3 rounding;
@@ -25,8 +29,8 @@
 //!   save whose client per-1 rate is not the request's or the booking's `per_one` is
 //!   `RATE_MISMATCH` and writes nothing; R5 applies to the LIVE desk save (a stale AUTO line
 //!   under STOP gets the save's "no rate" answer, `RATE_MISMATCH`);
-//! - D-3: the current rate is the line of `branches.current_publication_id`, never the newest
-//!   `rates` row (the direct save keeps writing `rates` until RE-7, and no reader uses it);
+//! - D-3: the current rate is the line of `branches.current_publication_id` (RE-7 drops
+//!   `rates` and the direct save, §8 migration 6);
 //! - §8 migration 5 (`transactions.published_rate_line_id`);
 //! - §9 RE-4c.
 //!
@@ -127,23 +131,6 @@ async fn counter(shop: &Shop, opening: &[(&str, &str)]) -> (String, String) {
     let customer = shop.reserve(MAIN, person()).await;
     let passport = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
     (customer, passport)
-}
-
-/// A row of the direct save (`rates`, per 1), as `adminSaveRate` appends it: what the save must
-/// no longer read (D-3).
-async fn direct_save(shop: &Shop, currency: &str, buy: &str, sell: &str) {
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-         VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'owner', $5)",
-    )
-    .bind(MAIN)
-    .bind(currency)
-    .bind(buy)
-    .bind(sell)
-    .bind(unique("direct-save"))
-    .execute(&shop.pool)
-    .await
-    .expect("insert into rates");
 }
 
 /// One saved exchange as stored.
@@ -455,14 +442,13 @@ async fn a_rate_from_a_publication_that_is_no_longer_current_is_refused() {
     shop.finish().await;
 }
 
-/// D-3: the newest `rates` row is not the counter rate any more. The direct save says USD 32.1
-/// after the publication said 32.5. A save at 32.1 is refused; at 32.5 it is accepted.
+/// D-3: the counter rate is the publication's 32.5. A save at 32.1 (before RE-7, the newer
+/// direct save's rate) is refused; at 32.5 it is accepted.
 #[tokio::test]
 async fn the_save_checks_the_publication_not_the_direct_save() {
     let shop = Shop::start().await;
     let (customer, passport) = counter(&shop, &[("THB", "100000"), ("USD", "1000")]).await;
     publish(&shop.pool, MAIN, &[("USD", "32.5", "33")]).await;
-    direct_save(&shop, "USD", "32.1", "33").await;
     let usd = line(&shop.pool, MAIN, "USD").await;
 
     let before = shop.everything().await;
@@ -510,13 +496,12 @@ async fn the_save_checks_the_publication_not_the_direct_save() {
     shop.finish().await;
 }
 
-/// D-3 (§9 RE-4c): with a direct-save rate and no publication, the currency has no current
-/// line, so a LIVE save is refused `RATE_MISMATCH` and writes nothing.
+/// D-3 (§9 RE-4c): with no publication the currency has no current line, so a LIVE save is
+/// refused `RATE_MISMATCH` and writes nothing.
 #[tokio::test]
 async fn without_a_publication_a_live_save_is_refused() {
     let shop = Shop::start().await;
     let (customer, passport) = counter(&shop, &[("THB", "100000"), ("USD", "1000")]).await;
-    direct_save(&shop, "USD", "32.1", "33").await;
 
     let before = shop.everything().await;
     let refused = shop
@@ -543,13 +528,11 @@ async fn without_a_publication_a_live_save_is_refused() {
     shop.finish().await;
 }
 
-/// D-3: a currency the current publication does not list has no counter rate, whatever the
-/// direct save says about it.
+/// D-3: a currency the current publication does not list has no counter rate.
 #[tokio::test]
 async fn a_currency_the_publication_does_not_list_is_refused() {
     let shop = Shop::start().await;
     let (customer, passport) = counter(&shop, &[("THB", "100000"), ("EUR", "1000")]).await;
-    direct_save(&shop, "EUR", "35.5", "36.25").await;
     publish(&shop.pool, MAIN, &[("USD", "32.1", "33")]).await;
 
     let before = shop.everything().await;

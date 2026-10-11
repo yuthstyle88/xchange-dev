@@ -17,14 +17,11 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize};
 use xc_kernel::payment::PaymentRules;
-use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
-use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::publication::published_rates::PublishedRates;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
@@ -136,13 +133,14 @@ impl KioskAuditLog for PgKioskAuditLog {
 pub struct PgKioskPorts {
     pool: PgPool,
     audit: Arc<dyn KioskAuditLog>,
-    source: Arc<dyn RateSource>,
     /// The branch's payment rules (PM-API), built from the same pool.
     payment: PaymentSettingsService,
 }
 
 impl PgKioskPorts {
-    pub fn new(pool: PgPool, audit: Arc<dyn KioskAuditLog>, source: Arc<dyn RateSource>) -> Self {
+    /// `_source` was the reference-rate source of the port's direct save, retired by RE-7 #604
+    /// (rates.md §9); it stays in the signature for the callers that pass it.
+    pub fn new(pool: PgPool, audit: Arc<dyn KioskAuditLog>, _source: Arc<dyn RateSource>) -> Self {
         let payment = PaymentSettingsService::new(
             BranchTx::new(Transactor::new(pool.clone())),
             BranchSettingStore::new(pool.clone()),
@@ -151,7 +149,6 @@ impl PgKioskPorts {
         Self {
             pool,
             audit,
-            source,
             payment,
         }
     }
@@ -312,45 +309,6 @@ impl KioskPorts for PgKioskPorts {
                 open,
                 rates,
             }))
-        })
-    }
-
-    fn save_rate<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        rate: &'a SaveCounterRate,
-        actor: &'a str,
-        now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<()>> {
-        Box::pin(async move {
-            let actual_actor: String = {
-                let maybe_username: Option<String> = sqlx::query_scalar(
-                    "SELECT username FROM employees WHERE id = $1 \
-                     UNION ALL \
-                     SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
-                     LIMIT 1",
-                )
-                .bind(actor)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(AppError::Database)?;
-                maybe_username.unwrap_or_else(|| actor.to_string())
-            };
-
-            let branch_tx = BranchTx::new(Transactor::new(self.pool.clone()));
-            let rate_service = RateService::new(branch_tx, self.source.clone());
-            let cmd = SaveRate {
-                request_id: rate.request_id.clone(),
-                code: rate.code.as_str().to_string(),
-                buy: rate.buy.clone(),
-                sell: rate.sell.clone(),
-                partner_name: rate.partner_name.clone(),
-                partner_cost: rate.partner_cost.clone(),
-                previous_updated: rate.previous_updated.clone(),
-            };
-            rate_service
-                .save_rate(branch, cmd, &actual_actor, now)
-                .await
         })
     }
 

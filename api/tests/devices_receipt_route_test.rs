@@ -141,17 +141,10 @@ impl Room {
             t0,
         };
         for branch in [MAIN, B9] {
-            sqlx::query(
-                "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-                 VALUES ($1, 'USD', 32.1, 33, now(), 'test', $2)",
-            )
-            .bind(branch)
-            .bind(request_id())
-            .execute(&room.desk.db.pool)
-            .await
-            .expect("insert a counter rate");
-            // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-            rates_re4e_publish::publish_newest_rates(&room.desk.db.pool, branch).await;
+            // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+            // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+            rates_re4e_publish::set_counter_rate(&room.desk.db.pool, branch, "USD", "32.1", "33")
+                .await;
             room.open_shift(branch).await;
         }
         room

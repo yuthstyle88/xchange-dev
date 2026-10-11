@@ -636,31 +636,19 @@ async fn a_write_in_the_branch_does_not_move_the_reference_version() {
     let room = Room::open().await;
     let v = room.version("branch=MAIN").await;
     room.desk.clock.advance(Duration::seconds(1));
-    let answer = room
-        .app
-        .send(
-            Call::action(
-                ORIGIN,
-                "/api/rpc",
-                "adminSaveRate",
-                json!({ "branchId": MAIN, "requestId": "00000000-0000-4000-8000-000000000468",
-                        "code": "USD", "buy": "30", "sell": "40", "partnerName": "",
-                        "partnerCost": null, "previousUpdated": "" }),
-            )
-            .cookie(&room.cookie("OWNER")),
-        )
-        .await;
-    assert_eq!(answer.status, 200, "adminSaveRate: {:.300}", answer.text);
+    // re-expected for RE-7 #604 by the ticket author: `adminSaveRate` is retired (design §9);
+    // a rate is put in MAIN the v3 way, by publishing it
+    snapshot_common::publish_rate_per_one(&room.desk.db.pool, MAIN, "USD", "30", "40").await;
     room.at(5);
     assert_eq!(
         room.view("OWNER", &format!("branch=MAIN&since={v}")).await,
         json!({ "version": v, "changed": false }),
-        "a rate saved in MAIN is not a change of the BOT reference"
+        "a rate published in MAIN is not a change of the BOT reference"
     );
     assert_eq!(
         room.bot.asked(),
         1,
-        "the view's BOT was not asked by the save"
+        "the view's BOT was not asked by the publish"
     );
     room.finish().await;
 }

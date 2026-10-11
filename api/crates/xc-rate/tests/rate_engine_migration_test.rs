@@ -15,6 +15,12 @@
 //! applies every migration older than migration 4, writes `rates` rows as the direct save writes
 //! them (per 1, `numeric(20,8)` since migration 1), then applies the rest.
 //!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7's migration 6
+//! (`<version>_drop_rates.sql`, `docs/design/blueprint/rates.md` §8) drops `rates`. This test is
+//! about what migration 4 did to `rates`, so "the rest" now stops before migration 6: the rows are
+//! still written with `INSERT INTO rates` and read back after migration 4, which stays correct
+//! after RE-7. Nothing it checks changed.
+//!
 //! Assumptions:
 //! - "Newest" is the highest `rates.id` per (branch, code), as `rates_branch_code_id_idx` orders
 //!   and `RateService::current` reads; every newer row here also has a later `updated_at`, so the
@@ -34,6 +40,8 @@ use rust_decimal::Decimal;
 use sqlx::migrate::Migrator;
 
 const MIGRATION_4: i64 = 20261010120000;
+/// The description sqlx gives RE-7's migration 6, which drops `rates` (RE-7 #604).
+const DROP_RATES: &str = "drop rates";
 
 fn d(text: &str) -> Decimal {
     Decimal::from_str(text).expect("a decimal")
@@ -140,9 +148,24 @@ async fn the_backfill_builds_version_one_from_the_newest_row_per_code_times_unit
     let rates_before = db.count("rates").await;
     assert!(jpy_old < jpy);
 
-    all.run(&db.pool)
+    // RE-7 #604: every migration up to, not including, the one that drops `rates`.
+    let drop = all
+        .migrations
+        .iter()
+        .find(|m| m.description == DROP_RATES)
+        .map_or(i64::MAX, |m| m.version);
+    let mut after = migrator().await;
+    after.migrations = Cow::Owned(
+        all.migrations
+            .iter()
+            .filter(|m| m.version < drop)
+            .cloned()
+            .collect(),
+    );
+    after
+        .run(&db.pool)
         .await
-        .expect("apply migration 4 and the rest");
+        .expect("apply migration 4 and the rest, up to the drop of rates");
 
     // MAIN: version 1 with the newest row of each code, × unit_size
     assert_eq!(

@@ -37,6 +37,14 @@
 //! ConfigureCurrency, DateTime<Utc>) -> AppResult<()>` and `ConfigureCurrency` as they are on
 //! `f04fd32`; `KioskServiceError::{RatesFirst, InvalidCurrencySettings}`; the tables of #598;
 //! the new `KioskRepository::published_both_sides_in` above (reached only through `configure`).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 drops the `rates` table
+//! and removes `KioskPorts::save_rate` (`docs/design/blueprint/rates.md` §8 migration 6, §9).
+//! So the ledger no longer counts `rates`; the `rate_saves().is_empty()` checks are gone (the port
+//! has no method to save with, which the compiler now holds); the rate context that "would refuse"
+//! is no longer set up (there is none to refuse), and the "old counter rate in `rates`" seed is
+//! gone with its table. What each test proves about switches, publications, approval requests and
+//! audit lines is unchanged.
 
 mod kiosk_publication_common;
 mod kiosk_service_common;
@@ -50,7 +58,6 @@ use serde_json::{Value, json};
 /// Everything a configure must not change, plus the switches and the audit log.
 #[derive(Debug, PartialEq)]
 struct Ledger {
-    rates: i64,
     approval_requests: i64,
     publications: i64,
     lines: i64,
@@ -62,7 +69,6 @@ struct Ledger {
 
 async fn ledger(db: &TestDb) -> Ledger {
     Ledger {
-        rates: db.count("rates").await,
         approval_requests: db.count("approval_requests").await,
         publications: db.count("rate_publications").await,
         lines: db.count("published_rate_lines").await,
@@ -74,9 +80,8 @@ async fn ledger(db: &TestDb) -> Ledger {
 }
 
 /// The rate tables part of a ledger: what no configure may touch.
-fn rate_side(l: &Ledger) -> (i64, i64, i64, i64, Option<String>, Option<String>) {
+fn rate_side(l: &Ledger) -> (i64, i64, i64, Option<String>, Option<String>) {
     (
-        l.rates,
         l.approval_requests,
         l.publications,
         l.lines,
@@ -154,7 +159,7 @@ async fn start() -> (TestDb, Arc<FakePorts>, KioskService) {
 /// have refused: buy above sell, and text that is not a number).
 #[tokio::test]
 async fn enabling_a_published_currency_stores_the_switch_and_one_audit_line_and_no_rate() {
-    let (db, ports, service) = start().await;
+    let (db, _ports, service) = start().await;
     publish(
         &db.pool,
         MAIN,
@@ -194,11 +199,6 @@ async fn enabling_a_published_currency_stores_the_switch_and_one_audit_line_and_
         rate_side(&before),
         "configure writes no rate, request or publication"
     );
-    assert!(
-        ports.rate_saves().is_empty(),
-        "configure never asks the rate context to save: {:?}",
-        ports.rate_saves()
-    );
     assert_eq!(switch_of(&after.switches, MAIN, "CHF"), Some(true));
     assert_eq!(
         pinned(&after.audit),
@@ -214,7 +214,7 @@ async fn enabling_a_published_currency_stores_the_switch_and_one_audit_line_and_
 /// Item 1: switching off writes no rate either, with or without rates in the command.
 #[tokio::test]
 async fn disabling_writes_no_rate_and_asks_for_no_save() {
-    let (db, ports, service) = start().await;
+    let (db, _ports, service) = start().await;
     publish(&db.pool, MAIN, exact(0), &[both("USD", "32.1", "32.45")]).await;
     let before = ledger(&db).await;
 
@@ -239,7 +239,6 @@ async fn disabling_writes_no_rate_and_asks_for_no_save() {
 
     let after = ledger(&db).await;
     assert_eq!(rate_side(&after), rate_side(&before));
-    assert!(ports.rate_saves().is_empty(), "{:?}", ports.rate_saves());
     assert_eq!(switch_of(&after.switches, MAIN, "USD"), Some(false));
     assert_eq!(switch_of(&after.switches, MAIN, "EUR"), Some(false));
     assert_eq!(
@@ -256,9 +255,10 @@ async fn disabling_writes_no_rate_and_asks_for_no_save() {
 /// configure with the rate context's sentence (the fixture's step 14).
 #[tokio::test]
 async fn a_rate_context_that_would_refuse_is_never_reached() {
-    let (db, ports, service) = start().await;
+    let (db, _ports, service) = start().await;
     publish(&db.pool, MAIN, exact(0), &[both("CHF", "36.4", "37.1")]).await;
-    ports.rate_save_fails(Some("เรทถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชก่อน"));
+    // RE-7 #604: v2's refusing rate context (`rate_save_fails`) can no longer be set up; the port
+    // has no save. The command is v2's step 14, which v2 refused with that context's sentence.
     service
         .configure(
             &branch(MAIN),
@@ -268,7 +268,6 @@ async fn a_rate_context_that_would_refuse_is_never_reached() {
         )
         .await
         .expect("the switch is stored; no rate save is asked for");
-    assert!(ports.rate_saves().is_empty(), "{:?}", ports.rate_saves());
     assert_eq!(switch_of(&db.switches().await, MAIN, "CHF"), Some(true));
     db.finish().await;
 }
@@ -314,7 +313,7 @@ async fn the_audit_line_claims_no_rate() {
 /// Asks to enable `code` in `branch` and expects `RatesFirst` with nothing written.
 async fn refused_rates_first(
     db: &TestDb,
-    ports: &FakePorts,
+    _ports: &FakePorts,
     service: &KioskService,
     b: &str,
     code: &str,
@@ -341,26 +340,14 @@ async fn refused_rates_first(
         "{what}: the sentence itself"
     );
     assert_eq!(ledger(db).await, before, "{what}: nothing is written");
-    assert!(
-        ports.rate_saves().is_empty(),
-        "{what}: {:?}",
-        ports.rate_saves()
-    );
 }
 
 /// Item 2: before the branch's first publication, enabling is refused even with valid rates in
-/// the command (v2 accepted these), and even with an old counter rate in `rates`.
+/// the command (v2 accepted these). (Before RE-7 #604 also with an old counter rate in `rates`.)
 #[tokio::test]
 async fn enabling_before_any_publication_is_refused_rates_first_and_writes_nothing() {
     let (db, ports, service) = start().await;
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, updated_at, \
-         updated_by, request_id) VALUES ('MAIN', 'CHF', 36.4, 37.1, '', NULL, $1, 'test', 'r-1')",
-    )
-    .bind(exact(0))
-    .execute(&db.pool)
-    .await
-    .expect("an old counter rate");
+    // RE-7 #604 dropped `rates`; the old counter rate this seeded has no table to live in.
     refused_rates_first(&db, &ports, &service, MAIN, "CHF", "no publication").await;
     db.finish().await;
 }
@@ -463,7 +450,7 @@ async fn a_line_per_unit_size_counts() {
 /// Item 2: switching off needs nothing published, for a currency with no line at all.
 #[tokio::test]
 async fn disabling_is_accepted_with_nothing_published() {
-    let (db, ports, service) = start().await;
+    let (db, _ports, service) = start().await;
     service
         .configure(
             &branch(MAIN),
@@ -479,7 +466,6 @@ async fn disabling_is_accepted_with_nothing_published() {
         pinned(&after.audit),
         json!([configured(MAIN, "rates1", "JPY", false)])
     );
-    assert!(ports.rate_saves().is_empty());
     db.finish().await;
 }
 
@@ -487,7 +473,7 @@ async fn disabling_is_accepted_with_nothing_published() {
 /// with a publication present; nothing is written.
 #[tokio::test]
 async fn thb_and_an_unknown_code_stay_invalid_currency_settings() {
-    let (db, ports, service) = start().await;
+    let (db, _ports, service) = start().await;
     publish(&db.pool, MAIN, exact(0), &[both("USD", "32.1", "32.45")]).await;
     let before = ledger(&db).await;
     for (code, enabled) in [("THB", true), ("THB", false), ("XXX", true), ("usd", true)] {
@@ -508,6 +494,5 @@ async fn thb_and_an_unknown_code_stay_invalid_currency_settings() {
         );
     }
     assert_eq!(ledger(&db).await, before, "nothing is written");
-    assert!(ports.rate_saves().is_empty());
     db.finish().await;
 }

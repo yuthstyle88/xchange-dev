@@ -322,7 +322,7 @@ impl<const K: u8> Recording<K> {
 /// `POST /api/test-drafts/{id}/submit`, `(Rpc, "adminSnapshot")`: the owner and
 /// every staff role — the same row as the real view `admin_branches`.
 type SubmitDraft = Recording<0>;
-/// `PUT /api/test-drafts/{id}`, `(Rpc, "adminSaveRate")`: a narrower row.
+/// `PUT /api/test-drafts/{id}`, `(Rpc, "rateDraft")` (re-expected for RE-7 #604: was `adminSaveRate`): a narrower row.
 type SaveDraft = Recording<1>;
 /// `POST /api/test-desk/{id}`, `(StaffRpc, "adminDeskConfig")`: staff session only.
 type SaveDesk = Recording<2>;
@@ -355,7 +355,9 @@ impl CommandAction for SubmitDraft {
 
 impl CommandAction for SaveDraft {
     const NAME: &'static str = SAVE_NAME;
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSaveRate");
+    // re-expected for RE-7 #604 by the ticket author: `adminSaveRate` is retired (design §9);
+    // `rateDraft` has the same rows of `Policy` (the owner, and RATES)
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
     type Input = DraftInput;
     type Output = Done;
     const ROUTE: &'static str = "/api/test-drafts/{id}";
@@ -848,7 +850,8 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
             DRAFT_D1,
             Method::PUT,
             EntryPath::Rpc,
-            "adminSaveRate",
+            // re-expected for RE-7 #604: was `adminSaveRate`, retired (design §9)
+            "rateDraft",
             SAVE_NAME,
             None,
         ),
@@ -1142,10 +1145,10 @@ async fn a_command_is_served_at_its_declared_method_and_route_only() {
         Policy::allow(
             Some(&Actor::owner("owner-1")),
             EntryPath::Rpc,
-            &Action::new("adminSaveRate")
+            &Action::new("rateDraft")
         )
         .is_ok(),
-        "precondition: the owner may call adminSaveRate"
+        "precondition: the owner may call rateDraft (RE-7 #604: was adminSaveRate)"
     );
     let a = send(
         &db,

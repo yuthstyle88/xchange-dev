@@ -8,6 +8,14 @@
 //! - X2: in `RateService::save_rate`, the insert of the rate runs inside the branch transaction.
 //! - X3: in `BranchService::create`, `count` runs inside the branch transaction.
 //! - X4: in `BranchService::create`, `insert` runs inside the branch transaction.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `RateService::save_rate` and drops `rates` (`docs/design/blueprint/rates.md` §8 migration 6, §9
+//! row "`rates_test.rs` … the direct save → publications"). X2 pinned only that save, so its two
+//! tests are retired: `rate_save_insert_runs_in_transaction` and
+//! `rate_save_waits_for_branch_lock_and_writes_nothing_while_held`. Rates are written only by
+//! publication now; draft → submit → publish and its transactions are pinned in
+//! `rate_draft_flow_test.rs` and `rework_hardening_test.rs`. X1, X3 and X4 are unchanged.
 
 mod common;
 
@@ -128,54 +136,6 @@ async fn branch_create_insert_runs_in_transaction() {
     db.finish().await;
 }
 
-#[tokio::test]
-async fn rate_save_insert_runs_in_transaction() {
-    let db = TestDb::start().await;
-    let b = branch("MAIN");
-
-    // Set version of MAIN in branch_versions to i64::MAX so that BranchTx::run
-    // fails with integer overflow when incrementing version after the closure.
-    sqlx::query(
-        "INSERT INTO branch_versions (branch_id, version) VALUES ($1, $2) \
-         ON CONFLICT (branch_id) DO UPDATE SET version = $2",
-    )
-    .bind(b.as_str())
-    .bind(i64::MAX)
-    .execute(&db.pool)
-    .await
-    .unwrap();
-
-    let rates = db.rates();
-    let req = request_id();
-    let cmd = SaveRate {
-        request_id: req.clone(),
-        code: "USD".to_string(),
-        buy: "30.0000".to_string(),
-        sell: "31.0000".to_string(),
-        partner_name: String::new(),
-        partner_cost: None,
-        previous_updated: String::new(),
-    };
-    let res = rates.save_rate(&b, cmd, ACTOR, at(0)).await;
-
-    assert!(
-        res.is_err(),
-        "save_rate must fail when version increment overflows"
-    );
-
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM rates WHERE request_id = $1")
-        .bind(&req)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        count, 0,
-        "no rate row must survive when transaction rolls back"
-    );
-
-    db.finish().await;
-}
-
 // ── The lock is held while the command reads and writes ─────────────────────
 
 #[tokio::test]
@@ -230,65 +190,6 @@ async fn branch_create_waits_for_branch_lock_and_writes_nothing_while_held() {
             .await
             .unwrap();
     assert_eq!(count_after, 1, "branch must be written after lock released");
-
-    db.finish().await;
-}
-
-#[tokio::test]
-async fn rate_save_waits_for_branch_lock_and_writes_nothing_while_held() {
-    let db = TestDb::start().await;
-    let b = branch("MAIN");
-    let (lock_tx, holder_pid) = lock_branch(&db.pool, b.as_str()).await;
-
-    let rates = db.rates();
-    let req = request_id();
-    let b_clone = b.clone();
-    let cmd = SaveRate {
-        request_id: req.clone(),
-        code: "EUR".to_string(),
-        buy: "35.0000".to_string(),
-        sell: "36.0000".to_string(),
-        partner_name: String::new(),
-        partner_cost: None,
-        previous_updated: String::new(),
-    };
-
-    let mut task = tokio::spawn(async move { rates.save_rate(&b_clone, cmd, ACTOR, at(0)).await });
-
-    within(
-        MUST_FINISH,
-        "wait for branch lock",
-        wait_until_waiting_for_branch_lock(&db.pool, holder_pid, &mut task),
-    )
-    .await;
-    assert!(
-        !task.is_finished(),
-        "command must be waiting for the branch lock"
-    );
-
-    let count_during: i64 = sqlx::query_scalar("SELECT count(*) FROM rates WHERE request_id = $1")
-        .bind(&req)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        count_during, 0,
-        "rate must not be written while branch lock is held"
-    );
-
-    lock_tx.rollback().await.unwrap();
-
-    within(MUST_FINISH, "finish save_rate", task)
-        .await
-        .unwrap()
-        .expect("save_rate should succeed after lock released");
-
-    let count_after: i64 = sqlx::query_scalar("SELECT count(*) FROM rates WHERE request_id = $1")
-        .bind(&req)
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-    assert_eq!(count_after, 1, "rate must be written after lock released");
 
     db.finish().await;
 }

@@ -19,7 +19,6 @@ use xc_kernel::money::{MinorUnit, Rate, Side, UnitSize};
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
-use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
@@ -95,15 +94,8 @@ impl KioskPorts for Counter {
         })
     }
 
-    fn save_rate<'a>(
-        &'a self,
-        _branch: &'a BranchId,
-        _rate: &'a SaveCounterRate,
-        _actor: &'a str,
-        _now: DateTime<Utc>,
-    ) -> Asked<'a, ()> {
-        Box::pin(async { Ok(()) })
-    }
+    // Re-expected for RE-7 #604 by the ticket author: `KioskPorts::save_rate` is removed (design
+    // `docs/design/blueprint/rates.md` §9: the direct save is retired), so this stub is too.
 
     fn record_in<'a>(
         &'a self,

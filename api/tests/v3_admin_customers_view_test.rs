@@ -430,20 +430,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
-        // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-        rates_re4e_publish::publish_newest_rates(&self.desk.db.pool, branch).await;
+        // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+        // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+        rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
     async fn open_shift(&self, branch: &str) {

@@ -37,6 +37,12 @@
 //! `approvalRead` are ApprovalsDecide, EXECUTIVE's (the B1 translation of "OWNER" alone). One
 //! answer changes, C1: on StaffRpc the owner's user is answered by its roles, so it may `rateDraft`
 //! there through EXECUTIVE (was `EmployeeAuthRequired`).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
+//! (`docs/design/blueprint/rates.md` §9: "`adminSaveRate` removed in RE-7"), so
+//! `the_new_rows_leave_the_existing_rows_as_they_were` now expects no role to pass it on either
+//! path and the owner's user to hear `InvalidRequest` on Rpc (an action no row names). Every
+//! `rateDraft` expectation is unchanged.
 
 mod policy_common;
 
@@ -177,15 +183,21 @@ fn approval_decide_and_approval_read_are_the_executives_the_branch_managers_and_
 
 #[test]
 fn the_new_rows_leave_the_existing_rows_as_they_were() {
-    // RE-3 adds rows; the direct save stays RatesDraft until RE-7, and the snapshot is CompatRead
+    // RE-3 adds rows; the direct save was RatesDraft until RE-7 #604 removed `adminSaveRate`
+    // (rates.md §9), and the snapshot is CompatRead
     for on in [EntryPath::Rpc, EntryPath::StaffRpc] {
-        assert_eq!(
-            allowed_roles(on, "adminSaveRate"),
-            ["EXECUTIVE", "RATE_MANAGER"]
+        assert!(
+            allowed_roles(on, "adminSaveRate").is_empty(),
+            "RE-7 #604: no role may adminSaveRate on {}",
+            path_name(on)
         );
         assert_eq!(allowed_roles(on, "adminSnapshot").len(), 7);
     }
-    assert_eq!(ask(Some(&owner()), EntryPath::Rpc, "adminSaveRate"), Ok(()));
+    assert_eq!(
+        ask(Some(&owner()), EntryPath::Rpc, "adminSaveRate"),
+        Err(PolicyError::InvalidRequest),
+        "RE-7 #604: adminSaveRate is a name no row has"
+    );
     // an action no row names is still refused, on both paths
     assert_eq!(
         ask(Some(&owner()), EntryPath::Rpc, "rateDraftt"),

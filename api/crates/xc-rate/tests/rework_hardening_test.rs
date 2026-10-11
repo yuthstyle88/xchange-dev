@@ -3,6 +3,15 @@
 //!    and both branches' publications and draft status remain unchanged.
 //! 2. source_snapshot on published_rate_lines after AUTO publish contains:
 //!    reference_line_id, policy_version_id, policy adjust %, and partner name/cost.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 drops `rates` and moves
+//! the publish's partner read to the newest `'PARTNER'` reference line of the currency
+//! (`docs/design/blueprint/rates.md` §4.1 "Partner cost", §8 migration 6). So
+//! `source_snapshot_carries_reference_policy_and_partner` seeds SuperRich's quote as a `'PARTNER'`
+//! batch (provider `SuperRich`, USD per 1, sell 34.8) instead of a `rates` row, fetched an hour
+//! before the BoT batch so the AUTO base is the BoT line either way, and reads the partner in
+//! §4.1's keys: `provider` (was `name`) and `sell` (the partner's figure, was `cost`). The
+//! reference, policy and adjust checks are unchanged.
 
 mod rate_engine_common;
 
@@ -158,14 +167,27 @@ async fn source_snapshot_carries_reference_policy_and_partner() {
         .seed_policy("MAIN", "0.5000", "0.7500", json!({}), Some(24), None, None)
         .await;
 
-    // Seed partner in rates table for MAIN / USD
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, partner_name, partner_cost, updated_at, updated_by, request_id) \
-         VALUES ('MAIN', 'USD', 35.0000, 36.0000, 'SuperRich', 34.8000, now(), 'owner', 'req-init')",
+    // Seed SuperRich's quote for USD as reference data (§4.1 "Partner cost"), older than BoT's.
+    let partner_batch: String = sqlx::query_scalar(
+        "INSERT INTO rate_reference_batches \
+           (id, provider, source_date, fetched_at, raw_checksum, status) \
+         VALUES (gen_random_uuid(), 'SuperRich', ($1::timestamptz AT TIME ZONE 'UTC')::date, $1, $2, 'COMPLETE') \
+         RETURNING id::text",
     )
+    .bind(now - chrono::Duration::hours(1))
+    .bind(unique("partner-checksum"))
+    .fetch_one(&db.pool)
+    .await
+    .expect("seed a PARTNER batch");
+    sqlx::query(
+        "INSERT INTO rate_reference_lines \
+           (id, batch_id, currency_code, reference_type, unit_size, buy, sell, raw) \
+         VALUES (gen_random_uuid(), $1::uuid, 'USD', 'PARTNER', 1, NULL, 34.8000, '{}'::jsonb)",
+    )
+    .bind(&partner_batch)
     .execute(&db.pool)
     .await
-    .expect("seed rates with partner");
+    .expect("seed the PARTNER line of USD");
 
     let mut tx = db.begin().await;
     let draft = e
@@ -222,16 +244,19 @@ async fn source_snapshot_carries_reference_policy_and_partner() {
     assert_eq!(buy_pct.to_string().trim_matches('"'), "0.5000");
     assert_eq!(sell_pct.to_string().trim_matches('"'), "0.7500");
 
-    // 4. partner name and cost
+    // 4. partner: the PARTNER line's provider and figure (§4.1 keys)
     let partner = snapshot.get("partner").expect("partner present");
     assert_eq!(
-        partner.get("name").and_then(|v| v.as_str()),
-        Some("SuperRich")
+        partner.get("provider").and_then(|v| v.as_str()),
+        Some("SuperRich"),
+        "partner.provider: {snapshot}"
     );
-    let cost =
-        rust_decimal::Decimal::from_str(partner.get("cost").unwrap().to_string().trim_matches('"'))
-            .unwrap();
-    assert_eq!(cost, rust_decimal::Decimal::from_str("34.8").unwrap());
+    let sell = partner
+        .get("sell")
+        .unwrap_or_else(|| panic!("partner.sell: {snapshot}"));
+    let sell = rust_decimal::Decimal::from_str(sell.to_string().trim_matches('"'))
+        .unwrap_or_else(|e| panic!("partner.sell {sell} is a decimal: {e}"));
+    assert_eq!(sell, rust_decimal::Decimal::from_str("34.8").unwrap());
 
     db.finish().await;
 }
