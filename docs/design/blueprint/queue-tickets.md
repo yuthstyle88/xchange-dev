@@ -372,7 +372,11 @@ If QU-6 moved the shell to `queue_board` directly, it would have to edit all of 
 | QU-A1 | #879 | closed | QU-1 + QU-2 |
 | QU-A2 | #880 | closed | QU-3, QU-4, QU-5 |
 | QU-A3 | #1128 | open | the unfinished part of the QU-4 row: the shift-open/close calls into `CounterService` (#880 shipped the service, nothing calls it) |
-| QU-B | #881 | open | QU-6, QU-7, QU-8 |
+| QU-B | #881 | closed `not planned` 2026-10-11, split into the four rows below | QU-6, QU-7, QU-8 |
+| QU-7 | #1266 | opened 2026-10-11 | the QU-7 row |
+| QU-8 | #1267 | opened 2026-10-11 | the QU-8 row |
+| QU-6a | #1353 | opened 2026-10-11 | the QU-6a row (§9.2) |
+| QU-6 | #1354 | opened 2026-10-11 | the QU-6 row; after #1266 and #1353 |
 
 ## 10. Must ask the owner
 
