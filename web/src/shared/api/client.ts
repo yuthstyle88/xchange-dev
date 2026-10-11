@@ -203,4 +203,29 @@ export class ApiClient {
       return (await res.json()) as R;
     })();
   }
+
+  /** A raw upload (#539): the Blob is the body and `contentType` its type; sent and refused like `command`. */
+  postBytes<R>(path: string, body: Blob, contentType: string, idempotencyKey: string): Promise<R> {
+    if (!idempotencyKey || idempotencyKey.trim() === '') {
+      throw new Error('Idempotency key must not be empty');
+    }
+    return (async () => {
+      const res = await this.fetchFn(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'x-xchange-request': '1',
+          'idempotency-key': idempotencyKey,
+          'content-type': contentType,
+        },
+        body,
+      });
+
+      if (!res.ok) {
+        await this.parseError(res);
+      }
+
+      return (await res.json()) as R;
+    })();
+  }
 }

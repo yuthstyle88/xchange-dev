@@ -53,3 +53,67 @@ ol.steps li[aria-current="step"] {
   text-align: center;
   color: #888;
 }
+
+/* steps (DK-C/D/E #539): the form every step draws */
+.desk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.desk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.desk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.desk-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #444;
+}
+
+.desk-rate-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.desk-error {
+  color: #b00020;
+  margin: 0;
+}
+
+.desk-notice {
+  color: #6b5b00;
+  margin: 0;
+}
+
+.desk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* the summary aside */
+.desk-summary dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.desk-summary dd {
+  margin: 0;
+  text-align: right;
+}
