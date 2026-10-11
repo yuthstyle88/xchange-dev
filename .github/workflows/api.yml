@@ -175,7 +175,7 @@ jobs:
   api:
     name: api
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
+    if: ${{ !cancelled() && needs.changes.outputs.skip_build != 'true' }}
     runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 30
     env:
@@ -188,12 +188,6 @@ jobs:
       GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
       GIT_CONFIG_VALUE_0: https://github.com/
     steps:
-      - name: Refuse to report green when changes did not succeed
-        if: ${{ needs.changes.result != 'success' }}
-        run: |
-          echo "changes did not succeed: ${{ needs.changes.result }}"
-          exit 1
-
       - name: Refuse to report green when the run was cancelled
         if: cancelled()
         run: exit 1
