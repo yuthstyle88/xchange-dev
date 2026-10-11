@@ -5,7 +5,10 @@ use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize, plain_decimal};
+use xc_kernel::money::{
+    CurrencyCode, ForeignAmount, Money, MoneyDelta, NumberError, Rate, Side, UnitSize,
+    plain_decimal,
+};
 
 use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::value_objects::document_ref::DocumentRef;
@@ -13,7 +16,7 @@ use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
 use crate::domain::transaction::line::TransactionLine;
 use crate::domain::transaction::payment::TransactionPayment;
 use crate::domain::transaction::receipt_record::Receipt;
-use crate::domain::transaction::repository::{StatusMove, TransactionStore};
+use crate::domain::transaction::repository::{LineCosts, StatusMove, TransactionStore};
 use crate::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
@@ -27,6 +30,14 @@ pub struct PgTransactionStore {
 impl PgTransactionStore {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+}
+
+/// A signed `numeric` read back: `-20.00` is `MoneyDelta(-2000)`.
+fn signed_money(text: &str) -> Result<MoneyDelta, NumberError> {
+    match text.strip_prefix('-') {
+        Some(abs) => Money::parse(abs).map(|m| MoneyDelta::ZERO.minus(m)),
+        None => Money::parse(text).map(MoneyDelta::from),
     }
 }
 
@@ -331,7 +342,7 @@ impl TransactionStore for PgTransactionStore {
                 .map_err(AppError::Database)?;
             let realized_margin_thb = margin_opt
                 .map(|s| {
-                    Money::parse(&s)
+                    signed_money(&s)
                         .map_err(|e| AppError::Internal(format!("realized_margin: {e}")))
                 })
                 .transpose()?;
@@ -544,35 +555,20 @@ impl TransactionStore for PgTransactionStore {
         receipt_file_key: &'a str,
         now: DateTime<Utc>,
     ) -> AppResult<(String, Receipt)> {
-        let row = sqlx::query(
-            "SELECT status, organization_id, mode FROM transactions WHERE id = $1 FOR UPDATE",
-        )
-        .bind(id.0)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
+        let document_ref = self.next_document_ref_in(tx, id, now).await?;
+        let receipt = self
+            .complete_numbered_in(tx, id, &document_ref, receipt_file_key, now)
+            .await?;
+        Ok((document_ref, receipt))
+    }
 
-        let Some(row) = row else {
-            return Err(AppError::Domain(
-                "staleVersion: transaction not found".into(),
-            ));
-        };
-
-        let status: String = row.try_get("status").map_err(AppError::Database)?;
-        if status != "CONFIRMED" {
-            return Err(AppError::Domain(
-                "staleVersion: transaction is not CONFIRMED".into(),
-            ));
-        }
-
-        let organization_id: Uuid = row.try_get("organization_id").map_err(AppError::Database)?;
-        let mode_str: String = row.try_get("mode").map_err(AppError::Database)?;
-        let mode = if mode_str == "DEMO" {
-            Mode::Demo
-        } else {
-            Mode::Live
-        };
-
+    async fn next_document_ref_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+        now: DateTime<Utc>,
+    ) -> AppResult<String> {
+        let (organization_id, mode) = confirmed_in(tx, id).await?;
         let counter_key = DocumentRef::counter_key(organization_id, mode, now);
         let number: i64 = sqlx::query_scalar(
             "INSERT INTO counters (key, value) VALUES ($1, 1) \
@@ -584,7 +580,18 @@ impl TransactionStore for PgTransactionStore {
         .await
         .map_err(AppError::Database)?;
 
-        let document_ref = DocumentRef::format(mode, now, number);
+        Ok(DocumentRef::format(mode, now, number))
+    }
+
+    async fn complete_numbered_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+        document_ref: &'a str,
+        receipt_file_key: &'a str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Receipt> {
+        let (organization_id, _) = confirmed_in(tx, id).await?;
 
         sqlx::query(
             "UPDATE transactions \
@@ -592,7 +599,7 @@ impl TransactionStore for PgTransactionStore {
              WHERE id = $1",
         )
         .bind(id.0)
-        .bind(&document_ref)
+        .bind(document_ref)
         .bind(now)
         .execute(&mut **tx)
         .await
@@ -611,21 +618,84 @@ impl TransactionStore for PgTransactionStore {
         .bind(receipt_id)
         .bind(organization_id)
         .bind(id.0)
-        .bind(&document_ref)
+        .bind(document_ref)
         .bind(now)
         .bind(receipt_file_key)
         .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
-        let receipt = Receipt {
+        Ok(Receipt {
             id: receipt_id,
-            number: document_ref.clone(),
+            number: document_ref.to_owned(),
             revision: 1,
             issued_at: now,
-            document_ref: receipt_file_key.to_string(),
-        };
-
-        Ok((document_ref, receipt))
+            document_ref: receipt_file_key.to_owned(),
+        })
     }
+
+    async fn record_line_costs_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+        costs: &'a [LineCosts],
+    ) -> AppResult<()> {
+        for c in costs {
+            let written = sqlx::query(
+                "UPDATE transaction_lines \
+                 SET cost_basis_thb = $3::numeric, realized_margin_thb = $4::numeric \
+                 WHERE transaction_id = $1 AND id = $2",
+            )
+            .bind(id.0)
+            .bind(c.line_id)
+            .bind(c.cost_basis_thb.to_string())
+            .bind(c.realized_margin_thb.map(|m| m.to_string()))
+            .execute(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+            if written.rows_affected() != 1 {
+                return Err(AppError::Internal(format!(
+                    "line {} is not a line of transaction {}",
+                    c.line_id, id.0
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The CONFIRMED exchange's organisation and mode, locked; any other status is `staleVersion`.
+async fn confirmed_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: TransactionId,
+) -> AppResult<(Uuid, Mode)> {
+    let row = sqlx::query(
+        "SELECT status, organization_id, mode FROM transactions WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id.0)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    let Some(row) = row else {
+        return Err(AppError::Domain(
+            "staleVersion: transaction not found".into(),
+        ));
+    };
+
+    let status: String = row.try_get("status").map_err(AppError::Database)?;
+    if status != "CONFIRMED" {
+        return Err(AppError::Domain(
+            "staleVersion: transaction is not CONFIRMED".into(),
+        ));
+    }
+
+    let organization_id: Uuid = row.try_get("organization_id").map_err(AppError::Database)?;
+    let mode_str: String = row.try_get("mode").map_err(AppError::Database)?;
+    let mode = if mode_str == "DEMO" {
+        Mode::Demo
+    } else {
+        Mode::Live
+    };
+    Ok((organization_id, mode))
 }

@@ -2,6 +2,7 @@
 
 pub mod approval;
 pub mod cancel;
+pub mod complete;
 pub mod confirm;
 pub mod create;
 pub mod quote;

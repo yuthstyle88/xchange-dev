@@ -22,19 +22,11 @@ impl PaymentSaveStep {
 }
 
 impl SaveStep for PaymentSaveStep {
+    /// The check runs before anything is written (TX-5 #873, design §4.5): it refuses and writes nothing.
     fn before_in<'a>(
-        &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _ctx: &'a SaveContext<'a>,
-    ) -> StepFuture<'a> {
-        Box::pin(async move { Ok(()) })
-    }
-
-    fn after_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         ctx: &'a SaveContext<'a>,
-        _saved: &'a Transaction,
     ) -> StepFuture<'a> {
         Box::pin(async move {
             if ctx.prior.is_none() && ctx.form.customer.mode == Mode::Live {
@@ -45,5 +37,14 @@ impl SaveStep for PaymentSaveStep {
             }
             Ok(())
         })
+    }
+
+    fn after_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _ctx: &'a SaveContext<'a>,
+        _saved: &'a Transaction,
+    ) -> StepFuture<'a> {
+        Box::pin(async move { Ok(()) })
     }
 }

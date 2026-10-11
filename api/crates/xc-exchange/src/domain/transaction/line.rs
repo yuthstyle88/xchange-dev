@@ -1,7 +1,7 @@
 //! TransactionLine entity.
 
 use uuid::Uuid;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta, Rate, Side, UnitSize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionLine {
@@ -17,6 +17,7 @@ pub struct TransactionLine {
     pub fee_thb: Money,
     pub settle_thb: Money,
     pub cost_basis_thb: Option<Money>,
-    pub realized_margin_thb: Option<Money>,
+    /// Signed: a SELL below cost has a negative margin (TX-5 #873, ruling Q5).
+    pub realized_margin_thb: Option<MoneyDelta>,
     pub line_no: i32,
 }
