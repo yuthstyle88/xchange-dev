@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
+use xc_kernel::pii::{IdentityType, normalize};
 
 use crate::application::user::UserService;
 use crate::application::user::user_service::{CreateStaffError, StaffCreate};
@@ -420,6 +421,27 @@ impl SessionService {
         .await
     }
 
+    fn identity_identifier(raw: &str) -> String {
+        let stripped: String = raw
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-' && *c != '(' && *c != ')')
+            .collect();
+
+        let is_phone = if let Some(rest) = stripped.strip_prefix('0') {
+            (rest.len() == 8 || rest.len() == 9) && rest.chars().all(|c| c.is_ascii_digit())
+        } else if let Some(rest) = stripped.strip_prefix('+') {
+            !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
+        } else {
+            false
+        };
+
+        if is_phone {
+            normalize(IdentityType::Phone, raw, None).unwrap_or_else(|_| raw.to_string())
+        } else {
+            raw.to_string()
+        }
+    }
+
     pub async fn login(
         &self,
         identifier: &str,
@@ -432,7 +454,8 @@ impl SessionService {
             .as_ref()
             .ok_or_else(|| IdentityError::unavailable("/api/auth/login", 503, "not_configured"))?;
 
-        let login_resp = identity.login(identifier, password, client_ip).await?;
+        let id = Self::identity_identifier(identifier);
+        let login_resp = identity.login(&id, password, client_ip).await?;
         self.sign_in_with_login(login_resp, now).await
     }
 
