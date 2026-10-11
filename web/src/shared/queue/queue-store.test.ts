@@ -46,6 +46,8 @@ const ME: Me = {
   branch: 'B-HOME',
   name: 'Somchai',
   username: 'somchai',
+  branchName: 'B-HOME',
+  branches: [],
 };
 
 let branchNo = 0;

@@ -43,6 +43,8 @@ const ME: Me = {
   branch: 'B-HOME',
   name: 'Somchai',
   username: 'somchai',
+  branchName: 'B-HOME',
+  branches: [],
 };
 
 type State = 'waiting' | 'working' | 'completed';

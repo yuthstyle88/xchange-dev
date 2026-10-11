@@ -9,7 +9,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::application::user::UserService;
 use crate::application::user::user_service::{CreateStaffError, StaffCreate};
-use crate::domain::access::{Role, ScopedRole};
+use crate::domain::access::{BranchRef, Role, ScopedRole, SessionBranch};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
     UNAVAILABLE_MESSAGE,
@@ -141,8 +141,92 @@ type ActiveUserRow = (
     i32,
     i32,
     DateTime<Utc>,
+    Option<String>,
+    Option<String>,
+    String,
 );
+/// `users.last_branch_id` and the organisation's branches (`ORG_BRANCHES_JSON`), read at sign-in.
+type SignInBranchRow = (Option<String>, String);
 type RoleRow = (String, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+
+/// The organisation's branches as one JSON text, `[{id, code, name}]`, for a row aliased `u` of `users` (SB-1
+/// §14.3). A sub-select, so it folds into the statement that reads the user: no extra query. `code` is
+/// `COALESCE(code, id)` for a branch inserted without one.
+const ORG_BRANCHES_JSON: &str = "(SELECT COALESCE(json_agg(json_build_object('id', b.id, 'code', COALESCE(b.code, b.id), \
+     'name', b.name)), '[]'::json)::text FROM branches b WHERE b.organization_id = u.organization_id)";
+
+#[derive(Deserialize)]
+struct BranchJson {
+    id: String,
+    code: String,
+    name: String,
+}
+
+fn branch_refs(json: &str) -> Result<Vec<BranchRef>, SessionError> {
+    let rows: Vec<BranchJson> =
+        serde_json::from_str(json).map_err(|e| SessionError::Database(e.to_string()))?;
+    Ok(rows
+        .into_iter()
+        .map(|b| BranchRef::new(&b.id, &b.code, &b.name))
+        .collect())
+}
+
+fn scoped_roles(rows: Vec<RoleRow>) -> Vec<ScopedRole> {
+    rows.into_iter()
+        .filter_map(|(role_code, branch_id, valid_from, valid_to)| {
+            let role = Role::parse(&role_code)?;
+            Some(ScopedRole::new(
+                role,
+                branch_id.map(BranchId::new),
+                valid_from,
+                valid_to,
+            ))
+        })
+        .collect()
+}
+
+const VALID_ROLES_SQL: &str = "SELECT role_code, branch_id, valid_from, valid_to FROM user_roles \
+     WHERE user_id = $1::uuid AND valid_from <= $2 AND (valid_to IS NULL OR valid_to > $2) \
+     ORDER BY valid_from ASC, id ASC";
+
+/// One active session as a read answers it (SB-1 §14.3): the user, their valid roles, the session's stored branch,
+/// the user's last choice, and the organisation's branches. Read in two statements, as before §14.
+#[derive(Debug, Clone)]
+pub struct ActiveSession {
+    pub user: User,
+    pub roles: Vec<ScopedRole>,
+    /// `user_sessions.branch_id`: `None` for a session opened before the migration.
+    pub stored_branch: Option<BranchId>,
+    /// `users.last_branch_id`.
+    pub last_branch: Option<BranchId>,
+    pub org_branches: Vec<BranchRef>,
+}
+
+impl ActiveSession {
+    /// S: the branches this user may switch to now (§14.2).
+    pub fn switchable(&self, now: DateTime<Utc>) -> Vec<BranchRef> {
+        SessionBranch::switchable(&self.roles, &self.org_branches, now)
+    }
+
+    /// The branch this session works in now: the stored one while it is in S, else R5. Never written back.
+    pub fn effective_branch(&self, now: DateTime<Utc>) -> Option<BranchId> {
+        SessionBranch::effective(
+            self.stored_branch.as_ref(),
+            &self.switchable(now),
+            self.last_branch.as_ref(),
+        )
+    }
+}
+
+/// Why `switch_branch` refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SwitchBranchError {
+    /// No active session for the token.
+    SignIn,
+    /// The branch is not in S (not granted, unknown, or another organisation's).
+    OutOfScope,
+    Database(String),
+}
 
 #[derive(Clone)]
 pub struct SessionService {
@@ -201,6 +285,34 @@ impl SessionService {
             .collect())
     }
 
+    /// R5 at sign-in: the branch a new session of `user_id` starts on, from its valid roles, the organisation's
+    /// branches and the user's last choice. Sign-in is not a choice: `last_branch_id` is only read.
+    async fn initial_branch_in(
+        conn: &mut sqlx::PgConnection,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<BranchId>, SessionError> {
+        let sql = format!(
+            "SELECT u.last_branch_id, {ORG_BRANCHES_JSON} FROM users u WHERE u.id = $1::uuid"
+        );
+        let row: Option<SignInBranchRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(user_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let Some((last, branches)) = row else {
+            return Ok(None);
+        };
+        let roles: Vec<RoleRow> = sqlx::query_as(VALID_ROLES_SQL)
+            .bind(user_id)
+            .bind(now)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let s = SessionBranch::switchable(&scoped_roles(roles), &branch_refs(&branches)?, now);
+        Ok(SessionBranch::initial(&s, last.map(BranchId::new).as_ref()))
+    }
+
     async fn create_session_for_user(
         &self,
         user_id: &str,
@@ -228,9 +340,15 @@ impl SessionService {
             _ => None,
         };
 
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let branch = Self::initial_branch_in(&mut conn, user_id, now).await?;
         sqlx::query(
-            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id) \
-             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid)",
+            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id) \
+             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7)",
         )
         .bind(&token_hash)
         .bind(user_id)
@@ -238,7 +356,8 @@ impl SessionService {
         .bind(expires)
         .bind(refresh_enc)
         .bind(organization_id)
-        .execute(&self.pool)
+        .bind(branch.as_ref().map(BranchId::as_str))
+        .execute(&mut *conn)
         .await
         .map_err(|e| SessionError::Database(e.to_string()))?;
 
@@ -549,23 +668,40 @@ impl SessionService {
         }
     }
 
-    pub async fn active_user_and_roles(
-        &self,
+    /// The session read (SB-1 §14.3) on `conn`: exactly two statements, as before §14. The first reads the session,
+    /// the user, the stored branch, the last choice and the organisation's branches; the second reads the valid roles.
+    async fn read_session_in(
+        conn: &mut sqlx::PgConnection,
         session_token: &str,
         now: DateTime<Utc>,
-    ) -> Result<Option<(User, Vec<ScopedRole>)>, SessionError> {
+    ) -> Result<Option<ActiveSession>, SessionError> {
         let token_hash = sha256_hex(session_token);
-        let row: Option<ActiveUserRow> = sqlx::query_as(
-            "SELECT u.id::text, u.organization_id::text, u.auth_subject, u.name, u.status, u.version, s.version, s.expires \
+        let sql = format!(
+            "SELECT u.id::text, u.organization_id::text, u.auth_subject, u.name, u.status, u.version, s.version, \
+             s.expires, s.branch_id, u.last_branch_id, {ORG_BRANCHES_JSON} \
              FROM user_sessions s JOIN users u ON u.id = s.user_id \
-             WHERE s.hash = $1",
-        )
-        .bind(&token_hash)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+             WHERE s.hash = $1"
+        );
+        let row: Option<ActiveUserRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(&token_hash)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
 
-        let Some((id, org_id, auth_sub, name, status, u_version, s_version, expires)) = row else {
+        let Some((
+            id,
+            org_id,
+            auth_sub,
+            name,
+            status,
+            u_version,
+            s_version,
+            expires,
+            stored_branch,
+            last_branch,
+            org_branches,
+        )) = row
+        else {
             return Ok(None);
         };
 
@@ -573,25 +709,13 @@ impl SessionService {
             return Ok(None);
         }
 
-        let roles_rows: Vec<RoleRow> = sqlx::query_as(
-            "SELECT role_code, branch_id, valid_from, valid_to FROM user_roles \
-             WHERE user_id = $1::uuid AND valid_from <= $2 AND (valid_to IS NULL OR valid_to > $2) \
-             ORDER BY valid_from ASC, id ASC",
-        )
-        .bind(&id)
-        .bind(now)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
-
-        let scoped_roles = roles_rows
-            .into_iter()
-            .filter_map(|(role_code, branch_id, valid_from, valid_to)| {
-                let role = Role::parse(&role_code)?;
-                let branch = branch_id.map(BranchId::new);
-                Some(ScopedRole::new(role, branch, valid_from, valid_to))
-            })
-            .collect::<Vec<_>>();
+        let roles_rows: Vec<RoleRow> = sqlx::query_as(VALID_ROLES_SQL)
+            .bind(&id)
+            .bind(now)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let roles = scoped_roles(roles_rows);
 
         let user = User {
             id,
@@ -603,10 +727,126 @@ impl SessionService {
             created_at: now,
             created_by: "session".to_string(),
             legacy_employee_id: None,
-            roles: scoped_roles.clone(),
+            roles: roles.clone(),
         };
 
-        Ok(Some((user, scoped_roles)))
+        Ok(Some(ActiveSession {
+            user,
+            roles,
+            stored_branch: stored_branch.map(BranchId::new),
+            last_branch: last_branch.map(BranchId::new),
+            org_branches: branch_refs(&org_branches)?,
+        }))
+    }
+
+    /// The active session behind `session_token`, or `None` (SB-1 §14.3). Reading never writes the session row.
+    pub async fn active_session(
+        &self,
+        session_token: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<ActiveSession>, SessionError> {
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        Self::read_session_in(&mut conn, session_token, now).await
+    }
+
+    /// The user and roles of an active session, for callers that need no branch.
+    pub async fn active_user_and_roles(
+        &self,
+        session_token: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(User, Vec<ScopedRole>)>, SessionError> {
+        Ok(self
+            .active_session(session_token, now)
+            .await?
+            .map(|s| (s.user, s.roles)))
+    }
+
+    /// `POST /api/auth/session/branch` (SB-1 §14.3): moves this session to `branch` and records it as the user's
+    /// last choice, in one transaction. A branch outside S is refused and nothing is written. `users.version` is
+    /// not bumped: that would end every session of the user.
+    pub async fn switch_branch(
+        &self,
+        session_token: &str,
+        branch: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ActiveSession, SwitchBranchError> {
+        let db = |e: sqlx::Error| SwitchBranchError::Database(e.to_string());
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let mut session = match Self::read_session_in(&mut tx, session_token, now).await {
+            Ok(Some(session)) => session,
+            Ok(None) => return Err(SwitchBranchError::SignIn),
+            Err(SessionError::Database(e)) => return Err(SwitchBranchError::Database(e)),
+            Err(e) => return Err(SwitchBranchError::Database(e.refusal().2)),
+        };
+        let chosen = BranchId::new(branch);
+        if !session.switchable(now).iter().any(|b| b.id == chosen) {
+            return Err(SwitchBranchError::OutOfScope);
+        }
+        sqlx::query("UPDATE user_sessions SET branch_id = $2 WHERE hash = $1")
+            .bind(sha256_hex(session_token))
+            .bind(chosen.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        sqlx::query("UPDATE users SET last_branch_id = $2 WHERE id = $1::uuid")
+            .bind(&session.user.id)
+            .bind(chosen.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        session.stored_branch = Some(chosen.clone());
+        session.last_branch = Some(chosen);
+        Ok(session)
+    }
+
+    /// S for the user `user_id` (SB-1 §14.4 `Me.branches`): their valid-now roles over their organisation's
+    /// branches, ordered as §14.2. `None` when no such user.
+    pub async fn switchable_of_user(
+        &self,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<Vec<BranchRef>>, SessionError> {
+        // The old owner and staff cookies act under ids that are not user ids ("owner", an employee id).
+        let is_uuid = user_id.len() == 36
+            && user_id.char_indices().all(|(i, c)| match i {
+                8 | 13 | 18 | 23 => c == '-',
+                _ => c.is_ascii_hexdigit(),
+            });
+        if !is_uuid {
+            return Ok(None);
+        }
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let sql = format!(
+            "SELECT u.last_branch_id, {ORG_BRANCHES_JSON} FROM users u WHERE u.id = $1::uuid"
+        );
+        let row: Option<SignInBranchRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(user_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let Some((_, branches)) = row else {
+            return Ok(None);
+        };
+        let roles: Vec<RoleRow> = sqlx::query_as(VALID_ROLES_SQL)
+            .bind(user_id)
+            .bind(now)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        Ok(Some(SessionBranch::switchable(
+            &scoped_roles(roles),
+            &branch_refs(&branches)?,
+            now,
+        )))
     }
 
     /// The first owner of an install (#1157, the first-user bootstrap): one user with

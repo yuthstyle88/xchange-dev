@@ -25,9 +25,9 @@ import { createSessionStore, endingFetch, endsSession } from './session';
 
 // ------------------------------------------------------------------ fixtures
 
-const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1' };
-const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: 'Nok', username: 'nok' };
-const ratesOther: Me = { kind: 'staff', id: 'e-8', role: 'RATES', branch: 'XC-B01', name: 'Ploy', username: 'ploy' };
+const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
+const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: 'Nok', username: 'nok', branchName: 'XC-B01', branches: [] };
+const ratesOther: Me = { kind: 'staff', id: 'e-8', role: 'RATES', branch: 'XC-B01', name: 'Ploy', username: 'ploy', branchName: 'XC-B01', branches: [] };
 const frontSameId: Me = { ...rates, role: 'FRONT' };
 const ratesRenamed: Me = { ...rates, name: 'Nok K.', username: 'nok.k' };
 

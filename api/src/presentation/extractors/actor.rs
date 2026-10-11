@@ -205,16 +205,18 @@ impl SessionReader for AccountSessionReader {
             if !session_token.is_empty() {
                 if let Some(session_svc) = req.app_data::<web::Data<SessionService>>() {
                     let now_utc = Utc::now();
-                    if let Ok(Some((user, roles))) = session_svc
-                        .active_user_and_roles(&session_token, now_utc)
-                        .await
+                    if let Ok(Some(session)) =
+                        session_svc.active_session(&session_token, now_utc).await
                     {
+                        // SB-1 §14.3: the actor works in the session's effective branch. Reading never writes it.
+                        let branch = session.effective_branch(now_utc);
                         let access_actor = xc_auth::domain::access::Actor::new(
-                            &user.id,
-                            &user.organization_id,
-                            roles,
+                            &session.user.id,
+                            &session.user.organization_id,
+                            session.roles,
                             None,
-                        );
+                        )
+                        .with_branch(branch);
                         let legacy = legacy_actor(&access_actor, now_utc);
                         let (owner, staff) = match legacy.as_ref().map(|l| l.kind()) {
                             Some(ActorKind::Owner) => (legacy.clone(), None),

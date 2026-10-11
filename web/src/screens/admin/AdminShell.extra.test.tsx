@@ -75,6 +75,8 @@ const fakeApi = {
         branch: q.branch || 'MAIN',
         name: 'Owner',
         username: 'owner',
+        branchName: q.branch || 'MAIN',
+        branches: [],
       };
       return { version: 1, changed: true, data: me as T };
     }

@@ -108,8 +108,8 @@ const fakeStorage = {
 const ARIA = 'แจ้งเตือนคิวลูกค้า';
 const OPEN = 'เปิดคิว / รับเรื่อง →';
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok' };
-const RATES: Me = { kind: 'staff', id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', username: 'pim' };
+const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
+const RATES: Me = { kind: 'staff', id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', username: 'pim', branchName: 'B1', branches: [] };
 
 const disposers: Array<() => void> = [];
 

@@ -40,7 +40,7 @@ const READY = {
   channel: 'staging',
   ui: 'built',
 };
-const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1' };
+const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

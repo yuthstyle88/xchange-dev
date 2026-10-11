@@ -7,6 +7,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::application::session::session_service::SwitchBranchError;
 use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService};
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::account::entities::session::SignedIn;
@@ -23,10 +24,11 @@ use xc_auth::infrastructure::token::jwks_verifier::JwksTokenVerifier;
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{
     AccountSessionReader, Accounts, BAD_REQUEST, OWNER_COOKIE, OWNER_ID, SESSION_SECONDS,
-    STAFF_COOKIE, accounts, answer, cookie, failure, payload_of, read, refuse, same_origin,
-    server_error, set_cookie,
+    STAFF_COOKIE, accounts, answer, cookie, failure, legacy_actor, payload_of, read, refuse,
+    same_origin, server_error, set_cookie,
 };
 use crate::presentation::http::client_address::{CLIENT_ADDRESS_HEADER, client_address};
+use crate::presentation::http::v3::me::me_of;
 use crate::presentation::pages::{self, SessionReader};
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -95,6 +97,11 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         web::resource("/api/auth/session")
             .app_data(body())
             .route(web::post().to(v3_session)),
+    );
+    cfg.service(
+        web::resource("/api/auth/session/branch")
+            .app_data(body())
+            .route(web::post().to(v3_session_branch)),
     );
     cfg.service(
         web::resource("/api/auth/refresh")
@@ -323,6 +330,65 @@ async fn v3_session(req: HttpRequest, session: web::Data<SessionService>) -> Htt
         _ => HttpResponse::Ok()
             .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
             .json(json!({ "user": null })),
+    }
+}
+
+/// `POST /api/auth/session/branch` (SB-1 §14.3): `{"branch": "<id>"}` moves this session to that branch and
+/// answers the new `Me` as the whole body. `400 invalidRequest` malformed or cross-site; `401 signIn` no session;
+/// `403 outOfScope` a branch outside S, with nothing written.
+async fn v3_session_branch(
+    req: HttpRequest,
+    bytes: web::Bytes,
+    session: web::Data<SessionService>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if !same_origin(&req) {
+        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
+    }
+    let body: Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"),
+    };
+    let Some(branch) = body.get("branch").and_then(Value::as_str) else {
+        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
+    };
+    let token = cookie(&req, SESSION_COOKIE);
+    if token.is_empty() {
+        return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ");
+    }
+    let now = Utc::now();
+    let active = match session.switch_branch(&token, branch, now).await {
+        Ok(active) => active,
+        Err(SwitchBranchError::SignIn) => {
+            return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ");
+        }
+        Err(SwitchBranchError::OutOfScope) => {
+            return refusal_response(403, "outOfScope", "ไม่มีสิทธิ์ในสาขานี้");
+        }
+        Err(SwitchBranchError::Database(e)) => {
+            tracing::error!(error = %e, "session branch switch failed");
+            return server_error();
+        }
+    };
+    let s = active.switchable(now);
+    let chosen = xc_kernel::ids::BranchId::new(branch);
+    let access_actor = xc_auth::domain::access::Actor::new(
+        &active.user.id,
+        &active.user.organization_id,
+        active.roles,
+        None,
+    )
+    .with_branch(Some(chosen.clone()));
+    // The same `Me` the `me` view answers; a session whose roles map to no v2 actor reads as not signed in there.
+    let Some(who) = legacy_actor(&access_actor, now) else {
+        return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ");
+    };
+    let accounts = PgAccountRepository::new(state.db.clone());
+    match me_of(&state.db, &accounts, &who, &chosen, Some(s)).await {
+        Ok(me) => HttpResponse::Ok()
+            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+            .json(me),
+        Err(e) => failure(e),
     }
 }
 

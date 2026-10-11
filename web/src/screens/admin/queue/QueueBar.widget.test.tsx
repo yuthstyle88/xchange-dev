@@ -65,7 +65,7 @@ vi.mock('../../../shared/ui/QueuePanel', () => ({
   },
 }));
 
-const OWNER: Me = { kind: 'staff', id: 'emp-nok', role: 'OWNER', branch: 'B1', name: 'Nok', username: 'nok' };
+const OWNER: Me = { kind: 'staff', id: 'emp-nok', role: 'OWNER', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
 
 function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;

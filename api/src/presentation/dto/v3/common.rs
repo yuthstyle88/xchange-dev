@@ -60,9 +60,23 @@ pub struct Me {
     pub kind: String,
     pub id: String,
     pub role: String,
+    // The branch this request works in: the session branch (SB-1 §14.3).
     pub branch: String,
     pub name: Option<String>,
     pub username: Option<String>,
+    // The name of `branch` (SB-1 §14.4).
+    pub branch_name: String,
+    // S: the branches this user may switch to, ordered by code, then id (SB-1 §14.2).
+    pub branches: Vec<BranchRef>,
+}
+
+/// One branch the session may switch to (SB-1 §14.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "common.ts")]
+pub struct BranchRef {
+    pub id: String,
+    pub code: String,
+    pub name: String,
 }
 
 /// Empty filter for views without one.
@@ -145,6 +159,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     Money::export_all(&cfg)?;
     Rate::export_all(&cfg)?;
     Me::export_all(&cfg)?;
+    BranchRef::export_all(&cfg)?;
     NoFilter::export_all(&cfg)?;
     Period::export_all(&cfg)?;
     RateFreshnessDto::export_all(&cfg)?;

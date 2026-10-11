@@ -10,6 +10,10 @@ use ts_rs::TS;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use chrono::Utc;
+use xc_auth::application::session::SessionService;
+use xc_auth::application::session::session_service::SessionError;
+use xc_auth::domain::access::BranchRef as SessionBranchRef;
 use xc_kernel::ids::BranchId;
 
 use sqlx::PgPool;
@@ -17,7 +21,7 @@ use xc_auth::domain::account::repositories::account_repository::AccountRepositor
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::common::{Me, NoFilter};
+use crate::presentation::dto::v3::common::{BranchRef, Me, NoFilter};
 use crate::presentation::dto::v3::me::MeView;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -69,43 +73,95 @@ impl BranchView for MeBranchView {
         let accounts = self.accounts.clone();
         let db = self.db.clone();
         async move {
-            let (name, username) = match who.kind() {
-                ActorKind::Owner => {
-                    let rows: Vec<(String, String)> =
-                        sqlx::query_as("SELECT name, username FROM owners LIMIT 2")
-                            .fetch_all(&db)
-                            .await
-                            .map_err(pos_error::AppError::Database)?;
-                    if rows.len() == 1 {
-                        let (n, u) = rows.into_iter().next().unwrap();
-                        (Some(n), Some(u))
-                    } else {
-                        (None, None)
-                    }
-                }
-                ActorKind::Staff => {
-                    if let Some(emp) = accounts.find_employee_by_id(who.id()).await? {
-                        (Some(emp.name), Some(emp.username))
-                    } else {
-                        (None, None)
-                    }
-                }
-            };
-            let me = Me {
-                kind: match who.kind() {
-                    ActorKind::Owner => "owner",
-                    ActorKind::Staff => "staff",
-                }
-                .to_owned(),
-                id: who.id().to_owned(),
-                role: who.role().as_str().to_owned(),
-                branch: branch.as_str().to_owned(),
-                name,
-                username,
-            };
-            Ok(MeView(me))
+            // A Blueprint session's S (SB-1 §14.4); `None` for the old owner and staff cookies.
+            let switchable = SessionService::new(db.clone(), None, None, None)
+                .switchable_of_user(who.id(), Utc::now())
+                .await
+                .map_err(|e| match e {
+                    SessionError::Database(e) => pos_error::AppError::Internal(e),
+                    other => pos_error::AppError::Internal(other.refusal().2),
+                })?;
+            me_of(&db, &accounts, &who, &branch, switchable).await.map(MeView)
         }
     }
+}
+
+/// The `Me` of `who` working in `branch` (§7.6, SB-1 §14.4): the `me` view and `POST /api/auth/session/branch`
+/// both answer it. `switchable` is a Blueprint session's S; without one (the old owner and staff cookies, until
+/// OR-7) `branches` lists `branch` alone.
+pub(crate) async fn me_of(
+    db: &PgPool,
+    accounts: &PgAccountRepository,
+    who: &Actor,
+    branch: &BranchId,
+    switchable: Option<Vec<SessionBranchRef>>,
+) -> AppResult<Me> {
+    let (name, username) = match who.kind() {
+        ActorKind::Owner => {
+            let rows: Vec<(String, String)> =
+                sqlx::query_as("SELECT name, username FROM owners LIMIT 2")
+                    .fetch_all(db)
+                    .await
+                    .map_err(pos_error::AppError::Database)?;
+            if rows.len() == 1 {
+                let (n, u) = rows.into_iter().next().unwrap();
+                (Some(n), Some(u))
+            } else {
+                (None, None)
+            }
+        }
+        ActorKind::Staff => {
+            if let Some(emp) = accounts.find_employee_by_id(who.id()).await? {
+                (Some(emp.name), Some(emp.username))
+            } else {
+                (None, None)
+            }
+        }
+    };
+    let branches: Vec<BranchRef> = match switchable {
+        Some(s) => s
+            .into_iter()
+            .map(|b| BranchRef {
+                id: b.id.as_str().to_owned(),
+                code: b.code,
+                name: b.name,
+            })
+            .collect(),
+        None => {
+            let row: Option<(String, String, String)> =
+                sqlx::query_as("SELECT id, COALESCE(code, id), name FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_optional(db)
+                    .await
+                    .map_err(pos_error::AppError::Database)?;
+            row.map(|(id, code, name)| BranchRef { id, code, name })
+                .into_iter()
+                .collect()
+        }
+    };
+    let branch_name = match branches.iter().find(|b| b.id == branch.as_str()) {
+        Some(b) => b.name.clone(),
+        None => sqlx::query_scalar::<_, String>("SELECT name FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_optional(db)
+            .await
+            .map_err(pos_error::AppError::Database)?
+            .unwrap_or_else(|| branch.as_str().to_owned()),
+    };
+    Ok(Me {
+        kind: match who.kind() {
+            ActorKind::Owner => "owner",
+            ActorKind::Staff => "staff",
+        }
+        .to_owned(),
+        id: who.id().to_owned(),
+        role: who.role().as_str().to_owned(),
+        branch: branch.as_str().to_owned(),
+        name,
+        username,
+        branch_name,
+        branches,
+    })
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {

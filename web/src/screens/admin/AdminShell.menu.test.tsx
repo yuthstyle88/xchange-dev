@@ -52,7 +52,7 @@ const BRANCHES = [
 ];
 
 function meFor(named: string | undefined): Me {
-  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner' };
+  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner', branchName: named || 'MAIN', branches: [] };
 }
 
 const fakeApi = {
