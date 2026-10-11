@@ -422,19 +422,33 @@ pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: Dat
   `TransferFlow::load` (`transfer_flow.rs:434`) read the pool today, and the pool cannot see rows written on an open
   transaction.
 - **Never commits.** A form never commits or rolls back. Its `Err` rolls back the whole caller transaction
-  (`branch_tx.rs:52-53`; the seam returns a `run` error as `Err`, `command.rs:430-437`).
+  (`branch_tx.rs:54-55`; the seam returns a `run` error as `Err`, `command.rs:430-437`).
 - **Awaiting finance is a value.** Today `verify` commits and then returns `Err(AwaitingFinance)`
   (`count_service.rs:445-446`, `:469-470`), so the approval request and the written differences persist. On the seam
   that `Err` would roll them back, and FINANCE would never see the request. So `verify_in` returns
-  `CountVerified::{Verified(CashCount), AwaitingFinance(request_id)}` `[proposed]`, and CA-8's `countVerify` reports
-  the awaiting case in its output. A finance refusal stays an `Err`: it rolls back today too (`:441-442`).
+  `CountVerified::{Verified(CashCount), AwaitingFinance(request_id)}` `[proposed]`. A finance refusal stays an `Err`:
+  it rolls back today too (`:441-442`). FINANCE's approval of a count difference is `ledger-inventory.md` §5.2
+  (`COUNT_DIFFERENCE`); this design adds no rule to it.
+- **`countVerify`'s answer.** It follows the repo's approval pattern: a step that records an approval request
+  succeeds with the new state, and `approvalRequired` (409) is answered only when nothing is written
+  (`commands/mod.rs:42`; `xc-rate/src/application/publication/publish_service.rs:89-130`). So `countVerify`
+  answers **200** with the count's resulting state:
+  - `{status: "VERIFIED"}` or `{status: "AWAITING_FINANCE", approvalRequestId}` `[proposed]`: no count DTO exists
+    yet, so the field names are proposed; the values are upper case, as the stored states are
+    (`handovers.status`, `cash_transfers.status`, §4.1), and the fields camelCase (wire DTOs).
+  - The approval request commits on the seam's transaction together with the idempotency row, so a replay with the
+    same `Idempotency-Key` returns the same answer.
+  - `AwaitingFinance` is no longer an error on the v3 path. The wrapper `verify` keeps its `Err(AwaitingFinance)` for
+    today's callers, so `count_verify_gate_test.rs:946-949` stays green.
 - **Wrappers.** Today's methods keep their signatures. Each opens the transaction it opens today (`pool.begin()`, or
   `BranchTx::run` on the same branch for dispatch, receive and reconcile), calls its form and commits. `verify`
   turns `AwaitingFinance` back into today's `Err`. So their existing tests stay unedited.
-- **Which lock the command takes.** A form assumes the caller holds the lock its wrapper takes today. CA-8's
-  `locks()` names it:
+- **Which lock the command takes.** A form assumes the caller holds the branch lock. CA-8's `locks()` names it:
   - `transferDispatch`: the source branch;
-  - `transferReceive`: `Locks::Pair(source, destination)`;
+  - `transferReceive`: `Locks::Pair(source, destination)`. Receive writes both branches' rows, so the seam takes the
+    pair (the CM-2 ruling, #701/#704: a command that writes two branches opens `run_pair`). Today's wrapper locks
+    only the destination; the pair is stricter, and `run_pair` behaves as `run` when the two are one branch
+    (`branch_tx.rs:121-123`);
   - `transferReconcile`: the destination (`destination()`, `transfer_flow.rs:448`);
   - counts, hand-overs, `transferCreate`, `transferSubmit`: `Locks::One` on the request's branch.
 - **No new behaviour.** No permission, table, column or route changes. CA-7b's `BranchDayService` (§4.8) follows
@@ -677,7 +691,7 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
 | CA-7b | the tests open the transaction and lock the branch (`branch_versions … FOR UPDATE`) themselves, as the seam does, and pass it to each method; each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on that transaction, and a rollback leaves none; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
 | CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (`Pair` for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; the wrappers behave as before (their existing tests pass unedited) |
-| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals` |
+| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals`; `countVerify` with a difference over the limit answers 200 `AWAITING_FINANCE` and leaves exactly one PENDING approval request |
 | CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
@@ -703,7 +717,7 @@ Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not 
 | §02 separation preparer / approver | the approval core (PR 570 §5.4) and `verified_by ≠ counted_by` |
 | §09 atomicity: posting and state in one transaction | Every service a command calls works on the seam's transaction (§4.9), so the posting, the state change and the idempotency row commit together under the branch lock. `TransferFlow` and `CashCountService` call `CashPostings::post_in` with that transaction (`xc-kernel/src/branch_tx.rs:56`), the repo's convention (`custody_repository.rs:15-36`; `rates.md` after PR 594) |
 | §09 idempotency on mutations | `Idempotency-Key` per command (C8) |
-| §10 error codes | `CashError` maps to `VALIDATION_FAILED`, `OUT_OF_SCOPE`, `STALE_VERSION`, `STOCK_INSUFFICIENT`, `APPROVAL_REQUIRED`, `IDEMPOTENCY_CONFLICT` with Thai and English sentences (W10) |
+| §10 error codes | `CashError` maps to `VALIDATION_FAILED`, `OUT_OF_SCOPE`, `STALE_VERSION`, `STOCK_INSUFFICIENT`, `APPROVAL_REQUIRED`, `IDEMPOTENCY_CONFLICT` with Thai and English sentences (W10). A count waiting for FINANCE is **not** an error on the v3 path: `countVerify` answers 200 `AWAITING_FINANCE` (§4.9) |
 | §12 Cash & cost: method, limits, certifier | certifier A1/A6, limits A5 as data; cost method is #553's (Q10 of the mapping) |
 | §07 Handover(status): the receiver certifies or refuses | `handoverAccept` / `handoverReject` (§4.4) expose §4.2's two transitions, which CA-4's `HandoverService` already implements. Reject carries no reason because the Blueprint's Handover has no reason column, and none is added. **No schema change** |
 | §12 limits as data, set by EXECUTIVE (A5) | `transferPolicySave` writes a version row into the existing `cash_transfer_policy_versions` (M1). Its permission `CashTransferPolicySet` is held by EXECUTIVE only (§3.1). **No schema change**; the permission is code, added by CA-0p |
