@@ -1,0 +1,37 @@
+// Step 4: v2's Thai copy verbatim (design xchange-v3-wave3-desk.md §3.6b row "Step 4 receipt and save", dh:118,131-148),
+// DK-1's notes (§3.9) and §3.7's v3 wording (D-3).
+export const th = {
+  label: 'ใบเสร็จ',
+  heading: 'ใบเสร็จรายการแลกเงิน',
+  saving: 'กำลังบันทึกรายการและไฟล์แนบ…',
+  saved: 'บันทึกเอกสารแล้ว',
+  documentRef: 'เลขที่เอกสาร',
+  adminLink: 'เปิดรายการในหน้าแอดมิน',
+  devicesLink: 'ดูงานพิมพ์และบันทึกหลังบ้าน →',
+  waiting: 'รอบันทึกเอกสาร',
+  pendingApproval: 'รายการรออนุมัติจากผู้จัดการสาขา',
+  failed: 'บันทึกไม่สำเร็จ กรุณาลองใหม่',
+  unknownNote: 'ยังไม่ทราบผลการบันทึก กด "ลองบันทึกซ้ำ" ได้ ระบบไม่บันทึกรายการเดียวกันซ้ำ',
+  retry: 'ลองบันทึกซ้ำ',
+  backToEdit: '← กลับไปแก้ไขรายการ',
+  newExchange: 'ทำรายการใหม่',
+  print: 'พิมพ์ใบเสร็จ NEOCAL 80 มม.',
+} as const;
+
+export const en: Record<keyof typeof th, string> = {
+  label: 'Receipt',
+  heading: 'Exchange receipt',
+  saving: 'Saving the transaction and its attachments…',
+  saved: 'Documents saved',
+  documentRef: 'Document number',
+  adminLink: 'Open the transaction in the admin',
+  devicesLink: 'See printing and back-office records →',
+  waiting: 'Waiting to save the documents',
+  pendingApproval: 'The transaction is waiting for the branch manager’s approval',
+  failed: 'Save failed. Please try again',
+  unknownNote: 'The save result is not known yet. Press "Retry save": the same transaction is never saved twice',
+  retry: 'Retry save',
+  backToEdit: '← Back to edit the transaction',
+  newExchange: 'New transaction',
+  print: 'Print receipt (NEOCAL 80 mm)',
+};
