@@ -31,6 +31,8 @@ impl RolePermissions {
                 Permission::ReferralAttach,
                 Permission::ReferralSupersede,
                 Permission::ReferralRead,
+                Permission::ReportsExport,
+                Permission::AlertSettingsSave,
             ],
             Role::Admin => &[
                 Permission::BranchesManage,
@@ -41,6 +43,7 @@ impl RolePermissions {
                 Permission::CompatRead,
                 Permission::DocumentsList,
                 Permission::SignedIn,
+                Permission::AlertSettingsSave,
             ],
             Role::RateManager => &[
                 Permission::RatesDraft,
@@ -108,6 +111,7 @@ impl RolePermissions {
                 Permission::FileRead,
                 Permission::ProofUpload,
                 Permission::SignedIn,
+                Permission::ReportsExport,
             ],
             Role::Marketing => &[
                 Permission::MarketingCampaigns,
