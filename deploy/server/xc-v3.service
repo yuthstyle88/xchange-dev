@@ -17,6 +17,9 @@ Group=xc-v3
 WorkingDirectory=/opt/xc-v3
 # (rendered)
 EnvironmentFile=/etc/xc-v3/env
+# Identity client settings (#1204). Optional ("-"): without the file the
+# server still starts and the routes that need Identity answer 503.
+EnvironmentFile=-/etc/xc-v3/identity-client.env
 # (rendered)
 ExecStart=/opt/xc-v3/xchange
 Restart=on-failure
