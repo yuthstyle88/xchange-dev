@@ -5,6 +5,8 @@ use std::path::Path;
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::presentation::dto::v3::common::MeRole;
+
 /// A working entry in `kiosk_notifications`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +25,8 @@ pub struct KioskNotificationsWorking {
 #[ts(export_to = "kiosk_notifications.ts")]
 pub struct KioskNotificationsEmployee {
     pub id: String,
-    pub role: String,
+    // The caller's role rows, as `me` answers them (#1030 §3.4).
+    pub roles: Vec<MeRole>,
 }
 
 /// Data payload of the `kiosk_notifications` view.

@@ -8,6 +8,11 @@
 // to the real `QueueBar`, with the queue store and the panel replaced by fakes. Nothing here imports
 // AdminShell: the card reaches admin through AppShell → AccountBar, which #786 does not change, so
 // the only thing that hid it on admin was the dock.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The caller's role OWNER → MANAGER (BRANCH_MANAGER): under ruling A on #1030 the
+// former owner no longer holds `QueueOperate`, and every test here needs the card's claim link, which
+// BRANCH_MANAGER keeps. The constant keeps its name.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -17,6 +22,7 @@ import { queueStore, type QueueError, type QueueStore } from '../../../shared/qu
 import type { KioskNotifications } from '../../../shared/queue/wire';
 import { QueueCard } from '../../../shared/ui/QueueCard';
 import { QueueBar } from './QueueBar';
+import { employeeOf, meOf } from '../../../test-support/me';
 
 interface FakeStore extends QueueStore {
   setState(v: KioskNotifications | undefined): void;
@@ -65,7 +71,7 @@ vi.mock('../../../shared/ui/QueuePanel', () => ({
   },
 }));
 
-const OWNER: Me = { kind: 'staff', id: 'emp-nok', role: 'OWNER', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
+const OWNER: Me = meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] });
 
 function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
@@ -82,7 +88,7 @@ function answer(b: string, over: Partial<KioskNotifications> = {}) {
     latest: null,
     workingCount: 0,
     working: [],
-    employee: { id: OWNER.id, role: OWNER.role },
+    employee: employeeOf(OWNER),
     ...over,
   });
 }

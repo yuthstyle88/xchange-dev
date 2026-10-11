@@ -13,18 +13,22 @@
 //   - otherwise `me.branch` from the shared session store;
 //   - never the literal 'MAIN'; and no branch-scoped read before `me` has answered when the URL names
 //     none.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` answer fixture (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`). It is
+// untyped, so tsc did not list it, but the shell's queue card and account bar read `permissions`/`roles`
+// from it. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { meOf } from '../../test-support/me';
 
-const ME_B2 = {
-  kind: 'user',
+const ME_B2 = meOf({
   id: 'u-7',
   role: 'TELLER',
   branch: 'B2',
   name: 'Nok',
-  username: 'nok',
   branchName: 'สาขาสอง',
   branches: [{ id: 'B2', code: 'XC-02', name: 'สาขาสอง' }],
-};
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

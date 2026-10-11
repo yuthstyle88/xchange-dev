@@ -46,6 +46,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -294,12 +295,12 @@ struct Echoing<const K: u8> {
 }
 
 impl<const K: u8> Echoing<K> {
-    async fn echo(&self, branch: &BranchId, who: &Actor, request: AmountRequest) -> Echo {
+    async fn echo(&self, branch: &BranchId, who: &AccessActor, request: AmountRequest) -> Echo {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let _ = request.note;
         Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
             amount: request.amount,
         }
     }
@@ -321,7 +322,7 @@ impl ComputeAction for EchoSnapshot {
     async fn compute(
         &self,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         request: AmountRequest,
     ) -> Result<Echo, V3Error> {
         Ok(self.echo(branch, who, request).await)
@@ -339,7 +340,7 @@ impl ComputeAction for EchoSaveRate {
     async fn compute(
         &self,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         request: AmountRequest,
     ) -> Result<Echo, V3Error> {
         Ok(self.echo(branch, who, request).await)
@@ -355,7 +356,7 @@ impl ComputeAction for EchoDeskConfig {
     async fn compute(
         &self,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         request: AmountRequest,
     ) -> Result<Echo, V3Error> {
         Ok(self.echo(branch, who, request).await)
@@ -380,7 +381,7 @@ impl ComputeAction for Refusing {
     async fn compute(
         &self,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         request: AmountRequest,
     ) -> Result<Echo, V3Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
@@ -405,7 +406,7 @@ impl ComputeAction for Refusing {
             )),
             _ => Ok(Echo {
                 branch: branch.as_str().to_owned(),
-                who: who.id().to_owned(),
+                who: who.user_id.clone(),
                 amount: request.amount,
             }),
         }

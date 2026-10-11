@@ -8,7 +8,8 @@ use actix_web::web;
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use chrono::Utc;
+use xc_auth::domain::access::{Actor, BranchRef, SessionBranch};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -46,12 +47,17 @@ impl BranchView for AdminBranchesBranchView {
         let who = who.clone();
         async move {
             let all_branches = branches.list().await?;
-            let filtered = match who.branch_id() {
-                Some(own) => all_branches.into_iter().filter(|b| b.id == *own).collect(),
-                None => all_branches,
-            };
-            let items = filtered
+            // S, the branches the caller may switch to (SB-1 `SessionBranch::switchable`, as `Me.branches`).
+            let refs: Vec<BranchRef> = all_branches
+                .iter()
+                .map(|b| {
+                    BranchRef::new(b.id.as_str(), b.code.as_deref().unwrap_or(b.id.as_str()), &b.name)
+                })
+                .collect();
+            let s = SessionBranch::switchable(&who.roles, &refs, Utc::now());
+            let items = all_branches
                 .into_iter()
+                .filter(|b| s.iter().any(|r| r.id == b.id))
                 .map(|b| AdminBranchItem {
                     id: b.id.to_string(),
                     name: b.name,

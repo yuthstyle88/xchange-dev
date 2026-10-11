@@ -11,7 +11,7 @@ export const menu: AdminMenu = {
   icon: '📜',
   order: 12,
   group: 'tools',
-  roles: ['OWNER'],
+  needs: 'ConsentPolicyManage',
   heading: {
     eyebrow: () => t('eyebrow'),
     title: () => t('title'),

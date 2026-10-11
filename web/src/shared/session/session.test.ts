@@ -21,10 +21,14 @@
 // `/api/auth` action `logout` clears only the owner and staff cookies (:556-563), so it would leave a person signed
 // in through the new login screen still signed in (amended by the OR-3 web follow-up #762, claude/b060e9). It goes through `ApiClient.post`, which sends
 // `X-Xchange-Request: 1` (pinned in ../api/client.post.test.ts).
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import { createSessionStore } from './session';
+import { meOf } from '../../test-support/me';
 
 interface Seen {
   at: number;
@@ -61,8 +65,8 @@ function fakeApi(script: Array<ViewAnswer<Me> | Error>) {
   return { api, seen, posted };
 }
 
-const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: null, username: null, branchName: 'MAIN', branches: [] };
-const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: null, username: null, branchName: 'XC-B01', branches: [] };
+const owner: Me = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: null, branchName: 'MAIN', branches: [] });
+const rates: Me = meOf({ id: 'e-7', role: 'RATES', branch: 'XC-B01', name: null, branchName: 'XC-B01', branches: [] });
 
 const signIn = () =>
   new ApiError({ code: 'signIn', message: 'กรุณาเข้าสู่ระบบ', status: 401 });

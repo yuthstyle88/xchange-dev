@@ -57,6 +57,11 @@
 //
 // The menu and its table are read through eager globs, so on a branch without them each test fails
 // on an assertion that the file exists, not on the import.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: ['OWNER']` pin → `needs: 'ConsentPolicyManage'` (`policy.rs:571`), and
+// "no other role sees it" now reads the Blueprint roles' permissions (`web/src/test-support/me.ts`,
+// copied from role_permissions.rs): only EXECUTIVE holds it (#1030 §3.10).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -65,6 +70,7 @@ import type { ConsentTextViewItem } from '../../../shared/api/generated/consent_
 import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { permissionsOf } from '../../../test-support/me';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -348,10 +354,10 @@ async function setRetention(el: HTMLElement, dataType: string, days: string): Pr
 // ── the menu record and the role gate ────────────────────────────────────────
 
 describe('CI-8: the consent menu record (#655; design §4.4, §9.1)', () => {
-  it('is the consent menu: OWNER only, not dated, reached through the shell glob once', () => {
+  it('is the consent menu: needs ConsentPolicyManage, not dated, reached through the shell glob once', () => {
     const menu = theMenu();
     expect(menu.id).toBe('consent');
-    expect(menu.roles, 'consentPolicy is reached by the owner only (policy.rs, PR 876)').toEqual(['OWNER']);
+    expect(menu.needs, 'consentPolicy needs ConsentPolicyManage (policy.rs:571)').toBe('ConsentPolicyManage');
     expect(menu.dated).toBe(false);
     expect(typeof menu.Component).toBe('function');
     const listed = menus.filter((m) => m.id === 'consent');
@@ -359,14 +365,15 @@ describe('CI-8: the consent menu record (#655; design §4.4, §9.1)', () => {
     expect(listed[0]).toBe(menu);
   });
 
-  it('no other role sees it — the shell lists a menu only when its roles include the role', () => {
+  it('no other role sees it — of the Blueprint roles only EXECUTIVE holds what the menu needs', () => {
     const menu = theMenu();
-    expect(menu.roles).not.toBe('all');
-    for (const role of ['MANAGER', 'BACKEND', 'FINANCE', 'RATES', 'TELLER', 'CASHIER', 'ADMIN', 'EXECUTIVE']) {
-      expect((menu.roles as readonly string[]).includes(role), `role ${role} must not list the consent menu`).toBe(
+    expect(menu.needs).not.toBe('all');
+    for (const role of ['ADMIN', 'RATE_MANAGER', 'BRANCH_MANAGER', 'TELLER', 'FINANCE', 'MARKETING', 'VERIFICATION_REVIEWER']) {
+      expect(permissionsOf([{ role, branchId: null }]).includes(menu.needs as string), `role ${role} must not list the consent menu`).toBe(
         false,
       );
     }
+    expect(permissionsOf([{ role: 'EXECUTIVE', branchId: null }])).toContain(menu.needs);
   });
 
   it('its table has every key in th and en, the en table has no Thai, and the label follows setLang', () => {

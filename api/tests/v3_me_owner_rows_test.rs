@@ -1,8 +1,9 @@
 //! Ticket #451: pins the 'two owner rows -> no name' rule for the `me` view
 //! (`GET /api/v3/views/me`, `api/src/presentation/http/v3/views/me.rs`).
 //!
-//! With two owner rows in the database, `me` must answer `name: null` and
-//! `username: null`. It must never guess or pick the first row.
+//! **Rewritten for OR-7.7 #1030 by its ticket author (claude/89bd61d9).** `me` no longer reads `owners` at all
+//! (`name` = `users.name`; no `username`), so with two owner rows it still answers `name: null` and never picks
+//! either row; it answers the new fields and none of `kind`, `role` and `username`.
 
 mod auth_http_common;
 mod common;
@@ -53,7 +54,7 @@ async fn insert_second_owner(desk: &Desk, username: &str, name: &str) {
 }
 
 #[actix_web::test]
-async fn two_owner_rows_answers_null_name_and_username() {
+async fn two_owner_rows_still_answer_a_null_name() {
     let desk = Desk::start().await;
     // Desk::start creates the first owner ("boss").
     // Insert a second owner directly through SQL.
@@ -63,14 +64,38 @@ async fn two_owner_rows_answers_null_name_and_username() {
     let owner = owner_signs_in(&app).await;
 
     let data = me(&app, get_me().owner(&owner), "two owners").await;
+    let mut keys: Vec<&str> = data
+        .as_object()
+        .unwrap_or_else(|| panic!("me data is an object: {data}"))
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort();
     assert_eq!(
-        data,
-        json!({
-            "kind": "owner", "id": "owner", "role": "OWNER", "branch": "MAIN",
-            "branchName": "XC-B", "branches": [{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }],
-            "name": null, "username": null
-        })
+        keys,
+        [
+            "branch",
+            "branchName",
+            "branches",
+            "id",
+            "name",
+            "permissions",
+            "roles"
+        ],
+        "{data}"
     );
+    assert_eq!(data["id"], json!("owner"), "{data}");
+    assert_eq!(
+        data["name"],
+        Value::Null,
+        "neither owner row is picked: {data}"
+    );
+    assert_eq!(
+        data["roles"],
+        json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
+        "{data}"
+    );
+    assert_eq!(data["branch"], json!("MAIN"), "{data}");
 
     drop(app);
     desk.drop_schema().await;

@@ -12,15 +12,19 @@
 //       api.post('/api/auth/session/branch', { branch }) — `ApiClient.post` sends the
 //       `X-Xchange-Request: 1` marker the route requires; it rejects with the post's error.
 //
-// A `me` answer with `changed: true` whose `id` and `role` are the held ones but whose `branch`
+// A `me` answer with `changed: true` whose `id` and `roles` are the held ones but whose `branch`
 // differs ends the store as 'branchChanged' (switched in another tab), keeping the held `me()`, as
 // 'switched' does (session.end.test.ts SE2). Another account wins: a new `id` ends it as 'switched'.
 //
 // `MeSB` spells out SB-1's `Me` fields so this file type-checks before SB-1 regenerates `common.ts`.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The ADMIN's row is organisation-wide; `otherAtB2` drops `username`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import { createSessionStore } from './session';
+import { meOf } from '../../test-support/me';
 
 type BranchRef = { id: string; code: string; name: string };
 type MeSB = Me & { branchName: string; branches: BranchRef[] };
@@ -28,18 +32,17 @@ type MeSB = Me & { branchName: string; branches: BranchRef[] };
 const HQ: BranchRef = { id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' };
 const B2: BranchRef = { id: 'B2', code: 'XC-02', name: 'สาขาสอง' };
 
-const atMain: MeSB = {
-  kind: 'user',
+const atMain: MeSB = meOf({
   id: 'u-1',
   role: 'ADMIN',
+  orgWide: true,
   branch: 'MAIN',
   name: 'Somchai',
-  username: 'admin1',
   branchName: 'สำนักงานใหญ่',
   branches: [HQ, B2],
-};
+});
 const atB2: MeSB = { ...atMain, branch: 'B2', branchName: 'สาขาสอง' };
-const otherAtB2: MeSB = { ...atB2, id: 'u-2', username: 'admin2' };
+const otherAtB2: MeSB = { ...atB2, id: 'u-2' };
 const moreBranches: MeSB = { ...atMain, branches: [HQ, B2, { id: 'B3', code: 'XC-03', name: 'สาขาสาม' }] };
 
 type Switching = { switchBranch(branch: string): Promise<void> };

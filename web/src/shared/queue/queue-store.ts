@@ -6,7 +6,7 @@ import {
   type Accessor,
 } from 'solid-js';
 import { ApiClient, ApiError, type ViewParams } from '../api/client';
-import { sharedSession, type SessionStore } from '../session/session';
+import { sameAccount, sharedSession, type Account, type SessionStore } from '../session/session';
 import { pageBranch } from '../session/page-branch';
 import type { KioskNotifications } from './wire';
 
@@ -53,8 +53,7 @@ class BranchQueueStore implements QueueStoreInternal {
   private retainCount = 0;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastMeId: string | undefined = undefined;
-  private lastMeRole: string | undefined = undefined;
+  private lastMe: Account | undefined = undefined;
   private meInitialized = false;
 
   private onFocus: (() => void) | null = null;
@@ -184,16 +183,15 @@ class BranchQueueStore implements QueueStoreInternal {
 
     if (!this.meInitialized) {
       sinceToSend = undefined;
-      this.lastMeId = currentMe?.id;
-      this.lastMeRole = currentMe?.role;
+      this.lastMe = currentMe;
       this.meInitialized = true;
     } else if (
-      currentMe?.id !== this.lastMeId ||
-      currentMe?.role !== this.lastMeRole
+      currentMe === undefined || this.lastMe === undefined
+        ? currentMe !== this.lastMe
+        : !sameAccount(currentMe, this.lastMe)
     ) {
       sinceToSend = undefined;
-      this.lastMeId = currentMe?.id;
-      this.lastMeRole = currentMe?.role;
+      this.lastMe = currentMe;
     }
 
     const params: ViewParams = { branch: this.branch };
@@ -214,7 +212,7 @@ class BranchQueueStore implements QueueStoreInternal {
           const meNow = this.session.me();
           if (meNow !== undefined) {
             const emp = answer.data.employee;
-            if (emp.id !== meNow.id || emp.role !== meNow.role) {
+            if (!sameAccount(emp, meNow)) {
               this.setError({ kind: 'ended', reason: 'switched' });
               this.stop();
               return;

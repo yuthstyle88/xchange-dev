@@ -6,7 +6,8 @@
 //! - `GET /api/v3/views/kiosk_notifications` — a versioned `BranchView` inheriting
 //!   `(EntryPath::Kiosk, "notifications")`, no filter. `data` is `{serverNow, branchId,
 //!   branchName, count, latest, workingCount, working, employee}`: the compat answer's values,
-//!   except that `employee` is `{id, role}` as the `me` view builds them.
+//!   except that `employee` is `{id, roles}` as the `me` view builds them (OR-7.7 #1030, rewritten by its
+//!   ticket author: was `{id, role}`).
 //! - `GET /api/v3/views/kiosk_queue` — a `PagedView` inheriting `(EntryPath::Kiosk, "list")`,
 //!   filter `state` = `waiting` | `working` | `completed` (absent = `waiting`; anything else
 //!   is refused naming `state`). Rows newest first (`created_at DESC, id DESC`), keyset paged by
@@ -1233,7 +1234,7 @@ async fn staff_naming_another_branch_are_answered_for_their_own() {
 /// §7: `kiosk_notifications` answers exactly the eight keys, with compat `notifications`'s
 /// values for the same caller — `count`, `latest`, `workingCount`, `working` (each entry
 /// exactly `{id, queue, staff, startedAt, status}`), `branchId`, `branchName` — and
-/// `employee` exactly `{id, role}`: none of compat's `username` and `name`.
+/// `employee` exactly `{id, roles}` (OR-7.7 #1030): none of compat's `username` and `name`.
 #[actix_web::test]
 async fn notifications_are_the_compat_answer_with_the_me_identity_as_employee() {
     let room = Room::open().await;
@@ -1260,12 +1261,25 @@ async fn notifications_are_the_compat_answer_with_the_me_identity_as_employee() 
         }
         assert_eq!(
             keys(&data["employee"]),
-            set_of(&["id", "role"]),
+            set_of(&["id", "roles"]),
             "{who}: {data}"
         );
+        // OR-7.7 #1030: the roles `me` answers, as design §3.3 maps the old ones (owner → EXECUTIVE + ADMIN
+        // organisation-wide; FRONT → TELLER, RATES → RATE_MANAGER, FINANCE → FINANCE at the employee's branch).
         let want = match who {
-            "owner" => json!({ "id": "owner", "role": "OWNER" }),
-            key => json!({ "id": room.id_of(key), "role": key }),
+            "owner" => json!({
+                "id": "owner",
+                "roles": [{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }],
+            }),
+            key => {
+                let role = match key {
+                    "FRONT" => "TELLER",
+                    "RATES" => "RATE_MANAGER",
+                    "FINANCE" => "FINANCE",
+                    other => panic!("no mapping written for {other}"),
+                };
+                json!({ "id": room.id_of(key), "roles": [{ "role": role, "branchId": MAIN }] })
+            }
         };
         assert_eq!(data["employee"], want, "{who}");
     }
@@ -1277,7 +1291,8 @@ async fn notifications_are_the_compat_answer_with_the_me_identity_as_employee() 
 }
 
 /// §9, §12.18.2: the owner's `employee` is the identity the `me` view answers the owner —
-/// `{id, role}` as `views/me.rs` builds them from the actor.
+/// `{id, roles}` (OR-7.7 #1030, design §3.4), with the owner's roles mapped as §3.3 maps OWNER:
+/// EXECUTIVE and ADMIN, both organisation-wide.
 #[actix_web::test]
 async fn the_owners_notifications_employee_is_the_me_views_identity() {
     let room = Room::open().await;
@@ -1285,10 +1300,14 @@ async fn the_owners_notifications_employee_is_the_me_views_identity() {
     let notes = room.data("owner", NOTES, "").await;
     assert_eq!(
         notes["employee"],
-        json!({ "id": me["id"], "role": me["role"] }),
+        json!({ "id": me["id"], "roles": me["roles"] }),
         "me {me}, notifications {notes}"
     );
-    assert_eq!(notes["employee"]["role"], json!("OWNER"), "{notes}");
+    assert_eq!(
+        notes["employee"]["roles"],
+        json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
+        "{notes}"
+    );
     room.finish().await;
 }
 

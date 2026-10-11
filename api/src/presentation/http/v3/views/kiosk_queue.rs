@@ -9,10 +9,9 @@ use chrono::Utc;
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -76,9 +75,8 @@ impl PagedView for KioskQueuePagedView {
                 )
                 .await?;
 
-            let user = actor_from_v3(&who, "XC", now);
             let can_claim = Policy::authorize(
-                Some(&user),
+                Some(&who),
                 EntryPath::Kiosk,
                 &Action::new("accept"),
                 Some(&branch),
@@ -97,7 +95,7 @@ impl PagedView for KioskQueuePagedView {
                 .map(|item| {
                     let request = &item.request;
                     let status = item.identity.status;
-                    let held_by_caller = request.staff.as_deref() == Some(who.id());
+                    let held_by_caller = request.staff.as_deref() == Some(who.user_id.as_str());
                     let can_accept = can_claim && status == KioskStatus::Waiting;
                     let can_continue = can_claim
                         && held_by_caller

@@ -39,6 +39,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use tokio::sync::Notify;
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -263,7 +264,7 @@ impl CommandAction for Flaky {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         input: FlakyInput,
         key: IdempotencyKey,
     ) -> Result<FlakyDone, V3Error> {

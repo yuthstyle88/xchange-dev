@@ -14,7 +14,7 @@ use uuid::Uuid;
 use xc_approval::domain::audit_log::AuditEvent;
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -27,6 +27,7 @@ use crate::presentation::dto::v3::branch_alert_settings::{
     BranchAlertSettingsData, BranchAlertSettingsSaveInput,
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
+use crate::presentation::http::v3::me::me_roles;
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct BranchAlertSettingsSaveCommand {
@@ -132,7 +133,7 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
-        let user_id = Uuid::parse_str(who.id()).map_err(|_| server_error())?;
+        let user_id = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
 
         // Step 3: Version check
         let repo = PgAlertSettingsRepository::new(self.pool.clone());
@@ -182,13 +183,20 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
         };
         let after = Some(serde_json::to_value(&after_data).map_err(|_| server_error())?);
 
+        // The audit row records the caller's valid-now Blueprint roles (design §3.3), not a v2 role:
+        // an EXECUTIVE-only or ADMIN-only caller has no v2 role, and both may save (EX-1).
+        let mut roles: Vec<String> = me_roles(who, chrono::Utc::now())
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        roles.dedup();
         let audit_log = PgAuditLog::new(self.pool.clone());
         audit_log
             .append(
                 tx,
                 &AuditEvent {
-                    actor_id: who.id().to_owned(),
-                    actor_role: who.role().as_str().to_owned(),
+                    actor_id: who.user_id.clone(),
+                    actor_role: roles.join(","),
                     scope: "branch".to_owned(),
                     action: "BRANCH_ALERT_SETTINGS_SAVE".to_owned(),
                     object_ref: format!("branch:{}", branch.as_str()),

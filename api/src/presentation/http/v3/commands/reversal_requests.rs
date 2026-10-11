@@ -11,9 +11,9 @@ use chrono::Utc;
 use pos_error::AppError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
 use xc_exchange::domain::transaction::transaction::TransactionId;
 use xc_kernel::ids::BranchId;
 
@@ -25,7 +25,10 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::reversal::ReversalDto;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -79,11 +82,13 @@ impl CommandAction for ReversalRequestCommand {
                 "outOfScope: no such exchange at this branch".into(),
             )));
         };
+        // OR-7 bridge, removed by #1024
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let actor = SaveActor {
-            id: who.id().to_owned(),
-            username: who.id().to_owned(),
-            employee_id: (who.role() != Role::Owner).then(|| who.id().to_owned()),
-            role: who.role(),
+            id: legacy.id().to_owned(),
+            username: legacy.id().to_owned(),
+            employee_id: (legacy.role() != Role::Owner).then(|| legacy.id().to_owned()),
+            role: legacy.role(),
         };
         let reversal = self
             .service

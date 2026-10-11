@@ -24,6 +24,9 @@
 //
 // `menu.ts`, the table and the menu list are read through eager globs, so on a branch without them
 // each test fails on an assertion that the file exists, not on the import.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: 'all'` pin → `needs: 'all'` (#1030 §3.10: `MenuDef.roles` becomes `needs`). Nothing else changes.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -554,7 +557,7 @@ describe('V2-payments: the menu record (#470 §7)', () => {
     expect(menu.order).toBe(6);
     expect(menu.icon).toBe('▣');
     expect(menu.dated).toBe(false);
-    expect(menu.roles).toBe('all');
+    expect(menu.needs).toBe('all');
     expect(menu.label()).toBe(T.label);
     expect(menu.heading.eyebrow()).toBe(T.eyebrow);
     expect(menu.heading.title()).toBe(T.title);

@@ -44,6 +44,9 @@
 //
 // `menu.ts` and `i18n.ts` are read through eager globs, so on a branch without them each test fails
 // on the assertion `… exists` instead of the whole file failing to load.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: 'all'` pin → `needs: 'all'` (#1030 §3.10: `MenuDef.roles` becomes `needs`). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal, type JSX } from 'solid-js';
@@ -525,7 +528,7 @@ describe('V2-customers: the menu record (#466 §7; design §12.3)', () => {
     expect(m.order).toBe(8);
     expect(m.group).toBe('data');
     expect(m.dated).toBe(false);
-    expect(m.roles).toBe('all');
+    expect(m.needs).toBe('all');
     expect(m.icon).toBe('♙');
     expect(m.label()).toBe(own('ลูกค้าและสมาชิก'));
     expect(m.heading.eyebrow()).toBe(own('CUSTOMERS'));

@@ -11,7 +11,7 @@ use actix_web::web;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use pos_error::AppError;
 use xc_kernel::branch_tx::BranchTx;
@@ -21,7 +21,7 @@ use xc_rate::application::branch::service::{BranchProfile, BranchService};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, out_of_scope, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::dto::v3::admin_branches_profile::AdminBranchProfileData;
 
@@ -51,10 +51,24 @@ impl CommandAction for BranchSaveCommand {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // #945 ruling 1: a branch of another organisation is out of the caller's scope. An old cookie's actor names
+        // its organisation by code ("XC"), an Identity session's by id.
+        let ours: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM branches b JOIN organizations o ON o.id = b.organization_id \
+             WHERE b.id = $1 AND (o.id::text = $2 OR o.code = $2))",
+        )
+        .bind(branch.as_str())
+        .bind(&who.organization_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+        if !ours {
+            return Err(out_of_scope());
+        }
         let branches = BranchService::new(BranchTx::new(Transactor::new(self.0.clone())));
         let profile = BranchProfile {
             code: input.code,

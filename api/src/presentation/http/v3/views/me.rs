@@ -7,42 +7,86 @@ use std::sync::Arc;
 use actix_web::web;
 use pos_error::AppResult;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
+use std::collections::BTreeSet;
+
+use chrono::{DateTime, Utc};
+use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::authorizer::{Authorizer, Target};
+use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use chrono::Utc;
 use xc_auth::application::session::SessionService;
 use xc_auth::application::session::session_service::SessionError;
 use xc_auth::domain::access::BranchRef as SessionBranchRef;
 use xc_kernel::ids::BranchId;
 
 use sqlx::PgPool;
-use xc_auth::domain::account::repositories::account_repository::AccountRepository;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::common::{BranchRef, Me, NoFilter};
+use crate::presentation::dto::v3::common::{BranchRef, Me, MeRole, NoFilter};
 use crate::presentation::dto::v3::me::MeView;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct MeBranchView {
-    accounts: PgAccountRepository,
     db: PgPool,
 }
 
+fn valid_at(row: &ScopedRole, now: DateTime<Utc>) -> bool {
+    row.valid_from <= now && row.valid_to.is_none_or(|to| now < to)
+}
+
+/// `Me.roles` (#1030 §3.3): the actor's valid-now rows in the sign-in session route's shape, ordered by role name,
+/// then branch id. `kiosk_notifications` names its caller with the same rows.
+pub(crate) fn me_roles(who: &Actor, now: DateTime<Utc>) -> Vec<MeRole> {
+    let mut rows: Vec<MeRole> = who
+        .roles
+        .iter()
+        .filter(|r| valid_at(r, now))
+        .map(|r| MeRole {
+            role: r.role.as_str().to_owned(),
+            branch_id: r.branch.as_ref().map(|b| b.as_str().to_owned()),
+        })
+        .collect();
+    rows.sort_by(|a, b| a.role.cmp(&b.role).then_with(|| a.branch_id.cmp(&b.branch_id)));
+    rows.dedup();
+    rows
+}
+
+/// `Me.permissions` (#1030 §3.3): of the union of `RolePermissions::of` over the actor's roles, the ones
+/// `Authorizer::check` grants at `branch`, by their serde names, sorted. `Authorizer::check` is the only judge.
+pub(crate) fn me_permissions(who: &Actor, branch: &BranchId, now: DateTime<Utc>) -> Vec<String> {
+    let target = Target::new(&who.organization_id, Some(branch.clone()), None);
+    let mut names = BTreeSet::new();
+    for row in &who.roles {
+        for &p in RolePermissions::of(row.role) {
+            if Authorizer::check(Some(who), p, &target, now).is_ok()
+                && let Ok(serde_json::Value::String(name)) = serde_json::to_value(p)
+            {
+                names.insert(name);
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// The `me` version (#1030 §3.3): `user_id` and the sorted `role@branch` list, so a grant or a revocation ends the
+/// view's cursor the way an account switch does.
 pub(crate) fn identity_version(who: &Actor) -> i64 {
     const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
     let mut hash = FNV_OFFSET_BASIS;
-    for &byte in who.id().as_bytes() {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash ^= 0; // '\0'
-    hash = hash.wrapping_mul(FNV_PRIME);
-    for &byte in who.role().as_str().as_bytes() {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
+    let mut eat = |bytes: &[u8]| {
+        for &byte in bytes {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    };
+    eat(who.user_id.as_bytes());
+    for row in me_roles(who, Utc::now()) {
+        eat(b"\0");
+        eat(row.role.as_bytes());
+        eat(b"@");
+        eat(row.branch_id.as_deref().unwrap_or("*").as_bytes());
     }
     (hash & 0x001f_ffff_ffff_ffff) as i64
 }
@@ -70,18 +114,17 @@ impl BranchView for MeBranchView {
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let branch = branch.clone();
         let who = who.clone();
-        let accounts = self.accounts.clone();
         let db = self.db.clone();
         async move {
             // A Blueprint session's S (SB-1 §14.4); `None` for the old owner and staff cookies.
             let switchable = SessionService::new(db.clone(), None, None, None)
-                .switchable_of_user(who.id(), Utc::now())
+                .switchable_of_user(&who.user_id, Utc::now())
                 .await
                 .map_err(|e| match e {
                     SessionError::Database(e) => pos_error::AppError::Internal(e),
                     other => pos_error::AppError::Internal(other.refusal().2),
                 })?;
-            me_of(&db, &accounts, &who, &branch, switchable).await.map(MeView)
+            me_of(&db, &who, &branch, switchable).await.map(MeView)
         }
     }
 }
@@ -91,33 +134,19 @@ impl BranchView for MeBranchView {
 /// OR-7) `branches` lists `branch` alone.
 pub(crate) async fn me_of(
     db: &PgPool,
-    accounts: &PgAccountRepository,
     who: &Actor,
     branch: &BranchId,
     switchable: Option<Vec<SessionBranchRef>>,
 ) -> AppResult<Me> {
-    let (name, username) = match who.kind() {
-        ActorKind::Owner => {
-            let rows: Vec<(String, String)> =
-                sqlx::query_as("SELECT name, username FROM owners LIMIT 2")
-                    .fetch_all(db)
-                    .await
-                    .map_err(pos_error::AppError::Database)?;
-            if rows.len() == 1 {
-                let (n, u) = rows.into_iter().next().unwrap();
-                (Some(n), Some(u))
-            } else {
-                (None, None)
-            }
-        }
-        ActorKind::Staff => {
-            if let Some(emp) = accounts.find_employee_by_id(who.id()).await? {
-                (Some(emp.name), Some(emp.username))
-            } else {
-                (None, None)
-            }
-        }
-    };
+    let now = Utc::now();
+    // `users.name` by id (#1030 §3.3); an old cookie's actor (`"owner"`, a staff id) has no `users` row.
+    let name: Option<String> =
+        sqlx::query_scalar::<_, Option<String>>("SELECT name FROM users WHERE id::text = $1")
+            .bind(&who.user_id)
+            .fetch_optional(db)
+            .await
+            .map_err(pos_error::AppError::Database)?
+            .flatten();
     let branches: Vec<BranchRef> = match switchable {
         Some(s) => s
             .into_iter()
@@ -149,16 +178,11 @@ pub(crate) async fn me_of(
             .unwrap_or_else(|| branch.as_str().to_owned()),
     };
     Ok(Me {
-        kind: match who.kind() {
-            ActorKind::Owner => "owner",
-            ActorKind::Staff => "staff",
-        }
-        .to_owned(),
-        id: who.id().to_owned(),
-        role: who.role().as_str().to_owned(),
-        branch: branch.as_str().to_owned(),
+        id: who.user_id.clone(),
         name,
-        username,
+        roles: me_roles(who, now),
+        permissions: me_permissions(who, branch, now),
+        branch: branch.as_str().to_owned(),
         branch_name,
         branches,
     })
@@ -166,7 +190,6 @@ pub(crate) async fn me_of(
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let view = MeBranchView {
-        accounts: PgAccountRepository::new(state.db.clone()),
         db: state.db.clone(),
     };
     ViewEndpoint::register(cfg, Arc::new(view));

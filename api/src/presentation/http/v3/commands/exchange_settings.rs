@@ -16,7 +16,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
@@ -29,7 +29,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::exchange_settings::{
     BranchExchangeLimitDto, ExchangeSettingsDto,
 };
-use crate::presentation::http::v3::command::{
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{role_not_allowed_here, 
     CommandAction, CommandEndpoint, Locks, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
@@ -116,6 +117,8 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // OR-7 bridge, removed by #1026: the audit row still records the v2 role
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let org = organization_of(tx, branch).await?;
         let before = self
             .settings
@@ -123,7 +126,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             .await
             .map_err(refusal)?;
         self.settings
-            .set_ttl_in(tx, org, input.quote_ttl_seconds, who.id(), Utc::now())
+            .set_ttl_in(tx, org, input.quote_ttl_seconds, &who.user_id, Utc::now())
             .await
             .map_err(refusal)?;
         let after = self
@@ -135,8 +138,8 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             &self.audit,
             tx,
             AuditEvent {
-                actor_id: who.id().to_owned(),
-                actor_role: who.role().as_str().to_owned(),
+                actor_id: who.user_id.clone(),
+                actor_role: legacy.role().as_str().to_owned(),
                 scope: "organization".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: org.to_string(),
@@ -189,6 +192,8 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // OR-7 bridge, removed by #1026: the audit row still records the v2 role
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let target = BranchId::new(input.id.clone());
         let limit = match input.approval_limit_thb.as_deref() {
             None => None,
@@ -208,7 +213,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             .await
             .map_err(refusal)?;
         self.settings
-            .set_approval_limit_in(tx, org, &target, limit, who.id(), Utc::now())
+            .set_approval_limit_in(tx, org, &target, limit, &who.user_id, Utc::now())
             .await
             .map_err(refusal)?;
         let after = self
@@ -221,8 +226,8 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             &self.audit,
             tx,
             AuditEvent {
-                actor_id: who.id().to_owned(),
-                actor_role: who.role().as_str().to_owned(),
+                actor_id: who.user_id.clone(),
+                actor_role: legacy.role().as_str().to_owned(),
                 scope: "branch".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: target.as_str().to_owned(),

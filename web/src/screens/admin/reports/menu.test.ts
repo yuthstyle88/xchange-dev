@@ -12,6 +12,9 @@
 //
 // The menu's files are read through eager globs, so on a branch without them each test fails on
 // an assertion that the file exists, not on the import.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: 'all'` pin → `needs: 'all'` (#1030 §3.10: `MenuDef.roles` becomes `needs`). Nothing else changes.
 import { describe, expect, it } from 'vitest';
 import type { JSX } from 'solid-js';
 import { screenLookup, setLang } from '../../../shared/i18n';
@@ -129,7 +132,7 @@ describe('V2-reports: the menu record (#469 §7; design §12.3)', () => {
     expect(menu.icon).toBe('▥');
     expect(menu.label()).toBe('รายงาน');
     expect(menu.dated).toBe(true);
-    expect(menu.roles).toBe('all');
+    expect(menu.needs).toBe('all');
     expect(menu.heading.eyebrow()).toBe('DAILY REPORT');
     expect(menu.heading.title()).toBe('รายงาน');
     expect(menu.heading.subtitle()).toBe('แยกดูช่องทางชำระเงิน สกุลเงิน และยอดของพนักงาน');

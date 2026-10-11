@@ -1,31 +1,19 @@
-//! Ticket #402 (V1-account-bar), the server part: the `me` view (`GET /api/v3/views/me`,
-//! `api/src/presentation/http/v3/views/me.rs`) answers the signed-in account's own `name` and
-//! `username`, so the account bar can show v2's `{name} · {username} · {role}`
-//! (xchange-v2-source@4d0bdbb:src/devices-public/account-bar.js:8).
+//! Ticket #402 (V1-account-bar), the server part, **rewritten for OR-7.7 #1030 by its ticket author
+//! (claude/89bd61d9)**. #402 had the `me` view (`GET /api/v3/views/me`) answer `name` and `username` from the
+//! `owners`/`employees` rows. The owner decided on 2026-10-10 ("roles + permissions") that `me` answers `id`,
+//! `name`, `roles` and `permissions`, with `name` = `users.name` read by `users.id`, and **no** `kind`, `role` or
+//! `username`. So these tests now pin that `me` no longer reads `owners` or `employees`: an old password cookie,
+//! whose actor has no `users` row, answers `name: null` even though its `owners`/`employees` row has a name.
 //!
-//! Written before the implementation by the lane controller. Do not edit, delete or weaken.
-//!
-//! What it pins (lane controller decisions on #402, 2026-10-08):
-//! - `Me` (`api/src/presentation/dto/v3/common.rs`) gains `name` and `username`, serialised
-//!   under those names, as `Option<String>` (TS `string | null`).
-//! - They come from the row of the account the session belongs to, read the way `/api/auth`
-//!   `status` reads it (`api/src/presentation/http/auth.rs:93-100`, `user_json` `:65-74`): the
-//!   owner's own `owners` row (v2 `src/auth.mjs:43-45` finds it through the owner session), and
-//!   the employee's `employees` row. The owner's `id` stays the constant `OWNER_ID` (`"owner"`).
-//! - There is one owner row at most: the repository refuses a second one
-//!   (`api/crates/xc-auth/src/infrastructure/account/account_repository.rs:450-456`), so no test
-//!   here makes two.
-//!
-//! The requests go through the server's whole route table (`bootstrap::configure`) with the real
-//! session reader and real sign-ins, so how the view reaches the row is not pinned here.
+//! The requests go through the server's whole route table (`bootstrap::configure`) with the real session reader
+//! and real sign-ins. The Identity-session cases (a `users.name` that follows a rename) are in
+//! `v3_me_roles_permissions_test.rs`.
 //!
 //! Needs a real PostgreSQL: `TEST_DATABASE_URL` must name an existing database whose name ends
 //! in `_test`. It fails without it; it does not skip. Each test works in a schema of its own.
 
 mod auth_http_common;
 mod common;
-
-use std::path::Path;
 
 use actix_web::http::Method;
 use auth_http_common::*;
@@ -67,21 +55,47 @@ async fn rename_owner(desk: &Desk, username: &str, name: &str) {
     assert_eq!(done.rows_affected(), 1, "the owner {username} exists");
 }
 
+/// The keys `me` answers (OR-7.7 #1030).
+fn me_keys(data: &Value) -> Vec<String> {
+    let mut keys: Vec<String> = data
+        .as_object()
+        .unwrap_or_else(|| panic!("me data is an object: {data}"))
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
+}
+
+const NEW_KEYS: [&str; 7] = [
+    "branch",
+    "branchName",
+    "branches",
+    "id",
+    "name",
+    "permissions",
+    "roles",
+];
+
 #[actix_web::test]
-async fn the_owner_sees_their_own_name_and_username() {
+async fn the_owner_cookie_no_longer_reads_the_owners_row() {
     let desk = Desk::start().await;
     rename_owner(&desk, "boss", "Somchai").await;
     let app = desk_app!(desk);
     let owner = owner_signs_in(&app).await;
 
     let data = me(&app, get_me().owner(&owner), "the owner").await;
+    assert_eq!(me_keys(&data), NEW_KEYS, "{data}");
+    assert_eq!(data["id"], json!("owner"), "{data}");
     assert_eq!(
-        data,
-        json!({
-            "kind": "owner", "id": "owner", "role": "OWNER", "branch": "MAIN",
-            "branchName": "XC-B", "branches": [{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }],
-            "name": "Somchai", "username": "boss"
-        })
+        data["name"],
+        Value::Null,
+        "not the owners row's \"Somchai\": {data}"
+    );
+    assert_eq!(
+        data["roles"],
+        json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
+        "{data}"
     );
 
     drop(app);
@@ -89,7 +103,7 @@ async fn the_owner_sees_their_own_name_and_username() {
 }
 
 #[actix_web::test]
-async fn a_staff_member_sees_their_own_name_and_username() {
+async fn a_staff_cookie_no_longer_reads_the_employees_row() {
     let desk = Desk::start().await;
     desk.branch("XC-B01").await;
     let app = desk_app!(desk);
@@ -98,21 +112,26 @@ async fn a_staff_member_sees_their_own_name_and_username() {
     let (_, _ploy) = working_employee(&app, &desk, &owner, "ploy", "RATES", "XC-B01").await;
 
     let data = me(&app, get_me().staff(&nok), "nok").await;
+    assert_eq!(me_keys(&data), NEW_KEYS, "{data}");
+    assert_eq!(data["id"], json!(nok_id), "{data}");
     assert_eq!(
-        data,
-        json!({
-            "kind": "staff", "id": nok_id, "role": "FRONT", "branch": "XC-B01",
-            "branchName": "XC-B01", "branches": [{ "id": "XC-B01", "code": "XC-B01", "name": "XC-B01" }],
-            "name": "คุณ nok", "username": "nok"
-        })
+        data["name"],
+        Value::Null,
+        "not the employees row's \"คุณ nok\": {data}"
     );
+    assert_eq!(
+        data["roles"],
+        json!([{ "role": "TELLER", "branchId": "XC-B01" }]),
+        "{data}"
+    );
+    assert_eq!(data["branch"], json!("XC-B01"), "{data}");
 
     drop(app);
     desk.drop_schema().await;
 }
 
 #[actix_web::test]
-async fn the_owner_and_a_staff_member_in_one_browser_answer_the_owners_row() {
+async fn the_owner_and_a_staff_member_in_one_browser_answer_the_owner() {
     let desk = Desk::start().await;
     desk.branch("XC-B01").await;
     rename_owner(&desk, "boss", "Somchai").await;
@@ -120,41 +139,15 @@ async fn the_owner_and_a_staff_member_in_one_browser_answer_the_owners_row() {
     let owner = owner_signs_in(&app).await;
     let (_, nok) = working_employee(&app, &desk, &owner, "nok", "FRONT", "XC-B01").await;
 
-    // The `me` view answers the owner session first (`EntryPath::Rpc`, as `rpc.rs`), and its
-    // names are of the same account it answers for.
+    // The `me` view answers the owner session first (`EntryPath::Rpc`, as `rpc.rs`).
     let data = me(&app, get_me().owner(&owner).staff(&nok), "owner and staff").await;
-    assert_eq!(data["kind"], "owner", "{data}");
-    assert_eq!(data["name"], "Somchai", "{data}");
-    assert_eq!(data["username"], "boss", "{data}");
+    assert_eq!(data["id"], json!("owner"), "{data}");
+    assert_eq!(
+        data["roles"],
+        json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
+        "{data}"
+    );
 
     drop(app);
     desk.drop_schema().await;
-}
-
-#[test]
-fn the_generated_me_type_has_name_and_username_as_string_or_null() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/src/shared/api/generated/common.ts");
-    let text =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let me = text
-        .lines()
-        .find(|l| l.starts_with("export type Me = "))
-        .unwrap_or_else(|| panic!("an `export type Me` line in {}", path.display()));
-    assert!(
-        me.contains(" name: string | null,"),
-        "Me has `name: string | null`: {me}"
-    );
-    assert!(
-        me.contains(" username: string | null,"),
-        "Me has `username: string | null`: {me}"
-    );
-    for kept in [
-        " kind: string,",
-        " id: string,",
-        " role: string,",
-        " branch: string,",
-    ] {
-        assert!(me.contains(kept), "Me keeps `{}`: {me}", kept.trim());
-    }
 }

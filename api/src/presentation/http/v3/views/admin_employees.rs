@@ -10,7 +10,7 @@ use pos_error::{AppError, AppResult};
 use serde_json::json;
 use ts_rs::TS;
 use xc_auth::application::account::service::EmployeesAnswer;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
@@ -46,7 +46,7 @@ impl BranchView for AdminEmployeesBranchView {
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let accounts = self.accounts.clone();
-        let who_id = who.id().to_string();
+        let who_id = who.user_id.clone();
         async move {
             match accounts
                 .employees("list", &json!({}), &who_id, Utc::now())

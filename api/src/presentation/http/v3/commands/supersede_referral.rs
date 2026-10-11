@@ -12,7 +12,7 @@ use actix_web::http::Method;
 use actix_web::web;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_referral::application::capture_service::{CaptureError, ReferralCaptureService};
@@ -75,7 +75,7 @@ impl CommandAction for SupersedeReferralCommand {
                 &capture,
                 code,
                 &input.reason,
-                who.id(),
+                &who.user_id,
                 chrono::Utc::now(),
             )
             .await

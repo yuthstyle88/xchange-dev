@@ -31,12 +31,17 @@
 // bar's button, and the assertions on that button (`disabled`, focus on close) and on the bar's
 // status line are gone. Their replacements are in QueueBar.widget.test.tsx and
 // ../../../shared/ui/QueueCard.float.test.tsx.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// `employee {id, role: 'OWNER'}` → `employeeOf(meOf(…))` with MANAGER (BRANCH_MANAGER), as in
+// QueueBar.widget.test.tsx: under ruling A on #1030 the former owner holds no `QueueOperate`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { queueStore, type QueueError, type QueueStore } from '../../../shared/queue/queue-store';
 import type { KioskNotifications } from '../../../shared/queue/wire';
+import { employeeOf, meOf } from '../../../test-support/me';
 
 type BarModule = typeof import('./QueueBar');
 type TextsModule = typeof import('./i18n');
@@ -145,7 +150,7 @@ function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
 }
 
-const EMPLOYEE = { id: 'emp-nok', role: 'OWNER' };
+const EMPLOYEE = employeeOf(meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok' }));
 
 /** A fresh answer object every time, as a `changed: true` poll. */
 function answer(b: string, over: Partial<KioskNotifications> = {}) {

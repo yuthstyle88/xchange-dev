@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -120,8 +120,8 @@ impl CommandAction for RatePolicySaveCommand {
         .await
         .map_err(|_| server_error())?;
 
-        // If caller is not owner (i.e. staff with RATES role):
-        if who.role() != Role::Owner {
+        // Without an EXECUTIVE row here (i.e. a RATE_MANAGER), only the adjustments may change (#1030 §3.9):
+        if !may_change_the_frame(who, branch, Utc::now()) {
             let Some(cur) = &cur_row else {
                 return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
             };
@@ -172,7 +172,7 @@ impl CommandAction for RatePolicySaveCommand {
         .bind(input.max_reference_age_hours)
         .bind(&input.on_stale)
         .bind(stale_limit)
-        .bind(who.id())
+        .bind(&who.user_id)
         .bind(&input.reason)
         .bind(source_ver)
         .execute(&mut **tx)
@@ -184,6 +184,17 @@ impl CommandAction for RatePolicySaveCommand {
             version: next_ver,
         })
     }
+}
+
+/// The guards and the stale settings may change iff the caller has a valid-now EXECUTIVE row covering `branch`
+/// (#1030 §3.9; design §3.3: the old owner is EXECUTIVE + ADMIN).
+fn may_change_the_frame(who: &Actor, branch: &BranchId, now: DateTime<Utc>) -> bool {
+    who.roles.iter().any(|r| {
+        r.role == Role::Executive
+            && r.valid_from <= now
+            && r.valid_to.is_none_or(|to| now < to)
+            && r.branch.as_ref().is_none_or(|b| b == branch)
+    })
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {

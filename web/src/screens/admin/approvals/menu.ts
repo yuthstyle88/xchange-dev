@@ -11,7 +11,7 @@ export const menu: AdminMenu = {
   icon: '✓',
   order: 11,
   group: 'tools',
-  roles: ['OWNER'],
+  needs: 'ApprovalsDecide',
   heading: {
     eyebrow: () => t('eyebrow'),
     title: () => t('title'),

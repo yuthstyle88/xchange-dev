@@ -15,15 +15,13 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor as User;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -70,13 +68,12 @@ impl QueueServices {
     }
 }
 
-/// The Blueprint actor the queue's services authorise (`Authorizer::check`), from the seam's
-/// actor and the branch's organisation (design §3.3 roles; OR-7 bridge until the seam hands
-/// `access::Actor`, #1030).
+/// The Blueprint actor the queue's services authorise (`Authorizer::check`): the seam's own actor
+/// (#1030), once the branch is known.
 pub async fn user_in(
     tx: &mut Transaction<'_, Postgres>,
     branch: &BranchId,
-    who: &Actor,
+    who: &User,
 ) -> Result<User, V3Error> {
     let organization: Option<String> =
         sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
@@ -84,8 +81,8 @@ pub async fn user_in(
             .fetch_optional(&mut **tx)
             .await
             .map_err(|_| server_error())?;
-    let organization = organization.ok_or_else(out_of_scope)?;
-    Ok(actor_from_v3(who, &organization, DateTime::UNIX_EPOCH))
+    organization.ok_or_else(out_of_scope)?;
+    Ok(who.clone())
 }
 
 /// A queue refusal as v3 answers it: the queue's code (`QueueError::code`), with the status its
@@ -237,7 +234,7 @@ impl CommandAction for IssueWalkIn {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &User,
         _input: Self::Input,
         key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -265,7 +262,7 @@ impl CommandAction for CallNext {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -297,7 +294,7 @@ macro_rules! ticket_command {
                 &self,
                 tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
                 branch: &BranchId,
-                who: &Actor,
+                who: &User,
                 input: Self::Input,
                 _key: IdempotencyKey,
             ) -> Result<Self::Output, V3Error> {
@@ -349,7 +346,7 @@ impl CommandAction for Cancel {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -389,7 +386,7 @@ impl CommandAction for Pause {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -418,7 +415,7 @@ impl CommandAction for Resume {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -449,7 +446,7 @@ impl CommandAction for Open {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -478,7 +475,7 @@ impl CommandAction for Close {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {

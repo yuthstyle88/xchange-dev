@@ -13,7 +13,7 @@ export const menu: AdminMenu = {
   icon: '⇄',
   order: 2,
   group: 'desk',
-  roles: 'all',
+  needs: 'all',
   heading: {
     eyebrow: () => t('eyebrow'),
     title: () => t('title'),

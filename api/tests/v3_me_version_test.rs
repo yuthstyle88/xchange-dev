@@ -330,10 +330,30 @@ async fn another_account_gets_another_me_version_and_its_own_me_on_the_old_since
         "employee-8 RATES and employee-7 FRONT"
     );
 
-    for (who, version, id, role) in [
-        (other_id, v_other_id, "employee-8", "RATES"),
-        (other_role, v_other_role, "employee-7", "FRONT"),
-        (owner, v_owner, "owner-1", "OWNER"),
+    // OR-7.7 #1030: `me` answers `roles` as design §3.3 maps the old role (RATES → RATE_MANAGER and
+    // FRONT → TELLER at the employee's branch; OWNER → ADMIN and EXECUTIVE, organisation-wide).
+    for (who, version, id, roles) in [
+        (
+            other_id,
+            v_other_id,
+            "employee-8",
+            serde_json::json!([{ "role": "RATE_MANAGER", "branchId": "XC-B01" }]),
+        ),
+        (
+            other_role,
+            v_other_role,
+            "employee-7",
+            serde_json::json!([{ "role": "TELLER", "branchId": "XC-B01" }]),
+        ),
+        (
+            owner,
+            v_owner,
+            "owner-1",
+            serde_json::json!([
+                { "role": "ADMIN", "branchId": null },
+                { "role": "EXECUTIVE", "branchId": null },
+            ]),
+        ),
     ] {
         let a = get(&db, who, &format!("/api/v3/views/me?since={v_rates}")).await;
         assert_eq!(a.status, StatusCode::OK, "{who}: {}", a.body);
@@ -344,15 +364,35 @@ async fn another_account_gets_another_me_version_and_its_own_me_on_the_old_since
         );
         assert_eq!(a.body["version"], version, "{who}: {}", a.body);
         assert_eq!(a.body["data"]["id"], id, "{who}: {}", a.body);
-        assert_eq!(a.body["data"]["role"], role, "{who}: {}", a.body);
+        assert_eq!(a.body["data"]["roles"], roles, "{who}: {}", a.body);
     }
     db.finish().await;
 }
 
+/// The Blueprint role design §3.3 maps each v3 staff role to (OR-7.7 #1030).
+fn blueprint_role(v3: &str) -> &'static str {
+    match v3 {
+        "FRONT" => "TELLER",
+        "BACKEND" | "MANAGER" => "BRANCH_MANAGER",
+        "RATES" => "RATE_MANAGER",
+        "FINANCE" => "FINANCE",
+        "SYSTEM" => "ADMIN",
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => "VERIFICATION_REVIEWER",
+        other => panic!("no §3.3 mapping written for {other}"),
+    }
+}
+
+/// OR-7.7 #1030: the `me` version follows the identity `me` answers, `{id, roles}`. Two v3 roles that
+/// §3.3 maps to the same Blueprint role at the same branch (BACKEND and MANAGER → BRANCH_MANAGER;
+/// MONITOR, DOCUMENTS and DOCUMENT_REVIEW → VERIFICATION_REVIEWER) are one identity and share one
+/// version; every other pair of callers has its own.
 #[actix_web::test]
-async fn every_account_and_role_has_its_own_me_version_within_a_javascript_safe_integer() {
+async fn every_account_and_mapped_role_has_its_own_me_version_within_a_javascript_safe_integer() {
     let db = TestDb::start().await;
-    let mut callers = vec!["owner:owner-1".to_string(), "owner:owner-2".to_string()];
+    let mut callers = vec![
+        ("owner:owner-1".to_string(), "owner-1|OWNER".to_string()),
+        ("owner:owner-2".to_string(), "owner-2|OWNER".to_string()),
+    ];
     for id in [
         "e-1",
         "e-10",
@@ -360,32 +400,55 @@ async fn every_account_and_role_has_its_own_me_version_within_a_javascript_safe_
         "0f8c6c1e-6a0b-4c55-9d1e-6f1f1c2b3a4d",
     ] {
         for role in STAFF_ROLES {
-            callers.push(format!("staff:{id}:{role}:XC-B01"));
+            callers.push((
+                format!("staff:{id}:{role}:XC-B01"),
+                format!("{id}|{}@XC-B01", blueprint_role(role)),
+            ));
         }
     }
-    let mut seen: HashMap<i64, String> = HashMap::new();
-    for who in &callers {
+    let mut by_identity: HashMap<String, (i64, String)> = HashMap::new();
+    let mut by_version: HashMap<i64, String> = HashMap::new();
+    for (who, identity) in &callers {
         let version = me_version(&db, who).await;
-        if let Some(earlier) = seen.insert(version, who.clone()) {
-            panic!("{who} and {earlier} share the me version {version}");
+        match by_identity.get(identity) {
+            Some((same, earlier)) => assert_eq!(
+                version, *same,
+                "{who} and {earlier} are the same identity {identity}, so one me version"
+            ),
+            None => {
+                if let Some(other) = by_version.insert(version, identity.clone()) {
+                    panic!("{who} ({identity}) and {other} share the me version {version}");
+                }
+                by_identity.insert(identity.clone(), (version, who.clone()));
+            }
         }
     }
-    assert_eq!(seen.len(), callers.len());
+    // 2 owners + 4 ids × 6 Blueprint roles (9 v3 roles collapse into 6).
+    assert_eq!(by_identity.len(), 2 + 4 * 6);
+    assert_eq!(by_version.len(), by_identity.len());
     db.finish().await;
 }
 
+/// OR-7.7 #1030: a role row is a grant at a branch (`role@branch`, design §3.3), so the same id and
+/// role at another branch is another identity with another version (the web reads it as "switched").
+/// The owner's rows are organisation-wide, so naming a branch keeps the owner's version.
 #[actix_web::test]
-async fn the_me_version_follows_id_and_role_only() {
+async fn the_me_version_follows_id_and_role_grants_at_their_branch() {
     let db = TestDb::start().await;
-    // XC-B02 and MAIN now have different branch versions, so a me version that
-    // followed the branch would differ below.
     db.write("XC-B02").await;
     let at_b01 = me_version(&db, "staff:employee-7:RATES:XC-B01").await;
     let at_b02 = me_version(&db, "staff:employee-7:RATES:XC-B02").await;
-    assert_eq!(
+    assert_ne!(
         at_b01, at_b02,
-        "the same id and role at another branch keep the version"
+        "the same id and role at another branch is another grant, so another version"
     );
+    for _ in 0..3 {
+        assert_eq!(
+            me_version(&db, "staff:employee-7:RATES:XC-B01").await,
+            at_b01,
+            "stable at XC-B01"
+        );
+    }
 
     let owner = me_version(&db, "owner:owner-1").await;
     let named = get(&db, "owner:owner-1", "/api/v3/views/me?branch=XC-B02").await;

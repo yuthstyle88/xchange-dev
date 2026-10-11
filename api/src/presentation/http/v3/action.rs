@@ -6,9 +6,9 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use serde_json::Value;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -68,7 +68,7 @@ async fn handle_compute<A: ComputeAction>(
     action: Arc<A>,
 ) -> HttpResponse {
     // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
-    let (who, user) = match authenticate_and_authorize(&req, A::INHERITS).await {
+    let who = match authenticate_and_authorize(&req, A::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -155,7 +155,7 @@ async fn handle_compute<A: ComputeAction>(
     let now = chrono::Utc::now();
     let action_vo = Action::new(A::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&user),
+        Some(&who),
         A::INHERITS.0,
         &action_vo,
         named_branch.as_ref(),
@@ -204,7 +204,8 @@ mod tests {
     use ts_rs::TS;
 
     use super::*;
-    use crate::presentation::pages::{SessionReader, Sessions};
+    use crate::presentation::pages::{Callers, SessionReader, Sessions};
+    use xc_auth::domain::access::{Role, ScopedRole};
 
     #[derive(Debug, Clone, Deserialize, TS)]
     #[ts(export_to = "test_seam_req.ts")]
@@ -250,8 +251,33 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
             Box::pin(async move {
                 Sessions {
-                    owner: Some(Actor::owner("owner-1")),
+                    owner: None,
                     staff: None,
+                }
+            })
+        }
+
+        /// An organisation-wide EXECUTIVE + ADMIN (the former owner, design §3.3).
+        fn callers<'a>(
+            &'a self,
+            _req: &'a HttpRequest,
+        ) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+            Box::pin(async move {
+                let since = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+                let user = Actor::new(
+                    "owner-1",
+                    "XC",
+                    vec![
+                        ScopedRole::new(Role::Executive, None, since, None),
+                        ScopedRole::new(Role::Admin, None, since, None),
+                    ],
+                    None,
+                );
+                Callers {
+                    owner: None,
+                    staff: None,
+                    user: Some(user),
+                    staff_user: None,
                 }
             })
         }

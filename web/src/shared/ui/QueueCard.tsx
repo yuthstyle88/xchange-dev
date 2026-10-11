@@ -18,8 +18,6 @@ function checkInitialFold(): boolean {
   return false;
 }
 
-const CLAIMING_ROLES = ['OWNER', 'FRONT', 'BACKEND', 'MANAGER'];
-
 export function QueueCard(props: { session: SessionStore }): JSX.Element {
   const [isFolded, setIsFolded] = createSignal(checkInitialFold());
   const toggleFold = () => setIsFolded((f) => !f);
@@ -114,10 +112,8 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
     }
   });
 
-  const canClaim = () => {
-    const r = props.session.me()?.role;
-    return r ? CLAIMING_ROLES.includes(r) : false;
-  };
+  // The server's row for the queue's accept/get (#1030 §3.10): claim iff `me.permissions` holds QueueOperate.
+  const canClaim = () => props.session.me()?.permissions.includes('QueueOperate') ?? false;
 
   const showWorkers = () => {
     if (store().error()?.kind === 'offline') return false;

@@ -341,7 +341,7 @@ export function createDeskStore(
     setCustomerId,
     staffDraftId,
     setStaffDraftId,
-    staff: () => deps.me()?.username ?? '',
+    staff: () => deps.me()?.name ?? deps.me()?.id ?? '',
     valueDate,
     setValueDate,
     booking,

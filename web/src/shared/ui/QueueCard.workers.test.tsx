@@ -19,6 +19,9 @@
 //     `ยังไม่มีข้อมูล` / `No data` when `startedAt` is null (the bar's `noData`);
 //   - [required] minimized: the lines are not shown (absent, or under an element with `hidden`);
 //   - [required] an empty `working` list, or offline (the bar's `showWorkers()`), renders no list element.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -28,6 +31,7 @@ import { queueStore, type QueueError, type QueueStore } from '../queue/queue-sto
 import type { KioskNotifications } from '../queue/wire';
 import { QueueCard } from './QueueCard';
 import { QueueBar } from '../../screens/admin/queue/QueueBar';
+import { employeeOf, meOf } from '../../test-support/me';
 
 interface FakeStore extends QueueStore {
   setState(v: KioskNotifications | undefined): void;
@@ -76,7 +80,8 @@ vi.mock('./QueuePanel', () => ({
   },
 }));
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
+const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
+const NOK: Me = meOf(NOK_V3);
 
 // 02:15Z is 09:15 in Bangkok: a stamp printed in UTC (browserInUtc) reads 2:15, not 9:15.
 const STARTED = '2026-10-10T02:15:00.000Z';
@@ -96,7 +101,7 @@ function answer(over: Partial<KioskNotifications> = {}) {
     latest: 'K9',
     workingCount: 0,
     working: [],
-    employee: { id: NOK.id, role: NOK.role },
+    employee: employeeOf(NOK),
     ...over,
   });
 }

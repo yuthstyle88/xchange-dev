@@ -8,7 +8,13 @@ export type BranchRef = { id: string, code: string, name: string, };
 /**
  * Current user / actor information.
  */
-export type Me = { kind: string, id: string, role: string, branch: string, name: string | null, username: string | null, branchName: string, branches: Array<BranchRef>, };
+export type Me = { id: string, name: string | null, roles: Array<MeRole>, permissions: Array<string>, branch: string, branchName: string, branches: Array<BranchRef>, };
+
+/**
+ * One role row of `Me.roles`: the role's wire name and the branch it holds at, `null` organisation-wide
+ * (#1030 §3.3, the sign-in session route's shape).
+ */
+export type MeRole = { role: string, branchId: string | null, };
 
 /**
  * Decimal money string (W7).

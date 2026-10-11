@@ -9,6 +9,9 @@
 // that file is not edited. matchMedia is a controllable fake here, so a test can say which side of
 // 900px the screen is on and fire the `change` event.
 
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The fixture menus' `roles: 'all'` → `needs: 'all'` (#1030 §3.10).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -17,6 +20,7 @@ import type { Me } from '../../shared/api/generated/common';
 import { setLang } from '../../shared/i18n';
 import { AdminShell } from './AdminShell';
 import type { AdminMenu } from './menus';
+import { meOf } from '../../test-support/me';
 
 const MENU_BUTTON = '☰ เมนู'; // admin-workspace.js:60, i18n.ts menuButton
 const SHADE_TH = 'ปิดเมนู'; // admin-workspace.js ~4253: shade.setAttribute('aria-label','ปิดเมนู')
@@ -33,7 +37,7 @@ function fixtureMenu(id: string, order: number, label: string, group: AdminMenu[
     label: () => label,
     icon: '▦',
     group,
-    roles: 'all',
+    needs: 'all',
     heading: { eyebrow: () => 'EYEBROW', title: () => label, subtitle: () => 'SUBTITLE' },
     dated: false,
     Component,
@@ -52,7 +56,7 @@ const BRANCHES = [
 ];
 
 function meFor(named: string | undefined): Me {
-  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner', branchName: named || 'MAIN', branches: [] };
+  return meOf({ id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', branchName: named || 'MAIN', branches: [] });
 }
 
 const fakeApi = {

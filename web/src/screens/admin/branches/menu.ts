@@ -9,7 +9,7 @@ export const menu: AdminMenu = {
   id: 'branches',
   order: 14,
   group: 'data',
-  roles: ['ADMIN'],
+  needs: 'BranchesManage',
   dated: false,
   icon: '🏢',
   label: () => t('label'),

@@ -9,7 +9,7 @@ export const menu: AdminMenu = {
   id: 'users',
   order: 15,
   group: 'data',
-  roles: ['ADMIN'],
+  needs: 'UsersManage',
   dated: false,
   icon: '👥',
   label: () => t('label'),

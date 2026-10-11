@@ -9,7 +9,7 @@ use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_notify::application::notification_service::{
@@ -51,7 +51,7 @@ impl BranchView for MyNotificationsBranchView {
         who: &Actor,
     ) -> impl Future<Output = AppResult<Option<i64>>> + Send {
         let pool = self.pool.clone();
-        let user_id = who.id().to_string();
+        let user_id = who.user_id.clone();
         async move {
             let user_uuid = Uuid::parse_str(&user_id)
                 .map_err(|e| AppError::Validation(format!("invalid user_id: {e}")))?;
@@ -73,7 +73,7 @@ impl BranchView for MyNotificationsBranchView {
         filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let service = self.service.clone();
-        let user_id = who.id().to_string();
+        let user_id = who.user_id.clone();
         let unread_only = filter.unread.unwrap_or(false);
 
         async move {

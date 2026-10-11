@@ -7,7 +7,7 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::notifications::NotificationId;
@@ -75,7 +75,7 @@ impl CommandAction for NotificationReadCommand {
         let notif_id = NotificationId(input.id);
         let read_at = self
             .service
-            .mark_read(who.id(), &notif_id)
+            .mark_read(&who.user_id, &notif_id)
             .await
             .map_err(map_notify_error)?;
 
@@ -126,7 +126,7 @@ impl CommandAction for NotificationReadAllCommand {
     ) -> Result<Self::Output, V3Error> {
         let count = self
             .service
-            .mark_all_read(who.id())
+            .mark_all_read(&who.user_id)
             .await
             .map_err(map_notify_error)?;
 

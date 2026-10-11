@@ -12,7 +12,13 @@
 // claude/5edf7bb5's ruling (#842 issuecomment-6105121433, item 2): the pin "without ?branch= the
 // branch is MAIN, and setQueueBranch(MAIN) wins over me().branch" becomes "without ?branch= the
 // reads name me().branch (B-HOME)". Session branch design §14.4: no page names 'MAIN' itself.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` answer fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` →
+// `employeeOf(…)` (`web/src/test-support/me.ts`); untyped, so tsc did not list it, but the queue card, the
+// account bar and the queue store read `permissions`/`roles`. Nothing else changes.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { employeeOf, meOf } from '../../test-support/me';
 
 const PAGES = import.meta.glob('../../../pages/kiosk-queue.html', {
   query: '?raw',
@@ -50,14 +56,12 @@ const V2 = {
   intro: 'รับเรื่องด้วยบัญชีของตนเอง เวลาเริ่มนับเมื่อรับเรื่อง และสิ้นสุดเมื่อบันทึกรายการสำเร็จ',
 };
 
-const ME = {
-  kind: 'employee',
+const ME = meOf({
   id: 'E1',
   role: 'FRONT',
   branch: 'B-HOME',
   name: 'Somchai',
-  username: 'somchai',
-};
+});
 
 function table(): { th: Record<string, string>; en: Record<string, string> } {
   const mod = TABLES['./i18n.ts'];
@@ -100,7 +104,7 @@ function serve(input: unknown): Response {
           latest: `${branch}-kq-1`,
           workingCount: 0,
           working: [],
-          employee: { id: ME.id, role: ME.role },
+          employee: employeeOf(ME),
         },
       });
     case '/api/v3/views/kiosk_queue':

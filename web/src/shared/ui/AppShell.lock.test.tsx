@@ -23,9 +23,13 @@
 //
 // The shared session is a page singleton, so every test loads fresh modules. Nothing here is JSX:
 // the test builds the shell with the freshly loaded Solid, so both sides share one Solid instance.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import type { Me } from '../api/generated/common';
+import { meOf } from '../../test-support/me';
 
 const EXPIRED_TH = 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่';
 const SWITCHED_TH = 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ';
@@ -40,7 +44,7 @@ const READY = {
   channel: 'staging',
   ui: 'built',
 };
-const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
+const OWNER: Me = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', branchName: 'MAIN', branches: [] });
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

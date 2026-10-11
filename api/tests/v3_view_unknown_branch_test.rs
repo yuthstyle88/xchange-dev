@@ -38,6 +38,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -257,7 +258,12 @@ impl BranchView for Counting {
     type Filter = ProbeFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, _who: &Actor, _f: &ProbeFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        _who: &AccessActor,
+        _f: &ProbeFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
@@ -280,12 +286,17 @@ impl BranchView for OwnVersioned {
     type Filter = ProbeFilter;
     type Data = Echo;
 
-    async fn own_version(&self, _branch: &BranchId, _who: &Actor) -> AppResult<Option<i64>> {
+    async fn own_version(&self, _branch: &BranchId, _who: &AccessActor) -> AppResult<Option<i64>> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         Ok(Some(OWN_VERSION))
     }
 
-    async fn load(&self, branch: &BranchId, _who: &Actor, _f: &ProbeFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        _who: &AccessActor,
+        _f: &ProbeFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
@@ -305,7 +316,12 @@ impl BranchView for Unversioned {
     type Filter = ProbeFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, _who: &Actor, _f: &ProbeFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        _who: &AccessActor,
+        _f: &ProbeFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
@@ -333,7 +349,7 @@ impl PagedView for Paging {
     async fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         _f: &ProbeFilter,
         before: Option<RowId>,
         _limit: u16,

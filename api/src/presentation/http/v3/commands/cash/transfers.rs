@@ -6,7 +6,7 @@
 use actix_web::http::Method;
 use chrono::Utc;
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::transfer::TransferFlow;
 use xc_cash::domain::transfer::cash_transfer::{

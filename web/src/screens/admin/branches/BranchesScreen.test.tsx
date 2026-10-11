@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { BranchesScreen } from './BranchesScreen';
 import { menu } from './menu';
+import { permissionsOf, rolesOf } from '../../../test-support/me';
 
 const disposers: Array<() => void> = [];
 
@@ -118,14 +119,14 @@ afterEach(() => {
 });
 
 describe('A04 BranchesScreen', () => {
-  it("pins its menu record: id 'branches', group 'data', order 14, roles ['ADMIN']", () => {
+  it("pins its menu record: id 'branches', group 'data', order 14, needs 'BranchesManage'", () => {
     expect(menu.id).toBe('branches');
     expect(menu.group).toBe('data');
     expect(menu.order).toBe(14);
-    expect(menu.roles).toEqual(['ADMIN']);
-    expect(menu.roles).not.toBe('all');
+    expect(menu.needs).toBe('BranchesManage');
+    expect(menu.needs).not.toBe('all');
     for (const nonAdmin of ['TELLER', 'BRANCH_MANAGER', 'FINANCE', 'EXECUTIVE', 'MANAGER']) {
-      expect((menu.roles as readonly string[]).includes(nonAdmin)).toBe(false);
+      expect(permissionsOf(rolesOf(nonAdmin, 'B1')).includes(menu.needs as string)).toBe(false);
     }
   });
 

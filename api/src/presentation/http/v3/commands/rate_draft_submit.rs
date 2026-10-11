@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
@@ -18,7 +19,8 @@ use xc_rate::domain::draft::rate_draft::DraftId;
 use super::commands::{make_approval_service, map_rate_engine_error};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -71,9 +73,11 @@ impl CommandAction for SubmitDraftCommand {
             )
         })?;
 
+        // OR-7 bridge, removed by #1021
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let outcome = self
             .service
-            .submit(tx, branch, who, &DraftId::new(draft_id), key.as_str())
+            .submit(tx, branch, &legacy, &DraftId::new(draft_id), key.as_str())
             .await
             .map_err(map_rate_engine_error)?;
 

@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 

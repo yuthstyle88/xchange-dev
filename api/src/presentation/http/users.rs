@@ -88,7 +88,7 @@ async fn user_create(
         .error_response();
     }
 
-    let (_, actor) = match authenticate_and_authorize(&req, INHERITS).await {
+    let actor = match authenticate_and_authorize(&req, INHERITS).await {
         Ok(callers) => callers,
         Err(response) => return response,
     };

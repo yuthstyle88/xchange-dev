@@ -9,7 +9,7 @@ use chrono::{SecondsFormat, Utc};
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -28,6 +28,7 @@ use crate::presentation::dto::v3::kiosk_notifications::{
 };
 use crate::presentation::http::kiosk::{username_or_id, usernames};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
+use crate::presentation::http::v3::me::me_roles;
 
 struct KioskNotificationsBranchView {
     kiosk: KioskService,
@@ -71,8 +72,8 @@ impl BranchView for KioskNotificationsBranchView {
                 .collect();
 
             let employee = KioskNotificationsEmployee {
-                id: who.id().to_owned(),
-                role: who.role().as_str().to_owned(),
+                id: who.user_id.clone(),
+                roles: me_roles(&who, Utc::now()),
             };
 
             let server_now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);

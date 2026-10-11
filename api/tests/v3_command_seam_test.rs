@@ -75,6 +75,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -302,7 +303,7 @@ impl<const K: u8> Recording<K> {
         &self,
         operation: &str,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         input: DraftInput,
         key: &IdempotencyKey,
     ) -> Done {
@@ -312,7 +313,7 @@ impl<const K: u8> Recording<K> {
             id: input.id,
             amount: input.amount,
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
             key: key.as_str().to_owned(),
             run,
         }
@@ -345,7 +346,7 @@ impl CommandAction for SubmitDraft {
         &self,
         _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         input: DraftInput,
         key: IdempotencyKey,
     ) -> Result<Done, V3Error> {
@@ -367,7 +368,7 @@ impl CommandAction for SaveDraft {
         &self,
         _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         input: DraftInput,
         key: IdempotencyKey,
     ) -> Result<Done, V3Error> {
@@ -387,7 +388,7 @@ impl CommandAction for SaveDesk {
         &self,
         _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         input: DraftInput,
         key: IdempotencyKey,
     ) -> Result<Done, V3Error> {
@@ -407,7 +408,7 @@ impl CommandAction for SaveEmployee {
         &self,
         _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         input: DraftInput,
         key: IdempotencyKey,
     ) -> Result<Done, V3Error> {

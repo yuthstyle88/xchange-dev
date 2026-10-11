@@ -45,6 +45,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -268,14 +269,14 @@ impl<F: Clone> Seen<F> {
         }
     }
 
-    fn record(&self, branch: &BranchId, who: &Actor, filter: &F) -> Echo {
+    fn record(&self, branch: &BranchId, who: &AccessActor, filter: &F) -> Echo {
         self.asked
             .lock()
             .expect("not poisoned")
             .push((branch.as_str().to_owned(), filter.clone()));
         Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         }
     }
 
@@ -290,7 +291,7 @@ impl BranchView for Seen<Probe> {
     type Data = Echo;
     type Filter = Probe;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, filter: &Probe) -> AppResult<Echo> {
+    async fn load(&self, branch: &BranchId, who: &AccessActor, filter: &Probe) -> AppResult<Echo> {
         Ok(self.record(branch, who, filter))
     }
 }
@@ -301,7 +302,12 @@ impl BranchView for Seen<Reserved> {
     type Data = Echo;
     type Filter = Reserved;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, filter: &Reserved) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        filter: &Reserved,
+    ) -> AppResult<Echo> {
         Ok(self.record(branch, who, filter))
     }
 }
@@ -345,7 +351,7 @@ impl PagedView for Pages<Probe> {
     async fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         filter: &Probe,
         before: Option<RowId>,
         limit: u16,
@@ -363,7 +369,7 @@ impl PagedView for Pages<Reserved> {
     async fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         filter: &Reserved,
         before: Option<RowId>,
         limit: u16,
@@ -383,11 +389,16 @@ impl BranchView for Plain {
     type Data = Echo;
     type Filter = NoFilter;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }
@@ -404,11 +415,16 @@ impl BranchView for Unversioned {
     type Data = Echo;
     type Filter = NoFilter;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }
@@ -425,15 +441,20 @@ impl BranchView for OwnVersion {
     type Data = Echo;
     type Filter = NoFilter;
 
-    async fn own_version(&self, _branch: &BranchId, _who: &Actor) -> AppResult<Option<i64>> {
+    async fn own_version(&self, _branch: &BranchId, _who: &AccessActor) -> AppResult<Option<i64>> {
         Ok(Some(self.version.load(Ordering::SeqCst)))
     }
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }

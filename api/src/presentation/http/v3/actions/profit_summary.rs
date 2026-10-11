@@ -6,7 +6,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::web;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{fixed2, round_cents, typed_decimal};

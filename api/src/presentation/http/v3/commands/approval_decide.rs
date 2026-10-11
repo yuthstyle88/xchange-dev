@@ -6,19 +6,21 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
 use xc_approval::domain::request::{Outcome, RequestId};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use super::commands::make_approval_service;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -85,11 +87,13 @@ impl CommandAction for ApprovalDecideCommand {
             }
         };
 
+        // OR-7 bridge, removed by #1020
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         self.service
             .decide(
                 tx,
                 &RequestId::new(req_uuid),
-                who,
+                &legacy,
                 outcome,
                 &input.reason,
                 key.as_str(),

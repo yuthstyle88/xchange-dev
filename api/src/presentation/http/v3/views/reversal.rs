@@ -9,7 +9,7 @@ use actix_web::web;
 use pos_error::AppResult;
 use sqlx::PgPool;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 

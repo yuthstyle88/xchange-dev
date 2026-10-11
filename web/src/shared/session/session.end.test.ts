@@ -18,18 +18,23 @@
 //
 // The store is never typed by name here, so the implementer chooses how `SessionStore` carries
 // `ended` / `end`.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. "another role" → "other roles" (#1030 §3.10, ruling (a): session.ts compares the role grants); the
+// rename keeps the roles and changes only `name`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import { createSessionStore, endingFetch, endsSession } from './session';
+import { meOf } from '../../test-support/me';
 
 // ------------------------------------------------------------------ fixtures
 
-const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
-const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: 'Nok', username: 'nok', branchName: 'XC-B01', branches: [] };
-const ratesOther: Me = { kind: 'staff', id: 'e-8', role: 'RATES', branch: 'XC-B01', name: 'Ploy', username: 'ploy', branchName: 'XC-B01', branches: [] };
-const frontSameId: Me = { ...rates, role: 'FRONT' };
-const ratesRenamed: Me = { ...rates, name: 'Nok K.', username: 'nok.k' };
+const owner: Me = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', branchName: 'MAIN', branches: [] });
+const rates: Me = meOf({ id: 'e-7', role: 'RATES', branch: 'XC-B01', name: 'Nok', branchName: 'XC-B01', branches: [] });
+const ratesOther: Me = meOf({ id: 'e-8', role: 'RATES', branch: 'XC-B01', name: 'Ploy', branchName: 'XC-B01', branches: [] });
+const frontSameId: Me = meOf({ id: 'e-7', role: 'FRONT', branch: 'XC-B01', name: 'Nok', branchName: 'XC-B01', branches: [] });
+const ratesRenamed: Me = { ...rates, name: 'Nok K.' };
 
 const refusal = (status: number, code: string, message = 'refused') =>
   new ApiError({ code, message, status });
@@ -209,7 +214,7 @@ describe('createSessionStore: the me poll ends the session (SE2, SE3)', () => {
     store.dispose();
   });
 
-  it('a changed answer with the same id and another role ends it as switched', async () => {
+  it('a changed answer with the same id and other roles ends it as switched', async () => {
     const { api } = fakeApi([
       { version: 4, changed: true, data: rates },
       { version: 9, changed: true, data: frontSameId },
@@ -221,7 +226,7 @@ describe('createSessionStore: the me poll ends the session (SE2, SE3)', () => {
     store.dispose();
   });
 
-  it('a changed answer with the same id and role (a rename) replaces me and does not end it', async () => {
+  it('a changed answer with the same id and roles (a rename) replaces me and does not end it', async () => {
     const { api, seen } = fakeApi([
       { version: 4, changed: true, data: rates },
       { version: 5, changed: true, data: ratesRenamed },

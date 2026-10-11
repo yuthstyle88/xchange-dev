@@ -160,7 +160,7 @@ function fixture(id: string, order: number, over: Partial<AdminMenu> = {}): Admi
     icon: '▦',
     order,
     group: 'desk',
-    roles: 'all',
+    needs: 'all',
     heading: { eyebrow: () => 'EYEBROW', title: () => `title ${id}`, subtitle: () => `subtitle ${id}` },
     dated: false,
     Component: Nothing,
@@ -250,6 +250,17 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // §11.1 EX-5) is a v3 menu with no v2 row, pinned in
 // `web/src/screens/admin/alert-settings/AlertSettings.test.tsx`.
 const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings'];
+// Amended for OR-7.7 (#1030 §3.10) by the test-writer claude/5d45b017: `roles` becomes `needs`, a
+// Permission name. The served menus need 'all'; the three Blueprint menus need the permission their
+// commands already require (lane controller's ruling, #1030 issuecomment-6105567502).
+const BLUEPRINT_NEEDS: Record<string, string> = {
+  approvals: 'ApprovalsDecide',
+  consent: 'ConsentPolicyManage',
+  'denomination-groups': 'RatesDraft',
+  // #946's two ADMIN-only menus, moved 1:1 by the implementer (#1030 issuecomment-6107651899).
+  branches: 'BranchesManage',
+  users: 'UsersManage',
+};
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {
@@ -265,7 +276,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
     }
   });
 
-  it("gives each merged menu its served group, order, icon, label, heading and period toolbar, and roles 'all'", () => {
+  it("gives each merged menu its served group, order, icon, label, heading and period toolbar, and needs 'all'", () => {
     const { menus } = mod();
     setLang('th');
     for (const m of menus.filter((x) => !BLUEPRINT_MENUS.includes(x.id))) {
@@ -278,8 +289,24 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
       expect(m.heading.eyebrow(), `${m.id}.heading.eyebrow`).toBe(s.eyebrow);
       expect(m.heading.title(), `${m.id}.heading.title`).toBe(s.title);
       expect(m.heading.subtitle(), `${m.id}.heading.subtitle`).toBe(s.subtitle);
-      expect(m.roles, `${m.id}.roles`).toBe('all');
+      expect(m.needs, `${m.id}.needs`).toBe('all');
       expect(typeof m.Component, `${m.id}.Component`).toBe('function');
     }
+  });
+});
+
+describe('OR-7.7: the Blueprint menus need their commands\' permission (#1030 §3.10)', () => {
+  it('approvals needs ApprovalsDecide, consent ConsentPolicyManage, denomination-groups RatesDraft, branches BranchesManage, users UsersManage', () => {
+    const { menus } = mod();
+    for (const [id, needs] of Object.entries(BLUEPRINT_NEEDS)) {
+      const m = menus.find((x) => x.id === id);
+      expect(m, `${id} is a merged menu`).toBeDefined();
+      expect(m!.needs, `${id}.needs`).toBe(needs);
+    }
+  });
+
+  it('no menu record keeps a roles field', () => {
+    const { menus } = mod();
+    for (const m of menus) expect('roles' in m, `${m.id} has no roles`).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -50,7 +50,7 @@ impl PagedView for HandoversPendingView {
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
-        let me = who.id().to_string();
+        let me = who.user_id.clone();
         async move {
             let rows: Vec<HandoverSqlRow> = sqlx::query_as(
                 "SELECT h.id::text AS id, h.from_shift_id, h.count_id::text AS count_id, \

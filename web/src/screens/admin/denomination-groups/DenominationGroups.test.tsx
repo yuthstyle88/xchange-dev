@@ -35,6 +35,10 @@
 // - The add form: an input labelled `newGroup` and a button `add`.
 // - Keys of `./i18n.ts` this test reads: `label`, `currency`, `newGroup`, `add`, `groupInvalid`,
 //   `boardKey`, `save`, `keyRequired`, `remove`.
+//
+// Amended for OR-7.7 (#1030) by the test-writer claude/5d45b017: the menu record's `roles: ['OWNER']` pin →
+// `needs: 'RatesDraft'`, the permission its three commands already require (`INHERITS (Rpc, "rateDraft")`,
+// `policy.rs`; lane controller's ruling on #1030 issuecomment-6105567502).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -314,10 +318,10 @@ async function shown(): Promise<HTMLElement> {
 // ── the menu record ──────────────────────────────────────────────────────────
 
 describe('F3w: the denomination-groups menu record (design §10.3)', () => {
-  it('is OWNER only, not dated, reached through the shell glob once', () => {
+  it('needs RatesDraft, not dated, reached through the shell glob once', () => {
     const menu = theMenu();
     expect(menu.id).toBe('denomination-groups');
-    expect(menu.roles).toEqual(['OWNER']);
+    expect(menu.needs, 'its commands INHERITS (Rpc, "rateDraft") → RatesDraft (policy.rs)').toBe('RatesDraft');
     expect(menu.dated).toBe(false);
     expect(typeof menu.Component).toBe('function');
     const listed = menus.filter((m) => m.id === 'denomination-groups');
