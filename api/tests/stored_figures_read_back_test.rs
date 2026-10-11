@@ -215,6 +215,14 @@ async fn a_stored_figure_the_save_cannot_write_is_still_a_fault() {
         .execute(&shop.pool)
         .await
         .expect("break the stored row");
+    sqlx::query(
+        "UPDATE transaction_lines l SET thb_amount = -1 FROM transactions t \
+         WHERE l.transaction_id = t.id AND t.document_ref = $1",
+    )
+    .bind(&saved.document_ref)
+    .execute(&shop.pool)
+    .await
+    .expect("break the stored line");
     let got = shop
         .transactions
         .find(&branch(MAIN), &saved.document_ref)

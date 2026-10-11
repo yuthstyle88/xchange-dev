@@ -16,15 +16,20 @@ pub struct PgTransactionRepository {
     pool: PgPool,
 }
 
-const SELECT: &str = "SELECT t.document_ref, t.branch_id, t.mode, t.shift_id, t.submission_id, t.customer_id, \
-    t.customer_name, t.nationality, t.type, t.code::text AS code, t.amount::text AS amount, t.rate::text AS rate, \
-    t.reference_rate::text AS reference_rate, t.principal::text AS principal, t.fee::text AS fee, \
-    t.bank_fee::text AS bank_fee, t.received::text AS received, t.paid::text AS paid, t.method, t.payment_ref, \
-    t.account, t.staff_id, t.booking_no, t.notes, t.value_date, t.paid_at, t.recorded_at, t.recorded_by, t.payload_hash, \
-    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'PASSPORT') AS passport_key, \
-    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'SLIP') AS slip_key, \
-    (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'RECEIPT') AS receipt_key \
-    FROM transactions t";
+const SELECT: &str = "SELECT COALESCE(t.document_ref, '') AS document_ref, t.branch_id, t.mode, t.shift_id, t.submission_id, t.customer_id, \
+    t.customer_name, t.nationality, l.shop_side AS type, TRIM(l.currency)::text AS code, l.quantity::numeric(20,2)::text AS amount, l.rate_snapshot::text AS rate, \
+    l.reference_rate::text AS reference_rate, l.thb_amount::text AS principal, l.fee_thb::text AS fee, \
+    p.bank_fee_thb::text AS bank_fee, \
+    CASE WHEN l.shop_side = 'SELL' THEN l.settle_thb::text ELSE '0.00' END AS received, \
+    CASE WHEN l.shop_side = 'BUY' THEN l.settle_thb::text ELSE '0.00' END AS paid, \
+    p.method, p.reference AS payment_ref, \
+    p.account, t.staff_id, t.booking_no, t.notes, t.value_date, t.paid_at, t.recorded_at, t.recorded_by, t.payload_hash, \
+    COALESCE((SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'PASSPORT'), '') AS passport_key, \
+    p.slip_file_key AS slip_key, \
+    COALESCE((SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'RECEIPT'), '') AS receipt_key \
+    FROM transactions t \
+    JOIN transaction_lines l ON l.transaction_id = t.id \
+    JOIN transaction_payments p ON p.transaction_id = t.id";
 
 fn bad(what: &str) -> AppError {
     AppError::Internal(format!("stored transaction: {what}"))
@@ -130,7 +135,7 @@ impl PgTransactionRepository {
 impl TransactionRepository for PgTransactionRepository {
     async fn find(&self, branch: &BranchId, document_ref: &str) -> AppResult<Option<Transaction>> {
         let row = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "{SELECT} WHERE t.branch_id = $1 AND t.document_ref = $2"
+            "{SELECT} WHERE t.branch_id = $1 AND t.document_ref = $2 AND t.status = 'COMPLETED'"
         )))
         .bind(branch.as_str())
         .bind(document_ref)
@@ -142,7 +147,7 @@ impl TransactionRepository for PgTransactionRepository {
 
     async fn list(&self, branch: &BranchId, mode: Mode) -> AppResult<Vec<Transaction>> {
         let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 ORDER BY t.seq"
+            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 AND t.status = 'COMPLETED' ORDER BY t.seq, l.line_no"
         )))
         .bind(branch.as_str())
         .bind(mode.as_str())
@@ -160,7 +165,7 @@ impl TransactionRepository for PgTransactionRepository {
         submission_id: &'a str,
     ) -> AppResult<Option<(Transaction, String)>> {
         let row = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 AND t.submission_id = $3"
+            "{SELECT} WHERE t.branch_id = $1 AND t.mode = $2 AND t.submission_id = $3 AND t.status = 'COMPLETED'"
         )))
         .bind(branch.as_str())
         .bind(mode.as_str())
