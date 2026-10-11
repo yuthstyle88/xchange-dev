@@ -231,7 +231,7 @@ jobs:
           # --locale=C: byte-order collation, the same as the musl-based postgres:16-alpine image.
           "$PGBIN/initdb" -D "$PGROOT/data" -U postgres --auth=trust --encoding=UTF8 --locale=C >/dev/null
           "$PGBIN/pg_ctl" -D "$PGROOT/data" -l "$PGROOT/log" -w -t 60 start \
-            -o "-p $PGPORT -k $PGROOT -c listen_addresses=127.0.0.1 -c max_connections=300 -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_locks_per_transaction=512"
+            -o "-p $PGPORT -k $PGROOT -c listen_addresses=127.0.0.1 -c max_connections=300 -c fsync=off -c synchronous_commit=off -c full_page_writes=off"
           "$PGBIN/createdb" -h 127.0.0.1 -p "$PGPORT" -U postgres xchange_test
           "$PGBIN/psql" -h 127.0.0.1 -p "$PGPORT" -U postgres -d xchange_test -tAc 'SELECT version()'
           {
