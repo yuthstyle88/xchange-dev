@@ -297,6 +297,14 @@ async fn a_row_without_a_line_lists_its_stored_rate_per_its_own_unit() {
     .execute(&shop.pool)
     .await
     .expect("make it a row from before RE-4");
+    sqlx::query(
+        "UPDATE transaction_lines l SET rate_snapshot = 0.2195, unit_size = 1 FROM transactions t \
+         WHERE l.transaction_id = t.id AND t.document_ref = $1",
+    )
+    .bind(&saved.document_ref)
+    .execute(&shop.pool)
+    .await
+    .expect("give its line the shape TX-2's backfill gives a row from before RE-4");
 
     assert_eq!(
         listed(&shop, &saved.document_ref).await["rate"],

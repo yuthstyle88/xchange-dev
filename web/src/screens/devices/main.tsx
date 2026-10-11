@@ -1,5 +1,8 @@
+import { Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../shared/api/client';
+import { sharedSession } from '../../shared/session/session';
+import { pageBranch } from '../../shared/session/page-branch';
 import { DevicesScreen } from './DevicesScreen';
 
 function downloadFile(name: string, blob: Blob): void {
@@ -15,18 +18,21 @@ function downloadFile(name: string, blob: Blob): void {
 
 const appEl = document.getElementById('app');
 if (appEl) {
-  const params = new URLSearchParams(window.location.search);
-  const branch = params.get('branch') || 'MAIN';
+  const branch = pageBranch(sharedSession());
   const api = new ApiClient();
 
   render(
     () => (
-      <DevicesScreen
-        api={api}
-        branch={branch}
-        newId={() => crypto.randomUUID()}
-        download={downloadFile}
-      />
+      <Show when={branch()} keyed>
+        {(b) => (
+          <DevicesScreen
+            api={api}
+            branch={b}
+            newId={() => crypto.randomUUID()}
+            download={downloadFile}
+          />
+        )}
+      </Show>
     ),
     appEl,
   );

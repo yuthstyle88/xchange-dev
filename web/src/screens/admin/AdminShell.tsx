@@ -14,6 +14,7 @@ import { Dynamic } from 'solid-js/web';
 import { ApiError, type ApiClient } from '../../shared/api/client';
 import type { AdminBranchesData, AdminBranchItem } from '../../shared/api/generated/admin_branches';
 import type { Me } from '../../shared/api/generated/common';
+import { sharedSession } from '../../shared/session/session';
 import { errorText, screenT } from '../../shared/i18n';
 import { AppShell } from '../../shared/ui/AppShell';
 import { Dialog, openDialog } from './parts/Dialog';
@@ -54,9 +55,7 @@ function formatTime(d: Date): string {
 export function AdminShell(props: AdminShellProps): JSX.Element {
   const t = screenT('admin', { th, en });
 
-  let selectRef: HTMLSelectElement | undefined;
-
-  const [currentBranch, setCurrentBranch] = createSignal('');
+  const [currentBranch, setSessionBranch] = createSignal('');
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [branchError, setBranchError] = createSignal<{
     code: string;
@@ -66,14 +65,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   const [lastSync, setLastSync] = createSignal(new Date());
   const [userRole, setUserRole] = createSignal<string | undefined>(undefined);
   const [ready, setReady] = createSignal(false);
-
-  createEffect(() => {
-    const b = currentBranch();
-    branches();
-    if (selectRef && b) {
-      selectRef.value = b;
-    }
-  });
 
   // Hash routing
   const [currentHash, setCurrentHash] = createSignal(
@@ -256,33 +247,22 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   };
 
   onMount(async () => {
-    const searchBranch =
-      typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('branch')
-        : null;
-
     let branchFromMe = '';
     try {
-      const meRes = await props.api.view<Me>(
-        'me',
-        searchBranch ? { branch: searchBranch } : {},
-      );
+      const meRes = await props.api.view<Me>('me');
       if (meRes.data) {
         branchFromMe = meRes.data.branch || '';
         setUserRole(meRes.data.role);
+        sharedSession().updateMe?.(meRes.data);
       }
     } catch {
       // ignore
     }
 
-    const initialPick = branchFromMe || searchBranch || 'MAIN';
-    setCurrentBranch(initialPick);
+    setSessionBranch(branchFromMe);
 
-    const loadedBranches = await fetchBranches(initialPick);
-    if (loadedBranches.length > 0) {
-      if (!loadedBranches.some((b) => b.id === initialPick)) {
-        setCurrentBranch(loadedBranches[0].id);
-      }
+    if (branchFromMe) {
+      await fetchBranches(branchFromMe);
     }
 
     setReady(true);
@@ -338,18 +318,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     return found ? found.name : id;
   });
 
-  const handleBranchChange = (
-    e: Event & { currentTarget: HTMLSelectElement },
-  ) => {
-    if (pendingWrite.busy()) {
-      e.preventDefault();
-      e.currentTarget.value = currentBranch();
-      return;
-    }
-    const next = e.currentTarget.value;
-    setCurrentBranch(next);
-  };
-
   const handleRefresh = async () => {
     requestRefresh();
     await fetchBranches(currentBranch());
@@ -380,14 +348,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           'adminCreateBranch',
           { name: trimmed },
           async () => {
-            const updated = await fetchBranches(currentBranch());
-            // Controller Decision 3: switch to new branch
-            const created = updated.find(
-              (b) => b.name.toLowerCase() === trimmed.toLowerCase(),
-            );
-            if (created) {
-              setCurrentBranch(created.id);
-            }
+            await fetchBranches(currentBranch());
           },
         );
       };
@@ -505,20 +466,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           {/* Branch management header */}
           <div class="branch-manager">
             <div>{t('manageBranches')}</div>
-            <select
-              ref={selectRef}
-              disabled={pendingWrite.busy()}
-              value={currentBranch()}
-              onChange={handleBranchChange}
-            >
-              <For each={branches()}>
-                {(b) => (
-                  <option value={b.id} selected={b.id === currentBranch()}>
-                    {b.name}
-                  </option>
-                )}
-              </For>
-            </select>
             <button
               type="button"
               disabled={!isOnline()}
@@ -576,7 +523,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                   )}
                 </For>
                 <Show when={isQueryMatch(t('linkQueue'))}>
-                  <a href={`/kiosk-queue.html?branch=${currentBranch()}`}>
+                  <a href="/kiosk-queue.html">
                     <span aria-hidden="true">≡</span>{' '}
                     <span>{t('linkQueue')}</span>
                   </a>
@@ -649,7 +596,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 </For>
                 <Show when={isQueryMatch(t('linkKiosk'))}>
                   <a
-                    href={`/kiosk?branch=${currentBranch()}`}
+                    href="/kiosk"
                     target="_blank"
                     rel="noopener"
                   >
@@ -658,7 +605,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                   </a>
                 </Show>
                 <Show when={isQueryMatch(t('linkDevices'))}>
-                  <a href={`/devices?branch=${currentBranch()}`}>
+                  <a href="/devices">
                     <span aria-hidden="true">⎙</span>{' '}
                     <span>{t('linkDevices')}</span>
                   </a>
@@ -669,7 +616,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             {/* Standalone Guide link */}
             <Show when={isQueryMatch(t('linkGuide'))}>
               <div class="nav-guide">
-                <a href={`/staff-guide.html?branch=${currentBranch()}`}>
+                <a href="/staff-guide.html">
                   <span aria-hidden="true">?</span>{' '}
                   <span>{t('linkGuide')}</span>
                 </a>

@@ -1,0 +1,59 @@
+// RD-3 customer rate-display texts (design rate-display.md D7).
+// Note: Chinese texts are checked by a reader of Chinese (languages.md L7).
+
+export const th = {
+  currency: 'สกุลเงิน',
+  unit: 'หน่วย',
+  weBuy: 'รับซื้อ',
+  weSell: 'ขายออก',
+  weBuyHint: 'ร้านรับซื้อเงินต่างประเทศจากลูกค้า',
+  weSellHint: 'ร้านขายเงินต่างประเทศให้ลูกค้า',
+  hours: 'เวลาทำการ',
+  noBranch: 'หน้านี้ต้องระบุสาขา',
+  notLinked: 'หน้านี้ยังไม่ได้เชื่อมต่อกับองค์กร',
+  loading: 'กำลังโหลด…',
+  notFound: 'ไม่พบข้อมูลอัตราแลกเปลี่ยน',
+  empty: 'ยังไม่มีอัตราแลกเปลี่ยนประกาศ',
+  loadFailed: 'โหลดข้อมูลไม่สำเร็จ',
+  retry: 'ลองใหม่',
+  updateFailed: 'อัปเดตข้อมูลไม่สำเร็จ ข้อมูลล่าสุดประกาศเมื่อ {at}',
+  fullscreen: 'เต็มจอ',
+};
+
+export const en = {
+  currency: 'Currency',
+  unit: 'Unit',
+  weBuy: 'We Buy',
+  weSell: 'We Sell',
+  weBuyHint: 'We buy foreign currency from customers',
+  weSellHint: 'We sell foreign currency to customers',
+  hours: 'Opening Hours',
+  noBranch: 'This display requires a branch',
+  notLinked: 'This display is not linked to an organisation',
+  loading: 'Loading…',
+  notFound: 'Exchange rate data not found',
+  empty: 'No published rates yet',
+  loadFailed: 'Failed to load data',
+  retry: 'Retry',
+  updateFailed: 'Update failed. Last published at {at}',
+  fullscreen: 'Fullscreen',
+};
+
+export const zh = {
+  currency: '币种',
+  unit: '单位',
+  weBuy: '买入',
+  weSell: '卖出',
+  weBuyHint: '本店向客户买入外币',
+  weSellHint: '本店向客户卖出外币',
+  hours: '营业时间',
+  noBranch: '此显示屏需要指定分行',
+  notLinked: '此显示屏尚未关联至组织',
+  loading: '正在加载…',
+  notFound: '未找到汇率数据',
+  empty: '暂无已发布的汇率',
+  loadFailed: '加载数据失败',
+  retry: '重试',
+  updateFailed: '更新失败，最后发布于 {at}',
+  fullscreen: '全屏',
+};

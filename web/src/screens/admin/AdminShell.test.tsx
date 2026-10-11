@@ -25,6 +25,25 @@
 //
 // The shell, its table and the HTML entry are read through eager globs, so on a branch without
 // them each test fails on an assertion that the file exists, not on the import.
+//
+// Amended by SB-2 (design docs/design/blueprint/org-roles-branches.md §14.0 R1, R2, §14.4 "Admin"),
+// by its ticket author claude/dell-claude-3. The session has one branch, switched from the account
+// bar; admin reads it and no longer keeps its own. Each change:
+//   - the fake `me` view answers the session branch (`world.session`, default MAIN; staff: their own),
+//     whatever branch is named, as SB-1's `me` does, and carries `branchName` and `branches`;
+//   - `world.meFails` makes the `me` view refuse;
+//   - "links … with ?branch=<picked>" → the links carry no `?branch=`;
+//   - "follows the picked branch in those links after a switch" → the sidebar has no branch select;
+//   - the heading test switched with the select → it mounts on session branch B1;
+//   - "the branch picker" describe → "the session branch": the menus get `me.branch`, `?branch=` and
+//     `'MAIN'` are not used, staff get their own branch;
+//   - add branch sends the session branch as `branchId`; the check that the new branch appears in the
+//     select goes with the select;
+//   - "locks the branch picker while a write is pending" is removed: there is no picker to lock.
+// Added by SB-2's test writer claude/5d45b017 on the lane controller's ruling 1 (#892
+// issuecomment-6104783522): the add-branch auto-switch (`AdminShell.tsx:381-389`, "Controller Decision 3"
+// of #460) is dropped with nothing in its place. Creating a branch calls no switch route, and the
+// session branch the shell works on stays the same; the new branch is reached from the account-bar menu.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, onCleanup, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -208,6 +227,10 @@ const BRANCHES: Branch[] = [
 
 interface World {
   who: { kind: 'owner' } | { kind: 'staff'; role: string; branch: string };
+  /** The session branch the `me` view answers for the owner (SB-1); staff always get their own. */
+  session?: string;
+  /** When set, the `me` view refuses. */
+  meFails?: boolean;
   branches: Branch[];
   branchesFail: boolean;
   reads: Read[];
@@ -218,11 +241,20 @@ interface World {
 
 let world: World;
 
-function meFor(named: string | undefined): Me {
+type MeSB = Me & { branchName: string; branches: { id: string; code: string; name: string }[] };
+
+function refOf(id: string): { id: string; code: string; name: string } {
+  return { id, code: id, name: world.branches.find((b) => b.id === id)?.name ?? id };
+}
+
+/** The `me` view as SB-1 answers it: the session branch, whatever branch the request names. */
+function meFor(): MeSB {
   if (world.who.kind === 'staff') {
-    return { kind: 'staff', id: 'e-1', role: world.who.role, branch: world.who.branch, name: 'Somchai', username: 'front1', branchName: world.who.branch, branches: [] };
+    const b = world.who.branch;
+    return { kind: 'staff', id: 'e-1', role: world.who.role, branch: b, name: 'Somchai', username: 'front1', branchName: refOf(b).name, branches: [refOf(b)] };
   }
-  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner', branchName: named || 'MAIN', branches: [] };
+  const b = world.session ?? 'MAIN';
+  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: b, name: 'Owner', username: 'owner', branchName: refOf(b).name, branches: world.branches.map((x) => refOf(x.id)) };
 }
 
 function branchesFor(): Branch[] {
@@ -235,7 +267,8 @@ const fakeApi = {
   async view<T>(name: string, q: ViewParams = {}): Promise<ViewAnswer<T>> {
     world.reads.push({ name, branch: q.branch });
     if (name === 'me') {
-      return { version: 3, changed: true, data: meFor(q.branch) as T };
+      if (world.meFails) throw new ApiError({ code: 'signIn', message: 'กรุณาเข้าสู่ระบบ', status: 401 });
+      return { version: 3, changed: true, data: meFor() as unknown as T };
     }
     if (name === 'admin_branches') {
       if (world.branchesFail) {
@@ -354,12 +387,11 @@ function link(label: string): HTMLAnchorElement {
   return found[0]!;
 }
 
-function picker(): HTMLSelectElement {
-  const found = Array.from(container.querySelectorAll('select')).filter((s) =>
-    Array.from(s.options).some((o) => BRANCHES.some((b) => b.id === o.value)),
+/** Every select in the shell that offers a branch id (SB-2: there must be none). */
+function branchSelects(): HTMLSelectElement[] {
+  return Array.from(container.querySelectorAll('select')).filter((s) =>
+    Array.from(s.options).some((o) => world.branches.some((b) => b.id === o.value)),
   );
-  expect(found, 'one branch picker').toHaveLength(1);
-  return found[0]!;
 }
 
 function dates(): [HTMLInputElement, HTMLInputElement] {
@@ -436,7 +468,7 @@ beforeEach(() => {
       return jsonResponse({ version: '3.0.0', build: 'abcdef1234567', channel: 'staging', builtAt: '2026-10-08T00:00:00Z' });
     }
     if (url.startsWith('/api/v3/views/me')) {
-      return jsonResponse({ version: 1, changed: true, data: meFor(undefined) });
+      return jsonResponse({ version: 1, changed: true, data: meFor() });
     }
     if (url.startsWith('/api/v3/views/kiosk_notifications')) {
       return jsonResponse({ version: 1, changed: false });
@@ -565,15 +597,16 @@ describe('V2-shell: the sidebar follows the served 10-06 nav (#460 §7; design �
     }
   });
 
-  it("links the queue, the customer screen, devices and the staff guide with ?branch=<picked> (admin-workspace.js:32-35, :55, :150; admin-devices.js:3)", async () => {
-    await mount(allMenus(), '/ui/admin/?branch=B1#overview');
-    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html?branch=B1');
+  it("links the queue, the customer screen, devices and the staff guide with no ?branch= (admin-workspace.js:32-35, :55, :150; admin-devices.js:3; SB-2 §14.4)", async () => {
+    world.session = 'B1';
+    await mount(allMenus(), '/ui/admin/?branch=B2#overview');
+    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html');
     const kiosk = link(KIOSK);
-    expect(kiosk.getAttribute('href')).toBe('/kiosk?branch=B1');
+    expect(kiosk.getAttribute('href')).toBe('/kiosk');
     expect(kiosk.getAttribute('target')).toBe('_blank');
     expect(kiosk.getAttribute('rel') ?? '').toContain('noopener');
-    expect(link(DEVICES).getAttribute('href')).toBe('/devices?branch=B1');
-    expect(link(GUIDE).getAttribute('href')).toBe('/staff-guide.html?branch=B1');
+    expect(link(DEVICES).getAttribute('href')).toBe('/devices');
+    expect(link(GUIDE).getAttribute('href')).toBe('/staff-guide.html');
     // each of them carries its glyph, aria-hidden
     for (const [label, icon] of [[QUEUE, '≡'], [KIOSK, '↗'], [DEVICES, '⎙'], [GUIDE, '?']] as const) {
       const icons = Array.from(link(label).querySelectorAll('[aria-hidden="true"]')).map((n) => (n.textContent ?? '').trim());
@@ -581,15 +614,10 @@ describe('V2-shell: the sidebar follows the served 10-06 nav (#460 §7; design �
     }
   });
 
-  it('follows the picked branch in those links after a switch', async () => {
+  it('has no branch select in the sidebar: the session branch is switched from the account bar (SB-2 R1, R2)', async () => {
     await mount(allMenus(), '/ui/admin/#overview');
-    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html?branch=MAIN');
-    setValue(picker(), 'B2');
-    await settle();
-    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html?branch=B2');
-    expect(link(KIOSK).getAttribute('href')).toBe('/kiosk?branch=B2');
-    expect(link(DEVICES).getAttribute('href')).toBe('/devices?branch=B2');
-    expect(link(GUIDE).getAttribute('href')).toBe('/staff-guide.html?branch=B2');
+    expect(branchSelects()).toEqual([]);
+    expect(Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '').filter((h) => h.includes('branch='))).toEqual([]);
   });
 
   it("hides a menu whose roles do not hold me.role, and shows 'all' menus to everyone (design §12.3 roles)", async () => {
@@ -741,8 +769,10 @@ describe('V2-shell: heading and period toolbar (#460 S4)', () => {
     expect(text()).toContain('DAILY OVERVIEW');
     expect(byText('ภาพรวมหน้าร้าน', container).some(visible)).toBe(true);
     expect(byText('ติดตามสถานะกะและยอดรายการในช่วงวันที่ที่เลือก · สำนักงานใหญ่', container).some(visible)).toBe(true);
-    setValue(picker(), 'B1');
-    await settle();
+    dispose?.();
+    container.remove();
+    world.session = 'B1';
+    await mount(allMenus(), '/ui/admin/#overview');
     expect(byText('ติดตามสถานะกะและยอดรายการในช่วงวันที่ที่เลือก · สาขาหนึ่ง', container).some(visible)).toBe(true);
     await go('#slips');
     expect(text()).toContain('PAYMENT SLIPS');
@@ -827,38 +857,39 @@ describe('V2-shell: heading and period toolbar (#460 S4)', () => {
 
 // ── the branch (§7 Branch, §9; design §12.4) ─────────────────────────────────
 
-describe('V2-shell: the branch picker (#460 §7 Branch; design §12.4)', () => {
-  it('lists the admin_branches view, names shown, ids as values, the picked one selected', async () => {
+describe('V2-shell: the session branch (#460 §7 Branch; SB-2 design §14.4 Admin)', () => {
+  it('gives the menu me.branch, and nothing before it; the heading names it from admin_branches', async () => {
     await mount(allMenus(), '/ui/admin/#overview');
     expect(reads('admin_branches').length).toBeGreaterThanOrEqual(1);
-    const p = picker();
-    expect(Array.from(p.options).map((o) => [o.value, (o.textContent ?? '').trim()])).toEqual(
-      BRANCHES.map((b) => [b.id, b.name]),
-    );
-    expect(p.value).toBe('MAIN');
     expect(probe('overview').branch, 'the menu is given MAIN, and nothing before it').toEqual(['MAIN']);
+    expect(branchSelects()).toEqual([]);
   });
 
-  it("reads ?branch= on load for the owner, through the me view's answer (design §3.3)", async () => {
+  it('a session on B2: the menu is given B2, and nothing before it', async () => {
+    world.session = 'B2';
+    await mount(allMenus(), '/ui/admin/#cash');
+    expect(probe('cash').branch).toEqual(['B2']);
+    expect(mounted()).toEqual(['cash']);
+  });
+
+  it('ignores ?branch=: the menu is given me.branch, not the named one (§14.4: no ?branch=)', async () => {
+    world.session = 'B2';
     await mount(allMenus(), '/ui/admin/?branch=B1#overview');
-    expect(picker().value).toBe('B1');
-    expect(probe('overview').branch, 'the menu is given B1, and nothing before it').toEqual(['B1']);
+    expect(probe('overview').branch, 'the menu is given B2, and nothing before it').toEqual(['B2']);
   });
 
-  it('gives staff their own branch only, whatever ?branch= names (Policy::branch, §9)', async () => {
+  it('gives staff their own branch, whatever ?branch= names', async () => {
     world.who = { kind: 'staff', role: 'FRONT', branch: 'B2' };
     await mount(allMenus(), '/ui/admin/?branch=B1#overview');
-    expect(Array.from(picker().options).map((o) => o.value)).toEqual(['B2']);
     expect(probe('overview').branch, 'the menu is given B2, and nothing before it').toEqual(['B2']);
-    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html?branch=B2');
+    expect(link(QUEUE).getAttribute('href')).toBe('/kiosk-queue.html');
   });
 
-  it('switching the branch gives the shown menu the new branch()', async () => {
-    await mount(allMenus(), '/ui/admin/#cash');
-    setValue(picker(), 'B2');
-    await settle();
-    expect(probe('cash').branch.at(-1)).toBe('B2');
-    expect(mounted()).toEqual(['cash']);
+  it("with no me answer it names no branch: no 'MAIN' fallback reaches a menu or a read", async () => {
+    world.meFails = true;
+    await mount(allMenus(), '/ui/admin/#overview');
+    expect(probe('overview').branch).not.toContain('MAIN');
+    expect(world.reads.filter((r) => r.name !== 'me').map((r) => r.branch)).not.toContain('MAIN');
   });
 
   it('re-reads admin_branches on รีเฟรช and moves refreshTick (design §12.4, §12.6)', async () => {
@@ -915,8 +946,9 @@ describe('V2-shell: add branch (#460 §7 Add branch)', () => {
     expect(world.posts.map((p) => p.body.payload['name'])).toEqual(['XC-D']);
   });
 
-  it("sends adminCreateBranch {name} through /api/rpc with the picked branch and a request id, then re-reads the branches (rpc.rs:277)", async () => {
-    await mount(allMenus(), '/ui/admin/?branch=B1#overview');
+  it("sends adminCreateBranch {name} through /api/rpc with the session branch and a request id, then re-reads the branches (rpc.rs:277)", async () => {
+    world.session = 'B1';
+    await mount(allMenus(), '/ui/admin/#overview');
     const before = reads('admin_branches').length;
     const input = await openAdd();
     setValue(input, '  XC-C  ');
@@ -930,32 +962,29 @@ describe('V2-shell: add branch (#460 §7 Add branch)', () => {
     expect(post.body.payload['branchId']).toBe('B1');
     expect(String(post.body.payload['requestId'])).toMatch(UUID);
     expect(reads('admin_branches').length).toBeGreaterThan(before);
-    expect(Array.from(picker().options).map((o) => (o.textContent ?? '').trim())).toContain('XC-C');
     expect(document.body.textContent ?? '').toContain(SAVED);
   });
 
-  it('locks the branch picker while a write is pending, and refuses a switch then (admin-html:158, :160; §9)', async () => {
+  it('creating a branch switches nothing: no switch route is called and the session branch stays (SB-2 ruling 1)', async () => {
+    world.session = 'B1';
     await mount(allMenus(), '/ui/admin/#overview');
-    let release!: () => void;
-    world.hold = new Promise<void>((r) => {
-      release = r;
-    });
+    expect(probe('overview').branch.at(-1), 'the menu starts on the session branch').toBe('B1');
+    const readsBefore = world.reads.length;
     const input = await openAdd();
-    setValue(input, 'XC-D');
+    setValue(input, 'XC-NEW');
     button(ADD_SUBMIT).click();
     await settle();
-    expect(world.posts).toHaveLength(1);
-    expect(picker().disabled, 'picker locked while the write is pending').toBe(true);
-    setValue(picker(), 'B2');
-    await settle();
-    expect(probe('overview').branch).not.toContain('B2');
-    release();
-    world.hold = undefined;
-    await settle();
-    expect(picker().disabled).toBe(false);
-    setValue(picker(), 'B2');
-    await settle();
-    expect(probe('overview').branch.at(-1)).toBe('B2');
+    // the branch was created
+    expect(world.posts.map((p) => p.body.action)).toEqual(['adminCreateBranch']);
+    expect(world.branches.some((b) => b.id === 'B-XC-NEW')).toBe(true);
+    // no switch: neither through the shell's api nor through the session's own fetch
+    expect(world.posts.filter((p) => p.path.includes('/api/auth/session/branch'))).toEqual([]);
+    expect(ownFetches.filter((u) => u.includes('/api/auth/session/branch'))).toEqual([]);
+    // the shell keeps working on the session branch: the menu never receives the new branch
+    expect(probe('overview').branch).not.toContain('B-XC-NEW');
+    expect(probe('overview').branch.at(-1)).toBe('B1');
+    // and nothing it reads afterwards names the new branch
+    expect(world.reads.slice(readsBefore).filter((r) => r.branch === 'B-XC-NEW')).toEqual([]);
   });
 });
 

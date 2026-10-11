@@ -35,6 +35,14 @@ const CHILD_MODULE_ENTRIES: Record<string, string[]> = {
   'receipt-sample.html': ['/src/screens/receipt-sample/ReceiptSample.tsx'],
   'staff-guide.html': ['/src/screens/staff-guide/StaffGuide.tsx'],
   'staff-guide-html.html': ['/src/screens/staff-guide/StaffGuide.tsx'],
+  'staff.html': ['/src/screens/staff/StaffPage.tsx'],
+};
+
+// Public pages that deliberately have no shell and read no session, with the reason. LK-1 skips only these; the
+// guard below keeps every one of them an `anyone` page, so the list can never hide a staff page.
+// (RD-3, xchange FE lane controller claude/5edf7bb5's ruling A, 2026-10-11.)
+const SHELL_LESS_PUBLIC_PAGES: Record<string, string> = {
+  'rates.html': 'P01 public board: no shell, no session (rate-display.md D3, D8)',
 };
 
 function hasShellOrAuthLayoutImport(source: string): boolean {
@@ -43,6 +51,11 @@ function hasShellOrAuthLayoutImport(source: string): boolean {
     /(?:^|\n)\s*import\s+['"][^'"]*(?:AppShell|AuthLayout)['"]/.test(source)
   );
 }
+
+function rendersShellOrAuthLayout(source: string): boolean {
+  return /<\s*(AppShell|AuthLayout)\b/.test(source);
+}
+
 
 beforeAll(async () => {
   fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs;
@@ -80,8 +93,13 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       expect(fs.existsSync(scriptFullPath), `${scriptFullPath} exists`).toBe(true);
       const scriptSource = fs.readFileSync(scriptFullPath, 'utf-8');
 
-      if (hasShellOrAuthLayoutImport(scriptSource)) {
-        // Direct import in entry module
+      if (Object.prototype.hasOwnProperty.call(SHELL_LESS_PUBLIC_PAGES, file)) {
+        // A named shell-less public page; the guard test below pins it to `anyone`.
+        continue;
+      }
+
+      if (hasShellOrAuthLayoutImport(scriptSource) && rendersShellOrAuthLayout(scriptSource)) {
+        // Direct import and render in entry module
         continue;
       }
 
@@ -89,7 +107,7 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       const childModules = CHILD_MODULE_ENTRIES[file];
       expect(
         childModules && childModules.length > 0,
-        `${file} does not directly import AppShell or AuthLayout, so it must be explicitly listed in CHILD_MODULE_ENTRIES`,
+        `${file} does not directly render AppShell or AuthLayout, so it must be explicitly listed in CHILD_MODULE_ENTRIES`,
       ).toBe(true);
 
       const entryDir = path.dirname(scriptFullPath);
@@ -111,13 +129,30 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
           `Entry module ${scriptRelative} for ${file} must import child module ${childRel} (${relSpecifier})`,
         ).toBe(true);
 
-        // Assert that the child module imports AppShell or AuthLayout
+        // Assert that the child module imports and renders AppShell or AuthLayout
         const childSource = fs.readFileSync(childFullPath, 'utf-8');
         expect(
           hasShellOrAuthLayoutImport(childSource),
           `Child module ${childRel} reached from ${file} must import AppShell or AuthLayout`,
         ).toBe(true);
+        expect(
+          rendersShellOrAuthLayout(childSource),
+          `Child module ${childRel} reached from ${file} must render AppShell or AuthLayout`,
+        ).toBe(true);
       }
+    }
+  });
+
+  it('every shell-less public page exists in web/pages and is an anyone page', () => {
+    const entries = Object.keys(SHELL_LESS_PUBLIC_PAGES);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const file of entries) {
+      expect(SHELL_LESS_PUBLIC_PAGES[file]!.trim(), `${file}: a reason`).not.toBe('');
+      const htmlPath = path.join(PAGES_DIR, file);
+      expect(fs.existsSync(htmlPath), `${file} exists in web/pages`).toBe(true);
+      const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+      const gates = [...htmlContent.matchAll(/<meta\s+name=["']xc-gate["']\s+content=["']([^"']*)["']/gi)].map((m) => m[1]);
+      expect(gates, `${file}: exactly one xc-gate, and it is anyone`).toEqual(['anyone']);
     }
   });
 

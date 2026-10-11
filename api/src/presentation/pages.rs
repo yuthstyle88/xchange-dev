@@ -373,9 +373,12 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
 
     let tx_row: Option<(String, String, String, String, String, String, String)> =
         match sqlx::query_as(
-            "SELECT customer_id, type, code, amount::text, rate::text, fee::text, unit_size::text \
-         FROM transactions \
-         WHERE branch_id = $1 AND document_ref = $2 AND mode = 'LIVE'",
+            "SELECT t.customer_id, tl.shop_side, tl.currency, tl.quantity::text, \
+         tl.rate_snapshot::text, tl.fee_thb::text, tl.unit_size::text \
+         FROM transactions t \
+         JOIN transaction_lines tl ON tl.transaction_id = t.id \
+         WHERE t.branch_id = $1 AND t.document_ref = $2 AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
+         ORDER BY tl.line_no LIMIT 1",
         )
         .bind(target_branch)
         .bind(ref_str)

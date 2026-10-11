@@ -109,7 +109,7 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
     const b = queueBranch();
     const on = soundOn();
     if (isEnded() || props.session.ended?.()) return;
-    if (on && u && s && s.count > 0 && s.latest) {
+    if (on && u && s && s.count > 0 && s.latest && b) {
       void announce(s, u.id, b);
     }
   });
@@ -154,15 +154,17 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
             <Show when={isEnded()}>
               <a href="/login" class="queue-card-action">{t('queue.card.signInAgain')}</a>
             </Show>
-            <Show when={!isEnded() && canClaim()}>
-              <a
-                href={`/kiosk-queue.html?branch=${encodeURIComponent(queueBranch())}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="queue-card-action"
-              >
-                {t('queue.card.openQueue')}
-              </a>
+            <Show when={!isEnded() && canClaim() && queueBranch()}>
+              {(b) => (
+                <a
+                  href={`/kiosk-queue.html?branch=${encodeURIComponent(b())}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="queue-card-action"
+                >
+                  {t('queue.card.openQueue')}
+                </a>
+              )}
             </Show>
             <Show when={showWorkers()}>
               <div class="queue-card-workers">

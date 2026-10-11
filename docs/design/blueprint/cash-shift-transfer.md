@@ -335,22 +335,24 @@ gains `myShift`; its `staff_requests` view is replaced by these two lists (§10)
 
 ```rust
 // api/crates/xc-shift/src/application/branch_day/service.rs   [required names; proposed signatures]
-pub struct BranchDayService { /* the branch's transaction runner and the custody repository it already uses */ }
+// tx: &mut Transaction<'_, Postgres> — the caller's transaction, already holding the branch lock (§4.9)
+pub struct BranchDayService { /* the custody repository, ShiftService and CustodyPorts it uses; no BranchTx */ }
 impl BranchDayService {
-    pub async fn start_service(&self, who: &access::Actor, branch: &BranchId, input: StartService, now: DateTime<Utc>) -> AppResult<Phase>;
-    pub async fn cut_off(&self, who: &access::Actor, branch: &BranchId, now: DateTime<Utc>) -> AppResult<Phase>;
-    pub async fn set_target(&self, who: &access::Actor, branch: &BranchId, amounts: Balances, now: DateTime<Utc>) -> AppResult<()>;
-    pub async fn clock(&self, who: &access::Actor, branch: &BranchId, direction: ClockDirection, now: DateTime<Utc>) -> AppResult<()>;
-    pub async fn hold(&self, who: &access::Actor, branch: &BranchId, customer_id: &str, reason: &str, now: DateTime<Utc>) -> AppResult<String>;
-    pub async fn release(&self, who: &access::Actor, branch: &BranchId, hold_id: &str, note: &str, now: DateTime<Utc>) -> AppResult<()>;
-    pub async fn begin_draft(&self, who: &access::Actor, branch: &BranchId, input: BeginDraft, now: DateTime<Utc>) -> AppResult<String>;
+    pub async fn start_service(&self, tx, who: &access::Actor, branch: &BranchId, input: StartService, now: DateTime<Utc>) -> AppResult<Phase>;
+    pub async fn cut_off(&self, tx, who: &access::Actor, branch: &BranchId, now: DateTime<Utc>) -> AppResult<Phase>;
+    pub async fn set_target(&self, tx, who: &access::Actor, branch: &BranchId, amounts: Balances, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn clock(&self, tx, who: &access::Actor, branch: &BranchId, direction: ClockDirection, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn hold(&self, tx, who: &access::Actor, branch: &BranchId, customer_id: &str, reason: &str, now: DateTime<Utc>) -> AppResult<String>;
+    pub async fn release(&self, tx, who: &access::Actor, branch: &BranchId, hold_id: &str, note: &str, now: DateTime<Utc>) -> AppResult<()>;
+    pub async fn begin_draft(&self, tx, who: &access::Actor, branch: &BranchId, input: BeginDraft, now: DateTime<Utc>) -> AppResult<String>;
 }
 ```
 
 **What it persists, and how:**
 - **Tables.** It writes the tables §4.1 keeps as they are: `ops_state` (phase, target, cutoff, `service_opened_at`),
   `attendance`, `customer_holds` and `tx_drafts`. It keeps v2's `ops_events` rows for the same steps.
-- **Transaction.** It writes on the transaction `BranchTx::run` hands its closure (§11 atomicity row).
+- **Transaction.** It writes on the caller's transaction (§4.9). CA-8b's commands are its only callers, so it has no
+  wrapper methods that open a transaction.
 - **Inputs.** The inputs are v2's own (`xc-shift/src/domain/custody/commands/custody_command.rs`):
   - `StartService {equipment_ready, rates_verified, rate_updated}`;
   - `BeginDraft {side, currency, amount}`, from `BeginTransaction`.
@@ -371,6 +373,90 @@ impl BranchDayService {
 
 No table, column or index changes (§8).
 
+### 4.9 Services run on the caller's transaction (CA-7c)
+
+**The rule.** Any service method a `CommandAction` calls has a form that takes `tx: &mut Transaction<'_, Postgres>`
+and does all its work on that transaction, reads included. It opens no transaction and takes no lock of its own:
+- the seam already holds the branch lock (`Locks::One` or `Locks::Pair`);
+- the idempotency row commits on the same transaction.
+
+The repo already works this way: `ShiftService::open_in`, `apply_delta_in`, `open_on_verified` and
+`close_on_verified` (`xc-shift/src/application/shift/service.rs:178`, `:385`, `:502`, `:586`), and
+`CashPostings::post_in` (§4.6).
+
+**Why** (measured on #624, issuecomment-6105440055; lines at `59fdb3f5`):
+- **The seam holds the lock.** The CM-1 seam runs `CommandAction::run` inside `BranchTx::run` / `run_pair`
+  (`api/src/presentation/http/v3/command.rs:345-395`). That holds `branch_versions … FOR UPDATE`
+  (`xc-kernel/src/branch_tx.rs:76-80`) on connection A, and the idempotency claim finishes on the same transaction
+  (`command.rs:450`).
+- **Transfers deadlock.** `TransferFlow::dispatch`, `receive` and `reconcile` open their own `BranchTx::run`
+  (`xc-cash/src/application/transfer/transfer_flow.rs:290`, `:348`, `:402`) on connection B and ask for the same
+  lock. B waits for A, and A waits for `run()` to return. `pg_stat_activity` in the comment shows the wait.
+- **Counts and hand-overs commit apart.** `CashCountService::{submit, verify}`, `HandoverService::{start, reject,
+  accept}` and `TransferFlow::{create, submit}` open a plain `pool.begin()` (`count_service.rs:138`, `:283`;
+  `handover_service.rs:98`, `:246`, `:287`; `transfer_flow.rs:110`, `:165`). They take no branch lock, so they do
+  not hang. But they commit outside the seam's lock and apart from its idempotency row, against §11's atomicity row.
+- **No such form exists yet.** `grep "pub async fn [a-z_]*_in("` in the three files finds none.
+
+**The forms (CA-7c), `[required names; proposed signatures]`.** `tx` is `&mut Transaction<'_, Postgres>`; every
+other argument is today's.
+
+```rust
+// api/crates/xc-cash/src/application/count/count_service.rs
+pub async fn submit_in(&self, tx, actor: &Actor, cmd: SubmitCount, now: DateTime<Utc>) -> AppResult<CashCount>;
+pub async fn verify_in(&self, tx, actor: &Actor, count_id: &str, now: DateTime<Utc>) -> AppResult<CountVerified>;
+// api/crates/xc-cash/src/application/handover/handover_service.rs
+pub async fn start_in(&self, tx, actor: &Actor, cmd: StartHandover, now: DateTime<Utc>) -> AppResult<Handover>;
+pub async fn accept_in(&self, tx, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover>;
+pub async fn reject_in(&self, tx, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover>;
+// api/crates/xc-cash/src/application/transfer/transfer_flow.rs
+pub async fn create_in(&self, tx, who: &Actor, cmd: NewTransfer, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+pub async fn submit_in(&self, tx, who: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+pub async fn dispatch_in(&self, tx, who: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+pub async fn receive_in(&self, tx, branch: &BranchId, who: &Actor, id: &str, counted: Vec<NewTransferLine>, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+```
+
+- **Same work.** Each form does what today's method does, in the same order, with the same checks and errors. All
+  reads go through `tx`, including the final re-read: `HandoverService::load` (`handover_service.rs:55-61`) and
+  `TransferFlow::load` (`transfer_flow.rs:434`) read the pool today, and the pool cannot see rows written on an open
+  transaction.
+- **Never commits.** A form never commits or rolls back. Its `Err` rolls back the whole caller transaction
+  (`branch_tx.rs:54-55`; the seam returns a `run` error as `Err`, `command.rs:430-437`).
+- **Awaiting finance is a value.** Today `verify` commits and then returns `Err(AwaitingFinance)`
+  (`count_service.rs:445-446`, `:469-470`), so the approval request and the written differences persist. On the seam
+  that `Err` would roll them back, and FINANCE would never see the request. So `verify_in` returns
+  `CountVerified::{Verified(CashCount), AwaitingFinance(request_id)}` `[proposed]`. A finance refusal stays an `Err`:
+  it rolls back today too (`:441-442`). FINANCE's approval of a count difference is `ledger-inventory.md` §5.2
+  (`COUNT_DIFFERENCE`); this design adds no rule to it.
+- **`countVerify`'s answer.** It follows the repo's approval pattern: a step that records an approval request
+  succeeds with the new state, and `approvalRequired` (409) is answered only when nothing is written
+  (`commands/mod.rs:42`; `xc-rate/src/application/publication/publish_service.rs:89-130`). So `countVerify`
+  answers **200** with the count's resulting state:
+  - `{status: "VERIFIED"}` or `{status: "AWAITING_FINANCE", approvalRequestId}` `[proposed]`: no count DTO exists
+    yet, so the field names are proposed; the values are upper case, as the stored states are
+    (`handovers.status`, `cash_transfers.status`, §4.1), and the fields camelCase (wire DTOs).
+  - The approval request commits on the seam's transaction together with the idempotency row, so a replay with the
+    same `Idempotency-Key` returns the same answer.
+  - `AwaitingFinance` is no longer an error on the v3 path. The wrapper `verify` keeps its `Err(AwaitingFinance)` for
+    today's callers, so `count_verify_gate_test.rs:946-949` stays green.
+- **Wrappers.** Today's methods keep their signatures. Each opens the transaction it opens today (`pool.begin()`, or
+  `BranchTx::run` on the same branch for dispatch, receive and reconcile), calls its form and commits. `verify`
+  turns `AwaitingFinance` back into today's `Err`. So their existing tests stay unedited.
+- **Which lock the command takes.** A form assumes the caller holds the branch lock. CA-8's `locks()` names it:
+  - `transferDispatch`: the source branch;
+  - `transferReceive`: the default `Locks::One(<session branch>)`, with no `locks()` override. The receiver works at
+    the destination, so the session branch is the destination. `receive_in` takes that branch and refuses
+    `outOfScope` when the transfer's destination is not it; the wrapper passes `destination(&t)`. The body stays
+    `{id, lines}`, with no `fromBranchId`. Why one lock: `locks()` is synchronous and sees only `(branch, input)`
+    (`command.rs:48-51`), and today's `receive` locks only the destination (`transfer_flow.rs:342-349`). If a later
+    ticket (LG-4) makes receive write the source branch's rows, it revisits the lock then (lane controller's ruling,
+    #624 issuecomment-6105777926);
+  - `transferReconcile`: the destination (`destination()`, `transfer_flow.rs:448`);
+  - counts, hand-overs, `transferCreate`, `transferSubmit`: `Locks::One` on the request's branch.
+- **No new behaviour.** No permission, table, column or route changes. CA-7b's `BranchDayService` (§4.8) follows
+  the same rule from the start.
+
 ## 5. Class diagram
 
 ```mermaid
@@ -379,20 +465,20 @@ classDiagram
   class ShiftService { <<xc-shift application/shift/service.rs>> +open_on_verified() +close_on_verified() +apply_delta_in(teller) }
   class CashCount { <<xc-cash domain/count/cash_count.rs  state machine>> }
   class CountLine { <<xc-cash domain/count/count_line.rs>> }
-  class CashCountService { <<xc-cash application/count/count_service.rs>> +submit() +verify() }
+  class CashCountService { <<xc-cash application/count/count_service.rs>> +submit() +verify() +submit_in(tx) +verify_in(tx)  CA-7c }
   class Handover { <<xc-cash domain/handover/handover.rs>> }
-  class HandoverService { <<xc-cash application/handover/handover_service.rs>> }
+  class HandoverService { <<xc-cash application/handover/handover_service.rs>> +start_in(tx) +accept_in(tx) +reject_in(tx)  CA-7c }
   class CashTransfer { <<xc-cash domain/transfer/cash_transfer.rs  state machine>> }
   class TransferEnds { <<trait xc-cash domain/transfer/ends.rs  dyn-safe>> +kind() TransferKind }
   class CashAreaRows { <<xc-auth domain/policy/areas/cash.rs  (EntryPath::Rpc, command) → Need  CA-8>> }
   class BranchDayAreaRows { <<xc-auth domain/policy/areas/branch_day.rs  CA-8b>> }
   class CashCommands { <<api presentation/http/v3/commands/cash.rs  every CA-8 command, one flat file>> }
   class BranchDayCommands { <<api presentation/http/v3/commands/branch_day.rs  every CA-8b command, one flat file>> }
-  class BranchDayService { <<xc-shift application/branch_day/service.rs  CA-7b>> +start_service() +cut_off() +set_target() +clock() +hold() +release() +begin_draft() }
+  class BranchDayService { <<xc-shift application/branch_day/service.rs  CA-7b, every method takes the caller's tx>> +start_service(tx) +cut_off(tx) +set_target(tx) +clock(tx) +hold(tx) +release(tx) +begin_draft(tx) }
   class BranchTransfer { <<xc-cash domain/transfer/kinds/branch.rs>> }
   class SafeMove { <<xc-cash domain/transfer/kinds/safe.rs  DRAWER_TO_SAFE, SAFE_TO_DRAWER>> }
   class ExternalMove { <<xc-cash domain/transfer/kinds/external.rs  EXTERNAL_IN, EXTERNAL_OUT>> }
-  class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> }
+  class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> +create_in(tx) +submit_in(tx) +dispatch_in(tx) +receive_in(tx, branch) +reconcile_in(tx)  CA-7c }
   class TransferApprovalSubject { <<xc-cash application/approval/transfer.rs>> }
   class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> }
   class CashPostings { <<trait xc-cash domain/posting.rs>> }
@@ -429,10 +515,10 @@ classDiagram
   CashRepository <|.. PgCashRepository
   CashAreaRows --> Authorizer : each command's Need
   BranchDayAreaRows --> Authorizer : each command's Need
-  CashCommands --> CashCountService
-  CashCommands --> HandoverService
-  CashCommands --> TransferFlow
-  BranchDayCommands --> BranchDayService
+  CashCommands --> CashCountService : *_in(tx) (CA-7c)
+  CashCommands --> HandoverService : *_in(tx) (CA-7c)
+  CashCommands --> TransferFlow : *_in(tx) (CA-7c)
+  BranchDayCommands --> BranchDayService : seam's tx
   BranchDayService --> BranchDay : start_service, cut_off
   BranchDayService --> Authorizer
 ```
@@ -450,6 +536,7 @@ the receiver of a hand-over, a teller's own shift).
 | #550 / PR 589 OR-4 `policy.rs` (the route table) and OR-4b/PL-0b's area rows | nothing in `policy.rs`: CA-8 and CA-8b add their rows in `areas/cash.rs` and `areas/branch_day.rs` (§4.4) | not needed — neither touches a file OR-4 owns; both start after OR-4 |
 | CA-0p `CashTransferPolicySet` (§9) | `transferPolicySave`'s permission and its area row | none — `transferPolicySave` starts after it; the rest of CA-8 does not wait |
 | CA-7b `BranchDayService` (§4.8) | CA-8b's seven commands | none — CA-8b starts after CA-7b |
+| CA-7c the `_in` forms of `CashCountService`, `HandoverService` and `TransferFlow` (§4.9) | CA-8's count, hand-over and transfer commands | none — CA-8 starts after CA-7c |
 | #550 / PR 589 `Role`, `Permission`, `RolePermissions`, `Authorizer` | every command | none — CA-2 onward start after PR 589's permission ticket. The four permissions this design needs beyond PR 589 §3.4's first list (`AttendanceClock`, `CustomerHoldPlace`, `CashTargetSet`, `BranchDayOperate`) are in PR 589 at `71f03ca`, owned by its OR-2 ticket |
 | #550 / PR 589 §6 `BranchHours::window(date)` | the branch day's time checks (today `custody_machine.rs:746`, `:804`, `:1195`) | ordering: PR 589's OR-6 edits those lines in `custody_machine.rs`; CA-7 moves them into `branch_day.rs`. **OR-6 merges first; CA-7 starts after it** and carries `BranchHours` along |
 | PR 570 AP-1 `xc-approval` | `TransferApprovalSubject` | none — CA-5 starts after AP-1 |
@@ -582,7 +669,8 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-6 | safe and external kinds | `xc-cash/src/domain/transfer/kinds/{safe.rs,external.rs}` | CA-5 |
 | CA-7 | the branch day rebound (C9), exchange save on the saver's shift | `xc-shift/src/domain/custody/branch_day.rs` (new, from the kept half of `custody_machine.rs`), `api/src/application/workflows/save_transaction.rs`, `custody_save_step.rs` | CA-3, PR 589 OR-6 |
 | CA-7b | the branch-day service (§4.8): the kept features of C9 on `access::Actor`, persisted | `api/crates/xc-shift/src/application/branch_day/**` (new), `xc-shift/src/application/mod.rs` (one line), `api/crates/xc-shift/tests/branch_day_service_test.rs` (new) | CA-7 (#623: `BranchDay::start_service` / `cut_off`), PR 589 OR-2 and OR-6 |
-| CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the four views of §4.7 | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
+| CA-7c | the xc-cash services on the caller's transaction (§4.9): `CashCountService::{submit_in, verify_in}`, `HandoverService::{start_in, accept_in, reject_in}`, `TransferFlow::{create_in, submit_in, dispatch_in, receive_in, reconcile_in}`; today's methods become wrappers over them, so their tests stay unedited | `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/application/handover/handover_service.rs`, `api/crates/xc-cash/src/application/transfer/transfer_flow.rs`, `api/crates/xc-cash/tests/services_on_caller_tx_test.rs` (new) | CA-4, CA-5, CA-6, CA-7 (all merged) |
+| CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the four views of §4.7 | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, **CA-7c** (§4.9), PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
 | CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. `draftBegin` starts with the rest of CA-8b; its area row (`ShiftOperate`) is in `areas/branch_day.rs`. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
 | CA-9 | admin cash menu (B05) and transfer policy screen | `web/src/screens/admin/cash/**`, `web/src/screens/admin/cash-policy/**` | CA-8 (the policy screen: including `transferPolicySave`) |
 | CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model |
@@ -604,8 +692,9 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-5 | the five states in order, every illegal jump refused, no sixth state; a refused approval leaves the transfer DRAFT and it can be submitted again; `TransferEnds` held as `Arc<dyn TransferEnds>`; within limit approved by a BRANCH_MANAGER, above by EXECUTIVE only, never the creator; receipt with fewer notes writes an exception; dispatch beyond the drawer's expected refused |
 | CA-6 | each kept kind moves the right balances at dispatch and receipt (the money flow of `custody_machine.rs:420-634`, restated) |
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
-| CA-7b | each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on the branch transaction; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
-| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals` |
+| CA-7b | the tests open the transaction and lock the branch (`branch_versions … FOR UPDATE`) themselves, as the seam does, and pass it to each method; each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on that transaction, and a rollback leaves none; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
+| CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (the destination's, for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; `receive_in` refuses `outOfScope` when the transfer's destination is not the branch it is given; the wrappers behave as before (their existing tests pass unedited) |
+| CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals`; `countVerify` with a difference over the limit answers 200 `AWAITING_FINANCE` and leaves exactly one PENDING approval request |
 | CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
@@ -629,9 +718,9 @@ Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not 
 | §11 *"เงิน in-transit แยก"* | **Staged** until #553: the interim posting port keeps no in-transit balance; money in transit is read from DISPATCHED transfers (§4.6). No rule changes |
 | §07 CashTransfer(from_branch, to_branch, …), Line(qty_sent, qty_received) | `kind = BRANCH` rows; the other kinds are v3's kept features (A2) on the same table |
 | §02 separation preparer / approver | the approval core (PR 570 §5.4) and `verified_by ≠ counted_by` |
-| §09 atomicity: posting and state in one transaction | `TransferFlow` and `CashCountService` call `CashPostings::post_in` with the transaction `BranchTx::run` hands its closure (`xc-kernel/src/branch_tx.rs:55-62`), the repo's convention (`custody_repository.rs:15-36`; `rates.md` after PR 594) |
+| §09 atomicity: posting and state in one transaction | Every service a command calls works on the seam's transaction (§4.9), so the posting, the state change and the idempotency row commit together under the branch lock. `TransferFlow` and `CashCountService` call `CashPostings::post_in` with that transaction (`xc-kernel/src/branch_tx.rs:56`), the repo's convention (`custody_repository.rs:15-36`; `rates.md` after PR 594) |
 | §09 idempotency on mutations | `Idempotency-Key` per command (C8) |
-| §10 error codes | `CashError` maps to `VALIDATION_FAILED`, `OUT_OF_SCOPE`, `STALE_VERSION`, `STOCK_INSUFFICIENT`, `APPROVAL_REQUIRED`, `IDEMPOTENCY_CONFLICT` with Thai and English sentences (W10) |
+| §10 error codes | `CashError` maps to `VALIDATION_FAILED`, `OUT_OF_SCOPE`, `STALE_VERSION`, `STOCK_INSUFFICIENT`, `APPROVAL_REQUIRED`, `IDEMPOTENCY_CONFLICT` with Thai and English sentences (W10). A count waiting for FINANCE is **not** an error on the v3 path: `countVerify` answers 200 `AWAITING_FINANCE` (§4.9) |
 | §12 Cash & cost: method, limits, certifier | certifier A1/A6, limits A5 as data; cost method is #553's (Q10 of the mapping) |
 | §07 Handover(status): the receiver certifies or refuses | `handoverAccept` / `handoverReject` (§4.4) expose §4.2's two transitions, which CA-4's `HandoverService` already implements. Reject carries no reason because the Blueprint's Handover has no reason column, and none is added. **No schema change** |
 | §12 limits as data, set by EXECUTIVE (A5) | `transferPolicySave` writes a version row into the existing `cash_transfer_policy_versions` (M1). Its permission `CashTransferPolicySet` is held by EXECUTIVE only (§3.1). **No schema change**; the permission is code, added by CA-0p |

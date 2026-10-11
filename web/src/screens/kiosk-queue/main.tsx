@@ -1,22 +1,22 @@
+import { Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { screenT } from '../../shared/i18n';
-import { setQueueBranch } from '../../shared/queue/queue-store';
+import { sharedSession } from '../../shared/session/session';
+import { pageBranch } from '../../shared/session/page-branch';
 import { AppShell } from '../../shared/ui/AppShell';
 import * as screenI18n from './i18n';
 import { KioskQueueScreen } from './KioskQueueScreen';
 
 const root = document.getElementById('app') ?? document.body;
-
-const url = new URL(window.location.href);
-const branch = url.searchParams.get('branch') || 'MAIN';
-setQueueBranch(branch);
-
 const t = screenT('kiosk-queue', screenI18n);
+const branch = pageBranch(sharedSession());
 
 render(
   () => (
     <AppShell title={t('title')}>
-      <KioskQueueScreen branch={branch} />
+      <Show when={branch()} keyed>
+        {(b) => <KioskQueueScreen branch={b} />}
+      </Show>
     </AppShell>
   ),
   root,

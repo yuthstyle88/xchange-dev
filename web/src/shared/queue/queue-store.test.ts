@@ -8,6 +8,11 @@
 // object is `{ api, session }` — the names this file fixes for `queueStore(branch, deps)`.
 // Every test uses a branch of its own, because the store is one per branch for the life of the
 // module (like `sharedSession()`).
+//
+// Amended for SB-3 (#842) by the test-writer claude/5d45b017, on the FE lane controller
+// claude/5edf7bb5's ruling (#842 issuecomment-6105121433, item 2): S8's "else MAIN" becomes
+// "else undefined" (with no `me`, `queueBranch()` is `undefined`); the reactive `setQueueBranch`
+// and `me()` cases stay. Session branch design §14.4: no page names 'MAIN' itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../api/client';
@@ -542,10 +547,10 @@ describe('useQueueStore', () => {
 // ── S8: which branch the card follows ────────────────────────────────────────
 
 describe('S8: queueBranch follows v2 currentBranch() (account-bar.js:5)', () => {
-  it('setQueueBranch, else ?branch=, else me().branch, else MAIN — and it is reactive to setQueueBranch', () => {
+  it('setQueueBranch, else ?branch=, else me().branch, else undefined — and it is reactive to setQueueBranch', () => {
     window.history.replaceState(null, '', '/kiosk-queue.html');
     shared.setMe!(undefined);
-    expect(queueBranch()).toBe('MAIN');
+    expect(queueBranch()).toBeUndefined();
 
     shared.setMe!({ ...ME, branch: 'B-ME' });
     expect(queueBranch()).toBe('B-ME');
@@ -553,7 +558,7 @@ describe('S8: queueBranch follows v2 currentBranch() (account-bar.js:5)', () => 
     window.history.replaceState(null, '', '/kiosk-queue.html?branch=B-URL');
     expect(queueBranch()).toBe('B-URL');
 
-    const seen: string[] = [];
+    const seen: Array<string | undefined> = [];
     createRoot((d) => {
       disposers.push(d);
       createEffect(() => seen.push(queueBranch()));

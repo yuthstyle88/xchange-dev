@@ -1,0 +1,129 @@
+.xc-rates-card {
+  padding: 1.5rem;
+  background: var(--xc-surface, #ffffff);
+  border-radius: 0.5rem;
+}
+
+.xc-rates-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.xc-rates-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.xc-rates-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--xc-text, #111827);
+}
+
+.xc-rates-version {
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #6b7280);
+}
+
+.xc-rates-empty {
+  margin: 1rem 0;
+  color: var(--xc-text-muted, #6b7280);
+  font-size: 0.875rem;
+}
+
+.xc-rates-table-container {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+.xc-rates-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.xc-rates-head-row {
+  border-bottom: 1px solid var(--xc-border, #e5e7eb);
+}
+
+.xc-rates-th-currency,
+.xc-rates-th-unit {
+  padding: 0.75rem 0.5rem;
+  font-weight: 600;
+  color: var(--xc-text-muted, #4b5563);
+  text-align: left;
+}
+
+.xc-rates-th-buy,
+.xc-rates-th-sell {
+  padding: 0.75rem 0.5rem;
+  font-weight: 600;
+  color: var(--xc-text-muted, #4b5563);
+  text-align: right;
+}
+
+.xc-rates-row {
+  border-bottom: 1px solid var(--xc-border, #f3f4f6);
+}
+
+.xc-rates-row:last-child {
+  border-bottom: none;
+}
+
+.xc-rates-td-currency {
+  padding: 0.75rem 0.5rem;
+  font-weight: 600;
+  color: var(--xc-text, #111827);
+  text-align: left;
+}
+
+.xc-rates-td-unit {
+  padding: 0.75rem 0.5rem;
+  color: var(--xc-text-muted, #6b7280);
+  text-align: left;
+}
+
+.xc-rates-td-buy,
+.xc-rates-td-sell {
+  padding: 0.75rem 0.5rem;
+  font-family: var(--xc-font-mono, ui-monospace, monospace);
+  color: var(--xc-text, #111827);
+  text-align: right;
+}
+
+.xc-rates-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.xc-rates-error-message {
+  margin: 0;
+  color: var(--xc-danger, #ef4444);
+  font-size: 0.875rem;
+}
+
+.xc-rates-retry-button {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xc-text, #111827);
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.xc-rates-retry-button:hover {
+  background: var(--xc-surface-hover, #f9fafb);
+}
+

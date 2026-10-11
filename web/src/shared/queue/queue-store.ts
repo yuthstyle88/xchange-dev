@@ -7,6 +7,7 @@ import {
 } from 'solid-js';
 import { ApiClient, ApiError, type ViewParams } from '../api/client';
 import { sharedSession, type SessionStore } from '../session/session';
+import { pageBranch } from '../session/page-branch';
 import type { KioskNotifications } from './wire';
 
 export type QueueError =
@@ -279,25 +280,39 @@ export function queueStore(branch: string, deps?: QueueStoreDeps): QueueStore {
   return existing;
 }
 
-export function useQueueStore(branch: Accessor<string>): Accessor<QueueStore> {
+const idleStore: QueueStore = {
+  state: () => undefined,
+  error: () => undefined,
+  lastUpdated: () => undefined,
+  version: () => undefined,
+  now: () => Date.now(),
+  refresh: async () => {},
+};
+
+export function useQueueStore(branch: Accessor<string | undefined>): Accessor<QueueStore> {
   let prevBranch: string | undefined = undefined;
   let prevStore: QueueStoreInternal | undefined = undefined;
 
-  const [currentStore, setCurrentStore] = createSignal<QueueStore>(
-    untrack(() => queueStore(branch())),
-  );
+  const initialBranch = untrack(branch);
+  const initialStore = initialBranch ? untrack(() => queueStore(initialBranch)) : idleStore;
+  const [currentStore, setCurrentStore] = createSignal<QueueStore>(initialStore);
 
   createEffect(() => {
     const b = branch();
     if (b !== prevBranch) {
       if (prevStore) {
         prevStore.release();
+        prevStore = undefined;
       }
       prevBranch = b;
-      const s = untrack(() => queueStore(b)) as QueueStoreInternal;
-      prevStore = s;
-      setCurrentStore(() => s);
-      s.retain();
+      if (b) {
+        const s = untrack(() => queueStore(b)) as QueueStoreInternal;
+        prevStore = s;
+        setCurrentStore(() => s);
+        s.retain();
+      } else {
+        setCurrentStore(() => idleStore);
+      }
     }
   });
 
@@ -320,24 +335,10 @@ export function setQueueBranch(branch: string): void {
   setExplicitBranch(branch);
 }
 
-export const queueBranch: Accessor<string> = () => {
+export const queueBranch: Accessor<string | undefined> = () => {
   const explicit = explicitBranch();
   if (explicit !== undefined && explicit !== '') {
     return explicit;
   }
-
-  try {
-    if (typeof window !== 'undefined' && window.location) {
-      const url = new URL(window.location.href);
-      const b = url.searchParams.get('branch');
-      if (b) return b;
-    }
-  } catch {
-    // ignore
-  }
-
-  const meBranch = sharedSession().me()?.branch;
-  if (meBranch) return meBranch;
-
-  return 'MAIN';
+  return pageBranch(sharedSession())();
 };

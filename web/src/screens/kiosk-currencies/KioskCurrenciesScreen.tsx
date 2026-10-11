@@ -3,7 +3,6 @@ import {
   createMemo,
   createSignal,
   For,
-  onMount,
   Show,
   type JSX,
 } from 'solid-js';
@@ -146,7 +145,7 @@ function CurrencyCard(props: CardProps): JSX.Element {
 
 export function KioskCurrenciesScreen(props: {
   api: Pick<ApiClient, 'view' | 'post'>;
-  branch: string;
+  branch?: string;
 }): JSX.Element {
   const t = screenT('kiosk-currencies', screenI18n);
 
@@ -162,10 +161,10 @@ export function KioskCurrenciesScreen(props: {
   >({});
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
 
-  onMount(async () => {
+  const fetchCurrencies = async (branchId: string) => {
     try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
-        branch: props.branch,
+        branch: branchId,
       });
       if (res.data) {
         setCurrencies(res.data.currencies);
@@ -184,6 +183,17 @@ export function KioskCurrenciesScreen(props: {
       setKbankRef(null);
       setFreshness(null);
     }
+  };
+
+  createEffect(() => {
+    const b = props.branch;
+    if (!b) {
+      setCurrencies([]);
+      setKbankRef(null);
+      setFreshness(null);
+      return;
+    }
+    void fetchCurrencies(b);
   });
 
   const filteredCurrencies = createMemo(() => {
@@ -200,12 +210,13 @@ export function KioskCurrenciesScreen(props: {
   });
 
   const handleToggle = async (code: string, isEnabled: boolean) => {
+    if (!props.branch) return;
     setSavingCodes((prev) => ({ ...prev, [code]: true }));
     setCardStatuses((prev) => ({ ...prev, [code]: undefined }));
 
     try {
       await configure(props.api, {
-        branchId: props.branch || 'MAIN',
+        branchId: props.branch,
         code,
         enabled: isEnabled,
       });

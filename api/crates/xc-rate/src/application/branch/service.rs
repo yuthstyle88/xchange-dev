@@ -5,6 +5,7 @@ use pos_error::{AppError, AppResult};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
+use crate::domain::branch::branch_hours::BranchHours;
 use crate::domain::branch::commands::create_branch::CreateBranch;
 use crate::domain::branch::entities::branch::Branch;
 use crate::domain::branch::repositories::branch_repository::BranchRepository;
@@ -13,6 +14,20 @@ use crate::domain::validation::{
     validate_request_id, validate_text,
 };
 use crate::infrastructure::branch::branch_repository::PgBranchRepository;
+
+/// A branch's profile (OR-1's columns), saved by an ADMIN through `branchSave` (OR-5a #945,
+/// design `org-roles-branches.md` §6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchProfile {
+    /// Unique within the branch's organisation.
+    pub code: String,
+    pub address: Option<String>,
+    /// An IANA zone (`chrono-tz`).
+    pub timezone: String,
+    /// The shape `BranchHours::new` accepts.
+    pub opening_hours: Option<serde_json::Value>,
+    pub booking_enabled: bool,
+}
 
 #[derive(Clone)]
 pub struct BranchService {
@@ -124,4 +139,78 @@ impl BranchService {
             })
             .await
     }
+
+    /// Save `branch`'s profile in that branch's `BranchTx`, so its version moves. An unknown
+    /// zone, malformed hours or an empty code is `AppError::Validation`; a code another branch of
+    /// the organisation holds is `AppError::Conflict`; an unknown branch is `NO_SUCH_BRANCH`.
+    /// Nothing is written on a refusal.
+    pub async fn save_profile(
+        &self,
+        branch: &BranchId,
+        profile: BranchProfile,
+    ) -> AppResult<Branch> {
+        // Refuse what needs no lock before taking one, so a refusal writes no `branch_versions` row.
+        validate_profile(&profile)?;
+        if !self.repo.branch_exists(branch).await? {
+            return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
+        }
+        let service = self.clone();
+        let id = branch.clone();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { service.save_profile_in(tx, &id, profile).await })
+            })
+            .await
+    }
+
+    /// `save_profile`'s work inside the caller's transaction, for a caller that already holds
+    /// the branch's `BranchTx` (the v3 command seam runs `branchSave` in one, so a second
+    /// `BranchTx` on the same branch would wait on its lock). Same refusals, nothing written on one.
+    /// `save_profile` is this inside its own `BranchTx`.
+    pub async fn save_profile_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        profile: BranchProfile,
+    ) -> AppResult<Branch> {
+        let code = validate_profile(&profile)?;
+        let Some(current) = self.repo.find_for_update_in(tx, branch).await? else {
+            return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
+        };
+        if self.repo.code_taken_in(tx, branch, &code).await? {
+            return Err(AppError::Conflict(format!(
+                "branch code {code:?} is taken in this organisation"
+            )));
+        }
+        self.repo
+            .update_profile_in(
+                tx,
+                branch,
+                &code,
+                profile.address.as_deref(),
+                &profile.timezone,
+                profile.opening_hours.as_ref(),
+                profile.booking_enabled,
+            )
+            .await?;
+        Ok(Branch {
+            code: Some(code),
+            address: profile.address,
+            timezone: profile.timezone,
+            opening_hours: profile.opening_hours,
+            booking_enabled: profile.booking_enabled,
+            ..current
+        })
+    }
+}
+
+/// Checks a profile before anything is read or written, answering its trimmed code: a non-empty
+/// code, an IANA zone and hours of `BranchHours`' shape (design §6), else `AppError::Validation`.
+fn validate_profile(profile: &BranchProfile) -> AppResult<String> {
+    let code = profile.code.trim();
+    if code.is_empty() {
+        return Err(AppError::Validation("branch code is required".to_string()));
+    }
+    BranchHours::new(&profile.timezone, profile.opening_hours.as_ref())?;
+    Ok(code.to_string())
 }
