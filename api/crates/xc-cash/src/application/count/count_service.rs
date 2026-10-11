@@ -7,7 +7,14 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use xc_approval::application::approval_service::ApprovalService;
+use xc_approval::application::registry::ApprovalRegistry;
+use xc_approval::domain::approval_repository::ApprovalRepository;
+use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
+use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
+use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
@@ -15,11 +22,15 @@ use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
+use crate::application::ledger_approval::count_difference::{
+    COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
+};
 use crate::domain::count::{CashCount, CountKind, CountLine};
 use crate::domain::error::CashError;
 use crate::domain::person_rules::PersonRules;
 use crate::domain::repository::{CashRepository, CountTotal};
 use crate::infrastructure::interim_postings::InterimCashPostings;
+use crate::infrastructure::inventory::repository::PgInventoryRepository;
 use crate::infrastructure::repository::PgCashRepository;
 
 #[derive(Debug, Clone)]
@@ -38,6 +49,8 @@ pub struct CashCountService {
     repo: Arc<PgCashRepository>,
     postings: Arc<InterimCashPostings>,
     shifts: ShiftService<PgShiftRepository>,
+    gate: Arc<CountDifferenceGate>,
+    approvals_repo: Arc<PgApprovalRepository>,
 }
 
 impl CashCountService {
@@ -46,12 +59,16 @@ impl CashCountService {
         repo: Arc<PgCashRepository>,
         postings: Arc<InterimCashPostings>,
         shifts: ShiftService<PgShiftRepository>,
+        gate: Arc<CountDifferenceGate>,
+        approvals_repo: Arc<PgApprovalRepository>,
     ) -> Self {
         Self {
             pool,
             repo,
             postings,
             shifts,
+            gate,
+            approvals_repo,
         }
     }
 
@@ -62,7 +79,23 @@ impl CashCountService {
         let transactor = Transactor::new(pool.clone());
         let branch_tx = BranchTx::new(transactor);
         let shifts = ShiftService::new(shift_repo, branch_tx);
-        Self::new(pool, repo, postings, shifts)
+
+        let mut registry = ApprovalRegistry::new();
+        crate::application::ledger_approval::count_difference::register(
+            &mut registry,
+            pool.clone(),
+        );
+        let approvals_repo = Arc::new(PgApprovalRepository::new(pool.clone()));
+        let audit_log = Arc::new(PgAuditLog::new(pool.clone()));
+        let approvals = Arc::new(ApprovalService::new(
+            registry,
+            approvals_repo.clone(),
+            audit_log,
+        ));
+        let inventory = Arc::new(PgInventoryRepository::new(pool.clone()));
+        let gate = Arc::new(CountDifferenceGate::new(approvals, inventory));
+
+        Self::new(pool, repo, postings, shifts, gate, approvals_repo)
     }
 
     pub fn postings(&self) -> &Arc<InterimCashPostings> {
@@ -368,8 +401,6 @@ impl CashCountService {
             }
 
             let mut updated_totals = Vec::new();
-            let mut close_balances = Vec::new();
-
             for t in totals {
                 CurrencyCode::parse(t.currency.trim()).map_err(|_| {
                     AppError::Internal(format!("unknown currency code in count: {}", t.currency))
@@ -382,7 +413,68 @@ impl CashCountService {
                     expected: t.expected,
                     difference: Some(diff),
                 });
+            }
 
+            for t in &updated_totals {
+                sqlx::query(
+                    "UPDATE cash_count_totals \
+                     SET difference = $1::numeric \
+                     WHERE count_id = $2::uuid AND currency = $3",
+                )
+                .bind(t.difference)
+                .bind(count_id)
+                .bind(&t.currency)
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            let key = format!("count-difference:{}", count_id);
+            let existing_req = self
+                .approvals_repo
+                .find_by_type_and_key(&mut tx, COUNT_DIFFERENCE, &key)
+                .await?;
+
+            if let Some(req) = existing_req {
+                match req.status.as_str() {
+                    "APPROVED" => {}
+                    "REJECTED" => {
+                        tx.rollback().await?;
+                        return Err(CashError::RejectedByFinance(req.id.to_string()).into());
+                    }
+                    "PENDING" => {
+                        tx.commit().await?;
+                        return Err(CashError::AwaitingFinance(req.id.to_string()).into());
+                    }
+                    other => {
+                        return Err(AppError::Internal(format!(
+                            "unexpected approval request status: {other}"
+                        )));
+                    }
+                }
+            } else {
+                let by = PolicyActor::staff(
+                    &actor.user_id,
+                    PolicyRole::Manager,
+                    count.branch_id.clone(),
+                )
+                .ok_or_else(|| {
+                    AppError::Internal(
+                        "failed to construct policy actor for count difference gate".to_string(),
+                    )
+                })?;
+
+                match self.gate.check_in(&mut tx, &count, &by).await? {
+                    GateResult::Clear => {}
+                    GateResult::AwaitingFinance(req_id) => {
+                        tx.commit().await?;
+                        return Err(CashError::AwaitingFinance(req_id.to_string()).into());
+                    }
+                }
+            }
+
+            let mut close_balances = Vec::new();
+            for t in &updated_totals {
+                let diff = t.difference.unwrap_or(Decimal::ZERO);
                 if !diff.is_zero() {
                     let exc_id = format!("EX-{}", uuid::Uuid::new_v4());
                     let pos: i32 = sqlx::query_scalar(
@@ -914,6 +1006,17 @@ mod tests {
 
         let service = CashCountService::pg(db.pool.clone());
         let now = Utc.with_ymd_and_hms(2026, 10, 12, 3, 0, 0).unwrap();
+
+        // V-1 (FINANCE approval above limit) / #928: branch limit covering the -1000 THB difference
+        sqlx::query(
+            "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             VALUES ($1::uuid, $2, 1000.00, 'test', now())",
+        )
+        .bind(ORG)
+        .bind(branch.as_str())
+        .execute(&db.pool)
+        .await
+        .expect("insert cash limit");
 
         // Open shift with 5 * 100 USD = 500 USD and 2 * 500 THB = 1000 THB
         let open_cmd = SubmitCount {
