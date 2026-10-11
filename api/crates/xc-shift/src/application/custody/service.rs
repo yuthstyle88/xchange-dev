@@ -5,18 +5,22 @@ use std::sync::Arc;
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
+use xc_auth::domain::access::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
 use crate::application::custody::request::parse_command;
 use crate::application::shift::service::ShiftService;
+use crate::domain::custody::branch_day::BranchDay;
 use crate::domain::custody::commands::custody_command::CustodyCommand;
 use crate::domain::custody::entities::custody_machine::CustodyMachine;
+use crate::domain::custody::entities::customer_hold::HoldStatus;
 use crate::domain::custody::entities::stored_event::StoredEvent;
 use crate::domain::custody::repositories::custody_ports::CustodyPorts;
 use crate::domain::custody::repositories::custody_repository::CustodyRepository;
 use crate::domain::custody::state::CustodyState;
 use crate::domain::custody::value_objects::custody_actor::CustodyActor;
+use crate::domain::custody::value_objects::custody_error::CustodyError;
 use crate::domain::custody::value_objects::custody_event::{CustodyEvent, EventKind};
 use crate::domain::custody::value_objects::custody_facts::{
     CustodyFacts, OpenShift as FactOpenShift,
@@ -24,12 +28,13 @@ use crate::domain::custody::value_objects::custody_facts::{
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::request_kind::RequestKind;
-use crate::domain::custody::value_objects::save_attempt::SaveAttempt;
+use crate::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 use crate::domain::custody::value_objects::shift_effect::ShiftEffect;
 use crate::domain::shift::commands::close_shift::CloseShift;
 use crate::domain::shift::commands::move_stock::MoveStock;
 use crate::domain::shift::commands::open_shift::OpenShift;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
+use crate::domain::shift::value_objects::shift_error::ShiftError;
 use crate::domain::shift::value_objects::stock_delta::Direction;
 use crate::infrastructure::custody::custody_repository::PgCustodyRepository;
 use crate::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -260,6 +265,64 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         };
         CustodyMachine::check_save(&state, save, actor, &facts, custody_now)
             .map_err(|e| AppError::Domain(e.to_string()))
+    }
+
+    /// CA-7 (#623): the save of a Blueprint-session teller, judged by `BranchDay::check_save` with no custodian.
+    /// Custody off is no rule, as for v2. The teller's own shift is the OPEN shift whose `teller_id` is their
+    /// `users.id`; without one the answer is the save's own `noOpenShift`.
+    pub async fn check_teller_save_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        save: &SaveAttempt,
+        teller: &Actor,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        let state = self.repo.load_state_in(tx, branch).await?;
+        if !state.enabled {
+            return Ok(());
+        }
+        let first = save.prior == PriorSave::None;
+        let fresh = matches!(save.prior, PriorSave::None | PriorSave::Unfinished);
+        if fresh
+            && state
+                .holds
+                .iter()
+                .any(|h| h.customer_id == save.customer_id && h.status == HoldStatus::Open)
+        {
+            return Err(AppError::Domain(CustodyError::CustomerOnHold.to_string()));
+        }
+        let own_shift: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2::uuid AND status = 'OPEN'",
+        )
+        .bind(branch.as_str())
+        .bind(&teller.user_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        let open_shifts: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM shifts WHERE branch_id = $1 AND status = 'OPEN'",
+        )
+        .bind(branch.as_str())
+        .fetch_one(&mut **tx)
+        .await?;
+        let custody_now = CustodyTime::from_epoch_millis(truncate_millis(now).timestamp_millis());
+        let window = self.ports.service_window(tx, branch, custody_now).await?;
+        if first && own_shift.is_some() && !window.allows_save(custody_now) {
+            return Err(AppError::Domain(CustodyError::SaveClosed.to_string()));
+        }
+        let phase = BranchDay::read_phase(state.phase, usize::try_from(open_shifts).unwrap_or(0));
+        BranchDay::check_save(
+            phase,
+            teller,
+            own_shift.as_deref(),
+            &state.drafts,
+            save,
+            window.needs_draft(custody_now),
+        )
+        .map_err(|e| match e {
+            CustodyError::NoOpenShift => ShiftError::NoOpenShift.into(),
+            e => AppError::Domain(e.to_string()),
+        })
     }
 
     pub async fn complete_draft_in(

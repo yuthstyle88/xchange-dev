@@ -58,6 +58,9 @@ pub struct SaveContext<'a> {
     pub extras: &'a SaveExtras,
     pub booking: Option<&'a BookingClaim>,
     pub actor: &'a SaveActor,
+    /// The Blueprint-session teller saving (CA-7 #623, `SaveTransactionWorkflow::save_as_teller`): the exchange
+    /// posts to their own OPEN shift. `None` for every other save, which keeps v2's path until CA-10 #626.
+    pub teller: Option<&'a xc_auth::domain::access::Actor>,
     /// The time the save was given, cut to milliseconds.
     pub now: DateTime<Utc>,
     /// The exchange already saved under this submission in this branch and
