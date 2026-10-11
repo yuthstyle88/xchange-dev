@@ -2,6 +2,7 @@ import { Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../shared/api/client';
 import { sharedSession } from '../../shared/session/session';
+import { pageBranch } from '../../shared/session/page-branch';
 import { DevicesScreen } from './DevicesScreen';
 
 function downloadFile(name: string, blob: Blob): void {
@@ -17,10 +18,7 @@ function downloadFile(name: string, blob: Blob): void {
 
 const appEl = document.getElementById('app');
 if (appEl) {
-  const params = new URLSearchParams(window.location.search);
-  const queryBranch = params.get('branch');
-  const session = sharedSession();
-  const branch = () => queryBranch || session.me()?.branch;
+  const branch = pageBranch(sharedSession());
   const api = new ApiClient();
 
   render(

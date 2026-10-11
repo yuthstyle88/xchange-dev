@@ -7,6 +7,11 @@
 // `main.tsx`, which is imported into a document with `<div id="app">` and a stubbed `fetch` that
 // answers like the server (`me`, `kiosk_notifications`, `kiosk_queue`). The files are reached
 // through `import.meta.glob`, so a missing file fails an assertion here, not the whole file.
+//
+// Amended for SB-3 (#842) by the test-writer claude/5d45b017, on the FE lane controller
+// claude/5edf7bb5's ruling (#842 issuecomment-6105121433, item 2): the pin "without ?branch= the
+// branch is MAIN, and setQueueBranch(MAIN) wins over me().branch" becomes "without ?branch= the
+// reads name me().branch (B-HOME)". Session branch design §14.4: no page names 'MAIN' itself.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PAGES = import.meta.glob('../../../pages/kiosk-queue.html', {
@@ -237,16 +242,14 @@ describe('the booted page', () => {
     expect(queueBranch()).toBe('B9');
   });
 
-  it("without ?branch= the branch is MAIN, and setQueueBranch(MAIN) wins over me().branch", async () => {
+  it('without ?branch= the reads name me().branch (B-HOME), and queueBranch() is B-HOME', async () => {
     const { app, queueBranch } = await boot('');
-    // the account bar shows me() has loaded, so queueBranch would otherwise be B-HOME
-    expect(text(app)).toContain('B-HOME');
     const reads = queueReads();
     expect(reads.length).toBeGreaterThan(0);
-    for (const u of reads) expect(u.searchParams.get('branch')).toBe('MAIN');
-    expect(queueBranch()).toBe('MAIN');
+    for (const u of reads) expect(u.searchParams.get('branch')).toBe('B-HOME');
+    expect(queueBranch()).toBe('B-HOME');
     const headings = [...app.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => text(h));
-    expect(headings).toContain('MAIN-Q1');
+    expect(headings).toContain('B-HOME-Q1');
   });
 
   it("in en, the page's strings come from its en table and its content has no Thai", async () => {
