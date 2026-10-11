@@ -184,27 +184,29 @@ impl BranchView for AdminReportsBranchView {
 
             let sql_rows: Vec<TxSqlRow> = sqlx::query_as(
                 "SELECT \
-                    document_ref, \
-                    type, \
-                    code::text AS code, \
-                    amount::text AS amount, \
-                    rate::text AS rate, \
-                    reference_rate::text AS reference_rate, \
-                    unit_size::text AS unit_size, \
-                    principal::text AS principal, \
-                    fee::text AS fee, \
-                    bank_fee::text AS bank_fee, \
-                    received::text AS received, \
-                    paid::text AS paid, \
-                    method, \
-                    staff_id, \
-                    value_date::text AS value_date, \
-                    seq \
-                 FROM transactions \
-                 WHERE branch_id = $1 AND mode = 'LIVE' \
-                   AND ($2::date IS NULL OR value_date >= $2::date) \
-                   AND ($3::date IS NULL OR value_date <= $3::date) \
-                 ORDER BY seq ASC",
+                    COALESCE(t.document_ref, '') AS document_ref, \
+                    l.shop_side AS type, \
+                    l.currency::text AS code, \
+                    l.quantity::text AS amount, \
+                    l.rate_snapshot::text AS rate, \
+                    l.reference_rate::text AS reference_rate, \
+                    l.unit_size::text AS unit_size, \
+                    l.thb_amount::text AS principal, \
+                    l.fee_thb::text AS fee, \
+                    p.bank_fee_thb::text AS bank_fee, \
+                    CASE WHEN l.shop_side = 'SELL' THEN l.settle_thb::text ELSE '0.00' END AS received, \
+                    CASE WHEN l.shop_side = 'BUY' THEN l.settle_thb::text ELSE '0.00' END AS paid, \
+                    p.method, \
+                    t.staff_id, \
+                    t.value_date::text AS value_date, \
+                    t.seq \
+                 FROM transactions t \
+                 JOIN transaction_lines l ON l.transaction_id = t.id \
+                 JOIN transaction_payments p ON p.transaction_id = t.id \
+                 WHERE t.branch_id = $1 AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
+                   AND ($2::date IS NULL OR t.value_date >= $2::date) \
+                   AND ($3::date IS NULL OR t.value_date <= $3::date) \
+                 ORDER BY t.seq ASC, l.line_no ASC",
             )
             .bind(&branch_id)
             .bind(from_date)
