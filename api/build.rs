@@ -75,6 +75,9 @@ mod commands_gen;
 #[path = "build_support/outbox_handlers.rs"]
 mod outbox_handlers_gen;
 
+#[path = "build_support/approval_subjects.rs"]
+mod approval_subjects_gen;
+
 use std::path::Path;
 
 fn main() {
@@ -324,4 +327,58 @@ fn main() {
     )
     .expect("write outbox_handlers.rs");
     println!("cargo:rerun-if-changed=src/bootstrap/outbox_handlers");
+
+    // Generate approval subjects table (#1146 ticket B)
+    let subjects_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bootstrap/approval_subjects");
+    let mut subject_files = Vec::new();
+    if subjects_dir.exists() {
+        for entry in std::fs::read_dir(&subjects_dir).expect("read bootstrap/approval_subjects") {
+            let path = entry.expect("approval subject entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                subject_files.push((name, content));
+            }
+        }
+    }
+    let subject_refs: Vec<(&str, &str)> = subject_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let subject_table = approval_subjects_gen::approval_subjects_table(&subject_refs)
+        .expect("approval_subjects_table failed");
+    let mut subjects_code = String::new();
+    for s in &subject_table {
+        let file_path = subjects_dir.join(&s.file);
+        subjects_code.push_str(&format!(
+            "#[path = {:?}]\nmod {};\n",
+            file_path.to_str().unwrap(),
+            s.module
+        ));
+    }
+    subjects_code.push_str("pub const APPROVAL_SUBJECTS: &[RegisterFn] = &[\n");
+    for s in &subject_table {
+        subjects_code.push_str(&format!("    {}::register,\n", s.module));
+    }
+    subjects_code.push_str("];\n");
+    subjects_code.push_str("pub const APPROVAL_SUBJECT_TYPES: &[&str] = &[\n");
+    for s in &subject_table {
+        subjects_code.push_str(&format!("    {}::TYPE,\n", s.module));
+    }
+    subjects_code.push_str("];\n");
+    subjects_code.push_str("pub const APPROVAL_SUBJECT_MODULES: &[&str] = &[\n");
+    for s in &subject_table {
+        subjects_code.push_str(&format!("    {:?},\n", s.module));
+    }
+    subjects_code.push_str("];\n");
+    std::fs::write(
+        Path::new(&out_dir).join("approval_subjects.rs"),
+        subjects_code,
+    )
+    .expect("write approval_subjects.rs");
+    println!("cargo:rerun-if-changed=src/bootstrap/approval_subjects");
+    for (name, _) in &subject_files {
+        println!("cargo:rerun-if-changed=src/bootstrap/approval_subjects/{name}");
+    }
 }
