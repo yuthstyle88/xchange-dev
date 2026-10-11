@@ -32,6 +32,9 @@ use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use crate::application::workflows::save_step::SaveActor;
 use crate::application::workflows::save_transaction::ATTACHMENT_NOT_FOUND;
 use crate::infrastructure::files::file_service::FileService;
+use serde_json::json;
+use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 
 /// The booking number of an exchange that names no booking.
 const WALK_IN: &str = "WALK-IN";
@@ -64,6 +67,7 @@ pub struct CreateTransaction {
     quotes: PgQuoteRepository,
     shifts: ShiftService,
     files: FileService,
+    audit: PgAuditLog,
 }
 
 fn refuse<T>(m: &str) -> AppResult<T> {
@@ -107,8 +111,9 @@ impl CreateTransaction {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
-            shifts: ShiftService::new(Arc::new(PgShiftRepository::new(pool)), branch_tx),
+            shifts: ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx),
             files,
+            audit: PgAuditLog::new(pool),
         }
     }
 
@@ -261,6 +266,24 @@ impl CreateTransaction {
             count_confirmed: req.count_confirmed,
         };
         self.store.insert_draft_in(tx, &t).await?;
+        self.audit
+            .append(
+                tx,
+                &AuditEvent {
+                    actor_id: who.id.clone(),
+                    actor_role: who.role.as_str().to_string(),
+                    scope: "branch".to_string(),
+                    action: "transaction.created".to_string(),
+                    object_ref: id.0.to_string(),
+                    branch_id: Some(t.branch_id.as_str().to_string()),
+                    before: None,
+                    after: Some(json!({
+                        "status": "DRAFT",
+                        "quoteId": q.id.to_string(),
+                    })),
+                },
+            )
+            .await?;
         self.store
             .find_in(tx, id)
             .await?

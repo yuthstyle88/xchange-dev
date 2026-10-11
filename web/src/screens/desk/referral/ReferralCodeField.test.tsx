@@ -22,10 +22,14 @@ function stubStore(outcome: 'idle' | 'saving' | 'saved' | 'refused' | 'unknown',
     backToEdit: vi.fn(),
     startNew: vi.fn(() => true),
     go: vi.fn(),
-    api: undefined as unknown as ApiClient,
+    api: {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
+    } as unknown as ApiClient,
     _setOutcome: setOutcome,
   };
 }
+
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
@@ -45,10 +49,11 @@ afterEach(() => {
 });
 
 describe('ReferralCodeField (#983)', () => {
-  it('shows only when outcome is saved (hidden before save)', () => {
+  it('shows only when outcome is saved (hidden before save)', async () => {
     for (const outcome of ['idle', 'saving', 'refused', 'unknown'] as const) {
       const store = stubStore(outcome);
       dispose = render(() => receiptStep.component({ store: store as any }), host);
+      await flush();
       expect(host.querySelector('.desk-referral-field'), `hidden on outcome=${outcome}`).toBeNull();
       dispose();
       dispose = undefined;
@@ -57,15 +62,18 @@ describe('ReferralCodeField (#983)', () => {
 
     const store = stubStore('saved');
     dispose = render(() => receiptStep.component({ store: store as any }), host);
+    await flush();
     expect(host.querySelector('.desk-referral-field'), 'visible on outcome=saved').not.toBeNull();
   });
 
   it('empty sends nothing', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn(),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const button = host.querySelector<HTMLButtonElement>('.desk-referral-btn')!;
     button.click();
@@ -75,10 +83,12 @@ describe('ReferralCodeField (#983)', () => {
 
   it('ab12cd is sent as typed (the server normalises it)', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockResolvedValue({ captureId: 'cap-1', status: 'ACTIVE' }),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'ab12cd';
@@ -98,10 +108,12 @@ describe('ReferralCodeField (#983)', () => {
 
   it('calls attachReferral with the saved transaction id', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockResolvedValue({ captureId: 'cap-1', status: 'ACTIVE' }),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-saved-abc-123" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'BROKER99';
@@ -124,10 +136,12 @@ describe('ReferralCodeField (#983)', () => {
       resolveCommand = r;
     });
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockReturnValue(commandPromise),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'BROKER123';
@@ -149,10 +163,12 @@ describe('ReferralCodeField (#983)', () => {
 
   it('shows 200 as "บันทึกแล้ว" with the code and locks the field', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockResolvedValue({ captureId: 'cap-1', status: 'ACTIVE' }),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'BROKER77';
@@ -171,6 +187,7 @@ describe('ReferralCodeField (#983)', () => {
 
   it('shows 409 as "รายการนี้มีโค้ดแนะนำแล้ว" and locks the field', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockRejectedValue(
         new ApiError({
           status: 409,
@@ -181,6 +198,7 @@ describe('ReferralCodeField (#983)', () => {
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'BROKER88';
@@ -198,6 +216,7 @@ describe('ReferralCodeField (#983)', () => {
 
   it('shows 400 beside the field and does not lock the field', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockRejectedValue(
         new ApiError({
           status: 400,
@@ -208,6 +227,7 @@ describe('ReferralCodeField (#983)', () => {
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     const input = host.querySelector<HTMLInputElement>('.desk-referral-input')!;
     input.value = 'BAD';
@@ -225,6 +245,7 @@ describe('ReferralCodeField (#983)', () => {
 
   it('New and Print stay enabled whatever the referral field does', async () => {
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockRejectedValue(
         new ApiError({
           status: 400,
@@ -238,6 +259,7 @@ describe('ReferralCodeField (#983)', () => {
     store.api = mockApi;
 
     dispose = render(() => receiptStep.component({ store: store as any }), host);
+    await flush();
 
     const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('button')];
     const newBtn = () => buttons().find((b) => (b.textContent ?? '').includes('ทำรายการใหม่'));
@@ -270,10 +292,12 @@ describe('ReferralCodeField (#983)', () => {
   it('supports English', async () => {
     setLang('en');
     const mockApi = {
+      view: vi.fn(async () => ({ data: { permissions: ['ReferralAttach'] } })),
       command: vi.fn().mockResolvedValue({ captureId: 'cap-1', status: 'ACTIVE' }),
     } as unknown as ApiClient;
 
     dispose = render(() => <ReferralCodeField transactionId="tx-1" api={mockApi} />, host);
+    await flush();
 
     expect(host.textContent).toContain('Referral Code (Optional)');
     expect(host.textContent).toContain('Save referral code');

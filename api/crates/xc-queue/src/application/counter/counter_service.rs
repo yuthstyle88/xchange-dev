@@ -38,52 +38,21 @@ impl CounterService {
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> AppResult<Counter> {
-        Authorizer::check(
-            Some(actor),
-            Permission::QueueOperate,
-            &Target::new(&actor.organization_id, Some(branch.clone()), None),
-            now,
-        )
-        .map_err(|_| AppError::Forbidden)?;
-
-        let status = self.status.clone();
+        let service = self.clone();
         let b = branch.clone();
-        let teller_id = actor.user_id.clone();
+        let act = actor.clone();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    let updated: Option<(String,)> = sqlx::query_as(
-                        "UPDATE queue_counters \
-                         SET status = 'PAUSED' \
-                         WHERE branch_id = $1 AND teller_id = $2::uuid \
-                         RETURNING organization_id::text",
-                    )
-                    .bind(b.as_str())
-                    .bind(&teller_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-
-                    let organization_id = match updated {
-                        Some((org_id,)) => org_id,
-                        None => return Err(AppError::Validation("noOpenShift".to_owned())),
-                    };
-
-                    status.refresh_in(tx, &b, now).await?;
-
-                    Ok(Counter {
-                        organization_id,
-                        branch_id: b,
-                        teller_id,
-                        status: CounterStatus::Paused,
-                    })
-                })
+                Box::pin(async move { service.pause_in(tx, &act, &b, now).await })
             })
             .await
     }
 
-    /// The caller's own counter becomes ACTIVE again; `active_counters` rises by one.
-    pub async fn resume(
+    /// `pause` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn pause_in(
         &self,
+        tx: &mut Transaction<'_, Postgres>,
         actor: &Actor,
         branch: &BranchId,
         now: DateTime<Utc>,
@@ -96,39 +65,90 @@ impl CounterService {
         )
         .map_err(|_| AppError::Forbidden)?;
 
-        let status = self.status.clone();
+        let updated: Option<(String,)> = sqlx::query_as(
+            "UPDATE queue_counters \
+             SET status = 'PAUSED' \
+             WHERE branch_id = $1 AND teller_id = $2::uuid \
+             RETURNING organization_id::text",
+        )
+        .bind(branch.as_str())
+        .bind(&actor.user_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        let organization_id = match updated {
+            Some((org_id,)) => org_id,
+            None => return Err(AppError::Validation("noOpenShift".to_owned())),
+        };
+
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(Counter {
+            organization_id,
+            branch_id: branch.clone(),
+            teller_id: actor.user_id.clone(),
+            status: CounterStatus::Paused,
+        })
+    }
+
+    /// The caller's own counter becomes ACTIVE again; `active_counters` rises by one.
+    pub async fn resume(
+        &self,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<Counter> {
+        let service = self.clone();
         let b = branch.clone();
-        let teller_id = actor.user_id.clone();
+        let act = actor.clone();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    let updated: Option<(String,)> = sqlx::query_as(
-                        "UPDATE queue_counters \
-                         SET status = 'ACTIVE' \
-                         WHERE branch_id = $1 AND teller_id = $2::uuid \
-                         RETURNING organization_id::text",
-                    )
-                    .bind(b.as_str())
-                    .bind(&teller_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-
-                    let organization_id = match updated {
-                        Some((org_id,)) => org_id,
-                        None => return Err(AppError::Validation("noOpenShift".to_owned())),
-                    };
-
-                    status.refresh_in(tx, &b, now).await?;
-
-                    Ok(Counter {
-                        organization_id,
-                        branch_id: b,
-                        teller_id,
-                        status: CounterStatus::Active,
-                    })
-                })
+                Box::pin(async move { service.resume_in(tx, &act, &b, now).await })
             })
             .await
+    }
+
+    /// `resume` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn resume_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<Counter> {
+        Authorizer::check(
+            Some(actor),
+            Permission::QueueOperate,
+            &Target::new(&actor.organization_id, Some(branch.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
+
+        let updated: Option<(String,)> = sqlx::query_as(
+            "UPDATE queue_counters \
+             SET status = 'ACTIVE' \
+             WHERE branch_id = $1 AND teller_id = $2::uuid \
+             RETURNING organization_id::text",
+        )
+        .bind(branch.as_str())
+        .bind(&actor.user_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        let organization_id = match updated {
+            Some((org_id,)) => org_id,
+            None => return Err(AppError::Validation("noOpenShift".to_owned())),
+        };
+
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(Counter {
+            organization_id,
+            branch_id: branch.clone(),
+            teller_id: actor.user_id.clone(),
+            status: CounterStatus::Active,
+        })
     }
 
     /// Called by the shift's open, in its transaction: inserts the teller's ACTIVE counter and

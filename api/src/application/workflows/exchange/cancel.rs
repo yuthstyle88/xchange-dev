@@ -4,7 +4,10 @@
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use serde_json::json;
 use sqlx::PgPool;
+use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{
@@ -18,13 +21,15 @@ use crate::application::workflows::save_step::SaveActor;
 pub struct CancelTransaction {
     store: PgTransactionStore,
     quotes: PgQuoteRepository,
+    audit: PgAuditLog,
 }
 
 impl CancelTransaction {
     pub fn new(pool: PgPool) -> Self {
         Self {
             store: PgTransactionStore::new(pool.clone()),
-            quotes: PgQuoteRepository::new(pool),
+            quotes: PgQuoteRepository::new(pool.clone()),
+            audit: PgAuditLog::new(pool),
         }
     }
 
@@ -33,7 +38,7 @@ impl CancelTransaction {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: TransactionId,
         reason: &str,
-        _who: &SaveActor,
+        who: &SaveActor,
         now: DateTime<Utc>,
     ) -> AppResult<ExchangeTransaction> {
         let reason = reason.trim();
@@ -57,6 +62,7 @@ impl CancelTransaction {
                 t.status.as_str()
             )));
         }
+        let before_status = t.status.as_str();
         self.store
             .set_status_in(
                 tx,
@@ -68,6 +74,24 @@ impl CancelTransaction {
                     approval_request_id: None,
                 },
                 now,
+            )
+            .await?;
+        self.audit
+            .append(
+                tx,
+                &AuditEvent {
+                    actor_id: who.id.clone(),
+                    actor_role: who.role.as_str().to_string(),
+                    scope: "branch".to_string(),
+                    action: "transaction.cancelled".to_string(),
+                    object_ref: id.0.to_string(),
+                    branch_id: Some(t.branch_id.as_str().to_string()),
+                    before: Some(json!({ "status": before_status })),
+                    after: Some(json!({
+                        "status": "CANCELLED",
+                        "reason": reason,
+                    })),
+                },
             )
             .await?;
         if let Some(quote) = t.quote_id {

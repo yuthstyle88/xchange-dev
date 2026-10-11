@@ -122,6 +122,12 @@ impl BranchView for TransactionView {
             let approval = r
                 .get::<Option<Uuid>, _>(7)
                 .map(|a| TxApprovalDto { id: a.to_string(), status: r.get("a_status") });
+            let reversal = crate::presentation::dto::v3::reversal::load_reversal_summary(
+                &pool,
+                crate::presentation::dto::v3::reversal::ReversalBy::Original(id),
+                &branch,
+            )
+            .await?;
             Ok(TransactionViewData {
                 transaction: Some(TransactionDetailDto {
                     id: r.get::<Uuid, _>(0).to_string(),
@@ -138,6 +144,7 @@ impl BranchView for TransactionView {
                     completed_at: ts(r.get(9)),
                     cancelled_at: ts(r.get(10)),
                     cancel_reason: r.get(11),
+                    reversal,
                 }),
             })
         }

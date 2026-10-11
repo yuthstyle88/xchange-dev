@@ -35,6 +35,10 @@ use xc_rate::domain::publication::freshness::Freshness;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
+use xc_kernel::queue_tickets::QueueTickets;
+use xc_queue::application::issue::ticket_issuer::TicketIssuer;
+use xc_queue::infrastructure::repository::PgQueueRepository;
+
 use crate::application::compat::v2_json::V2Json;
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
@@ -460,7 +464,13 @@ async fn handle_kiosk(
         }
         KioskAction::Confirm => {
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
-            match service.confirm(&branch, id, now).await {
+            // §4.5 (QU-7 #1266): the confirm issues the request's walk-in ticket in its own
+            // transaction, through the queue's port.
+            let queue: Arc<dyn QueueTickets> = Arc::new(TicketIssuer::new(
+                BranchTx::new(Transactor::new(pool.clone())),
+                Arc::new(PgQueueRepository::new(pool.clone())),
+            ));
+            match service.confirm_with_queue(&branch, id, now, queue).await {
                 Ok(identity) => json_response(dto_kiosk::identity_json(&identity)),
                 Err(err) => handle_service_error(err),
             }

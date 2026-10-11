@@ -30,16 +30,16 @@ The owner, in session claude/e5ab6c on 2026-10-09: *"พิมพ์ เค้�
 
 | Rule | Blueprint | § | Designed in | Effect here |
 |---|---|---|---|---|
-| Identity documents are stored apart, in a private object store, and opened only through a **short-lived authorized download** | *"เก็บไฟล์แยก private object store; short-lived authorized download; ไม่คืนภาพเต็มใน list/marketing export"* | 16 `VerificationDocument` | #557 | the passport `href` in `DocumentsLink` is the short-lived link #557 defines, not the session-wide `/files/<key>` |
+| Identity documents are stored apart, in a private object store, and opened only through a **short-lived authorized download** | *"เก็บไฟล์แยก private object store; short-lived authorized download; ไม่คืนภาพเต็มใน list/marketing export"* | 16 `VerificationDocument` | #557 | **Revised 2026-10-11 (#1349 issuecomment-6110217957):** #557's own `verification.md` (V15, row `:354`) keeps the exchange's PASSPORT scan in `transaction_files`, read with `FileRead`, until its S-4. VF-5's `DownloadLink` is for verification-case documents and is held. So the passport `href` stays `/files/<key>` (owner) and `/api/staff/file/<key>` (staff), as today |
 | Marketing and Partner never open identity documents | *"ไม่เปิดสิทธิเอกสารยืนยันตัวตน"*; *"Marketing/Partner ดาวน์โหลดเอกสารไม่ได้"* | 02, 18 | #550, #557 | the views' reader set follows #550's roles; no role check is written in the views |
-| A production receipt comes only from a completed Transaction, and is never overwritten (`Receipt.revision`) | *"production receipt ออกจาก completed Transaction เท่านั้น"*; *"ใบเสร็จไม่ overwrite"* | 14, 07 | #551 | the receipt link points at the receipt of the exchange's completed Transaction; **which revision** it shows is #551's design to state (the Blueprint gives `Receipt.revision` and "never overwritten", not the choice) |
+| A production receipt comes only from a completed Transaction, and is never overwritten (`Receipt.revision`) | *"production receipt ออกจาก completed Transaction เท่านั้น"*; *"ใบเสร็จไม่ overwrite"* | 14, 07 | #551 | the receipt link is the exchange's `receipt_key`, the original receipt (revision 1). Reprints and later revisions belong to B04 (TD-2 `receipt_document`, TD-3), not to this page (#1349 ruling, 2026-10-11) |
 | No full PII in any log | 07 | 07 | #549 (PR 570 §5.5) | the views write no audit lines with document contents |
 
 Until #557 and #551 merge, the rows of A.1 describe v3 **as measured** (session file links, v2's labels).
 - The V3-documents ticket is cut against the merged designs of #550, #551 and #557, using their names. Where they say
   otherwise, they win over A.1.
 - The A.1 rows that this changes are marked **[Blueprint]**: steps 3–7, 16–23 and 28–32 (the links), and 22–23 and
-  37–38 (who may read).
+  37–38 (who may read). After the 2026-10-11 revision the links stay as today (row 1 of the table above), so these marks change no expected answer.
 
 ### A.1 What v2 does: the behaviour contract (W9). This is the look; the rules are A.0's
 
@@ -52,17 +52,18 @@ becomes a test (§A.6).
 |---|---|---|---|---|
 | 0, 1 | nobody; a first-password employee | `GET /documents?ref=…` | 303 → `/login` | the same: gate `signed-in` (`screens.rs:130`); a first-password employee has no session |
 | 2, 27 | anyone | `POST /documents`, `POST /staff/documents` | 404 | the same: `ScreenTable` answers a non-GET with `plain_404` (`screens.rs:120`) |
-| 3–7, 16–18, 20–23 **[Blueprint]** | owner (any branch via `?branch=`, empty = `MAIN`); any employee (own branch; `?branch=` ignored), incl. RATES and SYSTEM | `GET /documents?ref=<own>` | 200: heading `เอกสารรายการ`, `<ref> · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน`, one item per file: label — `เปิดดู` (new tab) · `ดาวน์โหลด <ref>_<KIND>.<ext>`, link back `/?branch=<b>#transactions` | the same items, from the view `documents`. The owner names the branch through `?branch=`; an employee always gets their own branch (`Policy::branch`) |
+| 3–7, 16, 17, 20–23 **[Blueprint]** | owner (any branch via `?branch=`, empty = `MAIN`); any employee (own branch, with no `?branch=` or their own), incl. RATES and SYSTEM | `GET /documents?ref=<own>` | 200: heading `เอกสารรายการ`, `<ref> · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน`, one item per file: label — `เปิดดู` (new tab) · `ดาวน์โหลด <ref>_<KIND>.<ext>`, link back `/?branch=<b>#transactions` | the same items, from the view `documents`. The owner names the branch through `?branch=`; an employee always gets their own branch (`Policy::branch`) |
 | 6 | owner | a transfer | three items: passport, payment proof, receipt (in that order) | the same order, which is the order `DocumentsLookup::find` returns |
-| 8, 9, 12–15, 19 | owner or employee | another branch's ref, the wrong branch named, an unknown ref, no ref, empty ref, a demo exchange | 404 `text/plain` `ไม่พบเอกสารรายการ` | the page loads (200), the view answers 404 `documentsNotFound`, field `ref`, sentence `ไม่พบเอกสารรายการ`, and the screen shows that sentence where the list would be. **Known difference** (D-A3) |
+| 8, 9, 12–15 | owner or employee | another branch's ref, the wrong branch named (owner), an unknown ref, no ref, empty ref, a demo exchange | 404 `text/plain` `ไม่พบเอกสารรายการ` | the page loads (200), the view answers 404 `documentsNotFound`, field `ref`, sentence `ไม่พบเอกสารรายการ`, and the screen shows that sentence where the list would be. **Known difference** (D-A3) |
+| 18, 19 **[Blueprint]** | employee | `GET /documents?ref=…&branch=<another branch>` | the name is ignored: 200 with the own branch's exchange (18), or 404 (19) | 403 `outOfScope`, `สาขานี้อยู่นอกขอบเขตของบัญชีนี้`: the core's scope rule (`Policy::authorize`, OR-4 #550) refuses before load, and the screen shows that sentence. Measured by claude/5d45b017 on the #1349 test throwaway. **Known difference**: the Blueprint's branch scope wins over v2 ignoring the name |
 | 10 | owner | `?branch=NOWHERE` | 404 `ไม่พบสาขาที่เลือก กรุณารีเฟรช` | the view core's `require_branch` (`view.rs:357`) answers 400 `noSuchBranch` with the **same sentence**, `ไม่พบสาขาที่เลือก กรุณารีเฟรช`, and the screen shows it. **Known difference** for the status only (D-A3) |
 | 11 | owner | `?branch=MAIN_1` (cannot be a branch id) | 404 `สาขาไม่ถูกต้อง`, before the branch is looked for (#139, `documents_query_test.rs:68`) | the view core refuses before loading, **byte-identical to today**: 400 `invalidRequest`, no field (`view.rs:140-147`). The screen maps that refusal to `สาขาไม่ถูกต้อง`, v2's sentence verbatim (W6, §A.7). **Known difference** for the status only (D-A3) |
 | #139 | owner, employee | `?ref=A&ref=B`, `?branch=X&branch=Y` | the **first** of a repeated name counts (`documents_query_test.rs:100`, `:147`) | the same: the screen reads `URLSearchParams.get`, which returns the first, and passes that one value to the view. The view core also keeps the first one (`view.rs:136-137`) |
 | #139 | — | a file whose bytes are gone; a file an employee stored | the type comes from the record, and both are found (`documents_query_test.rs:169`, `:199`) | the same. `DocumentsLookup` is unchanged. The page assertions of those two tests move to **V** (§A.7). The lookup half of `:199` (`:229-238`, `lookup.find`) stays untouched |
 | 24–26 | nobody; the owner; a first-password employee | `GET /staff/documents?ref=…` | 302 → `/staff` | the page loads, the view `staff_documents` refuses (no staff session), and the screen calls `location.replace('/staff')`. **Known difference** (D-A4) |
 | 28–32 **[Blueprint]** | FRONT, MANAGER, FRONT of BR-2 (owner also signed in: still the employee) | `GET /staff/documents?ref=<own>` | 200: heading = the ref, one `<p><a href="/api/staff/file/<key>">label</a></p>` per file, back link `/staff` | the same links, from the view `staff_documents`: `href` already rewritten to `/api/staff/file/…`. No download name: v2's staff page has none |
-| 33–36 | FRONT | another branch's ref (`?branch=` ignored), an unknown ref, no ref, a demo exchange | 302 → `/staff` | the view answers 404 `documentsNotFound`, and the screen calls `location.replace('/staff')` (D-A4) |
-| 37, 38 **[Blueprint]** | RATES, SYSTEM | `GET /staff/documents?ref=…` | 302 → `/staff` | the view refuses through `Policy::allow(StaffRpc, documents)` (403), and the screen calls `location.replace('/staff')` (D-A4) |
+| 33–36 | FRONT | another branch's ref (the staff screen never sends `branch`, as v2 ignored it, so the view looks in the own branch), an unknown ref, no ref, a demo exchange | 302 → `/staff` | the view answers 404 `documentsNotFound`, and the screen calls `location.replace('/staff')` (D-A4) |
+| 37, 38 **[Blueprint]** | RATES, SYSTEM | `GET /staff/documents?ref=…` | 302 → `/staff` | the view refuses before load with `documentsNotReadable`, status **400**, the status `PolicyError` gives it (measured by claude/5d45b017; the test pins the status `main` answers once OR-7.7 #1030 has merged), and the screen calls `location.replace('/staff')` (D-A4) |
 
 ### A.2 Decisions
 
@@ -204,9 +205,11 @@ answers `AppError::Domain(NO_DOCUMENTS)`. It does **not** answer an empty list t
 (`SHOW_DOWNLOAD`). The owner's file name uses v2's `<ref>_<PASSPORT|PAYMENT|RECEIPT_FULL>.<ext>`
 (`documents.rs:143-147`).
 
+**The view core's refusal hook (revision 2026-10-11, #1349 issuecomment-6110206392).** `handle_branch_view` (`view.rs:495-510` at `20cbacff`) maps every error from `BranchView::load` to `500 serverError`, so a view cannot answer `404 documentsNotFound` from inside `load`. The ticket therefore adds one default method to the shared core: `BranchView::refusal(&self, err: &AppError) -> Option<V3Error>`, which defaults to `None`. `handle_branch_view` consults it before the 500. The two documents views override it and map `NO_DOCUMENTS` to `404 documentsNotFound` (field `ref`); every other view keeps its behaviour. This is the shared-core fix (♻️), not a second handler. `api/src/presentation/http/v3/view.rs` is in the ticket's scope for that hook only, and the ticket starts after OR-7.7 #1030, which also edits `view.rs`.
+
 ### A.4 Who may read it
 
-The two views inherit from `xchange-v3-web.md` §4.4, and the role table is not edited. `UserRoute documents` admits
+The two views inherit from `xchange-v3-web.md` §4.4, and the role table is not edited. They are gated by **permission**, not by role name: `(UserRoute, documents)` needs `DocumentsList` (`policy.rs:616` at `20cbacff`), and `(StaffRpc, documents)` needs `IdentityDocumentRead` (`:582`). Under §3.3's mapping the outcomes are those of v2: `UserRoute documents` admits
 the owner and every signed-in employee (steps 17–23). `StaffRpc documents` admits staff except RATES and SYSTEM
 (steps 37–38), and `authenticate_and_authorize` reads only the staff session for `StaffRpc` (`view.rs:340`). So step
 30, where the owner and FRONT are signed in together, is answered for FRONT.
@@ -216,12 +219,12 @@ the owner and every signed-in employee (steps 17–23). `StaffRpc documents` adm
 One ticket, **V3-documents**. It owns both paths, because the server core, the screen and the retirement are one
 piece of work: splitting it would leave a path served by neither the old page nor the new one.
 
-File scope: every file in the §A.3 table, plus `api/tests/documents_test.rs` and `api/tests/documents_query_test.rs` (only the page tests leave them, per D-A6a and §A.8), `api/tests/v3_documents_screens_test.rs` (new),
+File scope: every file in the §A.3 table, `api/src/presentation/http/v3/view.rs` (the refusal hook only, §A.3 revision), plus `api/tests/documents_test.rs` and `api/tests/documents_query_test.rs` (only the page tests leave them, per D-A6a and §A.8), `api/tests/v3_documents_screens_test.rs` (new),
 `api/tests/v3_documents_views_test.rs` (new), `web/src/screens/documents/DocumentsScreen.test.tsx` (new),
 `web/src/screens/documents/entries.test.tsx` (new), and
 `docs/design/xchange-v3-known-differences.md` (rows only).
 
-**Start dependency (A.0):** the merged designs of #550 (roles), #551 (Receipt) and #557 (VerificationDocument and its short-lived download). The ticket is cut after they merge, not before.
+**Start dependency (A.0):** the merged designs of #550 (roles), #551 (Receipt) and #557 (VerificationDocument and its short-lived download). The ticket is cut after they merge, not before. It is #1349, and it also starts after OR-7.7 #1030, which edits `view.rs`.
 
 Ordering: the ticket merges after #472 (V2-switch), because the owner's back link points at `/#transactions` on the
 v3 admin. It needs nothing #472 delivers to start, so it is **not** `Blocked by`. It shares no file with the desk or

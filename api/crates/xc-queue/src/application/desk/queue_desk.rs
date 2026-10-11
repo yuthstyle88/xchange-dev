@@ -208,54 +208,64 @@ impl QueueDesk {
         let act = actor.clone();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    check_counter_active(tx, &b, &act.user_id).await?;
-                    check_not_serving(tx, &b, &act.user_id).await?;
-
-                    let next = desk.repo.lock_next_waiting_in(tx, &b).await?;
-                    let ticket = match next {
-                        Some(t) => t,
-                        None => return Err(QueueError::NothingWaiting.into()),
-                    };
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'CALLED', counter_teller_id = $2::uuid, called_at = $3 \
-                         WHERE id = $1::uuid AND status = 'WAITING'",
-                    )
-                    .bind(&ticket.id)
-                    .bind(&act.user_id)
-                    .bind(now)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Called,
-                        kind: EventKind::Call,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::Called,
-                        counter_teller_id: Some(act.user_id),
-                        called_at: Some(now),
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.call_next_in(tx, &act, &b, now).await })
             })
             .await
+    }
+
+    /// `call_next` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn call_next_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        check_counter_active(tx, branch, &actor.user_id).await?;
+        check_not_serving(tx, branch, &actor.user_id).await?;
+
+        let next = self.repo.lock_next_waiting_in(tx, branch).await?;
+        let ticket = match next {
+            Some(t) => t,
+            None => return Err(QueueError::NothingWaiting.into()),
+        };
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'CALLED', counter_teller_id = $2::uuid, called_at = $3 \
+             WHERE id = $1::uuid AND status = 'WAITING'",
+        )
+        .bind(&ticket.id)
+        .bind(&actor.user_id)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Called,
+            kind: EventKind::Call,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::Called,
+            counter_teller_id: Some(actor.user_id.clone()),
+            called_at: Some(now),
+            ..ticket
+        })
     }
 
     /// Calls a chosen WAITING ticket. Same refusals as `call_next`, plus `notFound`.
@@ -272,53 +282,64 @@ impl QueueDesk {
         let tid = ticket_id.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    check_counter_active(tx, &b, &act.user_id).await?;
-                    check_not_serving(tx, &b, &act.user_id).await?;
-
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Waiting {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'CALLED', counter_teller_id = $2::uuid, called_at = $3 \
-                         WHERE id = $1::uuid AND status = 'WAITING'",
-                    )
-                    .bind(&ticket.id)
-                    .bind(&act.user_id)
-                    .bind(now)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Called,
-                        kind: EventKind::Call,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::Called,
-                        counter_teller_id: Some(act.user_id),
-                        called_at: Some(now),
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.call_in(tx, &act, &b, &tid, now).await })
             })
             .await
+    }
+
+    /// `call` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn call_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        check_counter_active(tx, branch, &actor.user_id).await?;
+        check_not_serving(tx, branch, &actor.user_id).await?;
+
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Waiting {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'CALLED', counter_teller_id = $2::uuid, called_at = $3 \
+             WHERE id = $1::uuid AND status = 'WAITING'",
+        )
+        .bind(&ticket.id)
+        .bind(&actor.user_id)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Called,
+            kind: EventKind::Call,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::Called,
+            counter_teller_id: Some(actor.user_id.clone()),
+            called_at: Some(now),
+            ..ticket
+        })
     }
 
     /// CALLED → CALLED, an event only.
@@ -335,31 +356,42 @@ impl QueueDesk {
         let tid = ticket_id.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Called {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-                    check_ticket_owner(&act, &ticket)?;
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Called,
-                        kind: EventKind::Recall,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(ticket)
-                })
+                Box::pin(async move { desk.recall_in(tx, &act, &b, &tid, now).await })
             })
             .await
+    }
+
+    /// `recall` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn recall_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Called {
+            return Err(QueueError::StaleVersion.into());
+        }
+        check_ticket_owner(actor, &ticket)?;
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Called,
+            kind: EventKind::Recall,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(ticket)
     }
 
     /// CALLED → NO_SHOW, final (owner Q-A3).
@@ -376,47 +408,58 @@ impl QueueDesk {
         let tid = ticket_id.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Called {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-                    check_ticket_owner(&act, &ticket)?;
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'NO_SHOW' \
-                         WHERE id = $1::uuid AND status = 'CALLED'",
-                    )
-                    .bind(&ticket.id)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::NoShow,
-                        kind: EventKind::Skip,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::NoShow,
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.skip_in(tx, &act, &b, &tid, now).await })
             })
             .await
+    }
+
+    /// `skip` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn skip_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Called {
+            return Err(QueueError::StaleVersion.into());
+        }
+        check_ticket_owner(actor, &ticket)?;
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'NO_SHOW' \
+             WHERE id = $1::uuid AND status = 'CALLED'",
+        )
+        .bind(&ticket.id)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::NoShow,
+            kind: EventKind::Skip,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::NoShow,
+            ..ticket
+        })
     }
 
     /// CALLED → SERVING.
@@ -433,49 +476,60 @@ impl QueueDesk {
         let tid = ticket_id.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Called {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-                    check_ticket_owner(&act, &ticket)?;
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'SERVING', served_at = $2 \
-                         WHERE id = $1::uuid AND status = 'CALLED'",
-                    )
-                    .bind(&ticket.id)
-                    .bind(now)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Serving,
-                        kind: EventKind::Start,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::Serving,
-                        served_at: Some(now),
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.start_in(tx, &act, &b, &tid, now).await })
             })
             .await
+    }
+
+    /// `start` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn start_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Called {
+            return Err(QueueError::StaleVersion.into());
+        }
+        check_ticket_owner(actor, &ticket)?;
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'SERVING', served_at = $2 \
+             WHERE id = $1::uuid AND status = 'CALLED'",
+        )
+        .bind(&ticket.id)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Serving,
+            kind: EventKind::Start,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::Serving,
+            served_at: Some(now),
+            ..ticket
+        })
     }
 
     /// SERVING → COMPLETED.
@@ -492,49 +546,60 @@ impl QueueDesk {
         let tid = ticket_id.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Serving {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-                    check_ticket_owner(&act, &ticket)?;
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'COMPLETED', completed_at = $2 \
-                         WHERE id = $1::uuid AND status = 'SERVING'",
-                    )
-                    .bind(&ticket.id)
-                    .bind(now)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Completed,
-                        kind: EventKind::Finish,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: None,
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::Completed,
-                        completed_at: Some(now),
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.finish_in(tx, &act, &b, &tid, now).await })
             })
             .await
+    }
+
+    /// `finish` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn finish_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Serving {
+            return Err(QueueError::StaleVersion.into());
+        }
+        check_ticket_owner(actor, &ticket)?;
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'COMPLETED', completed_at = $2 \
+             WHERE id = $1::uuid AND status = 'SERVING'",
+        )
+        .bind(&ticket.id)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Completed,
+            kind: EventKind::Finish,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: None,
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::Completed,
+            completed_at: Some(now),
+            ..ticket
+        })
     }
 
     /// WAITING | CALLED → CANCELLED with `reason`.
@@ -553,49 +618,59 @@ impl QueueDesk {
         let r = reason.to_owned();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    desk.authorize_in(tx, &act, &b, now).await?;
-                    let ticket = fetch_ticket_for_update(tx, &b, &tid).await?;
-                    if ticket.status != TicketStatus::Waiting
-                        && ticket.status != TicketStatus::Called
-                    {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let rows = sqlx::query(
-                        "UPDATE queue_tickets \
-                         SET status = 'CANCELLED', ended_reason = $2 \
-                         WHERE id = $1::uuid AND status IN ('WAITING', 'CALLED')",
-                    )
-                    .bind(&ticket.id)
-                    .bind(&r)
-                    .execute(&mut **tx)
-                    .await?;
-
-                    if rows.rows_affected() == 0 {
-                        return Err(QueueError::StaleVersion.into());
-                    }
-
-                    let event = QueueEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        organization_id: ticket.organization_id.clone(),
-                        ticket_id: ticket.id.clone(),
-                        status: TicketStatus::Cancelled,
-                        kind: EventKind::Cancel,
-                        actor_id: Some(act.user_id.clone()),
-                        at: now,
-                        reason: Some(r.clone()),
-                    };
-                    desk.repo.insert_event_in(tx, &event).await?;
-                    desk.status.refresh_in(tx, &b, now).await?;
-
-                    Ok(QueueTicket {
-                        status: TicketStatus::Cancelled,
-                        ended_reason: Some(r),
-                        ..ticket
-                    })
-                })
+                Box::pin(async move { desk.cancel_in(tx, &act, &b, &tid, &r, now).await })
             })
             .await
+    }
+
+    /// `cancel` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn cancel_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Waiting && ticket.status != TicketStatus::Called {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'CANCELLED', ended_reason = $2 \
+             WHERE id = $1::uuid AND status IN ('WAITING', 'CALLED')",
+        )
+        .bind(&ticket.id)
+        .bind(reason)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Cancelled,
+            kind: EventKind::Cancel,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: Some(reason.to_owned()),
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(QueueTicket {
+            status: TicketStatus::Cancelled,
+            ended_reason: Some(reason.to_owned()),
+            ..ticket
+        })
     }
 }

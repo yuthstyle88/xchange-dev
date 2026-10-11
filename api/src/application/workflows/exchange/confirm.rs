@@ -10,7 +10,9 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
+use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::RequestId;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -43,6 +45,7 @@ pub struct ConfirmTransaction {
     settings: PgSettingsRepository,
     approvals: Arc<ApprovalService>,
     steps: Vec<Arc<dyn SaveStep>>,
+    audit: PgAuditLog,
 }
 
 /// G3: the requester AP-1 is told about: the saver at the **transaction's** branch (the owner has
@@ -78,9 +81,10 @@ impl ConfirmTransaction {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
-            settings: PgSettingsRepository::new(pool),
+            settings: PgSettingsRepository::new(pool.clone()),
             approvals,
             steps,
+            audit: PgAuditLog::new(pool),
         }
     }
 
@@ -185,6 +189,25 @@ impl ConfirmTransaction {
                     now,
                 )
                 .await?;
+            self.audit
+                .append(
+                    tx,
+                    &AuditEvent {
+                        actor_id: who.id.clone(),
+                        actor_role: who.role.as_str().to_string(),
+                        scope: "branch".to_string(),
+                        action: "transaction.pendingApproval".to_string(),
+                        object_ref: id.0.to_string(),
+                        branch_id: Some(t.branch_id.as_str().to_string()),
+                        before: Some(json!({ "status": "DRAFT" })),
+                        after: Some(json!({
+                            "status": "PENDING_APPROVAL",
+                            "quoteId": quote_id.to_string(),
+                            "approvalRequestId": request.id.as_str(),
+                        })),
+                    },
+                )
+                .await?;
             return Ok(ConfirmOutcome::PendingApproval(request.id));
         }
         self.store
@@ -198,6 +221,24 @@ impl ConfirmTransaction {
                     approval_request_id: None,
                 },
                 now,
+            )
+            .await?;
+        self.audit
+            .append(
+                tx,
+                &AuditEvent {
+                    actor_id: who.id.clone(),
+                    actor_role: who.role.as_str().to_string(),
+                    scope: "branch".to_string(),
+                    action: "transaction.confirmed".to_string(),
+                    object_ref: id.0.to_string(),
+                    branch_id: Some(t.branch_id.as_str().to_string()),
+                    before: Some(json!({ "status": "DRAFT" })),
+                    after: Some(json!({
+                        "status": "CONFIRMED",
+                        "quoteId": quote_id.to_string(),
+                    })),
+                },
             )
             .await?;
         Ok(ConfirmOutcome::Confirmed)

@@ -87,6 +87,7 @@ pub struct TransactionDetailDto {
     pub completed_at: Option<String>,
     pub cancelled_at: Option<String>,
     pub cancel_reason: Option<String>,
+    pub reversal: Option<crate::presentation::dto::v3::reversal::ReversalSummaryDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -105,7 +106,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     TxPaymentDto::export_all(&cfg)?;
     TxReceiptDto::export_all(&cfg)?;
     TxApprovalDto::export_all(&cfg)?;
-    TransactionDetailDto::export_all(&cfg)?;
-    TransactionViewData::export_all(&cfg)?;
+    TransactionDetailDto::export(&cfg)?;
+    TransactionViewData::export(&cfg)?;
     Ok(())
 }
