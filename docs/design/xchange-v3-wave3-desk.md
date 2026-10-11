@@ -462,7 +462,7 @@ therefore shows an `APPROVED` reversal with the line *บันทึกคื�
 other half: where on the desk the post happens, and the one read it needs. Measured at `main` `647860f8`.
 
 Everything the step does traces to one of: the owner quote above, Blueprint B03 / B04 / §06 / §09 / §10, or
-`docs/design/blueprint/reversal.md` (merged). What does not trace is in §12.1 (Must ask), not decided here.
+`docs/design/blueprint/reversal.md` (merged). What did not trace was asked of the owner and is answered in §12.1.
 
 #### 5.5.1 What it stands on (measured)
 
@@ -740,7 +740,7 @@ that ticket also:
 | **DK-F+J** (#542) OCR screen, then the switch — **held for Recognize-Platform#150 and #557**; #546 (DK-J) was folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/ocr/**`, then DK-J's files: `web/pages/desk.html`, `web/pages/staff-desk.html`, the page tests of §7, `docs/design/xchange-v3-known-differences.md` (the KD rows) | the OCR part: the Recognize service is deployed (Recognize-Platform#150's code tickets) and the v3 endpoint of #557 (R-2) is merged; the switch part: #539 and #543 | last (the switch ships with the OCR screen, behind the same hold) |
 | **DK-G+H+I** (#543) steps 2–4 (booking, payment, receipt) and the `?booking=`/`?kiosk=` entries; #544 and #545 were folded into it and closed `not planned` on 2026-10-09 | `web/src/screens/desk/steps/booking/**`, `steps/payment/**`, `steps/receipt/**`, `web/src/screens/desk/entries/**` | DK-C+D+E | — |
 | **DK-R** (#983) the broker referral-code field on the saved exchange (step 4) | `web/src/screens/desk/referral/**` (new), plus **the one receipt-step file it embeds into, named by its concrete path** once #543 has merged (it is #543's until then, so #983 starts after #543 and reserves that file; an unreserved edit is not allowed) | #543 and RA-3 #981 (`attachReferral`) | after #543 |
-| **DK-K** (to be cut) the `desk_refunds` view (§5.5.2) — backend, `class:logic` | `api/src/presentation/http/v3/views/desk_refunds.rs`, `api/src/presentation/dto/v3/desk_refunds.rs`, `web/src/shared/api/generated/desk_refunds.ts`, `api/tests/v3_desk_refunds_view_test.rs` (all new; one-line `mod.rs` registrations are not reserved, #564 lane rule) | RV-1+RV-2 #682 (`reversals`, `ReversalWindow`), RV-4 #685 (`ReversalSummaryDto` and its mapping, §12 O-7) | after #685 |
+| **DK-K** (#1265) the `desk_refunds` view (§5.5.2) — backend, `class:logic` | `api/src/presentation/http/v3/views/desk_refunds.rs`, `api/src/presentation/dto/v3/desk_refunds.rs`, `web/src/shared/api/generated/desk_refunds.ts`, `api/tests/v3_desk_refunds_view_test.rs` (all new; one-line `mod.rs` registrations are not reserved, #564 lane rule) | RV-1+RV-2 #682 (`reversals`, `ReversalWindow`), RV-4 #685 (`ReversalSummaryDto` and its mapping, §12 O-7) | after #685 |
 | **DK-L** (to be cut) the pending-refunds step (§5.5.3) — web, `class:logic` | `web/src/screens/desk/steps/refunds/` (new folder, reserves its subtree on purpose), plus **one** registration file by concrete path per M-R1: `web/src/screens/desk/DeskPage.tsx` (owner M-R1 A) — #539's until it merges, so DK-L starts after #539 and reserves that file; no unreserved edit | #539; DK-K #1265; RV-3 #684 (the post command); S-3 #575 (`can`, `command.ts`, `ConfirmDialog`); TD-2 and TD-3 of `blueprint/desk-transaction-detail.md` (`receipt_document`, `ReceiptFrame`; owner M-R3 A) | after #539, DK-K #1265, TD-2 and TD-3 |
 
 **Held (2026-10-09, lane controller):** a ticket that touches rates waits for this revision **and** for the Blueprint rate
@@ -778,7 +778,7 @@ The ticket author writes them on each ticket's branch (`feat/v3-desk-<part>-<n>`
   non-FRONT session to `/staff`.
 - **DK-K**: rows RF-1 … RF-8 of §5.5.4, against a seeded branch with one reversal in each state, one past its window and one of
   another branch (the window across the branch timezone's midnight, as RV-1's test).
-- **DK-L**: rows RF-9 … RF-17 of §5.5.4, vitest against a fake `ApiClient` and a fake `staff_me`, on both `OWNER_DESK` and
+- **DK-L**: rows RF-9 … RF-19 of §5.5.4, vitest against a fake `ApiClient` and a fake `staff_me`, on both `OWNER_DESK` and
   `STAFF_DESK`. RF-17 … RF-19 pin the owner's M-R1, M-R2 and M-R3 answers.
 
 ## 11. Data migration
@@ -806,6 +806,8 @@ backfill, any deploy order (an older binary has no `desk_refunds` route and the 
 | O-6 | #551 designs the Blueprint quote and exchange (§07 Quote/QuoteLine/TransactionLine, §06 states, §10 routes). The desk is its client (§4.2). Until it merges: DK-B (#538) is superseded and can be closed `not planned` with a link to #551's code tickets; DK-C (#539) waits for it. #555 (booking), #554 (customer) and #557 (identity) reach `entries/booking`, `steps/customer` and `steps/receipt` in the same way | lane controller | DK-B, DK-C; noted on DK-E, DK-H, DK-I |
 | O-7 | DK-K reuses RV-4's `reversals` row → `ReversalSummaryDto` mapping (♻️). #685's scope already holds `dto/v3/reversal.rs`; the lane controller adds to #685 that the mapping is a `pub(crate)` function there (e.g. `ReversalSummaryDto::from_row`), so DK-K imports it and writes no second copy | lane controller | DK-K |
 | O-8 | `/staff/desk` and refunds: `reversalRequest` exists only on `EntryPath::Rpc` (`policy.rs:94-96`, `:570`) and RV-3's command is on `Rpc`, so a FRONT staff session on `/staff/desk` reaches neither. The same question §4.2 leaves to #550/#551 for the quote routes. Until it is answered the step is hidden on `STAFF_DESK` and no `staff_desk_refunds` file is cut | lane controller with #550/#874 | DK-L's `STAFF_DESK` half only |
+| O-9 | B2's *"while loading or on error, all of `#panel` is disabled"* (§3.6) has no home in the merged shell. The rest of B2 shipped with DK-G+H+I (#543). `DeskEntryState` has no loading or error field (`web/src/screens/desk/desk-store.ts:33` at `767ceed9`), and `openEntry` sets the entry only after `load()` resolves (`entries.ts:48`, `store.setEntry(await e.load(…))`). The panel belongs to `DeskPage.tsx`, which the frame test (#613) S2 limits to reading `store.step` and `store.go` (`desk-frame.test.tsx:406`). Any fix therefore has to either widen S2 by one frame-neutral member, or have the entry render its own blocking layer. Ruled out of #543 on 2026-10-11 (#543 issuecomment-6106793344) | lane controller (design) | nothing merged; B2's panel lock only |
+| O-10 | DK-R's referral field (#983, PR 1308) is shown on the saved receipt to every desk session, but `attachReferral` needs `ReferralAttach` (EXECUTIVE and TELLER only, `api/crates/xc-auth/src/domain/access/role_permissions.rs:31`, `:98`), so a session without it gets a 403 in the form. The pattern to reuse already exists here: DK-L's RF-9 hides its step unless `can(me, 'ReversalRequest')` from one `staff_me` read. DK-R's field takes the same gate with `ReferralAttach`. No new mechanism. Recorded on #983 (issuecomment-6107285027). The fix is cut as a DK-R follow-up when the owner lifts the 2026-10-11 hold on new tickets | lane controller | nothing merged; the 403 is shown, not silent |
 
 ### 12.1 Owner answers (§5.5, 2026-10-11, asked by claude/5edf7bb5)
 
