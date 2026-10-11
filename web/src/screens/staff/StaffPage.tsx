@@ -6,6 +6,7 @@ import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
 import type { StaffCard, StaffCtx } from './cards';
 import { can } from './parts/can';
 import { th, en } from './i18n';
+import { AppShell } from '../../shared/ui/AppShell';
 import './staff.css';
 
 export interface StaffPageProps {
@@ -78,20 +79,19 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
     [...props.cards].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
   return (
-    <main class="xc-staff-page">
-      <Show when={me()}>
-        {(currentMe) => {
-          const ctx = (): StaffCtx => ({
-            me: currentMe(),
-            floor: floor(),
-            refresh,
-          });
+    <Show when={me()}>
+      {(currentMe) => {
+        const ctx = (): StaffCtx => ({
+          me: currentMe(),
+          floor: floor(),
+          refresh,
+        });
 
-          return (
+        return (
+          <AppShell title={t('title')}>
             <div class="xc-staff-container">
               <header class="xc-staff-header">
                 <div class="xc-staff-header-info">
-                  <h1 class="xc-staff-title">{t('title')}</h1>
                   <p data-testid="staff-hours" class="xc-staff-hours">
                     {hoursText()}
                   </p>
@@ -130,9 +130,9 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
                 </For>
               </section>
             </div>
-          );
-        }}
-      </Show>
-    </main>
+          </AppShell>
+        );
+      }}
+    </Show>
   );
 }
