@@ -21,6 +21,7 @@ xc-referral = { path = "crates/xc-referral" }
 xc-outbox = { path = "crates/xc-outbox" }
 xc-notify = { path = "crates/xc-notify" }
 xc-cash = { path = "crates/xc-cash" }
+xc-queue = { path = "crates/xc-queue" }
 
 [package]
 name = "xchange"
@@ -48,6 +49,7 @@ xc-referral = { workspace = true }
 xc-outbox = { workspace = true }
 xc-notify = { workspace = true }
 xc-cash = { workspace = true }
+xc-queue = { workspace = true }
 subtle = "2"
 xc-app = { path = "crates/xc-app" }
 rust_decimal = { workspace = true }

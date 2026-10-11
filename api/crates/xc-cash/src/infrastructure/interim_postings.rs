@@ -3,13 +3,17 @@
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 use xc_kernel::money::{CurrencyCode, Money};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
-use crate::domain::posting::{CashPlace, CashPostings, PostingRequest};
+use crate::domain::ledger::posting::PostingId;
+use crate::domain::posting::{
+    ApprovalRequestId, CashPlace, CashPostings, PostingRequest, PostingResult,
+};
 
 #[derive(Clone, Default)]
 pub struct InterimCashPostings;
@@ -25,9 +29,11 @@ impl CashPostings for InterimCashPostings {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         req: &'a [PostingRequest],
-    ) -> BoxFuture<'a, AppResult<()>> {
+        _allow_negative: Option<ApprovalRequestId>,
+    ) -> BoxFuture<'a, AppResult<PostingResult>> {
         Box::pin(async move {
             for r in req {
+                let amount_minor = interim_minor(r);
                 // Source: where money leaves
                 match &r.from {
                     CashPlace::Safe(branch_id) => {
@@ -45,7 +51,7 @@ impl CashPostings for InterimCashPostings {
 
                         let cur_key = r.currency.as_str();
                         let current_minor = map.get(cur_key).and_then(|v| v.as_i64()).unwrap_or(0);
-                        let new_minor = current_minor - r.amount.minor();
+                        let new_minor = current_minor - amount_minor;
                         map.insert(cur_key.to_string(), Value::Number(new_minor.into()));
 
                         sqlx::query("UPDATE ops_state SET safe = $1 WHERE branch_id = $2")
@@ -55,7 +61,7 @@ impl CashPostings for InterimCashPostings {
                             .await?;
                     }
                     CashPlace::Drawer(shift_id) => {
-                        let amount_dec = Decimal::new(r.amount.minor(), 2);
+                        let amount_dec = Decimal::new(amount_minor, 2);
                         sqlx::query(
                             "UPDATE shift_balances SET expected = expected - $1 WHERE shift_id = $2 AND code = $3",
                         )
@@ -81,11 +87,11 @@ impl CashPostings for InterimCashPostings {
                         .bind(shift_id)
                         .bind(r.currency.as_str())
                         .bind(amount_dec)
-                        .bind(&r.source)
+                        .bind(&r.source.source_id)
                         .execute(&mut **tx)
                         .await?;
                     }
-                    CashPlace::InTransit(_) | CashPlace::Outside => {}
+                    CashPlace::InTransit(_) | CashPlace::Customer | CashPlace::Bank => {}
                 }
 
                 // Destination: where money enters
@@ -105,7 +111,7 @@ impl CashPostings for InterimCashPostings {
 
                         let cur_key = r.currency.as_str();
                         let current_minor = map.get(cur_key).and_then(|v| v.as_i64()).unwrap_or(0);
-                        let new_minor = current_minor + r.amount.minor();
+                        let new_minor = current_minor + amount_minor;
                         map.insert(cur_key.to_string(), Value::Number(new_minor.into()));
 
                         sqlx::query("UPDATE ops_state SET safe = $1 WHERE branch_id = $2")
@@ -115,7 +121,7 @@ impl CashPostings for InterimCashPostings {
                             .await?;
                     }
                     CashPlace::Drawer(shift_id) => {
-                        let amount_dec = Decimal::new(r.amount.minor(), 2);
+                        let amount_dec = Decimal::new(amount_minor, 2);
                         sqlx::query(
                             "INSERT INTO shift_balances (shift_id, code, opening, expected) \
                              VALUES ($1, $2, 0, $3) \
@@ -143,14 +149,18 @@ impl CashPostings for InterimCashPostings {
                         .bind(shift_id)
                         .bind(r.currency.as_str())
                         .bind(amount_dec)
-                        .bind(&r.source)
+                        .bind(&r.source.source_id)
                         .execute(&mut **tx)
                         .await?;
                     }
-                    CashPlace::InTransit(_) | CashPlace::Outside => {}
+                    CashPlace::InTransit(_) | CashPlace::Customer | CashPlace::Bank => {}
                 }
             }
-            Ok(())
+            Ok(PostingResult {
+                posting_id: PostingId(Uuid::new_v4()),
+                costs: Vec::new(),
+                reversed: Vec::new(),
+            })
         })
     }
 
@@ -208,4 +218,13 @@ impl CashPostings for InterimCashPostings {
             }
         })
     }
+}
+
+/// The interim tables hold hundredths: the request's quantity in hundredths, rounded half away from
+/// zero, as the old `Money` amount was.
+fn interim_minor(r: &PostingRequest) -> i64 {
+    (r.quantity.value() * Decimal::from(100))
+        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+        .to_i64()
+        .unwrap_or(i64::MAX)
 }

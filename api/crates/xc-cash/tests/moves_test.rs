@@ -311,7 +311,7 @@ fn flat(reqs: &[PostingRequest]) -> HashSet<(String, String, String, String)> {
                 format!("{:?}", r.from),
                 format!("{:?}", r.to),
                 r.currency.as_str().to_owned(),
-                r.amount.to_string(),
+                format!("{:.2}", r.quantity.value()),
             )
         })
         .collect()
@@ -374,7 +374,7 @@ fn each_moves_postings_follow_the_table() {
             TransferKind::ExternalIn,
             None,
             None,
-            CashPlace::Outside,
+            CashPlace::Bank,
             transit(),
             transit(),
             safe(),
@@ -386,7 +386,7 @@ fn each_moves_postings_follow_the_table() {
             safe(),
             transit(),
             transit(),
-            CashPlace::Outside,
+            CashPlace::Bank,
         ),
     ];
     for (kind, from_shift, to_shift, d_from, d_to, r_from, r_to) in cases {

@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod payment;
 pub mod pii;
 pub mod queue_tickets;
+pub mod shift_hook;
 pub mod time;
 
 pub use mode::Mode;

@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, plain_decimal};
+use xc_kernel::shift_hook::{NoShiftLifecycleHook, ShiftLifecycleHook};
 
 use crate::domain::shift::commands::close_shift::CloseShift;
 use crate::domain::shift::commands::move_stock::MoveStock;
@@ -85,9 +86,25 @@ fn verify_claimed_expected(
 
 use crate::infrastructure::shift::shift_repository::PgShiftRepository;
 
+/// The `users.id` of the shift's own teller (`shifts.teller_id`, queue-tickets.md Q7), read in `tx`
+/// after the shift row is written: the counter is the teller's, whoever acted.
+async fn shift_teller_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    shift_id: &str,
+) -> AppResult<String> {
+    let teller: String = sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
+        .bind(shift_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(teller)
+}
+
 pub struct ShiftService<R: ShiftRepository = PgShiftRepository> {
     repo: Arc<R>,
     branch_tx: BranchTx,
+    /// What else happens when a teller's shift opens or closes (#1128): `open_in_as` /
+    /// `close_in_as` tell it, in the shift's transaction.
+    lifecycle: Arc<dyn ShiftLifecycleHook>,
 }
 
 impl<R: ShiftRepository> Clone for ShiftService<R> {
@@ -95,13 +112,26 @@ impl<R: ShiftRepository> Clone for ShiftService<R> {
         Self {
             repo: Arc::clone(&self.repo),
             branch_tx: self.branch_tx.clone(),
+            lifecycle: Arc::clone(&self.lifecycle),
         }
     }
 }
 
 impl<R: ShiftRepository> ShiftService<R> {
     pub fn new(repo: Arc<R>, branch_tx: BranchTx) -> Self {
-        Self { repo, branch_tx }
+        Self {
+            repo,
+            branch_tx,
+            lifecycle: Arc::new(NoShiftLifecycleHook),
+        }
+    }
+
+    /// The same service, telling `hook` when a teller's shift opens or closes (#1128).
+    pub fn with_lifecycle_hook(self, hook: Arc<dyn ShiftLifecycleHook>) -> Self {
+        Self {
+            lifecycle: hook,
+            ..self
+        }
     }
 
     pub fn repo(&self) -> &Arc<R> {
@@ -228,6 +258,27 @@ impl<R: ShiftRepository> ShiftService<R> {
         };
 
         self.repo.insert_shift(tx, &shift).await?;
+        Ok(shift)
+    }
+
+    /// `open_in` for a caller signed in with a Blueprint session (#1128): `session_user` is the
+    /// caller's `users.id`. With `Some`, the lifecycle hook is told, in `tx`, the `users.id` of the
+    /// shift's own teller (`shifts.teller_id`, queue-tickets.md Q7), which can differ from the
+    /// caller. `None` (a legacy caller with no session user) skips the hook.
+    pub async fn open_in_as(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: OpenShift,
+        actor: &str,
+        session_user: Option<uuid::Uuid>,
+        now: DateTime<Utc>,
+    ) -> AppResult<Shift> {
+        let shift = self.open_in(tx, branch, cmd, actor, now).await?;
+        if session_user.is_some() {
+            let teller = shift_teller_in(tx, &shift.id).await?;
+            self.lifecycle.on_opened(tx, branch, &teller, now).await?;
+        }
         Ok(shift)
     }
 
@@ -380,6 +431,27 @@ impl<R: ShiftRepository> ShiftService<R> {
         closed_shift.close_request_id = Some(cmd.request_id);
 
         Ok(closed_shift)
+    }
+
+    /// `close_in` for a caller signed in with a Blueprint session (#1128): with `Some`, the
+    /// lifecycle hook is told, in `tx`, the `users.id` of the closed shift's own teller
+    /// (`shifts.teller_id`), not the caller's, so an admin closing a teller's shift releases the
+    /// teller's counter. `None` skips the hook.
+    pub async fn close_in_as(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: CloseShift,
+        actor: &str,
+        session_user: Option<uuid::Uuid>,
+        now: DateTime<Utc>,
+    ) -> AppResult<Shift> {
+        let shift = self.close_in(tx, branch, cmd, actor, now).await?;
+        if session_user.is_some() {
+            let teller = shift_teller_in(tx, &shift.id).await?;
+            self.lifecycle.on_closed(tx, branch, &teller, now).await?;
+        }
+        Ok(shift)
     }
 
     pub async fn apply_delta_in(

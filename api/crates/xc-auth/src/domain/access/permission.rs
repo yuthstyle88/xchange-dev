@@ -60,4 +60,6 @@ pub enum Permission {
     ReportsExport,
     /// EX-1 (#1070, §7.1, owner decision E-6): edit the alert thresholds. EXECUTIVE and ADMIN.
     AlertSettingsSave,
+    /// CA-0p (#1272, cash-shift-transfer blueprint §3.1, §9): set cash-transfer limit policy. EXECUTIVE only.
+    CashTransferPolicySet,
 }
