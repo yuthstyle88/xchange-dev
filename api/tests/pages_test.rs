@@ -251,7 +251,7 @@ const PAGES: [(&str, bool); 13] = [
     ("/", true),
     ("/desk", true),
     ("/receipt-sample", true),
-    ("/staff", false),
+    ("/staff", true),
     ("/staff/report", false),
     ("/staff/desk", false),
     ("/devices", true),
@@ -329,6 +329,9 @@ fn compiled_script_tag_ending_at(body: &str, end: usize) -> Option<usize> {
 
 #[actix_web::test]
 async fn every_page_answers_as_v2_does() {
+    // S-3 (docs/design/xchange-v3-wave3-staff.md §8.1 row S-3: the staff page is signed-in).
+    const V3_DIFFERS_FROM_V2: [(&str, &str, &str); 1] = [("web", "/staff", "none")];
+
     let cases = cases();
     let pages = cases["pages"].as_array().expect("pages");
     // the recording is whole: 94 answers from `web`, 3 from `web-bare`
@@ -351,6 +354,16 @@ async fn every_page_answers_as_v2_does() {
                 case["label"].as_str().unwrap()
             );
             let answer = ask(&app, get(&uri, who).to_request()).await;
+            if V3_DIFFERS_FROM_V2.contains(&(dir, path, who)) {
+                assert_eq!(answer.status.as_u16(), 303, "{what}: status");
+                assert_eq!(
+                    answer.header("location"),
+                    Some(format!("http://{HOST}/login").as_str()),
+                    "{what}: Location"
+                );
+                seen[2] += 1;
+                continue;
+            }
             let status = case["status"].as_u64().unwrap() as u16;
             assert_eq!(answer.status.as_u16(), status, "{what}: status");
             match status {
@@ -424,7 +437,8 @@ async fn every_page_answers_as_v2_does() {
             }
         }
     }
-    assert_eq!(seen, [64, 15, 11, 7], "200 / 400 / 303 / 302");
+    // one /staff case moved 200 → 303 by S-3
+    assert_eq!(seen, [63, 15, 12, 7], "200 / 400 / 303 / 302");
 }
 
 /// (X-Forwarded-Proto, Host, further headers, the origin a redirect must name)

@@ -1,0 +1,138 @@
+import { batch, createSignal, For, onMount, Show, type JSX } from 'solid-js';
+import { screenT } from '../../shared/i18n';
+import { ApiClient, ApiError } from '../../shared/api/client';
+import type { StaffMeView } from '../../shared/api/generated/staff_me';
+import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
+import type { StaffCard, StaffCtx } from './cards';
+import { can } from './parts/can';
+import { th, en } from './i18n';
+import './staff.css';
+
+export interface StaffPageProps {
+  api: ApiClient;
+  cards: readonly StaffCard[];
+  navigate: (url: string) => void;
+}
+
+function formatBangkokTime(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Bangkok',
+  }).format(d);
+}
+
+export function StaffPage(props: StaffPageProps): JSX.Element {
+  const t = screenT('staff', { th, en });
+  const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
+  const [floor, setFloor] = createSignal<StaffFloorView | undefined>(undefined);
+
+  const refresh = async (): Promise<void> => {
+    let meData: StaffMeView | undefined;
+    try {
+      const meRes = await props.api.view<StaffMeView>('staff_me');
+      meData = meRes.data;
+    } catch (err: unknown) {
+      if (
+        (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 401) ||
+        (err instanceof ApiError && err.status === 401)
+      ) {
+        props.navigate('/login?next=%2Fstaff');
+        return;
+      }
+    }
+
+    let floorData: StaffFloorView | undefined;
+    try {
+      const floorRes = await props.api.view<StaffFloorView>('staff_floor');
+      floorData = floorRes.data;
+    } catch {
+      // floor view might fail or not be ready
+    }
+
+    if (meData) {
+      batch(() => {
+        setMe(meData);
+        setFloor(floorData);
+      });
+    }
+  };
+
+  onMount(() => {
+    void refresh();
+  });
+
+  const hoursText = () => {
+    const h = floor()?.hours;
+    if (h && typeof h.open === 'string' && typeof h.close === 'string') {
+      const open = formatBangkokTime(h.open);
+      const close = formatBangkokTime(h.close);
+      return t('hoursWithTimes', { open, close });
+    }
+    return t('hoursWithoutTimes');
+  };
+
+  const sortedCards = () =>
+    [...props.cards].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+
+  return (
+    <main class="xc-staff-page">
+      <Show when={me()}>
+        {(currentMe) => {
+          const ctx = (): StaffCtx => ({
+            me: currentMe(),
+            floor: floor(),
+            refresh,
+          });
+
+          return (
+            <div class="xc-staff-container">
+              <header class="xc-staff-header">
+                <div class="xc-staff-header-info">
+                  <h1 class="xc-staff-title">{t('title')}</h1>
+                  <p data-testid="staff-hours" class="xc-staff-hours">
+                    {hoursText()}
+                  </p>
+                </div>
+                <div class="xc-staff-header-actions">
+                  <button
+                    type="button"
+                    data-testid="staff-refresh"
+                    class="xc-staff-refresh-btn"
+                    onClick={() => {
+                      void refresh();
+                    }}
+                  >
+                    {t('refresh')}
+                  </button>
+                  <Show when={can(currentMe(), 'FinanceReconcile') || can(currentMe(), 'BranchDayOperate')}>
+                    <a href="/staff/report" class="xc-staff-report-link">
+                      {t('reportLink')}
+                    </a>
+                  </Show>
+                </div>
+              </header>
+
+              <section class="xc-staff-cards">
+                <For each={sortedCards()}>
+                  {(card) => {
+                    const Comp = card.Component;
+                    return (
+                      <Show when={card.visible(ctx())}>
+                        <div data-card={card.id} class="xc-staff-card-wrapper">
+                          <Comp ctx={ctx()} />
+                        </div>
+                      </Show>
+                    );
+                  }}
+                </For>
+              </section>
+            </div>
+          );
+        }}
+      </Show>
+    </main>
+  );
+}

@@ -226,7 +226,7 @@ async fn no_other_page_loads_the_desk_script() {
     for (path, who) in [
         ("/", "owner"),
         ("/receipt-sample", "owner"),
-        ("/staff", "none"),
+        ("/staff", "owner"),
         ("/staff/report", "none"),
         ("/devices", "owner"),
         ("/login", "none"),
