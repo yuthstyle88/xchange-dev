@@ -1,11 +1,6 @@
 //! The ledger reconcile core (LG-7.0 #1054; design `docs/design/blueprint/ledger-inventory.md` §6 and
-//! §6.1). The five checks of §6 each live in their own file beside this one and register themselves
-//! in [`Reconcile::standard`]; the core runs them in one read-only snapshot.
-
-pub mod balanced;
-
-pub mod positions;
-pub mod valuation;
+//! §6.1). Checks live one per file in `src/application/reconcile/checks/`, `build.rs` lists them,
+//! and adding a check means adding one file; the core runs them in one read-only snapshot.
 
 use std::sync::Arc;
 
@@ -57,6 +52,8 @@ pub trait ReconcileCheck: Send + Sync {
     ) -> BoxFuture<'a, AppResult<Vec<Offender>>>;
 }
 
+include!(concat!(env!("OUT_DIR"), "/reconcile_checks.rs"));
+
 /// Runs registered checks.
 pub struct Reconcile {
     checks: Vec<Arc<dyn ReconcileCheck>>,
@@ -67,13 +64,9 @@ impl Reconcile {
         Self { checks }
     }
 
-    /// The five checks of design §6. Each check ticket (LG-7.1–7.5) adds its one line here.
+    /// The checks of design §6, discovered at build time from `checks/`.
     pub fn standard() -> Self {
-        Self::new(vec![
-            Arc::new(balanced::BalancedCheck),
-            Arc::new(positions::PositionsCheck),
-            Arc::new(valuation::ValuationCheck),
-        ])
+        Self::new(standard_checks())
     }
 
     /// Runs every check in one `REPEATABLE READ READ ONLY` transaction, ended with a rollback.
