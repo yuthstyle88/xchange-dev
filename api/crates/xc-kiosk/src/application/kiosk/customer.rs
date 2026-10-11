@@ -1,11 +1,14 @@
 //! The customer's kiosk: rates, quote, confirm, status and the published receipt.
 //! Methods of `KioskService` (design §10 S0); the type lives in `service.rs`.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::ForeignAmount;
+use xc_kernel::queue_tickets::{QueueTicketSource, QueueTickets};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::new_quote::NewQuote;
@@ -19,6 +22,7 @@ use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_service_error::KioskServiceError;
+use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::public_rates::PublicRates;
 use crate::domain::kiosk::value_objects::quote_limit::QuoteLimit;
@@ -145,6 +149,29 @@ impl KioskService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<RequestIdentity> {
+        self.confirm_with(branch, id, now, None).await
+    }
+
+    /// `confirm` that also issues the request's walk-in ticket through the queue's port, in the
+    /// same transaction (design `queue-tickets.md` §4.5, QU-7 #1266): one ticket per request, and
+    /// a closed queue refuses the confirm (`queueClosed`) so the request stays QUOTED.
+    pub async fn confirm_with_queue(
+        &self,
+        branch: &BranchId,
+        id: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+    ) -> AppResult<RequestIdentity> {
+        self.confirm_with(branch, id, now, Some(queue)).await
+    }
+
+    async fn confirm_with(
+        &self,
+        branch: &BranchId,
+        id: &str,
+        now: DateTime<Utc>,
+        queue: Option<Arc<dyn QueueTickets>>,
+    ) -> AppResult<RequestIdentity> {
         self.branch_name(branch).await?;
         let at = cut_to_millis(now);
         let now = time(now);
@@ -181,6 +208,17 @@ impl KioskService {
                         repo.update_in(tx, &b, &moved.request).await?;
                         let line = line_for(event, &moved.request, CUSTOMER_KIOSK);
                         ports.record_in(tx, &b, &line, at).await?;
+                        if let Some(queue) = &queue
+                            && moved.request.status == KioskStatus::Waiting
+                        {
+                            let source = QueueTicketSource::Kiosk {
+                                request_id: id.clone(),
+                            };
+                            queue
+                                .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
+                                .await
+                                .map_err(queue_refusal)?;
+                        }
                     }
                     KioskMachine::identity(Some(&moved.request), now).map_err(refuse)
                 })
@@ -218,5 +256,14 @@ impl KioskService {
             .filter(|receipt| KioskMachine::receipt_readable(receipt.published, now))
             .map(|receipt| receipt.image);
         Ok(CustomerReceipt { identity, image })
+    }
+}
+
+/// A refusal of the queue's port (`queueClosed`, `idempotencyConflict`) as the kiosk's own refusal,
+/// so the kiosk answers it as it answers its others (400 with the code), not as a server error.
+fn queue_refusal(err: AppError) -> AppError {
+    match err {
+        AppError::Validation(code) | AppError::Conflict(code) => AppError::Domain(code),
+        other => other,
     }
 }

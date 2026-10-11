@@ -442,6 +442,18 @@ impl<'f> KioskReplay<'f> {
     pub async fn start(fixture: &'f Fixture) -> KioskReplay<'f> {
         let desk = Desk::open().await;
         make_the_audit_table(&desk).await;
+        // Amended for #1266 (QU-7) by the test-writer claude/5d45b017, on the lane controller's ruling A:
+        // a closed queue refuses the kiosk's confirm (queue-tickets.md §4.5, Q8), so the replay opens
+        // `MAIN`'s queue, as `Counter::open` does.
+        sqlx::query(
+            "INSERT INTO branch_service_status (branch_id, organization_id, queue_open) \
+             SELECT id, organization_id, true FROM branches WHERE id = $1 \
+             ON CONFLICT (branch_id) DO UPDATE SET queue_open = true",
+        )
+        .bind(MAIN)
+        .execute(&desk.db.pool)
+        .await
+        .expect("open MAIN's queue");
         // the recorded shop's owner is called "Owner" (the generator wrote the row);
         // `create-owner` names a new owner after the username
         let owner = fixture
@@ -976,6 +988,18 @@ impl Counter {
         // kiosk's counter rate is the line of the current publication, no longer the newest
         // `rates` row; the same dollar is published (the rate engine is RE-1's, merged).
         rates_re4_common::publish(&counter.desk.db.pool, MAIN, &[("USD", "32.1", "32.6")]).await;
+        // Amended for #1266 (QU-7) by the test-writer claude/5d45b017, on the lane controller's ruling A:
+        // the kiosk's confirm issues a walk-in ticket and a closed queue refuses it (queue-tickets.md §4.5,
+        // Q8), and QU-1 opens no branch's queue by default, so the fixture opens `MAIN`'s queue.
+        sqlx::query(
+            "INSERT INTO branch_service_status (branch_id, organization_id, queue_open) \
+             SELECT id, organization_id, true FROM branches WHERE id = $1 \
+             ON CONFLICT (branch_id) DO UPDATE SET queue_open = true",
+        )
+        .bind(MAIN)
+        .execute(&counter.desk.db.pool)
+        .await
+        .expect("open MAIN's queue");
         counter
             .owner_rpc(
                 "adminOpenShift",

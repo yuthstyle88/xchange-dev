@@ -13,7 +13,41 @@ use xc_kernel::ids::BranchId;
 
 use crate::domain::repository::QueueRepository;
 use crate::domain::status::branch_service_status::BranchServiceStatus;
-use crate::domain::status::wait_estimator::WaitEstimator;
+use crate::domain::status::wait_estimator::{WaitEstimate, WaitEstimator};
+
+/// The service times (`served_at → completed_at`, in seconds) `WaitEstimator` samples: today's at
+/// `service_date`, oldest first, and the last 30 of earlier days.
+async fn samples_in(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    service_date: chrono::NaiveDate,
+) -> AppResult<(Vec<i64>, Vec<i64>)> {
+    let today_rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT EXTRACT(EPOCH FROM (completed_at - served_at))::bigint \
+             FROM queue_tickets \
+             WHERE branch_id = $1 AND status = 'COMPLETED' AND service_date = $2 \
+             ORDER BY completed_at ASC",
+    )
+    .bind(branch.as_str())
+    .bind(service_date)
+    .fetch_all(&mut **tx)
+    .await?;
+    let today_samples: Vec<i64> = today_rows.into_iter().map(|(s,)| s).collect();
+
+    let earlier_rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT EXTRACT(EPOCH FROM (completed_at - served_at))::bigint \
+             FROM queue_tickets \
+             WHERE branch_id = $1 AND status = 'COMPLETED' AND service_date < $2 \
+             ORDER BY completed_at DESC \
+             LIMIT 30",
+    )
+    .bind(branch.as_str())
+    .bind(service_date)
+    .fetch_all(&mut **tx)
+    .await?;
+    let earlier_samples: Vec<i64> = earlier_rows.into_iter().map(|(s,)| s).collect();
+    Ok((today_samples, earlier_samples))
+}
 
 #[derive(Clone)]
 pub struct StatusService {
@@ -24,6 +58,44 @@ pub struct StatusService {
 impl StatusService {
     pub fn new(branch_tx: BranchTx, repo: Arc<dyn QueueRepository>) -> Self {
         Self { branch_tx, repo }
+    }
+
+    /// The wait for a customer with `ahead` WAITING tickets before them, as `refresh_in` computes
+    /// the branch's (`WaitEstimator`, Q-A5/Q-A6), inside the caller's transaction. `None` when there
+    /// is nothing to estimate from. QU-7 #1266 (`my_queue_ticket`).
+    pub async fn estimate_for_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        ahead: i64,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<WaitEstimate>> {
+        let facts = self
+            .repo
+            .branch_in(tx, branch)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "branch",
+                id: branch.as_str().to_owned(),
+            })?;
+        let tz: chrono_tz::Tz = facts
+            .timezone
+            .parse()
+            .map_err(|e| AppError::Internal(format!("invalid timezone {}: {e}", facts.timezone)))?;
+        let service_date = now.with_timezone(&tz).date_naive();
+        let active_counters: (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM queue_counters WHERE branch_id = $1 AND status = 'ACTIVE'",
+        )
+        .bind(branch.as_str())
+        .fetch_one(&mut **tx)
+        .await?;
+        let (today, earlier) = samples_in(tx, branch, service_date).await?;
+        Ok(WaitEstimator::estimate(
+            ahead,
+            active_counters.0 as i32,
+            &today,
+            &earlier,
+        ))
     }
 
     /// Recomputes the branch's row inside the caller's transaction: `active_counters`, the
@@ -66,30 +138,7 @@ impl StatusService {
         .await?;
         let ahead = ahead_row.0;
 
-        let today_rows: Vec<(i64,)> = sqlx::query_as(
-            "SELECT EXTRACT(EPOCH FROM (completed_at - served_at))::bigint \
-             FROM queue_tickets \
-             WHERE branch_id = $1 AND status = 'COMPLETED' AND service_date = $2 \
-             ORDER BY completed_at ASC",
-        )
-        .bind(branch.as_str())
-        .bind(service_date)
-        .fetch_all(&mut **tx)
-        .await?;
-        let today_samples: Vec<i64> = today_rows.into_iter().map(|(s,)| s).collect();
-
-        let earlier_rows: Vec<(i64,)> = sqlx::query_as(
-            "SELECT EXTRACT(EPOCH FROM (completed_at - served_at))::bigint \
-             FROM queue_tickets \
-             WHERE branch_id = $1 AND status = 'COMPLETED' AND service_date < $2 \
-             ORDER BY completed_at DESC \
-             LIMIT 30",
-        )
-        .bind(branch.as_str())
-        .bind(service_date)
-        .fetch_all(&mut **tx)
-        .await?;
-        let earlier_samples: Vec<i64> = earlier_rows.into_iter().map(|(s,)| s).collect();
+        let (today_samples, earlier_samples) = samples_in(tx, branch, service_date).await?;
 
         let estimate =
             WaitEstimator::estimate(ahead, active_counters, &today_samples, &earlier_samples);
@@ -166,45 +215,21 @@ impl StatusService {
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> AppResult<BranchServiceStatus> {
-        Authorizer::check(
-            Some(actor),
-            Permission::BranchDayOperate,
-            &Target::new(&actor.organization_id, Some(branch.clone()), None),
-            now,
-        )
-        .map_err(|_| AppError::Forbidden)?;
-
         let status = self.clone();
         let b = branch.clone();
+        let act = actor.clone();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    let facts = status
-                        .repo
-                        .branch_in(tx, &b)
-                        .await?
-                        .ok_or_else(|| AppError::NotFound {
-                            entity: "branch",
-                            id: b.as_str().to_owned(),
-                        })?;
-                    sqlx::query(
-                        "INSERT INTO branch_service_status (organization_id, branch_id, queue_open, queue_version) \
-                         VALUES ($1::uuid, $2, true, 0) \
-                         ON CONFLICT (branch_id) DO UPDATE SET queue_open = true",
-                    )
-                    .bind(&facts.organization_id)
-                    .bind(b.as_str())
-                    .execute(&mut **tx)
-                    .await?;
-                    status.refresh_in(tx, &b, now).await
-                })
+                Box::pin(async move { status.open_in(tx, &act, &b, now).await })
             })
             .await
     }
 
-    /// Closes the branch's queue (`BranchDayOperate`): no new ticket; existing ones are served.
-    pub async fn close(
+    /// `open` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn open_in(
         &self,
+        tx: &mut Transaction<'_, Postgres>,
         actor: &Actor,
         branch: &BranchId,
         now: DateTime<Utc>,
@@ -217,31 +242,77 @@ impl StatusService {
         )
         .map_err(|_| AppError::Forbidden)?;
 
+        let facts = self
+            .repo
+            .branch_in(tx, branch)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "branch",
+                id: branch.as_str().to_owned(),
+            })?;
+        sqlx::query(
+            "INSERT INTO branch_service_status (organization_id, branch_id, queue_open, queue_version) \
+             VALUES ($1::uuid, $2, true, 0) \
+             ON CONFLICT (branch_id) DO UPDATE SET queue_open = true",
+        )
+        .bind(&facts.organization_id)
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await?;
+        self.refresh_in(tx, branch, now).await
+    }
+
+    /// Closes the branch's queue (`BranchDayOperate`): no new ticket; existing ones are served.
+    pub async fn close(
+        &self,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<BranchServiceStatus> {
         let status = self.clone();
         let b = branch.clone();
+        let act = actor.clone();
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    let facts = status
-                        .repo
-                        .branch_in(tx, &b)
-                        .await?
-                        .ok_or_else(|| AppError::NotFound {
-                            entity: "branch",
-                            id: b.as_str().to_owned(),
-                        })?;
-                    sqlx::query(
-                        "INSERT INTO branch_service_status (organization_id, branch_id, queue_open, queue_version) \
-                         VALUES ($1::uuid, $2, false, 0) \
-                         ON CONFLICT (branch_id) DO UPDATE SET queue_open = false",
-                    )
-                    .bind(&facts.organization_id)
-                    .bind(b.as_str())
-                    .execute(&mut **tx)
-                    .await?;
-                    status.refresh_in(tx, &b, now).await
-                })
+                Box::pin(async move { status.close_in(tx, &act, &b, now).await })
             })
             .await
+    }
+
+    /// `close` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, QU-7 #1266).
+    pub async fn close_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<BranchServiceStatus> {
+        Authorizer::check(
+            Some(actor),
+            Permission::BranchDayOperate,
+            &Target::new(&actor.organization_id, Some(branch.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
+
+        let facts = self
+            .repo
+            .branch_in(tx, branch)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "branch",
+                id: branch.as_str().to_owned(),
+            })?;
+        sqlx::query(
+            "INSERT INTO branch_service_status (organization_id, branch_id, queue_open, queue_version) \
+             VALUES ($1::uuid, $2, false, 0) \
+             ON CONFLICT (branch_id) DO UPDATE SET queue_open = false",
+        )
+        .bind(&facts.organization_id)
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await?;
+        self.refresh_in(tx, branch, now).await
     }
 }
