@@ -177,7 +177,7 @@
   "s156": {"code":"ZAR","name":"แรนด์แอฟริกาใต้","buy":null,"sell":null,"updated":"","requestId":"","partnerName":"","partnerCost":null,"botReference":null},
   "s157": {"code":"ZMW","name":"ควาชาแซมเบีย","buy":null,"sell":null,"updated":"","requestId":"","partnerName":"","partnerCost":null,"botReference":null},
   "s158": {"code":"ZWG","name":"ZWG","buy":null,"sell":null,"updated":"","requestId":"","partnerName":"","partnerCost":null,"botReference":null},
-  "s159": {"saved":true,"mode":"LIVE","documentRef":"XC-20261006-000001","receiptNo":"XC-20261006-000001","passportUrl":"/api/staff/file/00000000-0000-4000-8000-000000000069","slipUrl":"","receiptUrl":"/api/staff/file/receipt-be64caee17fe522b3c1e59ebd444f6c9dbdb36d4501147e20ec2ef3c567b5b59","folderUrl":"/staff/documents?branch=MAIN&ref=XC-20261006-000001","sheetUrl":"/staff"},
+  "s159": {"saved":true,"mode":"LIVE","documentRef":"XC-20261006-000001","receiptNo":"XC-20261006-000001","passportUrl":"/api/staff/file/00000000-0000-4000-8000-000000000069","slipUrl":"","receiptUrl":"/api/staff/file/receipt-9bc0cb5d666cf734571dbb334592d559823090dd8b943f5fb4a9758d7d5968cc","folderUrl":"/staff/documents?branch=MAIN&ref=XC-20261006-000001","sheetUrl":"/staff"},
   "s160": [{"$shared":"s161"}],
   "s161": {"id":"CX-00000001","name":"Customer 1","nationality":"DEU","created":"2026-10-06T06:36:00.000Z","member":false,"memberVerifiedAt":null},
   "s162": [{"$shared":"s163"}],
