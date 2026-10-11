@@ -413,7 +413,7 @@ pub async fn reject_in(&self, tx, actor: &Actor, id: &str, now: DateTime<Utc>) -
 pub async fn create_in(&self, tx, who: &Actor, cmd: NewTransfer, now: DateTime<Utc>) -> AppResult<CashTransfer>;
 pub async fn submit_in(&self, tx, who: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
 pub async fn dispatch_in(&self, tx, who: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
-pub async fn receive_in(&self, tx, who: &Actor, id: &str, counted: Vec<NewTransferLine>, now: DateTime<Utc>) -> AppResult<CashTransfer>;
+pub async fn receive_in(&self, tx, branch: &BranchId, who: &Actor, id: &str, counted: Vec<NewTransferLine>, now: DateTime<Utc>) -> AppResult<CashTransfer>;
 pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: DateTime<Utc>) -> AppResult<CashTransfer>;
 ```
 
@@ -445,10 +445,13 @@ pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: Dat
   turns `AwaitingFinance` back into today's `Err`. So their existing tests stay unedited.
 - **Which lock the command takes.** A form assumes the caller holds the branch lock. CA-8's `locks()` names it:
   - `transferDispatch`: the source branch;
-  - `transferReceive`: `Locks::Pair(source, destination)`. Receive writes both branches' rows, so the seam takes the
-    pair (the CM-2 ruling, #701/#704: a command that writes two branches opens `run_pair`). Today's wrapper locks
-    only the destination; the pair is stricter, and `run_pair` behaves as `run` when the two are one branch
-    (`branch_tx.rs:121-123`);
+  - `transferReceive`: the default `Locks::One(<session branch>)`, with no `locks()` override. The receiver works at
+    the destination, so the session branch is the destination. `receive_in` takes that branch and refuses
+    `outOfScope` when the transfer's destination is not it; the wrapper passes `destination(&t)`. The body stays
+    `{id, lines}`, with no `fromBranchId`. Why one lock: `locks()` is synchronous and sees only `(branch, input)`
+    (`command.rs:48-51`), and today's `receive` locks only the destination (`transfer_flow.rs:342-349`). If a later
+    ticket (LG-4) makes receive write the source branch's rows, it revisits the lock then (lane controller's ruling,
+    #624 issuecomment-6105777926);
   - `transferReconcile`: the destination (`destination()`, `transfer_flow.rs:448`);
   - counts, hand-overs, `transferCreate`, `transferSubmit`: `Locks::One` on the request's branch.
 - **No new behaviour.** No permission, table, column or route changes. CA-7b's `BranchDayService` (§4.8) follows
@@ -475,7 +478,7 @@ classDiagram
   class BranchTransfer { <<xc-cash domain/transfer/kinds/branch.rs>> }
   class SafeMove { <<xc-cash domain/transfer/kinds/safe.rs  DRAWER_TO_SAFE, SAFE_TO_DRAWER>> }
   class ExternalMove { <<xc-cash domain/transfer/kinds/external.rs  EXTERNAL_IN, EXTERNAL_OUT>> }
-  class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> +create_in(tx) +submit_in(tx) +dispatch_in(tx) +receive_in(tx) +reconcile_in(tx)  CA-7c }
+  class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> +create_in(tx) +submit_in(tx) +dispatch_in(tx) +receive_in(tx, branch) +reconcile_in(tx)  CA-7c }
   class TransferApprovalSubject { <<xc-cash application/approval/transfer.rs>> }
   class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> }
   class CashPostings { <<trait xc-cash domain/posting.rs>> }
@@ -690,7 +693,7 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-6 | each kept kind moves the right balances at dispatch and receipt (the money flow of `custody_machine.rs:420-634`, restated) |
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
 | CA-7b | the tests open the transaction and lock the branch (`branch_versions … FOR UPDATE`) themselves, as the seam does, and pass it to each method; each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on that transaction, and a rollback leaves none; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
-| CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (`Pair` for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; the wrappers behave as before (their existing tests pass unedited) |
+| CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (the destination's, for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; `receive_in` refuses `outOfScope` when the transfer's destination is not the branch it is given; the wrappers behave as before (their existing tests pass unedited) |
 | CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals`; `countVerify` with a difference over the limit answers 200 `AWAITING_FINANCE` and leaves exactly one PENDING approval request |
 | CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
