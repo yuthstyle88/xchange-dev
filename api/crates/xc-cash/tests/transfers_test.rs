@@ -144,8 +144,8 @@ fn flat(reqs: &[PostingRequest]) -> HashSet<(String, String, String, String, Str
                 format!("{:?}", r.from),
                 format!("{:?}", r.to),
                 r.currency.as_str().to_owned(),
-                r.amount.to_string(),
-                r.source.clone(),
+                format!("{:.2}", r.quantity.value()),
+                r.source.source_id.clone(),
             )
         })
         .collect()

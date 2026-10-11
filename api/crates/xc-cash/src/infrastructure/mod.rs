@@ -3,6 +3,7 @@
 pub mod interim_postings;
 pub mod inventory;
 pub mod ledger;
+pub mod ledger_postings;
 pub mod repository;
 pub mod transfer_repository;
 

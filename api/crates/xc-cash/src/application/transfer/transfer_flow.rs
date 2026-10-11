@@ -506,18 +506,18 @@ impl TransferFlow {
             match &r.from {
                 CashPlace::Drawer(_) | CashPlace::Safe(_) => {
                     let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    if balances.get(r.currency) < r.amount {
+                    if Decimal::new(balances.get(r.currency).minor(), 2) < r.quantity.value() {
                         return Err(AppError::Domain(
                             TransferError::StockInsufficient.to_string(),
                         ));
                     }
                 }
-                CashPlace::InTransit(_) | CashPlace::Outside => {}
+                CashPlace::InTransit(_) | CashPlace::Customer | CashPlace::Bank => {}
             }
         }
 
         parts.repo.mark_dispatched(tx, id, who, now).await?;
-        parts.postings.post_in(tx, &reqs).await?;
+        parts.postings.post_in(tx, &reqs, None).await?;
         parts
             .repo
             .find_by_id_in(tx, id)
@@ -575,7 +575,7 @@ impl TransferFlow {
             .await?
             .ok_or_else(|| not_found(id))?;
         let reqs = ends.on_receive(&updated_t);
-        parts.postings.post_in(tx, &reqs).await?;
+        parts.postings.post_in(tx, &reqs, None).await?;
         write_exceptions(tx, id, branch, &updated_t).await?;
         parts
             .repo

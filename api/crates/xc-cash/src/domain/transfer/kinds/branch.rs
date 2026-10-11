@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use xc_auth::domain::access::{Actor, Permission};
-use xc_kernel::money::Money;
+use xc_kernel::money::ForeignAmount;
 
-use crate::domain::posting::{CashPlace, PostingRequest};
+use crate::domain::ledger::posting::SourceType;
+use crate::domain::posting::{CashPlace, PostingRequest, SourceRef};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, TransferError, TransferKind,
 };
@@ -90,8 +91,14 @@ impl TransferEnds for BranchTransferEnds {
                 from: CashPlace::Safe(t.from_branch.clone()),
                 to: CashPlace::InTransit(t.id.clone()),
                 currency,
-                amount: Money::from_minor(minor).expect("valid minor amount"),
-                source: t.id.clone(),
+                quantity: ForeignAmount::from_decimal(rust_decimal::Decimal::new(minor, 2)),
+                source: SourceRef {
+                    source_type: SourceType::Transfer,
+                    source_id: t.id.clone(),
+                    source_key: "dispatch".to_string(),
+                },
+                line: None,
+                reverses: None,
             })
             .collect()
     }
@@ -118,8 +125,14 @@ impl TransferEnds for BranchTransferEnds {
                 from: CashPlace::InTransit(t.id.clone()),
                 to: CashPlace::Safe(dest.clone()),
                 currency,
-                amount: Money::from_minor(minor).expect("valid minor amount"),
-                source: t.id.clone(),
+                quantity: ForeignAmount::from_decimal(rust_decimal::Decimal::new(minor, 2)),
+                source: SourceRef {
+                    source_type: SourceType::Transfer,
+                    source_id: t.id.clone(),
+                    source_key: "receive".to_string(),
+                },
+                line: None,
+                reverses: None,
             })
             .collect()
     }
