@@ -246,7 +246,10 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // and A05 `/admin/users` (`docs/design/blueprint/org-roles-branches.md` §10) are v3 menus with no v2
 // row, ADMIN only, pinned in `web/src/screens/admin/branches/BranchesScreen.test.tsx` and
 // `web/src/screens/admin/users/UsersScreen.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users'];
+// Amended by #1075 (EX-5): A01 `/admin/alert-settings` (`docs/design/blueprint/executive-finance.md`
+// §11.1 EX-5) is a v3 menu with no v2 row, pinned in
+// `web/src/screens/admin/alert-settings/AlertSettings.test.tsx`.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings'];
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {

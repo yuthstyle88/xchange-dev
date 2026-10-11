@@ -1,0 +1,33 @@
+export const th = {
+  staleDataMinutes: 'ระยะเวลาข้อมูลค้าง (นาที)',
+  save: 'บันทึก',
+  addCurrency: 'เพิ่มสกุลเงิน',
+  addFloor: 'เพิ่มเกณฑ์',
+  removeFloor: 'ลบ',
+  label: 'เกณฑ์แจ้งเตือน',
+  eyebrow: 'EXECUTIVE & FINANCE',
+  title: 'เกณฑ์แจ้งเตือนของสาขา',
+  subtitle: 'กำหนดเกณฑ์แจ้งเตือนข้อมูลค้างและสต็อกขั้นต่ำ',
+  currency: 'สกุลเงิน',
+  minQuantity: 'สต็อกขั้นต่ำ',
+  noFloors: 'ไม่มีเกณฑ์สต็อกขั้นต่ำ',
+  floorsHeading: 'เกณฑ์สต็อกขั้นต่ำรายสกุลเงิน',
+  saved: 'บันทึกสำเร็จ',
+};
+
+export const en = {
+  staleDataMinutes: 'Stale Data (minutes)',
+  save: 'Save',
+  addCurrency: 'Add Currency',
+  addFloor: 'Add Floor',
+  removeFloor: 'Remove',
+  label: 'Alert Settings',
+  eyebrow: 'EXECUTIVE & FINANCE',
+  title: 'Branch Alert Settings',
+  subtitle: 'Configure stale data alert threshold and currency stock floors',
+  currency: 'Currency',
+  minQuantity: 'Minimum Stock Floor',
+  noFloors: 'No stock floors configured',
+  floorsHeading: 'Currency Stock Floors',
+  saved: 'Saved successfully',
+};
