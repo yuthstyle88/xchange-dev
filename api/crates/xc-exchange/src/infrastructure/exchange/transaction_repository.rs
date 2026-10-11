@@ -114,6 +114,17 @@ impl PgTransactionRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    pub async fn organization_of_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+    ) -> AppResult<uuid::Uuid> {
+        sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(AppError::Database)
+    }
 }
 
 impl TransactionRepository for PgTransactionRepository {
@@ -181,13 +192,17 @@ impl TransactionRepository for PgTransactionRepository {
         t: &'a Transaction,
         payload_hash: &'a str,
     ) -> AppResult<()> {
-        let id: String = sqlx::query_scalar(
+        let org = Self::organization_of_in(tx, &t.branch_id).await?;
+
+        let unit_size = rust_decimal::Decimal::ONE;
+
+        let tx_id: uuid::Uuid = sqlx::query_scalar(
             "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
              customer_id, customer_name, nationality, type, code, amount, rate, reference_rate, principal, fee, \
              bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, \
-             paid_at, recorded_at, recorded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, \
+             paid_at, recorded_at, recorded_by, organization_id, status, completed_at, unit_size) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, \
              $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, $17::numeric, $18::numeric, \
-             $19::numeric, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING id::text",
+             $19::numeric, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, 'COMPLETED', $28, $31) RETURNING id",
         )
         .bind(&t.document_ref)
         .bind(t.branch_id.as_str())
@@ -221,9 +236,99 @@ impl TransactionRepository for PgTransactionRepository {
         .bind(t.paid_at)
         .bind(t.recorded_at)
         .bind(&t.recorded_by)
+        .bind(org)
+        .bind(unit_size)
         .fetch_one(&mut **tx)
         .await
         .map_err(AppError::Database)?;
+
+        let side_str = match t.side {
+            Side::Buy => "BUY",
+            Side::Sell => "SELL",
+        };
+        let settle_thb = match t.side {
+            Side::Buy => t.paid.to_string(),
+            Side::Sell => t.received.to_string(),
+        };
+
+        let line_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO transaction_lines ( \
+                id, organization_id, transaction_id, quote_line_id, shop_side, currency, \
+                denomination_id, quantity, unit_size, rate_snapshot, reference_rate, \
+                thb_amount, fee_thb, settle_thb, cost_basis_thb, realized_margin_thb, \
+                line_no, created_at, updated_at \
+            ) VALUES ( \
+                $1, $2, $3, NULL, $4, $5, \
+                NULL, $6::numeric, $7::numeric, $8::numeric, $9::numeric, \
+                $10::numeric, $11::numeric, $12::numeric, NULL, NULL, \
+                1, $13, $13 \
+            )",
+        )
+        .bind(line_id)
+        .bind(org)
+        .bind(tx_id)
+        .bind(side_str)
+        .bind(&t.currency)
+        .bind(t.amount.to_string())
+        .bind(unit_size)
+        .bind(t.rate.to_string())
+        .bind(t.reference_rate.map(|r| r.to_string()))
+        .bind(t.principal.to_string())
+        .bind(t.fee.to_string())
+        .bind(&settle_thb)
+        .bind(t.recorded_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let payment_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO transaction_payments ( \
+                id, organization_id, transaction_id, payment_no, method, reference, \
+                account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
+                created_at, updated_at \
+            ) VALUES ( \
+                $1, $2, $3, 1, $4, $5, \
+                $6, $7, $8::numeric, $9::numeric, $10, \
+                $11, $11 \
+            )",
+        )
+        .bind(payment_id)
+        .bind(org)
+        .bind(tx_id)
+        .bind(t.method.as_str())
+        .bind(&t.payment_ref)
+        .bind(&t.account)
+        .bind(t.slip_key.as_deref())
+        .bind(&settle_thb)
+        .bind(t.bank_fee.to_string())
+        .bind(t.paid_at)
+        .bind(t.recorded_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let receipt_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO receipts ( \
+                id, organization_id, transaction_id, number, revision, issued_at, document_ref, \
+                created_at, updated_at \
+            ) VALUES ( \
+                $1, $2, $3, $4, 1, $5, $6, \
+                $5, $5 \
+            )",
+        )
+        .bind(receipt_id)
+        .bind(org)
+        .bind(tx_id)
+        .bind(&t.document_ref)
+        .bind(t.recorded_at)
+        .bind(&t.receipt_key)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
         let mut files = vec![
             ("PASSPORT", t.passport_key.as_str()),
             ("RECEIPT", t.receipt_key.as_str()),
@@ -233,9 +338,9 @@ impl TransactionRepository for PgTransactionRepository {
         }
         for (kind, key) in files {
             sqlx::query(
-                "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1::uuid, $2, $3)",
+                "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, $2, $3)",
             )
-            .bind(&id)
+            .bind(tx_id)
             .bind(kind)
             .bind(key)
             .execute(&mut **tx)

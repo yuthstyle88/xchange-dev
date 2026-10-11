@@ -7,8 +7,9 @@ const root = document.getElementById('root');
 if (root) {
   const client = new ApiClient();
   const auth = authApi(client);
+  const next = new URLSearchParams(window.location.search).get('next');
   render(
-    () => <LoginScreen auth={auth} navigate={(url) => window.location.assign(url)} />,
+    () => <LoginScreen auth={auth} navigate={(url) => window.location.assign(url)} next={next} />,
     root,
   );
 }

@@ -334,10 +334,10 @@ async fn without_limit_a_page_holds_200_rows() {
            INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
                customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
                bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-               value_date, paid_at, recorded_at, recorded_by) \
+               value_date, paid_at, recorded_at, recorded_by, completed_at) \
            SELECT 'DOC-' || c.id, 'MAIN', 'DEMO', 'SUB-' || c.id, 'h', c.id, 'Bulk', 'THA', 'SELL', \
                'USD', 100, 32.6, 3260.00, 0, 0, 3260.00, 0, 'Cash', '', '', 'owner', '', '', \
-               DATE '2026-10-06', now(), now(), 'owner' FROM c RETURNING id) \
+               DATE '2026-10-06', now(), now(), 'owner', now() FROM c RETURNING id) \
          INSERT INTO broker_exchange_feed (transaction_id, organization_id, branch_id, status, \
              value_satang, reversed_satang, completed_at, updated_at) \
          SELECT t.id, b.organization_id, 'MAIN', 'COMPLETED', 326000, 0, now(), now() \

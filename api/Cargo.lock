@@ -3867,6 +3867,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-app"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "rand 0.8.8",
+ "rust_decimal",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "uuid",
+ "xc-auth",
+ "xc-kernel",
+ "xc-rate",
+]
+
+[[package]]
 name = "xc-approval"
 version = "0.1.0"
 dependencies = [
@@ -4147,6 +4166,7 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
+ "xc-app",
  "xc-approval",
  "xc-auth",
  "xc-cash",

@@ -25,6 +25,8 @@ uuid = { version = "1", features = ["v4"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "rust_decimal", "uuid", "macros"] }
 
 [dev-dependencies]
+xc-approval = { workspace = true }
+serde_json = { workspace = true }
 pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-auth = { workspace = true }

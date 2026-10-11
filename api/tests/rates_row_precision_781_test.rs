@@ -178,11 +178,11 @@ async fn put(pool: &PgPool, ex: &Ex) {
             payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
             reference_rate, unit_size, published_rate_line_id, principal, fee, bank_fee, \
             received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-            value_date, paid_at, recorded_at, recorded_by) \
+            value_date, paid_at, recorded_at, recorded_by, completed_at) \
          VALUES ($1, 'MAIN', 'LIVE', $2, $1, 'hash', $3, 'Somchai', 'THA', $4, $5, $6::numeric, \
             $7::numeric, $8::numeric, $9::numeric, $10::uuid, $11::numeric, 0, 0, \
             $12::numeric, $13::numeric, 'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', \
-            $14::date, now(), now(), 'owner')",
+            $14::date, now(), now(), 'owner', now())",
     )
     .bind(ex.id)
     .bind(shift)

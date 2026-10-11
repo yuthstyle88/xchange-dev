@@ -247,6 +247,28 @@ async fn transaction(
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("insert transaction {document_ref}: {e}"));
+    // Every save writes its receipt file (`transaction_repository.rs::insert_in`); TX-2's migration 2
+    // (#670, design §8 item 2) RAISEs on an exchange without one, and "the rest" applied below
+    // includes it. Added by #670's ticket author (claude/f03345fe), lane controller's ruling of
+    // 2026-10-10; the rate checks of this test are unchanged.
+    let receipt = format!("RECEIPT-{document_ref}");
+    sqlx::query(
+        "INSERT INTO files (key, branch_id, owner_id, mime, sha256, created_at) \
+         VALUES ($1, 'MAIN', 'owner', 'text/html', $1, now())",
+    )
+    .bind(&receipt)
+    .execute(pool)
+    .await
+    .expect("insert the receipt file");
+    sqlx::query(
+        "INSERT INTO transaction_files (transaction_id, kind, file_key) \
+         SELECT id, 'RECEIPT', $2 FROM transactions WHERE document_ref = $1",
+    )
+    .bind(document_ref)
+    .bind(&receipt)
+    .execute(pool)
+    .await
+    .expect("link the receipt file");
     if let Some(unit) = unit_size {
         sqlx::query("UPDATE transactions SET unit_size = $2::numeric WHERE document_ref = $1")
             .bind(document_ref)

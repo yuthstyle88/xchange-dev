@@ -1480,10 +1480,10 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
         "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
              customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
              bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by) \
+             value_date, paid_at, recorded_at, recorded_by, completed_at) \
          VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Somchai Demo', 'THA', 'SELL', 'USD', \
              1000.00, 32.0, 32000.00, 0, 0, 32000.00, 0, 'Cash', '', '', 'owner', '', '', \
-             DATE '2026-10-06', now(), now(), 'owner')",
+             DATE '2026-10-06', now(), now(), 'owner', now())",
     )
     .bind(format!("TX-DEMO-{}", next()))
     .bind(MAIN)
@@ -1558,13 +1558,13 @@ async fn volume_never_prints_hash_fill_on_very_large_sums() {
         "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
              customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
              bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by) \
+             value_date, paid_at, recorded_at, recorded_by, completed_at) \
          SELECT 'TX-LARGE-' || $2 || '-' || n, $3, 'LIVE', \
              (SELECT id FROM shifts WHERE branch_id = $3 LIMIT 1), \
              'sub-' || $2 || '-' || n, 'hash', \
              $1, 'Rich Customer', 'THA', 'SELL', 'USD', \
              900000000000000000.00, 1.0, 900000000000000000.00, 0, 0, 900000000000000000.00, 0, \
-             'Cash', '', '', 'owner', '', '', DATE '2026-10-06', now(), now(), 'owner' \
+             'Cash', '', '', 'owner', '', '', DATE '2026-10-06', now(), now(), 'owner', now() \
          FROM generate_series(1, 150) AS n",
     )
     .bind(&rich.id)

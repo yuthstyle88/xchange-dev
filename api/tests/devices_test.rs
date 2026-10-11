@@ -99,13 +99,13 @@ async fn the_saved_row(
         "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
             payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
             unit_size, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
-            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by) \
+            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, completed_at) \
          VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, \
             'Somchai', 'THA', 'BUY', $4, $5::numeric, $6::numeric, 1, \
             round($5::numeric * $6::numeric, 2), 0, 0, 0, round($5::numeric * $6::numeric, 2), \
             'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', '2026-10-06', now(), now(), \
-            'owner') \
-         ON CONFLICT (document_ref) DO NOTHING",
+            'owner', now()) \
+         ON CONFLICT (organization_id, document_ref) DO NOTHING",
     )
     .bind(document_ref)
     .bind(branch_id)

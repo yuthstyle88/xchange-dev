@@ -155,10 +155,10 @@ impl TestDb {
             "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
                  customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
                  bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                 value_date, paid_at, recorded_at, recorded_by) \
+                 value_date, paid_at, recorded_at, recorded_by, completed_at) \
              VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'SELL', 'USD', \
                  1000.50, 32.6, 32616.30, 0, 0, 32616.30, 0, 'Cash', '', '', 'owner', '', '', \
-                 DATE '2026-10-06', $5, $5, 'owner') RETURNING id::text",
+                 DATE '2026-10-06', $5, $5, 'owner', $5) RETURNING id::text",
         )
         .bind(&document_ref)
         .bind(MAIN)

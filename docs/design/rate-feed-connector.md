@@ -321,6 +321,8 @@ F2 `domain/publication/mod.rs`; F3 `domain/currency/mod.rs`, `infrastructure/cur
 
 ### 3.6 The timer (F10, R-8)
 
+> **Replaced by §11 (R-12).** The loop now fetches BoT every 3 hours by default and refreshes `BOT_DRAFT` branches through the existing draft path. The lock-scope rule below still holds.
+
 - **One loop.** A single background task in the server runs `tick()` every `RATE_FEED_INTERVAL_SECS` (default 60; a setting, R-8).
 - **Each tick:**
   1. **Skip if another tick is running.** It takes a Postgres advisory lock (`pg_try_advisory_lock`) and returns at once if another tick, or another server instance, holds it. No overlapping runs.
@@ -441,14 +443,15 @@ for `rate_reference_lines`.
 | F2 | migration §4 + `TierTable`/`TierBand`/`TierCode` with the band-edge tests | this design |
 | F3 | denomination groups: trait, Pg impl, service, admin commands (API) | F2 |
 | F3w | `admin_denomination_groups` view + the admin screen for groups and mappings (§10) | F3 |
-| F4 | `RateBoardSource` + `RateBoardProvider` + `RateBoardPayload` | F1, F2, **Q-4** |
+| F4 | ~~`RateBoardSource` + `RateBoardProvider` + `RateBoardPayload`~~ **withdrawn by R-12 (§11)** | — |
 | F5 | `FeedPublisher` + `RATE_FEED_PUBLICATION` subject/policy | F1, F2, F3 |
 | F6 | `PublishedRates::line_for` + `LineSelector` + tier pick; `QuoteRequestLine.denomination_group`; `quote_in` step 3 | F2 |
-| F7 | kiosk prices at the tier of the amount; payment check by line id; kiosk lists show the first tier (§9.3, §9.4) | F6, F8 (`line_by_id`) |
+| F7 | kiosk prices at the tier of the amount; payment check by line id; kiosk lists show the first tier (§9.3, §9.4). **Parked for R-12e:** the ON-path reader, re-scoped by the switch's design row | R-12e design row |
 | F8 | bookings: `counter_rate_in` through `line_for` with the booked amount; confirm checks the stored line with `PublishedRates::line_by_id` (§9.2) | F6 |
 | F9 | per-branch switch: `BranchPriceSource`, Pg impl, `branchPriceSourceSet`, BoT publish refused on board branches | F2 |
-| F11 | every list reader outside the kiosk shows the first tier (R-10) + a source guard test (§9.4) | F6 |
-| F10 | `RateFeedLoop`: timer, advisory lock, one fetch per tick, publish per switched-on branch | F4, F5, **F6** (the `line_in` guard, §4 item 3), F9 |
+| F11 | every list reader outside the kiosk shows the first tier (R-10) + a source guard test (§9.4). **Parked for R-12e:** the ON-path reader, re-scoped by the switch's design row | R-12e design row |
+| F10a | `RateFeedLoop` + `DraftBranchRefresh`: BoT every `RATE_FEED_INTERVAL_SECS` (default 10800), copy → submit → publish within the guards (§11) | this amendment merged |
+| F10b | start the loop with the server (§11.5) | F10a, F12 |
 | F12 | BoT reference rates from the official BoT API: `BotApiRateSource` + `FallbackRateSource` (the website scraper stays as fallback), config `APP_BOT__API_TOKEN` / `APP_BOT__API_BASE` (§8, decisions B-1…B-4); ticket #1066 | F1 |
 
 Each ticket comes with its behaviour table and the failing tests its author writes first (🧪). None is released before this
@@ -785,6 +788,173 @@ Behaviour:
 
 ### 10.4 No database change
 The view reads existing tables only. No data-migration section is needed.
+
+## 11. The refresh loop: BoT every 3 hours, published within the branch's guards (F10, amendment 2026-10-11)
+
+> designed-by: claude/c954feda · measured on `main` `58dae1de` · `file:line` in this section is at that sha ·
+> released for this re-point by the BE lane controller claude/ad05bf8d (relayed by claude/5edf7bb5, 2026-10-11)
+
+### 11.0 Decided
+
+| # | Ruling | Source on #986 |
+|---|---|---|
+| R-12 | The counter price comes from **BoT**, not from the rate board. Owner's words: *"ใช้ ราคา กลางตั้งต้น แล้ว ดึง BoT ทุก3 ชม เพื่อ อัพเดท แต่ผมให้ สามารถ คอนฟิก จะดีกว่า"* | issuecomment-6103607280 |
+| R-12a | The owner's starting price is a **seed only**, used until the first successful BoT fetch: *"ใช้จนกว่าจะดึง ธปท. ได้ (แนะนำ)"* | issuecomment-6103628051 |
+| R-12b | v3 refreshes on its own timer, **every 3 hours by default**; the interval is a setting | issuecomment-6103607280 |
+| R-12c | A refresh **within the branch policy's existing guards** publishes by itself; outside them it waits for the owner: *"ในกรอบนโยบาย ประกาศเอง (แนะนำ)"*, *"กรอบนโยบายเดิมของแต่ละสาขา (แนะนำ)"* | issuecomment-6103607280, issuecomment-6103628051 |
+| R-12d | The policy's `adjust_pct` still applies (Blueprint v2 §05): *"บวก/ลบตามนโยบายเหมือนเดิม (แนะนำ)"* | issuecomment-6103628051 |
+| Q-T (a) | **No value tiers** by default: one price per currency and side. R-4 and R-10 lapse: *"(a) ไม่มีขั้นราคา"* | issuecomment-6103658425, issuecomment-6103662781 |
+| R-12e | Value tiers become a **switch**, default OFF = Q-T (a). ON = four tiers from the BoT base plus owner-set per-tier margins (§05 with `adjust_pct`). Owner's words: *"B: สร้าง config ตอนนี้"*, confirmed as "Yes, build switch now". The switch, the margin table and the readers come in a separate design row | issuecomment-6103707361 |
+
+**What this section replaces.** §3.6 and the F10 rows in §2 and §6 described a ~1-minute loop that fetched the board and
+published through `FeedPublisher` on `RATE_BOARD` branches. Under R-12 there is no board source, so that loop has nothing to
+fetch. This section is F10 now. F4 is withdrawn by R-12. F7 and F11 are parked: they are the readers for R-12e's ON path and are re-scoped by its design row. The merged board pieces (F3, F3w, F5, F6,
+F8, F9) stay on `main` and do nothing while no branch is `RATE_BOARD`. Whether to keep or remove them is a separate decision,
+not made here.
+
+### 11.1 Nothing new prices a line: the loop reuses the BoT draft path
+
+The existing BoT path already does what R-12c and R-12d ask:
+
+| Step | Existing code | What it does |
+|---|---|---|
+| copy | `RateDraftService::copy` (`api/crates/xc-rate/src/application/draft/rate_draft_service.rs:597-667`) | copies a draft's lines; `create` (`:57-154`) points every line at the **newest** reference line of its currency (`:106-116`) and at the branch's active policy version (`:81-92`) |
+| price | `RateDraftService::evaluate` (`:282-450`) via `RateProposal::of` | an `AUTO` side = reference × the policy's `adjust_pct` (R-12d); a `MANUAL` side keeps its rate |
+| guard | `DraftEvaluation::of` (`api/crates/xc-rate/src/domain/draft/draft_evaluation.rs:41-131`) | a side is out of bounds when its distance from the reference is outside the policy's `guard_for(currency, side)`, or when the branch has no policy (`:60`) or no guard for it (`:68`), or when a `MANUAL` side has no reference to measure from (`:62-65`) |
+| decide | `RateDraftService::submit` (`:456-595`) | in bounds ⇒ `decide_by_policy` ⇒ `Approved` (`:558-568`); out of bounds and the submitter is not OWNER ⇒ `PendingApproval` for OWNER (`:584-590`) |
+| publish | `PublishService::publish` (`api/crates/xc-rate/src/application/publication/publish_service.rs:28`) | publishes an approved draft under the branch row lock, checking the expected version |
+
+So F10 is a **timer and an orchestrator only**. It writes no price arithmetic and no guard rule. A loop that computed prices
+itself would be a second copy of the rate engine (♻️).
+
+⚠️ **What "within the guards" measures.** The existing guard is the distance between the proposed price and **the
+reference it was computed from** (`draft_evaluation.rs:69-80`), not the change from the last published price. An `AUTO`
+side is reference × `adjust_pct`, so it is in bounds exactly when `adjust_pct` lies inside the guard. A large BoT move is
+**not** by itself out of bounds. That is what "the existing per-branch guards" (R-12c) gives. Holding back a large move
+from the last price would need a new guard, which no ruling asks for. It is recorded here as a fact for the controller,
+not as a proposal.
+
+### 11.2 Classes
+
+```mermaid
+classDiagram
+    direction LR
+    class ReferenceFetch {
+        <<trait>>
+        +fetch_and_write(tx) BoxFuture~Result~Uuid, RateEngineError~~
+    }
+    class ReferenceBatchWriter
+    class BranchRefresh {
+        <<trait>>
+        +refresh(tx, branch, batch_id) BoxFuture~Result~RefreshOutcome, RateEngineError~~
+    }
+    class DraftBranchRefresh {
+        +new(drafts: Arc~RateDraftService~, publish: Arc~PublishService~) Self
+    }
+    class RateFeedConfig {
+        +interval: Duration
+        +from_env() Self
+    }
+    class RateFeedLoop {
+        +new(pool, fetch: Arc~dyn ReferenceFetch~, refresh: Arc~dyn BranchRefresh~, config) Self
+        +tick() Result~TickReport, RateEngineError~
+        +run(self: Arc~Self~, stop: watch::Receiver~bool~)
+    }
+    ReferenceFetch <|.. ReferenceBatchWriter
+    BranchRefresh <|.. DraftBranchRefresh
+    RateFeedLoop --> ReferenceFetch : once per tick
+    RateFeedLoop --> BranchRefresh : once per branch
+    RateFeedLoop --> RateFeedConfig
+    DraftBranchRefresh ..> RateDraftService : copy, submit
+    DraftBranchRefresh ..> PublishService : publish
+```
+
+| Piece | File | Kind |
+|---|---|---|
+| `pub trait ReferenceFetch: Send + Sync { fn fetch_and_write<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>) -> BoxFuture<'a, Result<Uuid, RateEngineError>>; }` + `impl ReferenceFetch for ReferenceBatchWriter` | `api/src/infrastructure/rate_feed/feed_loop.rs` (new directory, whole subtree) | `[required]` |
+| `pub trait BranchRefresh: Send + Sync { fn refresh<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, branch: &'a BranchId, batch: Uuid) -> BoxFuture<'a, Result<RefreshOutcome, RateEngineError>>; }` | `api/src/infrastructure/rate_feed/feed_loop.rs` | `[required]` |
+| `pub enum RefreshOutcome { Published(PublicationRef), AwaitingOwner(DraftId), UpToDate, NothingToCopy }` | same file | `[required]` |
+| `DraftBranchRefresh` (§11.3) | `api/src/infrastructure/rate_feed/branch_refresh.rs` | `[required]` |
+| `RateFeedConfig { interval: Duration }`; `from_env()` reads `RATE_FEED_INTERVAL_SECS`, default **10800** (R-12b); a value that is not a whole number > 0 ⇒ the default, with one `warn` | `api/src/infrastructure/rate_feed/feed_loop.rs` | `[required]` |
+| `RateFeedLoop`, `TickReport`, `pub const RATE_FEED_LOCK_KEY: i64` | same file | `[required]` |
+| `pub mod rate_feed;` | `api/src/infrastructure/mod.rs` | `[required]` |
+
+`ReferenceFetch` and `BranchRefresh` are seams for the tests: the loop's tests use a fake fetch and a fake refresh, and
+`DraftBranchRefresh` is tested against the real services on its own.
+
+### 11.3 `DraftBranchRefresh::refresh(tx, branch, batch)`
+
+The actor is `Actor::staff("SYSTEM:rate-feed:BOT", Role::System, branch)`, the same id scheme as `FeedPublisher`
+(`feed_publisher.rs:349-353`).
+
+1. **Find the draft to copy.** Read `branches.current_publication_id` and that publication's `draft_id`
+   (`rate_publications.draft_id`, `api/migrations/20261010120000_rate_engine.sql:84`).
+   - No publication, or a publication with no draft (a board publication) ⇒ `NothingToCopy`, and nothing is written.
+     A branch gets its first prices from the owner (R-12a, §11.6), not from the loop.
+2. **Skip when up to date.** If a draft of this branch created by the SYSTEM actor already has a line whose
+   `reference_line_id` belongs to `batch`, answer `UpToDate`. That draft may be published or waiting for the owner; either
+   way this batch has been handled for this branch. So an out-of-bounds batch asks the owner **once**, not every tick.
+3. **Copy.** `RateDraftService::copy(tx, branch, system, published_draft)`. `AUTO` sides move to the new batch; `MANUAL`
+   sides keep their rate and reason.
+4. **Submit.** `RateDraftService::submit(tx, branch, system, draft, key)` with `key = "rate-feed:{branch}:{batch}"`.
+   - `PendingApproval` ⇒ answer `AwaitingOwner(draft)`. The owner approves or rejects it in the existing screen.
+5. **Publish.** `Approved` ⇒ `PublishService::publish(tx, branch, system, draft, expected_version)`, where
+   `expected_version` is the current publication's version read in step 1. Answer `Published(ref)`.
+   - `StaleVersion` (someone published in between) ⇒ return the error. The tick rolls this branch back, and the next tick
+     sees the new publication and starts again from step 1.
+
+### 11.4 `RateFeedLoop::tick` and `run`
+
+1. **Lock.** Open a transaction on its own connection and take `pg_try_advisory_xact_lock(RATE_FEED_LOCK_KEY)`. Not taken
+   ⇒ `TickReport { skipped: true, .. }`, nothing else runs. The lock transaction stays open for the tick and is rolled back
+   at the end **on every path**, so a failed tick never leaves the lock held (§3.6 lock scope still applies).
+2. **Fetch once.** `fetch.fetch_and_write` in a transaction of its own, committed on success. A repeat checksum returns the
+   existing batch id and writes nothing (`reference_batch_writer.rs:66-73`). On error: log it, roll back, set
+   `fetch_error`, and **touch no branch** this tick. The current publications stay, and the stale policy decides (R-9).
+3. **Refresh per branch.** For every `branches.id` with `price_source = 'BOT_DRAFT'`, ordered by id: a transaction of its
+   own, `refresh.refresh(tx, branch, batch)`. Commit on `Ok`, roll back on `Err` and record the error. One branch's failure
+   does not stop the others. A `RATE_BOARD` branch is never touched (`PublishService` refuses it anyway, `publish_service.rs:51-55`).
+4. Answer `TickReport { skipped, batch: Option<Uuid>, fetch_error: Option<String>, refreshed: Vec<(String, RefreshOutcome)>, failed: Vec<(String, String)> }`.
+
+`run(self: Arc<Self>, mut stop: watch::Receiver<bool>)` ticks once at start, then every `config.interval`, until `stop` turns
+true. A tick's error is logged, and the loop goes on.
+
+**Call budget.** One fetch per tick = one `RateSource::fetch()`. At the 3-hour default that is 8 calls a day. The BoT API
+source also caches for 15 minutes (§8.6), so even a 60-second interval stays under its 200/hour limit.
+
+### 11.5 Starting with the server (F10b)
+
+The loop starts with the server: `ReferenceBatchWriter::new(state.rate_source.clone(), store)` (the BoT API with the scraper
+fallback, §8.5), `DraftBranchRefresh` on the server's `RateDraftService` and `PublishService`, and `RateFeedConfig::from_env()`.
+`run` is spawned with the server's shutdown signal. This is a separate ticket (F10b) from the loop itself (F10a), because it
+touches the start-up file other tickets also edit. The F10b ticket names that file.
+
+### 11.6 Not in F10
+
+- **R-12a, the owner's starting price for every branch.** It needs an organisation-level price per currency, which no table
+  holds today: `rate_drafts` and `rate_publications` are per branch (`rate_engine.sql:47-99`). That is a schema change, so it
+  needs its own design with a data-migration section (📐). Until it exists, a branch's first publication is the owner's
+  draft, as today, and the loop refreshes it from then on (§11.3 step 1).
+- **R-12e's ON path.** With the switch OFF (the default), the copied draft publishes untiered lines, as every BoT publication does today. Publishing tiers when the switch is ON belongs to the switch's design row, which states how the refresh builds them.
+- **An alert when refreshes keep failing.** Each failed tick is logged, as in §12.5 G-2.
+
+### 11.7 Edge cases
+
+| Case | Result | Where |
+|---|---|---|
+| BoT unchanged since the last tick | the same batch id; every branch answers `UpToDate`; nothing written | §11.3 step 2 |
+| BoT unreachable, and the scraper too | `fetch_error`; no branch touched; quotes follow the stale policy | §11.4 step 2 |
+| a branch has no policy version, or no guard for a currency | every such side is out of bounds ⇒ `AwaitingOwner` once per batch | `draft_evaluation.rs:60`, `:68` |
+| a branch's published draft has `MANUAL` sides | they are copied as they are. With a reference they are measured by the guard; with none (a currency BoT does not publish) they are out of bounds (`draft_evaluation.rs:62-65`) ⇒ `AwaitingOwner`, once per batch | §11.3 steps 2-3 |
+| the owner publishes between steps 1 and 5 | `StaleVersion`; this branch is rolled back and retried on the next tick | §11.3 step 5 |
+| two server instances tick at once | one holds the advisory lock; the other answers `skipped` | §11.4 step 1 |
+| a tick fails mid-way | the lock ends with its transaction; the next tick runs | §11.4 step 1 |
+| `RATE_FEED_INTERVAL_SECS=0`, `abc` or `-5` | the default 10800, plus one `warn` | §11.2 |
+
+### 11.8 No database change
+
+Nothing here adds or changes a table, column, constraint or value. Drafts, approvals and publications are written through
+the existing services into the existing tables. The advisory lock is a Postgres lock, not a row.
 
 ## 12. Conformance with the Blueprint (amendment, 2026-10-11)
 

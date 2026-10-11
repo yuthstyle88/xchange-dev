@@ -28,6 +28,10 @@ use xc_exchange::domain::exchange::value_objects::document_ref::DocumentRef;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 
+/// Ticket #670 (TX-2, D-4): the counter key names the organisation. Updated by the ticket author
+/// (claude/f03345fe) on the lane controller's ruling of 2026-10-10; OR-1's first organisation.
+const ORG_1: uuid::Uuid = uuid::Uuid::from_u128(1);
+
 // The eleven sentences v2 answered these forms with (fixture key `sentences`).
 const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 const BAD_DATE_FORMAT: &str = "รูปแบบวันที่ไม่ถูกต้อง";
@@ -630,12 +634,12 @@ fn a_document_number_carries_the_bangkok_date_and_at_least_six_digits() {
         "XC-20261006-1000000"
     );
     assert_eq!(
-        DocumentRef::counter_key(Mode::Live, noon),
-        "document-LIVE-20261006"
+        DocumentRef::counter_key(ORG_1, Mode::Live, noon),
+        "document-00000000-0000-0000-0000-000000000001-LIVE-20261006"
     );
     assert_eq!(
-        DocumentRef::counter_key(Mode::Demo, noon),
-        "document-DEMO-20261006"
+        DocumentRef::counter_key(ORG_1, Mode::Demo, noon),
+        "document-00000000-0000-0000-0000-000000000001-DEMO-20261006"
     );
 }
 
@@ -652,12 +656,12 @@ fn the_day_of_a_document_number_changes_at_bangkok_midnight() {
         "XC-20270101-000007"
     );
     assert_eq!(
-        DocumentRef::counter_key(Mode::Live, before),
-        "document-LIVE-20261231"
+        DocumentRef::counter_key(ORG_1, Mode::Live, before),
+        "document-00000000-0000-0000-0000-000000000001-LIVE-20261231"
     );
     assert_eq!(
-        DocumentRef::counter_key(Mode::Live, after),
-        "document-LIVE-20270101"
+        DocumentRef::counter_key(ORG_1, Mode::Live, after),
+        "document-00000000-0000-0000-0000-000000000001-LIVE-20270101"
     );
 }
 

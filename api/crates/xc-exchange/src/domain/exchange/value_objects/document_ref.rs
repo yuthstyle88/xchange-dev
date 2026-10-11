@@ -1,6 +1,7 @@
 //! DocumentRef value object and formatting.
 
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 use xc_kernel::time::bangkok;
 
 use crate::domain::customer::value_objects::mode::Mode;
@@ -18,13 +19,13 @@ impl DocumentRef {
         format!("{prefix}{date_str}-{number:06}")
     }
 
-    pub fn counter_key(mode: Mode, now: DateTime<Utc>) -> String {
+    pub fn counter_key(organization: Uuid, mode: Mode, now: DateTime<Utc>) -> String {
         let bkk_time = now.with_timezone(&bangkok());
         let date_str = bkk_time.format("%Y%m%d");
         let mode_str = match mode {
             Mode::Demo => "DEMO",
             Mode::Live => "LIVE",
         };
-        format!("document-{mode_str}-{date_str}")
+        format!("document-{organization}-{mode_str}-{date_str}")
     }
 }

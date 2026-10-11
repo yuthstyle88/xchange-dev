@@ -499,10 +499,10 @@ impl Room {
                  payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
                  reference_rate, principal, fee, bank_fee, received, paid, method, payment_ref, \
                  account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
-                 recorded_by) \
+                 recorded_by, completed_at) \
                  VALUES ($1, $2, $3, $4, $1, 'hash', $5, $6, 'THA', $7, $8, 100, $9::numeric, NULL, \
                  $10::numeric, 0, 0, $11::numeric, $12::numeric, 'Cash', '', 'Cash drawer', $13, \
-                 'WALK-IN', $14, $15::date, $16::timestamptz, $16::timestamptz, 'owner')",
+                 'WALK-IN', $14, $15::date, $16::timestamptz, $16::timestamptz, 'owner', $16::timestamptz)",
             )
             .bind(&tx.id)
             .bind(tx.branch)
@@ -1712,11 +1712,11 @@ async fn reference_percent_padded_to_six_places_when_ending_early() {
          payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
          reference_rate, principal, fee, bank_fee, received, paid, method, payment_ref, \
          account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
-         recorded_by) \
+         recorded_by, completed_at) \
          VALUES ('XC-20261006-P01', $1, 'LIVE', $2, 'XC-20261006-P01', 'hash', $3, \
          'Test Cust', 'THA', 'BUY', 'USD', 100, 7.9, 8.0, 790.00, 0, 0, 790.00, 0, \
          'Cash', '', 'Cash drawer', 'front', 'WALK-IN', '', '2026-10-06'::date, \
-         '2026-10-06T03:00:00Z'::timestamptz, '2026-10-06T03:00:00Z'::timestamptz, 'owner')",
+         '2026-10-06T03:00:00Z'::timestamptz, '2026-10-06T03:00:00Z'::timestamptz, 'owner', '2026-10-06T03:00:00Z'::timestamptz)",
     )
     .bind(MAIN)
     .bind(&shift)
