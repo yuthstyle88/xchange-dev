@@ -1,0 +1,194 @@
+/* A04 branches and hours admin screen styling (OR-5b, LK-6) */
+
+.branches-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+}
+
+.branches-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.branches-select-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branches-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.branches-select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cdd0d7;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+
+.branches-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.branches-empty {
+  padding: 24px;
+  text-align: center;
+  color: #676a73;
+}
+
+.branches-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.branches-heading {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.branches-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.branches-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.branches-field-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.branches-input {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cdd0d7;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+
+.branches-hours-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.branches-hours-heading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.branches-hours-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branches-hours-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #f9f9fa;
+  border-radius: 6px;
+}
+
+.branches-hours-day {
+  width: 120px;
+  font-weight: 500;
+}
+
+.branches-hours-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.branches-hours-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branches-time-input {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #cdd0d7;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+.branches-hours-closed {
+  color: #888;
+  font-style: italic;
+}
+
+.branches-form-error {
+  padding: 10px 14px;
+  background: #fdf2f2;
+  border: 1px solid #f8b4b4;
+  border-radius: 6px;
+  color: #c81e1e;
+  font-size: 14px;
+}
+
+.branches-form-success {
+  padding: 10px 14px;
+  background: #edf7ed;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  color: #276749;
+  font-size: 14px;
+}
+
+.branches-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.branches-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid #cdd0d7;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.branches-btn-primary {
+  background: #a5003c;
+  color: #fff;
+  border-color: #a5003c;
+}
