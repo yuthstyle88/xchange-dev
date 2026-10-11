@@ -3,7 +3,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::input;
-use xc_kernel::money::{Money, Quote, Rate, Side};
+use xc_kernel::money::{CompatRate, Money, NumberError, Quote, Rate, Side};
 
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
@@ -74,7 +74,7 @@ impl TransactionForm {
         }
 
         // Step 7: Rate
-        let client_rate = parse_client_rate(&cmd.rate)?;
+        let client_rate = CompatRate::parse_per_one(&cmd.rate).map_err(rate_refusal)?;
         let rate = Rate::parse(&cmd.rate).unwrap_or_else(|_| {
             Rate::parse(&format!("{:.8}", client_rate))
                 .unwrap_or_else(|_| Rate::parse("1").unwrap())
@@ -208,7 +208,7 @@ impl TransactionForm {
         let (reference_rate, client_reference_rate) = match cmd.reference_rate.as_deref() {
             None | Some("") => (None, None),
             Some(s) => {
-                let client_ref = parse_client_rate(s)?;
+                let client_ref = CompatRate::parse_per_one(s).map_err(rate_refusal)?;
                 let ref_rate = Rate::parse(s)
                     .ok()
                     .or_else(|| Rate::parse(&format!("{:.8}", client_ref)).ok());
@@ -244,31 +244,10 @@ impl TransactionForm {
     }
 }
 
-fn parse_client_rate(text: &str) -> AppResult<Decimal> {
-    if text.is_empty() || text.starts_with('.') || text.ends_with('.') {
-        return Err(AppError::Domain(BAD_NUMBER.to_owned()));
+/// The form's sentence for a per-1 rate `CompatRate::parse_per_one` refuses (#770).
+fn rate_refusal(e: NumberError) -> AppError {
+    match e {
+        NumberError::Invalid => AppError::Domain(BAD_NUMBER.to_owned()),
+        NumberError::TooManyDecimals => AppError::Domain(TOO_MANY_DECIMALS.to_owned()),
     }
-    let mut dot_count = 0;
-    for b in text.bytes() {
-        if b == b'.' {
-            dot_count += 1;
-            if dot_count > 1 {
-                return Err(AppError::Domain(BAD_NUMBER.to_owned()));
-            }
-        } else if !b.is_ascii_digit() {
-            return Err(AppError::Domain(BAD_NUMBER.to_owned()));
-        }
-    }
-    let frac_part = match text.split_once('.') {
-        Some((_, frac)) => frac,
-        None => "",
-    };
-    if frac_part.len() > 11 && frac_part[11..].bytes().any(|b| b != b'0') {
-        return Err(AppError::Domain(TOO_MANY_DECIMALS.to_owned()));
-    }
-    let val = Decimal::from_str_exact(text).map_err(|_| AppError::Domain(BAD_NUMBER.to_owned()))?;
-    if val.is_zero() || val > Decimal::from(Money::MAX_INPUT_UNITS) {
-        return Err(AppError::Domain(BAD_NUMBER.to_owned()));
-    }
-    Ok(val)
 }
