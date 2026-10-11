@@ -95,9 +95,15 @@ fn every_v3_route_file_declares_inherits_or_the_public_marker() {
             neither.push(relative(file));
         }
         // INHERITS is read by the shared handler only on an impl of one of the four traits
-        let on_a_trait = ["BranchView", "PagedView", "ComputeAction", "CommandAction"]
-            .iter()
-            .any(|t| code.contains(&format!("{t} for ")));
+        let on_a_trait = [
+            "BranchView",
+            "PagedView",
+            "ComputeAction",
+            "CommandAction",
+            "OrgView",
+        ]
+        .iter()
+        .any(|t| code.contains(&format!("{t} for ")));
         if inherits && !on_a_trait {
             inherits_off_the_trait.push(relative(file));
         }
