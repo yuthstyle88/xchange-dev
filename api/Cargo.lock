@@ -4178,6 +4178,7 @@ dependencies = [
  "xc-kiosk",
  "xc-notify",
  "xc-outbox",
+ "xc-queue",
  "xc-rate",
  "xc-referral",
  "xc-shift",

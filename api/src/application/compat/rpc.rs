@@ -244,12 +244,17 @@ impl CompatRpc {
     /// owner's `branchId` is not a branch id (`สาขาไม่ถูกต้อง`); the branch does
     /// not exist (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`); then whatever the use case
     /// or the family says.
+    #[allow(clippy::too_many_arguments)]
     pub async fn dispatch(
         &self,
         route: RpcRoute,
         action: &str,
         payload: Map<String, Value>,
         caller: &RpcCaller,
+        // The `users.id` of a Blueprint-session caller, `None` for a legacy password session
+        // (#1128): a shift opened or closed with one staffs or releases the shift teller's queue
+        // counter.
+        session_user: Option<uuid::Uuid>,
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> Result<V2Json, RpcFailure> {
@@ -302,8 +307,15 @@ impl CompatRpc {
                 self.written(&created.id, who, now).await?
             }
             "adminOpenShift" | "adminMoveStock" | "adminCloseShift" => {
-                self.shift_action(action, branch, Value::Object(payload), who, now)
-                    .await?;
+                self.shift_action(
+                    action,
+                    branch,
+                    Value::Object(payload),
+                    who,
+                    session_user,
+                    now,
+                )
+                .await?;
                 self.written(branch, who, now).await?
             }
             "adminAbandonRequest" => {
@@ -381,6 +393,7 @@ impl CompatRpc {
         branch: &BranchId,
         payload: Value,
         who: &str,
+        session_user: Option<uuid::Uuid>,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
         let custody = self.services.custody.clone();
@@ -397,7 +410,9 @@ impl CompatRpc {
                     match action.as_str() {
                         "adminOpenShift" => {
                             let command = OpenShift::from_payload(&payload)?;
-                            shifts.open_in(tx, &here, command, &who, now).await?;
+                            shifts
+                                .open_in_as(tx, &here, command, &who, session_user, now)
+                                .await?;
                         }
                         "adminMoveStock" => {
                             let command = MoveStock::from_payload(&payload)?;
@@ -405,7 +420,9 @@ impl CompatRpc {
                         }
                         _ => {
                             let command = CloseShift::from_payload(&payload)?;
-                            shifts.close_in(tx, &here, command, &who, now).await?;
+                            shifts
+                                .close_in_as(tx, &here, command, &who, session_user, now)
+                                .await?;
                         }
                     }
                     Ok(())

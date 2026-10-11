@@ -35,6 +35,9 @@ use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kiosk::application::kiosk::service::KioskService;
+use xc_queue::application::counter::counter_service::CounterService;
+use xc_queue::application::status::status_service::StatusService;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
@@ -185,7 +188,13 @@ async fn answer(
         RpcRoute::StaffRpc => callers.staff_user.as_ref(),
     };
 
-    let blueprint_session = identity_session(req, now).await.is_some();
+    let session = identity_session(req, now).await;
+    let blueprint_session = session.is_some();
+    // The Blueprint session's `users.id` (#1128): a shift opened or closed with one staffs or
+    // releases the shift teller's queue counter. A password session has none.
+    let session_user = session
+        .as_ref()
+        .and_then(|(user, _)| uuid::Uuid::parse_str(&user.id).ok());
 
     let named = if !blueprint_session
         && caller.actor.kind()
@@ -231,7 +240,15 @@ async fn answer(
         .ok_or_else(|| not_wired("the rpc actions"))?;
     compat_rpc(&state.db, source, accounts.get_ref().clone())
         .with_actions(actions.get_ref().clone())
-        .dispatch(route, &action, payload, &caller, &grant.branch, now)
+        .dispatch(
+            route,
+            &action,
+            payload,
+            &caller,
+            session_user,
+            &grant.branch,
+            now,
+        )
         .await
 }
 
@@ -332,11 +349,17 @@ async fn caller_of_staff_rpc(
     })
 }
 
+/// The shift service of the shift-open/close routes, with the queue's `CounterService` as its
+/// lifecycle hook (#1128, QU-A3): a teller's counter follows their shift.
 fn shift_service(pool: &PgPool, branch_tx: &BranchTx) -> ShiftService {
+    let queue = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(branch_tx.clone(), queue.clone());
+    let counters = CounterService::new(branch_tx.clone(), queue, status);
     ShiftService::new(
         Arc::new(PgShiftRepository::new(pool.clone())),
         branch_tx.clone(),
     )
+    .with_lifecycle_hook(Arc::new(counters))
 }
 
 fn transaction_service(pool: &PgPool, branch_tx: &BranchTx) -> TransactionService {
