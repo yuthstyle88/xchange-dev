@@ -30,9 +30,9 @@ impl DeviceTransactionsPagedView {
 #[derive(sqlx::FromRow)]
 struct TxSqlRow {
     document_ref: String,
-    r#type: String,
-    amount: String,
-    code: String,
+    shop_side: String,
+    quantity: String,
+    currency: String,
 }
 
 impl PagedView for DeviceTransactionsPagedView {
@@ -54,7 +54,7 @@ impl PagedView for DeviceTransactionsPagedView {
         async move {
             let rows: Vec<TxSqlRow> = if let Some(before_id) = before {
                 let before_seq: Option<i64> = sqlx::query_scalar(
-                    "SELECT seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND document_ref = $2",
+                    "SELECT seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND status = 'COMPLETED' AND document_ref = $2",
                 )
                 .bind(branch.as_str())
                 .bind(&before_id)
@@ -67,10 +67,11 @@ impl PagedView for DeviceTransactionsPagedView {
                 };
 
                 sqlx::query_as(
-                    "SELECT document_ref, type, amount::text, code::text \
-                     FROM transactions \
-                     WHERE branch_id = $1 AND mode = 'LIVE' AND seq < $2 \
-                     ORDER BY seq DESC \
+                    "SELECT t.document_ref, l.shop_side, l.quantity::text AS quantity, l.currency::text AS currency \
+                     FROM transactions t \
+                     JOIN transaction_lines l ON l.transaction_id = t.id \
+                     WHERE t.branch_id = $1 AND t.mode = 'LIVE' AND t.status = 'COMPLETED' AND t.seq < $2 \
+                     ORDER BY t.seq DESC \
                      LIMIT $3",
                 )
                 .bind(branch.as_str())
@@ -81,10 +82,11 @@ impl PagedView for DeviceTransactionsPagedView {
                 .map_err(AppError::Database)?
             } else {
                 sqlx::query_as(
-                    "SELECT document_ref, type, amount::text, code::text \
-                     FROM transactions \
-                     WHERE branch_id = $1 AND mode = 'LIVE' \
-                     ORDER BY seq DESC \
+                    "SELECT t.document_ref, l.shop_side, l.quantity::text AS quantity, l.currency::text AS currency \
+                     FROM transactions t \
+                     JOIN transaction_lines l ON l.transaction_id = t.id \
+                     WHERE t.branch_id = $1 AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
+                     ORDER BY t.seq DESC \
                      LIMIT $2",
                 )
                 .bind(branch.as_str())
@@ -98,9 +100,9 @@ impl PagedView for DeviceTransactionsPagedView {
                 .into_iter()
                 .map(|r| DeviceTransactionRow {
                     id: r.document_ref,
-                    transaction_type: r.r#type,
-                    amount: Money(r.amount),
-                    currency: r.code.trim().to_string(),
+                    transaction_type: r.shop_side,
+                    amount: Money(r.quantity),
+                    currency: r.currency.trim().to_string(),
                 })
                 .collect())
         }
