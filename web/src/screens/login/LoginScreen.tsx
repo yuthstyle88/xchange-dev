@@ -6,7 +6,7 @@ import { TextField } from '../../shared/ui/TextField';
 import { useForm } from '../../shared/ui/form';
 import { screenT } from '../../shared/i18n';
 import type { AuthApi } from './auth-api';
-import { homeOf } from './home';
+import { homeOf, safeNext } from './home';
 import * as loginI18n from './i18n';
 
 const t = screenT('login', loginI18n);
@@ -25,6 +25,7 @@ function toErrorKey(err: unknown): keyof typeof loginI18n.th {
 export function LoginScreen(props: {
   auth: AuthApi;
   navigate: (url: string) => void;
+  next?: string | null;
 }): JSX.Element {
   const form = useForm();
   let formEl: HTMLFormElement | undefined;
@@ -35,7 +36,8 @@ export function LoginScreen(props: {
     try {
       const res = await props.auth.session();
       if (res.user) {
-        props.navigate(homeOf(res.user));
+        const target = safeNext(props.next) ?? homeOf(res.user);
+        props.navigate(target);
       }
     } catch (err) {
       setErrorKey(toErrorKey(err));
@@ -55,7 +57,8 @@ export function LoginScreen(props: {
 
     try {
       const res = await props.auth.login({ identifier, password });
-      props.navigate(homeOf(res.user));
+      const target = safeNext(props.next) ?? homeOf(res.user);
+      props.navigate(target);
     } catch (err) {
       setErrorKey(toErrorKey(err));
     } finally {
