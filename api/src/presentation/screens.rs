@@ -121,7 +121,8 @@ impl ScreenTable {
             return pages::plain_404();
         }
 
-        let Some(decl) = self.entries.iter().find(|d| d.path == req.path()) else {
+        let wanted = req.match_pattern().unwrap_or_else(|| req.path().to_owned());
+        let Some(decl) = self.entries.iter().find(|d| d.path == wanted) else {
             return pages::plain_404();
         };
 
