@@ -52,6 +52,11 @@ function hasShellOrAuthLayoutImport(source: string): boolean {
   );
 }
 
+function rendersShellOrAuthLayout(source: string): boolean {
+  return /<\s*(AppShell|AuthLayout)\b/.test(source);
+}
+
+
 beforeAll(async () => {
   fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs;
   path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath;
@@ -93,8 +98,8 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
         continue;
       }
 
-      if (hasShellOrAuthLayoutImport(scriptSource)) {
-        // Direct import in entry module
+      if (hasShellOrAuthLayoutImport(scriptSource) && rendersShellOrAuthLayout(scriptSource)) {
+        // Direct import and render in entry module
         continue;
       }
 
@@ -102,7 +107,7 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       const childModules = CHILD_MODULE_ENTRIES[file];
       expect(
         childModules && childModules.length > 0,
-        `${file} does not directly import AppShell or AuthLayout, so it must be explicitly listed in CHILD_MODULE_ENTRIES`,
+        `${file} does not directly render AppShell or AuthLayout, so it must be explicitly listed in CHILD_MODULE_ENTRIES`,
       ).toBe(true);
 
       const entryDir = path.dirname(scriptFullPath);
@@ -124,11 +129,15 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
           `Entry module ${scriptRelative} for ${file} must import child module ${childRel} (${relSpecifier})`,
         ).toBe(true);
 
-        // Assert that the child module imports AppShell or AuthLayout
+        // Assert that the child module imports and renders AppShell or AuthLayout
         const childSource = fs.readFileSync(childFullPath, 'utf-8');
         expect(
           hasShellOrAuthLayoutImport(childSource),
           `Child module ${childRel} reached from ${file} must import AppShell or AuthLayout`,
+        ).toBe(true);
+        expect(
+          rendersShellOrAuthLayout(childSource),
+          `Child module ${childRel} reached from ${file} must render AppShell or AuthLayout`,
         ).toBe(true);
       }
     }
