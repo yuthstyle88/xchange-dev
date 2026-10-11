@@ -21,13 +21,31 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Quote, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
 use xc_shift::domain::shift::entities::stock_movement::StockMovement;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
+
+/// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
+/// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
+fn per_one(
+    side: xc_kernel::money::Side,
+    amount: xc_kernel::money::Money,
+    rate: xc_kernel::money::Rate,
+    fee: xc_kernel::money::Money,
+) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
+    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
+    xc_kernel::money::Quote::per_unit(
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(amount),
+        rate,
+        xc_kernel::money::UnitSize::ONE,
+        fee,
+    )
+}
 
 pub type Service = ShiftService<PgShiftRepository>;
 
@@ -282,7 +300,7 @@ pub fn tx_delta(t: &Tx) -> StockDelta {
         other => panic!("fixture type {other}"),
     };
     let amount = money(&t.amount);
-    let quote = Quote::compute(
+    let quote = per_one(
         side,
         amount,
         Rate::parse(&t.rate).expect("fixture rate"),

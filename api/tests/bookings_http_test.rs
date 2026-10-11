@@ -53,6 +53,9 @@
 //! D-3, §4.8 and §4.9 R1/R4: the counter rate a booking is created and confirmed at is the line
 //! of the branch's current publication, no longer the newest `rates` row. `Room::open` publishes
 //! the same counter rates it writes to `rates` (all unit 1, so every rate here reads as before).
+//!
+//! Re-expected for RE-7 #604 by the ticket author: `Room::open` no longer writes those rates to
+//! `rates` (rates.md §8 migration 6 drops it); it publishes them, as before, and nothing else.
 
 mod common;
 mod compat_common;
@@ -182,10 +185,8 @@ impl Room {
 
         room.seed_shift("SH-MAIN", MAIN).await;
         room.seed_shift("SH-AIR", AIRPORT).await;
-        room.seed_rate(MAIN, "USD", "36.25", "36.75").await;
-        room.seed_rate(MAIN, "EUR", "39.5", "40.1").await;
-        room.seed_rate(AIRPORT, "USD", "36.1", "36.9").await;
-        // RE-4d: the counter is the current publication's line (rates D-3, §4.8)
+        // RE-4d: the counter is the current publication's line (rates D-3, §4.8). RE-7 #604: the
+        // same rates are no longer also written to `rates` (dropped, rates.md §8 migration 6).
         let pool = room.desk.db.pool.clone();
         rates_re4_common::publish(
             &pool,
@@ -231,22 +232,6 @@ impl Room {
         .execute(&self.desk.db.pool)
         .await
         .expect("insert into shifts");
-    }
-
-    async fn seed_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5, 'owner', $6)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(at("2026-10-06T04:00:00.000Z"))
-        .bind(format!("rate-{branch}-{code}"))
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert into rates");
     }
 
     fn now(&self) -> DateTime<Utc> {

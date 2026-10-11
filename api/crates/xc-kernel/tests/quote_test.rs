@@ -8,6 +8,24 @@
 use serde::Deserialize;
 use xc_kernel::money::{Money, NumberError, Quote, QuoteError, Rate, Side};
 
+/// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
+/// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
+fn per_one(
+    side: xc_kernel::money::Side,
+    amount: xc_kernel::money::Money,
+    rate: xc_kernel::money::Rate,
+    fee: xc_kernel::money::Money,
+) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
+    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
+    xc_kernel::money::Quote::per_unit(
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(amount),
+        rate,
+        xc_kernel::money::UnitSize::ONE,
+        fee,
+    )
+}
+
 #[derive(Deserialize)]
 struct Figures {
     principal: String,
@@ -51,7 +69,7 @@ fn outcome(case: &Case) -> Result<Quote, &'static str> {
     let amount = Money::parse(&case.amount).map_err(number)?;
     let rate = Rate::parse(&case.rate).map_err(number)?;
     let fee = Money::parse(&case.fee).map_err(number)?;
-    Quote::compute(side, amount, rate, fee).map_err(|e| match e {
+    per_one(side, amount, rate, fee).map_err(|e| match e {
         QuoteError::ZeroAmount => "INVALID_NUMBER",
         QuoteError::FeeExceedsPrincipal => "FEE_EXCEEDS_PRINCIPAL",
     })
@@ -144,7 +162,7 @@ fn every_case_v2_refused_is_refused_for_the_same_reason() {
 fn half_a_satang_rounds_up() {
     // 0.07 × 0.0715 = 0.005005 → 0.01; 1 × 0.005 = 0.005 → 0.01; 1 × 0.0049 → 0.00.
     let q = |amount: &str, rate: &str| {
-        Quote::compute(
+        per_one(
             Side::Sell,
             Money::parse(amount).unwrap(),
             Rate::parse(rate).unwrap(),
@@ -165,7 +183,7 @@ fn buying_pays_principal_less_fee_and_selling_takes_principal_plus_fee() {
         Rate::parse("32.1").unwrap(),
         Money::parse("10.50").unwrap(),
     );
-    let buy = Quote::compute(Side::Buy, amount, rate, fee).unwrap();
+    let buy = per_one(Side::Buy, amount, rate, fee).unwrap();
     assert_eq!(
         (
             buy.principal.to_string(),
@@ -174,7 +192,7 @@ fn buying_pays_principal_less_fee_and_selling_takes_principal_plus_fee() {
         ),
         ("3210.00".into(), "0.00".into(), "3199.50".into())
     );
-    let sell = Quote::compute(Side::Sell, amount, rate, fee).unwrap();
+    let sell = per_one(Side::Sell, amount, rate, fee).unwrap();
     assert_eq!(
         (
             sell.principal.to_string(),
@@ -188,26 +206,26 @@ fn buying_pays_principal_less_fee_and_selling_takes_principal_plus_fee() {
 #[test]
 fn a_fee_equal_to_the_purchase_is_allowed_and_one_satang_more_is_not() {
     let (amount, rate) = (Money::parse("100").unwrap(), Rate::parse("32.1").unwrap());
-    let all = Quote::compute(Side::Buy, amount, rate, Money::parse("3210").unwrap()).unwrap();
+    let all = per_one(Side::Buy, amount, rate, Money::parse("3210").unwrap()).unwrap();
     assert_eq!(all.paid, Money::ZERO);
     assert_eq!(
-        Quote::compute(Side::Buy, amount, rate, Money::parse("3210.01").unwrap()),
+        per_one(Side::Buy, amount, rate, Money::parse("3210.01").unwrap()),
         Err(QuoteError::FeeExceedsPrincipal)
     );
     // Selling has no such rule.
-    assert!(Quote::compute(Side::Sell, amount, rate, Money::parse("99999").unwrap()).is_ok());
+    assert!(per_one(Side::Sell, amount, rate, Money::parse("99999").unwrap()).is_ok());
 }
 
 #[test]
 fn a_zero_amount_is_refused_and_the_largest_inputs_still_compute() {
     let rate = Rate::parse("32.1").unwrap();
     assert_eq!(
-        Quote::compute(Side::Sell, Money::ZERO, rate, Money::ZERO),
+        per_one(Side::Sell, Money::ZERO, rate, Money::ZERO),
         Err(QuoteError::ZeroAmount)
     );
     // The largest amount at the largest rate with the largest fee: 1e16 + 1e8 baht.
     let max = Money::parse("100000000").unwrap();
-    let q = Quote::compute(Side::Sell, max, Rate::parse("100000000").unwrap(), max).unwrap();
+    let q = per_one(Side::Sell, max, Rate::parse("100000000").unwrap(), max).unwrap();
     assert_eq!(q.principal.to_string(), "10000000000000000.00");
     assert_eq!(q.received.to_string(), "10000000100000000.00");
     assert_eq!(q.received.minor(), 1_000_000_010_000_000_000);

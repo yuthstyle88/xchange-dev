@@ -11,7 +11,6 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_kernel::payment::PaymentRules;
 
-use crate::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 use crate::domain::kiosk::value_objects::audit_line::AuditLine;
 use crate::domain::kiosk::value_objects::counter_facts::LineId;
 use crate::domain::kiosk::value_objects::counter_view::CounterView;
@@ -30,16 +29,6 @@ pub trait KioskPorts: Send + Sync {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>>;
-
-    /// Saves a counter rate through the rate context, in a transaction of its
-    /// own. A refusal is that context's sentence and is passed on unchanged.
-    fn save_rate<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        rate: &'a SaveCounterRate,
-        actor: &'a str,
-        now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Writes one audit line inside the caller's transaction.
     fn record_in<'a>(

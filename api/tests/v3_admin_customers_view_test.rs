@@ -430,20 +430,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
-        // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-        rates_re4e_publish::publish_newest_rates(&self.desk.db.pool, branch).await;
+        // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+        // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+        rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
     async fn open_shift(&self, branch: &str) {
@@ -1476,6 +1465,7 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
     let room = Room::open().await;
     let somchai = room.reserve(MAIN, &Who::new("Somchai Demo")).await;
 
+    let demo_ref = format!("TX-DEMO-{}", next());
     sqlx::query(
         "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
              customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
@@ -1485,13 +1475,14 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
              1000.00, 32.0, 32000.00, 0, 0, 32000.00, 0, 'Cash', '', '', 'owner', '', '', \
              DATE '2026-10-06', now(), now(), 'owner', now())",
     )
-    .bind(format!("TX-DEMO-{}", next()))
+    .bind(&demo_ref)
     .bind(MAIN)
     .bind(format!("submission-demo-{}", next()))
     .bind(&somchai.id)
     .execute(&room.desk.db.pool)
     .await
     .expect("insert demo transaction");
+    seed_lines(&room.desk.db.pool, &[demo_ref]).await;
 
     let row = room.customer(&somchai.id).await;
     assert_eq!(
@@ -1553,6 +1544,7 @@ async fn member_flag_is_per_branch() {
 async fn volume_never_prints_hash_fill_on_very_large_sums() {
     let room = Room::open().await;
     let rich = room.reserve(MAIN, &Who::new("Rich Customer")).await;
+    let batch = next() as i64;
 
     sqlx::query(
         "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
@@ -1563,16 +1555,18 @@ async fn volume_never_prints_hash_fill_on_very_large_sums() {
              (SELECT id FROM shifts WHERE branch_id = $3 LIMIT 1), \
              'sub-' || $2 || '-' || n, 'hash', \
              $1, 'Rich Customer', 'THA', 'SELL', 'USD', \
-             900000000000000000.00, 1.0, 900000000000000000.00, 0, 0, 900000000000000000.00, 0, \
+             9000000000000000.00, 100.0, 900000000000000000.00, 0, 0, 900000000000000000.00, 0, \
              'Cash', '', '', 'owner', '', '', DATE '2026-10-06', now(), now(), 'owner', now() \
          FROM generate_series(1, 150) AS n",
     )
     .bind(&rich.id)
-    .bind(next() as i64)
+    .bind(batch)
     .bind(MAIN)
     .execute(&room.desk.db.pool)
     .await
     .expect("insert 150 large transactions");
+    let large: Vec<String> = (1..=150).map(|n| format!("TX-LARGE-{batch}-{n}")).collect();
+    seed_lines(&room.desk.db.pool, &large).await;
 
     let row = room.customer(&rich.id).await;
     let volume = row["volume"].as_str().expect("volume is a string");
@@ -1617,4 +1611,42 @@ async fn full_width_wildcards_are_treated_as_literals_not_wildcards() {
     );
 
     room.finish().await;
+}
+
+/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
+/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
+/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
+/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
+async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+    sqlx::query(
+        "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
+            shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
+            reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
+            realized_margin_thb, line_no, created_at, updated_at) \
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
+            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
+            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
+            t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = ANY($1)",
+    )
+    .bind(refs)
+    .execute(pool)
+    .await
+    .expect("seed transaction_lines");
+    sqlx::query(
+        "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
+            method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
+            created_at, updated_at) \
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
+            t.account, \
+            (SELECT file_key FROM transaction_files f \
+             WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
+            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
+            t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = ANY($1)",
+    )
+    .bind(refs)
+    .execute(pool)
+    .await
+    .expect("seed transaction_payments");
 }

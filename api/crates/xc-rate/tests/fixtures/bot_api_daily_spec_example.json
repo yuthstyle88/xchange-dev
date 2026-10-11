@@ -1,0 +1,224 @@
+{
+  "result": {
+    "api": "Daily Average Exchange Rate - THB / Foreign Currency",
+    "timestamp": "2026-10-09 18:05:00",
+    "data": {
+      "data_header": {
+        "report_name_eng": "Rates of Exchange of Commercial Banks in Bangkok Metropolis (2002-present)",
+        "report_name_th": "อัตราแลกเปลี่ยนเฉลี่ยของธนาคารพาณิชย์ในกรุงเทพมหานคร (2545-ปัจจุบัน)",
+        "report_uoq_name_eng": "(Unit : Baht / 1 Unit of Foreign Currency)",
+        "report_uoq_name_th": "(หน่วย : บาท ต่อ 1 หน่วยเงินตราต่างประเทศ)",
+        "report_source_of_data": [
+          {
+            "source_of_data_eng": "Bank of Thailand",
+            "source_of_data_th": "ธนาคารแห่งประเทศไทย"
+          }
+        ],
+        "report_remark": [],
+        "last_updated": "2026-10-09"
+      },
+      "data_detail": [
+        {
+          "period": "2026-10-09",
+          "currency_id": "USD",
+          "currency_name_th": "สหรัฐอเมริกา : ดอลลาร์ (USD)",
+          "currency_name_eng": "USA : DOLLAR (USD) ",
+          "buying_sight": "32.1012345",
+          "buying_transfer": "32.2023456",
+          "selling": "32.5034567",
+          "mid_rate": "32.3529012"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "EUR",
+          "currency_name_th": "ยูโรโซน : ยูโร (EUR)",
+          "currency_name_eng": "EURO ZONE : EURO (EUR)",
+          "buying_sight": "37.2100000",
+          "buying_transfer": "37.3200000",
+          "selling": "37.9300000",
+          "mid_rate": "37.6250000"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "GBP",
+          "currency_name_th": "สหราชอาณาจักร : ปอนด์สเตอร์ลิง (GBP)",
+          "currency_name_eng": "UNITED KINGDOM : POUND STERLING (GBP)",
+          "buying_sight": "42.4100000",
+          "buying_transfer": "42.5200000",
+          "selling": "43.1300000",
+          "mid_rate": "42.8250000"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "JPY",
+          "currency_name_th": "ญี่ปุ่น : เยน (100 เยน) (JPY)",
+          "currency_name_eng": "JAPAN : YEN (100 YEN) (JPY)",
+          "buying_sight": "20.9012300",
+          "buying_transfer": "20.9512300",
+          "selling": "21.6012300",
+          "mid_rate": "21.2762300"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "CNY",
+          "currency_name_th": "จีน : หยวน เรนมินบิ (CNY)",
+          "currency_name_eng": "CHINA : YUAN RENMINBI (CNY)",
+          "buying_sight": "4.4100000",
+          "buying_transfer": "4.4300000",
+          "selling": "4.5500000",
+          "mid_rate": "4.4900000"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "AUD",
+          "currency_name_th": "ออสเตรเลีย : ดอลลาร์ (AUD)",
+          "currency_name_eng": "AUSTRALIA : DOLLAR (AUD)",
+          "buying_sight": "21.1100000",
+          "buying_transfer": "21.1500000",
+          "selling": "21.8100000",
+          "mid_rate": "21.4800000"
+        },
+        {
+          "period": "2026-10-09",
+          "currency_id": "SGD",
+          "currency_name_th": "สิงคโปร์ : ดอลลาร์ (SGD)",
+          "currency_name_eng": "SINGAPORE : DOLLAR (SGD)",
+          "buying_sight": "24.6100000",
+          "buying_transfer": "24.6600000",
+          "selling": "25.0100000",
+          "mid_rate": "24.8350000"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "USD",
+          "currency_name_th": "สหรัฐอเมริกา : ดอลลาร์ (USD)",
+          "currency_name_eng": "USA : DOLLAR (USD) ",
+          "buying_sight": "32.0512345",
+          "buying_transfer": "32.1523456",
+          "selling": "32.4534567",
+          "mid_rate": "32.3029011"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "EUR",
+          "currency_name_th": "ยูโรโซน : ยูโร (EUR)",
+          "currency_name_eng": "EURO ZONE : EURO (EUR)",
+          "buying_sight": "37.1600000",
+          "buying_transfer": "37.2700000",
+          "selling": "37.8800000",
+          "mid_rate": "37.5750000"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "GBP",
+          "currency_name_th": "สหราชอาณาจักร : ปอนด์สเตอร์ลิง (GBP)",
+          "currency_name_eng": "UNITED KINGDOM : POUND STERLING (GBP)",
+          "buying_sight": "42.3600000",
+          "buying_transfer": "42.4700000",
+          "selling": "43.0800000",
+          "mid_rate": "42.7750000"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "JPY",
+          "currency_name_th": "ญี่ปุ่น : เยน (100 เยน) (JPY)",
+          "currency_name_eng": "JAPAN : YEN (100 YEN) (JPY)",
+          "buying_sight": "20.8512300",
+          "buying_transfer": "20.9012300",
+          "selling": "21.5512300",
+          "mid_rate": "21.2262300"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "AUD",
+          "currency_name_th": "ออสเตรเลีย : ดอลลาร์ (AUD)",
+          "currency_name_eng": "AUSTRALIA : DOLLAR (AUD)",
+          "buying_sight": "21.0600000",
+          "buying_transfer": "21.1000000",
+          "selling": "21.7600000",
+          "mid_rate": "21.4300000"
+        },
+        {
+          "period": "2026-10-08",
+          "currency_id": "SGD",
+          "currency_name_th": "สิงคโปร์ : ดอลลาร์ (SGD)",
+          "currency_name_eng": "SINGAPORE : DOLLAR (SGD)",
+          "buying_sight": "24.5600000",
+          "buying_transfer": "24.6100000",
+          "selling": "24.9600000",
+          "mid_rate": "24.7850000"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "USD",
+          "currency_name_th": "สหรัฐอเมริกา : ดอลลาร์ (USD)",
+          "currency_name_eng": "USA : DOLLAR (USD) ",
+          "buying_sight": "32.0012345",
+          "buying_transfer": "32.1023456",
+          "selling": "32.4034567",
+          "mid_rate": "32.2529011"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "EUR",
+          "currency_name_th": "ยูโรโซน : ยูโร (EUR)",
+          "currency_name_eng": "EURO ZONE : EURO (EUR)",
+          "buying_sight": "37.1100000",
+          "buying_transfer": "37.2200000",
+          "selling": "37.8300000",
+          "mid_rate": "37.5250000"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "GBP",
+          "currency_name_th": "สหราชอาณาจักร : ปอนด์สเตอร์ลิง (GBP)",
+          "currency_name_eng": "UNITED KINGDOM : POUND STERLING (GBP)",
+          "buying_sight": "42.3100000",
+          "buying_transfer": "42.4200000",
+          "selling": "43.0300000",
+          "mid_rate": "42.7250000"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "JPY",
+          "currency_name_th": "ญี่ปุ่น : เยน (100 เยน) (JPY)",
+          "currency_name_eng": "JAPAN : YEN (100 YEN) (JPY)",
+          "buying_sight": "20.8012300",
+          "buying_transfer": "20.8512300",
+          "selling": "21.5012300",
+          "mid_rate": "21.1762300"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "CNY",
+          "currency_name_th": "จีน : หยวน เรนมินบิ (CNY)",
+          "currency_name_eng": "CHINA : YUAN RENMINBI (CNY)",
+          "buying_sight": "4.3100000",
+          "buying_transfer": "4.3300000",
+          "selling": "4.4500000",
+          "mid_rate": "4.3900000"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "AUD",
+          "currency_name_th": "ออสเตรเลีย : ดอลลาร์ (AUD)",
+          "currency_name_eng": "AUSTRALIA : DOLLAR (AUD)",
+          "buying_sight": "21.0100000",
+          "buying_transfer": "21.0500000",
+          "selling": "21.7100000",
+          "mid_rate": "21.3800000"
+        },
+        {
+          "period": "2026-10-07",
+          "currency_id": "SGD",
+          "currency_name_th": "สิงคโปร์ : ดอลลาร์ (SGD)",
+          "currency_name_eng": "SINGAPORE : DOLLAR (SGD)",
+          "buying_sight": "24.5100000",
+          "buying_transfer": "24.5600000",
+          "selling": "24.9100000",
+          "mid_rate": "24.7350000"
+        }
+      ]
+    }
+  }
+}

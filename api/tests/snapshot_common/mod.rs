@@ -12,6 +12,14 @@
 //!
 //! Nothing here goes through HTTP or a session: a recorded step is applied by
 //! calling the service the dispatcher will call, with the step's `at` as `now`.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (design `docs/design/blueprint/rates.md` §8
+//! migration 6, §9): the direct save and the `rates` table are gone. A recorded `adminSaveRate`
+//! is a known difference (design §9 removes the action): its answer is not compared and its rate
+//! is published instead (`publish_rate_per_one`, stamped with the step's instant), so later
+//! steps see it; a recorded snapshot is held to `rateHistory: []` and no partner, with `updated`
+//! the current publication's `published_at` (`without_direct_saves`, rates.md R10, §4.1; ruling
+//! Q3 on #604).
 #![allow(dead_code)]
 
 #[path = "../rates_re4c_common/mod.rs"]
@@ -43,7 +51,6 @@ use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side, UnitSize};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
@@ -206,6 +213,79 @@ pub fn without_dropped_keys(recorded: &Value) -> Value {
         &["row", "startRow", "endRow"],
     );
     value
+}
+
+/// Re-expected for RE-7 #604 by the ticket author: a recorded v2 answer (a snapshot, a write
+/// answer cut from one, a desk config, the kiosk's `manage`) as v3 answers it once the direct
+/// save and the `rates` table are gone. A known difference (design §9 removes the action,
+/// rates.md R10, §4.1):
+///
+/// - `rateHistory` was the branch's `rates` rows, newest first, and is `[]`. The top-level
+///   `updated` is the current publication's `published_at` (ruling Q3 on #604), which is the
+///   recorded value wherever a replay publishes the step's rate at the step's time, so it is left
+///   as recorded;
+/// - a rate's `partnerName` / `partnerCost` were what v2's direct save wrote; v3 reads the partner
+///   from a `'PARTNER'` reference line, which nothing enters yet (rates.md §4.1), so they are
+///   `""` / `null`;
+/// - the kiosk's `manage` lists each currency of the current publication per 1 unit: `buy` and
+///   `sell` stay as recorded; a saved currency's `updated` is the publication's `published_at`
+///   (one instant for every line; `rpc_common`'s `as_published` sets it from the branch's
+///   current publication, because a v3 `configure` publishes nothing); what only a direct save
+///   carried is gone: `requestId` is `""`, the partner `""` / `null`, `botReference` `null`.
+///
+/// The first holds for a snapshot (it has `rateHistory`), the second for the snapshot and the
+/// desk config (v2's rate entries, which carry `requestId`), the third for `manage` (its
+/// `currencies`); anything else is left as it is.
+pub fn without_direct_saves(recorded: &Value) -> Value {
+    let mut value = recorded.clone();
+    let Some(map) = value.as_object_mut() else {
+        return value;
+    };
+    if let Some(Value::Array(currencies)) = map.get_mut("currencies") {
+        for entry in currencies
+            .iter_mut()
+            .filter(|c| c.get("requestId").is_some())
+        {
+            for (key, none) in [
+                ("requestId", json!("")),
+                ("partnerName", json!("")),
+                ("partnerCost", Value::Null),
+                ("botReference", Value::Null),
+            ] {
+                if entry.get(key).is_some() {
+                    entry[key] = none;
+                }
+            }
+        }
+    }
+    if map.contains_key("rateHistory") {
+        map.insert("rateHistory".to_string(), json!([]));
+    }
+    if let Some(Value::Array(rates)) = map.get_mut("rates") {
+        for rate in rates.iter_mut().filter(|r| r.get("requestId").is_some()) {
+            if rate.get("partnerName").is_some() {
+                rate["partnerName"] = json!("");
+            }
+            if rate.get("partnerCost").is_some() {
+                rate["partnerCost"] = Value::Null;
+            }
+        }
+    }
+    value
+}
+
+/// Re-expected for RE-7 #604 by the ticket author: sets `code` at `buy` / `sell` per 1 (as
+/// v2's direct save took them) the v3 way, by publishing: every other line of `branch`'s
+/// current publication is kept, and `code` is published per its `currencies.unit_size`.
+/// Stands in for a v2 `adminSaveRate` a test or a recorded step needs applied.
+pub async fn publish_rate_per_one(
+    pool: &PgPool,
+    branch: &str,
+    code: &str,
+    buy: &str,
+    sell: &str,
+) -> rates_re4c_common::Published {
+    rates_re4c_common::set_counter_rate(pool, branch, code, buy, sell).await
 }
 
 /// Top-level keys v3 adds to a v2 answer by decision, per route and action, with the
@@ -807,6 +887,10 @@ pub struct Compared {
     pub reservations: usize,
     /// `saveTransaction` steps fed into the hand-made sources.
     pub saves_fed: usize,
+    /// Re-expected for RE-7 #604 by the ticket author: accepted `adminSaveRate` steps, whose
+    /// answer is not compared (known difference: design §9 removes the action) and whose rate
+    /// is published instead.
+    pub retired: usize,
 }
 
 /// Replays the steps of one recorded file against a fresh shop.
@@ -891,17 +975,13 @@ impl<'f> Replay<'f> {
             "adminDeskConfig" if on_rpc => self.compare_desk(step).await,
             // the staff path's view of the two reads is T11s's
             "adminSnapshot" | "adminDeskConfig" => {}
-            // Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): the answer of the direct save
-            // shows the publication, without the rate just saved; the harness then publishes
-            // what the step saved, as the owner would, so later steps see it.
+            // Re-expected for RE-7 #604 by the ticket author: a known difference (design §9
+            // removes the action). v3 has no direct save, so v2's answer to it is not compared;
+            // the rate the step saved is published instead, as a v3 owner sets a rate, so the
+            // later steps still see it and still prove what they did.
             "adminSaveRate" => {
-                let saved = self.save_rate(step).await;
-                self.compare_write(step, None, Some(saved.as_str())).await;
-                rates_re4c_common::publish_newest_rates(
-                    &self.shop.db.pool,
-                    branch_of(self.fixture, step).as_str(),
-                )
-                .await;
+                self.publish_saved(step).await;
+                self.compared.retired += 1;
             }
             "adminCreateBranch" => {
                 let created = self.create_branch(step).await;
@@ -1001,33 +1081,26 @@ impl<'f> Replay<'f> {
         );
     }
 
-    /// The direct save of a recorded step; answers the code saved.
-    async fn save_rate(&mut self, step: &Step) -> String {
+    /// Re-expected for RE-7 #604 by the ticket author: the rate a recorded `adminSaveRate`
+    /// saved (per 1, as v2 took it), published on top of the branch's current publication.
+    async fn publish_saved(&mut self, step: &Step) {
         let payload = self.payload(step);
-        let code = text_of(&payload, "code");
-        self.shop
-            .source
-            .answer_next(recorded_reference(step, &code));
-        let cmd = SaveRate {
-            request_id: text_of(&payload, "requestId"),
-            code: code.clone(),
-            buy: number_text(&payload, "buy").expect("buy"),
-            sell: number_text(&payload, "sell").expect("sell"),
-            partner_name: optional_text(&payload, "partnerName").unwrap_or_default(),
-            partner_cost: number_text(&payload, "partnerCost"),
-            previous_updated: text_of(&payload, "previousUpdated"),
-        };
-        self.shop
-            .rates
-            .save_rate(
-                &branch_of(self.fixture, step),
-                cmd,
-                &actor_of(self.fixture, step),
-                time(&step.at),
-            )
+        let published = publish_rate_per_one(
+            &self.shop.db.pool,
+            branch_of(self.fixture, step).as_str(),
+            &text_of(&payload, "code"),
+            &number_text(&payload, "buy").expect("buy"),
+            &number_text(&payload, "sell").expect("sell"),
+        )
+        .await;
+        // ruling Q3 on #604: the snapshot's `updated` is the publication's `published_at`; it is
+        // stamped with the step's instant, as v2 stamped the saved row
+        sqlx::query("UPDATE rate_publications SET published_at = $1 WHERE id = $2::uuid")
+            .bind(time(&step.at))
+            .bind(&published.id)
+            .execute(&self.shop.db.pool)
             .await
-            .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
-        code
+            .expect("stamp the publication with the step's instant");
     }
 
     async fn create_branch(&mut self, step: &Step) -> BranchId {
@@ -1149,11 +1222,12 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)))
             .to_value();
-        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10)
+        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10); re-expected for
+        // RE-7 #604 by the ticket author: no `rates` rows (`without_direct_saves`)
         let recorded = rates_re4c_common::as_published(
             &self.shop.db.pool,
             branch_of(self.fixture, step).as_str(),
-            &without_dropped_keys(step.json()),
+            &without_direct_saves(&without_dropped_keys(step.json())),
             None,
         )
         .await;
@@ -1171,11 +1245,12 @@ impl<'f> Replay<'f> {
             .await
             .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)))
             .to_value();
-        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10, R3)
+        // amended for #757 (RE-4c): rates[] is the publication (D-3, R10, R3); re-expected for
+        // RE-7 #604 by the ticket author: no partner (`without_direct_saves`)
         let recorded = rates_re4c_common::as_published(
             &self.shop.db.pool,
             branch_of(self.fixture, step).as_str(),
-            step.json(),
+            &without_direct_saves(step.json()),
             None,
         )
         .await;
@@ -1212,7 +1287,11 @@ impl<'f> Replay<'f> {
         let recorded = rates_re4c_common::as_published(
             &self.shop.db.pool,
             here.as_str(),
-            &without_keys(&without_dropped_keys(step.json()), &["requestResolution"]),
+            // re-expected for RE-7 #604 by the ticket author: no `rates` rows
+            &without_direct_saves(&without_keys(
+                &without_dropped_keys(step.json()),
+                &["requestResolution"],
+            )),
             saved,
         )
         .await;

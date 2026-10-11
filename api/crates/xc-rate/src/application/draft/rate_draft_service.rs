@@ -104,11 +104,12 @@ impl RateDraftService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         for line in &lines {
-            // Find newest reference line for this currency
+            // The newest 'BOT' line of this currency is the AUTO base; a 'PARTNER' line is
+            // reference data for `source_snapshot.partner` only (rates.md §4.1 "Partner cost")
             let ref_row: Option<(Uuid,)> = sqlx::query_as(
                 "SELECT l.id FROM rate_reference_lines l \
                  JOIN rate_reference_batches b ON b.id = l.batch_id \
-                 WHERE l.currency_code = $1 \
+                 WHERE l.currency_code = $1 AND l.reference_type = 'BOT' \
                  ORDER BY b.fetched_at DESC LIMIT 1",
             )
             .bind(line.currency.as_str())
@@ -233,7 +234,7 @@ impl RateDraftService {
             let ref_row: Option<(Uuid,)> = sqlx::query_as(
                 "SELECT l.id FROM rate_reference_lines l \
                  JOIN rate_reference_batches b ON b.id = l.batch_id \
-                 WHERE l.currency_code = $1 \
+                 WHERE l.currency_code = $1 AND l.reference_type = 'BOT' \
                  ORDER BY b.fetched_at DESC LIMIT 1",
             )
             .bind(line.currency.as_str())
@@ -517,11 +518,6 @@ impl RateDraftService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        crate::application::approval::rate_publication::stage_evaluation_hash(
-            &id.to_string(),
-            &eval_hash,
-        );
-
         let request_res = self
             .approvals
             .request(
@@ -537,9 +533,6 @@ impl RateDraftService {
         let request = match request_res {
             Ok(req) => req,
             Err(e) => {
-                crate::application::approval::rate_publication::unstage_evaluation_hash(
-                    &id.to_string(),
-                );
                 return Err(match e {
                     xc_approval::application::approval_service::ApprovalError::IdempotencyConflict(s) => {
                         RateEngineError::IdempotencyConflict(s)
@@ -561,9 +554,6 @@ impl RateDraftService {
                 .approvals
                 .decide_by_policy(tx, &request.id, pol_ver)
                 .await;
-            crate::application::approval::rate_publication::unstage_evaluation_hash(
-                &id.to_string(),
-            );
             decide_res.map_err(|e| RateEngineError::Internal(e.to_string()))?;
             DraftStatus::Approved
         } else if who.role() == Role::Owner {
@@ -571,9 +561,6 @@ impl RateDraftService {
                 .approvals
                 .decide_self(tx, &request.id, who, "proposer_is_owner")
                 .await;
-            crate::application::approval::rate_publication::unstage_evaluation_hash(
-                &id.to_string(),
-            );
             decide_res.map_err(|e| match e {
                 xc_approval::application::approval_service::ApprovalError::OutOfScope(s) => {
                     RateEngineError::OutOfScope(s)
@@ -582,9 +569,6 @@ impl RateDraftService {
             })?;
             DraftStatus::Approved
         } else {
-            crate::application::approval::rate_publication::unstage_evaluation_hash(
-                &id.to_string(),
-            );
             DraftStatus::PendingApproval
         };
 

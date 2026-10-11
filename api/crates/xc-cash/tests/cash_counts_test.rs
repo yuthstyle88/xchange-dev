@@ -734,6 +734,17 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
     let even = opened(&db, &main, &nok, &manager).await;
     let counts = db.counts();
 
+    // V-1 (FINANCE approval above limit) / #928: branch limit covering the -100 THB difference
+    sqlx::query(
+        "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+         VALUES ($1::uuid, $2, 100.00, 'test', now())",
+    )
+    .bind(ORG)
+    .bind(main.as_str())
+    .execute(&db.pool)
+    .await
+    .expect("insert cash limit");
+
     // 2,200 counted against 2,300 expected
     let lines = vec![
         CountLine::new("THB", db.denomination("THB", "1000").await, 2),

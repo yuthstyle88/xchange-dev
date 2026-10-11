@@ -11,19 +11,17 @@ use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 
-// no-op since #731; removed with its calls by RE-7 #604
-pub fn stage_evaluation_hash(_draft_id: &str, _hash: &str) {}
-
-// no-op since #731; removed with its calls by RE-7 #604
-pub fn unstage_evaluation_hash(_draft_id: &str) {}
-
-pub struct RatePublicationSubject {
-    _pool: PgPool,
-}
+pub struct RatePublicationSubject;
 
 impl RatePublicationSubject {
-    pub fn new(pool: PgPool) -> Self {
-        Self { _pool: pool }
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for RatePublicationSubject {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -112,7 +110,7 @@ impl ApprovalPolicy for RatePublicationPolicy {
 }
 
 pub fn register(registry: &mut ApprovalRegistry, pool: PgPool) {
-    let subject = Arc::new(RatePublicationSubject::new(pool.clone()));
+    let subject = Arc::new(RatePublicationSubject::new());
     let policy = Arc::new(RatePublicationPolicy::new(pool));
     registry.register(subject, policy);
 }

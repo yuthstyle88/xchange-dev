@@ -51,6 +51,11 @@
 //! backwards, so nothing here relies on two writes having different times.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`) for the view tests; nothing skips.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (rates.md D-3, §8 migration 6): `Room::set_rate`
+//! publishes the rate (`rates_re4e_publish::set_counter_rate`) and writes no `rates` row, so "the
+//! currencies the branch has a counter rate for" are the lines of its current publication. The
+//! scenarios and their expected rows are unchanged.
 
 mod common;
 mod compat_common;
@@ -428,20 +433,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
-        // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-        rates_re4e_publish::publish_newest_rates(&self.desk.db.pool, branch).await;
+        // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+        // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+        rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
     /// The owner opens a shift in `branch` through `/api/rpc` with the opening given.
@@ -924,6 +918,9 @@ async fn the_open_shift_its_stock_and_its_cash_flow_are_the_servers_figures() {
 
 /// `admin-workspace.js:125-131`: shown are THB, every rated currency (even at zero), and every
 /// currency with a non-zero opening, net or expected; `all=true` answers the whole register.
+///
+/// Re-expected for RE-7 #604 by the ticket author: a "rated" currency is one the branch's current
+/// publication lists (D-3); `Room::set_rate` publishes, and `rates` is dropped (§8 migration 6).
 #[actix_web::test]
 async fn the_stock_shows_thb_the_rated_and_the_non_zero_and_every_currency_on_request() {
     let room = Room::open().await;

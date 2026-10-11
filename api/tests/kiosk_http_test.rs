@@ -611,6 +611,11 @@ async fn a_step_whose_audit_line_fails_is_rolled_back() {
 async fn a_configure_whose_audit_line_fails_stores_no_switch() {
     let counter = Counter::open(&[]).await;
     publish_behind(&counter, "KRW", "23.1", "25.9").await;
+    let before: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM rate_publications WHERE branch_id = 'MAIN'")
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("read rate_publications");
     counter.hands.audit.fail(true);
     let answer = counter
         .ask(
@@ -627,11 +632,17 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
         .await
         .expect("read kiosk_currencies");
     assert_eq!(switches.0, 0, "no switch was stored");
-    let won: (i64,) = sqlx::query_as("SELECT count(*) FROM rates WHERE code = 'KRW'")
-        .fetch_one(&counter.desk.db.pool)
-        .await
-        .expect("read rates");
-    assert_eq!(won.0, 0, "configure saved no rate");
+    // re-expected for RE-7 #604 by the ticket author: `rates` is dropped (design §8 migration
+    // 6); that configure saved no rate is now that it published nothing either
+    let publications: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM rate_publications WHERE branch_id = 'MAIN'")
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("read rate_publications");
+    assert_eq!(
+        publications.0, before.0,
+        "configure saved no rate and published nothing"
+    );
     counter.hands.audit.fail(false);
     let rates = counter.ask(None, "rates", json!({})).await;
     let offered: Vec<String> = rates.json()["rates"]

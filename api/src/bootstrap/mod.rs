@@ -64,7 +64,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(settings: Arc<Settings>, db: PgPool) -> Self {
         let probe = Arc::new(db.clone());
-        let rate_source = Arc::new(BotRateSource::bot());
+        let rate_source = choose_rate_source(&settings.bot, Arc::new(BotRateSource::bot()));
         Self {
             settings,
             db,
@@ -88,6 +88,42 @@ impl AppState {
         self.rate_source = source;
         self
     }
+}
+
+/// The reference-rate source the server reads (`docs/design/rate-feed-connector.md` §8.5): with
+/// `bot.api_token`, the official API with `scraper` behind it; without it, `scraper` alone and one
+/// `warn`. `AppState::new` passes `BotRateSource::bot()`.
+// scaffold (#1066): placeholder answer, the scraper whatever the settings say; no warn.
+pub fn choose_rate_source(
+    bot: &crate::config::BotSettings,
+    scraper: Arc<dyn RateSource>,
+) -> Arc<dyn RateSource> {
+    if let Some(token) = &bot.api_token
+        && !token.trim().is_empty()
+    {
+        let api_config =
+            xc_rate::infrastructure::reference_source::bot_api_rate_source::BotApiConfig {
+                base: bot.api_base.clone(),
+                token: token.clone(),
+            };
+        let api_source = Arc::new(
+            xc_rate::infrastructure::reference_source::bot_api_rate_source::BotApiRateSource::new(
+                api_config,
+                std::time::Duration::from_secs(5),
+                Arc::new(chrono::Utc::now),
+            ),
+        );
+        return Arc::new(
+            xc_rate::infrastructure::reference_source::fallback_rate_source::FallbackRateSource::new(
+                api_source,
+                scraper,
+            ),
+        );
+    }
+    tracing::warn!(
+        "BoT API token not set (APP_BOT__API_TOKEN); reference rates come from the website scraper"
+    );
+    scraper
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: AppState) {

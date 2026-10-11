@@ -146,14 +146,9 @@ async fn each_branch_kiosk_reads_its_own_switch() {
         .as_str()
         .expect("the new branch")
         .to_string();
-    counter
-        .owner_rpc(
-            "adminSaveRate",
-            json!({ "requestId": "00000000-0000-4000-8000-0000000d0102", "branchId": airport,
-                    "code": "USD", "buy": 32.0, "sell": 32.5, "previousUpdated": "" }),
-        )
-        .await;
     // #756 (RE-4b, rates.md D-3, §4.9): the kiosk's counter rate is the current publication.
+    // Re-expected for RE-7 #604 by the ticket author: no `adminSaveRate` first (design §9 removes
+    // the action); the publication alone sets the airport's dollar.
     kiosk_http_common::rates_re4_common::publish(
         &counter.desk.db.pool,
         &airport,

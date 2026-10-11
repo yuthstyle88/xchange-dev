@@ -25,6 +25,7 @@ use crate::application::compat::rpc::RpcCaller;
 use crate::application::compat::v2_json::V2Json;
 use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::booking_save_step::BookingSaveStep;
+use crate::application::workflows::broker_feed_save_step::BrokerFeedSaveStep;
 use crate::application::workflows::custody_save_step::CustodySaveStep;
 use crate::application::workflows::device_save_step::DeviceSaveStep;
 use crate::application::workflows::kiosk_save_step::KioskSaveStep;
@@ -68,6 +69,14 @@ impl SaveAction {
     /// Appends the booking save step to redeem and use bookings at the desk (T15-h).
     pub fn with_booking_check(mut self, bookings: BookingService) -> Self {
         self.steps.push(Arc::new(BookingSaveStep::new(bookings)));
+        self.workflow = self.workflow.with_steps(self.steps.clone());
+        self
+    }
+
+    /// Appends the Broker exchange feed step (FD-2 #973). It must come after the booking step,
+    /// whose `after_in` writes `bookings.transaction_ref`, which the member lookup reads.
+    pub fn with_broker_feed(mut self) -> Self {
+        self.steps.push(Arc::new(BrokerFeedSaveStep::new()));
         self.workflow = self.workflow.with_steps(self.steps.clone());
         self
     }

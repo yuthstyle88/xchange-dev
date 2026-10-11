@@ -108,16 +108,9 @@ async fn setup_active_agent(desk: &Desk) {
 }
 
 async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-         VALUES ($1, 'USD', 32.1, 33.0, now(), 'test', 'rate-1')",
-    )
-    .bind(MAIN)
-    .execute(&desk.db.pool)
-    .await
-    .expect("insert rate");
-    // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-    rates_re4e_publish::publish_newest_rates(&desk.db.pool, MAIN).await;
+    // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+    // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+    rates_re4e_publish::set_counter_rate(&desk.db.pool, MAIN, "USD", "32.1", "33.0").await;
 
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \

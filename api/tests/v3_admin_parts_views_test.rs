@@ -31,6 +31,11 @@
 //! `v3_devices_view_test.rs` does). The test's clock is advanced before every write.
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`) for the view tests; nothing skips.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6, §9 RE-7): the counter
+//! rates are published (`rates_re4e_publish::set_counter_rate`), not written to `rates`; the
+//! `admin_request_status` tests that used `adminSaveRate` as a writer use `adminOpenShift`, and
+//! "a saved rate" is no longer one of the writers `applied` finds.
 
 mod common;
 mod compat_common;
@@ -279,20 +284,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, now(), 'test', $5)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert a counter rate");
-        // #759 (RE-4e; rates.md D-3, §4.9 R4): the counter rate is the current publication.
-        rates_re4e_publish::publish_newest_rates(&self.desk.db.pool, branch).await;
+        // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
+        // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
+        rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
     /// The owner opens a shift in `branch` through `/api/rpc`; the request id it used.
@@ -762,8 +756,9 @@ async fn admin_request_status_refuses_a_request_id_of_the_wrong_shape_naming_it(
     room.finish().await;
 }
 
-/// `applied` is the check `adminAbandonRequest` makes: a rate, an opened shift, a stock movement,
-/// a closed shift in the branch, or a branch anywhere, made with that request id.
+/// `applied` is the check `adminAbandonRequest` makes: an opened shift, a stock movement, a closed
+/// shift in the branch, or a branch anywhere, made with that request id. (Before RE-7 also a rate
+/// saved directly; RE-7 #604 removes that save.)
 #[actix_web::test]
 async fn admin_request_status_is_applied_exactly_when_abandon_would_find_the_request() {
     let room = Room::open().await;
@@ -780,19 +775,8 @@ async fn admin_request_status_is_applied_exactly_when_abandon_would_find_the_req
     };
     assert_eq!(ask(request_id()).await, json!({ "applied": false }));
 
-    let rate = request_id();
-    room.ok(
-        "OWNER",
-        "adminSaveRate",
-        json!({ "branchId": MAIN, "requestId": rate, "code": "EUR", "buy": "38.2",
-                "sell": "39.1", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
-    )
-    .await;
-    assert_eq!(
-        ask(rate.clone()).await,
-        json!({ "applied": true }),
-        "a saved rate"
-    );
+    // RE-7 #604 (re-expected by the ticket author): "a saved rate" is gone with `adminSaveRate`
+    // and `rates` (rates.md §8 migration 6, §9 RE-7); the other writers still count
 
     let opened = room.open_shift(MAIN).await;
     assert_eq!(
@@ -856,12 +840,12 @@ async fn admin_request_status_is_unversioned_and_writes_nothing() {
         .expect("count abandoned requests");
     assert_eq!(abandoned, 0, "asking gives nothing up");
 
-    // the id asked about is still free to be used
+    // the id asked about is still free to be used (RE-7 #604: by a shift opened with it, where
+    // it was a direct rate save before RE-7 removed that action)
     room.ok(
         "OWNER",
-        "adminSaveRate",
-        json!({ "branchId": MAIN, "requestId": id, "code": "EUR", "buy": "38.2",
-                "sell": "39.1", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
+        "adminOpenShift",
+        json!({ "branchId": MAIN, "requestId": id, "opening": { "THB": 100000, "USD": 1000 } }),
     )
     .await;
     let data = room
@@ -878,14 +862,9 @@ async fn admin_request_status_is_unversioned_and_writes_nothing() {
 #[actix_web::test]
 async fn admin_request_status_answers_staff_for_their_own_branch() {
     let room = Room::open().await;
-    let id = request_id();
-    room.ok(
-        "OWNER",
-        "adminSaveRate",
-        json!({ "branchId": B9, "requestId": id, "code": "EUR", "buy": "37.5",
-                "sell": "38.5", "previousUpdated": "", "partnerName": "", "partnerCost": null }),
-    )
-    .await;
+    // RE-7 #604 (re-expected by the ticket author): a shift opened in B9, where it was a direct
+    // rate save in B9 before RE-7 removed that action
+    let id = room.open_shift(B9).await;
     let q = |branch: &str| format!("branch={branch}&requestId={id}");
     assert_eq!(
         room.data("OWNER", REQUEST_STATUS, &q(B9)).await,
@@ -895,7 +874,7 @@ async fn admin_request_status_answers_staff_for_their_own_branch() {
     assert_eq!(
         room.data("OWNER", REQUEST_STATUS, &q(MAIN)).await,
         json!({ "applied": false }),
-        "a rate of B9 is not MAIN's"
+        "a shift of B9 is not MAIN's"
     );
     // OR-4b (D-4): FRONT works in MAIN; naming B9 is refused, naming MAIN reads MAIN
     assert_out_of_scope(

@@ -6,7 +6,6 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
-use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
@@ -28,7 +27,7 @@ use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepositor
 use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, NumberError, Side};
+use xc_kernel::money::{CompatRate, CurrencyCode, Money, NumberError, Side};
 
 use crate::application::bookings::booking_rules_service::BookingRulesService;
 use crate::bootstrap::AppState;
@@ -57,41 +56,6 @@ const NOT_IDENTIFIED: &str = "ต้องเลือกลูกค้าแ�
 const BAD_MEMBER_CODE: &str = "รหัสสมาชิกไม่ถูกต้อง";
 const BAD_RULES: &str = "กำหนดเวลา 5\u{2013}1440 นาที";
 const NO_REGISTRATION: &str = "ไม่พบการลงทะเบียนของสาขานี้";
-
-fn parse_wire_rate(text: &str) -> Result<Decimal, NumberError> {
-    if text.is_empty() {
-        return Err(NumberError::Invalid);
-    }
-    if text.starts_with('.') || text.ends_with('.') {
-        return Err(NumberError::Invalid);
-    }
-    let mut dot_count = 0;
-    for b in text.bytes() {
-        if b == b'.' {
-            dot_count += 1;
-            if dot_count > 1 {
-                return Err(NumberError::Invalid);
-            }
-        } else if !b.is_ascii_digit() {
-            return Err(NumberError::Invalid);
-        }
-    }
-    let frac_part = match text.split_once('.') {
-        Some((_, frac)) => frac,
-        None => "",
-    };
-    if frac_part.len() > 11 && frac_part[11..].bytes().any(|b| b != b'0') {
-        return Err(NumberError::TooManyDecimals);
-    }
-    let val = Decimal::from_str_exact(text).map_err(|_| NumberError::Invalid)?;
-    if val.is_zero() || val.is_sign_negative() {
-        return Err(NumberError::Invalid);
-    }
-    if val > Decimal::from(Money::MAX_INPUT_UNITS) {
-        return Err(NumberError::Invalid);
-    }
-    Ok(val)
-}
 
 /// Configures booking routes into the service config.
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -412,7 +376,7 @@ async fn execute_action(
                 Some(Value::String(s)) => s.clone(),
                 _ => return refuse(400, BAD_NUMBER),
             };
-            let expected_rate = match parse_wire_rate(&rate_str) {
+            let expected_rate = match CompatRate::parse_per_one(&rate_str) {
                 Ok(r) => r,
                 Err(NumberError::TooManyDecimals) => return refuse(400, TOO_MANY_DECIMALS),
                 Err(NumberError::Invalid) => return refuse(400, BAD_NUMBER),
@@ -463,8 +427,8 @@ async fn execute_action(
                 None => None,
             };
             let expected_rate = match payload.get("expectedRate") {
-                Some(Value::Number(n)) => parse_wire_rate(&n.to_string()).ok(),
-                Some(Value::String(s)) => parse_wire_rate(s).ok(),
+                Some(Value::Number(n)) => CompatRate::parse_per_one(&n.to_string()).ok(),
+                Some(Value::String(s)) => CompatRate::parse_per_one(s).ok(),
                 _ => None,
             };
 

@@ -15,6 +15,10 @@
 //! - `xc_auth::domain::access::v3_roles::blueprint_roles(v3: policy Role) -> &'static [Role]` and
 //!   `actor_from_v3(v3: &policy Actor, organization_id: &str, since: DateTime<Utc>) -> access::Actor`
 //!   (B1; the extractor maps a password session through it until OR-7).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
+//! (`docs/design/blueprint/rates.md` §9), so its two rows (Rpc and StaffRpc, RatesDraft) move to
+//! "no row". Every other row, `rateDraft`'s included, is unchanged.
 
 mod policy_common;
 
@@ -48,8 +52,6 @@ fn every_route_and_action_names_its_permission() {
         (E::StaffRpc, "saveTransaction", p(P::ExchangeTransact)),
         (E::Rpc, "reserveCustomer", p(P::ExchangeTransact)),
         (E::Rpc, "saveTransaction", p(P::ExchangeTransact)),
-        (E::Rpc, "adminSaveRate", p(P::RatesDraft)),
-        (E::StaffRpc, "adminSaveRate", p(P::RatesDraft)),
         (E::Kiosk, "manage", p(P::RatesDraft)),
         (E::Kiosk, "configure", p(P::RatesDraft)),
         (E::Rpc, "adminOpenShift", Some(Need::Custody)),
@@ -122,6 +124,9 @@ fn every_route_and_action_names_its_permission() {
         (E::StaffRpc, "opsEnable", Some(Need::Custody)),
         (E::StaffRpc, "adminOpenShift", Some(Need::Custody)),
         // no row
+        // RE-7 #604 removes adminSaveRate (rates.md §9): it was RatesDraft on both paths
+        (E::Rpc, "adminSaveRate", None),
+        (E::StaffRpc, "adminSaveRate", None),
         (E::Rpc, "documents", None),
         (E::Rpc, "opsClock", None),
         (E::Rpc, "nope", None),

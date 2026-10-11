@@ -16,14 +16,15 @@
 //! ([`RpcFailure::Refused`]); anything else that goes wrong is handed back for
 //! the route to answer as a server error ([`RpcFailure::Failed`]).
 //!
-//! **Part one** (this file) dispatches ten actions itself:
-//! `adminSnapshot`, `adminDeskConfig`, `getConnectionStatus`, `adminSaveRate`,
+//! **Part one** (this file) dispatches nine actions itself:
+//! `adminSnapshot`, `adminDeskConfig`, `getConnectionStatus`,
 //! `adminCreateBranch`, `adminOpenShift`, `adminMoveStock`, `adminCloseShift`,
-//! `adminAbandonRequest`, `reserveCustomer`.
+//! `adminAbandonRequest`, `reserveCustomer`. v2's `adminSaveRate` is retired
+//! (RE-7 #604, rates.md §9): it is answered as a name v2 does not know.
 //!
 //! **Part two** — `saveTransaction`, `documents` and every name starting with
 //! `ops` — is one file per family under `actions/`, behind [`RpcAction`]. A
-//! name that is not one of the ten is offered to the registered families
+//! name that is not one of the nine is offered to the registered families
 //! ([`CompatRpc::with_actions`]) in the order registered; the first that
 //! handles it answers, and steps 1, 2 and 4 above stay here. A name no family
 //! handles is answered as v2 answers a name it does not know; see
@@ -59,7 +60,6 @@ use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
@@ -148,7 +148,7 @@ impl From<AppError> for RpcFailure {
     }
 }
 
-/// The services the ten actions of part one are made of.
+/// The services the nine actions of part one are made of.
 #[derive(Clone)]
 pub struct RpcServices {
     pub branches: BranchService,
@@ -239,7 +239,7 @@ impl CompatRpc {
     /// print it with `V2Json::to_text`.
     ///
     /// `now` is the server clock at the request. Refusals, in this order: the
-    /// role may not ask for the name here; the name is neither one of the ten
+    /// role may not ask for the name here; the name is neither one of the nine
     /// nor one a registered family handles ([`not_dispatched_yet`]); the
     /// owner's `branchId` is not a branch id (`สาขาไม่ถูกต้อง`); the branch does
     /// not exist (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`); then whatever the use case
@@ -291,13 +291,6 @@ impl CompatRpc {
             "adminSnapshot" => self.snapshots.admin_snapshot(branch, who, now).await?,
             "adminDeskConfig" => self.snapshots.desk_config(branch).await?,
             "getConnectionStatus" => connection_status(),
-            "adminSaveRate" => {
-                self.services
-                    .rates
-                    .save_rate(branch, save_rate_command(&payload), who, now)
-                    .await?;
-                self.written(branch, who, now).await?
-            }
             "adminCreateBranch" => {
                 let command = CreateBranch {
                     request_id: js_text(payload.get("requestId")),
@@ -466,14 +459,13 @@ impl CompatRpc {
     }
 }
 
-/// The ten actions this file dispatches itself.
+/// The nine actions this file dispatches itself.
 fn is_part_one(action: &str) -> bool {
     matches!(
         action,
         "adminSnapshot"
             | "adminDeskConfig"
             | "getConnectionStatus"
-            | "adminSaveRate"
             | "adminCreateBranch"
             | "adminOpenShift"
             | "adminMoveStock"
@@ -521,28 +513,6 @@ fn connection_status() -> V2Json {
     ])
 }
 
-/// `adminSaveRate`'s payload as the rate service takes it: figures as the text
-/// that was sent, whether the screen sent a number or a text.
-fn save_rate_command(payload: &Map<String, Value>) -> SaveRate {
-    let or_empty = |key: &str| match payload.get(key) {
-        Some(value) if js_truthy(value) => js_text(Some(value)),
-        _ => String::new(),
-    };
-    SaveRate {
-        request_id: js_text(payload.get("requestId")),
-        code: js_text(payload.get("code")),
-        buy: js_text(payload.get("buy")),
-        sell: js_text(payload.get("sell")),
-        partner_name: or_empty("partnerName"),
-        // v2: absent and null mean no partner cost; the service reads "" the same
-        partner_cost: payload
-            .get("partnerCost")
-            .filter(|cost| !cost.is_null())
-            .map(|cost| js_text(Some(cost))),
-        previous_updated: or_empty("previousUpdated"),
-    }
-}
-
 /// `reserveCustomer`'s payload as the customer service takes it. `mode` is
 /// passed on only when it is a text: v2 compares it with `LIVE` and `DEMO`
 /// without making it a text first.
@@ -558,18 +528,6 @@ fn reserve_command(payload: &Map<String, Value>) -> ReserveCustomer {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
-    }
-}
-
-/// What JavaScript's `||` keeps: everything but `null`, `false`, zero and the
-/// empty text.
-fn js_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|n| n != 0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
     }
 }
 

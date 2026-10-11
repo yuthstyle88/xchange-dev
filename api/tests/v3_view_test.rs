@@ -263,7 +263,9 @@ struct SaveRate;
 
 impl BranchView for SaveRate {
     const NAME: &'static str = "test-save-rate";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSaveRate");
+    // re-expected for RE-7 #604 by the ticket author: `adminSaveRate` is retired (design §9);
+    // `rateDraft` has the same rows of `Policy` (the owner, and RATES)
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
     type Filter = NoFilter;
     type Data = Echo;
 
@@ -661,7 +663,7 @@ async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
     db.finish().await;
 }
 
-/// §9: a view whose INHERITS is (Rpc, "adminSaveRate") refuses exactly the
+/// §9: a view whose INHERITS is (Rpc, "rateDraft") refuses exactly the
 /// callers `Policy::allow` refuses for that pair, and so for the staff path.
 #[actix_web::test]
 async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
@@ -670,7 +672,7 @@ async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
     let mut allowed = 0;
     let mut refused = 0;
     for (view, path, action) in [
-        ("test-save-rate", EntryPath::Rpc, "adminSaveRate"),
+        ("test-save-rate", EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         ("test-desk-config", EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
         for who in every_caller() {

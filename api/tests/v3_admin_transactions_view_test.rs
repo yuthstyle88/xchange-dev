@@ -523,6 +523,7 @@ impl Room {
             .execute(&self.counter.desk.db.pool)
             .await
             .unwrap_or_else(|e| panic!("put exchange {}: {e}", tx.id));
+            seed_lines(&self.counter.desk.db.pool, std::slice::from_ref(&tx.id)).await;
         }
     }
 
@@ -1724,6 +1725,7 @@ async fn reference_percent_padded_to_six_places_when_ending_early() {
     .execute(&room.counter.desk.db.pool)
     .await
     .unwrap();
+    seed_lines(&room.counter.desk.db.pool, &["XC-20261006-P01".to_owned()]).await;
 
     let row = room.row("XC-20261006-P01").await;
     assert_eq!(row["referenceSpread"], json!("10.00"), "{row}");
@@ -1745,4 +1747,42 @@ async fn reference_value_half_away_from_zero_pins_half_satang() {
     assert_eq!(row["referenceValue"], json!("32.13"), "{row}");
     assert_eq!(row["referenceSpread"], json!("0.03"), "{row}");
     room.finish().await;
+}
+
+/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
+/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
+/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
+/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
+async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+    sqlx::query(
+        "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
+            shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
+            reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
+            realized_margin_thb, line_no, created_at, updated_at) \
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
+            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
+            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
+            t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = ANY($1)",
+    )
+    .bind(refs)
+    .execute(pool)
+    .await
+    .expect("seed transaction_lines");
+    sqlx::query(
+        "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
+            method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
+            created_at, updated_at) \
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
+            t.account, \
+            (SELECT file_key FROM transaction_files f \
+             WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
+            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
+            t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = ANY($1)",
+    )
+    .bind(refs)
+    .execute(pool)
+    .await
+    .expect("seed transaction_payments");
 }

@@ -10,7 +10,6 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
-use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{answer, refuse, server_error};
@@ -20,10 +19,8 @@ use crate::presentation::pages::{self, SessionReader};
 const ORIGIN_REJECTED: &str = "ORIGIN_REJECTED";
 
 /// Routes of this module; registered through the one route table.
-pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
-    cfg.app_data(web::Data::new(
-        Arc::new(BotRateSource::bot()) as Arc<dyn RateSource>
-    ));
+pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
+    cfg.app_data(web::Data::new(state.rate_source.clone()));
     cfg.service(
         web::resource("/api/reference-rates")
             .route(web::post().to(handler))

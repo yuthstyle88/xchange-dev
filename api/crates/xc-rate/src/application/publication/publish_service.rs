@@ -310,29 +310,45 @@ impl PublishService {
 
             let prop = RateProposal::of(&line, reference.as_ref(), policy.as_ref(), &units)?;
 
+            // rates.md §4.1 "Partner cost": the newest 'PARTNER' reference line of the currency
+            // (by its batch's `fetched_at`), copied as it stands; `null` when there is none.
+            // `name` and `cost` (the partner's sell per 1 unit, 8 places) are what the v2
+            // readers show as `partnerName` / `partnerCost` (#604 ruling Q2).
             let partner_row = sqlx::query(
-                "SELECT partner_name, partner_cost FROM rates WHERE branch_id = $1 AND code = $2 ORDER BY id DESC LIMIT 1",
+                "SELECT l.id::text, b.provider, l.unit_size, l.buy, l.sell, b.source_date, b.fetched_at \
+                 FROM rate_reference_lines l JOIN rate_reference_batches b ON b.id = l.batch_id \
+                 WHERE l.currency_code = $1 AND l.reference_type = 'PARTNER' \
+                 ORDER BY b.fetched_at DESC, l.id DESC LIMIT 1",
             )
-            .bind(branch_str)
             .bind(c.as_str())
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-            let partner = if let Some(pr) = partner_row {
-                let pname: String = pr.get(0);
-                let pcost: Option<Decimal> = pr.get(1);
-                if !pname.is_empty() {
-                    Some(json!({
-                        "name": pname,
-                        "cost": pcost,
-                    }))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let partner = partner_row.map(|pr| {
+                let line_id: String = pr.get(0);
+                let provider: String = pr.get(1);
+                let unit: Decimal = pr.get(2);
+                let p_buy: Option<Decimal> = pr.get(3);
+                let p_sell: Option<Decimal> = pr.get(4);
+                let p_date: chrono::NaiveDate = pr.get(5);
+                let p_fetched: chrono::DateTime<chrono::Utc> = pr.get(6);
+                let text = |d: Decimal| d.normalize().to_string();
+                let cost = p_sell
+                    .filter(|_| !unit.is_zero())
+                    .map(|sell| format!("{:.8}", (sell / unit).round_dp(8)));
+                json!({
+                    "provider": provider.clone(),
+                    "reference_line_id": line_id,
+                    "unit_size": text(unit),
+                    "buy": p_buy.map(text),
+                    "sell": p_sell.map(text),
+                    "source_date": p_date.to_string(),
+                    "fetched_at": p_fetched.to_rfc3339(),
+                    "name": provider,
+                    "cost": cost,
+                })
+            });
 
             let mut snapshot = json!({
                 "currency": c.as_str(),

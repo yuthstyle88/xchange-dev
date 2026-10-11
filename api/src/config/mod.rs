@@ -80,6 +80,36 @@ impl Default for DevicesSettings {
 
 pub use xc_auth::infrastructure::identity::IdentitySettings;
 
+/// The official BoT API (`docs/design/rate-feed-connector.md` §8.4): `APP_BOT__API_TOKEN`,
+/// `APP_BOT__API_BASE`.
+// scaffold (#1066): the field shapes only. The implementation gives `api_base` its default
+// (`https://gateway.api.bot.or.th/Stat-ExchangeRate/v2`) and makes `load_from` take
+// `api_token` raw from the environment (empty = absent).
+#[derive(Clone, serde::Deserialize)]
+#[serde(default)]
+pub struct BotSettings {
+    pub api_token: Option<String>,
+    pub api_base: String,
+}
+
+impl Default for BotSettings {
+    fn default() -> Self {
+        Self {
+            api_token: None,
+            api_base: "https://gateway.api.bot.or.th/Stat-ExchangeRate/v2".to_string(),
+        }
+    }
+}
+
+impl std::fmt::Debug for BotSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BotSettings")
+            .field("api_token", &self.api_token.as_ref().map(|_| "<redacted>"))
+            .field("api_base", &self.api_base)
+            .finish()
+    }
+}
+
 /// Where the Broker attribution handler sends (RA-2 #980, design `broker-seam.md` §5.4). Read
 /// from `XC_BROKER_BASE_URL` and `XC_BROKER_SERVICE_TOKEN`; `None` when either is unset or blank,
 /// and then no handler is registered. `Debug` never prints the token.
@@ -111,6 +141,8 @@ pub struct Settings {
     pub devices: DevicesSettings,
     #[serde(default)]
     pub identity: Option<IdentitySettings>,
+    #[serde(default)]
+    pub bot: BotSettings,
     #[serde(skip)]
     pub broker: Option<BrokerSettings>,
 }
@@ -178,6 +210,12 @@ impl Settings {
             _ => None,
         };
 
+        let bot_token = env_map
+            .get("APP_BOT__API_TOKEN")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let environment = env_map
             .get("APP_ENVIRONMENT")
             .map(|s| s.as_str())
@@ -208,17 +246,21 @@ impl Settings {
             builder = builder.add_source(config::File::from(env_path).required(false));
         }
 
+        let mut env_map_for_builder = env_map;
+        env_map_for_builder.remove("APP_BOT__API_TOKEN");
+
         builder = builder.add_source(
             config::Environment::with_prefix("APP")
                 .prefix_separator("_")
                 .separator("__")
                 .try_parsing(true)
-                .source(Some(env_map)),
+                .source(Some(env_map_for_builder)),
         );
 
         let mut settings: Settings = builder.build()?.try_deserialize()?;
         settings.identity = identity;
         settings.broker = broker;
+        settings.bot.api_token = bot_token;
         if settings.auth.purge_interval_secs == 0 {
             return Err(config::ConfigError::Message(
                 "auth.purge_interval_secs must be at least 1".to_string(),

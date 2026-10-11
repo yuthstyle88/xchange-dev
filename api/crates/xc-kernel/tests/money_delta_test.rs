@@ -2,7 +2,25 @@
 //!
 //! Provided with ticket T2c. These tests are the specification: make them pass, do not edit them.
 
-use xc_kernel::money::{Money, MoneyDelta, NumberError, Quote, Rate, Side};
+use xc_kernel::money::{Money, MoneyDelta, NumberError, Rate, Side};
+
+/// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
+/// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
+fn per_one(
+    side: xc_kernel::money::Side,
+    amount: xc_kernel::money::Money,
+    rate: xc_kernel::money::Rate,
+    fee: xc_kernel::money::Money,
+) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
+    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
+    xc_kernel::money::Quote::per_unit(
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(amount),
+        rate,
+        xc_kernel::money::UnitSize::ONE,
+        fee,
+    )
+}
 
 fn money(text: &str) -> Money {
     Money::parse(text).expect("valid amount")
@@ -110,7 +128,7 @@ fn deltas_order_by_value() {
 #[test]
 fn money_gives_its_hundredths_without_a_sixty_four_bit_limit() {
     // v2 stores this principal (99,999,999.99 × 32.1); see the quote fixture.
-    let quote = Quote::compute(
+    let quote = per_one(
         Side::Sell,
         money("99999999.99"),
         Rate::parse("32.1").unwrap(),

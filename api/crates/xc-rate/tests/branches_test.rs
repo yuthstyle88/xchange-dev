@@ -7,6 +7,13 @@
 //! Part 2 is what a single-threaded recording cannot show.
 //!
 //! Needs `TEST_DATABASE_URL` (see `common/mod.rs`); nothing here skips.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `RateService::save_rate` (`docs/design/blueprint/rates.md` §9), so
+//! `a_new_branch_takes_rates_of_its_own_at_once` gives the new branch its rates by publishing them
+//! (draft → submit → publish, `TestDb::publish`) and reads them from its current publication,
+//! instead of a direct save read back through `history`. What it proves is unchanged: a branch
+//! just created takes rates at once, and they are its own, not MAIN's.
 
 mod common;
 
@@ -140,27 +147,19 @@ async fn a_new_branch_takes_rates_of_its_own_at_once() {
         .create(create("Silom"), ACTOR, at(0))
         .await
         .expect("create");
-    let rates = db.rates();
-    let cmd = SaveRate {
-        request_id: request_id(),
-        code: "USD".to_owned(),
-        buy: "31".to_owned(),
-        sell: "33".to_owned(),
-        partner_name: String::new(),
-        partner_cost: None,
-        previous_updated: String::new(),
-    };
-    rates
-        .save_rate(&made.id, cmd, ACTOR, at(1))
-        .await
-        .expect("a rate in the new branch");
-    assert_eq!(rates.history(&made.id).await.expect("history").len(), 1);
+    db.publish(made.id.as_str(), &[("USD", "31", "33")]).await;
+    assert_eq!(
+        db.published_lines(made.id.as_str()).await,
+        vec![(
+            "USD".to_owned(),
+            "31.00000000".to_owned(),
+            "33.00000000".to_owned()
+        )],
+        "the new branch's own publication has the rate"
+    );
     assert!(
-        rates
-            .history(&branch(MAIN))
-            .await
-            .expect("history")
-            .is_empty()
+        db.published_lines(MAIN).await.is_empty(),
+        "MAIN has no publication of its own"
     );
     db.finish().await;
 }

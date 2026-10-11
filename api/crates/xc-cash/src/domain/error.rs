@@ -20,6 +20,28 @@ pub enum CashError {
     ShiftAlreadyOpen,
     #[error("{0:?}")]
     Refused(Refusal),
+    #[error("รอฝ่ายการเงินอนุมัติ: {0}")]
+    AwaitingFinance(String),
+    #[error("ฝ่ายการเงินปฏิเสธ: {0}")]
+    RejectedByFinance(String),
+}
+
+impl CashError {
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::SameCounter => "sameCounter",
+            Self::NotReceiver => "notReceiver",
+            Self::NotOwnShift => "notOwnShift",
+            Self::NotNewestCount => "notNewestCount",
+            Self::BalancesChanged => "balancesChanged",
+            Self::TooManyDecimals => "tooManyDecimals",
+            Self::ShiftAlreadyOpen => "shiftAlreadyOpen",
+            Self::Refused(_) => "refused",
+            Self::AwaitingFinance(_) => "awaitingFinance",
+            Self::RejectedByFinance(_) => "rejectedByFinance",
+        }
+    }
 }
 
 impl From<CashError> for pos_error::AppError {

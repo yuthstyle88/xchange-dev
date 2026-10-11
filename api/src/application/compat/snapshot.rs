@@ -105,8 +105,9 @@ impl SnapshotBuilder {
         let movements = self.shifts.movements(branch).await?;
         let operations = self.operations(branch).await?;
 
-        // the newest rate row of the branch, whatever its currency
-        let updated = history.first().map(|change| change.updated_at);
+        // RE-7 #604 (ruling Q3): the branch's current publication's `published_at`,
+        // `""` when it has none; `rateHistory` is `[]` (rates.md R10: no `rates` rows)
+        let updated = current_published_at(pool, branch).await?;
         let branch_id = here.id.as_str();
 
         Ok(V2Json::object(vec![
@@ -343,6 +344,22 @@ fn transaction_json(tx: &SnapshotTransaction) -> AppResult<V2Json> {
             tx.shift_id.as_deref().map_or(V2Json::Null, V2Json::text),
         ),
     ]))
+}
+
+/// The `published_at` of `branch`'s current publication; `None` when it has none.
+async fn current_published_at(
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+) -> AppResult<Option<DateTime<Utc>>> {
+    sqlx::query_scalar(
+        "SELECT p.published_at FROM branches b \
+         JOIN rate_publications p ON p.id = b.current_publication_id \
+         WHERE b.id = $1",
+    )
+    .bind(branch.as_str())
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)
 }
 
 async fn published_rates_json(

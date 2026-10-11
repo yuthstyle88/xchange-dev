@@ -59,6 +59,10 @@
 //!   publication through the rate routes, no longer `adminSaveRate` (D-3: a direct save is not
 //!   the counter rate).
 //!
+//! Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6): `Room::set_rate` and
+//! `the_counter_rates_are_the_published_lines_per_1` no longer write `rates` rows; the
+//! publications they make are unchanged.
+//!
 //! Amended for #943 (RF-4) by its up-front test author (claude/dell-claude-4, on the lane
 //! controller's order): `admin_booking_settings` also answers `freshness` (`RateFreshnessDto`,
 //! RF-1), so the two key-set pins below (`settings_answers_rules_members_public_url_and_counter_rates`
@@ -321,24 +325,14 @@ impl Room {
         .expect("insert into customers");
     }
 
-    /// A counter-rate row behind the routes' back (test data, not a writer under test).
+    /// A counter rate behind the routes' back (test data, not a writer under test).
     ///
     /// Amended for #758 (RE-4d): also publishes the branch's current lines with this one (D-3:
     /// the counter is the current publication), behind the routes' back too.
+    ///
+    /// Re-expected for RE-7 #604 by the ticket author: only the publication; the `rates` row it
+    /// also wrote is gone with the table (rates.md §8 migration 6).
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        sqlx::query(
-            "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5, 'owner', $6)",
-        )
-        .bind(branch)
-        .bind(code)
-        .bind(buy)
-        .bind(sell)
-        .bind(self.now())
-        .bind(request_id())
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert into rates");
         let pool = self.desk.db.pool.clone();
         let mut lines = self.published(branch).await;
         lines.retain(|(c, _, _)| c != code);
@@ -1024,20 +1018,13 @@ async fn a_pending_row_carries_the_counter_rate_and_principal() {
 /// lines per 1, exactly, and `counterPrincipal` is `ExchangeArithmetic::thb` at the line's rate
 /// per its unit, HALF_UP once. The screen sends them back as `expectedRate` and create and confirm
 /// accept them. JPY is per 100 (RU-1): 23.1 / 23.5 print `"0.2310"` / `"0.2350"`; SELL 3 JPY is
-/// 3 × 23.5 ÷ 100 = 0.705 → `"0.71"` (banker's rounding gives 0.70). A direct save that was never
-/// published is not a counter rate.
+/// 3 × 23.5 ÷ 100 = 0.705 → `"0.71"` (banker's rounding gives 0.70). A currency with no line
+/// (GBP) is not a counter rate. (RE-7 #604: before RE-7 GBP also had a direct-save `rates` row
+/// here as a decoy; the table is dropped.)
 #[actix_web::test]
 async fn the_counter_rates_are_the_published_lines_per_1() {
     let room = Room::open().await;
     room.set_rate(MAIN, "JPY", "23.1", "23.5").await;
-    sqlx::query(
-        "INSERT INTO rates (branch_id, code, buy, sell, updated_at, updated_by, request_id) \
-         VALUES ('MAIN', 'GBP', 45.1, 46.2, now(), 'owner', $1)",
-    )
-    .bind(request_id())
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("a direct save, not published");
 
     let settings = room.settings(MAIN).await;
     assert_eq!(
@@ -1047,7 +1034,7 @@ async fn the_counter_rates_are_the_published_lines_per_1() {
             { "currency": "JPY", "buy": "0.2310", "sell": "0.2350" },
             { "currency": "USD", "buy": "36.2500", "sell": "36.7500" },
         ]),
-        "the published lines per 1; GBP was only saved directly"
+        "the published lines per 1; GBP has no line"
     );
     let jpy_buy = settings["counterRates"][1]["buy"]
         .as_str()

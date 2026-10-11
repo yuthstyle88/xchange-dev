@@ -1,13 +1,11 @@
 //! BoT rate source implementation.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 
 use crate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 
@@ -15,8 +13,6 @@ pub const BOT_BASE: &str = "https://www.bot.or.th/content/bot/th/statistics/exch
 pub const BOT_SOURCE_PAGE: &str = "https://www.bot.or.th/th/statistics/exchange-rate.html";
 pub const BOT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const BOT_UNAVAILABLE: &str = "ไม่สามารถดึงเรทล่าสุดจาก ธปท. ได้ กรุณาลองใหม่ก่อนบันทึกเรท";
-
-const ALLOWED_CURRENCIES: [&str; 6] = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
@@ -71,25 +67,6 @@ fn window_contains(
         (Some(start), Some(end)) => start <= now && now < end,
         _ => false,
     }
-}
-
-fn parse_rate(val: Option<&serde_json::Value>) -> Option<Decimal> {
-    let text = match val? {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Number(n) => n.to_string(),
-        _ => return None,
-    };
-    let d = xc_kernel::money::plain_decimal(&text)?;
-    if d <= Decimal::ZERO {
-        return None;
-    }
-    Some(d)
-}
-
-fn decimal_to_number(d: Decimal) -> serde_json::Number {
-    let normalized = d.normalize();
-    serde_json::from_str::<serde_json::Number>(&normalized.to_string())
-        .expect("normalized decimal is valid json number")
 }
 
 impl RateSource for BotRateSource {
@@ -173,85 +150,8 @@ impl RateSource for BotRateSource {
             };
 
             // 5. Filter and process rows
-            let mut kept_rows = Vec::new();
-            for row_val in response_content {
-                let Some(currency_id) = row_val.get("currency_id").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                if !ALLOWED_CURRENCIES.contains(&currency_id) {
-                    continue;
-                }
-
-                let Some(period) = row_val.get("period").and_then(|v| v.as_str()) else {
-                    return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-                };
-                if period.len() != 10 {
-                    return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-                }
-                let bytes = period.as_bytes();
-                let is_date_shape = bytes.iter().enumerate().all(|(i, &b)| {
-                    if i == 4 || i == 7 {
-                        b == b'-'
-                    } else {
-                        b.is_ascii_digit()
-                    }
-                });
-                if !is_date_shape {
-                    return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-                }
-
-                let bs_val = row_val.get("buying_sight");
-                let bt_val = row_val.get("buying_transfer");
-                let selling_val = row_val.get("selling");
-
-                let (Some(bs_dec), Some(bt_dec), Some(selling_dec)) = (
-                    parse_rate(bs_val),
-                    parse_rate(bt_val),
-                    parse_rate(selling_val),
-                ) else {
-                    return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-                };
-
-                let unit: u64 = if currency_id == "JPY" { 100 } else { 1 };
-
-                let bs_rate = decimal_to_number(bs_dec);
-                let bt_rate = decimal_to_number(bt_dec);
-                let selling_rate = decimal_to_number(selling_dec);
-
-                let original = serde_json::json!({
-                    "buyingSight": bs_val.unwrap().clone(),
-                    "buyingTransfer": bt_val.unwrap().clone(),
-                    "selling": selling_val.unwrap().clone(),
-                });
-
-                let row = serde_json::json!({
-                    "code": currency_id,
-                    "date": period,
-                    "unit": unit,
-                    "buyingSight": bs_rate,
-                    "buyingTransfer": bt_rate,
-                    "selling": selling_rate,
-                    "original": original,
-                });
-
-                kept_rows.push((currency_id.to_string(), row));
-            }
-
-            if kept_rows.len() != 6 {
-                return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-            }
-
-            let mut seen_currencies = HashSet::new();
-            for (code, _) in &kept_rows {
-                if !seen_currencies.insert(code) {
-                    return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-                }
-            }
-            if seen_currencies.len() != 6 {
-                return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-            }
-
-            let rows: Vec<serde_json::Value> = kept_rows.into_iter().map(|(_, r)| r).collect();
+            let rows =
+                crate::infrastructure::reference_source::bot_rows::bot_rows(response_content)?;
 
             Ok(ReferenceRates {
                 source: BOT_SOURCE_PAGE.to_string(),

@@ -257,15 +257,22 @@ fn per_unit_buys_and_sells_through_the_one_arithmetic() {
     );
 }
 
+/// RE-7 #604 retires `Quote::compute`. What this test proved, that `per_unit` at unit 1 gives the
+/// figures `compute` gave, is kept by pinning `compute`'s answers for the same three cases, in
+/// satang (computed by script, half away from zero to 2 places; re-expected by the ticket author).
 #[test]
 fn per_unit_at_unit_one_agrees_with_compute() {
     let usd = units("USD", "1", 2);
-    for (amount, r, fee) in [
-        ("100", "32.1", "0"),
-        ("3", "0.335", "0.01"),
-        ("99999999.99", "32.1", "0"),
+    for (amount, r, fee, principal, received) in [
+        ("100", "32.1", "0", 321_000, 321_000),
+        ("3", "0.335", "0.01", 101, 102),
+        ("99999999.99", "32.1", "0", 320_999_999_968, 320_999_999_968),
     ] {
-        let old = Quote::compute(Side::Sell, money(amount), rate(r), money(fee)).expect("compute");
+        let old = Quote {
+            principal: Money::from_minor(principal).expect("principal"),
+            received: Money::from_minor(received).expect("received"),
+            paid: Money::ZERO,
+        };
         let new = Quote::per_unit(
             Side::Sell,
             foreign(amount, &usd),

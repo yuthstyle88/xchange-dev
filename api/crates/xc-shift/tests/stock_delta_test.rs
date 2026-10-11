@@ -11,8 +11,26 @@ use common::{code, fixture, money, shown_delta, signed};
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Quote, Rate, Side};
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta, StockError};
 
+/// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
+/// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
+fn per_one(
+    side: xc_kernel::money::Side,
+    amount: xc_kernel::money::Money,
+    rate: xc_kernel::money::Rate,
+    fee: xc_kernel::money::Money,
+) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
+    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
+    xc_kernel::money::Quote::per_unit(
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(amount),
+        rate,
+        xc_kernel::money::UnitSize::ONE,
+        fee,
+    )
+}
+
 fn quote(side: Side, amount: &str, rate: &str, fee: &str) -> Quote {
-    Quote::compute(
+    per_one(
         side,
         Money::parse(amount).unwrap(),
         Rate::parse(rate).unwrap(),
@@ -147,7 +165,7 @@ fn every_transaction_v2_computed_a_delta_for_gets_the_same_delta() {
             Side::Sell
         };
         let amount = Money::parse(&c.amount).unwrap();
-        let q = Quote::compute(
+        let q = per_one(
             side,
             amount,
             Rate::parse(&c.rate).unwrap(),

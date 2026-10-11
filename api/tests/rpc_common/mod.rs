@@ -25,6 +25,16 @@
 //! (That edit — `Family`, `is_part_two` — is the lane controller's, made on
 //! ticket T11a-0; with no family wired nothing here changes.)
 //!
+//! Re-expected for RE-7 #604 by the ticket author (design `docs/design/blueprint/rates.md` §8
+//! migration 6, §9): `adminSaveRate` is gone, and v3 answers it exactly as it answers a name v2
+//! does not know. A recorded `adminSaveRate` step is a known difference (design §9 removes the
+//! action, [`Rule::Retired`]): it is held to the answer v3 gives the same request naming
+//! [`NO_SUCH_NAME`] instead, and when v2 accepted it the rate it saved is published behind the
+//! routes (`snapshot_common::publish_rate_per_one`), so the steps after it still see that rate.
+//! A recorded snapshot is held to `rateHistory: []` and no partner, with `updated` the current
+//! publication's `published_at` (`snapshot_common::without_direct_saves`, rates.md R10, §4.1;
+//! ruling Q3 on #604).
+//!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 #![allow(dead_code)]
 
@@ -69,7 +79,8 @@ use xchange::presentation::http::rpc::RpcClock;
 use crate::common::settings;
 use crate::compat_common::{Fixture, IdMap, Person, Step};
 use crate::snapshot_common::{
-    TestDb, assert_same, rates_re4c_common, recorded_reference, time, without_dropped_keys,
+    TestDb, assert_same, publish_rate_per_one, rates_re4c_common, time, without_direct_saves,
+    without_dropped_keys,
 };
 
 pub const MAIN: &str = "MAIN";
@@ -93,6 +104,11 @@ pub const BANK_DOWN: &str = "ไม่สามารถดึงเรทล่
 pub const USE_CUSTODY: &str = "ใช้ขั้นตอนรับ–ส่งเงินและการลงชื่อในเมนูปฏิบัติงาน";
 /// v2's own fault: `adminCreateBranch` sent again from another branch.
 pub const V2_HEADERS_FAULT: &str = "หัวตารางเปลี่ยน กรุณาคืนลำดับคอลัมน์ก่อนบันทึก: Transactions";
+/// Re-expected for RE-7 #604 by the ticket author: a name v2 does not know, as long as
+/// `adminSaveRate` (so a body that names it keeps its length when the name is swapped).
+pub const NO_SUCH_NAME: &str = "re7NoSuchName";
+/// The action RE-7 retired (design §9).
+pub const RETIRED: &str = "adminSaveRate";
 
 /// The ten actions part one of T11a dispatches.
 pub const PART_ONE: [&str; 10] = [
@@ -784,6 +800,16 @@ pub enum Rule {
     /// Not a request of these two routes; applied behind them when later steps
     /// need it (an upload), otherwise left out.
     Excluded(&'static str),
+    /// Re-expected for RE-7 #604 by the ticket author: a known difference (design §9 removes
+    /// the action). `adminSaveRate`, sent through HTTP and held to the answer v3 gives the same
+    /// request naming [`NO_SUCH_NAME`]; when v2 accepted it, the rate it saved is then
+    /// published behind the routes.
+    Retired,
+    /// Re-expected for RE-7 #604 by the ticket author: a known difference (design §9 removes
+    /// the action). An `adminAbandonRequest` v2 accepted for an id only a direct save had
+    /// applied: v3 saved nothing for it, so it is held to v2's answer with this
+    /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
+    ResolvedAs(&'static str),
 }
 
 /// Every step of a replay, by what was done with it.
@@ -963,6 +989,9 @@ impl<'f> Replay<'f> {
         let Some(action) = action_of(step) else {
             return Rule::Replay;
         };
+        if action == RETIRED {
+            return Rule::Retired;
+        }
         // the route judges the name before the payload, unless it refuses the request first
         let judged_by_name = step.method.as_deref() == Some("POST")
             && step.request_headers.is_empty()
@@ -1031,7 +1060,6 @@ impl<'f> Replay<'f> {
         }
 
         self.desk.clock.set(time(&step.at));
-        self.set_the_bank(step);
         let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
         let call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
         let answer = self.app.send(call).await;
@@ -1172,6 +1200,42 @@ impl<'f> Replay<'f> {
                     self.save_behind(step).await;
                 }
             }
+            Rule::Retired => {
+                // known difference (design §9 removes the action): v3 answers the retired name
+                // as it answers a name v2 does not know
+                let unknown = self.unknown_name_answer(step).await;
+                assert_eq!(
+                    (answer.status, answer.text.as_str()),
+                    (unknown.status, unknown.text.as_str()),
+                    "{label}: answered as a name v2 does not know (RE-7, design §9)"
+                );
+                assert_eq!(
+                    answer.header("cache-control"),
+                    unknown.header("cache-control"),
+                    "{label}: Cache-Control"
+                );
+                self.tally.differences.push(step.n);
+                // what v2's accepted save did, the v3 way: the rate is published, as the owner
+                // sets a rate, so the steps after it (saves at that rate, snapshots showing it)
+                // keep v2's meaning. The kiosk page's `configure` is published by
+                // `kiosk_http_common`'s replay (#756 RE-4b).
+                if step.status == Some(200) {
+                    self.publish_behind(step).await;
+                }
+            }
+            Rule::ResolvedAs(resolution) => {
+                assert_eq!(step.status, Some(200), "{label}: v2 accepted this one");
+                assert_ne!(
+                    step.json()["requestResolution"],
+                    json!(resolution),
+                    "{label}: listed as a difference, but v2 says the same"
+                );
+                assert_eq!(answer.status, 200, "{label}: {:.300}", answer.text);
+                let mut recorded = step.json().clone();
+                recorded["requestResolution"] = json!(resolution);
+                self.hold_json_to(step, &answer, &recorded).await;
+                self.tally.differences.push(step.n);
+            }
             Rule::Blueprint(refusal) => {
                 answer.assert_refused(refusal.status(), &refusal.to_string(), &label);
                 assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
@@ -1198,20 +1262,49 @@ impl<'f> Replay<'f> {
             }
             Rule::Excluded(_) => unreachable!("handled above"),
         }
-        // Amended for #757 (RE-4c, rates.md D-3): the counter rate is the current publication,
-        // which a direct save no longer changes. An accepted `adminSaveRate` is followed by the
-        // publication of what it saved, as the owner would publish it, so the steps after it
-        // (saves at that rate, snapshots showing it) keep v2's meaning. The kiosk page's
-        // `configure` is published by `kiosk_http_common`'s replay (#756 RE-4b).
-        let direct_save = action_of(step).as_deref() == Some("adminSaveRate");
-        if direct_save && answer.status == 200 {
-            rates_re4c_common::publish_newest_rates(
-                &self.desk.db.pool,
-                self.branch_of(step).as_str(),
-            )
-            .await;
-        }
         self.answers.insert(step.n, answer);
+    }
+
+    /// Re-expected for RE-7 #604 by the ticket author: the answer to `step` sent again with
+    /// [`NO_SUCH_NAME`] in place of the retired name, by the same caller at the same clock.
+    async fn unknown_name_answer(&self, step: &Step) -> Answer {
+        let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
+        let mut call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
+        let body = String::from_utf8(call.body.clone()).expect("a recorded body is text");
+        assert!(
+            body.contains(&format!("\"{RETIRED}\"")),
+            "{}: the body names {RETIRED}",
+            self.label(step)
+        );
+        call.body = body
+            .replace(&format!("\"{RETIRED}\""), &format!("\"{NO_SUCH_NAME}\""))
+            .into_bytes();
+        self.app.send(call).await
+    }
+
+    /// Re-expected for RE-7 #604 by the ticket author: the rate an accepted v2 `adminSaveRate`
+    /// saved, published in its branch (`publish_rate_per_one`).
+    async fn publish_behind(&mut self, step: &Step) {
+        let payload = self
+            .ids
+            .to_actual(step.payload.as_ref().expect("a direct save has a payload"));
+        let published = publish_rate_per_one(
+            &self.desk.db.pool,
+            self.branch_of(step).as_str(),
+            &text_of(&payload, "code"),
+            &text_of(&payload, "buy"),
+            &text_of(&payload, "sell"),
+        )
+        .await;
+        // the publication is stamped with the step's instant, as v2 stamped the saved row: the
+        // later steps that name the rate's time (`opsStartService`'s `rateUpdated`) still match
+        sqlx::query("UPDATE rate_publications SET published_at = $1 WHERE id = $2::uuid")
+            .bind(time(&step.at))
+            .bind(&published.id)
+            .execute(&self.desk.db.pool)
+            .await
+            .expect("stamp the publication with the step's instant");
+        self.tally.applied_behind.push(step.n);
     }
 
     /// A recorded answer re-expected for #757 (RE-4c): `rates` as the branch's current
@@ -1220,33 +1313,43 @@ impl<'f> Replay<'f> {
     /// branch; any other answer (the kiosk's `rates`, RE-4b's) is left as recorded. An
     /// `adminSaveRate` answer does not show the rate it saved (D-3, R10).
     async fn as_published(&self, step: &Step, actual: &Value, expected: &Value) -> Value {
-        let Some(branch) = actual.get("branchId").and_then(Value::as_str) else {
-            return expected.clone();
-        };
-        let saved = (action_of(step).as_deref() == Some("adminSaveRate"))
-            .then(|| step.payload.as_ref().map(|p| text_of(p, "code")))
-            .flatten();
-        rates_re4c_common::as_published(&self.desk.db.pool, branch, expected, saved.as_deref())
+        // re-expected for RE-7 #604 by the ticket author: what the direct save wrote is not
+        // shown (R10, §4.1, the kiosk's `manage`), and no direct save answers any more
+        // (`Rule::Retired`)
+        let mut expected = without_direct_saves(expected);
+        // the kiosk's `manage`: one publication holds every line, so a saved currency's
+        // `updated` is the branch's current publication's `published_at` (ruling Q3 on #604);
+        // a v3 `configure` publishes nothing, so this is not v2's newest save
+        if let Some(Value::Array(currencies)) = expected.get_mut("currencies") {
+            let published: Option<String> = sqlx::query_scalar(
+                "SELECT to_char(p.published_at AT TIME ZONE 'UTC', \
+                    'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
+                 FROM branches b JOIN rate_publications p ON p.id = b.current_publication_id \
+                 WHERE b.id = $1",
+            )
+            .bind(self.branch_of(step).as_str())
+            .fetch_optional(&self.desk.db.pool)
             .await
+            .expect("the branch's current publication");
+            if let Some(published) = published {
+                for entry in currencies.iter_mut() {
+                    let saved =
+                        matches!(entry.get("updated"), Some(Value::String(t)) if !t.is_empty());
+                    if saved {
+                        entry["updated"] = json!(published);
+                    }
+                }
+            }
+        }
+        let Some(branch) = actual.get("branchId").and_then(Value::as_str) else {
+            return expected;
+        };
+        rates_re4c_common::as_published(&self.desk.db.pool, branch, &expected, None).await
     }
 
-    /// What the Bank of Thailand answers during this step: the reference v2
-    /// recorded in the answer of an accepted `adminSaveRate`; no answer where
-    /// v2 recorded that the bank gave none; otherwise a day with no row.
-    fn set_the_bank(&self, step: &Step) {
-        if step.action.as_deref() != Some("adminSaveRate") {
-            return;
-        }
-        if step.error() == Some(BANK_DOWN) {
-            self.desk.bank.go_down();
-        } else if step.status == Some(200) {
-            let code = text_of(step.payload.as_ref().expect("a payload"), "code");
-            self.desk.bank.answer_next(recorded_reference(step, &code));
-        } else {
-            // refused for another reason: the bank was up
-            self.desk.bank.answer_nothing_special();
-        }
-    }
+    // Re-expected for RE-7 #604 by the ticket author: `set_the_bank` is gone. It queued the
+    // Bank of Thailand answer v2 recorded for an `adminSaveRate`, and no direct save asks the
+    // bank any more (`Rule::Retired`).
 
     /// Status, headers and body against what v2 answered.
     pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) {
@@ -1282,6 +1385,14 @@ impl<'f> Replay<'f> {
             answer.assert_refused(step.status.unwrap_or(400), sentence, &label);
             return;
         }
+        self.hold_json_to(step, answer, step.json()).await;
+    }
+
+    /// The JSON of an accepted answer against `recorded` (v2's, or v2's re-expected): ids paired,
+    /// the keys v3 leaves out dropped. (Split out of `hold_to_recorded` for RE-7 #604's
+    /// `Rule::ResolvedAs` by the ticket author; what it holds is unchanged.)
+    async fn hold_json_to(&mut self, step: &Step, answer: &Answer, recorded: &Value) {
+        let label = self.label(step);
         // RF-5 (#877): a key v3 adds by decision (snapshot_common::V3_ADDED_KEYS), shape-checked, then left out.
         // The action is the one the route read, whatever form the body took (a byte-order mark, a body too
         // long to write down and recorded only by how it begins).
@@ -1298,7 +1409,7 @@ impl<'f> Replay<'f> {
         );
         // amended for #757 (RE-4c): rates[] is the publication (D-3, §4.9 R10)
         let mut expected = self
-            .as_published(step, &actual, &without_dropped_keys(step.json()))
+            .as_published(step, &actual, &without_dropped_keys(recorded))
             .await;
         // CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (COMPANY_CUSTOMERS)
         if let Some(list) = crate::compat_common::company_customers(self.fixture, step.n) {

@@ -53,6 +53,15 @@
 //! nothing again. Its own publication (only the switched-on currencies, at v2's per-1 rate under
 //! the currency's `unit_size`) replaced RE-4b's lines and priced KRW per 1000 as per 1
 //! (`currencies.json` #33: 0.0000231 for 0.0231).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (design `docs/design/blueprint/rates.md` §8
+//! migration 6, §9): the direct save and the `rates` table are gone. The rates v2 saved (an
+//! accepted `adminSaveRate`, and what `configure_behind` applies of an accepted `configure`) are
+//! kept by the replay itself (`KioskReplay::saved`, per each currency's `unit_size`) instead of
+//! being saved into `rates`, and published from there as before. A recorded `adminSaveRate` step
+//! is held to the answer of a name v2 does not know (`rpc_common::Rule::Retired`, a known
+//! difference: design §9 removes the action). `Counter::open` no longer sends `adminSaveRate`;
+//! its dollar is set by the publication alone.
 #![allow(dead_code)]
 
 #[path = "../rates_re4_common/mod.rs"]
@@ -66,18 +75,14 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use serde_json::{Map, Value, json};
-use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
-use xc_rate::application::rate::service::RateService;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::kiosk::KioskIds;
@@ -420,7 +425,16 @@ pub struct KioskReplay<'f> {
     pub lines_compared: usize,
     /// #603: `configure` steps v3 accepts where v2 refused; each writes its audit line.
     v3_accepts: BTreeSet<usize>,
+    /// Re-expected for RE-7 #604 by the ticket author: the rates v2 saved, branch → code →
+    /// `(buy, sell)` per the currency's `unit_size`, newest wins (what `rates` held before).
+    saved: SavedRates,
+    /// Re-expected for RE-7 #604 (ruling Q3): when each branch's newest kept rate was saved in
+    /// v2, the instant its publication is stamped with (v2's `updated` was the saved row's).
+    saved_at: BTreeMap<String, String>,
 }
+
+/// Re-expected for RE-7 #604: branch → code → `(buy, sell)` per the currency's `unit_size`.
+pub type SavedRates = BTreeMap<String, BTreeMap<String, (String, String)>>;
 
 impl<'f> KioskReplay<'f> {
     /// A desk with the people of `MAIN` employed and signed in; the people of
@@ -470,6 +484,8 @@ impl<'f> KioskReplay<'f> {
             lines: BTreeMap::new(),
             lines_compared: 0,
             v3_accepts: BTreeSet::new(),
+            saved: SavedRates::new(),
+            saved_at: BTreeMap::new(),
         }
     }
 
@@ -575,11 +591,7 @@ impl<'f> KioskReplay<'f> {
         let accepted = step.status == Some(200);
 
         let saves = matches!(action, Some("adminSaveRate") | Some("configure"));
-        let mut saved_before = if saves {
-            saved_rates(&self.replay.desk.db.pool).await
-        } else {
-            BTreeMap::new()
-        };
+        let mut saved_before = self.saved.clone();
 
         if Self::is_kiosk(step) {
             // the id v2 gave the quote is the id every later step names
@@ -602,7 +614,7 @@ impl<'f> KioskReplay<'f> {
                 // #603: published already when it switches on an unpublished currency, so
                 // the same saved rates are not published twice
                 if accepted && self.configure_behind(step).await {
-                    saved_before = saved_rates(&self.replay.desk.db.pool).await;
+                    saved_before = self.saved.clone();
                 }
             }
         }
@@ -618,16 +630,27 @@ impl<'f> KioskReplay<'f> {
             self.kiosk_behind(step).await;
         }
 
+        // re-expected for RE-7 #604: what v2's accepted direct save saved is kept here
+        if action == Some("adminSaveRate") && accepted {
+            let payload = self
+                .replay
+                .ids
+                .to_actual(step.payload.as_ref().expect("a direct save has a payload"));
+            let branch = self.branch_of_step(step, &payload);
+            self.keep_saved(&branch, &payload, &step.at).await;
+        }
+
         // #756: a direct save is published, as a v3 owner publishes it (D-3)
         if saves {
-            let saved_after = saved_rates(&self.replay.desk.db.pool).await;
-            for (branch, lines) in &saved_after {
+            for (branch, lines) in &self.saved {
                 if saved_before.get(branch) != Some(lines) {
-                    let lines: Vec<(&str, &str, &str)> = lines
-                        .iter()
-                        .map(|(code, buy, sell)| (code.as_str(), buy.as_str(), sell.as_str()))
-                        .collect();
-                    rates_re4_common::publish(&self.replay.desk.db.pool, branch, &lines).await;
+                    publish_lines(
+                        &self.replay.desk.db.pool,
+                        branch,
+                        lines,
+                        self.saved_at.get(branch).map(String::as_str),
+                    )
+                    .await;
                 }
             }
         }
@@ -727,7 +750,7 @@ impl<'f> KioskReplay<'f> {
     }
 
     /// #603: what v2's accepted `configure` did to the rate, applied behind the routes before the
-    /// step is sent: the rate saved through the rate rules (on the bank this step set). When the
+    /// step is sent: the rate kept as saved (RE-7 #604: by the replay, `keep_saved`). When the
     /// step switches on a currency the branch's current publication does not hold on both sides,
     /// the branch's saved rates are published now (`publish_saved_rates`'s content), so that v3's
     /// `configure` accepts it. Answers whether it published.
@@ -743,41 +766,9 @@ impl<'f> KioskReplay<'f> {
         };
         let branch = self.branch_of_step(step, &payload);
         let code = wire("code").expect("a code");
-        let (buy, sell) = (
-            wire("buy").unwrap_or_default(),
-            wire("sell").unwrap_or_default(),
-        );
-        let sender = self.replay.fixture.sender(step).expect("somebody sent it");
-        let cmd = SaveRate {
-            request_id: format!("7e57ca1e-0000-4000-9000-{:012x}", step.n),
-            code: code.clone(),
-            buy: buy.clone(),
-            sell: sell.clone(),
-            partner_name: payload
-                .get("partnerName")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            partner_cost: wire("partnerCost"),
-            previous_updated: payload
-                .get("previousUpdated")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-        };
+        // re-expected for RE-7 #604: kept by the replay, not saved into `rates`
+        self.keep_saved(&branch, &payload, &step.at).await;
         let pool = self.replay.desk.db.pool.clone();
-        let source: Arc<dyn RateSource> = self.replay.desk.bank.clone();
-        RateService::new(BranchTx::new(Transactor::new(pool.clone())), source)
-            .save_rate(
-                &BranchId::new(branch.clone()),
-                cmd,
-                &sender.username,
-                crate::snapshot_common::time(&step.at),
-            )
-            .await
-            .unwrap_or_else(|e| {
-                panic!("{}: the rate saved behind: {e:?}", self.replay.label(step))
-            });
 
         if payload.get("enabled") != Some(&Value::Bool(true)) {
             return false;
@@ -796,8 +787,42 @@ impl<'f> KioskReplay<'f> {
         if published {
             return false;
         }
-        publish_saved_rates(&pool, &branch).await;
+        publish_saved_rates(
+            &pool,
+            &self.saved,
+            &branch,
+            self.saved_at.get(&branch).map(String::as_str),
+        )
+        .await;
         true
+    }
+
+    /// Re-expected for RE-7 #604 by the ticket author: the rate `payload` saved in v2 (`code`,
+    /// `buy`, `sell` per 1), kept per the currency's `unit_size` as the newest of `branch`.
+    async fn keep_saved(&mut self, branch: &str, payload: &Value, at: &str) {
+        self.saved_at.insert(branch.to_string(), at.to_string());
+        let wire = |key: &str| match payload.get(key) {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) => n.to_string(),
+            other => panic!("`{key}` of a saved rate is {other:?}"),
+        };
+        let code = wire("code");
+        let unit: Decimal = sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
+            .bind(&code)
+            .fetch_one(&self.replay.desk.db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("the unit size of {code}: {e}"));
+        let per_unit = |per_one: String| {
+            let rate: Decimal = per_one
+                .parse()
+                .unwrap_or_else(|e| panic!("{per_one} is a rate: {e}"));
+            (rate * unit).normalize().to_string()
+        };
+        let line = (per_unit(wire("buy")), per_unit(wire("sell")));
+        self.saved
+            .entry(branch.to_string())
+            .or_default()
+            .insert(code, line);
     }
 
     /// #603: the audit line v3's `configure` writes for a step v2 refused.
@@ -841,37 +866,42 @@ impl<'f> KioskReplay<'f> {
 }
 
 /// #603: publish `branch`'s saved rates as they now stand, the content and the publisher of the
-/// replay's own publish after a save (RE-4b, `step`).
-pub async fn publish_saved_rates(pool: &sqlx::PgPool, branch: &str) {
-    let saved = saved_rates(pool).await;
-    let lines: Vec<(&str, &str, &str)> = saved
+/// replay's own publish after a save (RE-4b, `step`). Re-expected for RE-7 #604 by the ticket
+/// author: the saved rates are the replay's own (`SavedRates`), not `rates`.
+pub async fn publish_saved_rates(
+    pool: &sqlx::PgPool,
+    saved: &SavedRates,
+    branch: &str,
+    saved_at: Option<&str>,
+) {
+    let lines = saved
         .get(branch)
-        .unwrap_or_else(|| panic!("{branch} has saved rates to publish"))
-        .iter()
-        .map(|(code, buy, sell)| (code.as_str(), buy.as_str(), sell.as_str()))
-        .collect();
-    rates_re4_common::publish(pool, branch, &lines).await;
+        .unwrap_or_else(|| panic!("{branch} has saved rates to publish"));
+    publish_lines(pool, branch, lines, saved_at).await;
 }
 
-/// Every branch's newest saved rate per currency, per that currency's `unit_size` (#756):
-/// branch → `(code, buy, sell)` in code order.
-pub async fn saved_rates(pool: &sqlx::PgPool) -> BTreeMap<String, Vec<(String, String, String)>> {
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
-        "SELECT r.branch_id, trim(r.code::text), (r.buy * c.unit_size)::text, \
-                (r.sell * c.unit_size)::text \
-         FROM (SELECT DISTINCT ON (branch_id, code) branch_id, code, buy, sell \
-                 FROM rates ORDER BY branch_id, code, id DESC) r \
-         JOIN currencies c ON c.code = r.code \
-         ORDER BY 1, 2",
-    )
-    .fetch_all(pool)
-    .await
-    .expect("read the saved rates");
-    let mut saved: BTreeMap<String, Vec<(String, String, String)>> = BTreeMap::new();
-    for (branch, code, buy, sell) in rows {
-        saved.entry(branch).or_default().push((code, buy, sell));
+/// Re-expected for RE-7 #604: `lines` (code → `(buy, sell)` per `unit_size`) as `branch`'s next
+/// publication, in code order, stamped with `saved_at` when given (ruling Q3: the snapshot's
+/// `updated` is the publication's `published_at`, as v2's was the saved row's time).
+async fn publish_lines(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    lines: &BTreeMap<String, (String, String)>,
+    saved_at: Option<&str>,
+) {
+    let lines: Vec<(&str, &str, &str)> = lines
+        .iter()
+        .map(|(code, (buy, sell))| (code.as_str(), buy.as_str(), sell.as_str()))
+        .collect();
+    let published = rates_re4_common::publish(pool, branch, &lines).await;
+    if let Some(at) = saved_at {
+        sqlx::query("UPDATE rate_publications SET published_at = $1 WHERE id = $2::uuid")
+            .bind(crate::snapshot_common::time(at))
+            .bind(&published.id)
+            .execute(pool)
+            .await
+            .expect("stamp the publication with the save's instant");
     }
-    saved
 }
 
 fn text(value: &Value, key: &str) -> String {
@@ -940,13 +970,8 @@ impl Counter {
             cookies,
             origin: ORIGIN.to_string(),
         };
-        counter
-            .owner_rpc(
-                "adminSaveRate",
-                json!({ "requestId": "00000000-0000-4000-8000-0000000b0001", "code": "USD",
-                        "buy": 32.1, "sell": 32.6, "previousUpdated": "" }),
-            )
-            .await;
+        // Re-expected for RE-7 #604 by the ticket author: no `adminSaveRate` (design §9 removes
+        // the action); the dollar is set by publishing it alone.
         // Amended for #756 (RE-4b, `docs/design/blueprint/rates.md` D-3, §4.8, §4.9 R1): the
         // kiosk's counter rate is the line of the current publication, no longer the newest
         // `rates` row; the same dollar is published (the rate engine is RE-1's, merged).

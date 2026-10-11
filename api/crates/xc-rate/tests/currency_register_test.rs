@@ -7,6 +7,12 @@
 //! Blueprint's units, JPY 100, KRW 1000, every other currency 1. Minor units from ISO 4217.
 //!
 //! Needs a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in `_test`).
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 drops `rates`
+//! (`docs/design/blueprint/rates.md` §8 migration 6). `migration_one_widens_and_converts_nothing`
+//! is about what migration 1 did to `rates`, so it now applies only the migrations older than the
+//! drop (`TestDb::start_before_rates_drop`) and still writes and reads its per-1 JPY row there;
+//! that stays true after RE-7. Nothing it checks changed.
 
 mod common;
 
@@ -52,7 +58,8 @@ async fn the_register_answers_unit_size_and_minor_unit() {
 
 #[tokio::test]
 async fn migration_one_widens_and_converts_nothing() {
-    let db = TestDb::start().await;
+    // RE-7 #604: `rates` exists only before migration 6, which is not applied here.
+    let db = TestDb::start_before_rates_drop().await;
     // every rate column is numeric(20,8), and the unit_size columns are numeric(20,4). The amount and
     // till columns are not widened here: their readers still decode them at 2 places, so each is widened
     // by the ticket that moves its reader (design rates.md §8 migration 1, as corrected for #595)

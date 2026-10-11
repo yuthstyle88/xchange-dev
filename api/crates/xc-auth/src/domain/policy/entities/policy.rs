@@ -66,7 +66,6 @@ impl Policy {
                 | "adminOpenShift"
                 | "adminCloseShift"
                 | "adminMoveStock"
-                | "adminSaveRate"
                 | "ratePolicySave"
                 | "rateDraft"
                 | "approvalDecide"
@@ -84,7 +83,7 @@ impl Policy {
                 let allowed = match act {
                     "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => true,
                     "reserveCustomer" | "saveTransaction" => role == Role::Front,
-                    "adminSaveRate" | "rateDraft" | "ratePolicySave" => role == Role::Rates,
+                    "rateDraft" | "ratePolicySave" => role == Role::Rates,
                     "adminOpenShift" | "adminCloseShift" => {
                         role == Role::Backend || role == Role::Manager
                     }
@@ -123,7 +122,7 @@ impl Policy {
         // and does not start with ops -> R5
         let in_write_list = match role {
             Role::Front => act == "reserveCustomer" || act == "saveTransaction",
-            Role::Rates => act == "adminSaveRate" || act == "rateDraft",
+            Role::Rates => act == "rateDraft",
             _ => false,
         };
         let recognized = act == "adminSnapshot"
@@ -559,7 +558,7 @@ impl Policy {
                 "reserveCustomer" | "saveTransaction" => {
                     Some(Need::Permission(Permission::ExchangeTransact))
                 }
-                "adminSaveRate" | "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
+                "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
                 "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
                 "adminMoveStock" => Some(Need::Permission(Permission::CashManage)),
                 "adminCreateBranch" => Some(Need::Permission(Permission::BranchesManage)),
@@ -579,7 +578,7 @@ impl Policy {
                 "adminDeskConfig" | "reserveCustomer" | "saveTransaction" => {
                     Some(Need::Permission(Permission::ExchangeTransact))
                 }
-                "adminSaveRate" | "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
+                "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
                 "documents" => Some(Need::Permission(Permission::IdentityDocumentRead)),
                 "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
                 name if name.starts_with("ops") => Some(Need::Custody),

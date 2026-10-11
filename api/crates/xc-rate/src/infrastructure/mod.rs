@@ -4,3 +4,4 @@ pub mod currency;
 pub mod publication;
 pub mod rate;
 pub mod reference;
+pub mod reference_source;

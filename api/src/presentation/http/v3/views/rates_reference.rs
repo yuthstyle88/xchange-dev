@@ -14,7 +14,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
-use xc_rate::infrastructure::rate::bot_rate_source::{BotRateSource, Clock};
+use xc_rate::infrastructure::rate::bot_rate_source::Clock;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::rates_reference::{
@@ -223,14 +223,16 @@ impl BranchView for RatesReferenceView {
     }
 }
 
-static CACHE: std::sync::LazyLock<Arc<ReferenceCache>> = std::sync::LazyLock::new(|| {
-    let source = Arc::new(BotRateSource::bot());
-    let clock: Clock = Arc::new(Utc::now);
-    Arc::new(ReferenceCache::new(source, clock))
-});
+static CACHE: std::sync::OnceLock<Arc<ReferenceCache>> = std::sync::OnceLock::new();
 
-pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
-    let view = Arc::new(RatesReferenceView::new(CACHE.clone()));
+pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
+    let cache = CACHE
+        .get_or_init(|| {
+            let clock: Clock = Arc::new(Utc::now);
+            Arc::new(ReferenceCache::new(state.rate_source.clone(), clock))
+        })
+        .clone();
+    let view = Arc::new(RatesReferenceView::new(cache));
     ViewEndpoint::register(cfg, view);
 }
 

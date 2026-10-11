@@ -22,14 +22,18 @@
 //!
 //! The conversion test applies every migration older than migration 5, writes rows the way the
 //! pre-RE-4 binary writes them (per 1, `unit_size` 1, `numeric(20,8)` rates since RU-1), then
-//! applies the rest. The gate test runs on a fully migrated schema: the gate reads only `rates`,
-//! `currencies`, `branches`, `rate_publications` and `published_rate_lines`, which migration 5
-//! does not change. Publications are made through the rate engine (`rates_re4_common`).
+//! applies the rest. The gate test runs on a schema migrated but for RE-7's migration 6: the
+//! gate reads only `rates`, `currencies`, `branches`, `rate_publications` and
+//! `published_rate_lines`, which migration 5 does not change. Publications are made through the rate engine (`rates_re4_common`).
 //!
 //! `down` is not run here: like migrations 1 and 4, migration 5's `down` is a comment in the file
 //! (sqlx applies no down section from a plain `.sql` file), so no test can apply it.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips. Each test works in a schema of its own.
+//!
+//! Re-expected for RE-7 #604 by the ticket author: the gate test applies every migration but
+//! RE-7's migration 6 (`all_but_drop_rates`), because the gate it pins reads `rates` and runs
+//! before RE-7 deploys; the other tests are unchanged.
 //!
 //! Signatures this test assumes:
 //! - [required] the file `api/migrations/20261010125000_published_rate_line_ids.sql`
@@ -180,6 +184,24 @@ async fn before(version: i64) -> Migrator {
             .collect(),
     );
     older
+}
+
+/// Every migration but RE-7's migration 6, which drops `rates` (rates.md §8 migration 6; its file
+/// is `*_drop_rates.sql`, so sqlx describes it "drop rates"). Re-expected for RE-7 #604 by the
+/// ticket author: the deploy gate is RE-4's, run before RE-7 deploys, and reads `rates`; its test
+/// writes direct-save rows, so it runs on the schema RE-4 deployed onto, with `rates` still there.
+/// Before RE-7 there is no such migration and this is every migration.
+async fn all_but_drop_rates() -> Migrator {
+    let all = migrator().await;
+    let mut kept = migrator().await;
+    kept.migrations = Cow::Owned(
+        all.migrations
+            .iter()
+            .filter(|m| m.description != "drop rates")
+            .cloned()
+            .collect(),
+    );
+    kept
 }
 
 async fn count_before_deploy(pool: &PgPool) -> Vec<(String, i64)> {
@@ -603,7 +625,8 @@ async fn migration_5_adds_a_nullable_line_id_referencing_published_rate_lines() 
 #[tokio::test]
 async fn the_deploy_gate_counts_a_direct_save_the_current_line_does_not_say() {
     let db = TestDb::empty().await;
-    migrator()
+    // RE-7 #604: every migration but the one that drops `rates` (see `all_but_drop_rates`)
+    all_but_drop_rates()
         .await
         .run(&db.pool)
         .await

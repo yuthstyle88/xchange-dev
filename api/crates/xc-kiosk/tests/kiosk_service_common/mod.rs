@@ -35,6 +35,13 @@
 //! Amended again by the ticket author of #603 (ruling of 2026-10-09): configure sets no rate, so
 //! its `KIOSK_CURRENCY_CONFIGURED` line records `buy` and `sell` as `""`. `play` holds the
 //! fixture's recorded configure lines to that (`v3_configure_line`); the fixture is unchanged.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes
+//! `KioskPorts::save_rate` (`docs/design/blueprint/rates.md` §9), so `FakePorts` no longer
+//! implements it and no longer records rate saves (`RateSave`, `rate_saves`, `rate_save_fails`
+//! are gone). #603 item 1 ("configure never asks the rate context to save") is now held by the
+//! compiler: the port has no method to ask with. `play` leaves the fixture's `rateSaveFails`
+//! field unread for that reason; the fixture is unchanged.
 #![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
@@ -62,7 +69,6 @@ pub use xc_kiosk::application::kiosk::service::KioskService;
 pub use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 pub use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 pub use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
-pub use xc_kiosk::domain::kiosk::commands::save_counter_rate::SaveCounterRate;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
 pub use xc_kiosk::domain::kiosk::entities::kiosk_request::KioskRequest;
 pub use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
@@ -299,20 +305,9 @@ pub async fn publish_line(
     Ok(())
 }
 
-/// One call of `KioskPorts::save_rate`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RateSave {
-    pub branch: String,
-    pub rate: SaveCounterRate,
-    pub actor: String,
-    pub now: DateTime<Utc>,
-}
-
 #[derive(Default)]
 struct World {
     counters: BTreeMap<String, CounterView>,
-    rate_saves: Vec<RateSave>,
-    rate_save_fails: Option<String>,
     audit_fails: bool,
     /// Calls of `counter`, the form that reads committed data.
     counter_reads: usize,
@@ -324,8 +319,8 @@ struct World {
 ///
 /// `record_in` writes the line into the table `test_audit` **through the
 /// transaction it is given**, so a line is there exactly when the caller's
-/// transaction commits. `save_rate` stores the rate in the branch's counter the
-/// way the rate context would, or refuses with the sentence it was told to say.
+/// transaction commits. There is no rate save to fake: RE-7 #604 removed
+/// `KioskPorts::save_rate`.
 pub struct FakePorts {
     world: Mutex<World>,
 }
@@ -384,18 +379,9 @@ impl FakePorts {
         }
     }
 
-    /// The next `save_rate` calls refuse with `sentence`; `None` lets them through again.
-    pub fn rate_save_fails(&self, sentence: Option<&str>) {
-        self.world().rate_save_fails = sentence.map(str::to_owned);
-    }
-
     /// From now on `record_in` fails after it was called (the line is not written).
     pub fn audit_fails(&self, fails: bool) {
         self.world().audit_fails = fails;
-    }
-
-    pub fn rate_saves(&self) -> Vec<RateSave> {
-        self.world().rate_saves.clone()
     }
 
     /// How often the counter was read outside a transaction, and inside one.
@@ -457,42 +443,6 @@ impl KioskPorts for FakePorts {
                 }
             }
             Ok(view)
-        })
-    }
-
-    fn save_rate<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        rate: &'a SaveCounterRate,
-        actor: &'a str,
-        now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<()>> {
-        Box::pin(async move {
-            let fails = {
-                let mut world = self.world();
-                world.rate_saves.push(RateSave {
-                    branch: branch.as_str().to_owned(),
-                    rate: rate.clone(),
-                    actor: actor.to_owned(),
-                    now,
-                });
-                world.rate_save_fails.clone()
-            };
-            if let Some(sentence) = fails {
-                return Err(AppError::Domain(sentence));
-            }
-            self.set_rate(
-                branch.as_str(),
-                CounterRate {
-                    code: rate.code,
-                    buy: self::rate(&rate.buy),
-                    sell: self::rate(&rate.sell),
-                    unit_size: UnitSize::ONE,
-                    minor_unit: MinorUnit::TWO,
-                    line_id: fake_line(self::rate(&rate.buy), self::rate(&rate.sell)),
-                },
-            );
-            Ok(())
         })
     }
 
@@ -1109,7 +1059,6 @@ pub async fn play(name: &str) -> Vec<String> {
             continue;
         }
 
-        let saves_before = ports.rate_saves().len();
         if op == "configure" && step["enabled"].as_bool() == Some(true) {
             let v3_error = step["v3"].get("error").is_some_and(|e| !e.is_null());
             if !v3_error && step["error"].is_null() {
@@ -1220,7 +1169,6 @@ pub async fn play(name: &str) -> Vec<String> {
                 json!({ "enabled": all.iter().filter(|s| s.enabled).map(|s| s.code.as_str()).collect::<Vec<_>>() })
             }),
             "configure" => {
-                ports.rate_save_fails(step["rateSaveFails"].as_str());
                 let cmd = ConfigureCurrency {
                     code: text(&step["code"]),
                     enabled: step["enabled"].as_bool().expect("enabled"),
@@ -1232,7 +1180,6 @@ pub async fn play(name: &str) -> Vec<String> {
                     request_id: unique("req"),
                 };
                 let out = service.configure(&b, &actor, cmd, now).await;
-                ports.rate_save_fails(None);
                 out.map(|()| Value::Null)
             }
             "checkSave" | "complete" => {
@@ -1321,26 +1268,8 @@ pub async fn play(name: &str) -> Vec<String> {
                 step["switches"]
             ));
         }
-        if op == "configure" {
-            let saves: Vec<Value> = ports.rate_saves()[saves_before..]
-                .iter()
-                .map(|s| {
-                    assert_eq!(s.now, now, "{here}: the rate save gets the caller's time");
-                    json!({
-                        "branch": s.branch, "code": s.rate.code.as_str(), "buy": s.rate.buy,
-                        "sell": s.rate.sell, "previousUpdated": s.rate.previous_updated,
-                        "partnerName": s.rate.partner_name, "partnerCost": s.rate.partner_cost,
-                        "actor": s.actor,
-                    })
-                })
-                .collect();
-            // #603 item 1: never, whatever v2 asked for
-            if !saves.is_empty() {
-                wrong.push(format!(
-                    "{here}: asked the rate context for {saves:?}, expected nothing (#603)"
-                ));
-            }
-        }
+        // #603 item 1 (configure asks for no rate save) needs no check here since RE-7 #604:
+        // `KioskPorts` has no `save_rate` to call.
     }
 
     if wrong.is_empty() {

@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
+use xc_kernel::pii::{IdentityType, PiiError, normalize};
 
 use crate::domain::access::{Role, ScopeRule, ScopedRole};
 use crate::domain::identity::identity_client::{
@@ -226,6 +227,19 @@ impl From<AppError> for CreateStaffError {
     }
 }
 
+fn identity_phone(raw: &str) -> Result<String, CreateStaffError> {
+    normalize(IdentityType::Phone, raw, None).map_err(|e| match e {
+        PiiError::Empty => CreateStaffError::Validation {
+            field: "phone",
+            message: "กรุณากรอกเบอร์โทรศัพท์".to_string(),
+        },
+        _ => CreateStaffError::Validation {
+            field: "phone",
+            message: "เบอร์โทรศัพท์ไม่ถูกต้อง".to_string(),
+        },
+    })
+}
+
 impl<R: UserRepository> UserService<R> {
     /// Creates a staff member and their Identity account (#1157, design §5.3):
     /// 1. insert `users` as `PENDING` with its roles, and commit;
@@ -248,12 +262,7 @@ impl<R: UserRepository> UserService<R> {
                 message: "กรุณากรอกชื่อ".to_string(),
             });
         }
-        if input.phone.trim().is_empty() {
-            return Err(CreateStaffError::Validation {
-                field: "phone",
-                message: "กรุณากรอกเบอร์โทรศัพท์".to_string(),
-            });
-        }
+        let phone = identity_phone(input.phone)?;
         if input.password.is_empty() {
             return Err(CreateStaffError::Validation {
                 field: "password",
@@ -336,7 +345,7 @@ impl<R: UserRepository> UserService<R> {
         let registered = identity
             .register(&IdentityRegisterRequest {
                 username: input.username,
-                phone: input.phone.trim(),
+                phone: &phone,
                 email: input.email,
                 password: input.password,
                 must_change_password: input.must_change_password,

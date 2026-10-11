@@ -10,6 +10,13 @@
 //! from v2's answer (`row`, `startRow`, `endRow`, `rawStatus`).
 //!
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
+//!
+//! Re-expected for RE-7 #604 by the ticket author (design `docs/design/blueprint/rates.md` §8
+//! migration 6, §9, R10): the direct save and the `rates` table are gone. A recorded accepted
+//! `adminSaveRate` is a known difference (design §9 removes the action): its answer is not
+//! compared, its rate is published instead (`Compared::retired` counts them), and every write
+//! of v2's six is still accounted for (`writes + retired`). A rate a test set by the direct save
+//! is published (`publish_rate_per_one`); `rateHistory` is `[]` and the top-level `updated` `""`.
 
 mod compat_common;
 mod snapshot_common;
@@ -23,8 +30,6 @@ use snapshot_common::{
 };
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_rate::domain::rate::commands::save_rate::SaveRate;
-use xc_rate::domain::rate::entities::rate_source::ReferenceRates;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
 use xchange::application::compat::snapshot::write_answer;
@@ -82,27 +87,6 @@ fn member<'a>(printed: &'a V2Json, key: &str) -> &'a V2Json {
             .map(|(_, v)| v)
             .unwrap_or_else(|| panic!("no `{key}`")),
         other => panic!("not an object: {other:?}"),
-    }
-}
-
-fn reference() -> ReferenceRates {
-    ReferenceRates {
-        source: "https://www.bot.or.th/th/statistics/exchange-rate.html".to_string(),
-        fetched_at: "2026-10-06T05:00:00.000Z".to_string(),
-        kind: "DAILY_COMMERCIAL_BANK_AVERAGE".to_string(),
-        rows: Vec::new(),
-    }
-}
-
-fn save_rate(request: u32, code: &str, buy: &str, sell: &str) -> SaveRate {
-    SaveRate {
-        request_id: format!("00000000-0000-4000-8000-0000000b{request:04}"),
-        code: code.to_string(),
-        buy: buy.to_string(),
-        sell: sell.to_string(),
-        partner_name: String::new(),
-        partner_cost: None,
-        previous_updated: String::new(),
     }
 }
 
@@ -185,8 +169,13 @@ async fn rates_json_is_reproduced_step_by_step() {
     let mut replay = Replay::start(&fixture).await;
     replay.run().await;
 
-    assert_eq!(replay.compared.writes, accepted_writes(&fixture).len());
-    assert_eq!(replay.compared.writes, 5);
+    // re-expected for RE-7 #604: the five accepted writes are the five direct saves
+    assert_eq!(
+        replay.compared.writes + replay.compared.retired,
+        accepted_writes(&fixture).len()
+    );
+    assert_eq!(replay.compared.writes, 0);
+    assert_eq!(replay.compared.retired, 5);
     assert_eq!(replay.compared.snapshots, 5);
     assert_eq!(replay.compared.desks, 5);
     replay.shop.finish().await;
@@ -198,8 +187,13 @@ async fn shift_json_is_reproduced_step_by_step() {
     let mut replay = Replay::start(&fixture).await;
     replay.run().await;
 
-    assert_eq!(replay.compared.writes, accepted_writes(&fixture).len());
-    assert_eq!(replay.compared.writes, 7);
+    // re-expected for RE-7 #604: one of the seven accepted writes is a direct save
+    assert_eq!(
+        replay.compared.writes + replay.compared.retired,
+        accepted_writes(&fixture).len()
+    );
+    assert_eq!(replay.compared.writes, 6);
+    assert_eq!(replay.compared.retired, 1);
     assert_eq!(replay.compared.snapshots, 15);
     assert_eq!(replay.compared.desks, 15);
     // two shifts and three movements were made by the server and paired
@@ -213,8 +207,13 @@ async fn branches_json_is_reproduced_step_by_step() {
     let mut replay = Replay::start(&fixture).await;
     replay.run().await;
 
-    assert_eq!(replay.compared.writes, accepted_writes(&fixture).len());
-    assert_eq!(replay.compared.writes, 11);
+    // re-expected for RE-7 #604: three of the eleven accepted writes are direct saves
+    assert_eq!(
+        replay.compared.writes + replay.compared.retired,
+        accepted_writes(&fixture).len()
+    );
+    assert_eq!(replay.compared.writes, 8);
+    assert_eq!(replay.compared.retired, 3);
     assert_eq!(replay.compared.snapshots, 8);
     assert_eq!(replay.compared.desks, 7);
     assert_eq!(replay.compared.reservations, 2);
@@ -383,24 +382,16 @@ async fn actor_is_the_caller_and_synced_at_is_the_clock_cut_to_milliseconds() {
     shop.finish().await;
 }
 
+/// Re-expected for RE-7 #604 by the ticket author: `updated` was the newest `rates` row of the
+/// branch whatever its currency, and `rateHistory` those rows. A known difference (design §9
+/// removes the action, rates.md R10; ruling Q3 on #604): `rateHistory` is `[]`, and `updated` is
+/// the current publication's `published_at` in v2's form, while `rates[]` still lists the
+/// register.
 #[tokio::test]
-async fn updated_is_the_newest_rate_row_of_the_branch_whatever_its_currency() {
+async fn updated_is_the_current_publications_time_and_rate_history_is_empty() {
     let shop = Shop::open().await;
-    shop.source.answer_next(reference());
-    for (n, code, at) in [
-        (1, "EUR", "2026-10-06T05:01:00.000Z"),
-        (2, "USD", "2026-10-06T05:02:00.000Z"),
-        (3, "JPY", "2026-10-06T05:03:00.000Z"),
-    ] {
-        shop.rates
-            .save_rate(
-                &branch(MAIN),
-                save_rate(n, code, "1.5", "2.5"),
-                "owner",
-                time(at),
-            )
-            .await
-            .expect("save a rate");
+    for code in ["EUR", "USD", "JPY"] {
+        snapshot_common::publish_rate_per_one(&shop.db.pool, MAIN, code, "1.5", "2.5").await;
     }
     let snapshot = shop
         .builder()
@@ -408,12 +399,30 @@ async fn updated_is_the_newest_rate_row_of_the_branch_whatever_its_currency() {
         .await
         .expect("snapshot")
         .to_value();
-    // JPY is neither first nor last in register order: `updated` is not read
-    // off the rate list
-    assert_eq!(snapshot["updated"], "2026-10-06T05:03:00.000Z");
-    assert_eq!(snapshot["rateHistory"][0]["code"], "JPY");
-    assert_eq!(snapshot["rateHistory"].as_array().map(Vec::len), Some(3));
+    let published: String = sqlx::query_scalar(
+        "SELECT to_char(p.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
+         FROM branches b JOIN rate_publications p ON p.id = b.current_publication_id WHERE b.id = $1",
+    )
+    .bind(MAIN)
+    .fetch_one(&shop.db.pool)
+    .await
+    .expect("MAIN's current publication");
+    assert_eq!(
+        snapshot["updated"],
+        published.as_str(),
+        "ruling Q3: the publication's time"
+    );
+    assert_eq!(snapshot["rateHistory"], json!([]));
     assert_eq!(snapshot["rates"].as_array().map(Vec::len), Some(152));
+    // and the three are set: the publication is what `rates[]` shows (D-3, R10)
+    let set: Vec<&str> = snapshot["rates"]
+        .as_array()
+        .expect("rates")
+        .iter()
+        .filter(|r| !r["buy"].is_null())
+        .map(|r| r["code"].as_str().expect("code"))
+        .collect();
+    assert_eq!(set.len(), 3, "{set:?}");
     shop.finish().await;
 }
 
@@ -470,30 +479,11 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
         .expect("create")
         .id;
 
-    shop.source.answer_next(reference());
-    shop.rates
-        .save_rate(
-            &main,
-            save_rate(2, "USD", "32.1", "32.6"),
-            "owner",
-            time("2026-10-06T05:01:00.000Z"),
-        )
-        .await
-        .expect("a rate at MAIN");
-    shop.rates
-        .save_rate(
-            &airport,
-            save_rate(3, "EUR", "37", "39"),
-            "owner",
-            time("2026-10-06T05:02:00.000Z"),
-        )
-        .await
-        .expect("a rate at the airport");
     // Amended for #757 (RE-4c, rates.md D-3, §4.9 R10): `rates[]` is the branch's current
-    // publication, which a direct save no longer changes; each branch publishes what it saved.
-    for here in [MAIN, airport.as_str()] {
-        snapshot_common::rates_re4c_common::publish_newest_rates(&shop.db.pool, here).await;
-    }
+    // publication. Re-expected for RE-7 #604 by the ticket author: no direct save; each branch
+    // publishes its own rate.
+    snapshot_common::publish_rate_per_one(&shop.db.pool, MAIN, "USD", "32.1", "32.6").await;
+    snapshot_common::publish_rate_per_one(&shop.db.pool, airport.as_str(), "EUR", "37", "39").await;
     let opening =
         json!({"requestId": "00000000-0000-4000-8000-0000000b0004", "opening": {"THB": 20000}});
     snapshot_common::seed_opener(&shop.db.pool, "be2").await;
@@ -583,11 +573,23 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
     };
     assert_eq!(set(&at_main), ["USD"]);
     assert_eq!(set(&at_airport), ["EUR"]);
-    assert_eq!(at_main["rateHistory"].as_array().map(Vec::len), Some(1));
-    assert_eq!(at_main["rateHistory"][0]["code"], "USD");
-    assert_eq!(at_airport["rateHistory"][0]["code"], "EUR");
-    assert_eq!(at_main["updated"], "2026-10-06T05:01:00.000Z");
-    assert_eq!(at_airport["updated"], "2026-10-06T05:02:00.000Z");
+    // re-expected for RE-7 #604: no `rates` rows in either branch (known difference, R10), and
+    // each branch's `updated` is its own current publication's `published_at` (ruling Q3)
+    assert_eq!(at_main["rateHistory"], json!([]));
+    assert_eq!(at_airport["rateHistory"], json!([]));
+    for (snapshot, of) in [(&at_main, &main), (&at_airport, &airport)] {
+        let published: String = sqlx::query_scalar(
+            "SELECT to_char(p.published_at AT TIME ZONE 'UTC', \
+                'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
+             FROM branches b JOIN rate_publications p ON p.id = b.current_publication_id \
+             WHERE b.id = $1",
+        )
+        .bind(of.as_str())
+        .fetch_one(&shop.db.pool)
+        .await
+        .expect("the branch's current publication");
+        assert_eq!(snapshot["updated"], published.as_str(), "{}", of.as_str());
+    }
     assert_eq!(at_main["stock"]["shifts"], json!([]));
     assert_eq!(at_airport["stock"]["shifts"][0]["id"], json!(shift.id));
     assert_eq!(at_main["stock"]["movements"], json!([]));
@@ -805,7 +807,9 @@ async fn transactions_json_is_reproduced_from_exchanges_the_test_feeds() {
         .clone();
     replay.run().await;
 
-    assert_eq!(replay.compared.writes, 3);
+    // re-expected for RE-7 #604: two of the three writes are direct saves
+    assert_eq!(replay.compared.writes, 1);
+    assert_eq!(replay.compared.retired, 2);
     assert_eq!(replay.compared.reservations, 5);
     // five saves, one of them DEMO: no view shows it, nothing lists it
     assert_eq!(replay.compared.saves_fed, 4);
@@ -886,7 +890,9 @@ async fn custody_json_closed_for_the_night_is_reproduced_from_what_the_test_feed
             replay.step(step).await;
         }
     }
-    assert_eq!(replay.compared.writes, 2);
+    // re-expected for RE-7 #604: both writes are direct saves
+    assert_eq!(replay.compared.writes, 0);
+    assert_eq!(replay.compared.retired, 2);
     assert_eq!(replay.compared.reservations, 3);
 
     // shifts and movements were made by custody commits, exchanges by saves:

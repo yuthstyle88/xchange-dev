@@ -239,42 +239,102 @@ impl Room {
             .clone()
     }
 
-    /// Puts a rate in force for `code` in `branch`. See the file header: v2's direct save, then
-    /// the publication of what it saved.
+    /// Puts a rate in force for `code` in `branch`. See the file header.
     ///
     /// Amended for #757 (RE-4c, `docs/design/blueprint/rates.md` D-3, §4.9 R10): the rate in
-    /// force is the branch's current publication, which `adminDeskConfig` now reads and a direct
-    /// save no longer changes; so the branch's newest saved rates are published through the
-    /// rate engine (`rates_re4c_common::publish_newest_rates`) after the save, and
-    /// `previousUpdated` is read from `rateHistory`.
+    /// force is the branch's current publication. Re-expected for RE-7 #604 by the ticket author:
+    /// the direct save is retired (design §9), so the helper is re-pointed at the publication
+    /// path alone, through the owner's own routes (`POST /api/rate-drafts`, `…/submit`,
+    /// `…/publish`), as a v3 shop sets a rate: the branch's other published lines are kept and
+    /// `code` is set at `buy` / `sell` per 1 (× its `unit_size`). The routes, not a service call,
+    /// so the write is a write of the branch, as the direct save was. No assertion changes.
     async fn publish(&self, branch: &str, code: &str, buy: &str, sell: &str) {
-        let snapshot = self
-            .rpc("OWNER", "adminSnapshot", json!({ "branchId": branch }))
+        let pool = &self.desk.db.pool;
+        let kept: Vec<(String, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT trim(l.currency_code), l.buy_rate, l.sell_rate \
+             FROM branches b JOIN published_rate_lines l \
+               ON l.publication_id = b.current_publication_id \
+             WHERE b.id = $1 AND l.denomination_group = 'ALL' \
+               AND l.buy_rate IS NOT NULL AND l.sell_rate IS NOT NULL ORDER BY 1",
+        )
+        .bind(branch)
+        .fetch_all(pool)
+        .await
+        .expect("read the branch's current lines");
+        let unit: Decimal = sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
+            .bind(code)
+            .fetch_one(pool)
             .await
-            .json();
-        // the newest saved row of `code`, which the snapshot lists first in `rateHistory`:
-        // `rates[].updated` is the publication's time now
-        let previous = snapshot["rateHistory"]
-            .as_array()
-            .and_then(|rates| rates.iter().find(|r| r["code"] == json!(code)))
-            .and_then(|r| r["updated"].as_str())
-            .unwrap_or("")
-            .to_owned();
-        let answer = self
-            .rpc(
-                "OWNER",
-                "adminSaveRate",
-                json!({ "branchId": branch, "requestId": request_id(), "code": code,
-                        "buy": buy, "sell": sell, "partnerName": "", "partnerCost": null,
-                        "previousUpdated": previous }),
-            )
+            .expect("the currency's unit size");
+        let per_unit = |per_one: &str| {
+            (Decimal::from_str(per_one).expect("a rate") * unit)
+                .normalize()
+                .to_string()
+        };
+        let line = |c: &str, b: String, s: String| {
+            json!({ "currency": c, "buyMode": "MANUAL", "sellMode": "MANUAL",
+                    "manualBuy": b, "manualSell": s, "reason": "set by the desk config test" })
+        };
+        let mut lines: Vec<Value> = kept
+            .iter()
+            .filter(|(c, _, _)| c != code)
+            .map(|(c, b, s)| line(c, b.normalize().to_string(), s.normalize().to_string()))
+            .collect();
+        lines.push(line(code, per_unit(buy), per_unit(sell)));
+        let expected: Option<i32> = sqlx::query_scalar(
+            "SELECT p.version FROM branches b JOIN rate_publications p \
+               ON p.id = b.current_publication_id WHERE b.id = $1",
+        )
+        .bind(branch)
+        .fetch_optional(pool)
+        .await
+        .expect("read the current version");
+        let command = |path: String, body: Value| {
+            self.tick();
+            Call::post(ORIGIN, &path, body.to_string())
+                .header("idempotency-key", &request_id())
+                .cookie(&self.cookie("OWNER"))
+        };
+        let draft = self
+            .app
+            .send(command(
+                "/api/rate-drafts".to_owned(),
+                json!({ "branch": branch, "lines": lines }),
+            ))
             .await;
         assert_eq!(
-            answer.status, 200,
-            "rate {code} {buy}/{sell} in {branch}: {:.300}",
-            answer.text
+            draft.status, 200,
+            "draft {code} in {branch}: {:.300}",
+            draft.text
         );
-        snapshot_common::rates_re4c_common::publish_newest_rates(&self.desk.db.pool, branch).await;
+        let id = draft.json()["id"]
+            .as_str()
+            .expect("the draft's id")
+            .to_owned();
+        let submit = self
+            .app
+            .send(command(
+                format!("/api/rate-drafts/{id}/submit"),
+                json!({ "branch": branch }),
+            ))
+            .await;
+        assert_eq!(
+            submit.status, 200,
+            "submit {code} in {branch}: {:.300}",
+            submit.text
+        );
+        let publish = self
+            .app
+            .send(command(
+                format!("/api/rate-drafts/{id}/publish"),
+                json!({ "branch": branch, "expectedVersion": expected }),
+            ))
+            .await;
+        assert_eq!(
+            publish.status, 200,
+            "rate {code} {buy}/{sell} in {branch}: {:.300}",
+            publish.text
+        );
     }
 
     async fn open_shift(&self, branch: &str) {
