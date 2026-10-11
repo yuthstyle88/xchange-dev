@@ -40,8 +40,8 @@ afterEach(() => {
   setLang('th');
 });
 
-const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1' };
-const NOK: Me = { kind: 'staff', id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok', username: 'nok' };
+const OWNER: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1', branchName: 'MAIN', branches: [] };
+const NOK: Me = { kind: 'staff', id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok', username: 'nok', branchName: 'B2', branches: [] };
 
 function deferred<T>() {
   let resolve!: (v: T) => void;

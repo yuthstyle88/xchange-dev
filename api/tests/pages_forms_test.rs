@@ -197,7 +197,7 @@ const PAGES: [(&str, &str); 13] = [
     ("/", "owner"),
     ("/desk", "owner"),
     ("/receipt-sample", "owner"),
-    ("/staff", "none"),
+    ("/staff", "owner"),
     ("/staff/report", "none"),
     ("/staff/desk", "staff:FRONT:XC-B01"),
     ("/devices", "owner"),

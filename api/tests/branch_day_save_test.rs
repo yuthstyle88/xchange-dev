@@ -1,0 +1,570 @@
+//! CA-7 (#623), stage 2: an exchange saved by a Blueprint-session teller posts to that teller's own OPEN shift
+//! (design `docs/design/blueprint/cash-shift-transfer.md` C1, §4.3 rows "an exchange posts to the saver's own OPEN
+//! shift; no open shift → `noOpenShift`" and "after cut-off, a save needs the saver's own OPEN draft"), with no
+//! branch custodian. Lane controller's ruling on #623 (issuecomment-6100843512), option A:
+//! - a Blueprint-session saver (`users.id`) saves on their own OPEN shift, judged by `BranchDay::check_save`;
+//! - a v2 password saver (`employees.id`) keeps today's `apply_delta_in(branch)` path until CA-10 #626, so the
+//!   replayed v2 save fixtures keep their expectations and are not repeated here.
+//!
+//! Written before the implementation by the ticket author (claude/709ec749). Do not edit, delete or weaken these
+//! tests; add your own in another file.
+//!
+//! [required] by these tests, in `xchange::application::workflows::save_transaction::SaveTransactionWorkflow`:
+//! - `save_as_teller(branch: &BranchId, cmd: SaveTransaction, extras: &SaveExtras, actor: &SaveActor,
+//!   teller: &xc_auth::domain::access::Actor, now: DateTime<Utc>) -> AppResult<SavedTransaction>`: the save of
+//!   `save_as`, except that
+//!   - the exchange's stock moves on the OPEN shift whose `teller_id` is `teller.user_id`
+//!     (`ShiftService::apply_delta_for_teller_in`), never on the branch's v2 shift, and the stored exchange names
+//!     that shift (`transactions.shift_id`);
+//!   - no such shift → refused with `ShiftError::NoOpenShift`'s sentence, and nothing is written;
+//!   - with custody on for the branch, the registered `CustodySaveStep` judges the save by
+//!     `BranchDay::check_save(phase, teller, own_shift, drafts, attempt, window_needs_draft)`: no custodian, so two
+//!     tellers each on their own shift both save; after cut-off the teller needs an OPEN draft of their own
+//!     (`TxDraft.employee_id` = `teller.user_id`) on their own shift, matching the save; none → `SaveClosed`.
+//!
+//! `SaveActor` and `SaveExtras` gain no field: both are built by struct literal in `kiosk_ports.rs` and
+//! `booking_save_step.rs`, which are outside #623's scope (ruling, item 2). The teller travels as its own argument.
+//!
+//! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in `_test`). Without it they
+//! FAIL; none skips.
+
+#[allow(unused_imports)]
+mod save_common;
+
+use std::sync::Arc;
+
+use chrono::{TimeZone, Utc};
+use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
+use rust_decimal::Decimal;
+use save_common::*;
+use xc_auth::domain::access::{Actor, Role as BpRole, ScopedRole};
+use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::application::count::{CashCountService, SubmitCount};
+use xc_cash::domain::count::{CountKind, CountLine};
+use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::money::Side;
+use xc_shift::application::custody::service::CustodyService;
+use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
+use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
+use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
+use xc_shift::domain::custody::state::CustodyState;
+use xc_shift::domain::custody::value_objects::custody_error::CustodyError;
+use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::custody::value_objects::phase::Phase;
+use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
+use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
+use xchange::application::workflows::custody_save_step::CustodySaveStep;
+use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
+
+/// The v2 employee the custody state names as the branch custodian: nobody here saves as them.
+const V2_CUSTODIAN: &str = "employee-7";
+
+// ── the people ─────────────────────────────────────────────────────────────
+
+async fn org(shop: &Shop) -> String {
+    sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = 'XC'")
+        .fetch_one(&shop.pool)
+        .await
+        .expect("OR-1's organisation")
+}
+
+/// A user of the organisation holding `role` on `MAIN`, and the `access::Actor` for them.
+async fn person(shop: &Shop, name: &str, role: BpRole) -> Actor {
+    let org = org(shop).await;
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+    )
+    .bind(&org)
+    .bind(name)
+    .fetch_one(&shop.pool)
+    .await
+    .expect("insert a user");
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    sqlx::query(
+        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+         VALUES ($1::uuid, $2, $3::uuid, $4, $5)",
+    )
+    .bind(&id)
+    .bind(role.as_str())
+    .bind(&org)
+    .bind(MAIN)
+    .bind(from)
+    .execute(&shop.pool)
+    .await
+    .expect("give the user a role on MAIN");
+    Actor::new(
+        &id,
+        &org,
+        vec![ScopedRole::new(role, Some(branch(MAIN)), from, None)],
+        None,
+    )
+}
+
+/// The v2 actor a Blueprint-session teller's save carries since #767 (`legacy_actor`: id = `users.id`).
+fn save_actor(teller: &Actor) -> SaveActor {
+    SaveActor {
+        id: teller.user_id.clone(),
+        username: teller.user_id.clone(),
+        employee_id: Some(teller.user_id.clone()),
+        role: Role::Front,
+    }
+}
+
+// ── the shifts ─────────────────────────────────────────────────────────────
+
+/// `teller`'s shift on `MAIN`, opened the way CA-3 opens it: the teller counts THB 1000 × 10, a BRANCH_MANAGER
+/// verifies. Its id.
+async fn opened(shop: &Shop, teller: &Actor, manager: &Actor) -> String {
+    let thousand: i64 = sqlx::query_scalar(
+        "SELECT id FROM denominations WHERE currency_code = 'THB' AND face_value = 1000",
+    )
+    .fetch_one(&shop.pool)
+    .await
+    .expect("the THB 1000 face value");
+    let counts = CashCountService::pg(shop.pool.clone());
+    let count = counts
+        .submit(
+            teller,
+            SubmitCount {
+                branch: branch(MAIN),
+                shift_id: None,
+                kind: CountKind::Open,
+                lines: vec![CountLine::new("THB", thousand, 10)],
+                note: None,
+                idempotency_key: unique("count"),
+            },
+            at(-7200),
+        )
+        .await
+        .expect("the teller submits the OPEN count");
+    counts
+        .verify(manager, &count.id, at(-7140))
+        .await
+        .expect("the BRANCH_MANAGER verifies the OPEN count")
+        .shift_id
+        .expect("a verified OPEN count names the shift it opened")
+}
+
+async fn expected(shop: &Shop, shift: &str, currency: &str) -> Decimal {
+    sqlx::query_scalar::<_, Option<Decimal>>(
+        "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
+    )
+    .bind(shift)
+    .bind(currency)
+    .fetch_optional(&shop.pool)
+    .await
+    .expect("read a balance")
+    .flatten()
+    .unwrap_or(Decimal::ZERO)
+}
+
+fn d(text: &str) -> Decimal {
+    text.parse().expect("a decimal")
+}
+
+async fn shift_of(shop: &Shop, document_ref: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT shift_id FROM transactions WHERE document_ref = $1")
+        .bind(document_ref)
+        .fetch_one(&shop.pool)
+        .await
+        .expect("the stored exchange")
+}
+
+// ── custody ────────────────────────────────────────────────────────────────
+
+/// The custody service's questions to the other contexts: nothing outside, and today's window open 11:00–23:00
+/// Bangkok, so noon (`at(0)`) is inside it and needs no draft.
+struct NothingOutside;
+
+type Asked<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<T>> + Send + 'a>>;
+
+impl CustodyPorts for NothingOutside {
+    fn outside_facts<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        _open_shift_id: Option<&'a str>,
+    ) -> Asked<'a, OutsideFacts> {
+        Box::pin(async { Ok(OutsideFacts::default()) })
+    }
+
+    fn customer_known<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        _customer_id: &'a str,
+    ) -> Asked<'a, bool> {
+        Box::pin(async { Ok(false) })
+    }
+
+    fn evidence_owned<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        _owner_id: &'a str,
+        _keys: &'a [String],
+    ) -> Asked<'a, bool> {
+        Box::pin(async { Ok(false) })
+    }
+
+    fn employee_role<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        _employee_id: &'a str,
+    ) -> Asked<'a, Option<CustodyRole>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn service_window<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        now: CustodyTime,
+    ) -> Asked<'a, ServiceWindow> {
+        Box::pin(async move {
+            let bkk_millis = now.epoch_millis() + 7 * 3600 * 1000;
+            let bkk_day_start = bkk_millis.div_euclid(86_400 * 1000) * (86_400 * 1000);
+            let utc_day_start = bkk_day_start - 7 * 3600 * 1000;
+            let open = CustodyTime::from_epoch_millis(utc_day_start + 11 * 3600 * 1000);
+            let close = CustodyTime::from_epoch_millis(utc_day_start + 23 * 3600 * 1000);
+            Ok(ServiceWindow::Open { open, close })
+        })
+    }
+}
+
+fn branch_tx(shop: &Shop) -> BranchTx {
+    BranchTx::new(Transactor::new(shop.pool.clone()))
+}
+
+/// The save workflow with custody's step registered.
+fn guarded(shop: &Shop) -> SaveTransactionWorkflow {
+    let custody = CustodyService::new(
+        Arc::new(PgCustodyRepository::new(shop.pool.clone())),
+        shop.shifts.clone(),
+        Arc::new(NothingOutside),
+        branch_tx(shop),
+    );
+    let step: Arc<dyn SaveStep> = Arc::new(CustodySaveStep::new(custody));
+    SaveTransactionWorkflow::new(branch_tx(shop), shop.shifts.clone(), shop.files.clone())
+        .with_steps(vec![step])
+}
+
+/// Custody on for `MAIN`, in `phase`, with the v2 drawer custodian set to someone who never saves here.
+async fn custody_in(shop: &Shop, phase: Phase, drafts: Vec<TxDraft>) {
+    let repo = PgCustodyRepository::new(shop.pool.clone());
+    let mut tx = shop.pool.begin().await.expect("begin");
+    let before = repo
+        .load_state_in(&mut tx, &branch(MAIN))
+        .await
+        .expect("load the custody state");
+    let state = CustodyState {
+        enabled: true,
+        phase,
+        custodian: Some(V2_CUSTODIAN.to_owned()),
+        drafts,
+        ..CustodyState::initial()
+    };
+    repo.store_state_in(&mut tx, &branch(MAIN), &before, &state)
+        .await
+        .expect("store the custody state");
+    tx.commit().await.expect("commit");
+}
+
+fn draft(id: &str, shift: &str, owner: &str) -> TxDraft {
+    TxDraft {
+        id: id.to_owned(),
+        shift_id: shift.to_owned(),
+        employee_id: owner.to_owned(),
+        side: Side::Buy,
+        currency: code("USD"),
+        amount: money("100"),
+        at: CustodyTime::from_epoch_millis(at(-120).timestamp_millis()),
+        status: DraftStatus::Open,
+        document_ref: None,
+    }
+}
+
+fn naming(draft_id: &str) -> SaveExtras {
+    SaveExtras {
+        staff_draft_id: Some(draft_id.to_owned()),
+        ..SaveExtras::default()
+    }
+}
+
+fn refused(result: AppResult<SavedTransaction>) -> String {
+    match result {
+        Err(AppError::Domain(sentence)) => sentence,
+        other => panic!("expected a refusal (AppError::Domain), got {other:?}"),
+    }
+}
+
+/// The rate, a customer and the teller's passport on `MAIN`. No v2 shift is opened.
+async fn counter(shop: &Shop, teller: &Actor) -> (String, String) {
+    shop.set_rate(MAIN, "USD", "32.1", "33").await;
+    let customer = shop.reserve(MAIN, save_common::person()).await;
+    let passport = shop.upload(MAIN, &teller.user_id, "image/jpeg", JPEG).await;
+    (customer, passport)
+}
+
+// ── the tests ──────────────────────────────────────────────────────────────
+
+/// C1: Nok's exchange moves Nok's drawer only. The shop buys USD 100 at 32.1: USD +100, THB −3,210.
+#[tokio::test]
+async fn a_tellers_exchange_posts_to_their_own_open_shift_only() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let ploy = person(&shop, "Ploy", BpRole::Teller).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    let ploys = opened(&shop, &ploy, &manager).await;
+    let noks = opened(&shop, &nok, &manager).await;
+    let (customer, passport) = counter(&shop, &nok).await;
+
+    let saved = shop
+        .workflow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca7-0001-aaaaaaaaaaaa", &customer, &passport),
+            &SaveExtras::default(),
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await
+        .expect("Nok's exchange is saved");
+
+    assert_eq!(
+        shift_of(&shop, &saved.document_ref).await.as_deref(),
+        Some(noks.as_str()),
+        "the stored exchange names Nok's shift"
+    );
+    assert_eq!(expected(&shop, &noks, "USD").await, d("100"));
+    assert_eq!(expected(&shop, &noks, "THB").await, d("6790"));
+    assert_eq!(
+        (
+            expected(&shop, &ploys, "USD").await,
+            expected(&shop, &ploys, "THB").await
+        ),
+        (d("0"), d("10000")),
+        "Ploy's shift is untouched"
+    );
+    shop.finish().await;
+}
+
+/// C1, §4.3: a teller with no OPEN shift of their own is refused `noOpenShift`, and nothing is written, even
+/// while another teller's shift is open.
+#[tokio::test]
+async fn a_teller_with_no_open_shift_of_their_own_is_refused_and_nothing_is_written() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let ploy = person(&shop, "Ploy", BpRole::Teller).await;
+    let mai = person(&shop, "Mai", BpRole::Teller).await;
+    let ploys = opened(&shop, &ploy, &manager).await;
+    let (customer, passport) = counter(&shop, &mai).await;
+
+    let answer = shop
+        .workflow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca7-0002-aaaaaaaaaaaa", &customer, &passport),
+            &SaveExtras::default(),
+            &save_actor(&mai),
+            &mai,
+            at(0),
+        )
+        .await;
+    assert_eq!(refused(answer), ShiftError::NoOpenShift.to_string());
+    assert_eq!(shop.count("transactions").await, 0, "no exchange is stored");
+    assert_eq!(
+        expected(&shop, &ploys, "THB").await,
+        d("10000"),
+        "Ploy's shift is untouched"
+    );
+    shop.finish().await;
+}
+
+/// The branch's v2 shift (opened by `save_common`'s v2 opener) is not the teller's: the teller is still refused
+/// `noOpenShift`, and the v2 shift does not move.
+#[tokio::test]
+async fn the_branchs_v2_shift_is_not_the_tellers_shift() {
+    let shop = Shop::start().await;
+    let mai = person(&shop, "Mai", BpRole::Teller).await;
+    let (customer, passport) = counter(&shop, &mai).await;
+    shop.open_shift(MAIN, &[("THB", "100000"), ("USD", "1000")])
+        .await;
+    let v2_before = shop.balances(MAIN).await;
+
+    let answer = shop
+        .workflow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca7-0003-aaaaaaaaaaaa", &customer, &passport),
+            &SaveExtras::default(),
+            &save_actor(&mai),
+            &mai,
+            at(0),
+        )
+        .await;
+    assert_eq!(refused(answer), ShiftError::NoOpenShift.to_string());
+    assert_eq!(
+        shop.balances(MAIN).await,
+        v2_before,
+        "the v2 shift does not move"
+    );
+    assert_eq!(shop.count("transactions").await, 0);
+    shop.finish().await;
+}
+
+/// C1: with custody on and service OPEN, there is no branch custodian. Two tellers, each on their own shift, both
+/// save; the v2 custodian named in the state is neither of them.
+#[tokio::test]
+async fn with_service_open_two_tellers_on_their_own_shifts_both_save() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let ploy = person(&shop, "Ploy", BpRole::Teller).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    let ploys = opened(&shop, &ploy, &manager).await;
+    let noks = opened(&shop, &nok, &manager).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await;
+    let flow = guarded(&shop);
+    shop.set_rate(MAIN, "USD", "32.1", "33").await;
+
+    for (who, shift, submission) in [
+        (&ploy, &ploys, "ca7-0004-aaaaaaaaaaaa"),
+        (&nok, &noks, "ca7-0005-aaaaaaaaaaaa"),
+    ] {
+        let customer = shop.reserve(MAIN, save_common::person()).await;
+        let passport = shop.upload(MAIN, &who.user_id, "image/jpeg", JPEG).await;
+        let saved = flow
+            .save_as_teller(
+                &branch(MAIN),
+                form(submission, &customer, &passport),
+                &SaveExtras::default(),
+                &save_actor(who),
+                who,
+                at(0),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("a teller on their own shift saves while OPEN: {e:?}"));
+        assert_eq!(
+            shift_of(&shop, &saved.document_ref).await.as_deref(),
+            Some(shift.as_str())
+        );
+    }
+    shop.finish().await;
+}
+
+/// §4.3 (kept rule of `custody_machine.rs:1194-1214`): after cut-off, a teller's save needs an OPEN draft of
+/// their own, on their own shift, matching the save. Without it: `SaveClosed`, nothing written. Another teller's
+/// draft, or the teller's draft on another shift, does not count. With it: saved, and the draft is completed.
+#[tokio::test]
+async fn after_cut_off_a_tellers_save_needs_their_own_open_draft_on_their_own_shift() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let ploy = person(&shop, "Ploy", BpRole::Teller).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    let ploys = opened(&shop, &ploy, &manager).await;
+    let noks = opened(&shop, &nok, &manager).await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+
+    custody_in(
+        &shop,
+        Phase::CutOff,
+        vec![
+            draft("ploys-own", &ploys, &ploy.user_id),
+            draft("noks-on-ploys-shift", &ploys, &nok.user_id),
+            draft("noks-own", &noks, &nok.user_id),
+        ],
+    )
+    .await;
+
+    for (named, why) in [
+        (None, "no draft named"),
+        (Some("ploys-own"), "another teller's draft"),
+        (Some("noks-on-ploys-shift"), "Nok's draft on another shift"),
+    ] {
+        let extras = named.map(naming).unwrap_or_default();
+        let answer = flow
+            .save_as_teller(
+                &branch(MAIN),
+                form("ca7-0006-aaaaaaaaaaaa", &customer, &passport),
+                &extras,
+                &save_actor(&nok),
+                &nok,
+                at(0),
+            )
+            .await;
+        assert_eq!(
+            refused(answer),
+            CustodyError::SaveClosed.to_string(),
+            "{why}"
+        );
+        assert_eq!(
+            shop.count("transactions").await,
+            0,
+            "{why}: nothing written"
+        );
+    }
+
+    let saved = flow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca7-0006-aaaaaaaaaaaa", &customer, &passport),
+            &naming("noks-own"),
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await
+        .expect("Nok's own open draft on Nok's shift lets the save through");
+    assert_eq!(
+        shift_of(&shop, &saved.document_ref).await.as_deref(),
+        Some(noks.as_str())
+    );
+    let state = PgCustodyRepository::new(shop.pool.clone())
+        .load_state(&branch(MAIN))
+        .await
+        .expect("load the custody state");
+    let own = state
+        .drafts
+        .iter()
+        .find(|d| d.id == "noks-own")
+        .expect("the draft");
+    assert_eq!(
+        (own.status, own.document_ref.as_deref()),
+        (DraftStatus::Completed, Some(saved.document_ref.as_str()))
+    );
+    shop.finish().await;
+}
+
+/// §4.3: in a phase other than OPEN or CUT_OFF (here READY, before service starts), a teller's save is refused
+/// `SaveClosed` even on their own shift.
+#[tokio::test]
+async fn before_service_starts_a_tellers_save_is_closed() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    opened(&shop, &nok, &manager).await;
+    custody_in(&shop, Phase::Ready, Vec::new()).await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+
+    let answer = flow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca7-0007-aaaaaaaaaaaa", &customer, &passport),
+            &SaveExtras::default(),
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await;
+    assert_eq!(refused(answer), CustodyError::SaveClosed.to_string());
+    assert_eq!(shop.count("transactions").await, 0);
+    shop.finish().await;
+}

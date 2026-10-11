@@ -72,7 +72,7 @@ function queues(): FakeQueues {
   return fake.queues as FakeQueues;
 }
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok' };
+const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
 
 let serverNow = Date.parse('2026-10-08T03:00:00.000Z');
 

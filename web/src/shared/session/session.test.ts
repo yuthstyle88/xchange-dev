@@ -61,8 +61,8 @@ function fakeApi(script: Array<ViewAnswer<Me> | Error>) {
   return { api, seen, posted };
 }
 
-const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: null, username: null };
-const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: null, username: null };
+const owner: Me = { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: null, username: null, branchName: 'MAIN', branches: [] };
+const rates: Me = { kind: 'staff', id: 'e-7', role: 'RATES', branch: 'XC-B01', name: null, username: null, branchName: 'XC-B01', branches: [] };
 
 const signIn = () =>
   new ApiError({ code: 'signIn', message: 'กรุณาเข้าสู่ระบบ', status: 401 });

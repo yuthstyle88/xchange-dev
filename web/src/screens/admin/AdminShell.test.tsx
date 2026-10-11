@@ -220,9 +220,9 @@ let world: World;
 
 function meFor(named: string | undefined): Me {
   if (world.who.kind === 'staff') {
-    return { kind: 'staff', id: 'e-1', role: world.who.role, branch: world.who.branch, name: 'Somchai', username: 'front1' };
+    return { kind: 'staff', id: 'e-1', role: world.who.role, branch: world.who.branch, name: 'Somchai', username: 'front1', branchName: world.who.branch, branches: [] };
   }
-  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner' };
+  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', username: 'owner', branchName: named || 'MAIN', branches: [] };
 }
 
 function branchesFor(): Branch[] {

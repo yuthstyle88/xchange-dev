@@ -76,7 +76,7 @@ vi.mock('./QueuePanel', () => ({
   },
 }));
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok' };
+const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
 
 // 02:15Z is 09:15 in Bangkok: a stamp printed in UTC (browserInUtc) reads 2:15, not 9:15.
 const STARTED = '2026-10-10T02:15:00.000Z';

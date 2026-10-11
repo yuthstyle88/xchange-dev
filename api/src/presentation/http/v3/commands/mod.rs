@@ -7,20 +7,14 @@ use xc_approval::application::approval_service::ApprovalService;
 use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_cash::application::ledger_approval::count_difference;
 use xc_kernel::money::{CurrencyCode, Rate};
-use xc_rate::application::approval::{rate_feed_publication, rate_publication};
 use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 
 use crate::presentation::http::v3::error::V3Error;
 
 pub fn make_approval_registry(pool: PgPool) -> ApprovalRegistry {
-    let mut registry = ApprovalRegistry::new();
-    rate_publication::register(&mut registry, pool.clone());
-    rate_feed_publication::register(&mut registry, pool.clone());
-    count_difference::register(&mut registry, pool);
-    registry
+    crate::bootstrap::approval_subjects::registry(pool)
 }
 
 pub fn make_approval_service(pool: PgPool) -> Arc<ApprovalService> {

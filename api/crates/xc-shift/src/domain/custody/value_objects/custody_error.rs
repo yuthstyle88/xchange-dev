@@ -111,6 +111,10 @@ pub enum CustodyError {
     #[error("Backend ต้องตัดรายการและล็อกการสร้างรายการก่อนนับเงิน")]
     CutoffRequired,
 
+    /// A cut-off asked for outside OPEN (CA-7 #623).
+    #[error("ตัดรายการได้เฉพาะเมื่อสาขาเปิดบริการอยู่")]
+    DayNotOpen,
+
     #[error("มีเอกสารธุรกรรมค้าง ต้องสะสางก่อนปิดหรือส่งกะ")]
     TransactionsPending,
 

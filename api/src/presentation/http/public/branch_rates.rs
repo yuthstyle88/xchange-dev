@@ -2,7 +2,7 @@
 //! publication in the `published_rates` view's shape (`rates.md:454`).
 
 use actix_web::http::{StatusCode, header};
-use actix_web::{HttpResponse, ResponseError, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use sqlx::{PgPool, Row};
 use xc_kernel::ids::BranchId;
 
@@ -18,7 +18,11 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     );
 }
 
-async fn handle(pool: web::Data<PgPool>, path: web::Path<(String, String)>) -> HttpResponse {
+async fn handle(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(String, String)>,
+) -> HttpResponse {
     let (org_code, branch_code) = path.into_inner();
 
     let row = sqlx::query(
@@ -43,9 +47,28 @@ async fn handle(pool: web::Data<PgPool>, path: web::Path<(String, String)>) -> H
 
     let branch_id = BranchId::new(branch_id_str);
     match published_rates_data(pool.get_ref(), &branch_id).await {
-        Ok(data) => HttpResponse::Ok()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .json(data),
+        Ok(data) => {
+            let etag = match data.publication {
+                Some(ref pub_dto) => format!("\"p{}-s{}\"", pub_dto.id, u8::from(data.stale)),
+                None => "\"none\"".to_string(),
+            };
+
+            if let Some(if_none_match) = req
+                .headers()
+                .get(header::IF_NONE_MATCH)
+                .and_then(|v| v.to_str().ok())
+                && (if_none_match == etag || if_none_match.trim() == etag.trim())
+            {
+                return HttpResponse::NotModified()
+                    .insert_header((header::ETAG, etag))
+                    .finish();
+            }
+
+            HttpResponse::Ok()
+                .insert_header((header::ETAG, etag))
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .json(data)
+        }
         Err(_) => V3Error::new(
             "serverError",
             None,

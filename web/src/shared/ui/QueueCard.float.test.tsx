@@ -64,7 +64,7 @@ vi.mock('../queue/queue-store', async () => {
   };
 });
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok' };
+const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
 
 function answer(count: number, latest: string | null = count ? `K${count}` : null) {
   const s = queueStore('B1') as FakeStore;

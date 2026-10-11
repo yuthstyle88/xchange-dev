@@ -67,6 +67,7 @@ async fn two_owner_rows_answers_null_name_and_username() {
         data,
         json!({
             "kind": "owner", "id": "owner", "role": "OWNER", "branch": "MAIN",
+            "branchName": "XC-B", "branches": [{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }],
             "name": null, "username": null
         })
     );

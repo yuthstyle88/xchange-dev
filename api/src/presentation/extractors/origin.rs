@@ -11,11 +11,10 @@
 use actix_web::HttpRequest;
 use actix_web::http::header;
 
+use super::request_host::request_host;
+
 fn expected_origin(req: &HttpRequest) -> Option<String> {
-    let host_hdr = req
-        .headers()
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())?;
+    let host = request_host(req)?;
 
     let scheme = if req
         .headers()
@@ -25,13 +24,6 @@ fn expected_origin(req: &HttpRequest) -> Option<String> {
         "https"
     } else {
         "http"
-    };
-
-    let host_lower = host_hdr.to_ascii_lowercase();
-    let host = if scheme == "http" {
-        host_lower.strip_suffix(":80").unwrap_or(&host_lower)
-    } else {
-        host_lower.strip_suffix(":443").unwrap_or(&host_lower)
     };
 
     Some(format!("{scheme}://{host}"))

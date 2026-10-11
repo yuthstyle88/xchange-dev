@@ -26,7 +26,8 @@ impl CustodySaveStep {
 impl SaveStep for CustodySaveStep {
     /// Live exchanges only. A repeat is judged by who saved the first time
     /// (`recorded_by` against the saver's id), a first save by the whole rule
-    /// of `CustodyMachine::check_save`. A currency that is no currency is left
+    /// of `CustodyMachine::check_save` — or, for a Blueprint-session teller
+    /// (CA-7 #623), by `BranchDay::check_save` on their own shift. A currency that is no currency is left
     /// to the save itself, which refuses it at the counter rate.
     fn before_in<'a>(
         &'a self,
@@ -40,6 +41,12 @@ impl SaveStep for CustodySaveStep {
             let Some(attempt) = attempt_of(ctx) else {
                 return Ok(());
             };
+            if let Some(teller) = ctx.teller {
+                return self
+                    .custody
+                    .check_teller_save_in(tx, ctx.branch, &attempt, teller, ctx.now)
+                    .await;
+            }
             let actor = CustodyActor {
                 id: ctx.actor.id.clone(),
                 employee_id: ctx.actor.employee_id.clone(),

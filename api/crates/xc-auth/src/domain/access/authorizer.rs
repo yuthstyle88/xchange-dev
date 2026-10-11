@@ -93,8 +93,16 @@ impl Authorizer {
                 }
             }
             None => {
+                // SB-1 §14.3: the session branch, when a qualifying row covers it; otherwise the arms below.
+                let session = actor.branch.as_ref().filter(|b| {
+                    qualifying
+                        .iter()
+                        .any(|r| r.branch.is_none() || r.branch.as_ref() == Some(*b))
+                });
                 let has_org_wide = qualifying.iter().any(|r| r.branch.is_none());
-                if has_org_wide {
+                if let Some(b) = session {
+                    b.clone()
+                } else if has_org_wide {
                     BranchId::new("MAIN")
                 } else {
                     let distinct_branches: HashSet<_> = qualifying

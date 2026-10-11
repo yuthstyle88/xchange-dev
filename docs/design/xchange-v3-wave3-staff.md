@@ -20,7 +20,7 @@ the seam, which changes with this re-cut.
 | v2's roles (FRONT, BACKEND, MANAGER, MONITOR, FINANCE, RATES, SYSTEM…) and `StaffSight` keyed on them | The Blueprint's roles; every read and write checks a `Permission` through `Authorizer` | #550 §3.4, §4.2 |
 | Views inherit `(EntryPath::StaffRpc, "adminSnapshot")` | Views declare `REQUIRES: Permission` | #550 §4.1 (OR-4) |
 | Sign-in, first password and sign-out on `/api/staff/{login,password,logout,me}` | Identity for everyone: the BFF sign-in of OR-3; no password, no first-password card | #550 B2, §5 |
-| Writes on `POST /api/staff/rpc` (13 `ops*` actions) | `CommandAction`s with an `Idempotency-Key` (PR 570 CM-1), declared by CA-8 | #582 §4.4 |
+| Writes on `POST /api/staff/rpc` (13 `ops*` actions) | `CommandAction`s with an `Idempotency-Key` (PR 570 CM-1), declared by CA-8 (cash) and CA-8b (branch day, clock, holds, drafts) | #582 §4.4 |
 | Customer picked by plain passport number | Search through `xc-customer` by name, customer id, or a passport number matched by its keyed hash | #554 K4 |
 | A one-branch shift and a custodian | Shifts per teller; the floor shows **my** shift | #582 C1 |
 
@@ -88,10 +88,13 @@ once per call.
 
 ### 3.3 Writes
 
-None defined here. The page calls CA-8's commands (#582 §4.4): `clock`, `dayStartService`, `dayCutoff`, `dayTarget`,
-`countSubmit`, `countVerify`, `handoverStart`, `transferCreate`, `transferSubmit`, `transferDispatch`,
-`transferReceive`, `transferReconcile`, `holdCreate`, `holdRelease`. Approvals of a transfer are decided on PR 570's
-approvals screen, not here.
+None defined here. The page calls #582 §4.4's commands:
+- **CA-8's:** `countSubmit`, `countVerify`, `handoverStart`, `handoverAccept`, `handoverReject`, `transferCreate`,
+  `transferSubmit`, `transferDispatch`, `transferReceive`, `transferReconcile`.
+- **CA-8b's** (on CA-7b's branch-day service, #582 §4.8): `clock`, `dayStartService`, `dayCutoff`, `dayTarget`,
+  `holdCreate`, `holdRelease`.
+
+Approvals of a transfer are decided on PR 570's approvals screen, not here.
 
 ### 3.4 What does not change
 
@@ -130,7 +133,8 @@ classDiagram
   class CustomerService { <<xc-customer  #554 CI-4/CI-5>> +search(q) }
   class StaffViews { <<api v3/views: staff_me, staff_floor, staff_holds, staff_attendance, staff_customers>> }
   class CashViews { <<api v3/views  #582 CA-8: my_shift, cash_counts, cash_transfers, handovers_pending>> }
-  class CashCommands { <<api v3/commands/cash  #582 CA-8>> }
+  class CashCommands { <<api v3/commands/cash.rs  #582 CA-8>> }
+  class BranchDayCommands { <<api v3/commands/branch_day.rs  #582 CA-8b>> }
   class StaffPage { <<web screens/staff  shell + cards>> }
 
   StaffViews --> StaffFloorReader
@@ -143,6 +147,7 @@ classDiagram
   StaffPage --> StaffViews
   StaffPage --> CashViews
   StaffPage --> CashCommands
+  StaffPage --> BranchDayCommands
 ```
 
 ## 6. Behaviour tables (the contract the up-front tests pin)
@@ -157,8 +162,8 @@ classDiagram
 | B4 | start service / cut-off | `can(BranchDayOperate)`; start when `phase = READY`, cut-off when `phase = OPEN` |
 | B5 | target form; safe and target figures | form `can(CashTargetSet)`; figures when `staff_floor` answers them |
 | B6 | my shift: open / close count, hand-over | `can(ShiftOperate)` and clocked in; open when I have no OPEN shift, close and hand-over when I do |
-| B7 | counts to verify | `can(ShiftCloseCertify)` (open/close) or I am the hand-over's receiver; never my own count |
-| B8 | transfers | list `can(CashManage)`; create/dispatch/receive `can(CashManage)`; reconcile `can(FinanceReconcile)` |
+| B7 | counts to verify; hand-overs to accept | open/close counts: `can(ShiftCloseCertify)`, never my own count (C7). A hand-over whose receiver I am: accept or reject it (C7b), never through `countVerify`, which refuses a HANDOVER_OUT count (`OnlyThroughHandover`, `xc-cash/src/application/count/count_service.rs:294-297`) |
+| B8 | transfers | list `can(CashManage)`; create/dispatch/receive `can(CashManage)`; reconcile `can(FinanceReconcile)`. **Open (§11 O5):** a teller may receive a SAFE_TO_DRAWER move into their own drawer (`ShiftOperate` + own shift, #582 §3.2), but holds no `CashManage`, so this row gives them no list to find that move in |
 | B9 | hold form; holds list; release | form `can(CustomerHoldPlace)`; list `can(CustomerHoldPlace) \|\| can(VerificationReview)`; release `can(VerificationReview)` |
 | B10 | attendance log | `can(AttendanceClock)` (own rows; all rows for `BranchDayOperate`, server-decided) |
 | B11 | RATES card | the permission `staff_published_rates` requires, so the card is shown exactly to those the view answers: today `can(CompatRead)` (#550 `org-roles-branches.md:219`, the StaffRpc `adminSnapshot` row: T, BM, RM, VR, F, A). `CompatRead` retires with V4; whatever permission V4 gives that view replaces it here in the same change (no narrower audience is wanted) |
@@ -171,12 +176,13 @@ Every row sends a CA-8 command (#582 §4.4) with an `Idempotency-Key`; after suc
 | # | Control | Command | Body |
 |---|---|---|---|
 | C1 | `ลงเวลาเข้า` / `ลงเวลาออก` | `clock` | `{direction: IN \| OUT}` |
-| C2 | start service (ConfirmDialog, v2's sentence `S:22:2994`) | `dayStartService` | `{equipmentReady, ratesVerified, rateVersion}` per CA-8 |
+| C2 | start service (ConfirmDialog, v2's sentence `S:22:2994`) | `dayStartService` | `{equipmentReady, ratesVerified, rateVersion}` per CA-8b; `rateVersion` = the `published_at` (ISO-8601) of the branch's current rate publication that the page showed, v2's `rateUpdated` (#582 §9 CA-8b row) |
 | C3 | cut-off | `dayCutoff` | `{}` |
 | C4 | target | `dayTarget` | `{amounts: {CUR: str}}` |
 | C5 | open / close count | `countSubmit` | `{kind: OPEN \| CLOSE, lines: [{currency, denominationId, qty: str}]}` (S9) |
 | C6 | hand over to | `handoverStart` | `{receiverId, lines: [...]}` |
-| C7 | verify a count | `countVerify` | `{id}` |
+| C7 | verify an open or close count | `countVerify` | `{id}` |
+| C7b | accept / reject a hand-over I receive | `handoverAccept` / `handoverReject` | `{id}` / `{id}` (no reason: the hand-over has no column for one, #582 §4.4) |
 | C8 | new transfer / move | `transferCreate` then `transferSubmit` | `{kind, toBranchId?, lines: [...], note}` |
 | C9 | dispatch / receive / reconcile | `transferDispatch` / `transferReceive` / `transferReconcile` | `{id}` / `{id, lines: [{…, qtyReceived: str}]}` / `{id, note}` (ReasonDialog) |
 | C10 | place a hold | `holdCreate` | `{customerId, reason}` |
@@ -208,13 +214,15 @@ Replaces the first version's S-1…S-8 (issues #573, #574, #575, #577, #578, #57
 | **S-1** floor reader + views | §3.1 `staff_me`, `staff_floor`, `staff_holds`, `staff_attendance`; §3.2 | `api/src/application/staff_floor/**`, `api/src/application/mod.rs` (one line), the four views' view/DTO/generated files, `api/tests/v3_staff_views_test.rs` | #550 OR-2 and OR-4 (`Authorizer`, `REQUIRES`), OR-1 (`BranchHours`), #582 CA-3 (shifts per teller) |
 | **S-2** customer search view | `staff_customers` | its view/DTO/generated files, `api/tests/v3_staff_customers_view_test.rs` | #554 CI-5, S-1 |
 | **S-3** page shell | §4 root + `parts/` | `web/pages/staff.html`, `web/src/screens/staff/{main.tsx,StaffPage.tsx,staff.css,i18n.ts,cards.ts}` and their tests, `web/src/screens/staff/parts/**` | S-1, #550 OR-3 (sign-in screen) |
-| **S-4** floor card | B3–B5, C1–C4 | `web/src/screens/staff/floor/**` | S-3, #582 CA-8 |
-| **S-5** shift card | B6–B7, C5–C7 | `web/src/screens/staff/shift/**` | S-3, #582 CA-8 |
+| **S-4** floor card | B3–B5, C1–C4 | `web/src/screens/staff/floor/**` | S-3, #582 **CA-8b** (`clock`, `dayStartService`, `dayCutoff`, `dayTarget`) |
+| **S-5** shift card | B6–B7, C5–C7b | `web/src/screens/staff/shift/**` | S-3, #582 CA-8 |
 | **S-6** transfers card | B8, C8–C9 | `web/src/screens/staff/transfers/**` | S-3, #582 CA-8 |
-| **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 CA-8 |
+| **S-7** holds + attendance cards | B9–B10, C10–C11 | `web/src/screens/staff/holds/**`, `web/src/screens/staff/attendance/**` | S-2, S-3, #582 **CA-8b** (`holdCreate`, `holdRelease`) |
 | **S-8** RATES card, read only | B11, S10 | `web/src/screens/staff/rates/**` | S-3 and RE-3 (`staff_published_rates`, `rates.md:950`) |
+| **S-8b** (#1285) RATES card error state | Blueprint §03 layout *"ทุกตารางมี loading / empty / error / retry"* (BP:268). S-8's card (PR 1282) catches a failed `staff_published_rates` read and shows nothing but the freshness line's *ไม่มีเรทอ้างอิง*, so a failed read looks like "nothing published". The card keeps the failure and shows `errorText(code, message)` (`shared/i18n`) with a retry, never the freshness line or a rate | `web/src/screens/staff/rates/RatesCard.tsx`, `web/src/screens/staff/rates/i18n.ts`, `web/src/screens/staff/rates/rates.error.test.tsx` (new) | S-8 #574 merged |
 | **S-9** sign-in returns to `/staff` | S1's "and back to `/staff` after it" | `web/src/screens/login/home.ts`, `web/src/screens/login/LoginScreen.tsx`, `web/src/screens/login/main.tsx` and their tests | — (independent of S-3: no shared file, and the return leg works whether or not `/staff` has merged; #1223 ruling issuecomment-6103493211) |
 | **S-10** the server's sign-in redirect carries `next` (api) | S1, with S-9: `pages::to_login` (`api/src/presentation/pages.rs:666` at `a0778bae`) answers `303 Location: /login` with no `next`, so a signed-out visitor to a `signed-in`/`branch`-gated page (`screens.rs:130`/`:138`) never reaches S-9's return leg | `api/src/presentation/pages.rs`, `api/tests/login_redirect_next_test.rs` (new) | — (BE lane, claude/ad05bf8d dispatches) |
+| **S-11** `/staff` renders inside the shared shell | Blueprint §03 layout *"Desktop มี sidebar + branch selector + status bar"* (BP:268); look rule LK-1 (`xchange-v3-look.md:99-101`). `StaffPage` returns its content inside `<AppShell title={t('title')}>` (`web/src/shared/ui/AppShell.tsx:12-42`), so the page gets the shared `AccountBar`: the signed-in user, sign-out and SB-2's branch switch (#892). Its own `<header class="xc-staff-header">` keeps the S12 hours line, `โหลดข้อมูลล่าสุด` and the report link, but no second `<h1>`, because the shell renders the title. `main.tsx`'s `void AppShell;` goes (the shell is now used). The signed-out redirect (S1) and the card mounting (`cards.ts`) do not change | `web/src/screens/staff/main.tsx`, `web/src/screens/staff/StaffPage.tsx`, `web/src/screens/staff/staff.css`, `web/src/screens/staff/StaffPage.shell.test.tsx` (new). Any provided S-3 test that pins the old `<h1 class="xc-staff-title">` is re-pointed by the ticket author in the up-front test commit, named in that file's header; the implementer edits no test | S-3 #575 (merged `415d5e16`) |
 
 S-9 exists because S1 is `[required]` and OR-3's sign-in screen on `main` `08c94225` ignores `next`: `LoginScreen` navigates to `homeOf(user)` (`web/src/screens/login/home.ts`), which answers `/desk` or `/` only. S-3 pins only the redirect to `/login?next=%2Fstaff` (lane controller ruling on #575, 2026-10-11); the return leg is S-9's. `next` must be a same-origin path so the sign-in screen is not an open redirect.
 
@@ -231,7 +239,11 @@ V4 (claude/e5ab6c) retires `/staff`'s `PAGE_SPECS` row after S-3…S-8; CA-10 re
 | S-3 | vitest: signed out → redirect; `can()` reads `staff_me.permissions`; a card whose `visible` is false is not rendered; every text through `t()`; **no role name** (`TELLER`, `BRANCH_MANAGER`, `FINANCE`, `FRONT`, `BACKEND`…) appears in `web/src/screens/staff/**` (grep test) |
 | S-9 | vitest, for **both** of LoginScreen's exits (after a successful sign-in, and the already-signed-in check on mount): `/login?next=%2Fstaff` → navigates to `/staff`; the rule for `next` (`safeNext`, #1223 ruling issuecomment-6103413078): after exactly one URL-decode it is **accepted only if** (1) it has no control character (U+0000–U+001F, U+007F) and no `\` anywhere, (2) it starts with exactly one `/` and its second character is not `/`, (3) `new URL(value, location.origin).origin` equals `location.origin`, (4) `u = new URL(value, location.origin)` gives `u.pathname + u.search + u.hash` byte-identical to the value — so nothing the browser would rewrite passes (`.`/`..` and `%2e` segments, re-encoded characters; #1223 ruling issuecomment-6103468024) — and (5) `u.pathname` is not `/login` (bare or followed by `?`, `#`, `/`) and not under `/api/`; a malformed `%` gives `null`, never a throw — so `//evil`, `/\evil.com`, `%2F%2Fevil`, `%2F%09%2Fevil.com` (browsers strip the tab and land on `https://evil.com/`), the same with `%0A`/`%0D`, `https://…`, `javascript:…`, a bare `staff`, `/login…`, `/api/…` and dot-segment paths such as `/staff/../login` or `/staff/%2e%2e/login` are each ignored and the user goes to `homeOf`; no `next` → `homeOf` unchanged (existing `home.test.ts` stays green, unedited); **no loop:** the mount exit navigates once and never back to `/login`, and `/staff` sends a visitor to `/login` only when `staff_me` answers `signIn` (S-3's "signed out → redirect"), not on a refusal such as `roleNotAllowedHere` |
 | S-10 | `GET /staff` signed out → `303`, `Location: /login?next=%2Fstaff`; `GET /devices?x=1&y=a%20b` signed out → `next` is the request's own path+query, URL-encoded once (`%2Fdevices%3Fx%3D1%26y%3Da%2520b`), never a scheme or host; a signed-in request is unchanged (no redirect); an `anyone` page (`/login`) never redirects; every existing caller of `to_login` (`pages.rs:314`, `:524`, `screens.rs:133`, `:141`) carries `next` |
+| S-8b | vitest: the view answers 500 / network error / `outOfScope` → the card shows the error text and a retry, and neither *ไม่มีเรทอ้างอิง* nor any rate; retry → a success shows the rates |
+| S-11 | vitest: the rendered page has exactly one `.xc-shell` and one `AccountBar` (the shared shell is mounted, not only imported); the page title is the shell's `<h1>` and there is no second `<h1>`; the S12 hours line, the refresh button and the report link are still shown under their S-3 conditions; signed out → still the S1 redirect, with no shell flash |
 | S-4…S-8 | vitest per card: each B-row and C-row — shown for each permission set, and the exact command and body sent; a retry resends the same `Idempotency-Key` and byte-equal body; no `Number(` in `web/src/screens/staff/**` (grep test) |
+
+**S-11's source (lane controller claude/5edf7bb5, 2026-10-11).** S-3 (PR 1229, merged `415d5e16`) imports `AppShell` in `main.tsx` and discards it (`void AppShell;`), which satisfies LK-1's import check while the page draws its own header. Every other page renders `<AppShell>` (`AdminShell.tsx:479`, `desk/main.tsx:18`, `DevicesScreen.tsx:382`, `kiosk-currencies/main.tsx:17`, `kiosk-queue/main.tsx:18`, `ReceiptSample.tsx:22`, `StaffGuide.tsx:23`, at `415d5e16`), so `/staff` alone has no account bar and no branch selector, against §03's desktop layout. The gate half is LK-1b in `xchange-v3-look.md`.
 
 ## 9. The seam with the report (`/staff/report`, claude/e5ab6c)
 
@@ -248,17 +260,21 @@ merged designs' views, and writes only through #582's commands.
 
 ## 11. Open items
 
-None of this page's own. Every former open item (O1–O4) was answered by the owner on 2026-10-09 (kept as S10, S9,
-S11, S12).
+| # | Open item | Who decides |
+|---|---|---|
+| O5 | B8: how does a teller find a SAFE_TO_DRAWER move they may receive? #582 §3.2 lets the receiving teller receive it (`ShiftOperate` + own shift), but B8's list needs `can(CashManage)`, which TELLER does not hold. Nothing in #582 or this design says where the teller sees that move, so no answer is written here. | the lane controller, or the owner if it is a business rule |
+
+Every former open item (O1–O4) was answered by the owner on 2026-10-09 (kept as S10, S9, S11, S12).
 
 ## 12. Checked against the XC Desk Blueprint v2
 
 | Blueprint item | Effect here |
 |---|---|
-| B01 `/desk/shift` — open/close/hand-over by currency and banknote, counted vs variance, certified | S9, B6–B7, C5–C7 over #582's counts and hand-overs |
+| B01 `/desk/shift` — open/close/hand-over by currency and banknote, counted vs variance, certified | S9, B6–B7, C5–C7b over #582's counts and hand-overs; the receiver certifies or refuses with C7b |
 | B05 `/desk/cash` — balances, transfers in transit | B8, C8–C9 over #582's transfers |
 | §02 roles and §03 scopes | S2: permissions through `Authorizer`, no role literal |
 | Identity for everyone | S1, S7 (OR-3) |
 | Customer by hash, PII not shown | S11, S-2's tests (#554) |
 | Rates draft → approve → publish | S10 |
 | Branch hours (A04) | S12 |
+| §03 layout: desktop has a branch selector and a status bar (BP:268) | S-11: `/staff` inside `AppShell` (its `AccountBar` carries SB-2's branch switch) |

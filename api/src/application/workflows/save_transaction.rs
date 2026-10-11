@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
+use xc_auth::domain::access::Actor;
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
@@ -110,6 +111,22 @@ fn digest(form: &TransactionForm, passport_sha256: &str, slip_sha256: Option<&st
     format!("{:x}", hasher.finalize())
 }
 
+/// The OPEN shift of the teller whose `users.id` is `user_id`, in `branch`.
+async fn teller_shift_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    user_id: &str,
+) -> AppResult<Option<String>> {
+    sqlx::query_scalar(
+        "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2::uuid AND status = 'OPEN'",
+    )
+    .bind(branch.as_str())
+    .bind(user_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Database)
+}
+
 fn answer(t: &Transaction) -> SavedTransaction {
     SavedTransaction {
         mode: t.mode,
@@ -179,7 +196,7 @@ impl SaveTransactionWorkflow {
         actor_id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<SavedTransaction> {
-        self.run(branch, cmd, actor_id, now, None).await
+        self.run(branch, cmd, actor_id, now, None, None).await
     }
 
     /// The save as a signed-in person makes it: the form's `staff` becomes the
@@ -195,6 +212,30 @@ impl SaveTransactionWorkflow {
     ) -> AppResult<SavedTransaction> {
         self.save_as_booked(branch, cmd, extras, None, actor, now)
             .await
+    }
+
+    /// CA-7 (#623): the save of a Blueprint-session teller. The same save as `save_as`, except that the stock
+    /// moves on the OPEN shift whose `teller_id` is `teller.user_id`, never on the branch's v2 shift; no such
+    /// shift is `ShiftError::NoOpenShift`; and custody judges it by `BranchDay::check_save` with no custodian.
+    pub async fn save_as_teller(
+        &self,
+        branch: &BranchId,
+        mut cmd: SaveTransaction,
+        extras: &SaveExtras,
+        actor: &SaveActor,
+        teller: &Actor,
+        now: DateTime<Utc>,
+    ) -> AppResult<SavedTransaction> {
+        cmd.staff = actor.username.clone();
+        self.run(
+            branch,
+            cmd,
+            &actor.id,
+            now,
+            Some((extras.clone(), None, actor.clone())),
+            Some(teller.clone()),
+        )
+        .await
     }
 
     /// The save as a signed-in person makes it, with an optional booking claim.
@@ -214,6 +255,7 @@ impl SaveTransactionWorkflow {
             &actor.id,
             now,
             Some((extras.clone(), booking, actor.clone())),
+            None,
         )
         .await
     }
@@ -225,6 +267,7 @@ impl SaveTransactionWorkflow {
         actor_id: &str,
         now: DateTime<Utc>,
         stepped: Option<(SaveExtras, Option<BookingClaim>, SaveActor)>,
+        teller: Option<Actor>,
     ) -> AppResult<SavedTransaction> {
         let b = branch.as_str();
         if !BranchId::is_well_formed(b) {
@@ -334,6 +377,7 @@ impl SaveTransactionWorkflow {
                             extras,
                             booking: booking.as_ref(),
                             actor,
+                            teller: teller.as_ref(),
                             now,
                             prior: prior.as_ref().map(|(saved, _)| saved),
                         };
@@ -354,6 +398,7 @@ impl SaveTransactionWorkflow {
                                 extras,
                                 booking: booking.as_ref(),
                                 actor,
+                                teller: teller.as_ref(),
                                 now,
                                 prior: Some(saved),
                             };
@@ -366,7 +411,13 @@ impl SaveTransactionWorkflow {
 
                     let mut shift_id = None;
                     if mode == Mode::Live {
-                        if this.shifts.active_in(tx, &branch).await?.is_none() {
+                        // CA-7 (#623): a Blueprint-session teller posts to their own OPEN shift, never the
+                        // branch's v2 one.
+                        let open = match &teller {
+                            Some(t) => teller_shift_in(tx, &branch, &t.user_id).await?.is_some(),
+                            None => this.shifts.active_in(tx, &branch).await?.is_some(),
+                        };
+                        if !open {
                             return Err(ShiftError::NoOpenShift.into());
                         }
                         let code = CurrencyCode::parse(&form.currency).ok();
@@ -378,6 +429,7 @@ impl SaveTransactionWorkflow {
                                     extras,
                                     booking: booking.as_ref(),
                                     actor,
+                                    teller: teller.as_ref(),
                                     now,
                                     prior: None,
                                 };
@@ -436,7 +488,14 @@ impl SaveTransactionWorkflow {
                             form.method.is_cash(),
                         )
                         .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                        shift_id = Some(this.shifts.apply_delta_in(tx, &branch, &delta).await?);
+                        shift_id = Some(match &teller {
+                            Some(t) => {
+                                this.shifts
+                                    .apply_delta_for_teller_in(tx, &branch, &t.user_id, &delta)
+                                    .await?
+                            }
+                            None => this.shifts.apply_delta_in(tx, &branch, &delta).await?,
+                        });
                     }
 
                     let stored_reference_rate = if let Some(client_ref) = form.client_reference_rate {
@@ -552,6 +611,7 @@ impl SaveTransactionWorkflow {
                             extras,
                             booking: booking.as_ref(),
                             actor,
+                            teller: teller.as_ref(),
                             now,
                             prior: None,
                         };

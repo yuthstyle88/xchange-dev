@@ -2,15 +2,14 @@
 
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 
+use crate::domain::custody::branch_day::BranchDay;
 use crate::domain::custody::commands::custody_command::{ClockDirection, CustodyCommand};
 use crate::domain::custody::commands::proposal::Proposal;
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use crate::domain::custody::entities::custody_request::{CustodyRequest, Decision};
 use crate::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
-use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::state::CustodyState;
-use crate::domain::custody::value_objects::cash_target::CashTarget;
 use crate::domain::custody::value_objects::count_sheet::CountSheet;
 use crate::domain::custody::value_objects::custody_actor::CustodyActor;
 use crate::domain::custody::value_objects::custody_error::CustodyError;
@@ -18,14 +17,13 @@ use crate::domain::custody::value_objects::custody_event::{CustodyEvent, EventKi
 use crate::domain::custody::value_objects::custody_facts::CustodyFacts;
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
-use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
 use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::request_kind::RequestKind;
 use crate::domain::custody::value_objects::request_status::{
     Reconciliation, RequestStatus, TransferStage,
 };
-use crate::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
+use crate::domain::custody::value_objects::save_attempt::SaveAttempt;
 use crate::domain::custody::value_objects::shift_effect::ShiftEffect;
 use crate::domain::custody::value_objects::signature::Signature;
 use crate::domain::custody::value_objects::transition::Transition;
@@ -61,7 +59,7 @@ fn movement_reason(kind: RequestKind, note_or_id: &str) -> String {
     format!("{} · {}", kind.as_str(), note_or_id)
 }
 
-fn is_clocked_in(state: &CustodyState, employee_id: &str) -> bool {
+pub(crate) fn is_clocked_in(state: &CustodyState, employee_id: &str) -> bool {
     state
         .attendance
         .iter()
@@ -70,17 +68,6 @@ fn is_clocked_in(state: &CustodyState, employee_id: &str) -> bool {
 
 fn has_non_zero(opt: &Option<StockDelta>) -> bool {
     opt.as_ref().is_some_and(|d| !d.non_zero().is_empty())
-}
-
-/// The draft a save names and can finish: the one it names, still open, for
-/// exactly the figures it saved. Who opened the draft and which shift it
-/// belongs to are not part of the match (ticket #154, decision B).
-fn draft_matches_save(draft: &TxDraft, save: &SaveAttempt) -> bool {
-    save.draft_id.as_deref() == Some(draft.id.as_str())
-        && draft.status == DraftStatus::Open
-        && draft.side == save.side
-        && draft.currency == save.currency
-        && draft.amount == save.amount
 }
 
 fn validate_count_sheet(sheet: &CountSheet) -> Result<(), CustodyError> {
@@ -736,122 +723,26 @@ impl CustodyMachine {
                 side,
                 currency,
                 amount,
-            } => {
-                if actor.role != CustodyRole::Front {
-                    return Err(CustodyError::RoleNotAllowed);
-                }
-                if state.custodian.as_deref() != Some(me) || state.phase != Phase::Open {
-                    return Err(CustodyError::NotCustodianInOpenService);
-                }
-                if !facts.service_window.allows_begin(now) {
-                    return Err(CustodyError::OutsideServiceHours);
-                }
-                if currency.is_thb() {
-                    return Err(CustodyError::DraftInvalid);
-                }
-                if amount.is_zero() {
-                    return Err(CustodyError::AmountInvalid);
-                }
-                let open_shift = facts.open_shift.as_ref().ok_or(CustodyError::NoOpenShift)?;
-                let mut new_state = state.clone();
-                new_state.drafts.push(TxDraft {
-                    id: facts.new_id.clone(),
-                    shift_id: open_shift.id.clone(),
-                    employee_id: me.to_string(),
-                    side: *side,
-                    currency: *currency,
-                    amount: *amount,
-                    at: now,
-                    status: DraftStatus::Open,
-                    document_ref: None,
-                });
-                Ok(Transition {
-                    state: new_state,
-                    events: Vec::new(),
-                    effects: Vec::new(),
-                    id: Some(facts.new_id.clone()),
-                })
-            }
+            } => BranchDay::v2_begin_transaction(
+                state, actor, me, facts, now, *side, *currency, *amount,
+            ),
             CustodyCommand::SetTarget { amounts } => {
-                if actor.role != CustodyRole::Finance {
-                    return Err(CustodyError::RoleNotAllowed);
-                }
-                let mut new_state = state.clone();
-                new_state.target = Some(CashTarget {
-                    amounts: amounts.clone(),
-                    by: me.to_string(),
-                    at: now,
-                });
-                Ok(Transition {
-                    state: new_state,
-                    events: vec![CustodyEvent {
-                        kind: EventKind::CashTarget,
-                        subject: None,
-                    }],
-                    effects: Vec::new(),
-                    id: None,
-                })
+                BranchDay::v2_set_target(state, actor, me, now, amounts)
             }
             CustodyCommand::StartService {
                 equipment_ready,
                 rates_verified,
                 rate_updated,
-            } => {
-                if actor.role != CustodyRole::Backend {
-                    return Err(CustodyError::RoleNotAllowed);
-                }
-                if facts.open_shift.is_none()
-                    || state.phase != Phase::Ready
-                    || !facts.service_window.allows_start(now)
-                {
-                    return Err(CustodyError::ServiceNotReady {
-                        window: facts.service_window,
-                        utc_offset_minutes: facts.utc_offset_minutes,
-                    });
-                }
-                if !*equipment_ready || !*rates_verified || rate_updated != &facts.rates_updated {
-                    return Err(CustodyError::ServiceChecksIncomplete);
-                }
-                let mut new_state = state.clone();
-                new_state.phase = Phase::Open;
-                new_state.service_opened_at = Some(now);
-                Ok(Transition {
-                    state: new_state,
-                    events: vec![CustodyEvent {
-                        kind: EventKind::ServiceOpen,
-                        subject: None,
-                    }],
-                    effects: Vec::new(),
-                    id: None,
-                })
-            }
-            CustodyCommand::Cutoff => {
-                if actor.role != CustodyRole::Backend {
-                    return Err(CustodyError::RoleNotAllowed);
-                }
-                let open_shift = facts.open_shift.as_ref().ok_or(CustodyError::NoOpenShift)?;
-                if state.phase == Phase::Counting {
-                    return Err(CustodyError::CountingUnderWay);
-                }
-                let mut new_state = state.clone();
-                new_state.phase = Phase::CutOff;
-                new_state.cutoff = Some(Cutoff {
-                    at: now,
-                    by: me.to_string(),
-                    shift_id: open_shift.id.clone(),
-                    last_ref: facts.last_transaction.clone(),
-                    pending: facts.pending_transactions.clone(),
-                });
-                Ok(Transition {
-                    state: new_state,
-                    events: vec![CustodyEvent {
-                        kind: EventKind::CutOff,
-                        subject: None,
-                    }],
-                    effects: Vec::new(),
-                    id: None,
-                })
-            }
+            } => BranchDay::v2_start_service(
+                state,
+                actor,
+                facts,
+                now,
+                *equipment_ready,
+                *rates_verified,
+                rate_updated,
+            ),
+            CustodyCommand::Cutoff => BranchDay::v2_cut_off(state, actor, me, facts, now),
             CustodyCommand::Hold {
                 customer_id,
                 reason,
@@ -1161,69 +1052,7 @@ impl CustodyMachine {
         facts: &CustodyFacts,
         now: CustodyTime,
     ) -> Result<(), CustodyError> {
-        // 1. state.enabled is false -> Ok(()).
-        if !state.enabled {
-            return Ok(());
-        }
-
-        // 2. save.prior:
-        match save.prior {
-            PriorSave::SavedByActor => {
-                if actor.role == CustodyRole::Front {
-                    return Ok(());
-                } else {
-                    return Err(CustodyError::SaveNotOwnRetry);
-                }
-            }
-            PriorSave::SavedByOther => {
-                return Err(CustodyError::SaveNotOwnRetry);
-            }
-            PriorSave::None | PriorSave::Unfinished => {}
-        }
-
-        // 3. A hold with customer_id == save.customer_id and status Open exists -> CustomerOnHold.
-        if state
-            .holds
-            .iter()
-            .any(|h| h.customer_id == save.customer_id && h.status == HoldStatus::Open)
-        {
-            return Err(CustodyError::CustomerOnHold);
-        }
-
-        // 4. Only when save.prior == PriorSave::None:
-        let me = actor.employee_id.as_deref().unwrap_or_default();
-        if save.prior == PriorSave::None {
-            if !facts.service_window.allows_save(now) {
-                return Err(CustodyError::SaveClosed);
-            }
-            if state.phase != Phase::Open && state.phase != Phase::CutOff {
-                return Err(CustodyError::SaveClosed);
-            }
-            let needs_draft = state.phase != Phase::Open || facts.service_window.needs_draft(now);
-            if needs_draft {
-                let open_shift_id = facts.open_shift.as_ref().map(|s| s.id.as_str());
-                let has_matching_draft = state.drafts.iter().any(|d| {
-                    draft_matches_save(d, save)
-                        && d.employee_id == me
-                        && open_shift_id == Some(d.shift_id.as_str())
-                });
-                if !has_matching_draft {
-                    return Err(CustodyError::SaveClosed);
-                }
-            }
-        }
-
-        // 5. My role is not Front, or I have no employee_id, or I am not state.custodian, or I am not clocked in -> SaveNotCustodian.
-        if actor.role != CustodyRole::Front
-            || actor.employee_id.is_none()
-            || state.custodian.as_deref() != Some(me)
-            || !is_clocked_in(state, me)
-        {
-            return Err(CustodyError::SaveNotCustodian);
-        }
-
-        // 6. Ok(()).
-        Ok(())
+        BranchDay::v2_check_save(state, save, actor, facts, now)
     }
 
     pub fn complete_draft(
@@ -1231,23 +1060,6 @@ impl CustodyMachine {
         save: &SaveAttempt,
         document_ref: &str,
     ) -> CustodyState {
-        // One exchange completes at most one draft: its number already
-        // finished one, so this repeat finishes no other (ticket #154).
-        if state
-            .drafts
-            .iter()
-            .any(|d| d.document_ref.as_deref() == Some(document_ref))
-        {
-            return state.clone();
-        }
-        let mut new_state = state.clone();
-        for draft in &mut new_state.drafts {
-            if draft_matches_save(draft, save) {
-                draft.status = DraftStatus::Completed;
-                draft.document_ref = Some(document_ref.to_string());
-                break;
-            }
-        }
-        new_state
+        BranchDay::complete_draft(state, save, document_ref)
     }
 }

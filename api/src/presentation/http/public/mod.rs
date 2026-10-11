@@ -4,6 +4,7 @@
 
 pub mod branch_rates;
 pub mod branches;
+pub mod host;
 
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError, web};
@@ -15,6 +16,7 @@ use crate::presentation::http::v3::error::V3Error;
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     branches::configure(cfg, state);
     branch_rates::configure(cfg, state);
+    host::configure(cfg, state);
 }
 
 /// Byte-identical 404 response for both routes when organisation or branch is unknown/mismatched (ruling 2).

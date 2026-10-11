@@ -117,6 +117,18 @@ v2 has **three palettes**, one per family of pages, and only some pages have a h
 3. No selector in a screen's CSS is `.xc-<look>` followed directly by an element or a page class (`.xc-admin button`, `.xc-kiosk .card`).
    After `.xc-<look>`, the next part must be `*`, `.xc-shell-main`, `.xc-content` or a `.xc-shell-*` class (rules 3–5).
 
+### LK-1b: the gate checks a render, not an import (2026-10-11, lane controller claude/5edf7bb5)
+
+**Why.** LK-1's check 2 is satisfied by an `import` line alone, so an entry can import `AppShell`, discard it and still pass. `/staff` does exactly that at `415d5e16` (`web/src/screens/staff/main.tsx:3,8`, `void AppShell;`); its fix is the staff design's S-11.
+
+**What changes.** Check 2 becomes: every page entry under `web/pages/*.html` reaches a module whose source **renders** `<AppShell` or `<AuthLayout` as JSX, directly or through `CHILD_MODULE_ENTRIES`. A bare import no longer counts. The named `SHELL_LESS_PUBLIC_PAGES` exemption (RD-3, `rate-display.md` D8) stays and is still guarded to `xc-gate anyone` pages.
+
+| Ticket | File scope | Starts after |
+|---|---|---|
+| **LK-1b** | `web/src/shared/ui/shell-look.test.ts` | RD-3 #1259 (its test commit edits the same file) and S-11 (otherwise `/staff` turns the gate red) |
+
+Up-front test: on the commit before S-11, the new check is red for `staff.html` only; on S-11's head it is green; a probe entry that imports `AppShell` without rendering it is red.
+
 ## Done criterion for every LK ticket
 
 Attach screenshots of the v3 page next to v2's, at the same width (1280 px and 390 px), to the PR. Open v2's page as a static

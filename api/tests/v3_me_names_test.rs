@@ -79,6 +79,7 @@ async fn the_owner_sees_their_own_name_and_username() {
         data,
         json!({
             "kind": "owner", "id": "owner", "role": "OWNER", "branch": "MAIN",
+            "branchName": "XC-B", "branches": [{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }],
             "name": "Somchai", "username": "boss"
         })
     );
@@ -101,6 +102,7 @@ async fn a_staff_member_sees_their_own_name_and_username() {
         data,
         json!({
             "kind": "staff", "id": nok_id, "role": "FRONT", "branch": "XC-B01",
+            "branchName": "XC-B01", "branches": [{ "id": "XC-B01", "code": "XC-B01", "name": "XC-B01" }],
             "name": "คุณ nok", "username": "nok"
         })
     );
