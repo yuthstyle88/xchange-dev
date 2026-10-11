@@ -251,7 +251,8 @@ branch_exchange_limits(
 - The bounds 30–3600 s are format bounds, not a business value: a quote shorter than the kiosk's 3 s review or longer
   than an hour is a typing mistake. `[proposed]`
 - `approval_limit_thb NULL` (or no row) means **no transaction waits** (T2). The value is the owner's (§11).
-- Every change writes an `AuditLog` row through AP-1 (rates §5.5), with before and after.
+- Every change writes an `AuditLog` row through AP-1 (rates §5.5), with before and after. The transaction commands
+  write theirs by §4.7.
 
 ---
 
@@ -394,6 +395,73 @@ which is the one edit to a step, in TX-5.
 
   It stays until the desk (DK-C, #539) is on the new routes, then is removed with `save_transaction.rs`.
 
+### 4.7 Audit of the transaction commands (Blueprint §10; TX-11)
+
+Blueprint §10 (*API Contract*, the paragraph under the route table): *"ทุก mutation ใช้ authenticated actor และ audit"*.
+§07 names the record: `Audit(id, actor_id, scope, action, object_ref, before/after_redacted, at)`. Until this
+section, the design audited only the two settings commands (§3.6); the transaction commands wrote no audit row. The
+FE lane controller found the gap while designing B04 (PR 1260).
+
+**Mechanism: AP-1's `AuditLog`, unchanged.** No new table, column, port or writer. Line numbers are at `main`
+`f345721`:
+- the port `AuditLog::append(tx, &AuditEvent)` writes in the **caller's** transaction
+  (`api/crates/xc-approval/src/domain/audit_log.rs:31-39`);
+- the event `AuditEvent { actor_id, actor_role, scope, action, object_ref, branch_id, before, after }`
+  (`audit_log.rs:11-20`);
+- the writer `PgAuditLog::append` redacts `before`/`after` through `Redactor` (rates §5.5) and inserts into
+  `audit_events` (`api/crates/xc-approval/src/infrastructure/audit_log.rs:20-52`);
+- the table `audit_events` (`api/migrations/20261010110000_approvals.sql:27-39`).
+
+**The rule** `[required]`: every transaction command that changes a transaction writes **exactly one** `AuditEvent`
+through `AuditLog::append`. It is written with the `tx` the command's `run_in` was given, after the status write, so the
+row commits or rolls back with the change.
+
+| Field | Value |
+|---|---|
+| `actor_id`, `actor_role` | the authenticated caller: `SaveActor.id`, `SaveActor.role.as_str()` (`api/src/application/workflows/save_step.rs:26-32`) |
+| `scope`, `branch_id` | `"branch"` and the transaction's branch, as `branchPriceSourceSet` does (`api/crates/xc-rate/src/infrastructure/branch/price_source.rs:97-106`) |
+| `object_ref` | the transaction id |
+| `action` | one name per command, below |
+| `before` / `after` | the transaction's `status`, plus the fields that command changes, below. No customer, passport or payment field; `Redactor` masks one anyway |
+
+| Command (`run_in`) | `action` `[required]` | `before` | `after` |
+|---|---|---|---|
+| `CreateTransaction` (`POST /api/transactions`) | `transaction.created` | none | `{status: DRAFT, quoteId}` |
+| `ConfirmTransaction`, under the limit | `transaction.confirmed` | `{status: DRAFT}` | `{status: CONFIRMED, quoteId}` |
+| `ConfirmTransaction`, over the limit | `transaction.pendingApproval` | `{status: DRAFT}` | `{status: PENDING_APPROVAL, quoteId, approvalRequestId}` |
+| `CancelTransaction` | `transaction.cancelled` | `{status: DRAFT \| CONFIRMED}` | `{status: CANCELLED, reason}` |
+| `CompleteExchange` | `transaction.completed` | `{status: CONFIRMED}` | `{status: COMPLETED, documentRef, completedAt}` |
+
+**What writes nothing:**
+- **A refused command.** It returns its error before the status write and the `BranchTx` rolls back. So
+  `quoteExpired`, `staleVersion`, `outOfScope`, `stockInsufficient`, `countFirst` and the rest leave no
+  `audit_events` row. An error *after* the append rolls the row back with everything else.
+- **A replay.** A repeat with the same `Idempotency-Key` is answered by CM-1 from `idempotency_records` without running
+  `run_in`, so it writes no second row.
+
+**The approval's decision is already audited by AP-1; TX-11 adds nothing there:**
+- `ApprovalService::decide` calls `on_decided` and then appends its own event in the **same** transaction
+  (`api/crates/xc-approval/src/application/approval_service.rs:233-254`). That event has the decider as actor, scope
+  `EXCHANGE_TRANSACTION`, action `approval.approved|rejected`, `object_ref` = the request's object (the transaction id,
+  §4.4 step 5), and the reason.
+- The transaction's new status follows from the outcome (§5.1: APPROVED ⇒ `CONFIRMED`, REJECTED ⇒ `CANCELLED`).
+- `on_decided` is not given the decider (`api/crates/xc-approval/src/domain/subject.rs:22-27`). A second row from it
+  would therefore need the AP-1 trait changed, which this design does not do. `ExchangeTransactionSubject::on_decided`
+  writes no audit row of its own.
+
+**How a workflow gets the log** `[proposed]`: each workflow builds `Arc<dyn AuditLog>` from
+`PgAuditLog::new(pool.clone())` in its own constructor, as `xc-cash` does at
+`api/crates/xc-cash/src/application/count/count_service.rs:89`. Then no `run_in` signature (§7, `[required]`) and no
+caller changes: not the command files, and not the compat adapter (TX-6). A workflow whose constructor has no pool ⇒
+the implementer comments on TX-11 and stops; it does not change a signature.
+
+**The compat adapter (§4.6)** runs create, confirm and complete in one `BranchTx`. So a successful compat save leaves
+three rows (`transaction.created`, `transaction.confirmed`, `transaction.completed`), and a refused one leaves none. Its
+answer is unchanged, because the audit is not part of the answer.
+
+**No schema change.** `audit_events` already exists (`20261010110000_approvals.sql:27-39`), and TX-11 adds no table,
+column, index or migration (§8).
+
 ---
 
 ## 5. Approval (T2)
@@ -490,6 +558,7 @@ classDiagram
   class ExchangeArithmetic { <<xc-kernel rates §3.2>> }
   class CashPostings { <<trait xc-cash PR 590 §4.6>> }
   class ApprovalService { <<xc-approval AP-1>> }
+  class AuditLog { <<trait xc-approval domain/audit_log.rs AP-1 existing>> +append(tx, &AuditEvent) }
   class OutboxWriter { <<xc-outbox PR 606 OB-1>> }
   class CommandAction { <<trait api http/v3/command.rs CM-1>> }
 
@@ -518,6 +587,10 @@ classDiagram
   CompleteExchange --> SaveStep : after_in
   CompleteExchange --> TransactionForm : from_transaction
   CompleteExchange --> OutboxWriter : enqueue_in
+  CreateTransaction --> AuditLog : append
+  ConfirmTransaction --> AuditLog : append
+  CancelTransaction --> AuditLog : append
+  CompleteExchange --> AuditLog : append
   ExchangeTransactionSubject ..|> ApprovalSubject
   ExchangeApprovalPolicy ..|> ApprovalPolicy
   QuotesCommand ..|> CommandAction
@@ -563,7 +636,7 @@ and TX-5's):
 | rates RU-1 (#595): `ExchangeArithmetic`, `Quote::per_unit`, `ForeignAmount`, `UnitSize` | quote figures | TX-1 starts after RU-1 |
 | rates RE-1 (#598): `PublishedRates`, `rate_publications`, `published_rate_lines` | the quote's line and publication | TX-1 starts after RE-1 |
 | rates CM-1 (#597): `CommandAction`, `IdempotencyStore` | every command | TX-2 and TX-3 start after CM-1 |
-| rates AP-1 (#596): `ApprovalService`, `ApprovalSubject/Policy`, `AuditLog` | §5; settings audit | TX-4 starts after AP-1 |
+| rates AP-1 (#596): `ApprovalService`, `ApprovalSubject/Policy`, `AuditLog` | §5; settings audit; transaction-command audit (§4.7) | TX-4 starts after AP-1; AP-1 is on `main`, so TX-11 needs no stub |
 | #582 CA-1/CA-3 (PR 590): `CashPostings`, `InterimCashPostings`, the teller's shift | §4.5 posting, `shift_id` | TX-5 declares a stub `CashPostings` impl calling `ShiftService::apply_delta_in` in its own file, removed when #582's lands |
 | #550 OR-1/OR-2/OR-4 (PR 589): `organization_id`, `Permission`, `Authorizer` | every table, every route | **OR-1 #615 is a start dependency of TX-1 and TX-2**: migration 1 reads `organizations` and every new table's composite FK needs OR-1's `(organization_id, id)` keys. The routes use today's `Policy` rows until OR-4 re-points them (as every v3 route) |
 | #563 OB-1 (PR 606): `OutboxWriter` | §6.3 | the completion enqueues nothing until a handler exists; no stub needed |
@@ -645,6 +718,10 @@ assigned on #564 (issuecomment-6074437590)
   origin/main -- api/src api/crates` must list no reader of the wide row.
 - *Deploy:* with TX-9's binary only. *`down`:* re-adds the columns NULL-able and fills them from the children.
 
+**TX-11 (§4.7) has no migration.** `audit_events` already exists (`api/migrations/20261010110000_approvals.sql:27-39`).
+TX-11 writes rows into it and changes no table, column or index. No existing row changes, there is nothing to backfill,
+there is no deploy order, and there is no `down`.
+
 **4. `api/migrations/20261014120000_kiosk_quote_id.sql`** (TX-7; added when the tickets were cut, because §4.6 stores
 `kiosk_requests.quote_id` and no migration above created it)
 
@@ -680,6 +757,7 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 | TX-8 | readers: filter `status = 'COMPLETED'` and read the children | per reader file (§1 and the survey's list): `views/{admin_transactions,admin_slips,admin_overview,admin_customer_history,admin_customers,admin_reports,admin_cash,device_transactions,devices}.rs`, `dto/v3/transaction_row.rs`, `pages.rs` (receipt), `custody_ports.rs:59` — **one ticket per file**, each after RE-4 has finished that file | TX-2 |
 | TX-9 | migration 3 | migration 3 | every TX-8 ticket, TX-6 |
 | TX-10 | B04 view `transaction` | `views/transaction.rs`, `dto/v3/transaction_detail.rs` + TS | TX-2 |
+| TX-11 | audit on transaction commands (§4.7, Blueprint §10): one `AuditEvent` through AP-1's `AuditLog` per create, confirm, cancel and complete, in the command's transaction; the approval decision stays AP-1's own row | `api/src/application/workflows/exchange/create.rs`, `api/src/application/workflows/exchange/confirm.rs`, `api/src/application/workflows/exchange/cancel.rs` (#672's scope), `api/src/application/workflows/exchange/complete.rs` (#873's scope), `api/tests/exchange_transaction_audit_test.rs` (new; up-front tests). Not owned: `approval.rs` and the subject's registration (no edit, §4.7), the command files and `compat/actions/save.rs` (no constructor or `run_in` signature changes, §4.7); no migration | **TX-4 #672 and TX-5 #873 merged** (it edits their files) |
 
 - **Until TX-8 is complete, no non-COMPLETED row may exist in LIVE use**, because today's readers count every row.
   So the new routes (TX-3, TX-4, TX-5) are registered but the desk does not call them until TX-8 has merged for every
@@ -702,6 +780,7 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 | TX-6 | today's provided save tests pass through the adapter (`api/tests/*save*`), byte-for-byte answers; over the limit ⇒ `approvalRequired`; **a refused compat save (over the limit, stock, custody, payment, expired quote) leaves no `quotes`, `transactions` or `approval_requests` row**; the stored `payload_hash` does not change when only the passport's spelling (spacing/case) changes, and no stored column holds the plain passport (#554 K4) |
 | TX-7 | a kiosk quote has a `quote_id`; the kiosk's 300 s and 3 s rules unchanged; the kiosk tests pass; a request with `quote_id NULL` (before migration 4) still completes by the pre-TX-7 rule |
 | TX-8 | each reader ignores a `DRAFT`/`CANCELLED` row and reads figures from the line |
+| TX-11 | each of create, confirm under the limit, confirm over the limit, cancel (from `DRAFT` and from `CONFIRMED`) and complete leaves **exactly one** `audit_events` row for the transaction (`object_ref` = its id) with §4.7's `action`, `actor_id`/`actor_role` = the caller, `scope 'branch'`, `branch_id` = its branch, and §4.7's `before`/`after` **with every field the §4.7 table names**: create `after` = `{status: DRAFT, quoteId}` and no `before`; confirm under the limit `{status: DRAFT}` → `{status: CONFIRMED, quoteId}`; confirm over the limit `{status: DRAFT}` → `{status: PENDING_APPROVAL, quoteId, approvalRequestId}` (= the request confirm opened); cancel `{status: DRAFT | CONFIRMED}` → `{status: CANCELLED, reason}` (= the reason given); complete `{status: CONFIRMED}` → `{status: COMPLETED, documentRef, completedAt}` (= the row's `document_ref` and `completed_at`); a refused command (`quoteExpired` at create, `staleVersion` on cancel from `PENDING_APPROVAL`, `stockInsufficient` at complete) leaves **none**; a `run_in` that succeeds inside a transaction the test then rolls back leaves none (the row rolls back with the command); a replay with the same `Idempotency-Key` adds no second row; an approve or reject leaves AP-1's one `approval.*` row for the transaction and no `transaction.*` row from `on_decided`; no `before_redacted`/`after_redacted` holds the passport number. **Compat save (§4.7: three rows on success, none when refused): no test in TX-11 — intentional, because** the compat save reaches these workflows only through TX-6's adapter (`compat/actions/save.rs`, TX-6's file), and TX-6 may merge before or after TX-11. Until TX-6 merges, the compat save is today's `save_transaction.rs` writer, which TX-11 does not touch, so a TX-11 test of it would assert zero rows or three depending on merge order. The three-or-none result follows from the per-command cases above plus §4.6's single `BranchTx`, and the rollback case is the same mechanism as the rollback test above |
 
 ---
 
@@ -760,3 +839,4 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 | §11 buy/sell = THB of completed lines by `shop_side` | §4.1 answers | kept |
 | §17 *"rounded quote และจำนวนที่ส่งมอบต้องผ่าน teller validation"* | the teller confirms; `quantity` fits the minor unit | kept |
 | — | `TransactionPayment` (T3) | an addition the Blueprint does not have; the owner chose it |
+| §10 *"ทุก mutation ใช้ authenticated actor และ audit"*; §07 `Audit(id, actor_id, scope, action, object_ref, before/after_redacted, at)` | §4.7: one `AuditEvent` per transaction command through AP-1's `AuditLog`, in the command's transaction; the approval decision is AP-1's own row; settings by §3.6 | kept, through TX-11 (added 2026-10-11: until then the transaction commands wrote no audit) |
