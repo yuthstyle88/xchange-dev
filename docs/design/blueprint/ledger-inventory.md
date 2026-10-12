@@ -239,7 +239,7 @@ pub struct ReversedCost { pub reverses: TransactionLineId, pub cost_thb: Money, 
 pub struct ShiftBalance {
     pub currency: CurrencyCode,
     pub opening: Money,               // the OPENING posting, or the hand-over's, into DRAWER(shift)
-    pub expected: Money,              // Σ quantity_signed on DRAWER(shift) = expected_in(Drawer(shift))
+    pub expected: MoneyDelta,         // Σ quantity_signed on DRAWER(shift), SIGNED: negative after an approved NEGATIVE_STOCK sale
     pub moved_in: Money,              // Σ positive entries on DRAWER(shift) from postings whose source_type ∉ {EXCHANGE, OPENING}
     pub moved_out: Money,             // Σ |negative| entries on the same set
     pub counted: Option<Money>,       // the shift's verified CLOSE (or HANDOVER_OUT) count: cash_count_totals.counted
@@ -253,7 +253,8 @@ pub trait ShiftBalances: Send + Sync {
 ```
 
 - **Why the trait is in `xc-shift`.** `xc-cash` depends on `xc-shift` (`xc-cash/Cargo.toml` on PR 871), so `xc-shift`'s `PgShiftRepository` cannot name an `xc-cash` type. The port sits beside `ShiftRepository` and `xc-cash` implements it. `PgShiftRepository` takes an `Arc<dyn ShiftBalances>`, and `api`'s views take the same `Arc` from `AppState` (one bootstrap line each, not reserved).
-- **The one source.** `expected` is the same sum as `LedgerCashPostings::expected_in(Drawer(shift))`; the two must not drift. LG-6.0's up-front tests compare them on the `v2_shift_cases.json` cases.
+- **The one source.** `expected` is the same sum as `LedgerCashPostings::expected_in(Drawer(shift))`; the two must not drift. LG-6.0's up-front tests compare them on the `v2_shift_cases.json` cases, where every drawer is ≥ 0.
+- **`expected` is signed (amended 2026-10-12, lane controller, #1039).** The 2026-10-10 ruling on #924 kept `expected_in` returning `Balances` (non-negative, a negative place reads as 0) **until LG-6**, and gave LG-6.0 the job of carrying the sign. `expected` is therefore `MoneyDelta` (`xc-kernel/src/money/money_delta.rs:9`): after an approved `NEGATIVE_STOCK` sale a drawer reads its negative value here, while `expected_in` still reads 0 for it. The equality above holds for every drawer ≥ 0; for a negative drawer `ShiftBalance.expected` is the signed sum and `expected_in` is 0. Readers r1–r4 display the signed value. `opening`, `moved_in`, `moved_out` and `counted` stay `Money` (each is non-negative by construction).
 - **A shift with no posting yet** answers its count rows only. A shift with neither answers `[]`, which today's readers already treat as "no balances".
 - **No new table.** It reads `cash_accounts`, `ledger_postings`, `ledger_entries` (§3.1), `cash_counts` and `cash_count_totals` (`20261012100000_cash.sql:120-161`).
 - **Fallback if LG-6.0 lands late (📐).** A consumer (r1–r4) may start before #1039 merges by declaring, in its own file, the exact `ShiftBalance` struct and `ShiftBalances` trait of the block above, with the comment `// stub: moves to xc-shift/src/domain/shift/repositories/shift_balances.rs (LG-6.0 #1039)`. Its tests use a test double of the trait. It never declares `PgLedgerShiftBalances` or any SQL on the ledger tables, and never touches LG-6.0's files. When #1039 merges, the consumer's PR (or its rebase) deletes the stub and imports the real path. The tickets keep `Blocked by #1039` until the lane controller chooses to lift it on this fallback.
