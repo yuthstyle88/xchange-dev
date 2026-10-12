@@ -25,6 +25,15 @@ import { closeDialog, Dialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { toast, Toast } from '../parts/toast';
 import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
+import { meOf } from '../../../test-support/me';
+
+// Amended for EX-9 (#1147) by the up-front test writer claude/709ec749: the export buttons show only to a `me`
+// whose `permissions` hold `ReportsExport` (E-2: EXECUTIVE and FINANCE). `test-support/me.ts`'s table predates
+// EX-1 #1070, so the permission is added here to the OWNER fixture (EXECUTIVE + ADMIN, #1030's shape).
+const EXPORTER_ME: unknown = (() => {
+  const m = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }) as unknown as { permissions: string[] };
+  return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
+})();
 
 const loaded = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 
@@ -161,7 +170,7 @@ class FakeServer {
       case 'admin_shift_state':
         return ok({ version: this.version, changed: true, data: { shiftOpen: true, deskUrl: '/desk?branch=B1' } });
       case 'me':
-        return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
+        return ok({ version: 1, changed: true, data: EXPORTER_ME });
       case QUEUE_CARD_VIEW:
         return ok(queueCardUnchanged(this.version));
       default:
@@ -626,7 +635,7 @@ describe('V2-transactions: CSV (#464 T5; design §12.8)', () => {
     button('ส่งออกรายการ CSV').click();
     const text = await csvText();
     const walk = server.reads().slice(before).map(keysOf);
-    const filter = { branch: 'B1', limit: '100', from: '2026-10-01', to: '2026-10-08', q: 'Mary', type: 'SELL', status: 'COMPLETED' };
+    const filter = { branch: 'B1', limit: '100', from: '2026-10-01', to: '2026-10-08', q: 'Mary', type: 'SELL', status: 'COMPLETED', purpose: 'export' };
     expect(walk).toEqual([filter, { ...filter, before: tx(201).id }]);
     const lines = text.split('\r\n');
     expect(lines).toHaveLength(1 + 102);

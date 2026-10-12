@@ -11,6 +11,15 @@ import { closeDialog, Dialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
 import { menu } from './menu';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
+import { meOf } from '../../../test-support/me';
+
+// Amended for EX-9 (#1147) by the up-front test writer claude/709ec749: the export buttons show only to a `me`
+// whose `permissions` hold `ReportsExport` (E-2: EXECUTIVE and FINANCE). `test-support/me.ts`'s table predates
+// EX-1 #1070, so the permission is added here to the OWNER fixture (EXECUTIVE + ADMIN, #1030's shape).
+const EXPORTER_ME: unknown = (() => {
+  const m = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }) as unknown as { permissions: string[] };
+  return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
+})();
 
 const VIEW = '/api/v3/views/admin_overview';
 
@@ -154,7 +163,7 @@ describe('V2-overview: extra tests for controller decisions (#461)', () => {
         return ok([row('XC-001')]);
       },
       '/api/v3/views/me': () =>
-        ok({ kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }),
+        ok(EXPORTER_ME),
       [QUEUE_CARD_PATH]: () => ({ status: 200, body: queueCardUnchanged() }),
     };
     vi.stubGlobal('fetch', vi.fn(fakeFetch));

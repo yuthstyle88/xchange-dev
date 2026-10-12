@@ -20,7 +20,7 @@ import { toast } from '../parts/toast';
 import { DataTable } from '../parts/DataTable';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
-import { downloadCsv, walkPages } from '../parts/csv';
+import { canExport, downloadCsv, walkPages } from '../parts/csv';
 import { LIVE_CSV_HEADERS, liveCsvRow } from '../parts/live-csv';
 import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
@@ -200,13 +200,15 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       <div class="overview-toolbar">
         <div class="toolbar-actions">
           <NewTransactionButton api={api} branch={props.branch()} />
-          <button
-            type="button"
-            class="btn-export"
-            onClick={handleExportCsv}
-          >
-            {t('exportCsv')}
-          </button>
+          <Show when={canExport()}>
+            <button
+              type="button"
+              class="btn-export"
+              onClick={handleExportCsv}
+            >
+              {t('exportCsv')}
+            </button>
+          </Show>
         </div>
       </div>
 

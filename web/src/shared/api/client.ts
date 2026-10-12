@@ -16,6 +16,8 @@ export interface PageParams<F = unknown> {
   before?: string;
   limit?: number;
   filter?: F;
+  /** EX-9 #1147: marks the read as an export; the server gates it on `ReportsExport` and audits it. */
+  purpose?: 'export';
 }
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -113,6 +115,7 @@ export class ApiClient {
     if (q.branch !== undefined) params.set('branch', q.branch);
     if (q.before !== undefined) params.set('before', q.before);
     if (q.limit !== undefined) params.set('limit', String(q.limit));
+    if (q.purpose !== undefined) params.set('purpose', q.purpose);
     if (q.filter && typeof q.filter === 'object') {
       for (const [k, v] of Object.entries(q.filter)) {
         if (v === undefined || v === null || v === '') continue;
