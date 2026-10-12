@@ -37,7 +37,6 @@ import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
-import { th as partsTh } from '../parts/i18n';
 import { pendingWrite } from '../parts/pending-write';
 import { requestRefresh } from '../parts/refresh';
 import { Toast } from '../parts/toast';
@@ -71,7 +70,6 @@ const SHIFTS = '/api/v3/views/admin_shifts';
 const VIEWS = [CASH, MOVES, SHIFTS];
 /** AppShell's page-wide reads: answered, never the menu's own requests. */
 const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
-const ROLE_REFUSAL = 'บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้';
 
 /** Panel A5's texts (`shift-valuation.js:9`, `:13-14`; `profit-summary.js:7-13`). */
 const A5_TEXTS = [
@@ -445,41 +443,6 @@ function field<T extends HTMLElement = HTMLInputElement>(within: ParentNode, lab
   return control!;
 }
 
-function type(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  input.value = value;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function choose(select: HTMLSelectElement, value: string): void {
-  select.value = value;
-  select.dispatchEvent(new Event('input', { bubbles: true }));
-  select.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function toastText(): string | null {
-  const status = document.querySelector<HTMLElement>('.toast[role="status"]');
-  if (!status || status.hidden) return null;
-  const t = text(status);
-  return t === '' ? null : t;
-}
-
-/** The rows of the open dialog's selected currencies, by code (admin-opening-currencies.js:6). */
-function openingRows(): string[] {
-  return [...dialog().querySelectorAll<HTMLLabelElement>('label')]
-    .map((l) => {
-      const clone = l.cloneNode(true) as HTMLElement;
-      clone.querySelectorAll('input,select,textarea').forEach((n) => n.remove());
-      return norm(clone.textContent ?? '');
-    })
-    .filter((t) => /^[A-Z]{3} · /.test(t))
-    .map((t) => t.slice(0, 3));
-}
-
-function writes(): Post[] {
-  return server.posts.filter((p) => p.action !== 'adminAbandonRequest');
-}
-
 // ── when it reads ────────────────────────────────────────────────────────────
 
 describe('V2-cash: what it reads, and when (#467 §7; design §12.1, §12.6)', () => {
@@ -563,7 +526,7 @@ describe('V2-cash: what it reads, and when (#467 §7; design §12.1, §12.6)', (
 // ── A1: banner, stats, reference summary, buttons ────────────────────────────
 
 describe('V2-cash: the banner, the stats and the buttons (A1; admin-html:101-108)', () => {
-  it('no shift: the banner, four cards at —, no reference rate yet, open enabled, move and close disabled', async () => {
+  it('no shift: the banner, four cards at —, no reference rate yet; no retired write button, the example stays', async () => {
     server.cash = noShift();
     const m = mount();
     await settle();
@@ -580,9 +543,10 @@ describe('V2-cash: the banner, the stats and the buttons (A1; admin-html:101-108
     expect(all).toContain('0 รายการมีเรทอ้างอิง · 0 รายการยังไม่ระบุ · ไม่รวมค่าบริการและค่าใช้จ่าย');
     expect(all).toContain('เริ่มจากยอดเงินที่ตรวจนับจริง');
     expect(all).toContain('รายการก่อนเปิดกะจะไม่ถูกนำมาหักซ้ำจากยอดยกมา');
-    expect(button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').disabled).toBe(false);
-    expect(button(m.el, 'รับ–จ่ายเงินสด').disabled).toBe(true);
-    expect(button(m.el, 'ตรวจนับและปิดกะ').disabled).toBe(true);
+    // CA-9 #625: the open / move / close buttons are retired (design §6); the example stays
+    for (const retired of ['ตั้งเงินสดเริ่มต้น / เปิดกะ', 'รับ–จ่ายเงินสด', 'ตรวจนับและปิดกะ']) {
+      expect(buttonsNamed(m.el, retired), retired).toEqual([]);
+    }
     expect(button(m.el, 'ดูตัวอย่าง 500,000').disabled).toBe(false);
     for (const t of ['CASH & CURRENCY STOCK', 'เงินสดและสต็อกตามกะ']) expect(all).toContain(t);
     expect(all).toContain(
@@ -590,7 +554,7 @@ describe('V2-cash: the banner, the stats and the buttons (A1; admin-html:101-108
     );
   });
 
-  it("an open shift: its id, when and by whom, the server's four figures, the reference summary; open disabled", async () => {
+  it("an open shift: its id, when and by whom, the server's four figures, the reference summary; no retired write button", async () => {
     const m = mount();
     await settle();
     const all = text(m.el);
@@ -605,39 +569,18 @@ describe('V2-cash: the banner, the stats and the buttons (A1; admin-html:101-108
     ]);
     expect(all).toContain(`ส่วนต่างเทียบเรทอ้างอิงในกะ: ${formatMoney('240.00')} THB (6.74%)`);
     expect(all).toContain('2 รายการมีเรทอ้างอิง · 1 รายการยังไม่ระบุ · ไม่รวมค่าบริการและค่าใช้จ่าย');
-    expect(button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').disabled).toBe(true);
-    expect(button(m.el, 'รับ–จ่ายเงินสด').disabled).toBe(false);
-    expect(button(m.el, 'ตรวจนับและปิดกะ').disabled).toBe(false);
+    for (const retired of ['ตั้งเงินสดเริ่มต้น / เปิดกะ', 'รับ–จ่ายเงินสด', 'ตรวจนับและปิดกะ']) {
+      expect(buttonsNamed(m.el, retired), `${retired} is retired (CA-9)`).toEqual([]);
+    }
   });
 
-  it('a refused read: the refusal is shown and the three write buttons are disabled (v2 :108, offline)', async () => {
+  it('a refused read: the refusal is shown (v2 :108, offline)', async () => {
     server.cashRefusal = { status: 500, body: { error: { code: 'serverError', message: 'เซิร์ฟเวอร์ขัดข้อง' } } };
     const m = mount();
     await settle();
     expect(text(m.el)).toContain('เซิร์ฟเวอร์ขัดข้อง');
-    for (const name of ['ตั้งเงินสดเริ่มต้น / เปิดกะ', 'รับ–จ่ายเงินสด', 'ตรวจนับและปิดกะ']) {
-      expect(button(m.el, name).disabled, name).toBe(true);
-    }
   });
 
-  it('while a write is pending every write button is disabled (pendingWrite.busy, v2 :108)', async () => {
-    server.cash = noShift();
-    server.rpc = () => 'hang';
-    const m = mount();
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    type(field(dialog(), 'THB · '), '100');
-    button(dialog(), 'ยืนยันเปิดกะ').click();
-    await settle();
-    expect(writes().length).toBe(1);
-    for (const name of ['ตั้งเงินสดเริ่มต้น / เปิดกะ', 'รับ–จ่ายเงินสด', 'ตรวจนับและปิดกะ']) {
-      expect(button(m.el, name).disabled, `${name} while pending`).toBe(true);
-    }
-    server.release();
-    await settle();
-    expect(toastText()).toBe(partsTh.serverSaved);
-  });
 });
 
 // ── A2: the stock table, the filter, the history ─────────────────────────────
@@ -689,285 +632,6 @@ describe('V2-cash: the stock table, its filter and the history (A2; admin-html:1
     const all = text(m.el);
     expect(all).toContain('ยังไม่มีรายการรับ–จ่าย');
     expect(all).toContain('ยังไม่มีประวัติกะ');
-  });
-});
-
-// ── A3: opening a shift ──────────────────────────────────────────────────────
-
-describe('V2-cash: the open dialog and its currency picker (A3; admin-html:127, admin-opening-currencies.js)', () => {
-  it("prefills the last count, searches the server's register, adds and removes, and sends what was typed", async () => {
-    server.cash = { ...noShift(), lastCounted: [{ code: 'THB', amount: '5000.00' }, { code: 'USD', amount: '100.00' }] };
-    server.afterWrite = () => {
-      server.cash = openCash();
-    };
-    const m = mount({ branch: 'B9' });
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    expect(dialogTitle()).toBe('ตั้งเงินสดเริ่มต้น / เปิดกะ');
-    expect(text(dialog())).toContain(
-      'กรอกยอดเงินจริงเฉพาะสกุลที่มี ค้นหาแล้วกดเพิ่มสกุลเงินได้ สกุลที่ไม่ได้เพิ่มจะบันทึกเป็น 0 · เพิ่มสกุลที่มียอดจากกะก่อนให้แล้ว กรุณาตรวจนับยืนยันอีกครั้ง',
-    );
-    expect(openingRows()).toEqual(['THB', 'USD']);
-    expect(field(dialog(), 'THB · เงินสดตั้งต้น').value).toBe('5000.00');
-    expect(field(dialog(), 'USD · ').value).toBe('100.00');
-    expect(server.own().filter((s) => !VIEWS.includes(s.path)).length, 'the dialog reads nothing').toBe(0);
-
-    const search = field(dialog(), 'ค้นหาและเพิ่มสกุลเงิน');
-    expect(search.getAttribute('placeholder')).toBe('เช่น USD, ดอลลาร์, EUR');
-    type(search, 'gbp');
-    await settle();
-    expect(text(dialog()), "GBP is not in the server's register").toContain('ไม่พบสกุลเงิน หรือเพิ่มสกุลนี้แล้ว');
-    type(search, 'usd');
-    await settle();
-    expect(text(dialog()), 'USD is added already').toContain('ไม่พบสกุลเงิน หรือเพิ่มสกุลนี้แล้ว');
-    type(search, 'eur');
-    await settle();
-    const add = [...dialog().querySelectorAll('button')].filter((b) => text(b).startsWith('+ '));
-    expect(add.map((b) => text(b).slice(0, 5))).toEqual(['+ EUR']);
-    add[0]!.click();
-    await settle();
-    expect(openingRows()).toEqual(['THB', 'USD', 'EUR']);
-    expect(field(dialog(), 'EUR · ').value, 'an added currency starts empty').toBe('');
-    expect(search.value, 'the search is cleared').toBe('');
-
-    const remove = [...dialog().querySelectorAll('button')].filter((b) => b.getAttribute('aria-label') === 'ลบสกุลเงิน USD');
-    expect(remove.length).toBe(1);
-    expect(text(remove[0]!)).toBe('ลบ');
-    expect(
-      [...dialog().querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'ลบสกุลเงิน THB'),
-      'THB cannot be removed',
-    ).toBe(false);
-    remove[0]!.click();
-    await settle();
-    expect(openingRows()).toEqual(['THB', 'EUR']);
-
-    type(field(dialog(), 'THB · เงินสดตั้งต้น'), '4800');
-    type(field(dialog(), 'EUR · '), '20.5');
-    button(dialog(), 'ยืนยันเปิดกะ').click();
-    await settle();
-
-    expect(writes().length).toBe(1);
-    const { action, payload } = writes()[0]!;
-    expect(action).toBe('adminOpenShift');
-    expect(Object.keys(payload).sort()).toEqual(['branchId', 'opening', 'requestId']);
-    expect(payload.branchId).toBe('B9');
-    expect(String(payload.requestId)).toMatch(/^[0-9a-f-]{36}$/);
-    const opening = payload.opening as Record<string, unknown>;
-    expect(opening.THB, 'as typed, a string (W7)').toBe('4800');
-    expect(opening.EUR).toBe('20.5');
-    for (const [code, value] of Object.entries(opening)) {
-      if (code !== 'THB' && code !== 'EUR') {
-        expect(['0', 0, '0.00'], `${code}: not added, so 0 (admin-opening-currencies.js:19)`).toContain(value);
-      }
-    }
-    expect(toastText()).toBe(partsTh.serverSaved);
-    expect(document.querySelector('dialog')?.open ?? false, 'the dialog closes').toBe(false);
-    expect(server.reads(CASH).length, 'the views are read again after the write').toBeGreaterThan(1);
-    expect(text(m.el)).toContain('กะกำลังเปิด · S-0001');
-  });
-
-  it('no shift ever closed: only THB at 0, the note without the prefill sentence (ticket §9 row 3)', async () => {
-    server.cash = noShift();
-    const m = mount();
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    const note = text(dialog());
-    expect(note).toContain('กรอกยอดเงินจริงเฉพาะสกุลที่มี ค้นหาแล้วกดเพิ่มสกุลเงินได้ สกุลที่ไม่ได้เพิ่มจะบันทึกเป็น 0');
-    expect(note).not.toContain('เพิ่มสกุลที่มียอดจากกะก่อนให้แล้ว');
-    expect(openingRows()).toEqual(['THB']);
-    expect(field(dialog(), 'THB · เงินสดตั้งต้น').value).toBe('0');
-  });
-
-  it('Enter in the search adds the only match', async () => {
-    server.cash = noShift();
-    const m = mount();
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    const search = field(dialog(), 'ค้นหาและเพิ่มสกุลเงิน');
-    type(search, 'usd');
-    await settle();
-    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    await settle();
-    expect(openingRows()).toEqual(['THB', 'USD']);
-    expect(writes().length, 'Enter in the search does not submit').toBe(0);
-  });
-
-  it("a refused open — a second open shift, or a role the server refuses — shows the server's sentence (§8, §9 row 1)", async () => {
-    server.cash = noShift();
-    server.rpc = () => ({ status: 400, body: { error: 'มีกะเปิดอยู่แล้ว กรุณารีเฟรช' } });
-    const m = mount();
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    button(dialog(), 'ยืนยันเปิดกะ').click();
-    await settle();
-    expect(dialogTitle()).toBe(partsTh.notConfirmed);
-    expect(text(dialog())).toContain('มีกะเปิดอยู่แล้ว กรุณารีเฟรช');
-
-    server.rpc = () => ({ status: 403, body: { error: ROLE_REFUSAL } });
-    button(dialog(), partsTh.retry).click();
-    await settle();
-    expect(text(dialog())).toContain(ROLE_REFUSAL);
-    expect(writes().length).toBe(2);
-    expect(writes()[1]!.payload.requestId, 'the retry keeps the request id').toBe(writes()[0]!.payload.requestId);
-  });
-
-  it('a write with no answer: the pending dialog, and the retry sends the same request (§9 row 2)', async () => {
-    server.cash = noShift();
-    let failNext = true;
-    server.rpc = () => {
-      if (failNext) {
-        failNext = false;
-        return 'network';
-      }
-      return undefined;
-    };
-    const m = mount();
-    await settle();
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-    type(field(dialog(), 'THB · เงินสดตั้งต้น'), '100');
-    button(dialog(), 'ยืนยันเปิดกะ').click();
-    await settle();
-    expect(dialogTitle()).toBe(partsTh.notConfirmed);
-    expect(text(dialog())).toContain(partsTh.notConfirmedNote);
-    button(dialog(), partsTh.retry).click();
-    await settle();
-    expect(writes().length).toBe(2);
-    expect(writes()[1]).toEqual(writes()[0]);
-    expect(toastText()).toBe(partsTh.serverSaved);
-  });
-});
-
-// ── A4: movement, close, shift detail ────────────────────────────────────────
-
-describe('V2-cash: the movement dialog (A4; admin-html:128)', () => {
-  it("v2's form over the server's register; sends the typed amount and the trimmed reason", async () => {
-    const m = mount();
-    await settle();
-    button(m.el, 'รับ–จ่ายเงินสด').click();
-    await settle();
-    expect(dialogTitle()).toBe('บันทึกรับ–จ่ายเงินสด');
-    expect(text(dialog())).toContain(
-      'สำหรับนำเงินเข้าลิ้นชัก นำฝาก หรือค่าใช้จ่ายเงินสด ไม่ต้องบันทึกซ้ำรายการแลกเงิน ระบบนี้บันทึกบัญชีเท่านั้น ไม่ได้โอนเงินจริง',
-    );
-    const currency = field<HTMLSelectElement>(dialog(), 'สกุลเงิน');
-    expect([...currency.options].map((o) => o.value)).toEqual(REGISTER);
-    const direction = field<HTMLSelectElement>(dialog(), 'ประเภท');
-    expect([...direction.options].map((o) => [o.value, text(o)])).toEqual([
-      ['IN', 'รับเข้า'],
-      ['OUT', 'จ่ายออก'],
-    ]);
-    const reason = field(dialog(), 'เหตุผล / อ้างอิง');
-    expect(reason.getAttribute('placeholder')).toBe('เช่น เงินเติมลิ้นชัก หรือ นำเงินฝากธนาคาร');
-    expect(reason.maxLength).toBe(200);
-    choose(currency, 'USD');
-    choose(direction, 'OUT');
-    type(field(dialog(), 'จำนวน'), '250.50');
-    type(reason, '  นำเงินฝากธนาคาร  ');
-    button(dialog(), 'บันทึกรับ–จ่าย').click();
-    await settle();
-    expect(writes().length).toBe(1);
-    const { action, payload } = writes()[0]!;
-    expect(action).toBe('adminMoveStock');
-    expect(Object.keys(payload).sort()).toEqual(['amount', 'branchId', 'currency', 'direction', 'reason', 'requestId', 'shiftId']);
-    expect(payload).toMatchObject({
-      shiftId: 'S-0001',
-      currency: 'USD',
-      direction: 'OUT',
-      amount: '250.50',
-      reason: 'นำเงินฝากธนาคาร',
-      branchId: 'MAIN',
-    });
-    expect(toastText()).toBe(partsTh.serverSaved);
-  });
-
-  it("a blank reason is v2's sentence and nothing is sent", async () => {
-    const m = mount();
-    await settle();
-    button(m.el, 'รับ–จ่ายเงินสด').click();
-    await settle();
-    type(field(dialog(), 'จำนวน'), '10');
-    type(field(dialog(), 'เหตุผล / อ้างอิง'), '   ');
-    button(dialog(), 'บันทึกรับ–จ่าย').click();
-    await settle();
-    expect(writes().length).toBe(0);
-    const alert = dialog().querySelector('[role="alert"]');
-    expect(text(alert)).toBe('กรุณาระบุเหตุผล');
-  });
-
-  it('a move refused for the role is shown as the server answered it (§8: move as BACKEND)', async () => {
-    server.rpc = () => ({ status: 403, body: { error: ROLE_REFUSAL } });
-    const m = mount();
-    await settle();
-    button(m.el, 'รับ–จ่ายเงินสด').click();
-    await settle();
-    type(field(dialog(), 'จำนวน'), '10');
-    type(field(dialog(), 'เหตุผล / อ้างอิง'), 'ทดสอบ');
-    button(dialog(), 'บันทึกรับ–จ่าย').click();
-    await settle();
-    expect(text(dialog())).toContain(ROLE_REFUSAL);
-  });
-});
-
-describe('V2-cash: the close dialog (A4; admin-html:129; design §12.9)', () => {
-  it("shows the server's expected figures, echoes the counts as typed, computes no difference, and sends both", async () => {
-    server.afterWrite = (action) => {
-      if (action !== 'adminCloseShift') return;
-      server.cash = noShift();
-      server.shifts = [
-        { ...shifts()[0]!, status: 'CLOSED', note: 'USD เกิน', difference: [{ code: 'USD', amount: '134.00' }] },
-        ...shifts().slice(1),
-      ];
-    };
-    const m = mount();
-    await settle();
-    button(m.el, 'ตรวจนับและปิดกะ').click();
-    await settle();
-    expect(dialogTitle()).toBe('ตรวจนับและปิดกะ');
-    const thb = field(dialog(), 'THB · นับได้จริง');
-    const usd = field(dialog(), 'USD');
-    const eur = field(dialog(), 'EUR');
-    const all = () => text(dialog());
-    expect(all()).toContain(formatMoney('97770.00'));
-    expect(all()).toContain(formatMoney('1100.50'));
-    expect(all(), "v2's live difference column is not ported").not.toContain('นับได้ − ตามระบบ');
-    type(thb, '97770');
-    type(usd, '1234.5');
-    type(eur, '0');
-    await settle();
-    expect(all(), 'the count is echoed as typed').toContain('1234.5');
-    expect(all(), 'no difference while typing (134.00)').not.toContain('134.00');
-    expect(all()).not.toContain('-134.00');
-    const note = field(dialog(), 'เหตุผลยอดต่าง / หมายเหตุ');
-    expect(note.getAttribute('placeholder')).toBe('ต้องระบุเมื่อมีเงินขาดหรือเกิน');
-    type(note, ' USD เกิน ');
-    expect(buttonsNamed(dialog(), 'กลับไปตรวจนับ').length).toBe(1);
-    button(dialog(), 'ยืนยันปิดกะ').click();
-    await settle();
-
-    expect(writes().length).toBe(1);
-    const { action, payload } = writes()[0]!;
-    expect(action).toBe('adminCloseShift');
-    expect(Object.keys(payload).sort()).toEqual(['branchId', 'counted', 'expected', 'note', 'requestId', 'shiftId']);
-    expect(payload.shiftId).toBe('S-0001');
-    expect(payload.note).toBe('USD เกิน');
-    expect(payload.counted).toMatchObject({ THB: '97770', USD: '1234.5', EUR: '0' });
-    expect(payload.expected, "the server's expected figures, sent back for its drift check").toMatchObject({
-      THB: '97770.00',
-      USD: '1100.50',
-    });
-    for (const value of Object.values(payload.counted as Record<string, unknown>)) {
-      expect(typeof value, 'counts as typed strings (W7)').toBe('string');
-    }
-    expect(toastText()).toBe(partsTh.serverSaved);
-    // the difference comes from the server's answer after the close (design §12.9)
-    expect(server.reads(SHIFTS).length).toBeGreaterThan(1);
-    const rows = tableWith(m.el, 'ผลต่างตอนปิด');
-    expect(rows[0]!.slice(3)).toEqual(['ปิดแล้ว', `USD ${formatMoney('134.00')}`]);
   });
 });
 
@@ -1090,7 +754,8 @@ describe('V2-cash: setLang (W10 point 5)', () => {
     setLang('en');
     await settle();
     const all = text(m.el);
-    for (const thai of ['เงินสดรับเข้า', 'ตั้งเงินสดเริ่มต้น / เปิดกะ', 'เงินสดและสต็อกตามกะ', 'ประวัติรับ–จ่ายและกะที่ผ่านมา']) {
+    // CA-9 #625: the retired open button's label gives way to the example button's, which stays
+    for (const thai of ['เงินสดรับเข้า', 'ดูตัวอย่าง 500,000', 'เงินสดและสต็อกตามกะ', 'ประวัติรับ–จ่ายและกะที่ผ่านมา']) {
       expect(all).toContain(en[key(thai)]!);
       expect(all).not.toContain(thai);
     }

@@ -178,12 +178,6 @@ function button(el: ParentNode, name: string): HTMLButtonElement {
   return buttons[0]!;
 }
 
-function dialog(): HTMLElement {
-  const d = document.querySelector('dialog');
-  expect(d?.open, 'dialog is open').toBe(true);
-  return d!;
-}
-
 describe('V2-cash extra tests: keyset pagination, 153 register currencies, localized currency names', () => {
   beforeEach(() => {
     server = new TestServer();
@@ -268,63 +262,6 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
     expect(remainingButtons.length).toBe(0);
   });
 
-  it('close shift dialog: renders a required input and POSTS a count for every register currency', async () => {
-    const m = mount();
-    await settle();
-
-    button(m.el, 'ตรวจนับและปิดกะ').click();
-    await settle();
-
-    const d = dialog();
-    const rows = d.querySelectorAll('.close-currency-row');
-    expect(rows.length).toBe(153);
-
-    for (const code of REGISTER) {
-      const input = d.querySelector<HTMLInputElement>(`#close-${code}`);
-      expect(input, `input for ${code} exists`).not.toBeNull();
-      expect(input?.required, `input for ${code} is required`).toBe(true);
-    }
-
-    const form = d.querySelector('form')!;
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-
-    const post = server.posts.find((p) => p.action === 'adminCloseShift');
-    expect(post, 'adminCloseShift was posted').toBeDefined();
-    const payload = post!.payload as { counted: Record<string, string> };
-    expect(Object.keys(payload.counted).length, 'posts a count for every register currency').toBe(153);
-    for (const code of REGISTER) {
-      expect(code in payload.counted, `count posted for ${code}`).toBe(true);
-      expect(payload.counted[code], `untouched count for ${code} sends "", not "0"`).toBe('');
-    }
-  });
-
-  it('close shift dialog: untouched input sends blank string "", not "0"', async () => {
-    const m = mount();
-    await settle();
-
-    button(m.el, 'ตรวจนับและปิดกะ').click();
-    await settle();
-
-    const d = dialog();
-    const thbInput = d.querySelector<HTMLInputElement>('#close-THB')!;
-    thbInput.value = '10000';
-    thbInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await settle();
-
-    const form = d.querySelector('form')!;
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-
-    const post = server.posts.find((p) => p.action === 'adminCloseShift');
-    expect(post, 'adminCloseShift was posted').toBeDefined();
-    const payload = post!.payload as { counted: Record<string, string> };
-    expect(payload.counted['THB']).toBe('10000');
-    expect(payload.counted['USD'], 'untouched count sends "", not "0"').toBe('');
-    expect(payload.counted['EUR'], 'untouched count sends "", not "0"').toBe('');
-    expect(payload.counted['USD']).not.toBe('0');
-  });
-
   it('shifts list: shows errorText when load older read fails, does not swallow it', async () => {
     server.shiftsPages['initial'] = [
       {
@@ -353,52 +290,5 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
 
     const expectedMsg = errorText('ownerOnly', 'refused by the server');
     expect(text(m.el)).toContain(expectedMsg);
-  });
-
-  it('open shift dialog: currency names in picker follow active lang', async () => {
-    server.cashData = {
-      ...server.cashData,
-      shift: null,
-      lastCounted: null,
-    };
-
-    // 1. Thai
-    setLang('th');
-    const m = mount();
-    await settle();
-
-    button(m.el, 'ตั้งเงินสดเริ่มต้น / เปิดกะ').click();
-    await settle();
-
-    const d = dialog();
-    const search = d.querySelector<HTMLInputElement>('input[placeholder="เช่น USD, ดอลลาร์, EUR"]')!;
-    search.value = 'USD';
-    search.dispatchEvent(new Event('input', { bubbles: true }));
-    await settle();
-
-    // In Thai, USD should include Thai currency name 'ดอลลาร์สหรัฐ'
-    expect(text(d)).toContain('ดอลลาร์สหรัฐ');
-
-    closeDialog();
-    await settle();
-    dispose?.();
-    root?.remove();
-
-    // 2. English
-    setLang('en');
-    mount();
-    await settle();
-
-    button(root, 'Set Opening Cash / Open Shift').click();
-    await settle();
-
-    const dEn = dialog();
-    const searchEn = dEn.querySelector<HTMLInputElement>('input[placeholder="e.g. USD, Dollar, EUR"]')!;
-    searchEn.value = 'USD';
-    searchEn.dispatchEvent(new Event('input', { bubbles: true }));
-    await settle();
-
-    // In English, USD should include 'US Dollar'
-    expect(text(dEn)).toContain('US Dollar');
   });
 });
