@@ -51,6 +51,44 @@ done
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
+ORIG_PATH="$PATH"
+M=api/migrations
+
+GIT_GLOBAL_CONFIG="$TMP_ROOT/gitconfig"
+cat << 'EOF' > "$GIT_GLOBAL_CONFIG"
+[user]
+	name = Test User
+	email = test@example.com
+[core]
+	fsync = none
+[credential]
+	helper =
+EOF
+export GIT_CONFIG_GLOBAL="$GIT_GLOBAL_CONFIG"
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_TERMINAL_PROMPT=0
+export MIGRATION_SLOT_NO_FETCH=1
+
+# Pre-build fixture template once to avoid 14x repetitive git init/push/clone
+TPL_ORIGIN="$TMP_ROOT/template.git"
+TPL_WORK="$TMP_ROOT/template.work"
+git init -q --bare "$TPL_ORIGIN"
+git -C "$TPL_ORIGIN" symbolic-ref HEAD refs/heads/main
+git init -q "$TMP_ROOT/seed"
+(
+  cd "$TMP_ROOT/seed" || exit 1
+  git checkout -q -b main
+  mkdir -p api/migrations
+  echo 'CREATE TABLE shift (id INT);' > api/migrations/20261109100000_shift.sql
+  git add . && git commit -q -m A
+  git tag commitA
+  echo 'CREATE TABLE rate_feed (id INT);' > api/migrations/20261110100000_rate_feed.sql
+  git add . && git commit -q -m B
+  git remote add origin "$TPL_ORIGIN"
+  git push -q origin main commitA
+)
+git clone -q "$TPL_ORIGIN" "$TPL_WORK"
+
 FAILED=0
 TOTAL=0
 CASE=""
@@ -118,26 +156,9 @@ STUB
   PATH="$T/bin:$ORIG_PATH"
   export PATH
 
-  git init -q --bare "$T/origin.git"
-  git -C "$T/origin.git" symbolic-ref HEAD refs/heads/main
-  git init -q "$T/seed"
-  (
-    cd "$T/seed" || exit 1
-    git config user.email test@example.com
-    git config user.name "Test User"
-    git checkout -q -b main
-    mkdir -p api/migrations
-    echo 'CREATE TABLE shift (id INT);' > api/migrations/20261109100000_shift.sql
-    git add . && git commit -q -m A
-    git tag commitA
-    echo 'CREATE TABLE rate_feed (id INT);' > api/migrations/20261110100000_rate_feed.sql
-    git add . && git commit -q -m B
-    git remote add origin "$T/origin.git"
-    git push -q origin main commitA
-  )
-  git clone -q "$T/origin.git" "$WORK"
-  git -C "$WORK" config user.email test@example.com
-  git -C "$WORK" config user.name "Test User"
+  cp -R "$TPL_ORIGIN" "$T/origin.git"
+  cp -R "$TPL_WORK" "$WORK"
+  git -C "$WORK" remote set-url origin "$T/origin.git"
 }
 
 # branch_from <ref> <branch> <file>...: a PR branch adding the given migration
@@ -201,9 +222,6 @@ expect_stdout() {
     fail "stdout '$got', want exactly '$want'"
   fi
 }
-
-ORIG_PATH="$PATH"
-M=api/migrations
 
 # --- next ----------------------------------------------------------------
 

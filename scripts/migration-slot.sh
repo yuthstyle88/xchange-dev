@@ -129,7 +129,9 @@ cmd_next() {
     fi
   fi
 
-  git fetch -q origin main 2>/dev/null || true
+  if [ -z "${MIGRATION_SLOT_NO_FETCH:-}" ]; then
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q origin main 2>/dev/null || true
+  fi
 
   local pr_json
   if ! pr_json=$(fetch_open_prs); then
@@ -175,7 +177,9 @@ cmd_renumber() {
     exit 1
   fi
 
-  git fetch -q origin main 2>/dev/null || true
+  if [ -z "${MIGRATION_SLOT_NO_FETCH:-}" ]; then
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q origin main 2>/dev/null || true
+  fi
 
   local pr_json
   if ! pr_json=$(fetch_open_prs); then
