@@ -12,9 +12,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::approval_repository::ApprovalRepository;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
-use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
-use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
+use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, MoneyDelta};
@@ -1116,17 +1114,17 @@ impl CashCountService {
                     }
                 }
             } else {
-                let by = PolicyActor::staff(
+                let by = Actor::new(
                     &actor.user_id,
-                    PolicyRole::Manager,
-                    count.branch_id.clone(),
-                )
-                .ok_or_else(|| {
-                    AppError::Internal(
-                        "failed to construct policy actor for count difference gate".to_string(),
-                    )
-                })?;
-
+                    &count.organization_id,
+                    vec![ScopedRole::new(
+                        Role::BranchManager,
+                        Some(count.branch_id.clone()),
+                        DateTime::<Utc>::UNIX_EPOCH,
+                        None,
+                    )],
+                    None,
+                );
                 match self.gate.check_in(&mut *tx, &count, &by).await? {
                     GateResult::Clear => {}
                     GateResult::AwaitingFinance(req_id) => {

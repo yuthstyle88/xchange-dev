@@ -12,6 +12,10 @@
 //! before the BoT batch so the AUTO base is the BoT line either way, and reads the partner in
 //! §4.1's keys: `provider` (was `name`) and `sell` (the partner's figure, was `cost`). The
 //! reference, policy and adjust checks are unchanged.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -58,7 +62,7 @@ async fn cross_branch_publish_refused_and_main_draft_stays_approved() {
     let mut tx = db.begin().await;
     let outcome = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &draft.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &draft.id, &key())
         .await
         .expect("submit succeeds");
     tx.commit().await.expect("commit submit");
@@ -200,7 +204,7 @@ async fn source_snapshot_carries_reference_policy_and_partner() {
     let mut tx = db.begin().await;
     let outcome = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &draft.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &draft.id, &key())
         .await
         .expect("submit succeeds");
     tx.commit().await.expect("commit submit");

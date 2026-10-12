@@ -75,9 +75,10 @@ impl CommandAction for SubmitDraftCommand {
 
         // OR-7 bridge, removed by #1021
         let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+        let _ = &legacy;
         let outcome = self
             .service
-            .submit(tx, branch, &legacy, &DraftId::new(draft_id), key.as_str())
+            .submit(tx, branch, who, &DraftId::new(draft_id), key.as_str())
             .await
             .map_err(map_rate_engine_error)?;
 

@@ -84,9 +84,14 @@ impl DraftBranchRefresh {
 
         // 4. Submit with key = "rate-feed:{branch}:{batch}"
         let submit_key = format!("rate-feed:{}:{batch}", branch.as_str());
+        let submit_actor = xc_auth::domain::access::v3_roles::actor_from_v3(
+            &system_actor,
+            "00000000-0000-0000-0000-000000000001",
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        );
         let submit_outcome = self
             .drafts
-            .submit(tx, branch, &system_actor, &draft.id, &submit_key)
+            .submit(tx, branch, &submit_actor, &draft.id, &submit_key)
             .await?;
 
         match submit_outcome.status {

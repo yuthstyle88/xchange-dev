@@ -90,9 +90,24 @@ pub fn teller() -> SaveActor {
     }
 }
 
-/// A staff member as the approval core is told who decides (`access` actor of AP-1).
-pub fn staff(id: &str, role: Role, branch: &str) -> Actor {
-    Actor::staff(id, role, BranchId::new(branch)).expect("a staff actor")
+/// A staff member as the approval core is told who decides: OR-7.1 #1020 (design `org-roles-branches.md` §3.3,
+/// §4.3), by #1020's ticket author, the B1-mapped `access::Actor` of the v3 employee `role` on `branch`.
+pub fn staff(id: &str, role: Role, branch: &str) -> xc_auth::domain::access::Actor {
+    let v3 = Actor::staff(id, role, BranchId::new(branch)).expect("a staff actor");
+    xc_auth::domain::access::v3_roles::actor_from_v3(
+        &v3,
+        "00000000-0000-0000-0000-000000000001",
+        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+    )
+}
+
+/// The v3 owner's B1-mapped user (OR-7.1 #1020): EXECUTIVE and ADMIN, organisation-wide.
+pub fn owner(id: &str) -> xc_auth::domain::access::Actor {
+    xc_auth::domain::access::v3_roles::actor_from_v3(
+        &Actor::owner(id),
+        "00000000-0000-0000-0000-000000000001",
+        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+    )
 }
 
 /// A recorded call of a step's `before_in` / `after_in`.
@@ -371,7 +386,7 @@ impl Desk {
     pub async fn decide(
         &self,
         request: &RequestId,
-        who: &Actor,
+        who: &xc_auth::domain::access::Actor,
         outcome: Outcome,
         reason: &str,
     ) -> Result<(), ApprovalError> {

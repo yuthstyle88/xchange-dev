@@ -8,8 +8,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
 use xc_approval::domain::request::RequestId;
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
 
@@ -458,7 +458,7 @@ impl RateDraftService {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &AccessActor,
         id: &DraftId,
         key: &str,
     ) -> Result<SubmitOutcome, RateEngineError> {
@@ -556,7 +556,7 @@ impl RateDraftService {
                 .await;
             decide_res.map_err(|e| RateEngineError::Internal(e.to_string()))?;
             DraftStatus::Approved
-        } else if who.role() == Role::Owner {
+        } else if who.roles.iter().any(|r| r.role == AccessRole::Executive) {
             let decide_res = self
                 .approvals
                 .decide_self(tx, &request.id, who, "proposer_is_owner")

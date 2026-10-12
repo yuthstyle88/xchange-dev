@@ -13,6 +13,7 @@ use xc_approval::application::approval_service::{ApprovalError, ApprovalService}
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::RequestId;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -50,12 +51,19 @@ pub struct ConfirmTransaction {
 
 /// G3: the requester AP-1 is told about: the saver at the **transaction's** branch (the owner has
 /// no branch).
-fn actor_of(who: &SaveActor, t: &ExchangeTransaction) -> AppResult<Actor> {
-    if who.role == Role::Owner {
-        return Ok(Actor::owner(who.id.clone()));
-    }
-    Actor::staff(who.id.clone(), who.role, t.branch_id.clone())
-        .ok_or_else(|| AppError::Internal(format!("{} is not a staff role", who.role.as_str())))
+fn actor_of(who: &SaveActor, t: &ExchangeTransaction) -> AppResult<xc_auth::domain::access::Actor> {
+    let v3 = if who.role == Role::Owner {
+        Actor::owner(who.id.clone())
+    } else {
+        Actor::staff(who.id.clone(), who.role, t.branch_id.clone()).ok_or_else(|| {
+            AppError::Internal(format!("{} is not a staff role", who.role.as_str()))
+        })?
+    };
+    Ok(actor_from_v3(
+        &v3,
+        &t.organization_id.to_string(),
+        Utc::now(),
+    ))
 }
 
 /// An approval core refusal as the exchange's own refusal: its code first.

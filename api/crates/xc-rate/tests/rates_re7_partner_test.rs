@@ -14,6 +14,10 @@
 //! `fetched_at` is compared as an instant.
 //!
 //! Needs `TEST_DATABASE_URL` (see `rate_engine_common/mod.rs`); nothing here skips.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -76,7 +80,7 @@ async fn submit(db: &TestDb, e: &Engine, draft: &RateDraft) -> SubmitOutcome {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &draft.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &draft.id, &key())
         .await;
     settle(tx, got).await.expect("the submit is accepted")
 }

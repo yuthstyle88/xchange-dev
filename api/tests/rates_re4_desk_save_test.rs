@@ -859,6 +859,27 @@ async fn a_reference_rate_sent_per_1_is_stored_per_unit() {
 /// the rate engine, as `rates_re4_common::publish` does for MANUAL lines.
 async fn publish_lines(shop: &Shop, branch_id: &str, lines: Vec<DraftLine>) {
     let owner = Actor::owner("owner");
+    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
+    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    let owner_user = xc_auth::domain::access::Actor::new(
+        "owner",
+        "00000000-0000-0000-0000-000000000001",
+        vec![
+            xc_auth::domain::access::ScopedRole::new(
+                xc_auth::domain::access::Role::Executive,
+                None,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                None,
+            ),
+            xc_auth::domain::access::ScopedRole::new(
+                xc_auth::domain::access::Role::Admin,
+                None,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                None,
+            ),
+        ],
+        None,
+    );
     let b = BranchId::new(branch_id);
     let drafts = RateDraftService::new(shop.pool.clone(), make_approval_service(shop.pool.clone()));
     let publisher = PublishService::new(shop.pool.clone());
@@ -870,7 +891,7 @@ async fn publish_lines(shop: &Shop, branch_id: &str, lines: Vec<DraftLine>) {
     tx.commit().await.expect("commit the draft");
     let mut tx = shop.pool.begin().await.expect("begin");
     drafts
-        .submit(&mut tx, &b, &owner, &draft.id, &unique("re4c-submit"))
+        .submit(&mut tx, &b, &owner_user, &draft.id, &unique("re4c-submit"))
         .await
         .unwrap_or_else(|e| panic!("submit the draft: {}", e.code()));
     tx.commit().await.expect("commit the submit");

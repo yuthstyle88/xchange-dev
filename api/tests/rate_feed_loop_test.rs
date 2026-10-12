@@ -106,6 +106,27 @@ fn refresher(pool: &PgPool) -> DraftBranchRefresh {
 /// The owner publishes an all-`AUTO` USD draft on `branch` through the draft path, as today.
 async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
     let owner = Actor::owner("owner");
+    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
+    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    let owner_user = xc_auth::domain::access::Actor::new(
+        "owner",
+        "00000000-0000-0000-0000-000000000001",
+        vec![
+            xc_auth::domain::access::ScopedRole::new(
+                xc_auth::domain::access::Role::Executive,
+                None,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                None,
+            ),
+            xc_auth::domain::access::ScopedRole::new(
+                xc_auth::domain::access::Role::Admin,
+                None,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                None,
+            ),
+        ],
+        None,
+    );
     let b = BranchId::new(branch);
     let svc = drafts(&db.pool);
     let line = DraftLine::new(
@@ -119,7 +140,7 @@ async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
         .create(&mut tx, &b, &owner, vec![line])
         .await
         .unwrap_or_else(|e| panic!("create: {}", e.code()));
-    svc.submit(&mut tx, &b, &owner, &draft.id, &unique("owner-key"))
+    svc.submit(&mut tx, &b, &owner_user, &draft.id, &unique("owner-key"))
         .await
         .unwrap_or_else(|e| panic!("submit: {}", e.code()));
     let expected = current_version(&mut tx, branch).await;

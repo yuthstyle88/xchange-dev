@@ -13,8 +13,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_exchange::domain::reversal::repository::ReversalRepository;
 use xc_exchange::domain::reversal::reversal::{ReversalId, ReversalStatus};
 use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
@@ -97,8 +96,15 @@ pub struct ReversalPolicy;
 
 impl ApprovalPolicy for ReversalPolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let at_branch = who.branch_id().map(|b| b.as_str()) == request.branch_id.as_deref();
-        if who.role() == Role::Finance && at_branch {
+        let req_branch = request.branch_id.as_deref();
+        let is_finance_of_branch = who.roles.iter().any(|r| {
+            r.role == Role::Finance
+                && (match (r.branch.as_ref(), req_branch) {
+                    (Some(b), Some(rb)) => b.as_str() == rb,
+                    _ => false,
+                })
+        });
+        if is_finance_of_branch {
             Ok(())
         } else {
             Err(Refusal::new(

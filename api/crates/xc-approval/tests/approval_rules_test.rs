@@ -12,6 +12,13 @@
 //! core and nothing of any one type. Needs `TEST_DATABASE_URL` (see
 //! `common/mod.rs`); nothing here skips.
 //!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `Actor` is
+//! `access::Actor` and the harness's people are the B1-mapped users (`common/mod.rs`). Three assertions
+//! change, each on ruling 5 of #1020 (the stored role is the Blueprint role that qualified): the decision
+//! row's and the audit row's role for the owner's decisions is `"EXECUTIVE"`, no longer `"OWNER"`
+//! (`another_person_decides_…` ×2, `decide_self_approves_…` ×1). `event()`'s `actor_role: "OWNER"` is an
+//! input to `PgAuditLog`, not a decision's output, and stays. Every other assertion is unchanged.
+//!
 //! Signatures this test assumes (where §5.2 leaves the exact Rust open):
 //! - Every `ApprovalService` method takes the caller's transaction first, so a
 //!   type's own write (RE-1's submit) and the approval write are one transaction
@@ -72,7 +79,7 @@ use pos_error::AppResult;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use tokio::sync::Barrier;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -158,7 +165,7 @@ async fn the_proposer_cannot_decide_their_own_request_even_when_the_policy_allow
     )]);
 
     for proposer in [rates("rates-1"), owner("owner-1")] {
-        let object = format!("obj-{}", proposer.id());
+        let object = format!("obj-{}", proposer.user_id);
         let req = open(&db, &svc, TYPE_A, &object, &proposer).await;
         let id = req.id.to_string();
 
@@ -171,7 +178,7 @@ async fn the_proposer_cannot_decide_their_own_request_even_when_the_policy_allow
                 settle(tx, got).await,
                 Err("outOfScope"),
                 "{} decided their own request ({outcome:?})",
-                proposer.id()
+                proposer.user_id
             );
         }
         assert_eq!(db.status(&id).await, "PENDING");
@@ -224,7 +231,7 @@ async fn another_person_decides_through_the_policy_and_the_decision_is_audited()
         db.decisions(&id).await,
         vec![(
             "owner-1".to_owned(),
-            "OWNER".to_owned(),
+            "EXECUTIVE".to_owned(),
             "APPROVED".to_owned(),
             "checked".to_owned()
         )]
@@ -235,7 +242,10 @@ async fn another_person_decides_through_the_policy_and_the_decision_is_audited()
         audit_before + 1,
         "one audit row for the decision: {audit:?}"
     );
-    assert!(audit.iter().all(|(role, _)| role == "OWNER"), "{audit:?}");
+    assert!(
+        audit.iter().all(|(role, _)| role == "EXECUTIVE"),
+        "{audit:?}"
+    );
     assert_eq!(a.decided(), vec![("obj-1".to_owned(), Outcome::Approved)]);
     db.finish().await;
 }
@@ -550,7 +560,7 @@ async fn decide_self_approves_when_the_policy_allows_the_proposer() {
         db.decisions(&id).await,
         vec![(
             "owner-1".to_owned(),
-            "OWNER".to_owned(),
+            "EXECUTIVE".to_owned(),
             "APPROVED".to_owned(),
             "proposer_is_owner".to_owned()
         )]
@@ -583,7 +593,7 @@ async fn decide_self_is_refused_when_the_policy_does_not_allow_the_proposer() {
         (TYPE_B, rates("rates-1")),
     ];
     for (type_name, proposer) in cases {
-        let object = format!("obj-{}", proposer.id());
+        let object = format!("obj-{}", proposer.user_id);
         let req = open(&db, &svc, type_name, &object, &proposer).await;
         let id = req.id.to_string();
         let audit_before = db.count("audit_events").await;
@@ -595,7 +605,7 @@ async fn decide_self_is_refused_when_the_policy_does_not_allow_the_proposer() {
             settle(tx, got).await,
             Err("outOfScope"),
             "{type_name}: {} closed their own request",
-            proposer.id()
+            proposer.user_id
         );
         assert_eq!(db.status(&id).await, "PENDING");
         assert!(db.decisions(&id).await.is_empty());

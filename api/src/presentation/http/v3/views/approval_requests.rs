@@ -22,8 +22,7 @@ use crate::presentation::dto::v3::approval_requests::{
     ApprovalRequestItemDto, ApprovalRequestsData, ApprovalRequestsFilter,
 };
 use crate::presentation::http::v3::commands::make_approval_registry;
-use crate::presentation::extractors::actor::legacy_actor;
-use crate::presentation::http::v3::view::{bridge_refused, BranchView, ViewEndpoint};
+use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct ApprovalRequestsBranchView {
     pool: PgPool,
@@ -58,8 +57,6 @@ impl BranchView for ApprovalRequestsBranchView {
         let type_filter = filter.r#type.clone();
 
         async move {
-            // OR-7 bridge, removed by #1020
-            let legacy = legacy_actor(&who, Utc::now()).ok_or_else(bridge_refused)?;
             let mut sql = "SELECT id, type, branch_id, object_id, object_version_hash, \
                            policy_version, proposed_payload, requested_by, requested_at, status, \
                            idempotency_key \
@@ -121,7 +118,7 @@ impl BranchView for ApprovalRequestsBranchView {
 
                 let allowed = registry
                     .get(&type_name)
-                    .is_some_and(|(_subject, policy)| policy.may_decide(&legacy, &request).is_ok());
+                    .is_some_and(|(_subject, policy)| policy.may_decide(&who, &request).is_ok());
 
                 if allowed {
                     requests.push(ApprovalRequestItemDto {

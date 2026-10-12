@@ -24,6 +24,12 @@
 //!   `ApprovalError::code` answers as `outOfScope` (§9: *"The teller cannot decide (`outOfScope`),
 //!   nor can a manager of another branch"*).
 //! - `Role::Manager` is the Blueprint's BRANCH_MANAGER; `Actor::owner` is the EXECUTIVE.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `decide` takes
+//! `access::Actor`, so every decider is the B1-mapped user (`tx4_common::staff`/`owner`). One outcome changes,
+//! named by ruling 1 on #1020: BACKEND and MANAGER are both BRANCH_MANAGER, so BACKEND now decides.
+//! `no_other_role_of_the_branch_decides` therefore leaves out every role §3.3 makes a BRANCH_MANAGER, and
+//! `a_backend_employee_decides_as_the_branchs_manager` pins the change. Every other assertion is unchanged.
 //! - `on_decided` receives no reason (`xc-approval/src/domain/subject.rs`); the REJECTED reason it
 //!   stores is the reason of the decision row `decide` has written in the same transaction.
 
@@ -33,7 +39,6 @@ mod tx4_common;
 use quote_common::*;
 use tx4_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, TransactionStatus};
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
@@ -184,7 +189,7 @@ async fn the_owner_does_not_decide_an_exchange() {
 
     assert_eq!(
         approval_code(
-            desk.decide(&request, &Actor::owner("owner"), Outcome::Approved, "ok")
+            desk.decide(&request, &owner("owner"), Outcome::Approved, "ok")
                 .await
         ),
         "outOfScope"
@@ -202,7 +207,11 @@ async fn no_other_role_of_the_branch_decides() {
     let desk = Desk::start().await;
     let (t, request) = pending(&desk).await;
 
-    for role in Role::STAFF.into_iter().filter(|r| *r != Role::Manager) {
+    // OR-7.1 #1020 ruling 1: BACKEND is a BRANCH_MANAGER too (§3.3).
+    for role in Role::STAFF
+        .into_iter()
+        .filter(|r| !matches!(r, Role::Manager | Role::Backend))
+    {
         assert_eq!(
             approval_code(
                 desk.decide(
@@ -221,6 +230,26 @@ async fn no_other_role_of_the_branch_decides() {
         desk.stored(t.id).await.status,
         TransactionStatus::PendingApproval
     );
+    desk.db.finish().await;
+}
+
+/// OR-7.1 #1020 ruling 1 (named change): §3.3 maps BACKEND to BRANCH_MANAGER, the role that decides an exchange of
+/// its branch, so a BACKEND employee of the branch now approves it (before #1020 only MANAGER did).
+#[tokio::test]
+async fn a_backend_employee_decides_as_the_branchs_manager() {
+    let desk = Desk::start().await;
+    let (t, request) = pending(&desk).await;
+
+    desk.decide(
+        &request,
+        &staff("employee-BACKEND", Role::Backend, "MAIN"),
+        Outcome::Approved,
+        "known customer",
+    )
+    .await
+    .expect("BACKEND, a BRANCH_MANAGER of MAIN, approves");
+    assert_eq!(desk.stored(t.id).await.status, TransactionStatus::Confirmed);
+    assert_eq!(request_status(&desk, &request).await, "APPROVED");
     desk.db.finish().await;
 }
 

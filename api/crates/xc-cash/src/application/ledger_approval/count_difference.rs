@@ -11,8 +11,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome, RequestId};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::count::CashCount;
@@ -114,18 +113,26 @@ pub struct CountDifferencePolicy;
 
 impl ApprovalPolicy for CountDifferencePolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        if who.role() != Role::Finance {
-            return Err(Refusal::new(
+        let req_branch = request.branch_id.as_deref();
+        let is_finance_of_branch = who.roles.iter().any(|r| {
+            r.role == Role::Finance
+                && (match (r.branch.as_ref(), req_branch) {
+                    (Some(b), Some(rb)) => b.as_str() == rb,
+                    _ => false,
+                })
+        });
+        if is_finance_of_branch {
+            Ok(())
+        } else if !who.roles.iter().any(|r| r.role == Role::Finance) {
+            Err(Refusal::new(
                 "outOfScope",
                 "only finance staff may decide count difference",
-            ));
-        }
-        match (who.branch_id(), request.branch_id.as_deref()) {
-            (Some(user_branch), Some(req_branch)) if user_branch.as_str() == req_branch => Ok(()),
-            _ => Err(Refusal::new(
+            ))
+        } else {
+            Err(Refusal::new(
                 "outOfScope",
                 "finance staff can only decide requests for their own branch",
-            )),
+            ))
         }
     }
 
