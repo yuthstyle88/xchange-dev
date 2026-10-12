@@ -10,16 +10,11 @@ mod common;
 mod documents_common;
 mod save_common;
 
-use std::sync::Arc;
-
-use actix_web::http::Method;
-use actix_web::{App, test};
 use documents_common::*;
 use pos_error::AppError;
 use serde_json::json;
 use xc_kernel::ids::BranchId;
 use xchange::application::workflows::documents::{DocumentLink, Documents};
-use xchange::bootstrap::{self, AppState};
 
 fn refusal<T: std::fmt::Debug>(result: Result<T, AppError>) -> String {
     match result {
@@ -199,154 +194,5 @@ async fn an_exchange_is_found_only_in_its_own_branch_and_only_when_it_is_live() 
 }
 
 // ── the two pages ────────────────────────────────────────────────────────
-
-#[actix_web::test]
-async fn the_two_pages_answer_as_v2_answered() {
-    let fixture = fixture();
-    let world = World::start(&fixture).await;
-    let app = world_app!(world, &fixture);
-    replay(&app, &world, &fixture).await;
-    drop(app);
-    world.shop.finish().await;
-}
-
-#[actix_web::test]
-async fn a_wrong_method_is_the_pages_404_not_a_405() {
-    let fixture = fixture();
-    let world = World::start(&fixture).await;
-    let app = world_app!(world, &fixture);
-    let reference = &world.exchange("cash").document_ref;
-    for path in [
-        format!("/documents?ref={reference}"),
-        format!("/staff/documents?ref={reference}"),
-    ] {
-        for method in [Method::POST, Method::PUT, Method::DELETE, Method::PATCH] {
-            let answer = send(&app, method.clone(), &path, &["owner", "front"]).await;
-            assert_eq!(
-                (answer.status, answer.text.as_str()),
-                (404, "Not found"),
-                "{method} {path}"
-            );
-        }
-    }
-    drop(app);
-    world.shop.finish().await;
-}
-
-#[actix_web::test]
-async fn without_a_session_reader_nobody_is_signed_in() {
-    let fixture = fixture();
-    let world = World::start(&fixture).await;
-    let state = world.state();
-    let app = TestApp::new(
-        test::init_service(App::new().configure(move |cfg| bootstrap::configure(cfg, state))).await,
-        |t| t.to_request(),
-    );
-    let reference = &world.exchange("cash").document_ref;
-    let answer = get(&app, &format!("/documents?ref={reference}"), &[]).await;
-    assert_eq!(answer.status, 303);
-    assert_eq!(
-        answer.headers.get("location").map(String::as_str),
-        Some("https://desk.example/login")
-    );
-    let answer = get(&app, &format!("/staff/documents?ref={reference}"), &[]).await;
-    assert_eq!(answer.status, 302);
-    assert_eq!(
-        answer.headers.get("location").map(String::as_str),
-        Some("https://desk.example/staff")
-    );
-    drop(app);
-    world.shop.finish().await;
-}
-
-#[actix_web::test]
-async fn a_page_names_only_the_exchange_that_was_asked_for() {
-    // Nothing of another exchange, another branch or a file key that is not this exchange's
-    // may appear in a page.
-    let fixture = fixture();
-    let world = World::start(&fixture).await;
-    let app = world_app!(world, &fixture);
-    let (cash, transfer, other) = (
-        world.exchange("cash"),
-        world.exchange("transfer"),
-        world.exchange("other"),
-    );
-    for (path, who) in [
-        (format!("/documents?ref={}", cash.document_ref), "owner"),
-        (format!("/documents?ref={}", cash.document_ref), "front"),
-        (
-            format!("/staff/documents?ref={}", cash.document_ref),
-            "front",
-        ),
-    ] {
-        let answer = get(&app, &path, &[who]).await;
-        assert_eq!(answer.status, 200, "{path} as {who}");
-        assert!(
-            answer.text.contains(&cash.passport) && answer.text.contains(&cash.receipt),
-            "{path}: its own files"
-        );
-        for foreign in [
-            &transfer.document_ref,
-            &transfer.passport,
-            &transfer.receipt,
-            &other.document_ref,
-            &other.passport,
-        ] {
-            assert!(
-                !answer.text.contains(foreign.as_str()),
-                "{path} as {who}: {foreign} does not belong on this page"
-            );
-        }
-    }
-    // the staff page never links to the owner's file route
-    let answer = get(
-        &app,
-        &format!("/staff/documents?ref={}", transfer.document_ref),
-        &["front"],
-    )
-    .await;
-    assert!(!answer.text.contains("\"/files/"), "{}", answer.text);
-    assert_eq!(answer.text.matches("/api/staff/file/").count(), 3);
-    drop(app);
-    world.shop.finish().await;
-}
-
-#[actix_web::test]
-async fn when_the_database_is_down_the_owners_page_answers_500() {
-    let fixture = fixture();
-    let dir = std::env::temp_dir().join(save_common::unique("xchange-documents-down"));
-    let state = AppState::new(
-        Arc::new(common::settings(&[(
-            "APP_FILES__DIR",
-            dir.to_str().unwrap(),
-        )])),
-        common::unreachable_pool(),
-    );
-    let reader: Arc<dyn xchange::presentation::pages::SessionReader> =
-        Arc::new(FakeSessions::from_fixture(&fixture));
-    let app = TestApp::new(
-        test::init_service(
-            App::new()
-                .configure(move |cfg| bootstrap::configure(cfg, state))
-                .app_data(actix_web::web::Data::from(reader)),
-        )
-        .await,
-        |t| t.to_request(),
-    );
-    for who in ["owner", "front"] {
-        let answer = get(&app, "/documents?ref=XC-1", &[who]).await;
-        // v2: `server.mjs:8297`
-        assert_eq!(answer.status, 500, "as {who}: {:?}", answer.text);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&answer.text).expect("JSON"),
-            json!({ "error": SERVER_ERROR }),
-            "as {who}: nothing of the cause is shown"
-        );
-    }
-    // nobody signed in is still sent to the sign-in page: that needs no database
-    assert_eq!(get(&app, "/documents?ref=XC-1", &[]).await.status, 303);
-    assert_eq!(
-        get(&app, "/staff/documents?ref=XC-1", &[]).await.status,
-        302
-    );
-}
+// Moved to the views and the screen by #1349 (design §A.8, D-A6a): `v3_documents_views_test.rs` (V) and
+// `v3_documents_screens_test.rs` (T).

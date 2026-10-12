@@ -54,6 +54,11 @@ pub trait BranchView: Send + Sync + 'static {
         who: &Actor,
         filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send;
+    /// The refusal this view answers for a `load` error, instead of the core's 500 (#1349 ruling A).
+    /// None = the core's answer.
+    fn refusal(&self, _err: &AppError) -> Option<V3Error> {
+        None
+    }
 }
 
 pub trait PagedView: Send + Sync + 'static {
@@ -502,13 +507,16 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
             V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
         }
-        Err(_) => V3Error::new(
-            "serverError",
-            None,
-            "เซิร์ฟเวอร์ขัดข้อง",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .error_response(),
+        Err(err) => match view.refusal(&err) {
+            Some(refusal) => refusal.error_response(),
+            None => V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .error_response(),
+        },
     }
 }
 
