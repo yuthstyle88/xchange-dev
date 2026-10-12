@@ -19,7 +19,7 @@ import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { StatCard } from '../../../shared/ui/StatCard';
 import type { AdminMenuProps } from '../menus';
-import { downloadCsv, walkPages } from '../parts/csv';
+import { canExport, downloadCsv, walkPages } from '../parts/csv';
 import { DataTable } from '../parts/DataTable';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
@@ -183,6 +183,19 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  /** An export the server refuses (EX-9 #1147: `outOfScope` without `ReportsExport`) shows on the screen's error line. */
+  async function exporting(run: () => Promise<void>) {
+    try {
+      await run();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setError(errorText(err.code, err.message));
+      } else {
+        setError(String(err));
+      }
+    }
+  }
+
   async function handleExport() {
     const filter = {
       from: props.period().from || undefined,
@@ -282,15 +295,17 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <div class="reports-toolbar">
-        <button
-          type="button"
-          class="secondary"
-          id="export"
-          hidden={activeTab() === 2}
-          onClick={handleExport}
-        >
-          {t('exportCsv')}
-        </button>
+        <Show when={canExport()}>
+          <button
+            type="button"
+            class="secondary"
+            id="export"
+            hidden={activeTab() === 2}
+            onClick={() => void exporting(handleExport)}
+          >
+            {t('exportCsv')}
+          </button>
+        </Show>
       </div>
 
       <div role="tablist" class="admin-tabs" aria-label={t('tablistAria')}>
@@ -455,14 +470,16 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             <CardHead
               title={t('employeeSummaryHeading')}
               aside={
-                <button
-                  type="button"
-                  class="secondary"
-                  id="employee-csv"
-                  onClick={handleEmployeeCsv}
-                >
-                  {t('downloadCsv')}
-                </button>
+                <Show when={canExport()}>
+                  <button
+                    type="button"
+                    class="secondary"
+                    id="employee-csv"
+                    onClick={() => void exporting(handleEmployeeCsv)}
+                  >
+                    {t('downloadCsv')}
+                  </button>
+                </Show>
               }
             />
             <p class="unit">{t('employeeSummaryNote')}</p>

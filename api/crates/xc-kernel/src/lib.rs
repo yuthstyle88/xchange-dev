@@ -2,6 +2,7 @@
 
 pub mod branch_tx;
 pub mod branch_versions;
+pub mod document_store;
 pub mod ids;
 pub mod input;
 pub mod mode;

@@ -28,6 +28,11 @@ web:
 files:
   dir: "uploads"
 
+verification:
+  # Identity documents, sealed with pii.key (VF-2, owner S-1/S-2). A directory of its own,
+  # never under files.dir: nothing here is served the way uploads are.
+  store_dir: "verification-documents"
+
 auth:
   # seconds between two purges of expired sessions and past sign-in windows
   purge_interval_secs: 3600

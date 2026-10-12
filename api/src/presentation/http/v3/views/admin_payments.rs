@@ -5,7 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::Utc;
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use xc_auth::domain::access::Actor;
@@ -21,8 +20,7 @@ use crate::presentation::dto::v3::admin_payments::{
     AdminPaymentsData, PaymentHistoryItem, PaymentMethodItem, export_types as export_dto_types,
 };
 use crate::presentation::dto::v3::common::NoFilter;
-use crate::presentation::extractors::actor::legacy_actor;
-use crate::presentation::http::v3::view::{BranchView, ViewEndpoint, bridge_refused};
+use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct AdminPaymentsBranchView {
     service: PaymentSettingsService,
@@ -50,9 +48,7 @@ impl BranchView for AdminPaymentsBranchView {
         let branch = branch.clone();
         let who = who.clone();
         async move {
-            // OR-7 bridge, removed by #1022
-            let legacy = legacy_actor(&who, Utc::now()).ok_or_else(bridge_refused)?;
-            let view = service.view(&branch, &legacy).await?;
+            let view = service.view(&branch, &who).await?;
             let methods: Vec<PaymentMethodItem> = serde_json::from_value(view.methods)
                 .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
             let history: Vec<PaymentHistoryItem> = view

@@ -19,7 +19,7 @@ import { refreshTick } from '../parts/refresh';
 import { toast } from '../parts/toast';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { TransactionTable } from '../parts/TransactionTable';
-import { downloadCsv, walkPages } from '../parts/csv';
+import { canExport, downloadCsv, walkPages } from '../parts/csv';
 import { LIVE_CSV_HEADERS, liveCsvRow } from '../parts/live-csv';
 import { Card } from '../../../shared/ui/Card';
 import { en, th } from './i18n';
@@ -301,13 +301,15 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           </select>
         </label>
         <div class="actions-group">
-          <button
-            type="button"
-            class="secondary"
-            onClick={() => void handleExportCsv()}
-          >
-            {t('exportCsv')}
-          </button>
+          <Show when={canExport()}>
+            <button
+              type="button"
+              class="secondary"
+              onClick={() => void handleExportCsv()}
+            >
+              {t('exportCsv')}
+            </button>
+          </Show>
           <NewTransactionButton api={api} branch={props.branch()} />
         </div>
       </div>

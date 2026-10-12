@@ -1,0 +1,18 @@
+[package]
+name = "xc-marketing"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Marketing bounded context for xchange: campaigns, benefit rules, coupons, budgets, segments (design marketing-campaigns.md, #560)"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+thiserror = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "rust_decimal"] }
+sha2 = "0.10"

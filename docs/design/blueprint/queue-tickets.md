@@ -170,8 +170,16 @@ separate routes.
   states continue as today for the order data (`ACCEPTED → ID_CHECKED → COMPLETED`). Its `started_at` /
   `completed_at` are then copies of the ticket's `served_at` / `completed_at`. They are kept until the readers move
   (QU-6) and are dropped in the cleanup block (§8 M2).
-- **Queue card, panel and admin bar** (#486, #471). They move from `kiosk_notifications` / `kiosk_queue` to
-  `queue_board` (QU-6). PR 535's comment on #556 asks for exactly this.
+- **Queue card and admin bar** (#486, #471). They move from `kiosk_notifications` to `queue_board` (QU-6). PR 535's
+  comment on #556 asks for exactly this. `queue_board` answers only `{waiting, called, myCounter}`
+  (`views/queue_board.rs:93-131`) behind `QueueOperate`. So the card and bar derive what they show: the count from
+  `waiting.length`, the lines from `called`, the new-request key from the newest waiting id, the branch name from the
+  shell's `me` or the page label, and the client clock for "now". The card mounts only for sessions holding
+  `QueueOperate`.
+- **The queue panel stays on `kiosk_queue`** (amended 2026-10-12, #1354 issuecomment-6117565689). It lists kiosk
+  *requests* (amount, staff, accept, filter, paging, request id), not queue tickets, and `queue_board` carries none of
+  that. The earlier text grouped it with the card by mistake. `kiosk_queue` therefore stays until a later row gives the
+  panel a v3 request view. **Its `startedAt`/`completedAt` keep their wire shape but are read from the request's queue ticket** (`queue_tickets.served_at`/`completed_at`, joined on the ticket the kiosk `confirm` issued), not from the request's own columns, which QU-8's M2 drops. This is the copy relation stated above, read at the source. A request with no ticket answers `null` for both.
 
 ## 5. Class diagram
 
@@ -300,7 +308,7 @@ start dependencies are merged.
 | QU-6 | kiosk `accept` on the ticket; the queue card, panel and admin bar on `queue_board` | `xc-kiosk/src/application/kiosk/desk.rs`, `web/src/shared/queue/**`, `web/src/shared/ui/{QueueCard,QueuePanel}.tsx`, `web/src/screens/admin/queue/**`, `web/src/shared/testing/page-wide.ts` (after QU-6a) | QU-7, QU-6a |
 | QU-6a | test-only, no behaviour change: every screen test that answers the shell's page-wide queue reads (`/api/v3/views/kiosk_notifications`, `kiosk_queue`) by hand takes them from one shared helper instead, `web/src/shared/testing/page-wide.ts` (new). QU-6 then changes that one helper, not 31 test files | `web/src/shared/testing/page-wide.ts` (new) and the 31 test files listed in §9.2 | OR-7.7 #1030 merged (its scope names 7 of the 31 test files) |
 | QU-7 | commands and views (§4.4) | `api/src/presentation/http/v3/commands/queue/**` (with its own `permissions.rs`, as PR 590 §4.4), `views/{queue_board,branch_service_status,my_queue_ticket}.rs`, their DTOs and generated TS | QU-3, QU-5, PR 570 CM-1, PR 589 OR-4 |
-| QU-8 | retire the old queue reads and the request work times (M2) | `views/{kiosk_notifications,kiosk_queue}.rs` and their DTOs/TS, `xc-kiosk` readers of `started_at/completed_at`, `api/migrations/20261102100000_retire_kiosk_work_times.sql`, the retired tests and fixtures | QU-6 |
+| QU-8 | retire the old queue read `kiosk_notifications` and the request work times (M2). **`kiosk_queue` is kept**: the queue panel still reads it (§4.5, amended 2026-10-12) | `views/kiosk_notifications.rs` and its DTO/TS, `views/kiosk_queue.rs` + its DTO and generated TS (only the two fields' source: `startedAt`/`completedAt` read from the ticket), `xc-kiosk` readers of `started_at/completed_at`, `api/migrations/20261102100000_retire_kiosk_work_times.sql`, the retired tests and fixtures | QU-6 |
 
 The booking source (check-in → `QueueTickets::issue_in`) and the B06 desk screen are not tickets here. The first
 belongs to #555's check-in ticket. The second is a desk screen ticket that reads `queue_board`. The customer views are
@@ -360,7 +368,7 @@ If QU-6 moved the shell to `queue_board` directly, it would have to edit all of 
 | QU-6 | `accept` on a WAITING request calls and starts its ticket; the queue card shows `queue_board`'s lines; QueueBar's provided tests (#471) are re-pointed in one commit per file before any behaviour change |
 | QU-6a | none up front, on purpose: a pure test refactor. The proof is that `npm run check` stays green with no assertion changed, and that the `git grep` above, outside QU-6's scope, then finds only `web/src/shared/testing/page-wide.ts` |
 | QU-7 | every route, permission refusals, `Idempotency-Key` replay and conflict, `since` → `{changed:false}`; `branch_service_status` carries no customer field; `branch_service_status` and `my_queue_ticket` carry `estimateLowSeconds`/`estimateHighSeconds` next to `estimateSeconds` and `estimateAsOf` |
-| QU-8 | the workspace builds and passes with the two views and columns gone; `git grep -n started_at -- api/crates/xc-kiosk` finds no reader |
+| QU-8 | the workspace builds and passes with `kiosk_notifications` and the columns gone; `kiosk_queue` still served, its `startedAt`/`completedAt` equal to the ticket's `served_at`/`completed_at` (and `null` for a request without a ticket); `git grep -n started_at -- api/crates/xc-kiosk` finds no reader |
 
 
 ### Tickets as opened (reconciled 2026-10-11)

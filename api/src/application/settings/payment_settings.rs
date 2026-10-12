@@ -2,8 +2,7 @@
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
+use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::payment::PaymentRules;
@@ -75,7 +74,9 @@ impl PaymentSettingsService {
     /// Returns the view of payment methods for a branch and actor.
     pub async fn view(&self, branch: &BranchId, actor: &Actor) -> AppResult<PaymentMethodsView> {
         let stored = self.store.read(branch, SETTING_NAME).await?;
-        let can_edit = actor.kind() == ActorKind::Owner;
+        let target = Target::new(&actor.organization_id, Some(branch.clone()), None);
+        let can_edit =
+            Authorizer::check(Some(actor), Permission::SystemSettings, &target, Utc::now()).is_ok();
         let (version, methods, updated_at, updated_by) = match stored {
             Some(s) => {
                 let rules = rules_from_json(&s.body).unwrap_or_else(PaymentRules::defaults);

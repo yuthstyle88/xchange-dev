@@ -10,7 +10,7 @@ export type AdminOverviewData = { period: Period, totals: AdminOverviewTotals, l
 /**
  * Filter for the `admin_overview` view.
  */
-export type AdminOverviewFilter = { from?: string, to?: string, };
+export type AdminOverviewFilter = { from?: string, to?: string, currency?: string, channel?: string, };
 
 /**
  * Status strip figures.

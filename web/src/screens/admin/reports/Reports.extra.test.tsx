@@ -14,6 +14,15 @@ import { formatBangkokTime } from '../parts/TransactionTable';
 import { toast, Toast } from '../parts/toast';
 import { menu } from './menu';
 import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
+import { meOf } from '../../../test-support/me';
+
+// Amended for EX-9 (#1147) by the up-front test writer claude/709ec749: the export buttons show only to a `me`
+// whose `permissions` hold `ReportsExport` (E-2: EXECUTIVE and FINANCE). `test-support/me.ts`'s table predates
+// EX-1 #1070, so the permission is added here to the OWNER fixture (EXECUTIVE + ADMIN, #1030's shape).
+const EXPORTER_ME: unknown = (() => {
+  const m = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }) as unknown as { permissions: string[] };
+  return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
+})();
 
 const REPORTS = 'admin_reports';
 const TRANSACTIONS = 'admin_transactions';
@@ -182,7 +191,7 @@ class FakeServer {
       case 'transaction_documents':
         return ok({ version: 1, changed: true, data: { ref: p.get('ref'), files: [] } });
       case 'me':
-        return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
+        return ok({ version: 1, changed: true, data: EXPORTER_ME });
       case QUEUE_CARD_VIEW:
         return ok(queueCardUnchanged());
       default:

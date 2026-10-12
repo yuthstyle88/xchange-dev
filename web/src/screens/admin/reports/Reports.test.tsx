@@ -34,6 +34,15 @@ import { th as partsTh } from '../parts/i18n';
 import { requestRefresh } from '../parts/refresh';
 import { toast, Toast } from '../parts/toast';
 import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
+import { meOf } from '../../../test-support/me';
+
+// Amended for EX-9 (#1147) by the up-front test writer claude/709ec749: the export buttons show only to a `me`
+// whose `permissions` hold `ReportsExport` (E-2: EXECUTIVE and FINANCE). `test-support/me.ts`'s table predates
+// EX-1 #1070, so the permission is added here to the OWNER fixture (EXECUTIVE + ADMIN, #1030's shape).
+const EXPORTER_ME: unknown = (() => {
+  const m = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }) as unknown as { permissions: string[] };
+  return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
+})();
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -354,7 +363,7 @@ class FakeServer {
       case 'transaction_documents':
         return ok({ version: this.version, changed: true, data: { ref: p.get('ref'), files: [] } });
       case 'me':
-        return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
+        return ok({ version: 1, changed: true, data: EXPORTER_ME });
       case QUEUE_CARD_VIEW:
         return ok(queueCardUnchanged(this.version));
       default:
@@ -1048,7 +1057,7 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     visibleButtons(EXPORT)[0]!.click();
     const text = await csvText();
     const walk = server.walks().slice(before).map(keysOf);
-    const filter = { branch: 'MAIN', limit: '100', from: '2026-10-05', to: '2026-10-06' };
+    const filter = { branch: 'MAIN', limit: '100', from: '2026-10-05', to: '2026-10-06', purpose: 'export' };
     expect(walk).toEqual([filter, { ...filter, before: tx(201).id }]);
     const lines = text.split('\r\n');
     expect(lines).toHaveLength(1 + 102);
@@ -1116,7 +1125,7 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     visibleButtons(EMPLOYEE_CSV)[0]!.click();
     const text = await csvText();
     const walk = server.walks().slice(before).map(keysOf);
-    expect(walk).toEqual([{ branch: 'MAIN', limit: '100', from: '2026-10-05', to: '2026-10-06', staff: 'dao' }]);
+    expect(walk).toEqual([{ branch: 'MAIN', limit: '100', from: '2026-10-05', to: '2026-10-06', staff: 'dao', purpose: 'export' }]);
     const lines = text.split('\r\n');
     expect(lines[0]).toBe(quoted(EMPLOYEE_CSV_HEADERS));
     expect(lines.slice(1)).toEqual([
@@ -1137,7 +1146,7 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     await settle();
     visibleButtons(EMPLOYEE_CSV)[0]!.click();
     await csvText();
-    expect(keysOf(server.walks()[0]!)).toEqual({ branch: 'MAIN', limit: '100', to: '2026-10-06', staffQ: 'O' });
+    expect(keysOf(server.walks()[0]!)).toEqual({ branch: 'MAIN', limit: '100', to: '2026-10-06', staffQ: 'O', purpose: 'export' });
     expect(names).toEqual(['XC-Employees--2026-10-06.csv']);
   });
 });

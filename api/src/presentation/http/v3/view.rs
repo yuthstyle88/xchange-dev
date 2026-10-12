@@ -20,6 +20,7 @@ use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::validation::NO_SUCH_BRANCH;
 
 use super::error::V3Error;
+use super::export_gate::ExportGate;
 use crate::bootstrap::AppState;
 pub use crate::presentation::dto::v3::common::ViewAnswer;
 use crate::presentation::pages;
@@ -110,11 +111,30 @@ impl ViewEndpoint {
     }
 }
 
+/// Why a view is read: `purpose=export` marks an export (EX-9 #1147). Its only value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Purpose {
+    Export,
+}
+
+/// The query keys the core reads itself; never a filter key, never in an export's audited filter.
+const CORE_KEYS: [&str; 5] = ["branch", "since", "before", "limit", "purpose"];
+
 struct ParsedQuery {
     named_branch: Option<BranchId>,
     since: Option<i64>,
     before: Option<RowId>,
     limit: Option<u16>,
+    purpose: Option<Purpose>,
+}
+
+fn invalid_purpose() -> V3Error {
+    V3Error::new(
+        "invalidRequest",
+        Some("purpose"),
+        "คำขอไม่ถูกต้อง",
+        StatusCode::BAD_REQUEST,
+    )
 }
 
 fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
@@ -125,6 +145,7 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
             since: None,
             before: None,
             limit: None,
+            purpose: None,
         });
     }
 
@@ -138,7 +159,15 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
     })?;
 
     let mut map = HashMap::new();
+    let mut purpose = None;
     for (k, v) in pairs.into_inner() {
+        // Every `purpose` is read, not only the first: `export` is its one value (EX-9 #1147).
+        if k == "purpose" {
+            if v != "export" {
+                return Err(invalid_purpose());
+            }
+            purpose = Some(Purpose::Export);
+        }
         map.entry(k).or_insert(v);
     }
 
@@ -192,7 +221,22 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
         since,
         before,
         limit,
+        purpose,
     })
+}
+
+/// An export's filter for its audit row (design §8.4): every query key but the core's, as decoded strings, the
+/// first value of each. The audit log passes it through the shared `Redactor`.
+fn export_filter(req: &HttpRequest) -> serde_json::Value {
+    let mut filter = serde_json::Map::new();
+    if let Ok(pairs) = web::Query::<Vec<(String, String)>>::from_query(req.query_string()) {
+        for (k, v) in pairs.into_inner() {
+            if !CORE_KEYS.contains(&k.as_str()) && !filter.contains_key(&k) {
+                filter.insert(k, serde_json::Value::String(v));
+            }
+        }
+    }
+    serde_json::Value::Object(filter)
 }
 
 fn decode_key(raw_key: &str) -> String {
@@ -267,7 +311,7 @@ fn parse_filter<F: ViewFilter>(req: &HttpRequest) -> Result<F, V3Error> {
         let key_decoded = decode_key(raw_key);
 
         match key_decoded.as_str() {
-            "branch" | "since" | "before" | "limit" => {
+            key if CORE_KEYS.contains(&key) => {
                 continue;
             }
             _ => {
@@ -415,6 +459,10 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Ok(q) => q,
         Err(e) => return e.error_response(),
     };
+    // Only a paged view exports (EX-9 #1147).
+    if query.purpose.is_some() {
+        return invalid_purpose().error_response();
+    }
 
     let now = chrono::Utc::now();
     let action = Action::new(V::INHERITS.1);
@@ -545,6 +593,15 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     };
     let branch = grant.branch;
 
+    // EX-9 (#1147): an export needs `ReportsExport` at the branch the view resolved, before any row is read.
+    let export = match query.purpose {
+        Some(Purpose::Export) => match ExportGate::check(&who, &branch, now) {
+            Ok(grant) => Some(grant),
+            Err(e) => return e.error_response(),
+        },
+        None => None,
+    };
+
     if let Err(e) = require_branch(req, &branch).await {
         return e.error_response();
     }
@@ -567,7 +624,7 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
         }
     };
 
-    let versions = BranchVersions::new(pool);
+    let versions = BranchVersions::new(pool.clone());
     let version = match versions.current(&branch).await {
         Ok(v) => v,
         Err(_) => {
@@ -596,6 +653,13 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     let limit = query.limit.unwrap_or(50);
     match view.page(&branch, &who, &filter, query.before, limit).await {
         Ok(rows) => {
+            // One audit row per answered export request; no audit, no rows (fail closed).
+            if let Some(grant) = &export
+                && let Err(e) =
+                    ExportGate::record(&pool, grant, V::NAME, export_filter(req), rows.len()).await
+            {
+                return e.error_response();
+            }
             let answer = ViewAnswer {
                 version,
                 changed: true,

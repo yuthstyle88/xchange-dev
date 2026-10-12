@@ -48,7 +48,7 @@ Standing owner rules this design obeys: *"follow the Blueprint fully"* (PR 527, 
 | C6 | **Approval** of a transfer or move goes through PR 570's approval core: one `ApprovalSubject` + one `ApprovalPolicy`. Within the limit: the source branch's BRANCH_MANAGER; above: EXECUTIVE; the limit is a policy version EXECUTIVE saves; the core already refuses the proposer. | A5; PR 570 §5.2-§5.4 |
 | C7 | **Money and ledger**: every state change that moves cash calls the posting port of #553 (§4.6). Until #553 lands, the port's interim implementation keeps today's behaviour (`shift_balances.expected`, `stock_movements`, `ops_state.safe`). | A3 |
 | C8 | **Writes are `CommandAction`s** (PR 570 §6) with an `Idempotency-Key`; v2's `ops*` RPC names are retired with the request model. | §09, §10 |
-| C9 | **The kept branch day** (start service, cut-off, drafts after cut-off, the cash target, attendance, customer holds) stays as v3 behaviour, rebound to the Blueprint's roles (§3.2). | A2, A4 |
+| C9 | **The kept branch day** (start service, cut-off, drafts begun before cut-off that carry a save past it, the cash target, attendance, customer holds) stays as v3 behaviour, rebound to the Blueprint's roles (§3.2). | A2, A4 |
 | C10 | v2's fixture replays that pin the request model are **retired**, not edited: the request model is gone. The rules they pinned that survive are restated as new tests (§9). | consequence of A3 |
 
 ## 3. Who does what
@@ -88,7 +88,7 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 | Review and release a hold | **VERIFICATION_REVIEWER** | `VerificationReview` | MONITOR |
 | Set the cash target | **FINANCE** | `CashTargetSet` (FINANCE) | FINANCE |
 | Start service, cut-off | **BRANCH_MANAGER** | `BranchDayOperate` (BRANCH_MANAGER) | BACKEND |
-| Begin a transaction draft after cut-off (`draftBegin`, §4.4) | **TELLER** or **BRANCH_MANAGER** (owner, 2026-10-11, §10 Q11), on their own OPEN shift (§4.4) | → `ShiftOperate`; the saver's own OPEN shift. No new permission is needed: `ShiftOperate` is held by exactly these two roles (`role_permissions.rs:52`, `:74`) and already means acting on one's own shift (§3.1) | FRONT (`custody_machine.rs`, `BeginTransaction` arm) |
+| Begin a transaction draft while the branch day is OPEN, so the save may complete after cut-off (`draftBegin`, §4.4; v2 `branch_day.rs:156-158`, CA-7b `service.rs:493`) | **TELLER** or **BRANCH_MANAGER** (owner, 2026-10-11, §10 Q11), on their own OPEN shift (§4.4) | → `ShiftOperate`; the saver's own OPEN shift. No new permission is needed: `ShiftOperate` is held by exactly these two roles (`role_permissions.rs:52`, `:74`) and already means acting on one's own shift (§3.1) | FRONT (`custody_machine.rs`, `BeginTransaction` arm) |
 | Safe opening count / verify | **FINANCE** / **BRANCH_MANAGER** | `CashManage` / `ShiftCloseCertify`; not the counter | FINANCE + MONITOR signature |
 | Drawer↔safe, external in/out: create, dispatch | **BRANCH_MANAGER** or **FINANCE** | `CashManage` | FRONT propose, BACKEND dispatch |
 | … approve | per A5 | `ApprovalsDecide` + `TransferApprovalPolicy` | signatures |
@@ -287,7 +287,7 @@ these are [proposed] and may be renamed in review without changing logic.
 | `dayStartService` / `dayCutoff` / `dayTarget` | `POST /api/branch-day/start` · `/cutoff` · `/target` | §3.2 |
 | `clock` | `POST /api/attendance` | every staff role |
 | `holdCreate` / `holdRelease` | `POST /api/customer-holds` · `/{id}/release` | §3.2 |
-| `draftBegin` | `POST /api/tx-drafts` | TELLER or BRANCH_MANAGER, own open shift, after cut-off: `ShiftOperate` (§3.2) |
+| `draftBegin` | `POST /api/tx-drafts` | TELLER or BRANCH_MANAGER, own open shift, while the branch day is OPEN (a draft lets the save complete after cut-off; at CUT_OFF `draftBegin` answers `NotCustodianInOpenService`): `ShiftOperate` (§3.2) |
 
 Approval decisions use PR 570's `POST /api/approvals/{id}/decide`.
 

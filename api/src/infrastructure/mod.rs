@@ -5,6 +5,7 @@ pub mod compat;
 pub mod custody;
 pub mod device_agents;
 pub mod devices;
+pub mod document_store;
 pub mod executive;
 pub mod files;
 pub mod finance;
