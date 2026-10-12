@@ -140,6 +140,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
   const [filters, setFilters] = createSignal<Filters>({ branches: [], channel: '', currency: '' });
   const [refusal, setRefusal] = createSignal<Refusal | null>(null);
   const [loaded, setLoaded] = createSignal(false);
+  const [buyReversed, setBuyReversed] = createSignal<string | null>(null);
+  const [sellReversed, setSellReversed] = createSignal<string | null>(null);
 
   let versions: Record<string, number> | null = null;
   let latest = 0;
@@ -161,6 +163,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
     setKpis([]);
     setRows([]);
     setAlerts([]);
+    setBuyReversed(null);
+    setSellReversed(null);
     versions = null;
   };
 
@@ -176,6 +180,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
     setRows(d.branches);
     setAlerts(d.alerts);
     setDefinitions(d.definitions);
+    setBuyReversed(d.buyReversedThb);
+    setSellReversed(d.sellReversedThb);
     remember(d.branches);
   };
 
@@ -193,6 +199,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
     ]);
     setKpis(d.kpis);
     setDefinitions(d.definitions);
+    setBuyReversed(d.buyReversedThb);
+    setSellReversed(d.sellReversedThb);
     remember(d.branches);
   };
 
@@ -336,6 +344,16 @@ export function Executive(props: AdminMenuProps): JSX.Element {
                 <article class="executive-kpi" data-kpi={k.key}>
                   <h3 class="executive-kpi-label">{KPI_LABEL[k.key] ? t(KPI_LABEL[k.key]!) : k.key}</h3>
                   <MetricValue metric={k} money={isMoney(k.key)} class="executive-kpi-value" />
+                  <Show when={k.key === 'buy_volume_thb' && buyReversed() !== null}>
+                    <span class="executive-kpi-reversed">
+                      {t('reversed')}: {buyReversed()}
+                    </span>
+                  </Show>
+                  <Show when={k.key === 'sell_volume_thb' && sellReversed() !== null}>
+                    <span class="executive-kpi-reversed">
+                      {t('reversed')}: {sellReversed()}
+                    </span>
+                  </Show>
                   <p class="executive-kpi-definition">{definition(k.key)}</p>
                   <Drilldown drilldown={k.drilldown} />
                 </article>

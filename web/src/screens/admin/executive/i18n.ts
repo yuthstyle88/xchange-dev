@@ -15,6 +15,7 @@ export const th = {
   kpiRepeat: 'ลูกค้าซ้ำ',
   kpiConversion: 'จอง → สำเร็จ',
   kpiCommission: 'ค่าคอม',
+  reversed: 'คืนเงินแล้ว',
   // why a figure is missing (D-2)
   awaitsLedger: 'รอระบบบัญชีแยกประเภท ยังคำนวณไม่ได้',
   awaitsBookingDesign: 'รอการออกแบบระบบจอง ยังคำนวณไม่ได้',
@@ -65,6 +66,7 @@ export const en: Record<keyof typeof th, string> = {
   kpiRepeat: 'Repeat customers',
   kpiConversion: 'Booking → completed',
   kpiCommission: 'Commission',
+  reversed: 'Reversed',
   awaitsLedger: 'Awaits the ledger; not computed yet',
   awaitsBookingDesign: 'Awaits the booking design; not computed yet',
   awaitsBroker: 'Awaits the broker system; not computed yet',

@@ -3,7 +3,7 @@
 
 import type { DrilldownDto } from '../../../shared/api/generated/executive_overview';
 
-const TARGETS: Record<string, string> = {
+export const TARGETS: Record<string, string> = {
   admin_transactions: 'transactions',
   admin_customers: 'customers',
   approval_requests: 'approvals',

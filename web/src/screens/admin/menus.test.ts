@@ -305,7 +305,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
 });
 
 describe('OR-7.7: the Blueprint menus need their commands\' permission (#1030 §3.10)', () => {
-  it('approvals needs ApprovalsDecide, consent ConsentPolicyManage, denomination-groups RatesDraft, branches BranchesManage, users UsersManage, cash-policy CashTransferPolicySet', () => {
+  it('approvals needs ApprovalsDecide, consent ConsentPolicyManage, denomination-groups RatesDraft, branches BranchesManage, users UsersManage, executive OverviewRead, cash-policy CashTransferPolicySet', () => {
     const { menus } = mod();
     for (const [id, needs] of Object.entries(BLUEPRINT_NEEDS)) {
       const m = menus.find((x) => x.id === id);
