@@ -342,8 +342,10 @@ The xchange side is a port `CommissionSource` with an HTTP implementation; until
 
 ### 8.4 Export (D-8)
 
-A paged view called with `purpose=export` runs `Authorizer::check(actor, ReportsExport, …)` before the view's own
-check and writes one `audit_events` row (`20261010110000_approvals.sql:27-38`): `actor_id`, `actor_role`, `scope`,
+A paged view called with `purpose=export` runs `Authorizer::check(actor, ReportsExport, …)` **right after the view's
+`Policy::authorize`, against the branch that authorisation resolved (`grant.branch`), and before any row is read**
+(lane controller ruling on EX-9 #1147). Checking it before the view's own check would let a user who is FINANCE at B1
+and TELLER at B3 export B3's rows. It writes one `audit_events` row (`20261010110000_approvals.sql:27-38`): `actor_id`, `actor_role`, `scope`,
 `branch_id`, `action = 'EXPORT'`, `object_ref = 'view:<name>'`, `after_redacted = {filter, rows}` (the filter and the
 row count only, never row content; K8). Without the permission: `OUT_OF_SCOPE`. The web hides the
 export buttons without `ReportsExport` (the `me` view's permissions), but the server check is the rule. Export rows
@@ -361,6 +363,8 @@ classDiagram
   class ExecutiveOverviewService { <<api/src/application/executive/overview.rs>> +overview(scope, filter, changed) }
   class MetricDefinitions { <<api/src/application/executive/metrics.rs>> Metric; MetricUnavailable; definitions() }
   class Channel { <<api/src/application/executive/channel.rs (EX-3)>> WalkIn; Booking; Kiosk; Referred; sql_condition(alias) }
+  class Drilldown { <<api/src/application/executive/drilldown.rs (EX-3, merged)>> +view +filter +dropped; to(view, keys) Drilldown }
+  class accepted_keys { <<free fn, drilldown.rs:9>> accepted_keys(view) &[&str] }
   class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm() }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
@@ -410,6 +414,8 @@ classDiagram
   BranchAlertSettingsView --> AlertSettingsRepository
   ReconciliationCertify --> ReconciliationService
   WideTransactionFacts --> Channel
+  ExecutiveOverviewService --> Drilldown
+  Drilldown --> accepted_keys : to() reads
 ```
 
 Web: `web/src/screens/admin/executive/**` (A01) and `web/src/screens/admin/reconciliation/**` (F01), each an admin menu
@@ -432,6 +438,7 @@ shared route or menu file is edited.
 | Broker-Platform (other lane) | commission summary endpoint | `BrokerCommissionSource` |
 | AP-1 (merged) | approval core | F01 reversal decisions |
 | EX-3 | `Channel` + its SQL condition (`application/executive/channel.rs`) | `WideTransactionFacts`, EX-11 `admin_transactions` and `admin_overview` |
+| EX-3 (merged) | the free fn `accepted_keys(view)` (`application/executive/drilldown.rs:9`, one arm per target) and `Drilldown { view, filter, dropped }` built by `Drilldown::to(view, keys)` (`:31-40`) | `ExecutiveOverviewService`; each EX-11 child swaps its own arm for its DTO's `DRILLDOWN_KEYS` (§4.4) |
 | #868 | the shared LIVE CSV builder | exports (D-8) |
 | EX-3 | `ExchangeFacts` (trait in `application/executive/ports.rs`; today's impl `WideTransactionFacts`) | FN-1 `ReconciliationService` (F01 "today's parts: transactions") |
 | EX-2 | `v3/mod.rs` module lines and the empty `v3/org_view.rs`, `v3/export_gate.rs` | EX-3, EX-9 |
