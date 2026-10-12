@@ -8,8 +8,7 @@ use sqlx::{Postgres, Transaction};
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 
 /// The type name callers send.
 pub const NEGATIVE_STOCK: &str = "NEGATIVE_STOCK";
@@ -67,18 +66,26 @@ pub struct NegativeStockPolicy;
 
 impl ApprovalPolicy for NegativeStockPolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        if who.role() != Role::Manager {
-            return Err(Refusal::new(
+        let req_branch = request.branch_id.as_deref();
+        let is_bm_of_branch = who.roles.iter().any(|r| {
+            r.role == Role::BranchManager
+                && (match (r.branch.as_ref(), req_branch) {
+                    (Some(b), Some(rb)) => b.as_str() == rb,
+                    _ => false,
+                })
+        });
+        if is_bm_of_branch {
+            Ok(())
+        } else if !who.roles.iter().any(|r| r.role == Role::BranchManager) {
+            Err(Refusal::new(
                 "outOfScope",
                 "only branch manager may decide negative stock",
-            ));
-        }
-        match (who.branch_id(), request.branch_id.as_deref()) {
-            (Some(user_branch), Some(req_branch)) if user_branch.as_str() == req_branch => Ok(()),
-            _ => Err(Refusal::new(
+            ))
+        } else {
+            Err(Refusal::new(
                 "outOfScope",
                 "branch manager can only decide requests for their own branch",
-            )),
+            ))
         }
     }
 

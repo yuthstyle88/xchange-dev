@@ -11,5 +11,6 @@ pub mod files;
 pub mod finance;
 pub mod idempotency;
 pub mod kiosk;
+pub mod loyalty;
 pub mod rate_feed;
 pub mod settings;

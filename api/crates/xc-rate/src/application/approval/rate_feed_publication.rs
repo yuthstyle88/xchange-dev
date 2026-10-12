@@ -11,8 +11,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 
 pub struct RateFeedPublicationSubject {
     _pool: PgPool,
@@ -85,7 +84,9 @@ impl ApprovalPolicy for RateFeedPublicationPolicy {
     }
 
     fn allows_self_decision(&self, who: &Actor) -> bool {
-        who.role() == Role::System
+        let has_admin = who.roles.iter().any(|r| r.role == Role::Admin);
+        let has_exec = who.roles.iter().any(|r| r.role == Role::Executive);
+        has_admin && !has_exec
     }
 
     fn policy_version(&self) -> String {

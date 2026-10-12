@@ -38,8 +38,7 @@ use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access;
 use xc_rate::application::approval::rate_feed_publication::RateFeedPublicationPolicy;
 use xc_rate::application::approval::{rate_feed_publication, rate_publication};
 use xc_rate::application::currency::denomination_group_service::DenominationGroupService;
@@ -460,11 +459,14 @@ async fn the_publication_is_approved_by_the_system_through_the_approval_core() {
 #[test]
 fn only_the_system_may_decide_its_own_feed_publication() {
     let policy = RateFeedPublicationPolicy::new();
-    let system =
-        Actor::staff(SYSTEM_ID, Role::System, main_branch()).expect("SYSTEM is a staff role");
+    // OR-7.1 #1020 (§3.3; ruling 2: ADMIN and not EXECUTIVE): SYSTEM is the B1-mapped ADMIN of MAIN.
+    let system = user_on(SYSTEM_ID, access::Role::Admin, MAIN);
     assert!(policy.allows_self_decision(&system));
-    assert!(!policy.allows_self_decision(&owner()), "not even OWNER");
-    assert!(!policy.allows_self_decision(&rates()));
+    assert!(
+        !policy.allows_self_decision(&owner_user()),
+        "not even OWNER"
+    );
+    assert!(!policy.allows_self_decision(&rates_user()));
     assert_eq!(policy.policy_version(), "1");
 }
 

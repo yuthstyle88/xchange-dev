@@ -4,6 +4,7 @@ members = ["crates/*"]
 [workspace.dependencies]
 pos-error = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-infra = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
+pos-kernel = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-printer = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 rust_decimal = "1"
 serde = { version = "1", features = ["derive"] }
@@ -53,6 +54,7 @@ xc-notify = { workspace = true }
 xc-cash = { workspace = true }
 xc-queue = { workspace = true }
 xc-alert = { workspace = true }
+xc-loyalty = { workspace = true }
 subtle = "2"
 xc-app = { path = "crates/xc-app" }
 xc-marketing = { path = "crates/xc-marketing" }

@@ -47,8 +47,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
@@ -84,8 +83,18 @@ fn usd_code() -> CurrencyCode {
     CurrencyCode::parse("USD").unwrap()
 }
 
-fn finance() -> Actor {
-    Actor::staff("finance-MAIN", Role::Finance, BranchId::new("MAIN")).unwrap()
+fn finance() -> access::Actor {
+    access::Actor::new(
+        "finance-MAIN",
+        "00000000-0000-0000-0000-000000000001",
+        vec![access::ScopedRole::new(
+            access::Role::Finance,
+            Some(BranchId::new("MAIN")),
+            DateTime::<Utc>::UNIX_EPOCH,
+            None,
+        )],
+        None,
+    )
 }
 
 // ------------------------------------------------------------ the effect double

@@ -1,6 +1,9 @@
 //! Regression test for LG-3 (#925, PR #1121):
 //! A non-zero difference that cannot be valued (no position, quantity 0, no average)
 //! must give AwaitingFinance, never Clear.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the gate's requester
+//! is `access::Actor`, the B1-mapped MANAGER (BRANCH_MANAGER on B1). Every assertion is unchanged.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use sqlx::migrate::Migrator;
@@ -19,8 +22,7 @@ use xc_approval::application::approval_service::ApprovalService;
 use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_cash::application::ledger_approval::count_difference::{CountDifferenceGate, GateResult};
 use xc_cash::application::ledger_approval::negative_stock::NegativeStockSource;
 use xc_cash::application::ledger_approval::register;
@@ -41,8 +43,19 @@ fn unique(prefix: &str) -> String {
     format!("{prefix}_{}_{nanos}_{n}", std::process::id())
 }
 
+/// A user holding `role` on `branch` (the B1 mapping of a v3 employee, design §3.3).
 fn staff(id: &str, role: Role, branch: &str) -> Actor {
-    Actor::staff(id, role, BranchId::new(branch)).expect("a staff role")
+    Actor::new(
+        id,
+        ORG,
+        vec![ScopedRole::new(
+            role,
+            Some(BranchId::new(branch)),
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            None,
+        )],
+        None,
+    )
 }
 
 #[derive(Default)]
@@ -194,7 +207,7 @@ async fn unvalued_foreign_difference_with_no_position_and_no_limit_awaits_financ
     let pool = db().await;
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
 
     // 100 USD found, no USD position, no limit => AwaitingFinance
     let c = count(&pool, &teller, &[("USD", "100")]).await;
@@ -212,7 +225,7 @@ async fn unvalued_foreign_difference_with_no_position_and_generous_limit_awaits_
     let pool = db().await;
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
 
     sqlx::query(
         "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, \

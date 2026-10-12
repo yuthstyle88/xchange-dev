@@ -13,6 +13,11 @@
 //! from an empty schema every time. SQL in the migration and in the
 //! implementation must therefore name tables without a schema prefix.
 //!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3) moved this harness's actors 1:1 onto
+//! `access::Actor`, by #1020's ticket author: `owner` is the v3 owner's user (EXECUTIVE + ADMIN,
+//! organisation-wide), `rates` a RATES employee's (RATE_MANAGER on MAIN), and `OwnerPolicy` decides for
+//! whoever holds EXECUTIVE (the shape `RatePublicationPolicy` takes, ruling 3 on #1020).
+//!
 //! Signatures this harness assumes (see `approval_rules_test.rs` for the list
 //! the tests themselves assume):
 //! - `ApprovalSubject::on_decided` takes the caller's transaction as
@@ -38,14 +43,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use chrono::{DateTime, TimeZone, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction};
 use tokio::sync::Semaphore;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::ids::BranchId;
 
 pub use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
@@ -100,12 +105,42 @@ pub fn code<T: Debug>(result: Result<T, ApprovalError>) -> &'static str {
     }
 }
 
-pub fn owner(id: &str) -> Actor {
-    Actor::owner(id)
+pub const ORG: &str = "00000000-0000-0000-0000-000000000001";
+
+fn since() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()
 }
 
+/// The v3 owner's user: EXECUTIVE and ADMIN, organisation-wide (§3.3).
+pub fn owner(id: &str) -> Actor {
+    Actor::new(
+        id,
+        ORG,
+        vec![
+            ScopedRole::new(Role::Executive, None, since(), None),
+            ScopedRole::new(Role::Admin, None, since(), None),
+        ],
+        None,
+    )
+}
+
+/// A RATES employee's user: RATE_MANAGER on MAIN (§3.3).
 pub fn rates(id: &str) -> Actor {
-    Actor::staff(id, Role::Rates, BranchId::new("MAIN")).expect("RATES is a staff role")
+    Actor::new(
+        id,
+        ORG,
+        vec![ScopedRole::new(
+            Role::RateManager,
+            Some(BranchId::new("MAIN")),
+            since(),
+            None,
+        )],
+        None,
+    )
+}
+
+fn executive(who: &Actor) -> bool {
+    who.roles.iter().any(|r| r.role == Role::Executive)
 }
 
 // ── fakes ───────────────────────────────────────────────────────────────────
@@ -200,12 +235,12 @@ impl ApprovalPolicy for AnyonePolicy {
     }
 }
 
-/// OWNER decides, nobody else (the shape of `RatePublicationPolicy`, A2/A5).
+/// EXECUTIVE (the v3 owner) decides, nobody else (the shape of `RatePublicationPolicy`, A2/A5).
 pub struct OwnerPolicy;
 
 impl ApprovalPolicy for OwnerPolicy {
     fn may_decide(&self, who: &Actor, _request: &ApprovalRequest) -> Result<(), Refusal> {
-        if who.role() == Role::Owner {
+        if executive(who) {
             Ok(())
         } else {
             Err(Refusal::new("outOfScope", "only OWNER decides this type"))
@@ -213,7 +248,7 @@ impl ApprovalPolicy for OwnerPolicy {
     }
 
     fn allows_self_decision(&self, who: &Actor) -> bool {
-        who.role() == Role::Owner
+        executive(who)
     }
 
     fn policy_version(&self) -> String {

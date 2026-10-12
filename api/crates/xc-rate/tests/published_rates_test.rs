@@ -21,6 +21,10 @@
 //!   stale_limit_thb: Option<Money>) -> StalePolicy`; `StalePolicy::admits(&self,
 //!   side: &PublishedSide, thb: Money) -> Result<(), RateUnavailable>`; `RateUnavailable: Debug`.
 //! - `line_in` decides `stale` with the wall clock (`Utc::now()`).
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -72,7 +76,7 @@ async fn publish_with_reference_aged(db: &TestDb, e: &Engine, age_hours: i64) ->
     let mut tx = db.begin().await;
     let outcome = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &d.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &d.id, &key())
         .await
         .expect("submit");
     tx.commit().await.expect("commit");

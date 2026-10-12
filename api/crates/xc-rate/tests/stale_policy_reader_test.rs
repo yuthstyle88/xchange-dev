@@ -29,6 +29,10 @@
 //!   or when `stale_limit_thb` is not a `Money`.
 //! - `StalePolicy { on_stale: Option<OnStale>, stale_limit_thb: Option<Money> }` with public
 //!   fields, unchanged (`xc-rate/src/domain/policy/stale_policy.rs`).
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -85,7 +89,7 @@ async fn publish_stale_usd(
     let mut tx = db.begin().await;
     let outcome = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &d.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &d.id, &key())
         .await
         .expect("submit");
     tx.commit().await.expect("commit");

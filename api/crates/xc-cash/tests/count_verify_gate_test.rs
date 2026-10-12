@@ -24,8 +24,6 @@ use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Refusal, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
-use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::application::ledger_approval::count_difference::register as register_count_difference;
 use xc_cash::domain::count::{CashCount, CountKind, CountLine};
@@ -625,9 +623,7 @@ async fn verify_count_after_finance_approves_succeeds_and_closes_shift() {
 
     // FINANCE decides Approved through ApprovalService::decide
     let approvals = approval_service(&db.pool);
-    let finance_actor =
-        PolicyActor::staff(&finance_user.user_id, PolicyRole::Finance, branch.clone())
-            .expect("finance policy actor");
+    let finance_actor = finance_of(&finance_user.user_id, &branch);
     let mut tx = db.pool.begin().await.expect("begin");
     approvals
         .decide(
@@ -715,9 +711,7 @@ async fn verify_count_after_finance_rejects_refuses_rejected_by_finance() {
 
     // FINANCE decides Rejected through ApprovalService::decide
     let approvals = approval_service(&db.pool);
-    let finance_actor =
-        PolicyActor::staff(&finance_user.user_id, PolicyRole::Finance, branch.clone())
-            .expect("finance policy actor");
+    let finance_actor = finance_of(&finance_user.user_id, &branch);
     let mut tx = db.pool.begin().await.expect("begin");
     approvals
         .decide(
@@ -950,6 +944,23 @@ fn cash_error_display_contains_request_id() {
         rejected.contains("req-xyz-000"),
         "RejectedByFinance Display must contain request id: {rejected}"
     );
+}
+
+/// OR-7.1 #1020 (design §3.3, §4.3): the decider `ApprovalService::decide` is handed, `access::Actor`: the
+/// FINANCE user on the count's branch, the B1 mapping of the `PolicyActor::staff(.., Finance, branch)` this
+/// file passed before. Moved 1:1 by #1020's ticket author; every assertion is unchanged.
+fn finance_of(user_id: &str, branch: &BranchId) -> Actor {
+    Actor::new(
+        user_id,
+        ORG,
+        vec![ScopedRole::new(
+            Role::Finance,
+            Some(branch.clone()),
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            None,
+        )],
+        None,
+    )
 }
 
 /// LG-4 (#929, lane controller's 1:1 ruling): an OPEN count takes its counted cash out of the branch's SAFE

@@ -43,6 +43,11 @@
 //! - `ReversalPolicy::may_decide` refuses with `Refusal::new("outOfScope", …)`, as
 //!   `RatePublicationPolicy` does, so AP-1 answers `outOfScope`;
 //! - AP-1's own codes (`ApprovalError::code()`) for the decision.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `ApprovalService::decide`
+//! takes `access::Actor`, so the deciders are the B1-mapped users (`user`): FINANCE, BRANCH_MANAGER and TELLER
+//! on their branch, the owner EXECUTIVE + ADMIN organisation-wide. The requester's `SaveActor` is unchanged.
+//! Every assertion is unchanged.
 
 mod quote_common;
 
@@ -56,7 +61,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::reversal::reversal::{Reversal, ReversalStatus};
 use xc_exchange::domain::transaction::transaction::TransactionId;
@@ -84,13 +89,31 @@ fn teller() -> SaveActor {
     }
 }
 
-fn finance(branch: &str) -> Actor {
-    Actor::staff(
-        format!("finance-{branch}"),
-        Role::Finance,
-        BranchId::new(branch),
+/// A user holding each `(role, branch)` (organisation-wide when `branch` is None), the B1 mapping of a v3 actor.
+fn user(id: &str, roles: &[(access::Role, Option<&str>)]) -> access::Actor {
+    access::Actor::new(
+        id,
+        "00000000-0000-0000-0000-000000000001",
+        roles
+            .iter()
+            .map(|(role, branch)| {
+                access::ScopedRole::new(
+                    *role,
+                    branch.map(BranchId::new),
+                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                    None,
+                )
+            })
+            .collect(),
+        None,
     )
-    .unwrap()
+}
+
+fn finance(branch: &str) -> access::Actor {
+    user(
+        &format!("finance-{branch}"),
+        &[(access::Role::Finance, Some(branch))],
+    )
 }
 
 struct Shop {
@@ -219,7 +242,7 @@ impl Shop {
     async fn decide(
         &self,
         request: uuid::Uuid,
-        who: &Actor,
+        who: &access::Actor,
         outcome: Outcome,
     ) -> Result<(), &'static str> {
         let mut tx = self.db.pool.begin().await.unwrap();
@@ -446,15 +469,21 @@ async fn finance_of_the_branch_decides_and_nobody_else_does() {
         .await
         .unwrap();
 
-    let requester = Actor::staff("employee-front", Role::Front, BranchId::new("MAIN")).unwrap();
+    let requester = user("employee-front", &[(access::Role::Teller, Some("MAIN"))]);
     for (who, what) in [
         (requester, "the requester (a teller)"),
         (
-            Actor::staff("mgr", Role::Manager, BranchId::new("MAIN")).unwrap(),
+            user("mgr", &[(access::Role::BranchManager, Some("MAIN"))]),
             "the branch manager",
         ),
         (finance("B2"), "FINANCE of another branch"),
-        (Actor::owner("owner-1"), "the owner (R-3 names FINANCE)"),
+        (
+            user(
+                "owner-1",
+                &[(access::Role::Executive, None), (access::Role::Admin, None)],
+            ),
+            "the owner (R-3 names FINANCE)",
+        ),
     ] {
         assert_eq!(
             shop.decide(ra.approval_request_id, &who, Outcome::Approved)

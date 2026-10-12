@@ -176,13 +176,21 @@ fn money(text: &str) -> Money {
     Money::parse(text).unwrap()
 }
 
-fn staff(role: Role, branch: &str) -> Actor {
-    Actor::staff(
+/// OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the approval core takes
+/// `access::Actor`, so this is the B1-mapped user of the v3 employee `role` on `branch` (FINANCE stays FINANCE,
+/// so the stored `actor_role` `"FINANCE"` below is unchanged, ruling 5 on #1020).
+fn staff(role: Role, branch: &str) -> xc_auth::domain::access::Actor {
+    let v3 = Actor::staff(
         format!("employee-{}", role.as_str()),
         role,
         BranchId::new(branch),
     )
-    .expect("a staff actor")
+    .expect("a staff actor");
+    xc_auth::domain::access::v3_roles::actor_from_v3(
+        &v3,
+        "00000000-0000-0000-0000-000000000001",
+        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+    )
 }
 
 fn teller() -> SaveActor {
@@ -498,7 +506,7 @@ impl Room {
         t.id
     }
 
-    async fn decide(&self, request: Uuid, who: &Actor) {
+    async fn decide(&self, request: Uuid, who: &xc_auth::domain::access::Actor) {
         let mut tx = self.db.pool.begin().await.unwrap();
         self.approvals
             .decide(

@@ -9,8 +9,7 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 
@@ -347,10 +346,17 @@ impl FeedPublisher {
 
         // 3. Approval request as SYSTEM
         let system_id = format!("SYSTEM:rate-feed:{provider}");
-        let system_actor =
-            Actor::staff(&system_id, Role::System, branch.clone()).ok_or_else(|| {
-                RateEngineError::Internal("failed to create system actor".to_string())
-            })?;
+        let system_actor = Actor::new(
+            &system_id,
+            "00000000-0000-0000-0000-000000000001",
+            vec![ScopedRole::new(
+                Role::Admin,
+                Some(branch.clone()),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
         let object_id = format!("{branch}:{batch_id}");
         let idempotency_key = format!("{branch}:{raw_checksum}");
         let payload = json!({

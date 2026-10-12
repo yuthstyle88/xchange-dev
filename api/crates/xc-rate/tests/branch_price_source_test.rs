@@ -19,6 +19,10 @@
 //!   BoT draft through `PublishService`; if the publish fails, the caller rolls back and the
 //!   branch stays on the board.
 //! - `PublishService::publish` refuses (`validationFailed`) on a `RATE_BOARD` branch.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -111,7 +115,7 @@ async fn approved_draft(db: &TestDb) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &d.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &d.id, &key())
         .await;
     let outcome = settle(tx, got).await.expect("the submit is accepted");
     assert_eq!(

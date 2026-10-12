@@ -127,6 +127,8 @@ impl std::fmt::Debug for BrokerSettings {
     }
 }
 
+pub use xc_loyalty::infrastructure::config::LoyaltyConfig as LoyaltySettings;
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub application: ApplicationSettings,
@@ -145,6 +147,8 @@ pub struct Settings {
     pub bot: BotSettings,
     #[serde(skip)]
     pub broker: Option<BrokerSettings>,
+    #[serde(skip)]
+    pub loyalty: Option<LoyaltySettings>,
 }
 
 impl Settings {
@@ -210,6 +214,13 @@ impl Settings {
             _ => None,
         };
 
+        let loyalty = LoyaltySettings::from_raw(
+            env_map.get("XC_LOYALTY_BASE_URL").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_TENANT_ID").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_WEBHOOK_SECRET").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_TIMEOUT_MS").map(|s| s.as_str()),
+        );
+
         let bot_token = env_map
             .get("APP_BOT__API_TOKEN")
             .map(|s| s.trim())
@@ -260,6 +271,7 @@ impl Settings {
         let mut settings: Settings = builder.build()?.try_deserialize()?;
         settings.identity = identity;
         settings.broker = broker;
+        settings.loyalty = loyalty;
         settings.bot.api_token = bot_token;
         if settings.auth.purge_interval_secs == 0 {
             return Err(config::ConfigError::Message(

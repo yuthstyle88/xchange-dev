@@ -7,6 +7,11 @@
 //! `NegativeStockSource`, which these tests fake. Computing it over the source lines, and "an APPROVED
 //! request lets the posting go negative", are LG-2 #924's and tested there.
 //!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3) moved this file's actors 1:1 onto
+//! `access::Actor`, by #1020's ticket author: each v3 employee is the B1-mapped user (MANAGER →
+//! BRANCH_MANAGER, FRONT → TELLER, FINANCE → FINANCE) on the same branch, the owner is EXECUTIVE + ADMIN
+//! organisation-wide. Every assertion is unchanged.
+//!
 //! The policy tests need no database. The gate tests need `TEST_DATABASE_URL` naming a database whose
 //! name ends in `_test`; they fail without it, they do not skip.
 
@@ -34,8 +39,7 @@ use xc_approval::domain::request::{ApprovalRequest, Outcome, RequestId};
 use xc_approval::domain::subject::ApprovalSubject;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_cash::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, CountDifferencePolicy, CountDifferenceSubject,
     GateResult,
@@ -61,8 +65,36 @@ fn unique(prefix: &str) -> String {
     format!("{prefix}_{}_{nanos}_{n}", std::process::id())
 }
 
+fn since() -> chrono::DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()
+}
+
+/// A user holding `role` on `branch` (the B1 mapping of a v3 employee, design §3.3).
 fn staff(id: &str, role: Role, branch: &str) -> Actor {
-    Actor::staff(id, role, BranchId::new(branch)).expect("a staff role")
+    Actor::new(
+        id,
+        ORG,
+        vec![ScopedRole::new(
+            role,
+            Some(BranchId::new(branch)),
+            since(),
+            None,
+        )],
+        None,
+    )
+}
+
+/// The v3 owner's user: EXECUTIVE and ADMIN, organisation-wide (§3.3).
+fn owner(id: &str) -> Actor {
+    Actor::new(
+        id,
+        ORG,
+        vec![
+            ScopedRole::new(Role::Executive, None, since(), None),
+            ScopedRole::new(Role::Admin, None, since(), None),
+        ],
+        None,
+    )
 }
 
 fn request(type_name: &str, branch: &str, requested_by: &str) -> ApprovalRequest {
@@ -88,24 +120,24 @@ fn negative_stock_is_decided_only_by_the_branch_manager_of_the_requests_branch()
     let p = NegativeStockPolicy;
     let r = request(NEGATIVE_STOCK, "B1", "teller-1");
     assert!(
-        p.may_decide(&staff("mgr-1", Role::Manager, "B1"), &r)
+        p.may_decide(&staff("mgr-1", Role::BranchManager, "B1"), &r)
             .is_ok()
     );
     for (who, label) in [
         (
-            staff("mgr-2", Role::Manager, "B2"),
+            staff("mgr-2", Role::BranchManager, "B2"),
             "a branch manager of another branch",
         ),
-        (staff("teller-2", Role::Front, "B1"), "a teller"),
+        (staff("teller-2", Role::Teller, "B1"), "a teller"),
         (staff("fin-1", Role::Finance, "B1"), "FINANCE"),
-        (Actor::owner("owner"), "the owner"),
+        (owner("owner"), "the owner"),
     ] {
         assert!(
             p.may_decide(&who, &r).is_err(),
             "{label} may not decide NEGATIVE_STOCK"
         );
     }
-    assert!(!p.allows_self_decision(&staff("mgr-1", Role::Manager, "B1")));
+    assert!(!p.allows_self_decision(&staff("mgr-1", Role::BranchManager, "B1")));
     assert!(!p.policy_version().is_empty());
 }
 
@@ -122,9 +154,12 @@ fn count_difference_is_decided_only_by_finance_of_the_requests_branch() {
             staff("fin-2", Role::Finance, "B2"),
             "FINANCE of another branch (E-7)",
         ),
-        (staff("mgr-2", Role::Manager, "B1"), "a branch manager"),
-        (staff("teller-2", Role::Front, "B1"), "a teller"),
-        (Actor::owner("owner"), "the owner"),
+        (
+            staff("mgr-2", Role::BranchManager, "B1"),
+            "a branch manager",
+        ),
+        (staff("teller-2", Role::Teller, "B1"), "a teller"),
+        (owner("owner"), "the owner"),
     ] {
         assert!(
             p.may_decide(&who, &r).is_err(),
@@ -359,7 +394,7 @@ async fn a_difference_at_the_limit_is_clear_and_writes_nothing() {
     // -2 USD at the average 32.50 = 65.00.
     let c = count(&pool, &teller, &[("USD", "-2"), ("THB", "0")]).await;
     assert_eq!(
-        check(&pool, &c, &staff(&mgr, Role::Manager, "B1")).await,
+        check(&pool, &c, &staff(&mgr, Role::BranchManager, "B1")).await,
         GateResult::Clear
     );
     assert_eq!(requests(&pool).await, vec![]);
@@ -374,7 +409,7 @@ async fn a_difference_over_the_limit_awaits_finance_once_per_count() {
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
     let c = count(&pool, &teller, &[("USD", "-2")]).await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
     let first = check(&pool, &c, &by).await;
     let GateResult::AwaitingFinance(id) = first.clone() else {
         panic!("65.00 > 64.99 awaits FINANCE: {first:?}");
@@ -400,7 +435,7 @@ async fn the_difference_is_valued_net_across_currencies() {
     usd_position(&pool).await;
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
     // -2 USD (-65.00) and +70 THB (+70.00): Σ = +5.00 (design §5.2: |Σ difference valued at average|).
     limit(&pool, Some(Some("5.00"))).await;
     let c = count(&pool, &teller, &[("USD", "-2"), ("THB", "70")]).await;
@@ -427,7 +462,7 @@ async fn a_null_limit_or_no_row_sends_every_non_zero_difference_to_finance() {
     usd_position(&pool).await;
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
     // No row.
     let c = count(&pool, &teller, &[("THB", "0.01")]).await;
     assert!(
@@ -454,7 +489,7 @@ async fn finance_of_the_branch_decides_and_a_changed_count_is_stale() {
     let teller = user(&pool, "teller").await;
     let mgr = user(&pool, "manager").await;
     let fin = user(&pool, "finance").await;
-    let by = staff(&mgr, Role::Manager, "B1");
+    let by = staff(&mgr, Role::BranchManager, "B1");
     let approvals = service(&pool);
 
     let c = count(&pool, &teller, &[("THB", "10")]).await;
@@ -467,7 +502,7 @@ async fn finance_of_the_branch_decides_and_a_changed_count_is_stale() {
         .decide(
             &mut tx,
             &id,
-            &staff(&user(&pool, "mgr2").await, Role::Manager, "B1"),
+            &staff(&user(&pool, "mgr2").await, Role::BranchManager, "B1"),
             Outcome::Approved,
             "ok",
             "k1",
@@ -536,8 +571,8 @@ async fn negative_stock_uses_the_sources_hash_stale_when_it_moves_refused_when_i
     let pool = db().await;
     let source = Arc::new(FakeSource::default());
     let approvals = service_with(&pool, source.clone());
-    let teller = staff(&user(&pool, "teller").await, Role::Front, "B1");
-    let mgr = staff(&user(&pool, "manager").await, Role::Manager, "B1");
+    let teller = staff(&user(&pool, "teller").await, Role::Teller, "B1");
+    let mgr = staff(&user(&pool, "manager").await, Role::BranchManager, "B1");
     let shortfall = json!({ "shortfall": [{ "currency": "USD", "quantity": "-20" }] });
 
     // Unchanged hash: the branch manager approves.

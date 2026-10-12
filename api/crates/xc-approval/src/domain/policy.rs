@@ -1,6 +1,6 @@
 //! `ApprovalPolicy`: the per-type policy trait and refusal error.
 
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 
 use crate::domain::request::ApprovalRequest;
 

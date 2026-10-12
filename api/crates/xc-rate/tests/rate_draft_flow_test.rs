@@ -54,6 +54,11 @@
 //! - Codes the design does not name for these exact cases, chosen here: a decision by a person
 //!   `RatePublicationPolicy::may_decide` refuses is `outOfScope` (§5.4); a second submit of a
 //!   draft that is no longer DRAFT is refused (no code pinned).
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit`,
+//! `ApprovalService::decide` and `decide_self` take `access::Actor`, so those calls pass the B1-mapped users
+//! (`owner_user`: EXECUTIVE + ADMIN organisation-wide; `rates_user`/`rates_2_user`: RATE_MANAGER on MAIN).
+//! `create`, `edit`, `copy` and `publish` keep the old actor. Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -64,6 +69,7 @@ use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use tokio::sync::Barrier;
 use xc_approval::domain::request::Outcome;
+use xc_auth::domain::access;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::money::{Side, UnitSize};
 use xc_rate::application::draft::rate_draft_service::SubmitOutcome;
@@ -100,7 +106,7 @@ async fn create(db: &TestDb, e: &Engine, who: &Actor, lines: Vec<DraftLine>) -> 
 async fn try_submit(
     db: &TestDb,
     e: &Engine,
-    who: &Actor,
+    who: &access::Actor,
     draft: &RateDraft,
 ) -> Result<SubmitOutcome, &'static str> {
     let mut tx = db.begin().await;
@@ -111,7 +117,7 @@ async fn try_submit(
     settle(tx, got).await
 }
 
-async fn submit(db: &TestDb, e: &Engine, who: &Actor, draft: &RateDraft) -> SubmitOutcome {
+async fn submit(db: &TestDb, e: &Engine, who: &access::Actor, draft: &RateDraft) -> SubmitOutcome {
     try_submit(db, e, who, draft)
         .await
         .unwrap_or_else(|code| panic!("the submit is accepted, got {code}"))
@@ -163,7 +169,7 @@ async fn try_publish(
 /// An OWNER draft under no policy: out-of-bound, so OWNER's own decision approves it at submit.
 async fn approved(db: &TestDb, e: &Engine, lines: Vec<DraftLine>) -> RateDraft {
     let d = create(db, e, &owner(), lines).await;
-    let outcome = submit(db, e, &owner(), &d).await;
+    let outcome = submit(db, e, &owner_user(), &d).await;
     assert_eq!(
         outcome.status,
         DraftStatus::Approved,
@@ -176,7 +182,7 @@ async fn decide(
     db: &TestDb,
     e: &Engine,
     outcome: &SubmitOutcome,
-    who: &Actor,
+    who: &access::Actor,
     decision: Outcome,
     reason: &str,
 ) -> Result<(), &'static str> {
@@ -273,7 +279,7 @@ async fn an_in_bound_submit_by_rates_is_approved_by_the_policy_in_the_same_trans
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .submit(&mut tx, &main_branch(), &rates(), &d.id, &key())
+        .submit(&mut tx, &main_branch(), &rates_user(), &d.id, &key())
         .await
         .expect("the submit is accepted");
     assert_eq!(got.status, DraftStatus::Approved);
@@ -286,7 +292,7 @@ async fn an_in_bound_submit_by_rates_is_approved_by_the_policy_in_the_same_trans
     assert_eq!(db.count("approval_decisions").await, 0);
 
     // committed: one request, APPROVED by the policy itself
-    let outcome = submit(&db, &e, &rates(), &d).await;
+    let outcome = submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(outcome.status, DraftStatus::Approved);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
     assert_eq!(request_id, outcome.request_id.to_string());
@@ -310,7 +316,7 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
     let e = db.engine();
     seed_usd(&db).await;
     let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
-    let outcome = submit(&db, &e, &rates(), &d).await;
+    let outcome = submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(outcome.status, DraftStatus::PendingApproval);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
     assert_eq!(status, "PENDING");
@@ -319,7 +325,7 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
 
     // the proposer may not decide (the core, §5.4), nor may another RATES (the policy, A2)
     assert_eq!(
-        decide(&db, &e, &outcome, &rates(), Outcome::Approved, "mine").await,
+        decide(&db, &e, &outcome, &rates_user(), Outcome::Approved, "mine").await,
         Err("outOfScope")
     );
     assert_eq!(
@@ -327,7 +333,7 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
             &db,
             &e,
             &outcome,
-            &rates_2(),
+            &rates_2_user(),
             Outcome::Approved,
             "looks fine"
         )
@@ -341,7 +347,7 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
         &db,
         &e,
         &outcome,
-        &owner(),
+        &owner_user(),
         Outcome::Approved,
         "checked the market",
     )
@@ -364,6 +370,41 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
     db.finish().await;
 }
 
+/// OR-7.1 #1020 ruling 3 (`rate_draft_service.rs:559` is the same EXECUTIVE check): an EXECUTIVE with **no** ADMIN
+/// closes their own out-of-bound draft at submit, as the owner does (rule-A review must-fix, issuecomment-6116472666).
+#[tokio::test]
+async fn an_out_of_bound_submit_by_an_executive_without_admin_is_approved_by_decide_self() {
+    let db = TestDb::start().await;
+    let e = db.engine();
+    seed_usd(&db).await;
+
+    let executive = access::Actor::new(
+        "exec-1",
+        ORG,
+        vec![access::ScopedRole::new(
+            access::Role::Executive,
+            None,
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            None,
+        )],
+        None,
+    );
+    // `create` keeps the old actor (OR-7.1 moves `submit` only); it reads the id alone
+    let d = create(&db, &e, &Actor::owner("exec-1"), out_of_bound_usd()).await;
+    let outcome = submit(&db, &e, &executive, &d).await;
+    assert_eq!(outcome.status, DraftStatus::Approved);
+    let (request_id, status, _) = exactly_one_request(&db, &d).await;
+    assert_eq!(status, "APPROVED");
+    assert_eq!(
+        db.decisions_of(&request_id).await,
+        vec![(
+            "exec-1".to_owned(),
+            "APPROVED".to_owned(),
+            "proposer_is_owner".to_owned()
+        )]
+    );
+}
+
 #[tokio::test]
 async fn an_out_of_bound_submit_by_the_owner_is_approved_by_decide_self_and_rates_cannot_self_decide()
  {
@@ -373,7 +414,7 @@ async fn an_out_of_bound_submit_by_the_owner_is_approved_by_decide_self_and_rate
 
     // OWNER: approved at submit, by OWNER's own decision, reason proposer_is_owner
     let d = create(&db, &e, &owner(), out_of_bound_usd()).await;
-    let outcome = submit(&db, &e, &owner(), &d).await;
+    let outcome = submit(&db, &e, &owner_user(), &d).await;
     assert_eq!(outcome.status, DraftStatus::Approved);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
     assert_eq!(status, "APPROVED");
@@ -401,12 +442,17 @@ async fn an_out_of_bound_submit_by_the_owner_is_approved_by_decide_self_and_rate
 
     // RATES: the same lines wait; RATES may not close its own request through decide_self
     let r = create(&db, &e, &rates(), out_of_bound_usd()).await;
-    let pending = submit(&db, &e, &rates(), &r).await;
+    let pending = submit(&db, &e, &rates_user(), &r).await;
     assert_eq!(pending.status, DraftStatus::PendingApproval);
     let mut tx = db.begin().await;
     let got = e
         .approvals
-        .decide_self(&mut tx, &pending.request_id, &rates(), "proposer_is_owner")
+        .decide_self(
+            &mut tx,
+            &pending.request_id,
+            &rates_user(),
+            "proposer_is_owner",
+        )
         .await;
     let code = match got {
         Err(err) => err.code(),
@@ -457,7 +503,7 @@ async fn an_edit_moves_the_version_and_an_edit_after_submit_is_refused() {
     );
 
     // after submit: refused at the current version too, and nothing changes
-    submit(&db, &e, &rates(), &d).await;
+    submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(
         try_edit(&db, &e, &rates(), &d, 2, out_of_bound_usd())
             .await
@@ -506,12 +552,12 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
     let e = db.engine();
     seed_usd(&db).await;
     let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
-    let pending = submit(&db, &e, &rates(), &d).await;
+    let pending = submit(&db, &e, &rates_user(), &d).await;
     decide(
         &db,
         &e,
         &pending,
-        &owner(),
+        &owner_user(),
         Outcome::Rejected,
         "too far from the market",
     )
@@ -528,7 +574,7 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
         Err("staleVersion")
     );
     assert!(
-        try_submit(&db, &e, &rates(), &d).await.is_err(),
+        try_submit(&db, &e, &rates_user(), &d).await.is_err(),
         "a rejected draft is not resubmitted"
     );
     assert_eq!(
@@ -559,7 +605,7 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
     assert_eq!(db.draft_status(&id).await, "REJECTED");
 
     // the copy goes its own way: a new request
-    let again = submit(&db, &e, &rates(), &copy).await;
+    let again = submit(&db, &e, &rates_user(), &copy).await;
     assert_eq!(again.status, DraftStatus::PendingApproval);
     assert_ne!(again.request_id.to_string(), pending.request_id.to_string());
     db.finish().await;
@@ -579,7 +625,7 @@ async fn publishing_a_pending_draft_is_approval_required_and_writes_nothing() {
         Err("approvalRequired"),
         "a DRAFT"
     );
-    submit(&db, &e, &rates(), &d).await;
+    submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(
         try_publish(&db, &e, &d, None).await.map(|_| ()),
         Err("approvalRequired"),

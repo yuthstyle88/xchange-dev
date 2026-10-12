@@ -414,11 +414,6 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
 /// (#1030 §3.8). The seam answers it as a refused route does: `403 roleNotAllowedHere`.
 pub(crate) const BRIDGE_REFUSED: &str = "OR-7 bridge: the caller maps to no v2 actor";
 
-/// The error a view returns for [`BRIDGE_REFUSED`].
-pub(crate) fn bridge_refused() -> AppError {
-    AppError::Domain(BRIDGE_REFUSED.to_owned())
-}
-
 pub(crate) async fn authenticate_and_authorize(
     req: &HttpRequest,
     inherits: (EntryPath, &'static str),

@@ -140,7 +140,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python3 - <<'PY'
-          import json, os, sys, urllib.request
+          import json, os, sys, time, urllib.request
 
           LINUX_POOL = '["self-hosted","Linux","X64"]'
           FAST_MAC_POOL = '["self-hosted","macOS","ARM64","fast-mac"]'
@@ -154,7 +154,11 @@ jobs:
                   with open(output_file, "a") as f:
                       f.write(f"runs_on={val}\n")
 
+          start = time.monotonic()
+
           def fetch_json(url):
+              if time.monotonic() - start > 45:
+                  raise Exception("overall deadline exceeded (> 45s)")
               req = urllib.request.Request(
                   url,
                   headers={
@@ -163,7 +167,7 @@ jobs:
                       "User-Agent": "api-pool-select",
                   }
               )
-              with urllib.request.urlopen(req, timeout=15) as resp:
+              with urllib.request.urlopen(req, timeout=5) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
           try:
@@ -179,7 +183,8 @@ jobs:
                       jobs_url = r.get("jobs_url") or f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
                       jdata = fetch_json(jobs_url)
                       for job in jdata.get("jobs", []):
-                          if job.get("name") == "api" and job.get("status") == "queued":
+                          name = job.get("name", "")
+                          if name.startswith("test (") and job.get("status") == "queued":
                               labels = job.get("labels", [])
                               if "Linux" in labels:
                                   count += 1
@@ -196,12 +201,16 @@ jobs:
               write_output(LINUX_POOL)
           PY
 
-  api:
-    name: api
+  test:
+    name: test (${{ matrix.i }}/4)
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
     runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64"]') }}
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        i: [1, 2, 3, 4]
     env:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
@@ -240,6 +249,8 @@ jobs:
         run: bash .github/scripts/api-test-plan.test.sh
 
       - name: Start postgres (per run)
+        env:
+          LC_ALL: C
         run: |
           # Postgres >= 16 on the host (macOS Homebrew or Linux).
           PGBIN=
@@ -251,24 +262,83 @@ jobs:
             major=$(pg_ctl --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
             if [ "$major" -ge 16 ]; then PGBIN=$(dirname "$(command -v pg_ctl)"); fi
           fi
-          if [ -z "$PGBIN" ]; then
-            echo "::error::no postgres >= 16 on runner $RUNNER_NAME; install postgresql 16 or 17"
-            exit 1
-          fi
-          # Short path under /tmp: the unix socket path must stay under macOS's 104-byte limit.
-          PGROOT=$(mktemp -d /tmp/xcpg.XXXXXX)
+
           PGPORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
-          # --locale=C: byte-order collation, the same as the musl-based postgres:16-alpine image.
-          "$PGBIN/initdb" -D "$PGROOT/data" -U postgres --auth=trust --encoding=UTF8 --locale=C >/dev/null
-          "$PGBIN/pg_ctl" -D "$PGROOT/data" -l "$PGROOT/log" -w -t 60 start \
-            -o "-p $PGPORT -k $PGROOT -c listen_addresses=127.0.0.1 -c max_connections=300 -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_locks_per_transaction=512"
-          "$PGBIN/createdb" -h 127.0.0.1 -p "$PGPORT" -U postgres xchange_test
-          "$PGBIN/psql" -h 127.0.0.1 -p "$PGPORT" -U postgres -d xchange_test -tAc 'SELECT version()'
-          {
-            echo "XC_PGBIN=$PGBIN"
-            echo "XC_PGROOT=$PGROOT"
-            echo "XC_PGPORT=$PGPORT"
-          } >> "$GITHUB_ENV"
+
+          if [ -n "$PGBIN" ]; then
+            # Short path under /tmp: the unix socket path must stay under macOS's 104-byte limit.
+            PGROOT=$(mktemp -d /tmp/xcpg.XXXXXX)
+            {
+              echo "XC_PGBIN=$PGBIN"
+              echo "XC_PGROOT=$PGROOT"
+              echo "XC_PGPORT=$PGPORT"
+              echo "TEST_DATABASE_URL=postgres://postgres@127.0.0.1:$PGPORT/xchange_test"
+            } >> "$GITHUB_ENV"
+            # --locale=C: byte-order collation, the same as the musl-based postgres:16-alpine image.
+            "$PGBIN/initdb" -D "$PGROOT/data" -U postgres --auth=trust --encoding=UTF8 --locale=C >/dev/null
+            "$PGBIN/pg_ctl" -D "$PGROOT/data" -l "$PGROOT/log" -w -t 60 start \
+              -o "-p $PGPORT -k $PGROOT -c listen_addresses=127.0.0.1 -c max_connections=300 -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_locks_per_transaction=512"
+            "$PGBIN/createdb" -h 127.0.0.1 -p "$PGPORT" -U postgres xchange_test
+            "$PGBIN/psql" -h 127.0.0.1 -p "$PGPORT" -U postgres -d xchange_test -tAc 'SELECT version()'
+          else
+            # Fallback when runner has no postgres >= 16: start docker postgres:17
+            CONTAINER_NAME="xcpg-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${{ matrix.i }}"
+            {
+              echo "XC_CONTAINER=$CONTAINER_NAME"
+              echo "XC_PGPORT=$PGPORT"
+              echo "TEST_DATABASE_URL=postgres://postgres@127.0.0.1:$PGPORT/xchange_test"
+            } >> "$GITHUB_ENV"
+            echo "no postgres >= 16 on runner $RUNNER_NAME; starting docker postgres:17 (container: $CONTAINER_NAME) on port $PGPORT"
+            docker run --rm -d \
+              --name "$CONTAINER_NAME" \
+              -p "127.0.0.1:$PGPORT:5432" \
+              -e POSTGRES_PASSWORD=pg \
+              -e POSTGRES_HOST_AUTH_METHOD=trust \
+              -e POSTGRES_DB=xchange_test \
+              postgres:17
+
+            # Find host pg_isready if available
+            PG_ISREADY_BIN=
+            if command -v pg_isready >/dev/null 2>&1; then
+              PG_ISREADY_BIN="$(command -v pg_isready)"
+            else
+              for p in /opt/homebrew/opt/libpq/bin/pg_isready /opt/homebrew/bin/pg_isready /usr/lib/postgresql/*/bin/pg_isready; do
+                if [ -x "$p" ]; then
+                  PG_ISREADY_BIN="$p"
+                  break
+                fi
+              done
+            fi
+
+            READY=0
+            echo "Waiting for postgres to become ready on 127.0.0.1:$PGPORT..."
+            for attempt in $(seq 1 60); do
+              if [ -f "$HOME/.colima/_lima/colima/ssh.config" ]; then
+                COLIMA_PORT=$(awk '$1 == "Port" {print $2; exit}' "$HOME/.colima/_lima/colima/ssh.config")
+                if [ -n "$COLIMA_PORT" ]; then
+                  ssh -F "$HOME/.colima/_lima/colima/ssh.config" -p "$COLIMA_PORT" -T -O forward -L "127.0.0.1:$PGPORT:127.0.0.1:$PGPORT" lima-colima 2>/dev/null || true
+                fi
+              fi
+              if [ -n "$PG_ISREADY_BIN" ]; then
+                if "$PG_ISREADY_BIN" -h 127.0.0.1 -p "$PGPORT" -U postgres >/dev/null 2>&1; then
+                  READY=1
+                  break
+                fi
+              elif python3 -c "import socket; s=socket.create_connection(('127.0.0.1', $PGPORT), timeout=1); s.close()" >/dev/null 2>&1; then
+                READY=1
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$READY" -ne 1 ]; then
+              echo "::error::Postgres container did not become ready on 127.0.0.1:$PGPORT after 60 seconds"
+              exit 1
+            fi
+
+            echo "Postgres is ready on 127.0.0.1:$PGPORT"
+            docker exec "$CONTAINER_NAME" psql -U postgres -d xchange_test -tAc 'SELECT version()'
+          fi
 
       - name: Verify rustc 1.98.1
         working-directory: api
@@ -326,7 +396,7 @@ jobs:
           if [ -z "$TEST_ARGS" ]; then
             echo "Skipping test step: test_args is empty (no Rust packages affected)"
           else
-            cargo nextest run $TEST_ARGS --no-fail-fast
+            cargo nextest run $TEST_ARGS --no-fail-fast --partition count:${{ matrix.i }}/4
           fi
 
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
@@ -360,6 +430,53 @@ jobs:
         if: always()
         run: |
           if [ -n "${XC_PGROOT:-}" ] && [ -d "$XC_PGROOT" ]; then
-            "$XC_PGBIN/pg_ctl" -D "$XC_PGROOT/data" -m immediate stop || true
+            if [ -n "${XC_PGBIN:-}" ] && [ -x "$XC_PGBIN/pg_ctl" ]; then
+              "$XC_PGBIN/pg_ctl" -D "$XC_PGROOT/data" -m immediate stop || true
+            fi
             rm -rf "$XC_PGROOT"
           fi
+          if [ -n "${XC_CONTAINER:-}" ]; then
+            echo "Stopping container $XC_CONTAINER..."
+            docker stop "$XC_CONTAINER" || true
+          fi
+
+  api:
+    name: api
+    needs: [changes, test]
+    if: ${{ always() }}
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: |
+          echo "::error::Workflow was cancelled"
+          exit 1
+
+      - name: Aggregate status
+        run: |
+          echo "changes result: ${{ needs.changes.result }}"
+          echo "changes skip_build: ${{ needs.changes.outputs.skip_build }}"
+          echo "test result: ${{ needs.test.result }}"
+
+          if [ "${{ needs.changes.result }}" = "cancelled" ] || [ "${{ needs.test.result }}" = "cancelled" ]; then
+            echo "::error::Dependency was cancelled"
+            exit 1
+          fi
+
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::changes job did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
+
+          if [ "${{ needs.changes.outputs.skip_build }}" = "true" ]; then
+            echo "Docs-only change: test partitions were skipped; reporting success."
+            exit 0
+          fi
+
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::One or more test partitions failed: ${{ needs.test.result }}"
+            exit 1
+          fi
+
+          echo "All test partitions succeeded."

@@ -4,13 +4,9 @@
 //! Scaffold written by the up-front test writer (claude/07d3765f): the `[required]` names of #873 §7 and of
 //! `membership-points.md` §6.2, with `todo!()` bodies. The implementer fills them.
 //!
-//! The exchange-effect seam (`EffectPhase` … `ExchangeEffects`) belongs to XS-0
-//! (`api/src/application/workflows/exchange/effects.rs`), which is not on `main`. Per §6.2's fallback and the
-//! lane controller's ruling on #873 (Q4), TX-5 declares it here with §6.2's signature; it moves to
-//! `effects.rs` when XS-0 merges.
+//! The exchange-effect seam (`EffectPhase` … `ExchangeEffects`) is XS-0's (#1375,
+//! `api/src/application/workflows/exchange/effects.rs`); it is re-exported here under the names TX-5 used.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
@@ -18,7 +14,6 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
 use xc_exchange::domain::customer::value_objects::mode::Mode;
@@ -51,98 +46,11 @@ use serde_json::json;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 
-// ------------------------------------------------------------ the effect seam (XS-0's, stubbed here)
+// ------------------------------------------------------------ the effect seam (XS-0's, `effects.rs`)
 
-/// §6.2's `BoxFuture<'a, AppResult<()>>`, spelled without the `futures` crate (the `api` crate has none), as
-/// `save_step::StepFuture` is.
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// §09's two effect steps: `Redeem` = "redeem benefit" (may refuse), `Outbox` = "write outbox".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EffectPhase {
-    Redeem,
-    Outbox,
-}
-
-/// What a completion tells its effects (`membership-points.md` §6.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExchangeCompletedFacts {
-    pub organization_id: Uuid,
-    pub branch_id: BranchId,
-    pub transaction_id: Uuid,
-    pub quote_id: Uuid,
-    pub customer_id: Option<String>,
-    pub mode: Mode,
-    pub completed_at: DateTime<Utc>,
-    pub business_date: NaiveDate,
-    pub reversible_until: DateTime<Utc>,
-}
-
-/// What a posted reversal tells its effects (`membership-points.md` §6.2; RV-3's).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PostedReversal {
-    pub organization_id: Uuid,
-    pub reversal_id: Uuid,
-    pub transaction_id: Uuid,
-    pub customer_id: Option<String>,
-    pub mode: Mode,
-    pub posted_at: DateTime<Utc>,
-    pub amount_thb: Decimal,
-}
-
-/// One registered effect of a completion or a reversal. An `Err` rolls back the caller's transaction.
-pub trait ExchangeEffect: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn phase(&self) -> EffectPhase;
-    fn on_completed_in<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        e: &'a ExchangeCompletedFacts,
-    ) -> BoxFuture<'a, AppResult<()>>;
-    fn on_reversed_in<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        r: &'a PostedReversal,
-    ) -> BoxFuture<'a, AppResult<()>>;
-}
-
-/// The registered effects, in registration order.
-pub struct ExchangeEffects {
-    effects: Vec<Arc<dyn ExchangeEffect>>,
-}
-
-impl ExchangeEffects {
-    /// `[required]` (#873 Q4): the list XS-0's generated registration will pass; bootstrap passes it empty.
-    pub fn new(effects: Vec<Arc<dyn ExchangeEffect>>) -> Self {
-        Self { effects }
-    }
-
-    /// Runs every effect of `phase`, in order, on `tx`; the first `Err` is the answer.
-    pub async fn run_completed_in(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        phase: EffectPhase,
-        e: &ExchangeCompletedFacts,
-    ) -> AppResult<()> {
-        for effect in self.effects.iter().filter(|f| f.phase() == phase) {
-            effect.on_completed_in(tx, e).await?;
-        }
-        Ok(())
-    }
-
-    /// RV-3's call; the same rule as [`Self::run_completed_in`].
-    pub async fn run_reversed_in(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        phase: EffectPhase,
-        r: &PostedReversal,
-    ) -> AppResult<()> {
-        for effect in self.effects.iter().filter(|f| f.phase() == phase) {
-            effect.on_reversed_in(tx, r).await?;
-        }
-        Ok(())
-    }
-}
+pub use super::effects::{
+    BoxFuture, EffectPhase, ExchangeCompletedFacts, ExchangeEffect, ExchangeEffects, PostedReversal,
+};
 
 // ------------------------------------------------------------ the completion
 

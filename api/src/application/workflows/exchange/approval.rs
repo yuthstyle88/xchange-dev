@@ -12,8 +12,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{TransactionId, TransactionStatus};
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
@@ -140,11 +139,15 @@ impl ApprovalSubject for ExchangeTransactionSubject {
 impl ApprovalPolicy for ExchangeApprovalPolicy {
     /// BRANCH_MANAGER of the exchange's branch only (§5.1). The EXECUTIVE is not named by T2.
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let own_branch = match (who.branch_id(), request.branch_id.as_deref()) {
-            (Some(mine), Some(theirs)) => mine.as_str() == theirs,
-            _ => false,
-        };
-        if who.role() == Role::Manager && own_branch {
+        let req_branch = request.branch_id.as_deref();
+        let is_bm_of_branch = who.roles.iter().any(|r| {
+            r.role == Role::BranchManager
+                && (match (r.branch.as_ref(), req_branch) {
+                    (Some(b), Some(rb)) => b.as_str() == rb,
+                    _ => false,
+                })
+        });
+        if is_bm_of_branch {
             Ok(())
         } else {
             Err(Refusal::new(

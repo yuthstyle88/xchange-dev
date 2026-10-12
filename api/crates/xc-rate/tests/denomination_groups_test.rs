@@ -21,6 +21,10 @@
 //!   nothing appends none.
 //! - Removing `ALL`, an unknown group, a group a current publication prices, or a group that face
 //!   values belong to is refused (`validationFailed`), and nothing changes.
+//!
+//! OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `RateDraftService::submit`
+//! takes `access::Actor`, so its callers here pass the B1-mapped user (`rate_engine_common::owner_user`: EXECUTIVE
+//! + ADMIN organisation-wide). Every assertion is unchanged.
 
 mod rate_engine_common;
 
@@ -178,7 +182,7 @@ async fn publish_usd(db: &TestDb) {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .submit(&mut tx, &main_branch(), &owner(), &d.id, &key())
+        .submit(&mut tx, &main_branch(), &owner_user(), &d.id, &key())
         .await;
     let outcome = settle(tx, got).await.expect("the submit is accepted");
     assert_eq!(outcome.status, DraftStatus::Approved);

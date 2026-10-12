@@ -7,49 +7,24 @@ use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
-use xc_auth::domain::access::{Actor, Permission, RolePermissions};
-use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
-use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
+use xc_auth::domain::access::{Actor, Permission, Role, RolePermissions};
 use xc_kernel::ids::BranchId;
 
 /// The approval core's actor for `who` acting on a transfer whose source is `source`, or `None` when no role of
 /// `who` grants `permission` there. There is no fallback: an actor that maps to nothing is refused by the caller.
-///
-/// The mapping is the inverse of xc-auth's one v3 → Blueprint table (`blueprint_roles`), restricted to the
-/// roles valid at `now` that hold `permission` (`RolePermissions`), so it names no Blueprint role:
-/// - an organisation-wide role of the v3 owner → `PolicyActor::owner`;
-/// - otherwise the first v3 staff role (`PolicyRole::STAFF` order) with such a role on `source`, or
-///   organisation-wide, → `PolicyActor::staff` on `source`. The branch is the transfer's source, which that
-///   role's scope covers; none is invented.
 pub fn policy_actor(
     who: &Actor,
     source: &BranchId,
     permission: Permission,
     now: DateTime<Utc>,
-) -> Option<PolicyActor> {
-    let holds = |v3: PolicyRole, org_wide_only: bool| {
-        who.roles.iter().any(|r| {
-            r.valid_from <= now
-                && r.valid_to.is_none_or(|to| now < to)
-                && RolePermissions::of(r.role).contains(&permission)
-                && blueprint_roles(v3).contains(&r.role)
-                && (r.branch.is_none() || (!org_wide_only && r.branch.as_ref() == Some(source)))
-        })
-    };
-    if holds(PolicyRole::Owner, true) {
-        return Some(PolicyActor::owner(&who.user_id));
-    }
-    PolicyRole::STAFF
-        .into_iter()
-        .find(|&v3| holds(v3, false))
-        .and_then(|v3| PolicyActor::staff(&who.user_id, v3, source.clone()))
-}
-
-/// Whether `role` is one the v3 → Blueprint table makes a BRANCH_MANAGER (today BACKEND and MANAGER).
-fn is_branch_manager(role: PolicyRole) -> bool {
-    let manager = blueprint_roles(PolicyRole::Manager);
-    blueprint_roles(role).iter().any(|r| manager.contains(r))
+) -> Option<Actor> {
+    let has_perm = who.roles.iter().any(|r| {
+        r.valid_from <= now
+            && r.valid_to.is_none_or(|to| now < to)
+            && RolePermissions::of(r.role).contains(&permission)
+            && (r.branch.is_none() || r.branch.as_ref() == Some(source))
+    });
+    if has_perm { Some(who.clone()) } else { None }
 }
 
 #[derive(Clone)]
@@ -138,7 +113,7 @@ impl TransferApprovalPolicy {
 impl ApprovalPolicy for TransferApprovalPolicy {
     /// A5 with ruling Q2: within the limit only a BRANCH_MANAGER of the source branch decides (FINANCE does
     /// not, though it holds `ApprovalsDecide`); above it, or with no limit, only EXECUTIVE (the v3 owner).
-    fn may_decide(&self, who: &PolicyActor, request: &ApprovalRequest) -> Result<(), Refusal> {
+    fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
         let within_limit = request
             .proposed_payload
             .get("within_limit")
@@ -146,7 +121,7 @@ impl ApprovalPolicy for TransferApprovalPolicy {
             .unwrap_or(false);
 
         if !within_limit {
-            if who.role() != PolicyRole::Owner {
+            if !who.roles.iter().any(|r| r.role == Role::Executive) {
                 return Err(Refusal::new(
                     "ABOVE_LIMIT",
                     "only executive may approve transfers above limit",
@@ -159,11 +134,14 @@ impl ApprovalPolicy for TransferApprovalPolicy {
             .proposed_payload
             .get("from_branch")
             .and_then(|v| v.as_str());
-        let on_source = match (who.branch_id(), source) {
-            (Some(branch), Some(source)) => branch.as_str() == source,
-            _ => false,
-        };
-        if !(is_branch_manager(who.role()) && on_source) {
+        let on_source = who.roles.iter().any(|r| {
+            r.role == Role::BranchManager
+                && (match (r.branch.as_ref(), source) {
+                    (Some(branch), Some(source)) => branch.as_str() == source,
+                    _ => false,
+                })
+        });
+        if !on_source {
             return Err(Refusal::new(
                 "WITHIN_LIMIT",
                 "within the limit only a branch manager of the source branch approves",

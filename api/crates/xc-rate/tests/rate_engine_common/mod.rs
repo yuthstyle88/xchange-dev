@@ -50,6 +50,7 @@ use xc_approval::domain::approval_repository::ApprovalRepository;
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::domain::access::{self, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
@@ -104,6 +105,58 @@ pub fn rates() -> Actor {
 /// Another RATES employee of `MAIN`.
 pub fn rates_2() -> Actor {
     Actor::staff("rates-2", Role::Rates, BranchId::new(MAIN)).expect("RATES is a staff role")
+}
+
+/// OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the B1-mapped users of
+/// the people above, for what now takes `access::Actor` (`RateDraftService::submit`, `ApprovalService`, the
+/// approval policies). `create`, `edit` and `copy` keep the old actor until their own OR-7 child.
+pub const ORG: &str = "00000000-0000-0000-0000-000000000001";
+
+fn since() -> DateTime<Utc> {
+    DateTime::<Utc>::UNIX_EPOCH
+}
+
+/// The v3 owner's user: EXECUTIVE and ADMIN, organisation-wide.
+pub fn owner_user() -> access::Actor {
+    owner_user_with(OWNER_ID)
+}
+
+/// The owner's user under another id.
+pub fn owner_user_with(id: &str) -> access::Actor {
+    access::Actor::new(
+        id,
+        ORG,
+        vec![
+            ScopedRole::new(access::Role::Executive, None, since(), None),
+            ScopedRole::new(access::Role::Admin, None, since(), None),
+        ],
+        None,
+    )
+}
+
+/// A user holding `role` on `branch`.
+pub fn user_on(id: &str, role: access::Role, branch: &str) -> access::Actor {
+    access::Actor::new(
+        id,
+        ORG,
+        vec![ScopedRole::new(
+            role,
+            Some(BranchId::new(branch)),
+            since(),
+            None,
+        )],
+        None,
+    )
+}
+
+/// `rates()`'s user: RATE_MANAGER on `MAIN`.
+pub fn rates_user() -> access::Actor {
+    user_on(RATES_ID, access::Role::RateManager, MAIN)
+}
+
+/// `rates_2()`'s user.
+pub fn rates_2_user() -> access::Actor {
+    user_on("rates-2", access::Role::RateManager, MAIN)
 }
 
 pub fn main_branch() -> BranchId {

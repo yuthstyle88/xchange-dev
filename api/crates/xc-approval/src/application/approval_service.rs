@@ -4,7 +4,69 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
+
+fn requester_branch(by: &Actor) -> Option<String> {
+    let has_org_exec = by
+        .roles
+        .iter()
+        .any(|r| r.role == Role::Executive && r.branch.is_none());
+    let has_org_admin = by
+        .roles
+        .iter()
+        .any(|r| r.role == Role::Admin && r.branch.is_none());
+    if has_org_exec && has_org_admin {
+        return None;
+    }
+    const PRIORITY: [Role; 7] = [
+        Role::Teller,
+        Role::BranchManager,
+        Role::RateManager,
+        Role::Finance,
+        Role::Admin,
+        Role::VerificationReviewer,
+        Role::Executive,
+    ];
+    for role in PRIORITY {
+        if let Some(r) = by.roles.iter().find(|r| r.role == role) {
+            return Some(
+                r.branch
+                    .as_ref()
+                    .map(|b| b.as_str().to_string())
+                    .unwrap_or_else(|| "MAIN".to_string()),
+            );
+        }
+    }
+    if let Some(r) = by.roles.first() {
+        return Some(
+            r.branch
+                .as_ref()
+                .map(|b| b.as_str().to_string())
+                .unwrap_or_else(|| "MAIN".to_string()),
+        );
+    }
+    None
+}
+
+fn approver_role(who: &Actor) -> &'static str {
+    const DECIDER_PRIORITY: [Role; 9] = [
+        Role::Executive,
+        Role::Finance,
+        Role::BranchManager,
+        Role::RateManager,
+        Role::Admin,
+        Role::Teller,
+        Role::VerificationReviewer,
+        Role::Marketing,
+        Role::Customer,
+    ];
+    for role in DECIDER_PRIORITY {
+        if who.roles.iter().any(|r| r.role == role) {
+            return role.as_str();
+        }
+    }
+    "UNKNOWN"
+}
 
 use crate::application::registry::ApprovalRegistry;
 use crate::domain::approval_repository::ApprovalRepository;
@@ -126,8 +188,8 @@ impl ApprovalService {
 
         let policy_version = policy.policy_version();
         let proposed_payload = Redactor::redact(payload);
-        let branch_id = by.branch_id().map(|b| b.as_str().to_string());
-        let requested_by = by.id().to_string();
+        let branch_id = requester_branch(by);
+        let requested_by = by.user_id.clone();
 
         let req = self
             .repository
@@ -184,10 +246,10 @@ impl ApprovalService {
             )));
         }
 
-        if request.requested_by == who.id() {
+        if request.requested_by == who.user_id {
             return Err(ApprovalError::OutOfScope(format!(
                 "proposer {} cannot decide own request",
-                who.id()
+                who.user_id
             )));
         }
 
@@ -222,8 +284,8 @@ impl ApprovalService {
             .insert_decision(
                 tx,
                 request_id,
-                who.id(),
-                who.role().as_str(),
+                &who.user_id,
+                approver_role(who),
                 outcome,
                 reason,
             )
@@ -236,8 +298,8 @@ impl ApprovalService {
             .map_err(|e| ApprovalError::Internal(format!("on_decided failed: {e}")))?;
 
         let event = AuditEvent {
-            actor_id: who.id().to_string(),
-            actor_role: who.role().as_str().to_string(),
+            actor_id: who.user_id.clone(),
+            actor_role: approver_role(who).to_string(),
             scope: request.type_name.clone(),
             action: format!("approval.{}", outcome.as_str().to_lowercase()),
             object_ref: request.object_id.clone(),
@@ -357,7 +419,7 @@ impl ApprovalService {
             )));
         }
 
-        if request.requested_by != who.id() {
+        if request.requested_by != who.user_id {
             return Err(ApprovalError::OutOfScope(format!(
                 "only the proposer can self-decide, but proposer is {}",
                 request.requested_by
@@ -396,8 +458,8 @@ impl ApprovalService {
             .insert_decision(
                 tx,
                 request_id,
-                who.id(),
-                who.role().as_str(),
+                &who.user_id,
+                approver_role(who),
                 outcome,
                 reason,
             )
@@ -410,8 +472,8 @@ impl ApprovalService {
             .map_err(|e| ApprovalError::Internal(format!("on_decided failed: {e}")))?;
 
         let event = AuditEvent {
-            actor_id: who.id().to_string(),
-            actor_role: who.role().as_str().to_string(),
+            actor_id: who.user_id.clone(),
+            actor_role: approver_role(who).to_string(),
             scope: request.type_name.clone(),
             action: format!("approval.{}", outcome.as_str().to_lowercase()),
             object_ref: request.object_id.clone(),

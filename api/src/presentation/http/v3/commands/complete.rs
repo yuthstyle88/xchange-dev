@@ -121,14 +121,19 @@ pub struct TransactionCompleteCommand {
 }
 
 impl TransactionCompleteCommand {
-    pub fn new(pool: PgPool, files: FileService, steps: Vec<Arc<dyn SaveStep>>) -> Self {
+    pub fn new(
+        pool: PgPool,
+        files: FileService,
+        steps: Vec<Arc<dyn SaveStep>>,
+        effects: ExchangeEffects,
+    ) -> Self {
         Self {
             service: CompleteExchange::new(
                 pool,
                 files,
                 Arc::new(LedgerCashPostings::new()),
                 steps,
-                Arc::new(ExchangeEffects::new(Vec::new())),
+                Arc::new(effects),
             ),
         }
     }
@@ -176,6 +181,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
             pool,
             files,
             save_steps(state),
+            crate::bootstrap::exchange_effects::effects(state),
         )),
     );
 }

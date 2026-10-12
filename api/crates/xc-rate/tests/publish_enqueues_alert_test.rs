@@ -109,7 +109,7 @@ async fn approved(db: &TestDb, e: &Engine, branch: &BranchId) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .submit(&mut tx, branch, &owner(), &d.id, &key())
+        .submit(&mut tx, branch, &owner_user(), &d.id, &key())
         .await;
     let outcome = settle(tx, got).await.expect("the submit is accepted");
     assert_eq!(
