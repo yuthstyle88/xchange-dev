@@ -50,7 +50,31 @@ jobs:
         run: bash .github/scripts/migration-order.test.sh
 
       - name: Self-test migration-slot
-        run: bash scripts/migration-slot.test.sh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE"
+            HEAD="$PR_HEAD"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
+            BASE=$(bash .github/scripts/main-push-base.sh api "$PUSH_AFTER" 2>/dev/null || true)
+            HEAD="$PUSH_AFTER"
+          else
+            BASE="$PUSH_BEFORE"
+            HEAD="$PUSH_AFTER"
+          fi
+          if [ -n "$BASE" ] && [ -n "$HEAD" ]; then
+            if ! git diff --name-only "$BASE" "$HEAD" -- 'scripts/migration-slot*' '.github/scripts/migration-order*' 2>/dev/null | grep -q .; then
+              echo "migration-slot: no changes to migration-slot or migration-order; skipping self-test"
+              exit 0
+            fi
+          fi
+          bash scripts/migration-slot.test.sh
 
       - name: Check changed files
         id: filter
