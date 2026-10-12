@@ -1,10 +1,11 @@
 //! Command write seam (CM-1, §6).
 
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use actix_web::cookie::Cookie;
 use actix_web::http::{Method, StatusCode};
-use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
+use actix_web::{FromRequest, HttpRequest, HttpResponse, ResponseError, web};
 use pos_infra::transactions::Transactor;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -21,6 +22,9 @@ use super::view::{authenticate_caller, parse_branch, require_branch};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
 use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
+use crate::presentation::extractors::app_session::{
+    AppSessionCookie, AppSessionGuard, DRAFT_WRITES_PER_MINUTE,
+};
 use crate::presentation::extractors::origin::same_origin;
 
 /// The locks required by a command action (§6).
@@ -28,6 +32,18 @@ use crate::presentation::extractors::origin::same_origin;
 pub enum Locks {
     One(BranchId),
     Pair(BranchId, BranchId),
+}
+
+/// How a command uses the anonymous app session `xc_app_sid` (#994 ruling option A; design
+/// `customer-app.md` P7, §4.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppSessionUse {
+    /// The seam only reads a session the request carries (APP-18 ruling 4). Every command's default.
+    ReadOnly,
+    /// For a caller who is not a signed-in customer, the seam reads the request's session or mints
+    /// one, admits the write through [`AppSessionGuard`] (`rateLimited` 429), puts the session in
+    /// `Caller.app_session`, and answers a newly minted one with its `Set-Cookie`.
+    IssueAndLimit,
 }
 
 /// A command action that declares its route, method, input and output types, and policy gate (§6).
@@ -42,6 +58,8 @@ pub trait CommandAction: Send + Sync + 'static {
     const ROUTE: &'static str;
     /// The HTTP method for this command.
     const METHOD: Method;
+    /// Whether the seam issues and limits the app session for this command; `ReadOnly` by default.
+    const APP_SESSION: AppSessionUse = AppSessionUse::ReadOnly;
 
     /// Returns the locks required by this command action (§6).
     ///
@@ -128,13 +146,56 @@ impl CommandEndpoint {
     }
 }
 
+/// The guard for draft writes: the app's [`AppSessionGuard`] data, else one shared by the process.
+fn app_session_guard(req: &HttpRequest) -> &AppSessionGuard {
+    static PROCESS_GUARD: OnceLock<AppSessionGuard> = OnceLock::new();
+    match req.app_data::<web::Data<AppSessionGuard>>() {
+        Some(guard) => guard.get_ref(),
+        None => PROCESS_GUARD.get_or_init(|| AppSessionGuard::new(DRAFT_WRITES_PER_MINUTE)),
+    }
+}
+
+/// [`AppSessionUse::IssueAndLimit`] for a caller who is not a signed-in customer: the request's
+/// session, or a new one, admitted by the guard. Answers the `Set-Cookie` of a new session.
+async fn issue_and_limit(
+    req: &HttpRequest,
+    caller: &mut Caller,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<Cookie<'static>>, V3Error> {
+    if caller
+        .user
+        .as_ref()
+        .is_some_and(|u| u.customer_id.is_some())
+    {
+        return Ok(None);
+    }
+    let cookie = AppSessionCookie::extract(req)
+        .await
+        .map_err(|_| server_error())?;
+    app_session_guard(req).admit_draft_write(&cookie.session().hash, now)?;
+    caller.app_session = Some(cookie.session().clone());
+    Ok(cookie.issued_cookie())
+}
+
+/// The `200` answer of a command, with the app session's `Set-Cookie` when one was issued.
+fn ok_answer(body: Value, cookie: Option<Cookie<'static>>) -> HttpResponse {
+    let mut answer = HttpResponse::Ok();
+    answer
+        .insert_header((actix_web::http::header::CONTENT_TYPE, "application/json"))
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"));
+    if let Some(cookie) = cookie {
+        answer.cookie(cookie);
+    }
+    answer.json(body)
+}
+
 async fn handle_command<C: CommandAction>(
     req: HttpRequest,
     payload: web::Payload,
     command: Arc<C>,
 ) -> HttpResponse {
     // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
-    let caller = match authenticate_caller(&req, C::INHERITS).await {
+    let mut caller = match authenticate_caller(&req, C::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -339,6 +400,15 @@ async fn handle_command<C: CommandAction>(
         }
     }
 
+    // Step 6.9: The app session, for a command that issues and limits it (#994 option A)
+    let session_cookie = match C::APP_SESSION {
+        AppSessionUse::ReadOnly => None,
+        AppSessionUse::IssueAndLimit => match issue_and_limit(&req, &mut caller, now).await {
+            Ok(cookie) => cookie,
+            Err(e) => return e.error_response(),
+        },
+    };
+
     // Step 7: Request hash & idempotency claim
     let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
 
@@ -362,12 +432,7 @@ async fn handle_command<C: CommandAction>(
             )
             .error_response();
         }
-        Claim::Replay(answer) => {
-            return HttpResponse::Ok()
-                .insert_header((actix_web::http::header::CONTENT_TYPE, "application/json"))
-                .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-                .json(answer);
-        }
+        Claim::Replay(answer) => return ok_answer(answer, session_cookie),
         Claim::New(token) => token,
     };
 
@@ -427,10 +492,7 @@ async fn handle_command<C: CommandAction>(
     };
 
     match run_res {
-        Ok(response_val) => HttpResponse::Ok()
-            .insert_header((actix_web::http::header::CONTENT_TYPE, "application/json"))
-            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-            .json(response_val),
+        Ok(response_val) => ok_answer(response_val, session_cookie),
         Err(e) => {
             if let Err(err) = store.release(C::NAME, &idem_key, &claim_token).await {
                 tracing::error!(error = %err, "idempotency release failed");
