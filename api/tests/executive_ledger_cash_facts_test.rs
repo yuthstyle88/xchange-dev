@@ -432,6 +432,20 @@ impl Room {
         .await
         .expect("insert approval");
 
+        let posting_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+             VALUES ($1, $2::uuid, $3, 'REVERSAL', $4, 'reversal', 'POSTED', $5, 'finance')",
+        )
+        .bind(posting_id)
+        .bind(ORG)
+        .bind(branch)
+        .bind(original_tx_id.to_string())
+        .bind(posted_at)
+        .execute(&self.pool)
+        .await
+        .expect("ledger posting");
+
         sqlx::query(
             "INSERT INTO reversals ( \
                  id, organization_id, branch_id, original_transaction_id, status, reason, \
@@ -439,8 +453,8 @@ impl Room {
                  posted_by, posted_at, realized_margin_reversed_thb \
              ) VALUES ( \
                  $1, $2::uuid, $3, $4, 'POSTED', 'Customer return', \
-                 100.00, $5, $6, gen_random_uuid(), $7, 'staff', $8, \
-                 'staff', $8, $9::numeric \
+                 100.00, $5, $6, $7, $8, 'staff', $9, \
+                 'staff', $9, $10::numeric \
              )",
         )
         .bind(reversal_id)
@@ -449,6 +463,7 @@ impl Room {
         .bind(original_tx_id)
         .bind(business_date)
         .bind(approval_id)
+        .bind(posting_id)
         .bind(receipt_id)
         .bind(posted_at)
         .bind(reversed_margin_thb)

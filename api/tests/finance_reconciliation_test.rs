@@ -439,6 +439,19 @@ impl Room {
         .fetch_one(&self.pool)
         .await
         .expect("its approval request");
+        let posting_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+             VALUES ($1, $2::uuid, $3, 'REVERSAL', $4, 'reversal', 'POSTED', $5, 'finance')",
+        )
+        .bind(posting_id)
+        .bind(ORG)
+        .bind(B1)
+        .bind(original.to_string())
+        .bind(posted_at)
+        .execute(&self.pool)
+        .await
+        .expect("ledger posting");
         sqlx::query(
             "INSERT INTO reversals (organization_id, branch_id, original_transaction_id, status, reason, amount_thb, \
                business_date, approval_request_id, posting_id, receipt_id, requested_by, requested_at, posted_by, posted_at) \
@@ -450,7 +463,7 @@ impl Room {
         .bind(amount)
         .bind(date(DAY))
         .bind(request)
-        .bind(Uuid::new_v4())
+        .bind(posting_id)
         .bind(receipt)
         .bind(posted_at)
         .execute(&self.pool)

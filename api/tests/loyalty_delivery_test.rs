@@ -454,15 +454,21 @@ impl World {
                     'RECEIPT-LY2', 'REVERSAL', '{POSTED_AT}', '{POSTED_AT}')"
             ))
             .await;
+        let posting_id = Uuid::new_v4();
+        self.db
+            .exec(&format!(
+                "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+                 VALUES ('{posting_id}', '{ORG_1}', 'MAIN', 'REVERSAL', '{id}', 'reversal', 'POSTED', '{POSTED_AT}', 'EMP-FRONT')"
+            ))
+            .await;
         self.db
             .exec(&format!(
                 "INSERT INTO reversals (id, organization_id, branch_id, original_transaction_id, status, \
                     reason, amount_thb, business_date, approval_request_id, posting_id, receipt_id, \
                     requested_by, requested_at, posted_by, posted_at) \
                  VALUES ('{id}', '{ORG_1}', 'MAIN', '{tx_id}', 'POSTED', 'wrong currency', 3200.50, \
-                    '2026-10-07', '{request}', '{posting}', '{receipt}', 'EMP-FRONT', '{COMPLETED_AT}', \
-                    'EMP-FRONT', '{POSTED_AT}')",
-                posting = Uuid::new_v4(),
+                    '2026-10-07', '{request}', '{posting_id}', '{receipt}', 'EMP-FRONT', '{COMPLETED_AT}', \
+                    'EMP-FRONT', '{POSTED_AT}')"
             ))
             .await;
         let facts = ReversedFacts {
