@@ -387,12 +387,32 @@ LG-1 #923. The order is fixed: **BK-1's M1 comes before BK-11's M2** (M2 drops w
    FOREIGN KEY (booking_id) REFERENCES bookings (id)` (PostgreSQL's default name for that unnamed FK). No row can be
    affected: no BOOKING ticket exists before BK-4, the only issuer. M1 checks this first and `RAISE`s if
    `SELECT count(*) FROM queue_tickets WHERE booking_id IS NOT NULL` is not 0.
+   **The referral capture's FK is re-pointed too, the same way** (BK-1 #1377, lane controller's ruling 2, decided
+   here). `referral_attributions.booking_id text NULL REFERENCES bookings(id)`
+   (`api/migrations/20261110130000_referral_attributions.sql:16`, RA-1) would also follow the rename. Then BK-3's
+   DESK/APP `referralCode` capture on a new booking would break it. So M1 also runs
+   `ALTER TABLE referral_attributions DROP CONSTRAINT referral_attributions_booking_id_fkey, ADD CONSTRAINT
+   referral_attributions_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES bookings (id)`.
+   - **The guard:** it first `RAISE`s if `SELECT count(*) FROM referral_attributions WHERE booking_id IS NOT NULL` is
+     not 0.
+   - **Why no row can be affected:** measured on `main` `6b35749a`, nothing in production builds a booking capture. The
+     only capture route, `attach_referral.rs:76`, captures on a transaction, and `CaptureService::link_transaction_in`
+     has no production caller.
+   - **v2's `CaptureTarget::Booking` from M1 on.** The variant names a **Blueprint** booking. Its target lookup
+     (`xc-referral/src/infrastructure/capture_repository.rs:50`, today `FROM bookings … LEFT JOIN members … member_id`)
+     reads the new `bookings` and takes `customer_id`, `organization_id` and `branch_id` from that row. The new table's
+     `customer_id` is `NOT NULL`, so `NoCustomer` cannot occur for it.
+   - **A v2 booking can no longer be captured.** Its id is not in `bookings`, so the lookup answers `NoSuchTarget`
+     before the FK is reached. No v2 caller exists, so nothing changes for v2.
+   - **Who changes it:** this one query is BK-1's. BK-3 then calls `CaptureTarget::Booking` unchanged and touches no
+     `xc-referral` file (§9).
 2. *Backfill.* One `booking_policies` row per organisation with the owner's 2026-10-10 values (§0):
    `cancel_cutoff_minutes = 60`, `no_show_grace_minutes = 15`, `confirm_expiry_minutes = 60`, `updated_by = NULL`
    (seeded by the migration). An organisation created later has no row, so its bookings stay closed (§4.3 row 1) until
    ADMIN saves one. Count first: `SELECT count(*) FROM organizations;` (one row each) and, for the record,
    `SELECT status, count(*) FROM bookings GROUP BY status;` (the v2 rows that the rename keeps) and
-   `SELECT count(*) FROM queue_tickets WHERE booking_id IS NOT NULL;` (must be 0; item 1).
+   `SELECT count(*) FROM queue_tickets WHERE booking_id IS NOT NULL;` and
+   `SELECT count(*) FROM referral_attributions WHERE booking_id IS NOT NULL;` (both must be 0; item 1).
 3. *Order.* After PR 589 OR-1/OR-2, PR 639's `20261019100000_customers_org.sql` and TX-1's quotes (all on `main`),
    and after the queue's M1 (`20261101100000_queue.sql`, PR 886), whose FK item 1 re-points. A push-time `<M1>` always
    sorts after it.
@@ -401,9 +421,10 @@ LG-1 #923. The order is fixed: **BK-1's M1 comes before BK-11's M2** (M2 drops w
    **TX-2 interaction:** if TX-2 (`transactions.booking_id REFERENCES bookings(id)`, `quote-transaction.md:148`)
    merges first, the rename carries that FK to `v2_bookings` and M2 re-points it. If TX-2 merges after M1, its FK lands on
    the new `bookings` and its backfill (`quote-transaction.md:605`) must read `v2_bookings.transaction_ref`.
-4. *`down`* first re-points `queue_tickets_booking_id_fkey` at the table that becomes `bookings` again, refusing
-   (`RAISE`) while any `queue_tickets.booking_id` is not NULL, since such a ticket names a new booking. It then drops
-   the new tables and renames `v2_bookings` back to `bookings`. It loses the new rows.
+4. *`down`* first re-points `queue_tickets_booking_id_fkey` and `referral_attributions_booking_id_fkey` at the table
+   that becomes `bookings` again. It refuses (`RAISE`) while any `queue_tickets.booking_id` or
+   `referral_attributions.booking_id` is not NULL, since such a row names a new booking. It then drops the new tables
+   and renames `v2_bookings` back to `bookings`. It loses the new rows.
 
 **M2. `api/migrations/<M2>_retire_v2_bookings.sql` (slot chosen above main's newest at push time, after `<M1>`) (BK-11): drop the v2 booking.**
 1. *Existing rows.* `v2_bookings` and `members` are dropped with their rows (test data). The `bookingRules` rows of
@@ -426,7 +447,7 @@ start dependencies are merged (fleet rule 🧪).
 
 | # | Ticket | Owns | Starts after |
 |---|---|---|---|
-| BK-1 | schema M1; the v2 SQL renamed to `v2_bookings` | `api/migrations/<M1>_booking_slots.sql` (slot chosen above main's newest at push time); `xc-exchange/src/infrastructure/booking/booking_repository.rs` (table name only, `:33-80`); `api/src/presentation/http/v3/views/admin_bookings.rs` (`:66`, `:72` only); the tests whose SQL names `bookings`, measured on `main` at `978d94b` with `git grep -l -E "(FROM|INTO|UPDATE|JOIN|TABLE|TRUNCATE) bookings"` (table name only): `api/crates/xc-exchange/tests/booking_published_line_test.rs`, `api/crates/xc-exchange/tests/booking_repository_db_test.rs`, `api/crates/xc-exchange/tests/booking_service_test.rs`, `api/tests/booking_save_step_test.rs`, `api/tests/bookings_http_test.rs`, `api/tests/rates_re4_bookings_test.rs`, `api/tests/rates_re4_migration_test.rs`, `api/tests/stale_policy_bookings_test.rs`, `api/tests/v3_admin_bookings_view_test.rs`; a new `api/tests/booking_slots_migration_test.rs` | this design (Q-B2–Q-B4 seed values in §0) |
+| BK-1 | schema M1; the v2 SQL renamed to `v2_bookings`; the queue and referral FKs re-pointed; the booking capture's target lookup on the new `bookings` | `api/migrations/20261113110000_booking_slots.sql` (lane controller's slot, after VF-1's `20261113100000`, #1377); `xc-exchange/src/infrastructure/booking/booking_repository.rs` (table name only, `:33-80`); `api/src/presentation/http/v3/views/admin_bookings.rs` (table name only); `xc-referral/src/infrastructure/capture_repository.rs` (the `CaptureTarget::Booking` lookup reads the new `bookings`, §8 M1 item 1); table name only in `xc-referral/src/infrastructure/booking_member_keys.rs`, `api/src/application/executive/channel.rs` and `api/src/application/workflows/save_transaction.rs` (lane controller's ruling 1 on #1377: they read v2's shape); the tests whose SQL names `bookings`, measured on `main` at `6b35749a` with `git grep -l -E "(FROM\|INTO\|UPDATE\|JOIN\|TABLE\|TRUNCATE) bookings" -- api web` (table name only, except the booking captures of `xc-referral/tests/capture_test.rs`, which the ticket author re-seeds on a Blueprint booking in the up-front commit): `api/crates/xc-exchange/tests/{booking_published_line_test,booking_repository_db_test,booking_service_test}.rs`, `api/crates/xc-queue/tests/queue_common/mod.rs`, `api/crates/xc-referral/tests/{capture_test.rs,common/mod.rs}`, `api/tests/{booking_save_step_test,booking_tiers_test,bookings_http_test,broker_feed_save_step_test,ex11a_transactions_drilldown_test,executive_overview_test,queue_commands_views_test,rates_re4_bookings_test,rates_re4_desk_save_test,rates_re4_migration_test,rates_re4c_unit3_booking_test,stale_policy_bookings_test,tx_states_migration_test,v3_admin_bookings_view_test}.rs`; a new `api/tests/booking_slots_migration_test.rs` | this design (Q-B2–Q-B4 seed values in §0) |
 | BK-2 | crate skeleton; slots: rule, closures, generator, capacity reserve/release/move, `SlotService`, the policy value | `api/crates/xc-booking/{Cargo.toml,src/lib.rs}`, workspace `Cargo.toml` (one line), `xc-booking/src/domain/slot/**`, `xc-booking/src/domain/policy/**`, `xc-booking/src/application/slot_service.rs`, `xc-booking/src/infrastructure/slot_repository.rs` | BK-1 |
 | BK-3 | the booking: entity, machine, status, channel, number, QR, events, repository, `BookingService` (create DESK/APP, confirm, cancel, reschedule, QR re-issue); `ContactReserve` | `xc-booking/src/domain/booking/**`, `xc-booking/src/application/booking_service.rs`, `xc-booking/src/infrastructure/booking_repository.rs`, `xc-customer/src/application/customer/contact_reserve.rs` (+ one `mod` line); the optional DESK/APP `referralCode` capture is inside `booking_service.rs` (no `xc-referral` file is touched) | BK-2, RA-1 #979 |
 | BK-4 | check-in and the queue's hooks | `xc-booking/src/application/check_in.rs`, `xc-booking/src/application/lifecycle.rs`, `xc-kernel/src/booking_queue_events.rs` (+ one `pub mod` line); one call in `xc-queue/src/application/desk/queue_desk.rs` (start) and one in `xc-queue/src/application/day/queue_day_hook.rs`; `cancel_active_for_booking_in` on the port if QU-2 lacks it | BK-3, QU-2; the two calls after QU-3 and QU-5 |
@@ -445,7 +466,7 @@ C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking con
 
 | Ticket | Tests (red until implemented) |
 |---|---|
-| BK-1 | every migration applies in version order on a fresh database; each existing organisation has one `booking_policies` row with 60 / 15 / 60; v2 rows survive the rename and the v2 list/create/redeem tests still pass; after M1 a `queue_tickets` row can name a new `bookings` id and cannot name a `v2_bookings` id; M1 refuses when a `queue_tickets.booking_id` is set; the new tables' CHECKs refuse `reserved > capacity`, a `COMPLETED` booking without `transaction_id`, a second booking with the same `transaction_id`, a booking whose slot is another branch's |
+| BK-1 | every migration applies in version order on a fresh database; each existing organisation has one `booking_policies` row with 60 / 15 / 60; v2 rows survive the rename and the v2 list/create/redeem tests still pass; after M1 a `queue_tickets` row can name a new `bookings` id and cannot name a `v2_bookings` id; M1 refuses when a `queue_tickets.booking_id` is set; the new tables' CHECKs refuse `reserved > capacity`, a `COMPLETED` booking without `transaction_id`, a second booking with the same `transaction_id`, a booking whose slot is another branch's; a `PARTNER` booking without `partner_attribution_id` is refused (lane controller's ruling 3 on #1377); after M1 a `referral_attributions` row can name a new `bookings` id and cannot name a `v2_bookings` id; M1 refuses when a `referral_attributions.booking_id` is set; `down` refuses while either FK names a new booking; a booking capture on a new booking takes its organisation, branch and customer, and one on a v2 booking id is `NoSuchTarget` |
 | BK-2 | the generator: slots of `slot_minutes` from open to close in the branch timezone, none on a closure date, none on a `Closed`/`NotSet` day, none past `horizon_days`; re-running adds nothing; a rule change closes empty future slots and leaves slots with bookings; **50 concurrent reserves on a slot of capacity 1 → exactly 1 succeeds, 49 `CAPACITY_FULL`, `reserved = 1`**; move between two slots under concurrency never leaves `reserved` off by one; capacity below `reserved` refused |
 | BK-3 | APP create → `CONFIRMED`; DESK create → `CONFIRMED` (Q-B5); DESK with a new phone creates one customer with an unverified PHONE identity, and the same phone again finds it; a replay with the same key returns the same booking and writes once; the same key with another body → `idempotencyConflict`; the stored replay answer holds no QR token; customer cancel before the cutoff → `CANCELLED` and the place released; after the cutoff → `cancelCutoffPassed`; teller cancel without a reason refused; reschedule to a full slot refused and nothing moves; confirm after `confirm_expires_at` → `bookingExpired`; a quote of another branch or side refused; QR re-issue: the old token finds nothing; a DESK booking with a `referralCode` gives one ACTIVE capture on the booking, one without gives none; an APP booking with a code gives one; a malformed code refuses the create and writes neither booking nor capture |
 | BK-4 | check-in by the right QR issues one BOOKING ticket and makes the booking `CHECKED_IN` in one transaction; a wrong QR → `qrMismatch`; a closed queue → refused and the booking stays `CONFIRMED` with no ticket; check-in on another day or after start + grace → `checkInWindow`; the ticket `SERVING` → booking `IN_SERVICE`; ticket `NO_SHOW` → booking stays `CHECKED_IN` and a second check-in issues a second ticket; day close → booking `CANCELLED` (`dayClosed`) |
