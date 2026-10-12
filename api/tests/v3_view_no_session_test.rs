@@ -15,7 +15,7 @@ use pos_error::AppResult;
 use serde::Serialize;
 use serde_json::Value;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::dto::v3::common::NoFilter;
@@ -39,7 +39,7 @@ impl BranchView for KioskRatesView {
     async fn load(
         &self,
         _branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         _filter: &NoFilter,
     ) -> AppResult<EchoData> {
         Ok(EchoData {
@@ -59,7 +59,7 @@ impl PagedView for KioskRatesPagedView {
     async fn page(
         &self,
         _branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         _filter: &NoFilter,
         _before: Option<RowId>,
         _limit: u16,

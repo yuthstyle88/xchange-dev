@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import type { EndReason, SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { KioskNotifications } from '../queue/wire';
+import { employeeOf, meOf } from '../../test-support/me';
 
 interface FakeQueues {
   branch: Accessor<string>;
@@ -72,7 +76,8 @@ function queues(): FakeQueues {
   return fake.queues as FakeQueues;
 }
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
+const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
+const NOK: Me = meOf(NOK_V3);
 
 let serverNow = Date.parse('2026-10-08T03:00:00.000Z');
 
@@ -88,7 +93,7 @@ function answer(branch: string, over: Partial<KioskNotifications> = {}) {
     latest: null,
     workingCount: 0,
     working: [],
-    employee: { id: NOK.id, role: NOK.role },
+    employee: employeeOf(NOK),
     ...over,
   });
 }
@@ -104,7 +109,7 @@ function pushState(branch: string, over: Partial<KioskNotifications> = {}) {
     latest: 'kq-1',
     workingCount: 0,
     working: [],
-    employee: { id: NOK.id, role: NOK.role },
+    employee: employeeOf(NOK),
     ...over,
   });
 }

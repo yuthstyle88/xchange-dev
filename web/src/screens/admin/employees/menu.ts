@@ -9,7 +9,7 @@ export const menu: AdminMenu = {
   id: 'employees',
   order: 10,
   group: 'data',
-  roles: 'all',
+  needs: 'all',
   dated: false,
   icon: '♙',
   label: () => t('label'),

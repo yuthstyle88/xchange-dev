@@ -10,9 +10,9 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
@@ -26,7 +26,8 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::quote::QuoteDto;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, Locks};
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint, Locks};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -195,15 +196,17 @@ impl CommandAction for QuotesCommand {
             }],
         };
 
+        // OR-7 bridge, removed by #1024
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let save_actor = SaveActor {
-            id: who.id().to_string(),
-            username: who.id().to_string(),
-            employee_id: if who.role() == Role::Owner {
+            id: legacy.id().to_string(),
+            username: legacy.id().to_string(),
+            employee_id: if legacy.role() == Role::Owner {
                 None
             } else {
-                Some(who.id().to_string())
+                Some(legacy.id().to_string())
             },
-            role: who.role(),
+            role: legacy.role(),
         };
 
         let quote = match self

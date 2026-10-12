@@ -5,12 +5,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use xc_auth::domain::access::RolePermissions;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -47,7 +45,7 @@ impl BranchView for StaffMeBranchView {
         let who = who.clone();
 
         async move {
-            let user_id = who.id();
+            let user_id = who.user_id.as_str();
             let name: String = sqlx::query_scalar("SELECT name FROM users WHERE id::text = $1")
                 .bind(user_id)
                 .fetch_optional(&pool)
@@ -62,11 +60,7 @@ impl BranchView for StaffMeBranchView {
                 .map_err(AppError::Database)?
                 .unwrap_or_default();
 
-            let user = actor_from_v3(
-                &who,
-                "00000000-0000-0000-0000-000000000001",
-                DateTime::<Utc>::UNIX_EPOCH,
-            );
+            let user = &who;
 
             let roles: Vec<StaffRoleDto> = user
                 .roles

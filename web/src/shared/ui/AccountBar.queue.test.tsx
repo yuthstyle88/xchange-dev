@@ -11,6 +11,11 @@
 // The card is not inside the bar's own element: AccountBar.test.tsx's "role alone" row asserts that
 // the bar's host has no `·`, and the card's title `XC · …` has one — v2 appended the card to
 // `document.body`, apart from the bar (account-bar.js:31).
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// The bar's line `Nok · nok · FRONT` → `Nok · <shell.account.role.teller>` (ruling (a): name, then the role
+// labels held at me.branch; no username), read from the shared table, not hard-coded.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -18,6 +23,7 @@ import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { KioskNotifications } from '../queue/wire';
+import { employeeOf, meOf, roleLabel } from '../../test-support/me';
 
 interface FakeStore extends QueueStore {
   setState(v: KioskNotifications | undefined): void;
@@ -108,8 +114,9 @@ const fakeStorage = {
 const ARIA = 'แจ้งเตือนคิวลูกค้า';
 const OPEN = 'เปิดคิว / รับเรื่อง →';
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
-const RATES: Me = { kind: 'staff', id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', username: 'pim', branchName: 'B1', branches: [] };
+const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
+const NOK: Me = meOf(NOK_V3);
+const RATES: Me = meOf({ id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', branchName: 'B1', branches: [] });
 
 const disposers: Array<() => void> = [];
 
@@ -189,7 +196,7 @@ describe('AccountBar renders the queue card (KQ3)', () => {
     expect(cards()).toHaveLength(1);
     expect(host.contains(cards()[0])).toBe(false);
     expect(host.textContent ?? '').not.toContain('XC ·');
-    expect(host.textContent ?? '').toContain('Nok · nok · FRONT');
+    expect(host.textContent ?? '').toContain(`Nok · ${roleLabel('teller')}`);
   });
 
   it('nobody signed in: no card; it appears on sign-in and goes when me() becomes undefined', async () => {
@@ -235,7 +242,7 @@ describe('AccountBar renders the queue card (KQ3)', () => {
       latest: 'kq-1',
       workingCount: 0,
       working: [],
-      employee: { id: NOK.id, role: NOK.role },
+      employee: employeeOf(NOK),
     });
     await settle();
     expect(storage.get('xc.queue.sound.E7.B1')).toBe('kq-1');

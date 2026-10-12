@@ -8,9 +8,9 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::branch_tx::BranchTx;
@@ -328,10 +328,19 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
     }
 }
 
+/// What a view's `load`/`page` fails with when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller
+/// (#1030 §3.8). The seam answers it as a refused route does: `403 roleNotAllowedHere`.
+pub(crate) const BRIDGE_REFUSED: &str = "OR-7 bridge: the caller maps to no v2 actor";
+
+/// The error a view returns for [`BRIDGE_REFUSED`].
+pub(crate) fn bridge_refused() -> AppError {
+    AppError::Domain(BRIDGE_REFUSED.to_owned())
+}
+
 pub(crate) async fn authenticate_and_authorize(
     req: &HttpRequest,
     inherits: (EntryPath, &'static str),
-) -> Result<(Actor, xc_auth::domain::access::Actor), HttpResponse> {
+) -> Result<Actor, HttpResponse> {
     let callers = pages::get_callers(req).await;
     let now = chrono::Utc::now();
     let action = Action::new(inherits.1);
@@ -356,21 +365,7 @@ pub(crate) async fn authenticate_and_authorize(
         }
     };
 
-    let legacy_who = match inherits.0 {
-        EntryPath::StaffRpc => callers.staff,
-        _ => callers.owner.or(callers.staff),
-    };
-
-    let who = match legacy_who {
-        Some(w) => w,
-        None => {
-            let err = Policy::authorize(None, inherits.0, &action, None, now)
-                .err()
-                .unwrap_or(PolicyError::SignIn);
-            return Err(V3Error::from(err).error_response());
-        }
-    };
-    Ok((who, user.clone()))
+    Ok(user.clone())
 }
 
 /// 400 noSuchBranch when `branch` is not in `branches`; 500 serverError when it cannot be read.
@@ -406,7 +401,7 @@ pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Resu
 }
 
 async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let (who, user) = match authenticate_and_authorize(req, V::INHERITS).await {
+    let who = match authenticate_and_authorize(req, V::INHERITS).await {
         Ok(res) => res,
         Err(resp) => return resp,
     };
@@ -419,7 +414,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
     let now = chrono::Utc::now();
     let action = Action::new(V::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&user),
+        Some(&who),
         V::INHERITS.0,
         &action,
         query.named_branch.as_ref(),
@@ -504,6 +499,9 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
                 .insert_header((header::CACHE_CONTROL, "no-store"))
                 .json(answer)
         }
+        Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
+            V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
+        }
         Err(_) => V3Error::new(
             "serverError",
             None,
@@ -515,7 +513,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
 }
 
 async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let (who, user) = match authenticate_and_authorize(req, V::INHERITS).await {
+    let who = match authenticate_and_authorize(req, V::INHERITS).await {
         Ok(res) => res,
         Err(resp) => return resp,
     };
@@ -528,7 +526,7 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     let now = chrono::Utc::now();
     let action = Action::new(V::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&user),
+        Some(&who),
         V::INHERITS.0,
         &action,
         query.named_branch.as_ref(),
@@ -599,6 +597,9 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
                 .insert_header((header::CONTENT_TYPE, "application/json"))
                 .insert_header((header::CACHE_CONTROL, "no-store"))
                 .json(answer)
+        }
+        Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
+            V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
         }
         Err(_) => V3Error::new(
             "serverError",

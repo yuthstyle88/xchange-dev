@@ -237,3 +237,36 @@
 .xc-admin .xc-content .shift-valuation {
   display: block;
 }
+
+/* CA-9 #625: counts waiting and transfers (CA-8); the sections reuse .card, .table-scroll, .num, .pill and .empty */
+.xc-admin .xc-content .cash-flows {
+  display: block;
+}
+
+/* the same table look as #stock-table / #movement-table */
+.xc-admin .xc-content .counts-table,
+.xc-admin .xc-content .transfers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* the new-transfer form: one field per row, like the v2 dialogs' forms */
+.xc-admin .xc-content .cash-new-transfer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.xc-admin .xc-content .transfer-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+/* the receive / reconcile dialogs: as .cash-open-dialog */
+.xc-admin .xc-content .cash-transfer-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}

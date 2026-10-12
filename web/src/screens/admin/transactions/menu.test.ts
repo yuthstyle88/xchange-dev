@@ -10,6 +10,9 @@
 //
 // `menu.ts` is read through an eager glob, so on a branch without it each test fails on the
 // assertion `menu.ts exists` instead of the whole file failing to load.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: 'all'` pin → `needs: 'all'` (#1030 §3.10: `MenuDef.roles` becomes `needs`). Nothing else changes.
 import { describe, expect, it } from 'vitest';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
@@ -32,7 +35,7 @@ describe('V2-transactions: the menu record (#464 §7)', () => {
     expect(m.order).toBe(2);
     expect(m.icon).toBe('⇄');
     expect(m.dated).toBe(true);
-    expect(m.roles).toBe('all');
+    expect(m.needs).toBe('all');
     expect(typeof m.Component).toBe('function');
   });
 

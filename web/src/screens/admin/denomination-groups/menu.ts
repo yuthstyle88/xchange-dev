@@ -11,7 +11,7 @@ export const menu: AdminMenu = {
   icon: '💵',
   order: 13,
   group: 'money',
-  roles: ['OWNER'],
+  needs: 'RatesDraft',
   heading: {
     eyebrow: () => t('eyebrow'),
     title: () => t('title'),

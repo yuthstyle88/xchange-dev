@@ -39,6 +39,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -242,7 +243,7 @@ impl CommandAction for WritePair {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         input: PairInput,
         _key: IdempotencyKey,
     ) -> Result<Marked, V3Error> {
@@ -279,7 +280,7 @@ impl CommandAction for WriteOne {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         input: OneInput,
         _key: IdempotencyKey,
     ) -> Result<Marked, V3Error> {

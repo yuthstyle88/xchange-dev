@@ -4,6 +4,7 @@ import { render } from 'solid-js/web';
 import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
 import { UsersScreen } from './UsersScreen';
 import { menu } from './menu';
+import { permissionsOf, rolesOf } from '../../../test-support/me';
 
 const disposers: Array<() => void> = [];
 
@@ -158,14 +159,14 @@ afterEach(() => {
 });
 
 describe('A05 UsersScreen', () => {
-  it("pins its menu record: id 'users', group 'data', order 15, roles ['ADMIN']", () => {
+  it("pins its menu record: id 'users', group 'data', order 15, needs 'UsersManage'", () => {
     expect(menu.id).toBe('users');
     expect(menu.group).toBe('data');
     expect(menu.order).toBe(15);
-    expect(menu.roles).toEqual(['ADMIN']);
-    expect(menu.roles).not.toBe('all');
+    expect(menu.needs).toBe('UsersManage');
+    expect(menu.needs).not.toBe('all');
     for (const nonAdmin of ['TELLER', 'BRANCH_MANAGER', 'FINANCE', 'EXECUTIVE', 'MANAGER']) {
-      expect((menu.roles as readonly string[]).includes(nonAdmin)).toBe(false);
+      expect(permissionsOf(rolesOf(nonAdmin, 'B1')).includes(menu.needs as string)).toBe(false);
     }
   });
 

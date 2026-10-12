@@ -8,9 +8,9 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use pos_infra::transactions::Transactor;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -63,6 +63,14 @@ pub trait CommandAction: Send + Sync + 'static {
 }
 
 /// Helper for commands to map internal failures to `500 serverError`.
+/// What a command answers when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller (#1030 §3.8):
+/// `403 roleNotAllowedHere`, as a refused route does.
+pub(crate) fn role_not_allowed_here() -> V3Error {
+    V3Error::from(
+        xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
+    )
+}
+
 pub fn server_error() -> V3Error {
     V3Error::new(
         "serverError",
@@ -105,7 +113,7 @@ async fn handle_command<C: CommandAction>(
     command: Arc<C>,
 ) -> HttpResponse {
     // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
-    let (who, user) = match authenticate_and_authorize(&req, C::INHERITS).await {
+    let who = match authenticate_and_authorize(&req, C::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -222,7 +230,7 @@ async fn handle_command<C: CommandAction>(
     let now = chrono::Utc::now();
     let action_vo = Action::new(C::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&user),
+        Some(&who),
         C::INHERITS.0,
         &action_vo,
         named_branch.as_ref(),

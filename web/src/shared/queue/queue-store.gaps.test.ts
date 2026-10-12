@@ -1,24 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 import { createRoot, createSignal, type Accessor } from 'solid-js';
 import type { ApiClient, ViewAnswer, ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { KioskNotifications } from './wire';
 import { queueStore, useQueueStore, type QueueStore } from './queue-store';
+import { employeeOf, meOf } from '../../test-support/me';
 
 const T0 = Date.parse('2026-10-08T03:00:00.000Z');
 const SKEW = 10 * 60 * 1000;
 
-const ME: Me = {
-  kind: 'employee',
+const ME: Me = meOf({
   id: 'E1',
   role: 'FRONT',
   branch: 'B-HOME',
   name: 'Somchai',
-  username: 'somchai',
   branchName: 'B-HOME',
   branches: [],
-};
+});
 
 let branchNo = 1000;
 function freshBranch(): string {
@@ -35,7 +37,7 @@ function notifications(branch: string, over: Partial<KioskNotifications> = {}): 
     latest: 'kq-1',
     workingCount: 0,
     working: [],
-    employee: { id: ME.id, role: ME.role },
+    employee: employeeOf(ME),
     ...over,
   };
 }

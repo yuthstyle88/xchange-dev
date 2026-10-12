@@ -20,7 +20,8 @@ export interface AdminMenu {
   icon: string;
   order: number;
   group: 'desk' | 'money' | 'data' | 'tools';
-  roles: 'all' | readonly string[] | string[];
+  /** `'all'`, or the `Permission` name a user's `me.permissions` must hold (#1030 §3.10). */
+  needs: 'all' | string;
   heading: AdminMenuHeading;
   dated: boolean;
   Component: (props: AdminMenuProps) => JSX.Element;

@@ -11,7 +11,7 @@ use serde_json::Value;
 use sqlx::{PgPool, Row};
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 

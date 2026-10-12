@@ -12,7 +12,7 @@ use actix_web::web;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -82,7 +82,7 @@ impl CommandAction for CashLimitsSaveCommand {
         )
         .bind(branch.as_str())
         .bind(limit.map(|l| l.to_string()))
-        .bind(who.id())
+        .bind(&who.user_id)
         .fetch_one(&mut **tx)
         .await
         .map_err(|_| server_error())?;

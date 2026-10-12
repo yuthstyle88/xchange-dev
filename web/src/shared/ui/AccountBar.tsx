@@ -1,7 +1,15 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { t } from '../i18n';
+import { th, type Key } from '../i18n/th';
 import { sharedSession, type SessionStore } from '../session/session';
 import { QueueCard } from './QueueCard';
+
+/** A role code's label, `shell.account.role.<camelCase>`; a code with no key shows as itself. */
+function roleLabel(code: string): string {
+  const camel = code.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  const key = `shell.account.role.${camel}`;
+  return Object.prototype.hasOwnProperty.call(th, key) ? t(key as Key) : code;
+}
 
 function cleanUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -91,13 +99,17 @@ export function AccountBar(props: {
 
   const user = () => session().me();
 
+  // The name, then the labels of the roles held at `me.branch` (org-wide rows included), joined with ", "
+  // (#1030 ruling (a)). Display only: access stays on `me.permissions`.
   const userText = () => {
     const u = user();
     if (!u) return '';
-    if (u.name != null && u.username != null) {
-      return `${u.name} · ${u.username} · ${u.role}`;
-    }
-    return u.role;
+    const roles = u.roles
+      .filter((r) => r.branchId === null || r.branchId === u.branch)
+      .map((r) => roleLabel(r.role))
+      .join(', ');
+    if (u.name == null) return roles;
+    return roles ? `${u.name} · ${roles}` : u.name;
   };
 
   const branchName = () => {

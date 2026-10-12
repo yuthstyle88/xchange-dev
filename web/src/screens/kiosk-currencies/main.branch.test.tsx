@@ -17,7 +17,12 @@
 //     the page sends nothing.
 // Assumed, as today: the switch is the card's `input[type="checkbox"]`; `configure` is
 // `POST /api/kiosk` with `{ action: 'configure', payload: { branchId, code, enabled } }`.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` fixture (`kind`/`role`/`username`) → `meOf(…)`
+// (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { meOf } from '../../test-support/me';
 
 const disposers: Array<() => void> = [];
 
@@ -33,16 +38,14 @@ vi.mock('solid-js/web', async (importOriginal) => {
   };
 });
 
-const ME_B2 = {
-  kind: 'user',
+const ME_B2 = meOf({
   id: 'u-7',
   role: 'MANAGER',
   branch: 'B2',
   name: 'Nok',
-  username: 'nok',
   branchName: 'สาขาสอง',
   branches: [{ id: 'B2', code: 'XC-02', name: 'สาขาสอง' }],
-};
+});
 
 const USD = {
   code: 'USD',

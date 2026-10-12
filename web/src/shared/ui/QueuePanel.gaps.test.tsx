@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { ApiClient, PageParams, ViewAnswer, ViewParams } from '../api/client';
@@ -8,20 +11,19 @@ import type { SessionStore } from '../session/session';
 import { queueStore, type QueueStore } from '../queue/queue-store';
 import type { KioskNotifications, KioskQueueRow } from '../queue/wire';
 import { QueuePanel } from './QueuePanel';
+import { employeeOf, meOf } from '../../test-support/me';
 
 const T0 = Date.parse('2026-10-08T03:00:00.000Z');
 const SKEW = 10 * 60 * 1000;
 
-const ME: Me = {
-  kind: 'employee',
+const ME: Me = meOf({
   id: 'E1',
   role: 'FRONT',
   branch: 'B-HOME',
   name: 'Somchai',
-  username: 'somchai',
   branchName: 'B-HOME',
   branches: [],
-};
+});
 
 type State = 'waiting' | 'working' | 'completed';
 
@@ -63,7 +65,7 @@ class Branch {
       latest: this.rows.waiting[0]?.id ?? null,
       workingCount: this.rows.working.length,
       working: [],
-      employee: { id: ME.id, role: ME.role },
+      employee: employeeOf(ME),
     };
   }
 }

@@ -9,7 +9,7 @@ export const menu: AdminMenu = {
   id: 'alert-settings',
   order: 16,
   group: 'tools',
-  roles: ['EXECUTIVE', 'ADMIN'],
+  needs: 'AlertSettingsSave',
   dated: false,
   icon: '🔔',
   label: () => t('label'),

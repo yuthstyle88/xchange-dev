@@ -10,22 +10,25 @@
 // The accessor is reactive: when `me` changes, it follows.
 // Assumed: `pageBranch(session: Pick<SessionStore, 'me'>): Accessor<string | undefined>` in
 // `web/src/shared/session/page-branch.ts` (#842 §8).
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` fixture (`kind`/`role`/`username`) → `meOf(…)`
+// (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEffect, createRoot, createSignal } from 'solid-js';
 import type { Me } from '../api/generated/common';
 import { pageBranch } from './page-branch';
+import { meOf } from '../../test-support/me';
 
 function me(branch: string): Me {
-  return {
-    kind: 'user',
+  return meOf({
     id: 'u-7',
     role: 'FRONT',
     branch,
     name: 'Nok',
-    username: 'nok',
     branchName: branch,
     branches: [{ id: branch, code: branch, name: branch }],
-  };
+  });
 }
 
 function session(initial: Me | undefined) {

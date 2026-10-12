@@ -16,7 +16,6 @@ use ts_rs::TS;
 use xc_auth::domain::access::{
     Actor as User, Authorizer, Permission, Role, ScopedRole, Target,
 };
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
@@ -49,12 +48,12 @@ impl BranchView for HandoverReceiversView {
     fn load(
         &self,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let branch = branch.clone();
-        let me = who.id().to_string();
+        let me = who.user_id.clone();
         async move {
             let now = Utc::now();
             // the session branch's organisation: only its people can receive here (PR 1325 review, issuecomment-6108602501)

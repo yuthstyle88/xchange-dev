@@ -57,17 +57,30 @@ pub struct Rate(pub String);
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "common.ts")]
 pub struct Me {
-    pub kind: String,
+    // `users.id` (#1030 §3.3).
     pub id: String,
-    pub role: String,
+    // `users.name`; `null` when the caller has no `users` row (#1030 §3.3).
+    pub name: Option<String>,
+    // The caller's valid-now role rows, ordered by role name, then branch id (#1030 §3.3).
+    pub roles: Vec<MeRole>,
+    // The `Permission` names `Authorizer::check` grants at `branch`, sorted (#1030 §3.3).
+    pub permissions: Vec<String>,
     // The branch this request works in: the session branch (SB-1 §14.3).
     pub branch: String,
-    pub name: Option<String>,
-    pub username: Option<String>,
     // The name of `branch` (SB-1 §14.4).
     pub branch_name: String,
     // S: the branches this user may switch to, ordered by code, then id (SB-1 §14.2).
     pub branches: Vec<BranchRef>,
+}
+
+/// One role row of `Me.roles`: the role's wire name and the branch it holds at, `null` organisation-wide
+/// (#1030 §3.3, the sign-in session route's shape).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "common.ts")]
+pub struct MeRole {
+    pub role: String,
+    pub branch_id: Option<String>,
 }
 
 /// One branch the session may switch to (SB-1 §14.4).

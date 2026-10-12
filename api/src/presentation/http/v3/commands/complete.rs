@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
 use xc_cash::infrastructure::interim_postings::InterimCashPostings;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 use xc_kernel::ids::BranchId;
@@ -29,8 +29,9 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::transaction::TransactionDto;
+use crate::presentation::extractors::actor::legacy_actor;
 use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, out_of_scope, server_error,
+    CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -73,13 +74,15 @@ fn complete_refusal(e: AppError) -> V3Error {
 }
 
 /// The signed-in caller as the exchange workflows are told who acts.
-fn save_actor(who: &Actor) -> SaveActor {
-    SaveActor {
-        id: who.id().to_owned(),
-        username: who.id().to_owned(),
-        employee_id: (who.role() != Role::Owner).then(|| who.id().to_owned()),
-        role: who.role(),
-    }
+fn save_actor(who: &Actor) -> Result<SaveActor, V3Error> {
+    // OR-7 bridge, removed by #1024
+    let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+    Ok(SaveActor {
+        id: legacy.id().to_owned(),
+        username: legacy.id().to_owned(),
+        employee_id: (legacy.role() != Role::Owner).then(|| legacy.id().to_owned()),
+        role: legacy.role(),
+    })
 }
 
 /// The exchange named by the path, after checking it is this branch's.
@@ -148,9 +151,10 @@ impl CommandAction for TransactionCompleteCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = this_branchs(tx, branch, &input.id).await?;
+        let actor = save_actor(who)?;
         let done = self
             .service
-            .run_in(tx, id, &save_actor(who), Utc::now())
+            .run_in(tx, id, &actor, Utc::now())
             .await
             .map_err(complete_refusal)?;
         Ok(TransactionCompletedDto {

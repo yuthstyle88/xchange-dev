@@ -17,7 +17,6 @@ use pos_error::AppError;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::count::count_service::CountVerified;
 use xc_cash::application::count::{CashCountService, SubmitCount};
@@ -58,10 +57,10 @@ type RoleRow = (String, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
 /// roles valid at `now`, read on the seam's transaction. The seam's actor id is the caller's `users.id`.
 pub(crate) async fn caller_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    who: &Actor,
+    who: &User,
     now: DateTime<Utc>,
 ) -> Result<User, V3Error> {
-    let id = who.id().to_string();
+    let id = who.user_id.clone();
     let org: Option<String> =
         sqlx::query_scalar("SELECT organization_id::text FROM users WHERE id::text = $1")
             .bind(&id)
@@ -198,7 +197,7 @@ impl CommandAction for CountSubmit {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &User,
         input: Self::Input,
         key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -252,7 +251,7 @@ impl CommandAction for CountVerify {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        who: &Actor,
+        who: &User,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {

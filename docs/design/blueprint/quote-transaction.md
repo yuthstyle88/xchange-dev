@@ -395,6 +395,144 @@ which is the one edit to a step, in TX-5.
 
   It stays until the desk (DK-C, #539) is on the new routes, then is removed with `save_transaction.rs`.
 
+#### 4.6.1 The adapter: four answers for TX-6 (#674)
+
+Draft for the lane controller's review (#674, ruling issuecomment-6109669520 on claude/14cc24bd's gaps,
+issuecomment-6109664380). Every `file:line` is on `main` `d9440858`.
+
+**A1. Who is the adapter: the workflow's own `save*` methods.**
+
+- **Answer.** `SaveTransactionWorkflow::run` (`save_transaction.rs:263`) keeps its public entry points, and their
+  signatures do not change. Its body becomes the chain: quote → create → confirm → complete in the one `BranchTx` the
+  method already opens (`:300`). It writes nothing itself.
+  - The entry points are `save` (`:192`), `save_as` (`:205`), `save_as_booked` (`:242`) and `save_as_teller` (`:220`).
+  - `SaveAction::run` stays as it is: it already calls `save_as_booked` (`compat/actions/save.rs:97-100`).
+  - The replay check (`find_submission_in`, `:304-307`), `CHANGED` (`:390-393`) and the payload hash (`:292-296`) stay
+    where they are, before the chain, so a replay never asks for a second quote.
+- **Why.** The provided save tests call the workflow, not `SaveAction`.
+  - Measured with `git grep -l SaveTransactionWorkflow -- api/tests api/crates`: 26 files. claude/14cc24bd counted
+    45 files that reach these methods, including through shared helpers.
+  - Among them, `save_transaction_test.rs:161` runs every `fixtures/save/v2_save_cases.json` scenario through
+    `shop.workflow.save(...)`.
+  - If only `SaveAction` became the adapter, those tests would lose their writer, and keeping them would mean editing
+    existing tests (#674 §6 forbids that). With the methods as the adapter, every caller goes through the chain
+    unchanged.
+- **Where `save()` gets a `SaveActor`.**
+  - `save()` has only `actor_id` (`:192-200`), but `quote_in` (`exchange/quote.rs:57-62`) and
+    `CreateTransaction::run_in` (`exchange/create.rs:129-133`) take `who: &SaveActor`.
+  - `save()` builds `SaveActor { id: actor_id, username: cmd.staff (as sent, as `save()` keeps it today, :189-191),
+    employee_id: None, role: Role::System }`.
+  - The role reaches only the audit row's `actor_role` (`create.rs:273-274`); the quote records `created_by = who.id`
+    (`quote.rs:218`).
+  - `save()` has no caller in `api/src` (measured: `git grep -n "\.save(" -- api/src` finds none of the workflow's),
+    and its doc says it is the save "with no step of another context". `System` says that no signed-in person made it,
+    without passing it off as the owner.
+- **`save_as_teller` needs two more files in #674 §5.**
+  - It posts to the teller's own OPEN shift (`save_transaction.rs:416-418`, `:491-497`). The chain cannot do that
+    today:
+    - `CreateTransaction::run_in` takes the branch's v2 shift (`create.rs:193-198`);
+    - `CompleteExchange` refuses a LIVE exchange whose shift is not the branch's active one (`complete.rs:303-311`).
+  - `confirm.rs:136-140` already records that the teller save is outside this path "until CA-10 #626".
+  - **Proposed:**
+    - `CreateRequest` gains `teller_user_id: Option<Uuid>`. When it is set, create takes that teller's OPEN shift, as
+      `teller_shift_in` does today.
+    - `CompleteExchange`'s LIVE check accepts the exchange's own shift while it is still OPEN.
+    - That adds `exchange/create.rs` and `exchange/complete.rs` to #674 §5.
+  - **The other way:** `save_as_teller` keeps today's writing body until CA-10. That costs D-1: the legacy insert
+    keeps a caller, so A4's second check cannot pass, and `save_transaction.rs` keeps writing.
+
+**A2. A DEMO save at a rate that is not published: Decided: option A (owner, 2026-10-11).**
+
+- **Facts.**
+  - Today the rate check, the shift and the stock all sit inside `if mode == Mode::Live` (`save_transaction.rs:413-499`).
+    A DEMO save stores `form.rate` as sent (`:310`) and prints its receipt from the form (`:516`).
+  - Through the chain, `quote_in` prices from the published line only, and answers `rateUnavailable` when there is
+    none (`quote.rs:103-124`).
+  - `quote_lines.published_rate_line_id` is `NOT NULL REFERENCES published_rate_lines` (`20261014100000_quotes.sql:27`),
+    so no quote can exist without a published line.
+  - `complete` builds the receipt from the stored row (`complete.rs:361-363`, `TransactionForm::from_transaction`),
+    and that row carries the quote's rate.
+  - The provided cases that depend on this are `engine_actions.json` step 125 (DEMO USD at `"rate": 1`, answers 200
+    `TEST-XC-20261006-000001`) and the `v2_save_cases.json` scenario "a demo exchange needs no shift, no rate and no
+    stock, and moves none".
+- **Option A: refuse.**
+  - A DEMO save is quoted like a LIVE one. With no published line it is refused `rateUnavailable`. At a rate other
+    than the published one it is refused `RATE_MISMATCH`, as a LIVE save is today (`:454-458`).
+  - **Cost:** training mode can no longer practise at an arbitrary rate. The two cases above change their answers.
+    That is an edit to provided expectations, so #674 criterion 1 has to list them as changed by this decision. No
+    schema change; one pricing path.
+- **Option B: keep its rate.**
+  - A DEMO save keeps the rate it was sent, and its receipt shows it.
+  - **Cost:**
+    - `QuoteRequestLine` gains a DEMO-only explicit rate, so `quote.rs` joins #674 §5.
+    - `quote_lines.published_rate_line_id` must become nullable for DEMO lines. That is a migration, with its own
+      data-migration section (📐): existing rows keep their line; `down` must refuse while a NULL exists.
+    - Two pricing paths have to stay correct in one service.
+    - The two cases stay byte-identical.
+- **Decided: option A (owner, 2026-10-11).** Both options stay above for the record. Whether training mode may use a rate the shop never published is a business rule,
+  not a design detail. A1, A3 and A4 hold under either answer.
+
+**A3. Kiosk and booking rates: neither passes a rate to `quote_in`.**
+
+- **Answer, kiosk.**
+  - A save that names a kiosk request does not ask for a new quote. It uses the request's own quote:
+    `kiosk_requests.quote_id`, which TX-7 writes when the kiosk asks `QuoteService` through its port
+    (`xc-kiosk/src/application/kiosk/customer.rs:118-135`; migration `20261031100000_kiosk_quote_id.sql`).
+  - The adapter passes that quote to create, as §4.6's kiosk bullet already has the desk do on the new route.
+  - That quote carries the kiosk's published line, rate and unit size. They are what today's save reads back from
+    `kiosk_requests` (`save_transaction.rs:316-342`), so the stored line is the same.
+  - Its life is the organisation's quote TTL, whose default equals the kiosk's 300 s (§4.6). Past it, create answers
+    `quoteExpired`, as for any quote (D-5).
+  - A request with no `quote_id` is refused `RATE_MISMATCH`, today's kiosk refusal (`:336-338`). That covers a request
+    whose port returned no quote (`customer.rs:118`, `if let Some`) and one made before TX-7.
+- **Answer, booking.**
+  - §6.4 already decides that a booking does not set the rate (desk D-13).
+  - A booked save is quoted at the current published line like a walk-in. The booking's stored rate and unit
+    (`save_transaction.rs:345-370`) are not used, and `BookingSaveStep` still marks the booking `USED`.
+- **For every non-kiosk compat save, the adapter checks the client rate.**
+  - The adapter compares `form.client_rate` with `CompatRate::per_one(quote.final_rate, quote.unit_size)` and refuses
+    `RATE_MISMATCH` when they differ. That is today's walk-in check (`:454-458`), so today's answers stay the same.
+  - Without it, a desk that showed one rate could save at another. The receipt now prints the stored rate
+    (`complete.rs:361-363`), so the customer would get a receipt that disagrees with the screen.
+  - A booked save whose booking rate differs from the current publication is therefore refused `RATE_MISMATCH`, where
+    today it saves at the booking's rate. That follows from §6.4, and #674 criterion 1 must list any provided booking
+    case that depends on it.
+- **Why no rate goes into `quote_in`.** A rate parameter would give the service a second source of prices next to the
+  publication, which is what TX-6 removes (D-1). The kiosk's rate already lives in its quote, and §6.4 has decided
+  the booking's.
+
+**A4. Criterion 3: narrow the grep to `src`, and check the legacy insert has no caller.**
+
+- **Facts.**
+  - `git grep -n "INSERT INTO transactions" origin/main -- api/src api/crates` → 11 lines:
+    - TX-2's store, `xc-exchange/src/infrastructure/transaction/store.rs:96`;
+    - the legacy insert, `xc-exchange/src/infrastructure/exchange/transaction_repository.rs:205`;
+    - nine test seeds under `api/crates/*/tests/`.
+  - The legacy insert is reached only from `save_transaction.rs:555`, by this chain:
+    - `ExchangeService::record_in` (`xc-exchange/src/application/exchange/service.rs:69-76`);
+    - `PgTransactionRepository::insert_in` (`transaction_repository.rs:194-205`).
+  - `PgTransactionRepository` itself stays: readers use it (`complete.rs:160`, `presentation/http/devices.rs:40`,
+    `infrastructure/devices/passport_drawer_device.rs:192`).
+- **Answer.** Criterion 3 becomes two checks:
+  - `git grep -n "INSERT INTO transactions" -- api/src 'api/crates/*/src'` lists exactly `store.rs:96` and
+    `transaction_repository.rs:205`;
+  - `git grep -n "record_in" -- api/src/application/workflows/save_transaction.rs` is empty (or the file is gone),
+    so the legacy insert has no caller.
+  - Deleting the legacy insert and `ExchangeService::record_in` goes with the removal of `save_transaction.rs`
+    (§4.6 above).
+- **Why not add `transaction_repository.rs` to #674 §5.** The file is shared by those readers. Deleting its insert would
+  widen TX-6 into `xc-exchange` for no change in behaviour, since once nothing calls it, it writes nothing. The test
+  seeds are not writers, so a grep that includes them can never list only TX-2's store.
+
+**Changes to #674 for the lane controller to apply** (the ticket body is the controller's to edit):
+
+| #674 part | Change |
+|---|---|
+| §3 | The adapter is `SaveTransactionWorkflow`'s `save*` methods (A1); `SaveAction::run` unchanged |
+| §4 criterion 1 | List the provided cases whose answers change by decision: A2's two DEMO cases if the owner picks option A, and any booking case under A3 |
+| §4 criterion 3 | A4's two checks |
+| §5 | `api/src/application/workflows/exchange/create.rs` and `exchange/complete.rs` (A1, the teller save); `exchange/quote.rs` and a migration only if A2 option B |
+
 ### 4.7 Audit of the transaction commands (Blueprint §10; TX-11)
 
 Blueprint §10 (*API Contract*, the paragraph under the route table): *"ทุก mutation ใช้ authenticated actor และ audit"*.

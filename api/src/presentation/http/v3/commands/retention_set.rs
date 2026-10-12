@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use pos_error::AppError;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_customer::application::retention_job::RetentionJob;
 use xc_customer::domain::consent::ConsentError;
@@ -74,7 +74,7 @@ impl CommandAction for RetentionSetCommand {
 
         let org_id = org_id.ok_or_else(server_error)?;
 
-        let set_by = Uuid::parse_str(who.id()).ok().map(|u| u.to_string());
+        let set_by = Uuid::parse_str(&who.user_id).ok().map(|u| u.to_string());
         let now = Utc::now();
 
         RetentionJob::set_period_in(

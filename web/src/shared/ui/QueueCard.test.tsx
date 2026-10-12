@@ -18,7 +18,7 @@
 // only clears `error`). So the card makes no request of its own: `fetch` is watched and only
 // `/api/v3/views/me` (the shared session, AppShell's) is allowed.
 //
-// From `SessionStore` the card reads `me()` only (`me().id` for the sound key, `me().role` for the
+// From `SessionStore` the card reads `me()` only (`me().id` for the sound key, `me().permissions` for the
 // link). It never calls `signOut()` or `dispose()`.
 //
 // The card is found by its label, its parts by role and text, never by class or position, except
@@ -30,6 +30,14 @@
 //
 // Each test is a fresh page (`vi.resetModules()` then `import()`), because the sound and the dock
 // are one per page. Thai is v2's, verbatim (W6).
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// C3 (ruling A, issuecomment on #1030 by claude/ad05bf8d): the link follows `me.permissions` holding
+// `QueueOperate`. OWNER (→ EXECUTIVE + ADMIN, neither holds it) moves from the link list to the no-link
+// list: an intended outcome change, since the server already refuses its accept/get.
+// Added after claude/dell-claude-6's review (#1030, gap 2): two C3 cases where `roles` and `permissions`
+// disagree, so a role-name rule cannot pass.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -37,6 +45,7 @@ import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { KioskNotifications } from '../queue/wire';
+import { employeeOf, meOf } from '../../test-support/me';
 
 // ── fake queue store (#486's module) ─────────────────────────────────────────
 
@@ -122,7 +131,7 @@ function answer(branch: string, over: Partial<KioskNotifications> = {}) {
     latest: null,
     workingCount: 0,
     working: [],
-    employee: { id: NOK.id, role: NOK.role },
+    employee: employeeOf(NOK),
     ...over,
   });
 }
@@ -237,7 +246,8 @@ function viewport(width: number) {
 
 // ── the page ─────────────────────────────────────────────────────────────────
 
-const NOK: Me = { kind: 'staff', id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', username: 'nok', branchName: 'B1', branches: [] };
+const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
+const NOK: Me = meOf(NOK_V3);
 
 const TH = {
   aria: 'แจ้งเตือนคิวลูกค้า',
@@ -503,9 +513,9 @@ describe('QueueCard C2: folding', () => {
 // ── C3 ───────────────────────────────────────────────────────────────────────
 
 describe('QueueCard C3: the link to the queue page', () => {
-  for (const role of ['OWNER', 'FRONT', 'BACKEND', 'MANAGER']) {
+  for (const role of ['FRONT', 'BACKEND', 'MANAGER']) {
     it(`${role}: เปิดคิว / รับเรื่อง → to /kiosk-queue.html?branch=<branch>, in a new tab`, async () => {
-      await openPage({ ...NOK, role });
+      await openPage(meOf({ ...NOK_V3, role }));
       await settle();
       const a = link(theCard(), TH.open);
       expect(shown(a)).toBe(true);
@@ -515,16 +525,31 @@ describe('QueueCard C3: the link to the queue page', () => {
     });
   }
 
-  for (const role of ['RATES', 'MONITOR', 'FINANCE', 'SYSTEM', 'DOCUMENTS', 'DOCUMENT_REVIEW']) {
+  for (const role of ['OWNER', 'RATES', 'MONITOR', 'FINANCE', 'SYSTEM', 'DOCUMENTS', 'DOCUMENT_REVIEW']) {
     it(`${role}: no link`, async () => {
-      await openPage({ ...NOK, role });
+      const who = meOf({ ...NOK_V3, role });
+      await openPage(who);
       await settle();
-      answer('B1', { count: 1, latest: 'kq-1', employee: { id: NOK.id, role } });
+      answer('B1', { count: 1, latest: 'kq-1', employee: employeeOf(who) });
       await settle();
       expect(shown(link(theCard(), TH.open))).toBe(false);
       expect(Array.from(theCard().querySelectorAll('a')).filter((a) => shown(a))).toEqual([]);
     });
   }
+
+  // #1030 §3.10 (gap 2 of claude/dell-claude-6's review): the link follows `permissions`, never a role
+  // name. Hand-built `me`s, because `meOf` always derives the permissions from the roles.
+  it('a TELLER row at another branch whose permissions lack QueueOperate: no link', async () => {
+    await openPage({ ...NOK, roles: [{ role: 'TELLER', branchId: 'B2' }], permissions: ['SignedIn'] } as Me);
+    await settle();
+    expect(shown(link(theCard(), TH.open))).toBe(false);
+  });
+
+  it('a FINANCE row whose permissions hold QueueOperate: the link', async () => {
+    await openPage({ ...NOK, roles: [{ role: 'FINANCE', branchId: 'B1' }], permissions: ['QueueOperate', 'SignedIn'] } as Me);
+    await settle();
+    expect(shown(link(theCard(), TH.open))).toBe(true);
+  });
 
   it('the branch is encoded, and the link follows a branch change', async () => {
     await openPage();
@@ -694,7 +719,7 @@ describe('QueueCard C6: the session ended', () => {
   });
 
   it('the sign-in link is shown to a role that never sees the queue link (RATES)', async () => {
-    await openPage({ ...NOK, role: 'RATES' });
+    await openPage(meOf({ ...NOK_V3, role: 'RATES' }));
     await settle();
     fail('B1', { kind: 'ended', reason: 'expired' });
     await settle();

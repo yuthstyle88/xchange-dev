@@ -13,10 +13,15 @@
 //
 // The shared session is faked with a `me` signal, as in `queue-store.test.ts`; the store's own
 // `ApiClient` goes through the global `fetch`, which is stubbed to record the URLs read.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)`
+// (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Accessor } from 'solid-js';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
+import { employeeOf, meOf } from '../../test-support/me';
 
 const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
 vi.mock('../session/session', async (importOriginal) => {
@@ -28,16 +33,14 @@ vi.mock('../session/session', async (importOriginal) => {
   return { ...original, sharedSession: () => session };
 });
 
-const ME: Me = {
-  kind: 'employee',
+const ME: Me = meOf({
   id: 'E1',
   role: 'FRONT',
   branch: 'B-ME',
   name: 'Somchai',
-  username: 'somchai',
   branchName: 'B-ME',
   branches: [{ id: 'B-ME', code: 'B-ME', name: 'B-ME' }],
-};
+});
 
 let urls: string[];
 const disposers: Array<() => void> = [];
@@ -89,7 +92,7 @@ beforeEach(() => {
           latest: null,
           workingCount: 0,
           working: [],
-          employee: { id: ME.id, role: ME.role },
+          employee: employeeOf(ME),
         },
       });
     }),

@@ -342,8 +342,10 @@ The xchange side is a port `CommissionSource` with an HTTP implementation; until
 
 ### 8.4 Export (D-8)
 
-A paged view called with `purpose=export` runs `Authorizer::check(actor, ReportsExport, …)` before the view's own
-check and writes one `audit_events` row (`20261010110000_approvals.sql:27-38`): `actor_id`, `actor_role`, `scope`,
+A paged view called with `purpose=export` runs `Authorizer::check(actor, ReportsExport, …)` **right after the view's
+`Policy::authorize`, against the branch that authorisation resolved (`grant.branch`), and before any row is read**
+(lane controller ruling on EX-9 #1147). Checking it before the view's own check would let a user who is FINANCE at B1
+and TELLER at B3 export B3's rows. It writes one `audit_events` row (`20261010110000_approvals.sql:27-38`): `actor_id`, `actor_role`, `scope`,
 `branch_id`, `action = 'EXPORT'`, `object_ref = 'view:<name>'`, `after_redacted = {filter, rows}` (the filter and the
 row count only, never row content; K8). Without the permission: `OUT_OF_SCOPE`. The web hides the
 export buttons without `ReportsExport` (the `me` view's permissions), but the server check is the rule. Export rows
@@ -361,6 +363,8 @@ classDiagram
   class ExecutiveOverviewService { <<api/src/application/executive/overview.rs>> +overview(scope, filter, changed) }
   class MetricDefinitions { <<api/src/application/executive/metrics.rs>> Metric; MetricUnavailable; definitions() }
   class Channel { <<api/src/application/executive/channel.rs (EX-3)>> WalkIn; Booking; Kiosk; Referred; sql_condition(alias) }
+  class Drilldown { <<api/src/application/executive/drilldown.rs (EX-3, merged)>> +view +filter +dropped; to(view, keys) Drilldown }
+  class accepted_keys { <<free fn, drilldown.rs:9>> accepted_keys(view) &[&str] }
   class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm() }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
@@ -410,6 +414,8 @@ classDiagram
   BranchAlertSettingsView --> AlertSettingsRepository
   ReconciliationCertify --> ReconciliationService
   WideTransactionFacts --> Channel
+  ExecutiveOverviewService --> Drilldown
+  Drilldown --> accepted_keys : to() reads
 ```
 
 Web: `web/src/screens/admin/executive/**` (A01) and `web/src/screens/admin/reconciliation/**` (F01), each an admin menu
@@ -432,6 +438,7 @@ shared route or menu file is edited.
 | Broker-Platform (other lane) | commission summary endpoint | `BrokerCommissionSource` |
 | AP-1 (merged) | approval core | F01 reversal decisions |
 | EX-3 | `Channel` + its SQL condition (`application/executive/channel.rs`) | `WideTransactionFacts`, EX-11 `admin_transactions` and `admin_overview` |
+| EX-3 (merged) | the free fn `accepted_keys(view)` (`application/executive/drilldown.rs:9`, one arm per target) and `Drilldown { view, filter, dropped }` built by `Drilldown::to(view, keys)` (`:31-40`) | `ExecutiveOverviewService`; each EX-11 child swaps its own arm for its DTO's `DRILLDOWN_KEYS` (§4.4) |
 | #868 | the shared LIVE CSV builder | exports (D-8) |
 | EX-3 | `ExchangeFacts` (trait in `application/executive/ports.rs`; today's impl `WideTransactionFacts`) | FN-1 `ReconciliationService` (F01 "today's parts: transactions") |
 | EX-2 | `v3/mod.rs` module lines and the empty `v3/org_view.rs`, `v3/export_gate.rs` | EX-3, EX-9 |
@@ -466,6 +473,7 @@ Ordered so the first ones start **now**, without the TX chain. Each owns disjoin
 | EX-2 | migration `20261031130000`; `changed_at` written by `BranchTx`; **the module roots** | `api/migrations/20261031130000_executive_finance.sql`, `xc-kernel/src/branch_tx.rs` (the two `UPDATE branch_versions` lines, `:86`, `:181`), `api/src/application/mod.rs` and `api/src/infrastructure/mod.rs` (the `pub mod executive;` / `pub mod finance;` lines), the four empty roots `application/{executive,finance}/mod.rs`, `infrastructure/{executive,finance}/mod.rs`, and `api/src/presentation/http/v3/mod.rs` (the `pub mod org_view;` / `pub mod export_gate;` lines) with the two empty files `v3/org_view.rs` and `v3/export_gate.rs` that EX-3 and EX-9 then fill | now |
 | EX-3 | `OrgView` seam; `executive_overview` with today's sources (`WideTransactionFacts`, `ShiftBalanceCashFacts`, `PgAlertFacts` for rates pending and stale data); metric registry; unavailable reasons; `Channel`; the drill-down `dropped` computation (§4.4) | `v3/org_view.rs`, `views/executive_overview.rs`, `dto/v3/executive_overview.rs`, `application/executive/{mod,overview,metrics,ports,channel,drilldown}.rs`, `infrastructure/executive/{mod,wide_transaction_facts,shift_balance_cash_facts,alert_facts}.rs`, the generated `.ts` | EX-1, EX-2 |
 | EX-4 | A01 screen | `web/src/screens/admin/executive/**` | EX-3 |
+| EX-4b | A01 shows posted reversals per side, apart from the gross volumes (§3 `buy_volume_thb`/`sell_volume_thb`: *"posted reversals shown **separately**"*): the two KPI tiles show `buyReversedThb` / `sellReversedThb` beneath the gross figure, as the server's strings. Also closes EX-4's review follow-up (PR 1421): a test that any view outside §4.4's five maps to no link, and the `menus.test.ts` `it(...)` title naming `executive OverviewRead` | `web/src/screens/admin/executive/**`, plus the one `it(...)` title line in `web/src/screens/admin/menus.test.ts` | EX-4 #1186, EX-6 #1189 (adds `buyReversedThb`, `sellReversedThb` to the A01 DTO, [required] on #1189) |
 | EX-5 | thresholds: repository, save command (§6.1), settings view and form | `infrastructure/executive/alert_settings_repository.rs` (+ its `pub mod` line in `infrastructure/executive/mod.rs`), `commands/branch_alert_settings_save.rs`, `views/branch_alert_settings.rs`, `dto/v3/branch_alert_settings.rs`, `web/src/screens/admin/alert-settings/**` | **EX-3** (owns `infrastructure/executive/mod.rs` until it merges), EX-1 |
 | FN-1 | F01 sheet (today's parts: transactions, exceptions) + certify (§5.2) | `views/finance_reconciliation.rs`, `commands/reconciliation_certify.rs`, `application/finance/{mod,reconciliation}.rs`, `infrastructure/finance/{mod,certification_repository}.rs`, `dto/v3/finance_reconciliation.rs`, `web/src/screens/admin/reconciliation/**` | EX-1, EX-2, **EX-3** (provides `ExchangeFacts`, which `ReconciliationService` uses for today's transactions) |
 | EX-6 | `LineFacts` (lines + reversals) and the switch | `infrastructure/executive/line_facts.rs`, the one wiring line in `overview.rs` | EX-3, TX-2, TX-8, RV-1 |

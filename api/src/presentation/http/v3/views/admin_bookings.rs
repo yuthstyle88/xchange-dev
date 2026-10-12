@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::booking::entities::booking::Booking;
 use xc_exchange::domain::booking::value_objects::booking_status::BookingStatus;

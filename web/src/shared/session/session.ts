@@ -1,9 +1,28 @@
 import { createSignal, type Accessor } from 'solid-js';
 import { ApiClient, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import type { Me, MeRole } from '../api/generated/common';
 import { ViewPoller } from '../live/view-poller';
 
 export type EndReason = 'expired' | 'switched' | 'branchChanged';
+
+/** Who an answer names: an id and its role grants (`Me`, or `kiosk_notifications.employee`). */
+export interface Account {
+  id: string;
+  roles: readonly MeRole[];
+}
+
+/**
+ * The same account (#1030 §3.10, ruling (a)): the same id and the same set of role grants, in any order.
+ * Another id, a grant added or removed, or the same role at another branch is a switch. Shared by the
+ * session and the queue store.
+ */
+export function sameAccount(a: Account, b: Account): boolean {
+  if (a.id !== b.id) return false;
+  const grants = (x: Account) => new Set(x.roles.map((r) => JSON.stringify([r.role, r.branchId])));
+  const ga = grants(a);
+  const gb = grants(b);
+  return ga.size === gb.size && [...ga].every((g) => gb.has(g));
+}
 
 export interface SessionStore {
   me: Accessor<Me | undefined>;
@@ -79,7 +98,7 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
           const held = poller.data();
           const next = answer.data as unknown as Me;
           if (held !== undefined) {
-            if (next.id !== held.id || next.role !== held.role) {
+            if (!sameAccount(next, held)) {
               end('switched');
             } else if (next.branch !== held.branch) {
               end('branchChanged');

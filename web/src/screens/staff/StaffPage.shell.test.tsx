@@ -16,6 +16,11 @@
 // navigate: (url: string) => void })`, reached through import.meta.glob as `StaffPage.test.tsx` does. The shell's own
 // reads (the shared session's `/api/v3/views/me`, the version footer's `/health/ready`) go to the global `fetch`,
 // which this file stubs with the same route table as the page's `ApiClient`.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the session `Me` fixture takes #1030 §7's shape (`kind`/`role`/`username` → `roles: []`,
+// `permissions: []`), written out here rather than through `web/src/test-support/me.ts` because a role
+// literal would trip S-3's gate. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -60,12 +65,11 @@ function staffMe(permissions: string[]): StaffMeView {
 
 /** The shared session's `me` (v3 `Me`), for the shell's account bar. */
 const SESSION_ME: Me = {
-  kind: 'user',
   id: '00000000-0000-4000-8000-0000000000a1',
-  role: 'any', // a role literal would trip S-3's no-role-names gate (SD:S2); the bar's role text is not under test
-  branch: 'MAIN',
   name: 'Ploy',
-  username: 'ploy',
+  roles: [], // no role literal: it would trip S-3's no-role-names gate (SD:S2); the bar's role text is not under test
+  permissions: [],
+  branch: 'MAIN',
   branchName: 'XC-B',
   branches: [{ id: 'MAIN', code: 'XC-B', name: 'XC-B' }],
 };

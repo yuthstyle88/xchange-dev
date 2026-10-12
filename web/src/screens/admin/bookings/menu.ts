@@ -12,7 +12,7 @@ export const menu: AdminMenu = {
   order: 3,
   icon: '▤',
   dated: false,
-  roles: 'all',
+  needs: 'all',
   label: () => t('navLabel'),
   heading: {
     eyebrow: () => t('headingEyebrow'),

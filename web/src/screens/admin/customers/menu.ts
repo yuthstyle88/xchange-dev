@@ -11,7 +11,7 @@ export const menu: AdminMenu = {
   id: 'customers',
   order: 8,
   group: 'data',
-  roles: 'all',
+  needs: 'all',
   dated: false,
   icon: '♙',
   label: () => t('label'),

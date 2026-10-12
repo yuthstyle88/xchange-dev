@@ -7,7 +7,7 @@ use actix_web::http::Method;
 use actix_web::web;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::reference::reference_batch_writer::ReferenceBatchWriter;

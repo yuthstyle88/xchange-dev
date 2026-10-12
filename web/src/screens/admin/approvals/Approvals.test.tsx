@@ -38,6 +38,10 @@
 //
 // The menu and its table are read through eager globs, so on a branch without them each test fails
 // on an assertion that the file exists, not on the import.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: ['OWNER']` pin → `needs: 'ApprovalsDecide'` (#1030 §3.10: the menu follows
+// the permission its view and command need, `policy.rs:567-569`; the intended change §9 names).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -315,10 +319,10 @@ function decisions(): Sent[] {
 // ── the menu record ──────────────────────────────────────────────────────────
 
 describe('RE-5 A06: the approvals menu record (#602; design §4.7, §5)', () => {
-  it('is the approvals menu: OWNER only, not dated, reached through the shell glob once', () => {
+  it('is the approvals menu: needs ApprovalsDecide, not dated, reached through the shell glob once', () => {
     const menu = theMenu();
     expect(menu.id).toBe('approvals');
-    expect(menu.roles, 'approval_requests and approvalDecide are OWNER rows (policy.rs:72-73)').toEqual(['OWNER']);
+    expect(menu.needs, 'approvalRead and approvalDecide need ApprovalsDecide (policy.rs:567-569)').toBe('ApprovalsDecide');
     expect(menu.dated).toBe(false);
     expect(typeof menu.Component).toBe('function');
     const listed = menus.filter((m) => m.id === 'approvals');

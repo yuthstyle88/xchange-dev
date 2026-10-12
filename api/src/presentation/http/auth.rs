@@ -24,8 +24,8 @@ use xc_auth::infrastructure::token::jwks_verifier::JwksTokenVerifier;
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{
     AccountSessionReader, Accounts, BAD_REQUEST, OWNER_COOKIE, OWNER_ID, SESSION_SECONDS,
-    STAFF_COOKIE, accounts, answer, cookie, failure, legacy_actor, payload_of, read, refuse,
-    same_origin, server_error, set_cookie,
+    STAFF_COOKIE, accounts, answer, cookie, failure, payload_of, read, refuse, same_origin,
+    server_error, set_cookie,
 };
 use crate::presentation::http::client_address::{CLIENT_ADDRESS_HEADER, client_address};
 use crate::presentation::http::v3::me::me_of;
@@ -379,12 +379,8 @@ async fn v3_session_branch(
         None,
     )
     .with_branch(Some(chosen.clone()));
-    // The same `Me` the `me` view answers; a session whose roles map to no v2 actor reads as not signed in there.
-    let Some(who) = legacy_actor(&access_actor, now) else {
-        return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ");
-    };
-    let accounts = PgAccountRepository::new(state.db.clone());
-    match me_of(&state.db, &accounts, &who, &chosen, Some(s)).await {
+    // The same `Me` the `me` view answers (#1030: from the Blueprint actor itself).
+    match me_of(&state.db, &access_actor, &chosen, Some(s)).await {
         Ok(me) => HttpResponse::Ok()
             .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
             .json(me),

@@ -13,6 +13,11 @@
 // claude/5edf7bb5's ruling (#842 issuecomment-6105121433, item 2): S8's "else MAIN" becomes
 // "else undefined" (with no `me`, `queueBranch()` is `undefined`); the reactive `setQueueBranch`
 // and `me()` cases stay. Session branch design §14.4: no page names 'MAIN' itself.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// S7: "the same id with another role" → "… other roles" (OWNER's rows), and the me() changes that used
+// `role`/`username` use `roles` (MANAGER → BRANCH_MANAGER) and `name`, per #1030 §3.10.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../api/client';
@@ -26,6 +31,7 @@ import {
   useQueueStore,
   type QueueStore,
 } from './queue-store';
+import { employeeOf, meOf } from '../../test-support/me';
 
 // S8 reads `me().branch` of the shared session; the page has no other session to give it.
 const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
@@ -44,16 +50,14 @@ const T0 = Date.parse('2026-10-08T03:00:00.000Z');
 /** The server's clock runs ten minutes ahead of this browser's. */
 const SKEW = 10 * 60 * 1000;
 
-const ME: Me = {
-  kind: 'employee',
+const ME: Me = meOf({
   id: 'E1',
   role: 'FRONT',
   branch: 'B-HOME',
   name: 'Somchai',
-  username: 'somchai',
   branchName: 'B-HOME',
   branches: [],
-};
+});
 
 let branchNo = 0;
 function freshBranch(): string {
@@ -70,7 +74,7 @@ function notifications(branch: string, over: Partial<KioskNotifications> = {}): 
     latest: 'kq-1',
     workingCount: 0,
     working: [],
-    employee: { id: ME.id, role: ME.role },
+    employee: employeeOf(ME),
     ...over,
   };
 }
@@ -476,8 +480,8 @@ describe('S6: a 401 or kioskStaff ends the store as expired', () => {
 
 describe('S7: an account switch ends the store; a new me drops since', () => {
   it.each([
-    ['another id', { id: 'E2', role: 'FRONT' }],
-    ['the same id with another role', { id: 'E1', role: 'OWNER' }],
+    ['another id', employeeOf(meOf({ id: 'E2', role: 'FRONT', branch: 'B-HOME', name: 'Malee' }))],
+    ['the same id with other roles', employeeOf(meOf({ id: 'E1', role: 'OWNER', branch: 'B-HOME', name: 'Somchai' }))],
   ])('an answer naming %s sets error {kind: ended, reason: switched} and stops polling', async (_name, employee) => {
     const { branch, server, signOut, store } = setup();
     retain(branch);
@@ -493,7 +497,7 @@ describe('S7: an account switch ends the store; a new me drops since', () => {
     expect(server.posts).toEqual([]);
   });
 
-  it("when me()'s id or role changes the next poll has no since, so its answer carries employee; a me() with the same id and role keeps since", async () => {
+  it("when me()'s id or roles change the next poll has no since, so its answer carries employee; a me() with the same id and roles keeps since", async () => {
     const { branch, server, setMe, store } = setup();
     retain(branch);
     await flush();
@@ -504,8 +508,8 @@ describe('S7: an account switch ends the store; a new me drops since', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[2]!.since).toBe(7);
 
-    setMe({ ...ME, id: 'E2', username: 'malee' });
-    server.data = { ...server.data, employee: { id: 'E2', role: 'FRONT' } };
+    setMe({ ...ME, id: 'E2', name: 'Malee' });
+    server.data = { ...server.data, employee: employeeOf({ ...ME, id: 'E2' }) };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[3]!.since).toBeUndefined();
     expect(store.error()).toBeUndefined();
@@ -513,8 +517,8 @@ describe('S7: an account switch ends the store; a new me drops since', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[4]!.since).toBe(7);
 
-    setMe({ ...ME, id: 'E2', role: 'MANAGER' });
-    server.data = { ...server.data, employee: { id: 'E2', role: 'MANAGER' } };
+    setMe(meOf({ id: 'E2', role: 'MANAGER', branch: 'B-HOME', name: 'Malee', branchName: 'B-HOME' }));
+    server.data = { ...server.data, employee: employeeOf(meOf({ id: 'E2', role: 'MANAGER', branch: 'B-HOME', name: 'Malee' })) };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[5]!.since).toBeUndefined();
     expect(store.error()).toBeUndefined();

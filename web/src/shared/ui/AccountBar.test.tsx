@@ -27,6 +27,15 @@
 // SB-1), no longer its id. Changed: the fixtures gain `branchName`; the four branch-line
 // expectations (owner, staff, row gone, setLang) expect the name. The switch menu is pinned in
 // AccountBar.branch.test.tsx.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the account line (ruling (a)): `{name} · {username} · {role}` → `{name} · {role labels}`, the labels
+// of the roles held at me.branch from `shell.account.role.<camelCase>`, joined with ", ", in `roles`' order;
+// no username; with no name, the role part alone. Rewritten pins: "the owner …" (Somchai · <admin>,
+// <executive>), "a staff member …" (Nok · <teller>), "an account whose row is gone …" (no name → role
+// part alone), "follows me()" and "its texts follow setLang" (Nok · <teller>, en in en). The labels are
+// read from the tables, never hard-coded; each pin also asserts no raw role code shows. Fixtures →
+// `meOf(…)` (`web/src/test-support/me.ts`).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -36,6 +45,7 @@ import { en } from '../i18n/en';
 import { th } from '../i18n/th';
 import type { SessionStore } from '../session/session';
 import { AccountBar } from './AccountBar';
+import { meOf, roleLabel } from '../../test-support/me';
 
 let dispose: (() => void) | undefined;
 
@@ -48,14 +58,16 @@ afterEach(() => {
 
 type MeSB = Me & { branchName: string; branches: { id: string; code: string; name: string }[] };
 
-const OWNER: MeSB = {
-  kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai', username: 'owner1',
+const OWNER: MeSB = meOf({
+  id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somchai',
   branchName: 'สำนักงานใหญ่', branches: [{ id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' }],
-};
-const NOK: MeSB = {
-  kind: 'staff', id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok', username: 'nok',
+});
+const NOK: MeSB = meOf({
+  id: 'employee-7', role: 'FRONT', branch: 'B2', name: 'Nok',
   branchName: 'สาขาสอง', branches: [{ id: 'B2', code: 'XC-02', name: 'สาขาสอง' }],
-};
+});
+/** The owner's role part: ADMIN then EXECUTIVE, in `roles`' order, each its th label. */
+const OWNER_ROLES = () => `${roleLabel('admin')}, ${roleLabel('executive')}`;
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -136,33 +148,36 @@ describe('AccountBar (#402)', () => {
     expect(host.querySelector('button')).toBeNull();
   });
 
-  it('the owner: "Somchai · owner1 · OWNER", the branch line, and the sign-out button (V1, V6)', async () => {
+  it('the owner: "Somchai · <admin>, <executive>", the branch line, and the sign-out button (V1, V6)', async () => {
     const { session } = fakeSession(OWNER);
     const { host, navigate } = mount(session);
     await settle();
-    expect(text(host)).toContain('Somchai · owner1 · OWNER');
+    expect(text(host)).toContain(`Somchai · ${OWNER_ROLES()}`);
+    expect(text(host)).not.toMatch(/\b(OWNER|ADMIN|EXECUTIVE)\b/);
+    expect(text(host)).not.toContain('owner1');
     expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'สำนักงานใหญ่' }));
     const button = signOutButton(host);
     expect(button.disabled).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('a staff member: "Nok · nok · FRONT" and "สาขา สาขาสอง" (V1, V6; SB-2: the name, not B2)', async () => {
+  it('a staff member: "Nok · <teller>" and "สาขา สาขาสอง" (V1, V6; SB-2: the name, not B2)', async () => {
     const { session } = fakeSession(NOK);
     const { host } = mount(session);
     await settle();
-    expect(text(host)).toContain('Nok · nok · FRONT');
+    expect(text(host)).toContain(`Nok · ${roleLabel('teller')}`);
+    expect(text(host)).not.toMatch(/\b(FRONT|TELLER)\b/);
     expect(text(host)).toContain(fill(th['shell.account.branch'], { branch: 'สาขาสอง' }));
     expect(text(host)).not.toContain('Somchai');
     signOutButton(host);
   });
 
-  it('an account whose row is gone (name and username null) shows the role alone', async () => {
-    const { session } = fakeSession({ ...OWNER, name: null, username: null });
+  it('an account with no name shows the role part alone', async () => {
+    const { session } = fakeSession({ ...OWNER, name: null });
     const { host } = mount(session);
     await settle();
     const shown = text(host);
-    expect(shown).toContain('OWNER');
+    expect(shown).toContain(OWNER_ROLES());
     expect(shown).not.toContain('null');
     expect(shown).not.toContain('·');
     expect(shown).toContain(fill(th['shell.account.branch'], { branch: 'สำนักงานใหญ่' }));
@@ -226,7 +241,7 @@ describe('AccountBar (#402)', () => {
 
     setMe(NOK);
     await settle();
-    expect(text(host)).toContain('Nok · nok · FRONT');
+    expect(text(host)).toContain(`Nok · ${roleLabel('teller')}`);
     signOutButton(host);
 
     setMe(undefined);
@@ -242,7 +257,7 @@ describe('AccountBar (#402)', () => {
     await settle();
     expect(text(host)).toContain(fill(en['shell.account.branch'], { branch: 'สาขาสอง' }));
     expect(buttonNamed(host, en['shell.account.signOut'])).toBeDefined();
-    expect(text(host)).toContain('Nok · nok · FRONT');
+    expect(text(host)).toContain(`Nok · ${roleLabel('teller', (en as unknown as Record<string, string>))}`);
 
     setLang('th');
     await settle();

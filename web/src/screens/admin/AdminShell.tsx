@@ -63,7 +63,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   } | null>(null);
   const [isOnline, setIsOnline] = createSignal(true);
   const [lastSync, setLastSync] = createSignal(new Date());
-  const [userRole, setUserRole] = createSignal<string | undefined>(undefined);
+  const [permissions, setPermissions] = createSignal<readonly string[]>([]);
   const [ready, setReady] = createSignal(false);
 
   // Hash routing
@@ -252,7 +252,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       const meRes = await props.api.view<Me>('me');
       if (meRes.data) {
         branchFromMe = meRes.data.branch || '';
-        setUserRole(meRes.data.role);
+        setPermissions(meRes.data.permissions);
         sharedSession().updateMe?.(meRes.data);
       }
     } catch {
@@ -273,14 +273,10 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     return [...props.menus].sort((a, b) => a.order - b.order);
   });
 
-  // Allowed menus for current role
+  // Allowed menus: `needs` is 'all' or a permission `me.permissions` holds (#1030 §3.10)
   const allowedMenus = createMemo(() => {
-    const role = userRole();
-    return sortedMenus().filter((m) => {
-      if (m.roles === 'all') return true;
-      if (!role) return false;
-      return m.roles.includes(role);
-    });
+    const held = permissions();
+    return sortedMenus().filter((m) => m.needs === 'all' || held.includes(m.needs));
   });
 
   // Active menu calculation

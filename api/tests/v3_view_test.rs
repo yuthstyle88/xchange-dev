@@ -40,6 +40,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -250,11 +251,16 @@ impl BranchView for Counting {
     type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }
@@ -269,10 +275,15 @@ impl BranchView for SaveRate {
     type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }
@@ -285,10 +296,15 @@ impl BranchView for DeskConfig {
     type Filter = NoFilter;
     type Data = Echo;
 
-    async fn load(&self, branch: &BranchId, who: &Actor, _filter: &NoFilter) -> AppResult<Echo> {
+    async fn load(
+        &self,
+        branch: &BranchId,
+        who: &AccessActor,
+        _filter: &NoFilter,
+    ) -> AppResult<Echo> {
         Ok(Echo {
             branch: branch.as_str().to_owned(),
-            who: who.id().to_owned(),
+            who: who.user_id.clone(),
         })
     }
 }
@@ -313,7 +329,7 @@ impl PagedView for Paging {
     async fn page(
         &self,
         _branch: &BranchId,
-        _who: &Actor,
+        _who: &AccessActor,
         _filter: &NoFilter,
         before: Option<RowId>,
         limit: u16,
@@ -798,6 +814,60 @@ async fn a_paged_first_page_with_an_equal_since_is_unchanged() {
 
 // ------------------------------------------------------------ the me view
 
+/// OR-7.7 #1030: `data` is exactly the new `Me`, with these values; `name` is null (the test callers have no `users`
+/// row) and `permissions` is a sorted list of names without duplicates.
+fn assert_me(
+    data: &Value,
+    id: &str,
+    roles: Value,
+    branch: &str,
+    branch_name: &str,
+    branches: Value,
+) {
+    let mut keys: Vec<&str> = data
+        .as_object()
+        .unwrap_or_else(|| panic!("me data is an object: {data}"))
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "branch",
+            "branchName",
+            "branches",
+            "id",
+            "name",
+            "permissions",
+            "roles"
+        ],
+        "{data}"
+    );
+    assert_eq!(data["id"], serde_json::json!(id), "{data}");
+    assert_eq!(data["name"], Value::Null, "{data}");
+    assert_eq!(data["roles"], roles, "{data}");
+    assert_eq!(data["branch"], serde_json::json!(branch), "{data}");
+    assert_eq!(data["branchName"], serde_json::json!(branch_name), "{data}");
+    assert_eq!(data["branches"], branches, "{data}");
+    let names: Vec<&str> = data["permissions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("permissions is an array: {data}"))
+        .iter()
+        .map(|p| p.as_str().expect("a permission name"))
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(names, sorted, "permissions sorted, no duplicates: {data}");
+}
+
+fn has_permission(data: &Value, name: &str) -> bool {
+    data["permissions"]
+        .as_array()
+        .is_some_and(|ps| ps.iter().any(|p| p == name))
+}
+
 #[actix_web::test]
 async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
     let db = TestDb::start().await;
@@ -810,9 +880,20 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
         "me as the owner: its own version, not the branch's 0 (#492)"
     );
     is_changed(&owner, owner_version, "me as the owner");
-    assert_eq!(
-        owner.body["data"],
-        serde_json::json!({ "kind": "owner", "id": "owner-1", "role": "OWNER", "branch": "MAIN", "branchName": "XC-B", "branches": [{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }], "name": null, "username": null })
+    // OR-7.7 #1030 (rewritten by the ticket author): `Me` is `{id, name, roles, permissions, branch, branchName,
+    // branches}`; the owner's actor is EXECUTIVE + ADMIN organisation-wide, and "owner-1" has no `users` row.
+    assert_me(
+        &owner.body["data"],
+        "owner-1",
+        serde_json::json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
+        "MAIN",
+        "XC-B",
+        serde_json::json!([{ "id": "MAIN", "code": "MAIN", "name": "XC-B" }]),
+    );
+    assert!(
+        has_permission(&owner.body["data"], "ApprovalsDecide"),
+        "{}",
+        owner.body
     );
 
     let named = get(&db, &views, "owner", "/api/v3/views/me?branch=XC-B02").await;
@@ -840,9 +921,24 @@ async fn the_me_view_is_served_by_the_route_table_with_no_other_edit() {
         "me as RATES staff: its own version, not the branch's 0 (#492)"
     );
     is_changed(&staff, staff_version, "me as RATES staff");
-    assert_eq!(
-        staff.body["data"],
-        serde_json::json!({ "kind": "staff", "id": "employee-7", "role": "RATES", "branch": "XC-B01", "branchName": "B01", "branches": [{ "id": "XC-B01", "code": "XC-B01", "name": "B01" }], "name": null, "username": null })
+    // OR-7.7 #1030: RATES staff is RATE_MANAGER at its branch (design §3.3).
+    assert_me(
+        &staff.body["data"],
+        "employee-7",
+        serde_json::json!([{ "role": "RATE_MANAGER", "branchId": "XC-B01" }]),
+        "XC-B01",
+        "B01",
+        serde_json::json!([{ "id": "XC-B01", "code": "XC-B01", "name": "B01" }]),
+    );
+    assert!(
+        has_permission(&staff.body["data"], "RatePolicySave"),
+        "{}",
+        staff.body
+    );
+    assert!(
+        !has_permission(&staff.body["data"], "ApprovalsDecide"),
+        "{}",
+        staff.body
     );
 
     let nobody = get(&db, &views, "", "/api/v3/views/me").await;

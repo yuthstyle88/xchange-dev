@@ -47,6 +47,7 @@ import { setLang } from '../../../shared/i18n';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { meOf } from '../../../test-support/me';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -136,7 +137,7 @@ function answer(s: Sent): Reply {
       body: {
         version: 1,
         changed: true,
-        data: { kind: 'staff', id: 'u-exec', role: 'EXECUTIVE', roles: ['EXECUTIVE'], branch: B01, name: 'Exec', username: 'exec' },
+        data: meOf({ id: 'u-exec', role: 'EXECUTIVE', branch: B01, name: 'Exec', orgWide: true }),
       },
     };
   }

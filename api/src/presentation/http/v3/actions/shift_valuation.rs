@@ -8,7 +8,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::web;
 use rust_decimal::Decimal;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, fixed2, fixed6, round_cents, typed_decimal};

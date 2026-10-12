@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
@@ -19,7 +20,8 @@ use xc_rate::infrastructure::currency::denomination_groups::PgDenominationGroups
 use super::commands::map_rate_engine_error;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::extractors::actor::legacy_actor;
+use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -64,6 +66,8 @@ impl CommandAction for DenominationGroupCreateCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // OR-7 bridge, removed by #1026
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -77,7 +81,7 @@ impl CommandAction for DenominationGroupCreateCommand {
         })?;
 
         self.service
-            .create_group(tx, who, code, &group)
+            .create_group(tx, &legacy, code, &group)
             .await
             .map_err(map_rate_engine_error)?;
 
@@ -134,6 +138,8 @@ impl CommandAction for DenominationGroupMapCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // OR-7 bridge, removed by #1026
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -149,7 +155,7 @@ impl CommandAction for DenominationGroupMapCommand {
         self.service
             .map_group(
                 tx,
-                who,
+                &legacy,
                 code,
                 &group,
                 &input.provider,
@@ -209,6 +215,8 @@ impl CommandAction for DenominationGroupRemoveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        // OR-7 bridge, removed by #1026
+        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -222,7 +230,7 @@ impl CommandAction for DenominationGroupRemoveCommand {
         })?;
 
         self.service
-            .remove_group(tx, who, code, &group)
+            .remove_group(tx, &legacy, code, &group)
             .await
             .map_err(map_rate_engine_error)?;
 

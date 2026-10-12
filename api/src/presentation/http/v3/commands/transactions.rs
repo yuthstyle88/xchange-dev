@@ -18,9 +18,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
 use xc_exchange::application::booking::service::BookingService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -67,7 +67,9 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::transaction::TransactionDto;
+use crate::presentation::extractors::actor::legacy_actor;
 use crate::presentation::http::v3::command::{
+    role_not_allowed_here,
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
@@ -183,13 +185,15 @@ fn payment_method(text: &str) -> Option<PaymentMethod> {
 }
 
 /// The signed-in caller as the exchange workflows are told who acts.
-fn save_actor(who: &Actor) -> SaveActor {
-    SaveActor {
-        id: who.id().to_owned(),
-        username: who.id().to_owned(),
-        employee_id: (who.role() != Role::Owner).then(|| who.id().to_owned()),
-        role: who.role(),
-    }
+fn save_actor(who: &Actor) -> Result<SaveActor, V3Error> {
+    // OR-7 bridge, removed by #1024
+    let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+    Ok(SaveActor {
+        id: legacy.id().to_owned(),
+        username: legacy.id().to_owned(),
+        employee_id: (legacy.role() != Role::Owner).then(|| legacy.id().to_owned()),
+        role: legacy.role(),
+    })
 }
 
 fn transaction_id(id: &str) -> Result<TransactionId, V3Error> {
@@ -366,7 +370,7 @@ impl CommandAction for TransactionCreateCommand {
         };
         let made = self
             .service
-            .run_in(tx, req, &save_actor(who), Utc::now())
+            .run_in(tx, req, &save_actor(who)?, Utc::now())
             .await
             .map_err(refusal)?;
         answer(&self.store, tx, made.id).await
@@ -412,7 +416,7 @@ impl CommandAction for TransactionConfirmCommand {
         let id = transaction_id(&input.id)?;
         let extras = extras_of(tx, branch, id).await?;
         self.service
-            .run_in(tx, id, &save_actor(who), &extras, Utc::now())
+            .run_in(tx, id, &save_actor(who)?, &extras, Utc::now())
             .await
             .map_err(refusal)?;
         answer(&self.store, tx, id).await
@@ -453,7 +457,7 @@ impl CommandAction for TransactionCancelCommand {
         extras_of(tx, branch, id).await?;
         let cancelled = self
             .service
-            .run_in(tx, id, &input.reason, &save_actor(who), Utc::now())
+            .run_in(tx, id, &input.reason, &save_actor(who)?, Utc::now())
             .await
             .map_err(refusal)?;
         Ok(TransactionDto::from_domain(&cancelled))

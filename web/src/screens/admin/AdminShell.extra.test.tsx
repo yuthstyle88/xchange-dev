@@ -2,6 +2,9 @@
 // - SB-2 ruling 1 (#892, replaces Decision 3): after add branch succeeds, the shell does not switch branch
 // - Decision 6: document.title follows v2 (admin-html:158) from the shown menu's heading
 
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The fixture menus' `roles: 'all'` → `needs: 'all'` (#1030 §3.10).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createEffect, onCleanup, type JSX } from 'solid-js';
@@ -9,6 +12,7 @@ import type { ApiClient, ViewAnswer, ViewParams } from '../../shared/api/client'
 import type { Me } from '../../shared/api/generated/common';
 import { AdminShell } from './AdminShell';
 import type { AdminMenu, AdminMenuProps } from './menus';
+import { meOf } from '../../test-support/me';
 
 interface Branch {
   id: string;
@@ -54,7 +58,7 @@ function makeMenu(id: string, order: number, title: string): AdminMenu {
     label: () => title,
     icon: '▦',
     group: 'desk',
-    roles: 'all',
+    needs: 'all',
     heading: {
       eyebrow: () => 'EYEBROW',
       title: () => title,
@@ -68,16 +72,14 @@ function makeMenu(id: string, order: number, title: string): AdminMenu {
 const fakeApi = {
   async view<T>(name: string, q: ViewParams = {}): Promise<ViewAnswer<T>> {
     if (name === 'me') {
-      const me: Me = {
-        kind: 'owner',
+      const me: Me = meOf({
         id: 'owner',
         role: 'OWNER',
         branch: q.branch || 'MAIN',
         name: 'Owner',
-        username: 'owner',
         branchName: q.branch || 'MAIN',
         branches: [],
-      };
+      });
       return { version: 1, changed: true, data: me as T };
     }
     if (name === 'admin_branches') {

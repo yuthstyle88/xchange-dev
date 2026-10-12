@@ -33,6 +33,9 @@
 // issuecomment-6104783522, after claude/89bd61d9's gap issuecomment-6094634009): a session whose
 // `me.branch` is missing or empty, or whose `branches` is empty, never shows the raw
 // `สาขา {branch}`. The bar shows `branchName`, or no branch label at all when there is no name.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The ADMIN's row is organisation-wide.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -44,6 +47,7 @@ import { th } from '../i18n/th';
 import { zh } from '../i18n/zh';
 import type { EndReason, SessionStore } from '../session/session';
 import { AccountBar } from './AccountBar';
+import { meOf } from '../../test-support/me';
 
 type BranchRef = { id: string; code: string; name: string };
 type MeSB = Me & { branchName: string; branches: BranchRef[] };
@@ -58,26 +62,23 @@ const HQ: BranchRef = { id: 'MAIN', code: 'XC-01', name: 'สำนักงา�
 const B2: BranchRef = { id: 'B2', code: 'XC-02', name: 'สาขาสอง' };
 const B3: BranchRef = { id: 'A3', code: 'XC-03', name: 'ขอนแก่น' };
 
-const ADMIN: MeSB = {
-  kind: 'user',
+const ADMIN: MeSB = meOf({
   id: 'u-1',
   role: 'ADMIN',
+  orgWide: true,
   branch: 'B2',
   name: 'Somchai',
-  username: 'admin1',
   branchName: 'สาขาสอง',
   branches: [HQ, B2, B3],
-};
-const TELLER: MeSB = {
-  kind: 'user',
+});
+const TELLER: MeSB = meOf({
   id: 'u-7',
   role: 'TELLER',
   branch: 'B2',
   name: 'Nok',
-  username: 'nok',
   branchName: 'สาขาสอง',
   branches: [B2],
-};
+});
 
 let dispose: (() => void) | undefined;
 

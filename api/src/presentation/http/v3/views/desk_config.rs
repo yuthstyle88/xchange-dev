@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use actix_web::web;
 use pos_error::AppResult;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 

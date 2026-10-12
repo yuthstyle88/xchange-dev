@@ -10,6 +10,9 @@
 // decoded admin page `admin-html:19` — and the words design §12.17 gives the create form. Texts
 // with a value in them (the info line, the confirm and cancel sentences, the settings title) are
 // pinned through the rendered menu in `bookings.screen.test.tsx`.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the menu record's `roles: 'all'` pin → `needs: 'all'` (#1030 §3.10: `MenuDef.roles` becomes `needs`). Nothing else changes.
 import { describe, expect, it } from 'vitest';
 import { collectScreens, screenLookup, setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
@@ -106,7 +109,7 @@ describe('V2-bookings: the menu record (#463 §7; design §12.3)', () => {
     expect(menu.order).toBe(3);
     expect(menu.icon).toBe('▤');
     expect(menu.dated).toBe(false);
-    expect(menu.roles).toBe('all');
+    expect(menu.needs).toBe('all');
     expect(menu.label()).toBe('การจอง');
     expect(menu.heading.eyebrow()).toBe('ONLINE BOOKINGS');
     expect(menu.heading.title()).toBe('การจอง');

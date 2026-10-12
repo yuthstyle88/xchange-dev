@@ -16,7 +16,7 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::application::user::user_service::UserService;
 use xc_auth::domain::access::Role;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;

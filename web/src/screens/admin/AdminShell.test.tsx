@@ -44,6 +44,14 @@
 // issuecomment-6104783522): the add-branch auto-switch (`AdminShell.tsx:381-389`, "Controller Decision 3"
 // of #460) is dropped with nothing in its place. Creating a branch calls no switch route, and the
 // session branch the shell works on stays the same; the new branch is reached from the account-bar menu.
+//
+// Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
+// the `me` fixture (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`; the owner is
+// EXECUTIVE + ADMIN organisation-wide, staff hold their §3.3 role at their branch, each with that role's
+// permissions); the fixture menus' `roles: 'all'` → `needs: 'all'`. The pin "hides a menu whose roles do
+// not hold me.role …" is rewritten as #1030's web case 4 (a menu `needs` a permission: hidden when
+// `me.permissions` lacks it). Added: web cases 2 and 3 with the real approvals menu (FINANCE sees it,
+// TELLER does not, the owner does).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, onCleanup, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -51,6 +59,8 @@ import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../.
 import type { Me } from '../../shared/api/generated/common';
 import { lang, screenLookup, setLang } from '../../shared/i18n';
 import type { AdminMenu, AdminMenuProps } from './menus';
+import { menu as approvalsMenu } from './approvals/menu';
+import { meOf } from '../../test-support/me';
 
 type ShellModule = typeof import('./AdminShell');
 type TextsModule = typeof import('./i18n');
@@ -175,7 +185,7 @@ function fixtureMenu(row: Row, over: Partial<AdminMenu> = {}): AdminMenu {
     icon: row.icon,
     order: row.order,
     group: row.group,
-    roles: 'all',
+    needs: 'all',
     heading: {
       eyebrow: () => row.eyebrow,
       title: () => (th() ? row.title : `EN title ${row.id}`),
@@ -251,10 +261,10 @@ function refOf(id: string): { id: string; code: string; name: string } {
 function meFor(): MeSB {
   if (world.who.kind === 'staff') {
     const b = world.who.branch;
-    return { kind: 'staff', id: 'e-1', role: world.who.role, branch: b, name: 'Somchai', username: 'front1', branchName: refOf(b).name, branches: [refOf(b)] };
+    return meOf({ id: 'e-1', role: world.who.role, branch: b, name: 'Somchai', branchName: refOf(b).name, branches: [refOf(b)] });
   }
   const b = world.session ?? 'MAIN';
-  return { kind: 'owner', id: 'owner', role: 'OWNER', branch: b, name: 'Owner', username: 'owner', branchName: refOf(b).name, branches: world.branches.map((x) => refOf(x.id)) };
+  return meOf({ id: 'owner', role: 'OWNER', branch: b, name: 'Owner', branchName: refOf(b).name, branches: world.branches.map((x) => refOf(x.id)) });
 }
 
 function branchesFor(): Branch[] {
@@ -620,8 +630,9 @@ describe('V2-shell: the sidebar follows the served 10-06 nav (#460 §7; design �
     expect(Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '').filter((h) => h.includes('branch='))).toEqual([]);
   });
 
-  it("hides a menu whose roles do not hold me.role, and shows 'all' menus to everyone (design §12.3 roles)", async () => {
-    const menus = allMenus().map((m) => (m.id === 'payments' ? { ...m, roles: ['OWNER'] as const } : m));
+  it("hides a menu whose needs is not in me.permissions, and shows 'all' menus to everyone (#1030 §3.10)", async () => {
+    // CashManage: BRANCH_MANAGER holds it, TELLER does not (role_permissions.rs).
+    const menus = allMenus().map((m) => (m.id === 'payments' ? { ...m, needs: 'CashManage' } : m));
     world.who = { kind: 'staff', role: 'FRONT', branch: 'B2' };
     await mount(menus, '/ui/admin/#overview');
     const labels = Array.from(container.querySelectorAll('a')).filter(visible).map(spoken);
@@ -629,10 +640,35 @@ describe('V2-shell: the sidebar follows the served 10-06 nav (#460 §7; design �
     expect(labels).toContain('รายงาน');
     dispose?.();
     container.remove();
-    world.who = { kind: 'owner' };
+    world.who = { kind: 'staff', role: 'MANAGER', branch: 'B2' };
     await mount(menus, '/ui/admin/#overview');
-    const owners = Array.from(container.querySelectorAll('a')).filter(visible).map(spoken);
-    expect(owners).toContain('วิธีชำระเงิน');
+    const managers = Array.from(container.querySelectorAll('a')).filter(visible).map(spoken);
+    expect(managers).toContain('วิธีชำระเงิน');
+    expect(managers).toContain('รายงาน');
+  });
+
+  // #1030 §9 (web cases 2 and 3, issuecomment-6105551159): the real approvals menu follows
+  // `ApprovalsDecide`, never a role name.
+  function approvalsShown(): boolean {
+    return Array.from(container.querySelectorAll('a')).filter(visible).map(spoken).includes(approvalsMenu.label());
+  }
+
+  it('a FINANCE user (ApprovalsDecide, no EXECUTIVE row) sees the approvals menu', async () => {
+    world.who = { kind: 'staff', role: 'FINANCE', branch: 'B2' };
+    await mount([...allMenus(), approvalsMenu], '/ui/admin/#overview');
+    expect(approvalsShown()).toBe(true);
+  });
+
+  it('a TELLER (QueueOperate, no ApprovalsDecide) does not see the approvals menu; the owner (EXECUTIVE) does', async () => {
+    world.who = { kind: 'staff', role: 'TELLER', branch: 'B2' };
+    await mount([...allMenus(), approvalsMenu], '/ui/admin/#overview');
+    expect(approvalsShown()).toBe(false);
+    expect(Array.from(container.querySelectorAll('a')).filter(visible).map(spoken)).toContain('รายงาน');
+    dispose?.();
+    container.remove();
+    world.who = { kind: 'owner' };
+    await mount([...allMenus(), approvalsMenu], '/ui/admin/#overview');
+    expect(approvalsShown()).toBe(true);
   });
 
   it('renders with no menu at all: the groups\' links and header are there, no menu body, no crash (§9)', async () => {

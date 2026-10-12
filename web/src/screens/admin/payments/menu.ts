@@ -14,7 +14,7 @@ export const menu: AdminMenu = {
   order: 6,
   group: 'money',
   dated: false,
-  roles: 'all',
+  needs: 'all',
   heading: {
     eyebrow: () => t('eyebrow'),
     title: () => t('title'),
