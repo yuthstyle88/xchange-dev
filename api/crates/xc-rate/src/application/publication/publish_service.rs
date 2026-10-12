@@ -36,15 +36,15 @@ impl PublishService {
         let branch_str = branch.as_str();
 
         // Lock branch row to prevent concurrent publish races
-        let branch_row: Option<(Option<Uuid>, String)> = sqlx::query_as(
-            "SELECT current_publication_id, price_source FROM branches WHERE id = $1 FOR UPDATE",
+        let branch_row: Option<(Option<Uuid>, String, String)> = sqlx::query_as(
+            "SELECT current_publication_id, price_source, organization_id::text FROM branches WHERE id = $1 FOR UPDATE",
         )
         .bind(branch_str)
         .fetch_optional(&mut **tx)
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let (current_pub_id, price_source) = branch_row.ok_or_else(|| {
+        let (current_pub_id, price_source, org_id) = branch_row.ok_or_else(|| {
             RateEngineError::ValidationFailed(format!("branch not found: {branch_str}"))
         })?;
 
@@ -392,6 +392,22 @@ impl PublishService {
             .execute(&mut **tx)
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        let payload = json!({
+            "branchId": branch_str,
+            "publicationId": pub_id.to_string(),
+            "version": next_version,
+        });
+        xc_outbox::application::writer::OutboxWriter::enqueue_in(
+            tx,
+            &org_id,
+            &crate::application::publication::alert_event::RATE_ALERTS_PUBLICATION,
+            &format!("branch:{branch_str}"),
+            &pub_id.to_string(),
+            &payload,
+        )
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         sqlx::query(
             "UPDATE rate_drafts SET status = 'PUBLISHED', updated_at = now() WHERE id = $1",
