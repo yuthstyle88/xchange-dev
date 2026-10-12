@@ -53,8 +53,9 @@ impl NotificationService {
 
     /// `notificationRead`: sets `read_at` only when it is NULL and answers the stored `read_at`.
     /// Another user's notification → `OutOfScope`.
-    pub async fn mark_read(
+    pub async fn mark_read_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         user_id: &str,
         id: &NotificationId,
     ) -> Result<DateTime<Utc>, NotifyError> {
@@ -65,7 +66,7 @@ impl NotificationService {
         let row: Option<(Uuid, Option<DateTime<Utc>>)> =
             sqlx::query_as("SELECT recipient_user_id, read_at FROM notifications WHERE id = $1")
                 .bind(notif_uuid)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -84,15 +85,30 @@ impl NotificationService {
              RETURNING read_at",
         )
         .bind(notif_uuid)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
         Ok(updated)
     }
 
+    pub async fn mark_read(
+        &self,
+        user_id: &str,
+        id: &NotificationId,
+    ) -> Result<DateTime<Utc>, NotifyError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        let updated = self.mark_read_in(&mut tx, user_id, id).await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(updated)
+    }
+
     /// `notificationReadAll`: marks the user's own unread notifications; answers how many.
-    pub async fn mark_all_read(&self, user_id: &str) -> Result<u64, NotifyError> {
+    pub async fn mark_all_read_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        user_id: &str,
+    ) -> Result<u64, NotifyError> {
         let user_uuid = Uuid::parse_str(user_id)
             .map_err(|_| NotifyError::Store(AppError::Validation("invalid user_id".into())))?;
 
@@ -101,11 +117,18 @@ impl NotificationService {
              WHERE recipient_user_id = $1 AND read_at IS NULL",
         )
         .bind(user_uuid)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
         Ok(res.rows_affected())
+    }
+
+    pub async fn mark_all_read(&self, user_id: &str) -> Result<u64, NotifyError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        let count = self.mark_all_read_in(&mut tx, user_id).await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(count)
     }
 
     /// The view `my_notifications`: the user's own notifications, newest first.

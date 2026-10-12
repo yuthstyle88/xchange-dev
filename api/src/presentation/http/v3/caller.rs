@@ -1,8 +1,6 @@
 //! The v3 endpoint seam's caller (APP-18 #1373; design `docs/design/blueprint/customer-app.md` §9 APP-18 row; the lane
 //! controller's rulings on #1373: `Caller { user, app_session }`, no legacy actor; option B, the `*_as` methods sit
 //! alongside today's `&access::Actor` methods).
-//!
-//! SCAFFOLD (#1373 up-front tests): the type the provided tests use. The seam does not build it yet; APP-18 does.
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSession, AppSessionId};
