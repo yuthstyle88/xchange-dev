@@ -168,6 +168,69 @@ cash_transfer_policy_versions(version text PK, organization_id, limits jsonb,   
 - **Exceptions.** A non-zero `difference` on a verified count, or `qty_received ≠ qty_sent` on a RECEIVED transfer,
   writes a row in the existing `cash_exceptions` (C4, §06 *"difference เป็น exception ไม่บังคับตรง"*); FINANCE's
   reconcile reviews it.
+
+  **The row has the existing shape (CA-7d, added 2026-10-12).** "Existing" means the row shape the kept readers
+  decode, not only the table. Every row is one `CashException` (`xc-shift/src/domain/custody/entities/cash_exception.rs:13-24`),
+  serialised by the kept `exception_data` (`xc-shift/src/infrastructure/custody/custody_repository.rs:247`). The
+  readers that need that shape are `exception_from_row` (`decode.rs:591`, which refuses a row without `requestId` or
+  `status`), the branch's custody load (`custody_repository.rs:503`, `?` on every row; called by `api/src/infrastructure/custody/employee_custody.rs:138`), `exceptions_between`
+  (`custody_pages.rs:335`, filtered on `data->>'at'`) and the executive alerts (`alert_facts.rs:112`).
+
+  Why this is written down: CA-3, CA-4 and CA-5 each hand-built `{countId|transferId, currency, difference}` instead
+  (`count_service.rs:1094`, `handover_service.rs:350`, `transfer_flow.rs:328` on `main` `4bfe4d7d`). With one such row
+  at a branch, `exception_from_row` fails on `requestId`, so that branch's custody state no longer loads, and
+  `exceptions_between` never returns the row (#1350 issuecomment-6115209737).
+
+  One exception per event, holding every currency that differs:
+
+  | Field | Value |
+  |---|---|
+  | `id` | `EX-<uuid>`, as today |
+  | `request_id` | the source object's id: the count's id (a count verify, and the count a hand-over is accepted on), or the transfer's id (a receipt) |
+  | `status` | `Open` |
+  | `cash_variance` | the differences when the place that differs is a drawer (a shift's count, a hand-over); otherwise `None` |
+  | `safe_variance` | the differences when the place that differs is the branch safe (a SAFE count, a receipt into the safe); otherwise `None` |
+  | `target_difference` | `None` (that field is the branch-day target's, C9) |
+  | `note` | `"COUNT <id>"`, `"HANDOVER <id>"` or `"TRANSFER <id>"`, so a reader can tell the source without a lookup |
+  | `at` | the command's `now` |
+  | `reviewed_by`, `reviewed_at` | `None` |
+
+  A difference is counted − expected (count, hand-over) or received − sent (receipt), per currency, in the
+  `StockDelta` of that field; currencies with no difference are absent.
+
+  **The writer.** One function in `xc-shift`, next to `exception_data`, writes the row on the caller's transaction,
+  at `position` = `COALESCE(MAX(position) + 1, 0)` on the branch.
+  - **Why 0-based, not the three sites' `COALESCE(MAX(position), 0) + 1`:** the custody save writes `position` as the
+    0-based index into the branch's list (`custody_repository.rs:716-730`), and the table is `UNIQUE (branch_id, position)`.
+  - With the old rule, a branch's first appended row sits at 1. The next v2 custody completion with a difference
+    (`custody_machine.rs:646`) then writes index 1 and violates the unique key.
+  - That path becomes reachable once the load stops failing, so a dense 0-based list is required. `xc-cash` already depends
+  on `xc-shift` (`xc-cash/Cargo.toml:17`). The three sites build the `CashException` and call it, so no other crate
+  writes `cash_exceptions.data`.
+
+  ```rust
+  // api/crates/xc-shift/src/infrastructure/custody/custody_repository.rs   [required name; proposed signature]
+  pub async fn append_cash_exception_in(
+      tx: &mut Transaction<'_, Postgres>,
+      branch: &BranchId,
+      exception: &CashException,
+  ) -> AppResult<()>;
+  ```
+
+  **Data migration.**
+  1. **Existing rows:** rows of the hand-built shape exist only in v3 test databases (v3 holds test data, D6). No
+     schema changes.
+  2. **Backfill:** none, because there is no real data. A test database holding such rows is **recreated**; that is
+     the only cleanup this design names. Deleting the rows by hand would leave gaps in the dense `position` list and
+     collide in the same way as the position rule above. Count them first with
+     `SELECT count(*) FROM cash_exceptions WHERE NOT (data ? 'requestId')`.
+  3. **Deploy order:** there is no migration. The fixed binary writes the full shape from its first request.
+  4. **`down`:** none.
+
+  **Not built here, and named so it isn't assumed:** only a custody request's Reconcile marks an exception
+  `REVIEWED` today (`custody_machine.rs`). Rows keyed by a count or a transfer id therefore stay `OPEN` until FINANCE's
+  review of them exists. §4.1 above says FINANCE's reconcile reviews them, and no ticket in §9 builds that yet. It is
+  recorded in §11 as staged. It is not a regression, because before CA-7d these rows could not be read at all.
 - **Kept as they are:** `ops_state` (phase, entity, target, safe, cutoff, service_opened_at) minus `custodian_id`;
   `attendance`; `customer_holds`; `tx_drafts`; `cash_exceptions`; `ops_events`.
 - **Removed, by CA-10 only** (while the request model still runs, its tables and `custodian_id` stay): `custody_requests`,
@@ -677,6 +740,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-7 | the branch day rebound (C9), exchange save on the saver's shift | `xc-shift/src/domain/custody/branch_day.rs` (new, from the kept half of `custody_machine.rs`), `api/src/application/workflows/save_transaction.rs`, `custody_save_step.rs` | CA-3, PR 589 OR-6 |
 | CA-7b | the branch-day service (§4.8): the kept features of C9 on `access::Actor`, persisted | `api/crates/xc-shift/src/application/branch_day/**` (new), `xc-shift/src/application/mod.rs` (one line), `api/crates/xc-shift/tests/branch_day_service_test.rs` (new) | CA-7 (#623: `BranchDay::start_service` / `cut_off`), PR 589 OR-2 and OR-6 |
 | CA-7c | the xc-cash services on the caller's transaction (§4.9): `CashCountService::{submit_in, verify_in}`, `HandoverService::{start_in, accept_in, reject_in}`, `TransferFlow::{create_in, submit_in, dispatch_in, receive_in, reconcile_in}`; today's methods become wrappers over them, so their tests stay unedited | `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/application/handover/handover_service.rs`, `api/crates/xc-cash/src/application/transfer/transfer_flow.rs`, `api/crates/xc-cash/tests/services_on_caller_tx_test.rs` (new) | CA-4, CA-5, CA-6, CA-7 (all merged) |
+| CA-7d | the exception row shape (§4.1 "Exceptions", added 2026-10-12): `append_cash_exception_in` and the three writers moved onto it | `api/crates/xc-shift/src/infrastructure/custody/custody_repository.rs` (the one function), `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/application/handover/handover_service.rs`, `api/crates/xc-cash/src/application/transfer/transfer_flow.rs` (each: its exception write only), `api/crates/xc-cash/tests/cash_exception_shape_test.rs` (new) | CA-7c (merged); LG-4 #929, which holds the three xc-cash files |
 | CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the six views of §4.7 (with `denominations` and `handover_receivers`) | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift,denominations,handover_receivers}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, **CA-7c** (§4.9), PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
 | CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. `draftBegin` starts with the rest of CA-8b; its area row (`ShiftOperate`) is in `areas/branch_day.rs`. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
 | CA-8c | the CA-8 leftover: `transferPolicySave` (§4.4 table, written by this design to CA-8, but #624 closed with PR 1325 without it: `git grep transferPolicySave origin/main -- api/src web/src` finds 0 on 2026-10-11) and the read view `cash_transfer_policy` (§4.7, added 2026-10-11) | `api/src/presentation/http/v3/commands/cash.rs` (the one command, appended), `api/src/presentation/http/v3/views/cash_transfer_policy.rs` (new), `api/src/presentation/dto/v3/cash_transfer_policy.rs` (new), `web/src/shared/api/generated/cash_transfer_policy.ts` (generated), `api/tests/v3_cash_transfer_policy_test.rs` (new). Not the area file: CA-0p's row covers both | CA-0p, CA-8 (merged) |
@@ -703,6 +767,7 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-7 | start-service and cut-off by BRANCH_MANAGER; after cut-off a save needs the saver's own draft; the day closes when the last shift's CLOSE is verified |
 | CA-7b | the tests open the transaction and lock the branch (`branch_versions … FOR UPDATE`) themselves, as the seam does, and pass it to each method; each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on that transaction, and a rollback leaves none; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
 | CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (the destination's, for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; `receive_in` refuses `outOfScope` when the transfer's destination is not the branch it is given; the wrappers behave as before (their existing tests pass unedited) |
+| CA-7d | a verified count with a THB and a USD difference writes **one** row; `exception_from_row` decodes it with `status` OPEN, `request_id` = the count id, `cash_variance` holding both currencies and `at` = the command's time. After it, the branch's custody state still loads and `exceptions_between` around that time returns it. A SAFE count fills `safe_variance`. On a branch whose list already holds n rows (positions 0…n−1), the new row takes position n; on an empty branch, 0; after it, a v2 custody completion with a difference still saves (no `UNIQUE (branch_id, position)` violation). A hand-over with a difference writes the same shape with its count id. A receipt with fewer notes writes `safe_variance` or `cash_variance` by its destination, and `request_id` = the transfer id. No other crate writes `cash_exceptions` (`git grep -n "INTO cash_exceptions" -- 'api/crates/*/src' api/src` lists only `custody_repository.rs`). The existing in-source test at `count_service.rs:698`, which reads `data->>'countId'`, changes with this ticket: it is listed as changed by decision |
 | CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals`; `countVerify` with a difference over the limit answers 200 `AWAITING_FINANCE` and leaves exactly one PENDING approval request |
 | CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-8c | `transferPolicySave` writes one version row, refuses a non-EXECUTIVE (`roleNotAllowed`) and `TooManyDecimals`, and replays on the same `Idempotency-Key`; `cash_transfer_policy` answers `null` before the first save and the newest version after two saves, and refuses a non-EXECUTIVE |
@@ -726,6 +791,7 @@ Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not 
 | §07 Count(kind, counted_by, verified_by), Line(currency, denomination, qty, expected, difference) | C2. **Staged:** `expected`/`difference` per denomination waits for #553's per-denomination stock; until then per currency (§4.1). No rule changes: the difference is computed by the server, as the Blueprint asks |
 | §07 Handover(from_shift, to_shift, status) | C3 |
 | §06 Cash transfer states, in-transit, receiver certifies, difference = exception | C4, §4.2: exactly the five states; a refusal lives on the ApprovalRequest (A06 *"อนุมัติ/ปฏิเสธพร้อมเหตุผล"*), the transfer stays DRAFT |
+| §06/§07 a difference is an exception that FINANCE reviews | CA-7d writes it in the kept `CashException` shape (§4.1). **Staged:** marking a count- or transfer-keyed exception `REVIEWED` is not built; only a custody request's Reconcile does it today. No §9 ticket owns it yet |
 | §11 *"เงิน in-transit แยก"* | **Staged** until #553: the interim posting port keeps no in-transit balance; money in transit is read from DISPATCHED transfers (§4.6). No rule changes |
 | §07 CashTransfer(from_branch, to_branch, …), Line(qty_sent, qty_received) | `kind = BRANCH` rows; the other kinds are v3's kept features (A2) on the same table |
 | §02 separation preparer / approver | the approval core (PR 570 §5.4) and `verified_by ≠ counted_by` |
