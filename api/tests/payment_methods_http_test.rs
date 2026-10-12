@@ -413,8 +413,9 @@ async fn an_employee_reads_only_their_own_branch() {
     room.finish().await;
 }
 
-/// "ประวัติการตั้งค่า" is the owner's: an employee of any role reads the rows with no history
-/// and cannot edit.
+/// "ประวัติการตั้งค่า" is for whoever holds `SystemSettings` (OR-7.3 #1022): the owner and SYSTEM (an ADMIN, B1) read
+/// the rows with the history and may edit; an employee of any other role reads the rows with no history and cannot
+/// edit.
 #[actix_web::test]
 async fn only_the_owner_sees_the_history() {
     let room = Room::everyone().await;
@@ -427,13 +428,23 @@ async fn only_the_owner_sees_the_history() {
     assert_eq!(owner["history"][0]["after_methods"], rows);
     assert_eq!(owner["history"][0]["before_methods"], defaults());
 
-    for person in one_of_each_role().iter().filter(|p| !p.is_owner()) {
+    // OR-7.3 (#1022): `canEdit` and the history follow `SystemSettings`, the permission `save` checks. B1 makes
+    // SYSTEM an ADMIN, which holds it (and already saves, C5 below), so SYSTEM now edits and sees the history
+    for person in one_of_each_role()
+        .iter()
+        .filter(|p| !p.is_owner() && p.key != "SYSTEM")
+    {
         let read = room.list(&person.key, None).await;
         assert_eq!(read["canEdit"], json!(false), "{}", person.key);
         assert_eq!(read["history"], json!([]), "{}", person.key);
         assert_eq!(read["methods"], rows, "{}", person.key);
         assert_eq!(read["version"], json!(1), "{}", person.key);
     }
+    let system = room.list("SYSTEM", None).await;
+    assert_eq!(system["canEdit"], json!(true), "SYSTEM (ADMIN) edits");
+    assert_eq!(system["history"].as_array().map(Vec::len), Some(1));
+    assert_eq!(system["methods"], rows, "SYSTEM");
+    assert_eq!(system["version"], json!(1), "SYSTEM");
     room.finish().await;
 }
 

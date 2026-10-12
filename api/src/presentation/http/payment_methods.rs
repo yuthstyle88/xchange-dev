@@ -167,17 +167,10 @@ async fn handle(
         Err(_) => return refuse(500, DB_ERROR),
     }
 
-    let dummy_owner = xc_auth::domain::policy::value_objects::actor::Actor::owner("owner");
-    let actor = callers
-        .owner
-        .as_ref()
-        .or(callers.staff.as_ref())
-        .unwrap_or(&dummy_owner);
-    let username = callers
-        .user
-        .as_ref()
-        .map(|u| u.user_id.as_str())
-        .unwrap_or("owner");
+    let Some(actor) = callers.user.as_ref() else {
+        return refuse(401, "กรุณาเข้าสู่ระบบ");
+    };
+    let username = actor.user_id.as_str();
 
     // Process list / save
     if action_str == "list" {
