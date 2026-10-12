@@ -25,6 +25,7 @@ xc-cash = { path = "crates/xc-cash" }
 xc-queue = { path = "crates/xc-queue" }
 xc-alert = { path = "crates/xc-alert" }
 xc-loyalty = { path = "crates/xc-loyalty" }
+xc-booking = { path = "crates/xc-booking" }
 
 [package]
 name = "xchange"
