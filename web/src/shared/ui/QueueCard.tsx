@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { locale, t } from '../i18n';
+import { summarize } from '../queue/board';
 import { queueBranch, useQueueStore } from '../queue/queue-store';
 import { announce, soundOn } from '../queue/queue-sound';
 import type { SessionStore } from '../session/session';
@@ -18,7 +19,20 @@ function checkInitialFold(): boolean {
   return false;
 }
 
+/** The server's row for `queue_board` (QueueOperate): only a caller who holds it gets the card (QU-6, #1354 ruling). */
+function holdsQueueOperate(session: SessionStore): boolean {
+  return session.me()?.permissions.includes('QueueOperate') ?? false;
+}
+
 export function QueueCard(props: { session: SessionStore }): JSX.Element {
+  return (
+    <Show when={holdsQueueOperate(props.session)}>
+      <OperatorCard session={props.session} />
+    </Show>
+  );
+}
+
+function OperatorCard(props: { session: SessionStore }): JSX.Element {
   const [isFolded, setIsFolded] = createSignal(checkInitialFold());
   const toggleFold = () => setIsFolded((f) => !f);
 
@@ -26,12 +40,25 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
   const [hasAnsweredAny, setHasAnsweredAny] = createSignal(false);
   let lastStatusLine = '';
 
+  const summary = () => {
+    const s = store().state();
+    return s ? summarize(s) : undefined;
+  };
+
+  /** The name of the branch the card follows, from the signed-in user's branches. */
+  const branchName = () => {
+    const me = props.session.me();
+    const b = queueBranch();
+    if (!me || !b) return undefined;
+    return me.branches.find((x) => x.id === b)?.name ?? (me.branch === b ? me.branchName : undefined);
+  };
+
   const badgeText = () => {
     const err = store().error();
     if (err && err.kind === 'offline') {
       return '!';
     }
-    const s = store().state();
+    const s = summary();
     if (s) {
       return String(s.count);
     }
@@ -40,14 +67,14 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
 
   const isWaiting = () => {
     if (store().error()) return false;
-    const s = store().state();
+    const s = summary();
     return Boolean(s && s.count > 0);
   };
 
   const titleText = () => {
-    const s = store().state();
-    if (s?.branchName) {
-      return `XC · ${s.branchName}`;
+    const name = store().state() ? branchName() : undefined;
+    if (name) {
+      return `XC · ${name}`;
     }
     return t('queue.card.title');
   };
@@ -67,12 +94,13 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
         }
       }
     }
-    const s = store().state();
+    const s = summary();
     if (s) {
+      const name = branchName() ?? '';
       if (s.count > 0) {
-        return t('queue.card.hasWaiting', { count: s.count, branchName: s.branchName });
+        return t('queue.card.hasWaiting', { count: s.count, branchName: name });
       }
-      return t('queue.card.noWaiting', { branchName: s.branchName });
+      return t('queue.card.noWaiting', { branchName: name });
     }
     if (hasAnsweredAny()) {
       return t('queue.card.checkingBranch');
@@ -86,7 +114,7 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
       lastStatusLine = '';
       return;
     }
-    const s = store().state();
+    const s = summary();
     if (s) {
       setHasAnsweredAny(true);
       const line = statusText();
@@ -102,7 +130,7 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
   const isEnded = () => store().error()?.kind === 'ended';
 
   createEffect(() => {
-    const s = store().state();
+    const s = summary();
     const u = props.session.me();
     const b = queueBranch();
     const on = soundOn();
@@ -118,7 +146,7 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
   const showWorkers = () => {
     if (store().error()?.kind === 'offline') return false;
     const s = store().state();
-    if (!s || s.working.length === 0) return false;
+    if (!s || s.called.length === 0) return false;
     return true;
   };
 
@@ -164,19 +192,19 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
             </Show>
             <Show when={showWorkers()}>
               <div class="queue-card-workers">
-                <For each={store().state()?.working ?? []}>
+                <For each={store().state()?.called ?? []}>
                   {(w) => {
                     const stamp = () =>
-                      w.startedAt
-                        ? new Date(w.startedAt).toLocaleString(locale(), {
+                      w.calledAt
+                        ? new Date(w.calledAt).toLocaleString(locale(), {
                             timeZone: 'Asia/Bangkok',
                           })
                         : t('queue.card.noData');
                     return (
                       <div class="queue-card-worker">
                         {t('queue.card.workerLine', {
-                          staff: w.staff,
-                          queue: w.queue,
+                          staff: w.tellerId ?? t('queue.card.noData'),
+                          queue: w.displayNumber,
                           time: stamp(),
                         })}
                       </div>

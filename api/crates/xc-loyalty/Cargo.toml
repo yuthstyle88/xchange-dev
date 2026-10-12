@@ -1,0 +1,24 @@
+[package]
+name = "xc-loyalty"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "xchange as a client of the central Loyalty service: event kinds, customer reference, facts, wire body and the outbox writer of the two loyalty events (design membership-points.md §6)"
+license = "Proprietary"
+publish = false
+
+[dependencies]
+pos-error = { workspace = true }
+xc-kernel = { workspace = true }
+xc-outbox = { workspace = true }
+rust_decimal = { workspace = true }
+serde_json = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+uuid = { version = "1", features = ["v4", "v5"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres"] }
+futures = "0.3"
+
+[dev-dependencies]
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "json", "migrate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

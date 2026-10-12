@@ -601,7 +601,20 @@ async fn handle_kiosk(
         }
         KioskAction::Accept => {
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
-            match service.accept(&branch, &kiosk_actor, id, now).await {
+            // §4.5 (QU-6 #1354): accept starts the request's ticket as the accepting teller, through
+            // the queue's port, in the same transaction; the queue's refusals keep it WAITING.
+            let issuer = TicketIssuer::new(
+                BranchTx::new(Transactor::new(pool.clone())),
+                Arc::new(PgQueueRepository::new(pool.clone())),
+            );
+            let queue: Arc<dyn QueueTickets> = Arc::new(match callers.user.clone() {
+                Some(user) => issuer.acting_as(user),
+                None => issuer,
+            });
+            match service
+                .accept_with_queue(&branch, &kiosk_actor, id, now, queue)
+                .await
+            {
                 Ok(AcceptOutcome::Claimed(times)) => {
                     json_response(dto_kiosk::accept_claimed_json(&times))
                 }

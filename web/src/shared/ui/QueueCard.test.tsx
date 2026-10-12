@@ -38,14 +38,19 @@
 // list: an intended outcome change, since the server already refuses its accept/get.
 // Added after claude/dell-claude-6's review (#1030, gap 2): two C3 cases where `roles` and `permissions`
 // disagree, so a role-name rule cannot pass.
+// QU-6 (#1354, rulings issuecomment-6117574257 and issuecomment-6118321787) by the test-writer claude/14cc24bd: the
+// store now holds `queue_board`'s `QueueBoardData` (`waiting`/`called`/`myCounter`), so every answer is re-expressed on
+// that shape: the count is `waiting.length`, the "latest" key is the newest waiting ticket's id, and the branch name
+// comes from the session's `me` (its `branches`), as `queue_board` names no branch. Ruling (a): a session without
+// `QueueOperate` gets no card at all, so the C3 "no link" rows and the C6 RATES row now expect no card. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { KioskNotifications } from '../queue/wire';
-import { employeeOf, meOf } from '../../test-support/me';
+import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import { meOf } from '../../test-support/me';
 
 // ── fake queue store (#486's module) ─────────────────────────────────────────
 
@@ -57,8 +62,9 @@ interface FakeQueues {
   reset(): void;
 }
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
   refreshes: number;
 }
@@ -72,7 +78,7 @@ vi.mock('../queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = stores.get(b);
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -116,24 +122,36 @@ function queues(): FakeQueues {
   return fake.queues as FakeQueues;
 }
 
-let serverNow = Date.parse('2026-10-08T03:00:00.000Z');
+/**
+ * `count` WAITING tickets in call order (`queue_board`'s `waiting`); the newest one (the latest `issuedAt`) has the id
+ * `latest`, so it is the card's "new request" key. The older ones keep the same ids from one answer to the next.
+ */
+function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
+  const list: QueueBoardWaiting[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const newest = i === count;
+    list.push({
+      id: newest && latest !== null ? latest : `older-${i}`,
+      displayNumber: `W${String(i).padStart(3, '0')}`,
+      serviceType: 'WALK_IN',
+      sequence: i,
+      issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
+    });
+  }
+  return list;
+}
 
 /** The store's answer: a new data object every time, like a `changed: true` poll. */
-function answer(branch: string, over: Partial<KioskNotifications> = {}) {
-  serverNow += 5000;
+function answer(branch: string, over: Partial<QueueBoardData> = {}) {
   const s = queues().store(branch);
   s.setError(undefined);
-  s.setState({
-    serverNow: new Date(serverNow).toISOString(),
-    branchId: branch,
-    branchName: 'Silom',
-    count: 0,
-    latest: null,
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(NOK),
+  const data: QueueBoardData = {
+    waiting: [],
+    called: [],
+    myCounter: null,
     ...over,
-  });
+  };
+  s.setState(data);
 }
 
 function fail(branch: string, error: QueueError) {
@@ -246,7 +264,18 @@ function viewport(width: number) {
 
 // ── the page ─────────────────────────────────────────────────────────────────
 
-const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
+// `queue_board` names no branch: the card takes the branch's name from `me` (QU-6).
+const NOK_V3 = {
+  id: 'E7',
+  role: 'FRONT',
+  branch: 'B1',
+  name: 'Nok',
+  branchName: 'Silom',
+  branches: [
+    { id: 'B1', code: 'B1', name: 'Silom' },
+    { id: 'B2', code: 'B2', name: 'Ratchada' },
+  ],
+};
 const NOK: Me = meOf(NOK_V3);
 
 const TH = {
@@ -346,6 +375,15 @@ function theCard(label = TH.aria): HTMLElement {
   return found[0];
 }
 
+async function awaitCard(label = TH.aria): Promise<HTMLElement> {
+  for (let i = 0; i < 100; i += 1) {
+    const list = cards(label);
+    if (list.length === 1) return list[0];
+    await Promise.resolve();
+  }
+  return theCard(label);
+}
+
 function shown(el: Element | null | undefined): boolean {
   if (!el || !el.isConnected) return false;
   for (let e: Element | null = el; e; e = e.parentElement) {
@@ -426,8 +464,7 @@ function ownRequests(): string[] {
 describe('QueueCard C1: the card before the first answer', () => {
   it('an <aside> labelled แจ้งเตือนคิวลูกค้า: badge —, title XC · คิวหน้าร้าน, a polite status กำลังตรวจคิว…, fold button −', async () => {
     await openPage();
-    await settle();
-    const card = theCard();
+    const card = await awaitCard();
     expect(card.tagName).toBe('ASIDE');
     expect(leaf(card, '—')).toBeDefined();
     expect(leaf(card, TH.title)).toBeDefined();
@@ -443,7 +480,7 @@ describe('QueueCard C1: the card before the first answer', () => {
   it('makes no request of its own and never signs out', async () => {
     const page = await openPage();
     await settle();
-    answer('B1', { count: 2, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(2, 'kq-1') });
     fail('B1', { kind: 'ended', reason: 'expired' });
     await settle();
     expect(ownRequests()).toEqual([]);
@@ -525,24 +562,25 @@ describe('QueueCard C3: the link to the queue page', () => {
     });
   }
 
+  // QU-6 ruling (a): `queue_board` is read only with QueueOperate, so a session without it gets no card at all (no link).
   for (const role of ['OWNER', 'RATES', 'MONITOR', 'FINANCE', 'SYSTEM', 'DOCUMENTS', 'DOCUMENT_REVIEW']) {
-    it(`${role}: no link`, async () => {
+    it(`${role}: no card, so no link`, async () => {
       const who = meOf({ ...NOK_V3, role });
       await openPage(who);
       await settle();
-      answer('B1', { count: 1, latest: 'kq-1', employee: employeeOf(who) });
+      answer('B1', { waiting: waiting(1, 'kq-1') });
       await settle();
-      expect(shown(link(theCard(), TH.open))).toBe(false);
-      expect(Array.from(theCard().querySelectorAll('a')).filter((a) => shown(a))).toEqual([]);
+      expect(cards()).toEqual([]);
+      expect(Array.from(document.querySelectorAll('a')).filter((a) => shown(a) && (a.textContent ?? '').trim() === TH.open)).toEqual([]);
     });
   }
 
   // #1030 §3.10 (gap 2 of claude/dell-claude-6's review): the link follows `permissions`, never a role
   // name. Hand-built `me`s, because `meOf` always derives the permissions from the roles.
-  it('a TELLER row at another branch whose permissions lack QueueOperate: no link', async () => {
+  it('a TELLER row at another branch whose permissions lack QueueOperate: no card, so no link (QU-6 ruling (a))', async () => {
     await openPage({ ...NOK, roles: [{ role: 'TELLER', branchId: 'B2' }], permissions: ['SignedIn'] } as Me);
     await settle();
-    expect(shown(link(theCard(), TH.open))).toBe(false);
+    expect(cards()).toEqual([]);
   });
 
   it('a FINANCE row whose permissions hold QueueOperate: the link', async () => {
@@ -570,10 +608,10 @@ describe('QueueCard C4: each answer', () => {
     await openPage();
     await settle();
     expect(folded()).toBe(true);
-    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     expect(folded()).toBe(true);
-    answer('B1', { count: 2, latest: 'kq-2', branchName: 'Silom' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     const card = theCard();
     expect(leaf(card, '2')).toBeDefined();
@@ -589,7 +627,7 @@ describe('QueueCard C4: each answer', () => {
     viewport(390);
     await openPage();
     await settle();
-    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     const card = theCard();
     expect(leaf(card, '0')).toBeDefined();
@@ -601,22 +639,22 @@ describe('QueueCard C4: each answer', () => {
   it('the same line again does not unfold it again; a new line with a waiting count does', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 2, latest: 'kq-2' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     foldButton().click();
     await settle();
     expect(folded()).toBe(true);
 
-    answer('B1', { count: 2, latest: 'kq-2' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     expect(folded()).toBe(true);
     // one request served and another arrived: same count, same line, new latest — still folded
-    answer('B1', { count: 2, latest: 'kq-3' });
+    answer('B1', { waiting: waiting(2, 'kq-3') });
     await settle();
     expect(folded()).toBe(true);
     expect(statusLine().textContent?.trim()).toBe(TH.waiting(2, 'Silom'));
 
-    answer('B1', { count: 3, latest: 'kq-4' });
+    answer('B1', { waiting: waiting(3, 'kq-4') });
     await settle();
     expect(folded()).toBe(false);
     expect(statusLine().textContent?.trim()).toBe(TH.waiting(3, 'Silom'));
@@ -625,11 +663,11 @@ describe('QueueCard C4: each answer', () => {
   it('a waiting count that drops to 0 keeps it folded', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 1, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     foldButton().click();
     await settle();
-    answer('B1', { count: 0, latest: null });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     expect(folded()).toBe(true);
     expect(theCard().classList.contains('waiting')).toBe(false);
@@ -638,12 +676,12 @@ describe('QueueCard C4: each answer', () => {
   it('a branch change: กำลังตรวจคิวของสาขา… until that branch answers', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 1, latest: 'kq-1', branchName: 'Silom' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     queues().setBranch('B2');
     await settle();
     expect(statusLine().textContent?.trim()).toBe(TH.checkingBranch);
-    answer('B2', { count: 0, latest: null, branchName: 'Ratchada' });
+    answer('B2', { waiting: waiting(0, null) });
     await settle();
     expect(statusLine().textContent?.trim()).toBe(TH.none('Ratchada'));
     expect(leaf(theCard(), 'XC · Ratchada')).toBeDefined();
@@ -657,7 +695,7 @@ describe('QueueCard C5: offline', () => {
   it('badge !, no class waiting, เชื่อมต่อไม่ได้ · กำลังลองใหม่; it does not unfold', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 2, latest: 'kq-2' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     foldButton().click();
     await settle();
@@ -674,7 +712,7 @@ describe('QueueCard C5: offline', () => {
   it('the next success clears it — even an unchanged one — and the waiting line is new again, so it unfolds (account-bar.js:45 last=\'\')', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 2, latest: 'kq-2' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     foldButton().click();
     fail('B1', { kind: 'offline' });
@@ -695,7 +733,7 @@ describe('QueueCard C6: the session ended', () => {
   it('expired: เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่ and เข้าสู่ระบบอีกครั้ง → to /login', async () => {
     const page = await openPage();
     await settle();
-    answer('B1', { count: 1, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     fail('B1', { kind: 'ended', reason: 'expired' });
     await settle();
@@ -718,14 +756,12 @@ describe('QueueCard C6: the session ended', () => {
     expect(link(card, TH.signIn)?.getAttribute('href')).toBe('/login');
   });
 
-  it('the sign-in link is shown to a role that never sees the queue link (RATES)', async () => {
+  it('a role without QueueOperate (RATES) has no card, so no sign-in link either (QU-6 ruling (a))', async () => {
     await openPage(meOf({ ...NOK_V3, role: 'RATES' }));
     await settle();
     fail('B1', { kind: 'ended', reason: 'expired' });
     await settle();
-    const a = link(theCard(), TH.signIn);
-    expect(shown(a)).toBe(true);
-    expect(a?.getAttribute('href')).toBe('/login');
+    expect(cards()).toEqual([]);
   });
 });
 
@@ -840,16 +876,16 @@ describe('QueueCard C9: it announces each answer', () => {
     await settle();
     expect(audio.chimes()).toBe(1);
 
-    answer('B1', { count: 1, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     expect(audio.chimes()).toBe(2);
     expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-1');
 
-    answer('B1', { count: 2, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(2, 'kq-1') });
     await settle();
     expect(audio.chimes()).toBe(2);
 
-    answer('B1', { count: 2, latest: 'kq-2' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     expect(audio.chimes()).toBe(3);
     expect(storage.map.get('xc.queue.sound.E7.B1')).toBe('kq-2');
@@ -858,7 +894,7 @@ describe('QueueCard C9: it announces each answer', () => {
   it('sound off: an answer chimes nothing and stores nothing', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 1, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     expect(audio.chimes()).toBe(0);
     expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
@@ -871,7 +907,7 @@ describe('QueueCard C9: it announces each answer', () => {
     await settle();
     queues().setBranch('B2');
     await settle();
-    answer('B2', { count: 1, latest: 'kq-7', branchName: 'Ratchada' });
+    answer('B2', { waiting: waiting(1, 'kq-7') });
     await settle();
     expect(storage.map.get('xc.queue.sound.E7.B2')).toBe('kq-7');
     expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
@@ -880,7 +916,7 @@ describe('QueueCard C9: it announces each answer', () => {
   it('switching sound on while a request already waits announces it, as v2’s next poll did (:46 → :37)', async () => {
     await openPage();
     await settle();
-    answer('B1', { count: 1, latest: 'kq-1' });
+    answer('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
     button(theCard(), TH.soundOn)?.click();
     await settle();
@@ -908,7 +944,7 @@ describe('QueueCard texts follow the language (W10)', () => {
     expect(button(card, en['queue.sound.enable'])).toBeDefined();
     expect(leaf(card, en['queue.sound.hintInitial'])).toBeDefined();
 
-    answer('B1', { count: 2, latest: 'kq-2', branchName: 'Silom' });
+    answer('B1', { waiting: waiting(2, 'kq-2') });
     await settle();
     expect(statusLine(card).textContent?.trim()).toBe(
       page.i18n.fill(en['queue.card.hasWaiting'], { count: 2, branchName: 'Silom' }),
@@ -932,7 +968,7 @@ describe('QueueCard texts follow the language (W10)', () => {
     const page = await openPage(NOK, 'en');
     const { en } = page;
     await settle();
-    answer('B1', { count: 0, latest: null, branchName: 'Silom' });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     const card = theCard(en['queue.card.aria']);
     expect(statusLine(card).textContent?.trim()).toBe(page.i18n.fill(en['queue.card.noWaiting'], { branchName: 'Silom' }));

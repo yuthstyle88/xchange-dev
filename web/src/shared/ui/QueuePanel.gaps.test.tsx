@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// QU-6 (#1354, ruling issuecomment-6118459878) by the test-writer claude/14cc24bd: the shared store polls `queue_board`
+// (the panel itself stays on `kiosk_queue`), so the fake answers the store's poll as typed `QueueBoardData`. The panel's
+// `kiosk_queue` answers and every assertion are unchanged.
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
@@ -9,9 +12,10 @@ import type { Me } from '../api/generated/common';
 import { setLang } from '../i18n';
 import type { SessionStore } from '../session/session';
 import { queueStore, type QueueStore } from '../queue/queue-store';
-import type { KioskNotifications, KioskQueueRow } from '../queue/wire';
+import type { QueueBoardData } from '../api/generated/queue_board';
+import type { KioskQueueRow } from '../queue/wire';
 import { QueuePanel } from './QueuePanel';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 const T0 = Date.parse('2026-10-08T03:00:00.000Z');
 const SKEW = 10 * 60 * 1000;
@@ -56,16 +60,18 @@ class Branch {
   version = 7;
   readonly rows: Record<State, KioskQueueRow[]> = { waiting: [], working: [], completed: [] };
   constructor(readonly id: string) {}
-  notifications(): KioskNotifications {
+  /** The store's poll (`queue_board`): one WAITING ticket per waiting request, in call order. */
+  board(): QueueBoardData {
     return {
-      serverNow: new Date(Date.now() + SKEW).toISOString(),
-      branchId: this.id,
-      branchName: 'Silom',
-      count: this.rows.waiting.length,
-      latest: this.rows.waiting[0]?.id ?? null,
-      workingCount: this.rows.working.length,
-      working: [],
-      employee: employeeOf(ME),
+      waiting: this.rows.waiting.map((r, i) => ({
+        id: r.id,
+        displayNumber: r.queue,
+        serviceType: 'WALK_IN',
+        sequence: i + 1,
+        issuedAt: new Date(T0).toISOString(),
+      })),
+      called: [],
+      myCounter: null,
     };
   }
 }
@@ -127,9 +133,9 @@ class FakeApi {
       this.calls.push({ method: 'view', name, params: p });
       await settled();
       const b = this.branch(String(p.branch));
-      if (name === 'kiosk_notifications') {
+      if (name === 'queue_board') {
         if (p.since !== undefined && p.since === b.version) return { version: b.version, changed: false };
-        return { version: b.version, changed: true, data: b.notifications() as unknown as T };
+        return { version: b.version, changed: true, data: b.board() as unknown as T };
       }
       const version = b.version;
       const list = b.rows[(p.filter?.state ?? 'waiting') as State].slice(0, p.limit ?? 51);

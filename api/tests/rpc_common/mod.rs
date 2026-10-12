@@ -794,6 +794,12 @@ pub enum Rule {
     /// sent, and held to the route's refusal. What v2 accepted is applied behind the routes, as
     /// recorded, so the steps after it see the state v2 recorded.
     Blueprint(PolicyError),
+    /// A claim v2 let through and the queue refuses (QU-3: a teller holds one CALLED or SERVING ticket;
+    /// QU-6 #1354: the kiosk's `accept` starts the request's ticket; design `queue-tickets.md` §7, "a
+    /// teller 'accepts' any waiting request" becomes call/start): sent, and held to the kiosk route's
+    /// refusal, `400 {"error": <code>}`. What v2 accepted is applied behind the routes, as recorded and
+    /// by its own sender (`KioskReplay`), so the steps after it see the state v2 recorded.
+    QueueRefuses(&'static str),
     /// Sent through HTTP and held to v2's answer as `edit` changes it: a caller the Blueprint
     /// lets through and answers otherwise (OR-4b, #767; e.g. C8, the owner's user is not offered
     /// the kiosk queue's work).
@@ -1263,6 +1269,16 @@ impl<'f> Replay<'f> {
                 if step.status == Some(200) && step.path() != Some("/api/kiosk") {
                     self.accepted_behind(step).await;
                 }
+            }
+            Rule::QueueRefuses(code) => {
+                assert_eq!(answer.status, 400, "{label}: {:.300}", answer.text);
+                assert_eq!(
+                    answer.json()["error"],
+                    json!(code),
+                    "{label}: {:.300}",
+                    answer.text
+                );
+                self.tally.differences.push(step.n);
             }
             Rule::RecordedWith(edit) => {
                 assert_eq!(

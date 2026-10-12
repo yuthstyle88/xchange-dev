@@ -28,13 +28,14 @@ import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import { locale, setLang, t } from '../i18n';
 import { queueStore, type QueueError, type QueueStore } from '../queue/queue-store';
-import type { KioskNotifications } from '../queue/wire';
+import type { QueueBoardData } from '../api/generated/queue_board';
 import { QueueCard } from './QueueCard';
 import { QueueBar } from '../../screens/admin/queue/QueueBar';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
 }
 
@@ -46,7 +47,7 @@ vi.mock('../queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = fake.stores.get(b) as FakeStore | undefined;
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -62,7 +63,7 @@ vi.mock('../queue/queue-store', async () => {
       };
       fake.stores.set(b, s);
     }
-    return s;
+    return s!;
   };
   return {
     queueBranch: branch,
@@ -90,20 +91,40 @@ const TWO = [
   { id: 'K2', queue: 'Q-2', staff: 'ploy', startedAt: null, status: 'ACCEPTED' },
 ];
 
-function answer(over: Partial<KioskNotifications> = {}) {
+function answer(
+  over: Partial<QueueBoardData> & { working?: any[]; workingCount?: number; count?: number; latest?: string | null } = {},
+) {
   const s = queueStore('B1') as FakeStore;
   s.setError(undefined);
-  s.setState({
-    serverNow: '2026-10-10T03:00:00.000Z',
-    branchId: 'B1',
-    branchName: 'Silom',
-    count: 1,
-    latest: 'K9',
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(NOK),
-    ...over,
-  });
+  const called =
+    over.called ??
+    (over.working ?? []).map((w: any) => ({
+      id: w.id,
+      displayNumber: w.queue ?? w.displayNumber,
+      serviceType: 'WALK_IN',
+      status: w.status ?? 'SERVING',
+      tellerId: w.staff ?? w.tellerId ?? null,
+      calledAt: w.startedAt ?? w.calledAt ?? null,
+    }));
+  const waiting =
+    over.waiting ??
+    (over.count
+      ? [
+          {
+            id: over.latest ?? 'K9',
+            displayNumber: 'W001',
+            serviceType: 'WALK_IN',
+            sequence: 1,
+            issuedAt: '2026-10-10T03:00:00.000Z',
+          },
+        ]
+      : []);
+  const data: QueueBoardData = {
+    waiting,
+    called,
+    myCounter: over.myCounter ?? null,
+  };
+  s.setState(data);
 }
 
 function viewport(width: number) {

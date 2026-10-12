@@ -560,6 +560,61 @@ impl<'f> KioskReplay<'f> {
         self.replay.tally.applied_behind.push(step.n);
     }
 
+    /// QU-6 #1354: an `accept` v2 let through and the queue refuses ([`crate::rpc_common::Rule::QueueRefuses`]),
+    /// applied behind the routes through the kiosk service as the route runs it, **by the step's own
+    /// sender** (the route's `KioskActor::Staff { username: <employee id>, role }`), so the `working`
+    /// lines of the later steps name the claimant v2 recorded. Its audit lines go to the test's log as the
+    /// route's would.
+    async fn queue_refused_behind(&mut self, step: &Step) {
+        let label = self.replay.label(step);
+        let payload = self
+            .replay
+            .ids
+            .to_actual(step.payload.as_ref().unwrap_or(&json!({})));
+        let branch = BranchId::new(
+            payload
+                .get("branchId")
+                .and_then(Value::as_str)
+                .filter(|b| !b.is_empty())
+                .unwrap_or(MAIN),
+        );
+        let person = self
+            .replay
+            .fixture
+            .sender(step)
+            .unwrap_or_else(|| panic!("{label}: a claim has a sender"));
+        let role = match person.role.as_str() {
+            "FRONT" => KioskRole::Front,
+            "BACKEND" => KioskRole::Backend,
+            "MANAGER" => KioskRole::Manager,
+            "RATES" => KioskRole::Rates,
+            _ => KioskRole::Other,
+        };
+        let claimant = KioskActor::Staff {
+            username: person.id.clone(),
+            role,
+        };
+        let pool = self.replay.desk.db.pool.clone();
+        let audit: Arc<dyn KioskAuditLog> = self.hands.audit.clone();
+        let source: Arc<dyn RateSource> = self.replay.desk.bank.clone();
+        let service = KioskService::new(
+            self.replay.desk.db.branch_tx(),
+            Arc::new(PgKioskPorts::new(pool, audit, source)),
+        );
+        let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
+        let now = crate::snapshot_common::time(&step.at);
+        assert_eq!(
+            step.action.as_deref(),
+            Some("accept"),
+            "{label}: only a claim is refused by the queue"
+        );
+        service
+            .accept(&branch, &claimant, id, now)
+            .await
+            .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+        self.replay.tally.applied_behind.push(step.n);
+    }
+
     /// #603: step `n` is a `configure` v2 refused and v3 accepts; the audit line it writes is the
     /// step's own (its code and switch, `buy` and `sell` `""`).
     pub fn v3_accepts(mut self, n: usize) -> Self {
@@ -640,6 +695,16 @@ impl<'f> KioskReplay<'f> {
             && step.action.as_deref() != Some("list")
         {
             self.kiosk_behind(step).await;
+        }
+        // QU-6 #1354: a claim the queue refuses, applied behind the routes as v2 recorded it
+        if Self::is_kiosk(step)
+            && accepted
+            && matches!(
+                self.replay.rules.get(&step.n),
+                Some(crate::rpc_common::Rule::QueueRefuses(_))
+            )
+        {
+            self.queue_refused_behind(step).await;
         }
 
         // re-expected for RE-7 #604: what v2's accepted direct save saved is kept here

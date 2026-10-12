@@ -17,20 +17,23 @@
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// QU-6 (#1354, ruling issuecomment-6118321787) by the test-writer claude/14cc24bd: the store holds `queue_board`'s
+// `QueueBoardData`; `answer(count, latest)` now sets that many WAITING tickets, the newest with id `latest`. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import { setLang } from '../i18n';
 import { queueStore, type QueueError, type QueueStore } from '../queue/queue-store';
-import type { KioskNotifications } from '../queue/wire';
+import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
 import { QueueCard } from './QueueCard';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 // ── fake queue store (as QueueCard.test.tsx's) ───────────────────────────────
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
 }
 
@@ -42,7 +45,7 @@ vi.mock('../queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = fake.stores.get(b) as FakeStore | undefined;
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -71,19 +74,30 @@ vi.mock('../queue/queue-store', async () => {
 const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
 const NOK: Me = meOf(NOK_V3);
 
+/**
+ * `count` WAITING tickets in call order (`queue_board`'s `waiting`); the newest one (the latest `issuedAt`) has the id
+ * `latest`, so it is the card's "new request" key. The older ones keep the same ids from one answer to the next.
+ */
+function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
+  const list: QueueBoardWaiting[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const newest = i === count;
+    list.push({
+      id: newest && latest !== null ? latest : `older-${i}`,
+      displayNumber: `W${String(i).padStart(3, '0')}`,
+      serviceType: 'WALK_IN',
+      sequence: i,
+      issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
+    });
+  }
+  return list;
+}
+
 function answer(count: number, latest: string | null = count ? `K${count}` : null) {
   const s = queueStore('B1') as FakeStore;
   s.setError(undefined);
-  s.setState({
-    serverNow: '2026-10-10T03:00:00.000Z',
-    branchId: 'B1',
-    branchName: 'Silom',
-    count,
-    latest,
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(NOK),
-  });
+  const data: QueueBoardData = { waiting: waiting(count, latest), called: [], myCounter: null };
+  s.setState(data);
 }
 
 function viewport(width: number) {

@@ -8,10 +8,12 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
+use xc_auth::domain::access::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::{IssuedTicket, QueueTicketSource, QueueTickets};
 
+use crate::application::desk::queue_desk::QueueDesk;
 use crate::application::status::status_service::StatusService;
 use crate::domain::repository::QueueRepository;
 use crate::domain::ticket::display_number::DisplayNumber;
@@ -25,6 +27,8 @@ pub struct TicketIssuer {
     branch_tx: BranchTx,
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
+    /// The teller the kiosk's `accept` starts tickets for (`acting_as`); `None` refuses it.
+    actor: Option<Actor>,
 }
 
 fn source_matches_ticket(source: &IssueSource, ticket: &QueueTicket) -> bool {
@@ -46,7 +50,59 @@ impl TicketIssuer {
             branch_tx,
             repo,
             status,
+            actor: None,
         }
+    }
+
+    /// This issuer acting for `actor`, the teller whose kiosk `accept` starts a ticket
+    /// (`QueueTickets::start_for_kiosk_in`). `QueueDesk` checks the actor's `QueueOperate`.
+    pub fn acting_as(self, actor: Actor) -> Self {
+        Self {
+            actor: Some(actor),
+            ..self
+        }
+    }
+
+    /// Calls (if WAITING) and starts the kiosk request's ticket through `QueueDesk::call_in` and
+    /// `start_in`, so the desk's rules apply unchanged. A SERVING ticket is left as it is; a
+    /// skipped, cancelled or finished one is refused `staleVersion`.
+    /// `Ok(false)` when the request has no ticket.
+    pub async fn start_for_kiosk_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        request_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let Some(ticket) = self
+            .repo
+            .find_by_kiosk_request_in(tx, branch, request_id)
+            .await?
+        else {
+            return Ok(false);
+        };
+        let actor = self.actor.as_ref().ok_or(AppError::Forbidden)?;
+        let actor = &in_branch_org(tx, branch, actor).await?;
+        let desk = QueueDesk::new(
+            self.branch_tx.clone(),
+            self.repo.clone(),
+            self.status.clone(),
+        );
+        match ticket.status {
+            TicketStatus::Waiting => {
+                desk.call_in(tx, actor, branch, &ticket.id, now).await?;
+                desk.start_in(tx, actor, branch, &ticket.id, now).await?;
+            }
+            TicketStatus::Called => {
+                desk.start_in(tx, actor, branch, &ticket.id, now).await?;
+            }
+            TicketStatus::Serving => {}
+            // A skipped, cancelled or finished ticket is not started again (§4.3).
+            TicketStatus::Completed | TicketStatus::Cancelled | TicketStatus::NoShow => {
+                return Err(QueueError::StaleVersion.into());
+            }
+        }
+        Ok(true)
     }
 
     /// Issues a ticket in a branch transaction of its own (the desk's walk-in, QU-B's route).
@@ -203,6 +259,36 @@ impl TicketIssuer {
     }
 }
 
+/// stopgap (#1354 ruling issuecomment-6118023291): the root cause is that an old cookie's actor is
+/// built with the organisation code "XC" (`presentation/pages.rs:46`), #1463; once it names the id,
+/// this goes.
+///
+/// The actor with its organisation named by id. An old cookie's actor names its organisation by
+/// code ("XC"), an Identity session's by id (#945 ruling 1, `branch_save.rs`); `QueueDesk` compares
+/// ids, so a code naming the branch's own organisation becomes that id. Any other value is kept,
+/// and `QueueDesk` refuses it.
+async fn in_branch_org(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    actor: &Actor,
+) -> AppResult<Actor> {
+    let id: Option<String> = sqlx::query_scalar(
+        "SELECT o.id::text FROM branches b JOIN organizations o ON o.id = b.organization_id \
+         WHERE b.id = $1 AND o.code = $2",
+    )
+    .bind(branch.as_str())
+    .bind(&actor.organization_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(match id {
+        Some(organization_id) => Actor {
+            organization_id,
+            ..actor.clone()
+        },
+        None => actor.clone(),
+    })
+}
+
 impl QueueTickets for TicketIssuer {
     fn issue_in<'a>(
         &'a self,
@@ -225,5 +311,15 @@ impl QueueTickets for TicketIssuer {
                 display_number: ticket.display_number,
             })
         })
+    }
+
+    fn start_for_kiosk_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        Box::pin(async move { self.start_for_kiosk_in(tx, branch, request_id, now).await })
     }
 }

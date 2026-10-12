@@ -8,14 +8,14 @@ import {
 import { ApiClient, ApiError, type ViewParams } from '../api/client';
 import { sameAccount, sharedSession, type Account, type SessionStore } from '../session/session';
 import { pageBranch } from '../session/page-branch';
-import type { KioskNotifications } from './wire';
+import type { QueueBoardData } from './wire';
 
 export type QueueError =
   | { kind: 'offline' }
   | { kind: 'ended'; reason: 'expired' | 'switched' };
 
 export interface QueueStore {
-  state: Accessor<KioskNotifications | undefined>;
+  state: Accessor<QueueBoardData | undefined>;
   error: Accessor<QueueError | undefined>;
   lastUpdated: Accessor<number | undefined>;
   version: Accessor<number | undefined>;
@@ -34,8 +34,8 @@ export interface QueueStoreInternal extends QueueStore {
 }
 
 class BranchQueueStore implements QueueStoreInternal {
-  readonly state: Accessor<KioskNotifications | undefined>;
-  private readonly setState: (val: KioskNotifications | undefined) => void;
+  readonly state: Accessor<QueueBoardData | undefined>;
+  private readonly setState: (val: QueueBoardData | undefined) => void;
 
   readonly error: Accessor<QueueError | undefined>;
   private readonly setError: (val: QueueError | undefined) => void;
@@ -46,7 +46,6 @@ class BranchQueueStore implements QueueStoreInternal {
   readonly version: Accessor<number | undefined>;
   private readonly setVersion: (val: number | undefined) => void;
 
-  private offset = 0;
   private inFlight = false;
   private inFlightPromise: Promise<void> | null = null;
   private stopped = false;
@@ -65,7 +64,7 @@ class BranchQueueStore implements QueueStoreInternal {
     private readonly api: ApiClient,
     private readonly session: SessionStore,
   ) {
-    const [state, setState] = createSignal<KioskNotifications | undefined>(undefined);
+    const [state, setState] = createSignal<QueueBoardData | undefined>(undefined);
     const [error, setError] = createSignal<QueueError | undefined>(undefined);
     const [lastUpdated, setLastUpdated] = createSignal<number | undefined>(undefined);
     const [version, setVersion] = createSignal<number | undefined>(undefined);
@@ -81,7 +80,7 @@ class BranchQueueStore implements QueueStoreInternal {
   }
 
   now(): number {
-    return Date.now() + this.offset;
+    return Date.now();
   }
 
   retain(): void {
@@ -202,32 +201,17 @@ class BranchQueueStore implements QueueStoreInternal {
     this.inFlight = true;
     const run = async () => {
       try {
-        const answer = await this.api.view<KioskNotifications>(
-          'kiosk_notifications',
-          params,
-        );
+        // QU-6 (#1354): the card and the admin bar read `queue_board` (design queue-tickets.md §4.4–§4.5). It
+        // names no employee and no server time, so an account switch is caught by `me()` (no `since`, above)
+        // and the clock is this browser's.
+        const answer = await this.api.view<QueueBoardData>('queue_board', params);
         if (this.stopped) return;
 
+        this.setError(undefined);
+        this.setLastUpdated(Date.now());
         if (answer.changed && answer.data) {
-          const meNow = this.session.me();
-          if (meNow !== undefined) {
-            const emp = answer.data.employee;
-            if (!sameAccount(emp, meNow)) {
-              this.setError({ kind: 'ended', reason: 'switched' });
-              this.stop();
-              return;
-            }
-          }
-
-          this.setError(undefined);
           this.setVersion(answer.version);
           this.setState(answer.data);
-          const serverMs = Date.parse(answer.data.serverNow);
-          this.offset = serverMs - Date.now();
-          this.setLastUpdated(serverMs);
-        } else {
-          this.setError(undefined);
-          this.setLastUpdated(Date.now() + this.offset);
         }
       } catch (err: unknown) {
         if (this.stopped) return;

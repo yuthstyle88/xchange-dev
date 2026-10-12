@@ -56,6 +56,35 @@ use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
 
+/// Amended for QU-6 #1354 (ruling issuecomment-6117792804), setup only: `accept` starts the
+/// request's queue ticket as the accepting teller (queue-tickets.md §4.5), and the queue serves
+/// only a teller with an ACTIVE counter, so the accepting staff of `MAIN` get one (and the `users`
+/// row it references), seeded as `kiosk_accept_queue_ticket_test.rs` seeds them.
+async fn open_counters(pool: &sqlx::PgPool, tellers: &[&str]) {
+    for teller in tellers {
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) \
+             SELECT $2::uuid, organization_id, 'Teller', 'ACTIVE', 'test' FROM branches WHERE id = $1 \
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(rpc_common::MAIN)
+        .bind(teller)
+        .execute(pool)
+        .await
+        .expect("the teller's user row");
+        sqlx::query(
+            "INSERT INTO queue_counters (organization_id, branch_id, teller_id, status) \
+             SELECT organization_id, id, $2::uuid, 'ACTIVE' FROM branches WHERE id = $1 \
+             ON CONFLICT (branch_id, teller_id) DO NOTHING",
+        )
+        .bind(rpc_common::MAIN)
+        .bind(teller)
+        .execute(pool)
+        .await
+        .expect("open the teller's counter");
+    }
+}
+
 const QUEUE: &str = "kiosk_queue";
 const NOTES: &str = "kiosk_notifications";
 
@@ -323,6 +352,15 @@ impl Room {
     async fn open() -> Room {
         let staff = the_staff();
         let counter = Counter::open(&staff).await;
+        open_counters(
+            &counter.desk.db.pool,
+            &[&staff
+                .iter()
+                .find(|p| p.key == "FRONT")
+                .expect("FRONT is one of the staff")
+                .id],
+        )
+        .await;
         counter.desk.db.seed_branch(B9, B9_NAME).await;
         Room { counter, staff }
     }

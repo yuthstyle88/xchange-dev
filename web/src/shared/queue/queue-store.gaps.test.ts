@@ -2,16 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+//
+// Amended for QU-6 (#1354; this directory is the ticket's) by the implementer claude/709ec749: the store polls
+// `queue_board`, so the fixture is `QueueBoardData` (one waiting ticket kq-1). Fixture only; no assertion changes.
 import { createRoot, createSignal, type Accessor } from 'solid-js';
 import type { ApiClient, ViewAnswer, ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
-import type { KioskNotifications } from './wire';
+import type { QueueBoardData } from './wire';
 import { queueStore, useQueueStore, type QueueStore } from './queue-store';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 const T0 = Date.parse('2026-10-08T03:00:00.000Z');
-const SKEW = 10 * 60 * 1000;
 
 const ME: Me = meOf({
   id: 'E1',
@@ -28,16 +30,11 @@ function freshBranch(): string {
   return `QS-GAP-${branchNo}`;
 }
 
-function notifications(branch: string, over: Partial<KioskNotifications> = {}): KioskNotifications {
+function board(over: Partial<QueueBoardData> = {}): QueueBoardData {
   return {
-    serverNow: new Date(Date.now() + SKEW).toISOString(),
-    branchId: branch,
-    branchName: 'Silom',
-    count: 1,
-    latest: 'kq-1',
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(ME),
+    waiting: [{ id: 'kq-1', displayNumber: 'W001', serviceType: 'WALK_IN', sequence: 1, issuedAt: new Date(T0).toISOString() }],
+    called: [],
+    myCounter: null,
     ...over,
   };
 }
@@ -46,15 +43,15 @@ class FakeServer {
   readonly calls: ViewParams[] = [];
   readonly names: string[] = [];
   version = 7;
-  data: KioskNotifications;
+  data: QueueBoardData;
 
   constructor(readonly branch: string) {
-    this.data = notifications(branch);
+    this.data = board();
   }
 
-  write(over: Partial<KioskNotifications> = {}): void {
+  write(over: Partial<QueueBoardData> = {}): void {
     this.version += 1;
-    this.data = notifications(this.branch, over);
+    this.data = board(over);
   }
 
   readonly api = {

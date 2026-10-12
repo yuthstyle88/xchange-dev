@@ -3509,6 +3509,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
@@ -4032,6 +4033,22 @@ dependencies = [
  "thiserror",
  "tokio",
  "xc-kernel",
+]
+
+[[package]]
+name = "xc-loyalty"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "pos-error",
+ "rust_decimal",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+ "xc-kernel",
+ "xc-outbox",
 ]
 
 [[package]]

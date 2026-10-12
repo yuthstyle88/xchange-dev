@@ -23,6 +23,7 @@ import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
 import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_transfer_policy';
 import type { Me } from '../../../shared/api/generated/common';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { setLang } from '../../../shared/i18n';
 import { AdminShell } from '../AdminShell';
 import type { AdminMenu, AdminMenuProps } from '../menus';
@@ -117,8 +118,8 @@ class Server {
       switch (u.pathname) {
         case '/api/v3/views/me':
           return view(this.me);
-        case '/api/v3/views/kiosk_notifications':
-          return json(200, { version: 1, changed: false });
+        case QUEUE_CARD_PATH:
+          return json(200, queueCardUnchanged());
         case '/api/v3/views/admin_branches':
           return view({ branches: [{ id: 'MAIN', name: 'สำนักงานใหญ่' }] });
         case '/api/v3/views/admin_cash':

@@ -43,4 +43,16 @@ pub trait QueueTickets: Send + Sync {
         idempotency_key: &'a str,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<IssuedTicket>>;
+
+    /// The kiosk's `accept` (design §4.5): starts the ticket of kiosk request `request_id` inside
+    /// `tx` for the teller this port acts for, calling it first if it is WAITING. The queue's own
+    /// rules decide (no counter, a paused counter, a ticket already at the counter, another
+    /// teller's ticket all refuse). `Ok(false)` when the request has no ticket.
+    fn start_for_kiosk_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>>;
 }

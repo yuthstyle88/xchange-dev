@@ -1,9 +1,12 @@
 //! The desk's side of the queue: notifications, list, accept, identity check, get and publish the receipt.
 //! Methods of `KioskService` (design §10 S0); the type lives in `service.rs`.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
+use xc_kernel::queue_tickets::QueueTickets;
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
@@ -109,6 +112,32 @@ impl KioskService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<AcceptOutcome> {
+        self.accept_with(branch, actor, id, now, None).await
+    }
+
+    /// `accept` that also starts the request's queue ticket in the same transaction, through the
+    /// queue's port (design `queue-tickets.md` §4.5): a WAITING ticket is called first. `queue`
+    /// acts for the accepting teller; when the queue refuses (no counter, a paused counter, a
+    /// ticket already at the counter, …) nothing is written and the request stays WAITING.
+    pub async fn accept_with_queue(
+        &self,
+        branch: &BranchId,
+        actor: &KioskActor,
+        id: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+    ) -> AppResult<AcceptOutcome> {
+        self.accept_with(branch, actor, id, now, Some(queue)).await
+    }
+
+    async fn accept_with(
+        &self,
+        branch: &BranchId,
+        actor: &KioskActor,
+        id: &str,
+        now: DateTime<Utc>,
+        queue: Option<Arc<dyn QueueTickets>>,
+    ) -> AppResult<AcceptOutcome> {
         let user = match actor {
             KioskActor::Staff { username, .. } => username.clone(),
             KioskActor::Customer => return Err(refuse(KioskError::StaffRequired)),
@@ -158,6 +187,12 @@ impl KioskService {
                                 now_kiosk,
                             )
                             .map_err(refuse)?;
+                            if let Some(queue) = &queue {
+                                queue
+                                    .start_for_kiosk_in(tx, &b, &id, at)
+                                    .await
+                                    .map_err(queue_refusal)?;
+                            }
                             if let Some(event) = moved.event {
                                 repo.update_in(tx, &b, &moved.request).await?;
                                 repo.mark_started_in(tx, &b, &id, at).await?;
@@ -274,5 +309,15 @@ impl KioskService {
                 })
             })
             .await
+    }
+}
+
+/// The queue's refusals reach the desk as domain refusals, as the kiosk's `confirm` answers them;
+/// a caller the queue refuses (`QueueOperate`) gets the queue's v3 code `outOfScope`.
+fn queue_refusal(err: AppError) -> AppError {
+    match err {
+        AppError::Validation(code) | AppError::Conflict(code) => AppError::Domain(code),
+        AppError::Forbidden => AppError::Domain("outOfScope".to_owned()),
+        other => other,
     }
 }

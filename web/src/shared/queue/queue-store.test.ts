@@ -18,12 +18,18 @@
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 // S7: "the same id with another role" → "… other roles" (OWNER's rows), and the me() changes that used
 // `role`/`username` use `roles` (MANAGER → BRANCH_MANAGER) and `name`, per #1030 §3.10.
+//
+// Amended for QU-6 (#1354, ruling issuecomment-6117565689 item 1; the FE lane controller allowed the store tests to follow
+// the switch) by the implementer claude/709ec749: the store polls `queue_board`, whose answer is `{waiting, called,
+// myCounter}` and names no employee and no server time. So the fixture is `QueueBoardData`; the server-clock row becomes
+// this browser's clock; S7's "an answer naming another account ends the store" is gone (no answer names one), and its
+// `me()` row keeps dropping `since`. Every other row is unchanged.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
-import type { KioskNotifications } from './wire';
+import type { QueueBoardData, QueueBoardWaiting } from './wire';
 import {
   queueBranch,
   queueStore,
@@ -31,7 +37,7 @@ import {
   useQueueStore,
   type QueueStore,
 } from './queue-store';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 // S8 reads `me().branch` of the shared session; the page has no other session to give it.
 const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
@@ -47,8 +53,6 @@ vi.mock('../session/session', async (importOriginal) => {
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
 const T0 = Date.parse('2026-10-08T03:00:00.000Z');
-/** The server's clock runs ten minutes ahead of this browser's. */
-const SKEW = 10 * 60 * 1000;
 
 const ME: Me = meOf({
   id: 'E1',
@@ -65,34 +69,28 @@ function freshBranch(): string {
   return `QS-${branchNo}`;
 }
 
-function notifications(branch: string, over: Partial<KioskNotifications> = {}): KioskNotifications {
-  return {
-    serverNow: new Date(Date.now() + SKEW).toISOString(),
-    branchId: branch,
-    branchName: 'Silom',
-    count: 1,
-    latest: 'kq-1',
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(ME),
-    ...over,
-  };
+function ticket(id: string, sequence: number): QueueBoardWaiting {
+  return { id, displayNumber: `W${String(sequence).padStart(3, '0')}`, serviceType: 'WALK_IN', sequence, issuedAt: new Date(T0).toISOString() };
 }
 
-/** A fake `ApiClient` for one branch that answers `kiosk_notifications` like the server. */
+function board(over: Partial<QueueBoardData> = {}): QueueBoardData {
+  return { waiting: [ticket('kq-1', 1)], called: [], myCounter: null, ...over };
+}
+
+/** A fake `ApiClient` for one branch that answers `queue_board` like the server. */
 class FakeServer {
   readonly calls: ViewParams[] = [];
   readonly names: string[] = [];
   readonly posts: unknown[] = [];
   version = 7;
-  data: KioskNotifications;
+  data: QueueBoardData;
   /** When set, every request is refused with it. */
   fail: unknown = undefined;
   private holdNext = false;
   private readonly held: Array<() => void> = [];
 
   constructor(readonly branch: string) {
-    this.data = notifications(branch);
+    this.data = board();
   }
 
   /** The next request stays in flight until the returned function is called. */
@@ -104,9 +102,9 @@ class FakeServer {
   }
 
   /** One write to the branch: the version moves and the data is new. */
-  write(over: Partial<KioskNotifications> = {}): void {
+  write(over: Partial<QueueBoardData> = {}): void {
     this.version += 1;
-    this.data = notifications(this.branch, over);
+    this.data = board(over);
   }
 
   readonly api = {
@@ -191,7 +189,7 @@ afterEach(() => {
 
 // ── S1, S4: one store per branch, one request every 5 s while retained ───────
 
-describe('S1: polling kiosk_notifications every 5 s while retained', () => {
+describe('S1: polling queue_board every 5 s while retained', () => {
   it('queueStore is lazy and one per branch: the same object for the same branch, and creating it sends nothing', async () => {
     const { branch, server, store } = setup();
     expect(queueStore(branch)).toBe(store);
@@ -205,7 +203,7 @@ describe('S1: polling kiosk_notifications every 5 s while retained', () => {
     const { branch, server } = setup();
     const { dispose } = retain(branch);
     await flush();
-    expect(server.names).toEqual(['kiosk_notifications']);
+    expect(server.names).toEqual(['queue_board']);
     expect(server.calls[0]).toEqual({ branch });
 
     await vi.advanceTimersByTimeAsync(4_999);
@@ -273,14 +271,13 @@ describe('S1: polling kiosk_notifications every 5 s while retained', () => {
     expect(store().version()).toBe(7);
     expect([stateRuns, versionRuns]).toEqual(runs);
 
-    server.write({ count: 2, latest: 'kq-2' });
+    server.write({ waiting: [ticket('kq-1', 1), ticket('kq-2', 2)] });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(store().version()).toBe(8);
-    expect(store().state()?.count).toBe(2);
-    expect(store().state()?.latest).toBe('kq-2');
+    expect(store().state()?.waiting.map((w) => w.id)).toEqual(['kq-1', 'kq-2']);
   });
 
-  it('runs on the server clock: now() and lastUpdated add the offset of the last changed answer; an unchanged answer keeps the offset', async () => {
+  it("runs on this browser's clock: now() is Date.now(); lastUpdated is when the last answer came, changed or not", async () => {
     const { branch, server } = setup();
     const { store } = retain(branch);
     expect(store().now()).toBe(T0);
@@ -288,24 +285,21 @@ describe('S1: polling kiosk_notifications every 5 s while retained', () => {
     expect(store().version()).toBeUndefined();
 
     await flush();
-    expect(store().now()).toBe(T0 + SKEW);
-    expect(store().lastUpdated()).toBe(T0 + SKEW);
+    expect(store().now()).toBe(T0);
+    expect(store().lastUpdated()).toBe(T0);
 
-    await vi.advanceTimersByTimeAsync(5_000); // unchanged: no serverNow, the offset stays
+    await vi.advanceTimersByTimeAsync(5_000); // unchanged
     expect(server.calls[1]!.since).toBe(7);
-    expect(store().lastUpdated()).toBe(T0 + 5_000 + SKEW);
-    expect(store().now()).toBe(T0 + 5_000 + SKEW);
+    expect(store().lastUpdated()).toBe(T0 + 5_000);
+    expect(store().now()).toBe(T0 + 5_000);
 
     await vi.advanceTimersByTimeAsync(1_234);
-    expect(store().now()).toBe(T0 + 6_234 + SKEW);
-    expect(store().lastUpdated()).toBe(T0 + 5_000 + SKEW);
+    expect(store().now()).toBe(T0 + 6_234);
+    expect(store().lastUpdated()).toBe(T0 + 5_000);
 
-    // the server's clock is now set right: the next changed answer brings the offset to 0
     server.write();
-    server.data = { ...server.data, serverNow: new Date(T0 + 10_000).toISOString() };
     await vi.advanceTimersByTimeAsync(10_000 - 6_234);
     expect(store().version()).toBe(8);
-    expect(store().now()).toBe(T0 + 10_000);
     expect(store().lastUpdated()).toBe(T0 + 10_000);
   });
 });
@@ -382,10 +376,10 @@ describe('S3: it also polls at once on focus, on becoming visible, 100 ms after 
     await flush();
     await vi.advanceTimersByTimeAsync(1_000);
 
-    server.write({ count: 4 });
+    server.write({ waiting: [ticket('kq-1', 1), ticket('kq-2', 2), ticket('kq-3', 3), ticket('kq-4', 4)] });
     await store().refresh();
     expect(server.calls).toHaveLength(2);
-    expect(store().state()?.count).toBe(4);
+    expect(store().state()?.waiting).toHaveLength(4);
     expect(store().version()).toBe(8);
   });
 });
@@ -478,26 +472,8 @@ describe('S6: a 401 or kioskStaff ends the store as expired', () => {
   });
 });
 
-describe('S7: an account switch ends the store; a new me drops since', () => {
-  it.each([
-    ['another id', employeeOf(meOf({ id: 'E2', role: 'FRONT', branch: 'B-HOME', name: 'Malee' }))],
-    ['the same id with other roles', employeeOf(meOf({ id: 'E1', role: 'OWNER', branch: 'B-HOME', name: 'Somchai' }))],
-  ])('an answer naming %s sets error {kind: ended, reason: switched} and stops polling', async (_name, employee) => {
-    const { branch, server, signOut, store } = setup();
-    retain(branch);
-    await flush();
-    expect(store.error()).toBeUndefined();
-
-    server.write({ employee });
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(store.error()).toEqual({ kind: 'ended', reason: 'switched' });
-
-    await expectStopped(server, store);
-    expect(signOut).not.toHaveBeenCalled();
-    expect(server.posts).toEqual([]);
-  });
-
-  it("when me()'s id or roles change the next poll has no since, so its answer carries employee; a me() with the same id and roles keeps since", async () => {
+describe('S7: a new me drops since (queue_board names no account, so no answer ends the store)', () => {
+  it("when me()'s id or roles change the next poll has no since; a me() with the same id and roles keeps since", async () => {
     const { branch, server, setMe, store } = setup();
     retain(branch);
     await flush();
@@ -509,7 +485,6 @@ describe('S7: an account switch ends the store; a new me drops since', () => {
     expect(server.calls[2]!.since).toBe(7);
 
     setMe({ ...ME, id: 'E2', name: 'Malee' });
-    server.data = { ...server.data, employee: employeeOf({ ...ME, id: 'E2' }) };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[3]!.since).toBeUndefined();
     expect(store.error()).toBeUndefined();
@@ -518,7 +493,6 @@ describe('S7: an account switch ends the store; a new me drops since', () => {
     expect(server.calls[4]!.since).toBe(7);
 
     setMe(meOf({ id: 'E2', role: 'MANAGER', branch: 'B-HOME', name: 'Malee', branchName: 'B-HOME' }));
-    server.data = { ...server.data, employee: employeeOf(meOf({ id: 'E2', role: 'MANAGER', branch: 'B-HOME', name: 'Malee' })) };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(server.calls[5]!.since).toBeUndefined();
     expect(store.error()).toBeUndefined();

@@ -5,8 +5,8 @@
 /** The signed-in user, read by `AppShell` on every page. */
 export const ME_PATH = '/api/v3/views/me';
 
-/** The queue card's view (`shared/queue/queue-store.ts`), polled on every staff and admin page. */
-export const QUEUE_CARD_VIEW = 'kiosk_notifications';
+/** The queue card's view (`shared/queue/queue-store.ts`), polled on every staff and admin page; `queue_board` since QU-6. */
+export const QUEUE_CARD_VIEW = 'queue_board';
 export const QUEUE_CARD_PATH = `/api/v3/views/${QUEUE_CARD_VIEW}`;
 
 /** The queue panel's view (`shared/ui/QueuePanel.tsx`). */

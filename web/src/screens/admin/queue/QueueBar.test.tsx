@@ -40,8 +40,8 @@ import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { queueStore, type QueueError, type QueueStore } from '../../../shared/queue/queue-store';
-import type { KioskNotifications } from '../../../shared/queue/wire';
-import { employeeOf, meOf } from '../../../test-support/me';
+import type { QueueBoardData, QueueBoardWaiting } from '../../../shared/api/generated/queue_board';
+import { meOf } from '../../../test-support/me';
 
 type BarModule = typeof import('./QueueBar');
 type TextsModule = typeof import('./i18n');
@@ -68,8 +68,9 @@ async function textsModule(): Promise<TextsModule> {
 
 // ── fakes ────────────────────────────────────────────────────────────────────
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
 }
 
@@ -80,12 +81,22 @@ const fake = vi.hoisted(() => ({
   soundControls: 0,
 }));
 
+const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
+vi.mock('../../../shared/session/session', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../shared/session/session')>();
+  const { createSignal: signal } = await import('solid-js');
+  const [me, setMe] = signal<unknown>(undefined);
+  shared.setMe = (value) => setMe(() => value);
+  const session = { me, signOut: async () => {}, dispose: () => {} };
+  return { ...original, sharedSession: () => session };
+});
+
 vi.mock('../../../shared/queue/queue-store', async () => {
   const solid = await import('solid-js');
   const store = (b: string): FakeStore => {
     let s = fake.stores.get(b) as FakeStore | undefined;
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -150,23 +161,27 @@ function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
 }
 
-const EMPLOYEE = employeeOf(meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok' }));
+function waitingTicket(id: string, seq = 1): QueueBoardWaiting {
+  return {
+    id,
+    displayNumber: `W00${seq}`,
+    serviceType: 'WALK_IN',
+    sequence: seq,
+    issuedAt: '2026-10-09T03:00:00.000Z',
+  };
+}
 
 /** A fresh answer object every time, as a `changed: true` poll. */
-function answer(b: string, over: Partial<KioskNotifications> = {}) {
+function answer(b: string, over: Partial<QueueBoardData> = {}) {
   const s = store(b);
   s.setError(undefined);
-  s.setState({
-    serverNow: '2026-10-09T03:00:00.000Z',
-    branchId: b,
-    branchName: 'Silom',
-    count: 0,
-    latest: null,
-    workingCount: 0,
-    working: [],
-    employee: EMPLOYEE,
+  const data: QueueBoardData = {
+    waiting: [],
+    called: [],
+    myCounter: null,
     ...over,
-  });
+  };
+  s.setState(data);
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -234,7 +249,9 @@ const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 let disposers: (() => void)[] = [];
 let fetchSpy: ReturnType<typeof vi.fn>;
 
-async function mount(start = 'B1', label = 'สาขาสีลม') {
+const ME = meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok', branchName: 'Silom' });
+
+async function mount(start = 'B1', label = 'Silom') {
   const { QueueBar } = await barModule();
   const [branch, setBranch] = createSignal(start);
   const [branchLabel, setBranchLabel] = createSignal(label);
@@ -258,6 +275,7 @@ beforeEach(() => {
   sessionStorage.clear();
   fetchSpy = vi.fn(async () => new Response('{}', { status: 500 }));
   vi.stubGlobal('fetch', fetchSpy);
+  shared.setMe?.(ME);
 });
 
 afterEach(() => {
@@ -300,7 +318,7 @@ describe('texts (W6, W10)', () => {
 describe('the bar (admin-queue.js:6, :12-16)', () => {
   it('Q6: the bar never calls fetch itself', async () => {
     await mount();
-    answer('B1', { count: 2, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1', 1), waitingTicket('K2', 2)] });
     await flush();
     openQueue();
     await flush();
@@ -313,7 +331,7 @@ describe('the bar (admin-queue.js:6, :12-16)', () => {
 describe('the dialog (admin-queue.js:7-9)', () => {
   it('Q7: the queue link opens the dialog named by the picked branch and mounts the panel for it', async () => {
     await mount('B1', 'สาขาสีลม');
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     expect(shown(dialog())).toBe(false);
     openQueue();
@@ -328,7 +346,7 @@ describe('the dialog (admin-queue.js:7-9)', () => {
 
   it('Q8: ปิด × closes the dialog and unmounts the panel', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     openQueue();
     await flush();
@@ -342,7 +360,7 @@ describe('the dialog (admin-queue.js:7-9)', () => {
 
   it('Q9: a click on a link to /kiosk-queue.html opens the dialog instead of navigating', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     const a = document.createElement('a');
     a.href = '/kiosk-queue.html?branch=B1';
@@ -372,7 +390,7 @@ describe('the dialog (admin-queue.js:7-9)', () => {
 describe('the toast (admin-queue.js:10, :16-17)', () => {
   it('Q11: a new request while the dialog is closed shows the toast once and stores its key', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     const t1 = toast();
     expect(shown(t1)).toBe(true);
@@ -383,11 +401,11 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
     await flush();
     expect(shown(toast())).toBe(false);
 
-    answer('B1', { count: 1, latest: 'K1' }); // same request, a new poll
+    answer('B1', { waiting: [waitingTicket('K1')] }); // same request, a new poll
     await flush();
     expect(shown(toast()), 'the same latest does not toast twice').toBe(false);
 
-    answer('B1', { count: 2, latest: 'K2' });
+    answer('B1', { waiting: [waitingTicket('K2', 2), waitingTicket('K1', 1)] });
     await flush();
     expect(shown(toast())).toBe(true);
     expect(toast()!.textContent).toContain('มีคิวลูกค้ารอ 2 รายการ · Silom');
@@ -396,16 +414,18 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
   it('Q12: a request already toasted in this tab (sessionStorage) does not toast after a reload', async () => {
     sessionStorage.setItem('xc.queue.popup.emp-nok.B1', 'K1');
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     expect(shown(toast())).toBe(false);
   });
 
   it('Q13: ดูคิว hides the toast and opens the dialog', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
-    button(toast()!, 'ดูคิว')!.click();
+    const t = toast();
+    expect(shown(t), 'toast is shown').toBe(true);
+    button(t!, 'ดูคิว')!.click();
     await flush();
     expect(shown(toast())).toBe(false);
     expect(shown(dialog())).toBe(true);
@@ -413,11 +433,11 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
 
   it('Q14: no toast while the dialog is open; the key is still stored', async () => {
     await mount();
-    answer('B1', { count: 0 });
+    answer('B1', { waiting: [] });
     await flush();
     openQueue();
     await flush();
-    answer('B1', { count: 1, latest: 'K3' });
+    answer('B1', { waiting: [waitingTicket('K3')] });
     await flush();
     expect(shown(toast())).toBe(false);
     expect(sessionStorage.getItem('xc.queue.popup.emp-nok.B1')).toBe('K3');
@@ -425,10 +445,10 @@ describe('the toast (admin-queue.js:10, :16-17)', () => {
 
   it('Q15: when the waiting count falls to 0 the toast hides', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     expect(shown(toast())).toBe(true);
-    answer('B1', { count: 0, latest: 'K1' });
+    answer('B1', { waiting: [] });
     await flush();
     expect(shown(toast())).toBe(false);
   });
@@ -440,10 +460,17 @@ describe('errors (admin-queue.js:19, account-bar.js lock)', () => {
   it('Q16: offline hides the toast', async () => {
     await mount();
     answer('B1', {
-      count: 1,
-      latest: 'K1',
-      workingCount: 1,
-      working: [{ id: 'K1', queue: 'Q-1', staff: 'nok', startedAt: null, status: 'ACCEPTED' }],
+      waiting: [waitingTicket('K1')],
+      called: [
+        {
+          id: 'K1',
+          displayNumber: 'W001',
+          serviceType: 'WALK_IN',
+          status: 'SERVING',
+          tellerId: 'emp-nok',
+          calledAt: null,
+        },
+      ],
     });
     await flush();
     store('B1').setError({ kind: 'offline' });
@@ -453,7 +480,7 @@ describe('errors (admin-queue.js:19, account-bar.js lock)', () => {
 
   it('Q17: a session end closes the dialog', async () => {
     await mount();
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     openQueue();
     await flush();
@@ -478,10 +505,17 @@ describe('branch change (admin-queue.js:14, :20, :22)', () => {
   it('Q19: a change closes the dialog and hides the toast; once the new branch answers the dialog opens for it', async () => {
     const { setBranch, setBranchLabel } = await mount('B1', 'สาขาสีลม');
     answer('B1', {
-      count: 1,
-      latest: 'K1',
-      workingCount: 1,
-      working: [{ id: 'K1', queue: 'Q-1', staff: 'nok', startedAt: null, status: 'ACCEPTED' }],
+      waiting: [waitingTicket('K1')],
+      called: [
+        {
+          id: 'K1',
+          displayNumber: 'W001',
+          serviceType: 'WALK_IN',
+          status: 'SERVING',
+          tellerId: 'emp-nok',
+          calledAt: null,
+        },
+      ],
     });
     await flush();
     openQueue();
@@ -493,7 +527,7 @@ describe('branch change (admin-queue.js:14, :20, :22)', () => {
     expect(shown(toast())).toBe(false);
     expect(shown(dialog())).toBe(false);
 
-    answer('B2', { branchName: 'Siam', count: 0 });
+    answer('B2', { waiting: [] });
     await flush();
     openQueue('B2');
     await flush();
@@ -503,11 +537,11 @@ describe('branch change (admin-queue.js:14, :20, :22)', () => {
 
   it('Q20: the toast key is per branch: a latest toasted on B1 still toasts on B2', async () => {
     const { setBranch } = await mount('B1');
-    answer('B1', { count: 1, latest: 'K1' });
+    answer('B1', { waiting: [waitingTicket('K1')] });
     await flush();
     setBranch('B2');
     await flush();
-    answer('B2', { branchName: 'Siam', count: 1, latest: 'K1' });
+    answer('B2', { waiting: [waitingTicket('K1')] });
     await flush();
     expect(shown(toast())).toBe(true);
     expect(sessionStorage.getItem('xc.queue.popup.emp-nok.B2')).toBe('K1');
