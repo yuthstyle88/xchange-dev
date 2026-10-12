@@ -249,7 +249,8 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // Amended by #1075 (EX-5): A01 `/admin/alert-settings` (`docs/design/blueprint/executive-finance.md`
 // §11.1 EX-5) is a v3 menu with no v2 row, pinned in
 // `web/src/screens/admin/alert-settings/AlertSettings.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings'];
+// Amended by #1186 (EX-4), by its lane controller's ruling (claude/5edf7bb5): A01 `/admin/executive` is a v3 menu with no v2 row, pinned in `web/src/screens/admin/executive/Executive.shell.test.tsx`.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive'];
 // Amended for OR-7.7 (#1030 §3.10) by the test-writer claude/5d45b017: `roles` becomes `needs`, a
 // Permission name. The served menus need 'all'; the three Blueprint menus need the permission their
 // commands already require (lane controller's ruling, #1030 issuecomment-6105567502).
@@ -260,6 +261,7 @@ const BLUEPRINT_NEEDS: Record<string, string> = {
   // #946's two ADMIN-only menus, moved 1:1 by the implementer (#1030 issuecomment-6107651899).
   branches: 'BranchesManage',
   users: 'UsersManage',
+  executive: 'OverviewRead',
 };
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
