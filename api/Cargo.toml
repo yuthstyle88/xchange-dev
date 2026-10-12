@@ -23,6 +23,7 @@ xc-notify = { path = "crates/xc-notify" }
 xc-cash = { path = "crates/xc-cash" }
 xc-queue = { path = "crates/xc-queue" }
 xc-alert = { path = "crates/xc-alert" }
+xc-loyalty = { path = "crates/xc-loyalty" }
 
 [package]
 name = "xchange"
