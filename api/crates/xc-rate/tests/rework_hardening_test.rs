@@ -54,7 +54,12 @@ async fn cross_branch_publish_refused_and_main_draft_stays_approved() {
     let mut tx = db.begin().await;
     let draft = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), vec![auto_line("USD")])
+        .create(
+            &mut tx,
+            &main_branch(),
+            &owner_user(),
+            vec![auto_line("USD")],
+        )
         .await
         .expect("draft created");
     tx.commit().await.expect("commit draft create");
@@ -73,7 +78,7 @@ async fn cross_branch_publish_refused_and_main_draft_stays_approved() {
     let mut tx = db.begin().await;
     let publish_res = e
         .publisher
-        .publish(&mut tx, &branch_b1, &owner(), &draft.id, None)
+        .publish(&mut tx, &branch_b1, &owner_user(), &draft.id, None)
         .await;
     match publish_res {
         Err(RateEngineError::NotFound(_)) => (),
@@ -120,7 +125,12 @@ async fn cross_branch_copy_refused() {
     let mut tx = db.begin().await;
     let draft = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), vec![auto_line("USD")])
+        .create(
+            &mut tx,
+            &main_branch(),
+            &owner_user(),
+            vec![auto_line("USD")],
+        )
         .await
         .expect("draft created");
     tx.commit().await.expect("commit draft create");
@@ -130,7 +140,7 @@ async fn cross_branch_copy_refused() {
     let mut tx = db.begin().await;
     let copy_res = e
         .drafts
-        .copy(&mut tx, &branch_b1, &owner(), &draft.id)
+        .copy(&mut tx, &branch_b1, &owner_user(), &draft.id)
         .await;
     match copy_res {
         Err(RateEngineError::NotFound(_)) => (),
@@ -196,7 +206,12 @@ async fn source_snapshot_carries_reference_policy_and_partner() {
     let mut tx = db.begin().await;
     let draft = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), vec![auto_line("USD")])
+        .create(
+            &mut tx,
+            &main_branch(),
+            &owner_user(),
+            vec![auto_line("USD")],
+        )
         .await
         .expect("draft created");
     tx.commit().await.expect("commit draft create");
@@ -213,7 +228,7 @@ async fn source_snapshot_carries_reference_policy_and_partner() {
     let mut tx = db.begin().await;
     let pub_ref = e
         .publisher
-        .publish(&mut tx, &main_branch(), &owner(), &draft.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &draft.id, None)
         .await
         .expect("publish succeeds");
     tx.commit().await.expect("commit publish");
@@ -473,7 +488,7 @@ async fn draft_simulation_reports_out_of_bound_and_leaves_tables_untouched() {
         .create(
             &mut tx,
             &main_branch(),
-            &owner(),
+            &owner_user(),
             vec![manual_line("USD", "35.1000", "35.6000")],
         )
         .await
@@ -524,7 +539,7 @@ async fn draft_simulation_reports_out_of_bound_and_leaves_tables_untouched() {
         .create(
             &mut tx,
             &main_branch(),
-            &owner(),
+            &owner_user(),
             vec![manual_line("USD", "35.1000", "50.0000")],
         )
         .await

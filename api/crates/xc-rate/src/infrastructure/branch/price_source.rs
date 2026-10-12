@@ -5,8 +5,7 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_kernel::ids::BranchId;
 
 use crate::application::publication::publish_service::PublishService;
@@ -57,9 +56,13 @@ impl BranchPriceSource for PgBranchPriceSource {
         to: PriceSource,
     ) -> BoxFuture<'a, Result<(), RateEngineError>> {
         Box::pin(async move {
-            if who.role() != Role::Owner {
+            let is_authorized = who
+                .roles
+                .iter()
+                .any(|r| r.role == Role::Executive && r.branch.is_none());
+            if !is_authorized {
                 return Err(RateEngineError::OutOfScope(
-                    "only owner may set branch price source".to_string(),
+                    "only executive org-wide may set branch price source".to_string(),
                 ));
             }
 
@@ -95,8 +98,8 @@ impl BranchPriceSource for PgBranchPriceSource {
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
             let event = AuditEvent {
-                actor_id: who.id().to_string(),
-                actor_role: who.role().as_str().to_string(),
+                actor_id: who.user_id.clone(),
+                actor_role: "EXECUTIVE".to_string(),
                 scope: "branch".to_string(),
                 action: "branchPriceSourceSet".to_string(),
                 object_ref: branch.as_str().to_string(),
@@ -123,9 +126,13 @@ impl BranchPriceSource for PgBranchPriceSource {
         expected_version: Option<i32>,
     ) -> BoxFuture<'a, Result<PublicationRef, RateEngineError>> {
         Box::pin(async move {
-            if who.role() != Role::Owner {
+            let is_authorized = who
+                .roles
+                .iter()
+                .any(|r| r.role == Role::Executive && r.branch.is_none());
+            if !is_authorized {
                 return Err(RateEngineError::OutOfScope(
-                    "only owner may switch branch price source back".to_string(),
+                    "only executive org-wide may switch branch price source back".to_string(),
                 ));
             }
 
@@ -157,8 +164,8 @@ impl BranchPriceSource for PgBranchPriceSource {
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
             let event = AuditEvent {
-                actor_id: who.id().to_string(),
-                actor_role: who.role().as_str().to_string(),
+                actor_id: who.user_id.clone(),
+                actor_role: "EXECUTIVE".to_string(),
                 scope: "branch".to_string(),
                 action: "branchPriceSourceSet".to_string(),
                 object_ref: branch.as_str().to_string(),

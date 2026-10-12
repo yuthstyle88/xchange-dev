@@ -26,7 +26,6 @@ use std::str::FromStr;
 
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
@@ -57,9 +56,7 @@ pub struct Line {
 /// Publish `lines` (`(currency, buy, sell)`, each rate per the currency's `unit_size`) as the
 /// next publication of `branch`, as the owner. Answers the new publication.
 pub async fn publish(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) -> Published {
-    let owner = Actor::owner("owner");
-    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
-    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = xc_auth::domain::access::Actor::new(
         "owner",
         "00000000-0000-0000-0000-000000000001",
@@ -96,7 +93,7 @@ pub async fn publish(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) 
 
     let mut tx = pool.begin().await.expect("begin");
     let draft = drafts
-        .create(&mut tx, &b, &owner, draft_lines)
+        .create(&mut tx, &b, &owner_user, draft_lines)
         .await
         .unwrap_or_else(|e| panic!("create the draft: {}", e.code()));
     tx.commit().await.expect("commit the draft");
@@ -119,7 +116,7 @@ pub async fn publish(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) 
 
     let mut tx = pool.begin().await.expect("begin");
     let published = publisher
-        .publish(&mut tx, &b, &owner, &draft.id, expected)
+        .publish(&mut tx, &b, &owner_user, &draft.id, expected)
         .await
         .unwrap_or_else(|e| panic!("publish the draft: {}", e.code()));
     tx.commit().await.expect("commit the publish");

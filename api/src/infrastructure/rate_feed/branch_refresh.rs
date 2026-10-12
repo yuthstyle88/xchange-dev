@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::publication::publish_service::PublishService;
@@ -30,8 +29,8 @@ impl DraftBranchRefresh {
     ) -> Result<RefreshOutcome, RateEngineError> {
         // 1. Find the draft to copy.
         // Read branches.current_publication_id and that publication's draft_id
-        let row: Option<(Option<Uuid>, i32)> = sqlx::query_as(
-            "SELECT p.draft_id, p.version \
+        let row: Option<(Option<Uuid>, i32, String)> = sqlx::query_as(
+            "SELECT p.draft_id, p.version, b.organization_id::text \
              FROM branches b \
              JOIN rate_publications p ON p.id = b.current_publication_id \
              WHERE b.id = $1",
@@ -41,8 +40,10 @@ impl DraftBranchRefresh {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let (published_draft_id, expected_version) = match row {
-            Some((Some(draft_uuid), version)) => (DraftId::new(draft_uuid), Some(version)),
+        let (published_draft_id, expected_version, org_id) = match row {
+            Some((Some(draft_uuid), version, org_id)) => {
+                (DraftId::new(draft_uuid), Some(version), org_id)
+            }
             _ => return Ok(RefreshOutcome::NothingToCopy),
         };
 
@@ -72,10 +73,17 @@ impl DraftBranchRefresh {
         }
 
         // 3. Copy.
-        let system_actor = Actor::staff("SYSTEM:rate-feed:BOT", Role::System, branch.clone())
-            .ok_or_else(|| {
-                RateEngineError::Internal("failed to create system actor".to_string())
-            })?;
+        let system_actor = Actor::new(
+            "SYSTEM:rate-feed:BOT",
+            &org_id,
+            vec![ScopedRole::new(
+                Role::Admin,
+                Some(branch.clone()),
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
 
         let draft = self
             .drafts
@@ -84,14 +92,9 @@ impl DraftBranchRefresh {
 
         // 4. Submit with key = "rate-feed:{branch}:{batch}"
         let submit_key = format!("rate-feed:{}:{batch}", branch.as_str());
-        let submit_actor = xc_auth::domain::access::v3_roles::actor_from_v3(
-            &system_actor,
-            "00000000-0000-0000-0000-000000000001",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        );
         let submit_outcome = self
             .drafts
-            .submit(tx, branch, &submit_actor, &draft.id, &submit_key)
+            .submit(tx, branch, &system_actor, &draft.id, &submit_key)
             .await?;
 
         match submit_outcome.status {

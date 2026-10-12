@@ -174,7 +174,7 @@ async fn publish_usd(db: &TestDb) {
         .create(
             &mut tx,
             &main_branch(),
-            &owner(),
+            &owner_user(),
             vec![manual_line("USD", "32.10", "33.00")],
         )
         .await;
@@ -189,7 +189,7 @@ async fn publish_usd(db: &TestDb) {
     let mut tx = db.begin().await;
     let got = e
         .publisher
-        .publish(&mut tx, &main_branch(), &owner(), &d.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &d.id, None)
         .await;
     settle(tx, got).await.expect("the draft is published");
 }

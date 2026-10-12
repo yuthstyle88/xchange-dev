@@ -29,7 +29,6 @@ use std::time::Duration;
 use quote_common::*;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
@@ -105,9 +104,7 @@ fn refresher(pool: &PgPool) -> DraftBranchRefresh {
 
 /// The owner publishes an all-`AUTO` USD draft on `branch` through the draft path, as today.
 async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
-    let owner = Actor::owner("owner");
-    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
-    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = xc_auth::domain::access::Actor::new(
         "owner",
         "00000000-0000-0000-0000-000000000001",
@@ -137,7 +134,7 @@ async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
     );
     let mut tx = db.pool.begin().await.expect("begin");
     let draft = svc
-        .create(&mut tx, &b, &owner, vec![line])
+        .create(&mut tx, &b, &owner_user, vec![line])
         .await
         .unwrap_or_else(|e| panic!("create: {}", e.code()));
     svc.submit(&mut tx, &b, &owner_user, &draft.id, &unique("owner-key"))
@@ -145,7 +142,7 @@ async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
         .unwrap_or_else(|e| panic!("submit: {}", e.code()));
     let expected = current_version(&mut tx, branch).await;
     PublishService::new(db.pool.clone())
-        .publish(&mut tx, &b, &owner, &draft.id, expected)
+        .publish(&mut tx, &b, &owner_user, &draft.id, expected)
         .await
         .unwrap_or_else(|e| panic!("publish: {}", e.code()));
     tx.commit().await.expect("commit");
