@@ -163,6 +163,7 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 let host: HTMLElement | undefined;
 
 beforeEach(() => {
+  vi.useFakeTimers();
   reportCalls = [];
   reportAnswer = (url) => ok(report({ day: url.searchParams.get('day') ?? '2026-10-05' }));
   fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
@@ -222,10 +223,17 @@ function mainArea(): Element {
   return area!;
 }
 
+async function flush(): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await vi.advanceTimersByTimeAsync(0);
+  }
+}
+
 const pageText = (): string => squash(host?.textContent);
 
 async function loaded(): Promise<void> {
-  await vi.waitFor(() => expect(pageText()).toContain(squash('รายการสำเร็จ')));
+  await flush();
+  expect(pageText()).toContain(squash('รายการสำเร็จ'));
 }
 
 /** The table row whose first cell is the currency code. */
@@ -257,7 +265,8 @@ describe('V3-staff-report screen: v2 strings in th (B.1, D-B6)', () => {
       return ok(report());
     };
     await mountMain();
-    await vi.waitFor(() => expect(pageText()).toContain(squash('กำลังโหลดรายงาน…')));
+    await flush();
+    expect(pageText()).toContain(squash('กำลังโหลดรายงาน…'));
     release();
     await loaded();
     expect(pageText()).not.toContain(squash('กำลังโหลดรายงาน…'));
@@ -450,7 +459,8 @@ describe('V3-staff-report screen: refusals (rows 1, 2)', () => {
       body: { error: { code: 'roleNotAllowed', message: 'role not allowed' } },
     });
     await mountMain();
-    await vi.waitFor(() => expect(pageText()).toContain(squash('บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน')));
+    await flush();
+    expect(pageText()).toContain(squash('บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน'));
     expect(link(), 'the กลับเข้าสู่ระบบ link').toBeDefined();
     expect(link()!.getAttribute('href')).toBe('/staff');
     expect(host!.querySelector('table'), 'no figure table').toBeNull();
@@ -461,7 +471,8 @@ describe('V3-staff-report screen: refusals (rows 1, 2)', () => {
   it('any other refusal → its sentence, with the same link', async () => {
     reportAnswer = () => ({ status: 401, body: { error: { code: 'signIn', message: 'กรุณาเข้าสู่ระบบ' } } });
     await mountMain();
-    await vi.waitFor(() => expect(pageText()).toContain(squash('กรุณาเข้าสู่ระบบ')));
+    await flush();
+    expect(pageText()).toContain(squash('กรุณาเข้าสู่ระบบ'));
     expect(pageText()).not.toContain(squash('บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน'));
     expect(link()?.getAttribute('href')).toBe('/staff');
     expect(host!.querySelector('table')).toBeNull();
@@ -486,9 +497,10 @@ describe('V3-staff-report screen: reads (D-B1, row 4)', () => {
     await loaded();
     expect(reportCalls).toHaveLength(1);
     await changeDay('2026-10-01');
-    await vi.waitFor(() => expect(reportCalls.length).toBeGreaterThan(1));
+    await flush();
+    expect(reportCalls.length).toBeGreaterThan(1);
     for (const c of reportCalls.slice(1)) expect(c.searchParams.get('day')).toBe('2026-10-01');
-    await vi.waitFor(() => expect(pageText()).toContain(squash('XC Silom · 2026-10-01')));
+    expect(pageText()).toContain(squash('XC Silom · 2026-10-01'));
   });
 
   it('makes no request after mount without a day change (no polling)', async () => {
@@ -521,9 +533,8 @@ describe('V3-staff-report screen: print and shell (row 21, D-B8)', () => {
     await mountMain();
     await loaded();
     expect(host!.querySelectorAll('.xc-shell')).toHaveLength(1);
-    await vi.waitFor(() =>
-      expect(host!.querySelector('.xc-shell .account-bar'), "the shell's account bar").not.toBeNull(),
-    );
+    await flush();
+    expect(host!.querySelector('.xc-shell .account-bar'), "the shell's account bar").not.toBeNull();
     const area = squash(mainArea().textContent);
     expect(area).toContain(squash('รายการสำเร็จ 7'));
     expect(area).toContain(squash('พิมพ์ / บันทึก PDF'));
@@ -571,7 +582,8 @@ describe('V3-staff-report screen: en (D-B6, W10)', () => {
     host!.remove();
 
     await mountMain('en');
-    await vi.waitFor(() => expect(host!.querySelector('tbody tr')).not.toBeNull());
+    await flush();
+    expect(host!.querySelector('tbody tr')).not.toBeNull();
     const enText = squash(mainArea().textContent);
     expect(enText, 'the en report has no Thai letter').not.toMatch(thai);
 
@@ -608,21 +620,22 @@ describe('V3-staff-report screen: en (D-B6, W10)', () => {
     ] as const) {
       reportAnswer = () => ok(report({ status }));
       await mountMain('en');
-      await vi.waitFor(() => expect(host!.querySelector('tbody tr')).not.toBeNull());
+      await flush();
+      expect(host!.querySelector('tbody tr')).not.toBeNull();
       expect(squash(mainArea().textContent)).toContain(squash(en[keyOf(word)]));
       host!.remove();
     }
 
     reportAnswer = () => ({ status: 400, body: { error: { code: 'roleNotAllowed', message: 'x' } } });
     await mountMain('en');
-    await vi.waitFor(() =>
-      expect(squash(host!.textContent)).toContain(squash(en[keyOf('บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน')])),
-    );
+    await flush();
+    expect(squash(host!.textContent)).toContain(squash(en[keyOf('บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน')]));
     expect(squash(host!.textContent)).toContain(squash(en[keyOf('กลับเข้าสู่ระบบ')]));
     host!.remove();
 
     reportAnswer = () => new Promise<Answer>(() => {});
     await mountMain('en');
-    await vi.waitFor(() => expect(squash(host!.textContent)).toContain(squash(en[keyOf('กำลังโหลดรายงาน…')])));
+    await flush();
+    expect(squash(host!.textContent)).toContain(squash(en[keyOf('กำลังโหลดรายงาน…')]));
   });
 });

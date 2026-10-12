@@ -166,7 +166,7 @@ function serverWithQuotes(answerFor?: (call: Call, n: number) => Answer | Promis
 
 for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
   describe(`DeskStore on ${which}`, () => {
-    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    beforeEach(() => vi.useFakeTimers());
 
     it("S1 reads its config view once, on create, and never again (no polling)", async () => {
       const s = serverWithQuotes();
