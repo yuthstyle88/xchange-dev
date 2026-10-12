@@ -18,8 +18,15 @@ use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_outbox::application::worker::OutboxWorker;
 use xc_outbox::infrastructure::pg_store::PgOutboxStore;
+use xc_rate::application::draft::rate_draft_service::RateDraftService;
+use xc_rate::application::publication::publish_service::PublishService;
+use xc_rate::application::reference::reference_batch_writer::ReferenceBatchWriter;
+use xc_rate::infrastructure::reference::pg_reference_batch_store::PgReferenceBatchStore;
 
 use crate::config::Settings;
+use crate::infrastructure::rate_feed::branch_refresh::DraftBranchRefresh;
+use crate::infrastructure::rate_feed::feed_loop::{RateFeedConfig, RateFeedLoop};
+use crate::presentation::http::v3::commands::make_approval_service;
 
 #[derive(Debug, Clone)]
 pub struct BuildInfo {
@@ -205,13 +212,17 @@ pub struct Application {
     server: actix_web::dev::Server,
     purge: tokio::task::JoinHandle<()>,
     outbox: tokio::task::JoinHandle<()>,
+    rate_feed_stop: tokio::sync::watch::Sender<bool>,
+    rate_feed: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for Application {
-    /// The purge timer and outbox worker live as long as the server they belong to.
+    /// The purge timer, outbox worker, and rate feed loop live as long as the server they belong to.
     fn drop(&mut self) {
+        let _ = self.rate_feed_stop.send(true);
         self.purge.abort();
         self.outbox.abort();
+        self.rate_feed.abort();
     }
 }
 
@@ -257,8 +268,30 @@ impl Application {
         let registry = outbox_handlers::registry(&state)?;
         registry.verify_against(&pool).await?;
         let outbox = tokio::spawn(
-            OutboxWorker::new(Arc::new(PgOutboxStore::new(pool)), Arc::new(registry)).run_forever(),
+            OutboxWorker::new(
+                Arc::new(PgOutboxStore::new(pool.clone())),
+                Arc::new(registry),
+            )
+            .run_forever(),
         );
+
+        let (rate_feed_stop, stop_rx) = tokio::sync::watch::channel(false);
+        let rate_feed_loop = RateFeedLoop::new(
+            pool.clone(),
+            Arc::new(ReferenceBatchWriter::new(
+                state.rate_source.clone(),
+                Arc::new(PgReferenceBatchStore::new()),
+            )),
+            Arc::new(DraftBranchRefresh::new(
+                Arc::new(RateDraftService::new(
+                    pool.clone(),
+                    make_approval_service(pool.clone()),
+                )),
+                Arc::new(PublishService::new(pool)),
+            )),
+            RateFeedConfig::from_env(),
+        );
+        let rate_feed = tokio::spawn(Arc::new(rate_feed_loop).run(stop_rx));
 
         let server = actix_web::HttpServer::new(move || {
             actix_web::App::new().configure(|cfg| configure(cfg, state.clone()))
@@ -273,6 +306,8 @@ impl Application {
             server,
             purge,
             outbox,
+            rate_feed_stop,
+            rate_feed,
         })
     }
 
@@ -281,6 +316,9 @@ impl Application {
     }
 
     pub async fn run_until_stopped(mut self) -> Result<(), std::io::Error> {
-        (&mut self.server).await
+        let result = (&mut self.server).await;
+        let _ = self.rate_feed_stop.send(true);
+        let _ = (&mut self.rate_feed).await;
+        result
     }
 }
