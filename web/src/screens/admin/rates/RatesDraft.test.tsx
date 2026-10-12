@@ -24,8 +24,8 @@
 // Signatures, props, DTO fields and DOM hooks this test assumes (the implementer follows them):
 // - The menu is `./menu.ts`'s `menu.Component(props: AdminMenuProps)`, mounted as the shell mounts
 //   it, beside the page's one `Dialog` and `Toast`. It builds its own `new ApiClient()`, so the fake
-//   API is the global `fetch`. AppShell's page-wide reads (`/api/v3/views/me`,
-//   `/api/v3/views/kiosk_notifications`) are answered and never counted as the menu's own.
+//   API is the global `fetch`. AppShell's page-wide reads (`PAGE_WIDE`,
+//   `shared/testing/page-wide.ts`) are answered and never counted as the menu's own.
 // - Writes go through `ApiClient.command(method, path, body, key)`: each carries a non-empty
 //   `idempotency-key` header, a key of its own, and `branch` = the picked branch in the body.
 // - On show it reads `published_rates`, `rate_drafts`, `rate_policy` and `rates_reference` with
@@ -75,6 +75,7 @@ import type { RatesReferenceData, RatesReferenceRow } from '../../../shared/api/
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -126,7 +127,6 @@ const PUBLICATIONS = `${V}rate_publications`;
 const REFERENCE = `${V}rates_reference`;
 const OLD_READS = [`${V}admin_rates`, `${V}admin_rate_history`];
 const RPC = '/api/rpc';
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 const THAI = /[฀-๿]/;
 
@@ -312,7 +312,7 @@ async function answer(s: Sent): Promise<Reply> {
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) return { status: 200, body: queueCardUnchanged() };
   if (method === 'GET') {
     if (path === PUBLISHED) {
       const e = published[branch];

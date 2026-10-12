@@ -14,6 +14,7 @@ import type { PublishedRatesData } from '../../../shared/api/generated/published
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -46,7 +47,7 @@ async function fakeFetch(input: string): Promise<Response> {
   const path = new URL(input, 'http://localhost').pathname;
   const V = '/api/v3/views/';
   if (path === `${V}me`) return view({ kind: 'owner', id: 'owner-1', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' });
-  if (path === `${V}kiosk_notifications`) return json(200, { version: 1, changed: false });
+  if (path === QUEUE_CARD_PATH) return json(200, queueCardUnchanged());
   if (path === `${V}published_rates`) return view(published);
   if (path === `${V}rate_drafts`) return view({ drafts: [] });
   if (path === `${V}rate_draft`) return view({ draft: null, lines: [] });

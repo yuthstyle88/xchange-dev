@@ -8,6 +8,7 @@ import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
 import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -104,8 +105,8 @@ class TestServer {
         data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' },
       });
     }
-    if (url.pathname === '/api/v3/views/kiosk_notifications') {
-      return json(200, { version: 1, changed: false });
+    if (url.pathname === QUEUE_CARD_PATH) {
+      return json(200, queueCardUnchanged());
     }
     if (method === 'GET' && url.pathname === CASH) {
       return json(200, { version: this.version, changed: true, data: this.cashData });

@@ -61,6 +61,7 @@ import { lang, screenLookup, setLang } from '../../shared/i18n';
 import type { AdminMenu, AdminMenuProps } from './menus';
 import { menu as approvalsMenu } from './approvals/menu';
 import { meOf } from '../../test-support/me';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../shared/testing/page-wide';
 
 type ShellModule = typeof import('./AdminShell');
 type TextsModule = typeof import('./i18n');
@@ -480,8 +481,8 @@ beforeEach(() => {
     if (url.startsWith('/api/v3/views/me')) {
       return jsonResponse({ version: 1, changed: true, data: meFor() });
     }
-    if (url.startsWith('/api/v3/views/kiosk_notifications')) {
-      return jsonResponse({ version: 1, changed: false });
+    if (url.startsWith(QUEUE_CARD_PATH)) {
+      return jsonResponse(queueCardUnchanged());
     }
     ownFetches.push(url);
     return jsonResponse({ error: { code: 'notFound', message: 'not found' } }, 404);

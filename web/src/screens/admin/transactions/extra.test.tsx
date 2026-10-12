@@ -11,6 +11,7 @@ import { setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { toast, Toast } from '../parts/toast';
+import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 const loaded = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 
@@ -117,8 +118,8 @@ class FakeServer {
         return ok({ version: this.version, changed: true, data: { shiftOpen: true, deskUrl: '/desk?branch=B1' } });
       case 'me':
         return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
-      case 'kiosk_notifications':
-        return ok({ version: this.version, changed: false });
+      case QUEUE_CARD_VIEW:
+        return ok(queueCardUnchanged(this.version));
       default:
         return reply(404, { error: { code: 'notFound', message: 'not found' } });
     }

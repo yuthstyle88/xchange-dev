@@ -17,7 +17,7 @@
 // `shown()` (design §12.3), beside the page's one `Dialog` and `Toast` (V2-parts). The menu builds
 // its own `new ApiClient()` (controller's decision for every V2 menu, #462), so the fake API is
 // the global `fetch`: it answers the views by name and records every request. The two page-wide
-// reads AppShell makes (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and
+// reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and
 // never counted as the menu's own.
 //
 // The menu is read through an eager glob, so on a branch without it each test fails on an
@@ -48,6 +48,7 @@ import { setLang } from '../../../shared/i18n';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -240,8 +241,8 @@ async function answer(path: string, p: URLSearchParams, body: unknown): Promise<
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') {
-    return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) {
+    return { status: 200, body: queueCardUnchanged() };
   }
   if (path === RATES) {
     const branch = p.get('branch') ?? 'MAIN';

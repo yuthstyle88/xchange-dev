@@ -5,7 +5,7 @@
 //
 // The page is booted the way the browser boots it: `web/pages/kiosk-queue.html` names
 // `main.tsx`, which is imported into a document with `<div id="app">` and a stubbed `fetch` that
-// answers like the server (`me`, `kiosk_notifications`, `kiosk_queue`). The files are reached
+// answers like the server (`me`, and the queue card's and panel's views from `shared/testing/page-wide.ts`). The files are reached
 // through `import.meta.glob`, so a missing file fails an assertion here, not the whole file.
 //
 // Amended for SB-3 (#842) by the test-writer claude/5d45b017, on the FE lane controller
@@ -19,6 +19,7 @@
 // account bar and the queue store read `permissions`/`roles`. Nothing else changes.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { employeeOf, meOf } from '../../test-support/me';
+import { QUEUE_CARD_PATH, QUEUE_PANEL_PATH } from '../../shared/testing/page-wide';
 
 const PAGES = import.meta.glob('../../../pages/kiosk-queue.html', {
   query: '?raw',
@@ -92,7 +93,7 @@ function serve(input: unknown): Response {
   switch (url.pathname) {
     case '/api/v3/views/me':
       return json({ version: 1, changed: true, data: ME });
-    case '/api/v3/views/kiosk_notifications':
+    case QUEUE_CARD_PATH:
       return json({
         version: 7,
         changed: true,
@@ -107,7 +108,7 @@ function serve(input: unknown): Response {
           employee: employeeOf(ME),
         },
       });
-    case '/api/v3/views/kiosk_queue':
+    case QUEUE_PANEL_PATH:
       return json({
         version: 7,
         changed: true,
@@ -172,7 +173,7 @@ function text(node: Element | null | undefined): string {
 }
 
 function queueReads(): URL[] {
-  return urls.filter((u) => u.pathname === '/api/v3/views/kiosk_queue');
+  return urls.filter((u) => u.pathname === QUEUE_PANEL_PATH);
 }
 
 beforeAll(async () => {

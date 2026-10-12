@@ -9,7 +9,7 @@
 // a user reaches it: the cash menu `../menu.ts` mounted as the shell mounts it (its `Component`
 // with `branch()`, `period()`, `shown()`, beside the page's `Dialog`), a click on a shift id.
 // The panels' requests carry the menu's branch. The two page-wide reads AppShell makes
-// (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted.
+// (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and never counted.
 //
 // The folder's files are read through eager globs, so on a branch without them each test fails on
 // an assertion that the file exists, not on the import.
@@ -23,6 +23,7 @@ import { th as sharedTh } from '../../../../shared/i18n/th';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../../menus';
 import { Dialog, closeDialog } from '../../parts/Dialog';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../../shared/testing/page-wide';
 
 interface PanelProps {
   api: ApiClient;
@@ -80,7 +81,6 @@ const PROFIT = '/api/v3/compute/profit_summary';
 const CASH = '/api/v3/views/admin_cash';
 const MOVES = '/api/v3/views/admin_cash_movements';
 const SHIFTS = '/api/v3/views/admin_shifts';
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 const sharedThR = sharedTh as Record<string, string>;
 const sharedEnR = sharedEn as Record<string, string>;
 
@@ -174,8 +174,8 @@ class Server {
     if (url.pathname === '/api/v3/views/me') {
       return json({ status: 200, body: { version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' } } });
     }
-    if (url.pathname === '/api/v3/views/kiosk_notifications') {
-      return json({ status: 200, body: { version: 1, changed: false } });
+    if (url.pathname === QUEUE_CARD_PATH) {
+      return json({ status: 200, body: queueCardUnchanged() });
     }
     if (method === 'GET' && url.pathname === CASH) {
       return json({ status: 200, body: { version: 3, changed: true, data: cashData() } });

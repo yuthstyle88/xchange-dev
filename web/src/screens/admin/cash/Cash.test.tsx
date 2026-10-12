@@ -24,7 +24,7 @@
 // `new ApiClient()` in its folder (lane controller's decision for every V2 menu, #462). The fake
 // server is therefore the global `fetch` that client calls: it answers the three views and
 // `/api/rpc`, and records every request. The two page-wide reads AppShell makes
-// (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted as the
+// (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and never counted as the
 // menu's own. Writes go through V2-parts' `pendingWrite` (one store per page), so every test
 // leaves no write pending.
 //
@@ -40,6 +40,7 @@ import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { requestRefresh } from '../parts/refresh';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -68,8 +69,6 @@ const CASH = '/api/v3/views/admin_cash';
 const MOVES = '/api/v3/views/admin_cash_movements';
 const SHIFTS = '/api/v3/views/admin_shifts';
 const VIEWS = [CASH, MOVES, SHIFTS];
-/** AppShell's page-wide reads: answered, never the menu's own requests. */
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 /** Panel A5's texts (`shift-valuation.js:9`, `:13-14`; `profit-summary.js:7-13`). */
 const A5_TEXTS = [
@@ -258,8 +257,8 @@ class Server {
     if (url.pathname === '/api/v3/views/me') {
       return json({ status: 200, body: { version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' } } });
     }
-    if (url.pathname === '/api/v3/views/kiosk_notifications') {
-      return json({ status: 200, body: { version: 1, changed: false } });
+    if (url.pathname === QUEUE_CARD_PATH) {
+      return json({ status: 200, body: queueCardUnchanged() });
     }
     if (method === 'GET' && url.pathname === CASH) {
       if (this.cashRefusal) return json(this.cashRefusal);

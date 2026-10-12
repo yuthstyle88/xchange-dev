@@ -21,6 +21,7 @@ import { setLang } from '../../shared/i18n';
 import { AdminShell } from './AdminShell';
 import type { AdminMenu } from './menus';
 import { meOf } from '../../test-support/me';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../shared/testing/page-wide';
 
 const MENU_BUTTON = '☰ เมนู'; // admin-workspace.js:60, i18n.ts menuButton
 const SHADE_TH = 'ปิดเมนู'; // admin-workspace.js ~4253: shade.setAttribute('aria-label','ปิดเมนู')
@@ -225,7 +226,7 @@ beforeEach(() => {
         return jsonResponse({ version: '3.0.0', build: 'abcdef1234567', channel: 'staging', builtAt: '2026-10-08T00:00:00Z' });
       }
       if (url.startsWith('/api/v3/views/me')) return jsonResponse({ version: 1, changed: true, data: meFor(undefined) });
-      if (url.startsWith('/api/v3/views/kiosk_notifications')) return jsonResponse({ version: 1, changed: false });
+      if (url.startsWith(QUEUE_CARD_PATH)) return jsonResponse(queueCardUnchanged());
       return jsonResponse({ error: { code: 'notFound', message: 'not found' } }, 404);
     }),
   );

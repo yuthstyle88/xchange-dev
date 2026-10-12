@@ -10,6 +10,7 @@ import { setLang } from '../../../shared/i18n';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
 import { menu } from './menu';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 const VIEW = '/api/v3/views/admin_overview';
 
@@ -154,7 +155,7 @@ describe('V2-overview: extra tests for controller decisions (#461)', () => {
       },
       '/api/v3/views/me': () =>
         ok({ kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner' }),
-      '/api/v3/views/kiosk_notifications': () => ({ status: 200, body: { version: 1, changed: false } }),
+      [QUEUE_CARD_PATH]: () => ({ status: 200, body: queueCardUnchanged() }),
     };
     vi.stubGlobal('fetch', vi.fn(fakeFetch));
     setLang('th');

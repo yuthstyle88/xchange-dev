@@ -50,6 +50,7 @@ import type { ApprovalRequestItemDto } from '../../../shared/api/generated/appro
 import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -85,7 +86,6 @@ function say(key: K, lang: 'th' | 'en' = 'th'): string {
 }
 
 const REQUESTS = '/api/v3/views/approval_requests';
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 const THAI = /[฀-๿]/;
 
 // ── the answers ──────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ async function answer(s: Sent): Promise<Reply> {
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) return { status: 200, body: queueCardUnchanged() };
   if (path === REQUESTS && method === 'GET') {
     const branch = p.get('branch') ?? 'MAIN';
     const status = p.get('status');

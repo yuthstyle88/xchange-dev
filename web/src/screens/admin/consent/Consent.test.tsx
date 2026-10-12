@@ -71,6 +71,7 @@ import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 import { permissionsOf } from '../../../test-support/me';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -125,7 +126,6 @@ function say(key: K, lang: 'th' | 'en' = 'th'): string {
 const TEXTS_VIEW = '/api/v3/views/consent_texts';
 const PUBLISH = '/api/consent-texts';
 const RETENTION = /^\/api\/retention-policies\/([^/]+)$/;
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 const THAI = /[฀-๿]/;
 const DATA_TYPES = ['IDENTITY_VALUE', 'CONTACT', 'CLOSED_CUSTOMER'] as const;
 
@@ -171,7 +171,7 @@ async function answer(s: Sent): Promise<Reply> {
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) return { status: 200, body: queueCardUnchanged() };
   if (path === TEXTS_VIEW && method === 'GET') {
     const since = p.get('since');
     if (since !== null && Number(since) === textsVersion) {

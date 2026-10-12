@@ -24,6 +24,7 @@ import type { ProfitSummary } from '../../../../shared/api/generated/profit_summ
 import { setLang } from '../../../../shared/i18n';
 import { th as sharedTh } from '../../../../shared/i18n/th';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../../shared/testing/page-wide';
 
 interface PanelProps {
   api: ApiClient;
@@ -144,8 +145,8 @@ class Server {
     if (url.pathname === '/api/v3/views/me') {
       return json({ status: 200, body: { version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' } } });
     }
-    if (url.pathname === '/api/v3/views/kiosk_notifications') {
-      return json({ status: 200, body: { version: 1, changed: false } });
+    if (url.pathname === QUEUE_CARD_PATH) {
+      return json({ status: 200, body: queueCardUnchanged() });
     }
     if (method === 'POST' && url.pathname === PROFIT) {
       const index = this.calls.filter((c) => c.path === PROFIT).length;

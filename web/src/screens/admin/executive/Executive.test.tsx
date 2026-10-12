@@ -39,6 +39,7 @@ import type {
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../menus';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -64,8 +65,6 @@ function texts(): TextsModule {
 }
 
 const ENDPOINT = '/api/executive/overview';
-/** AppShell's page-wide reads: answered, never the menu's own requests. */
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 // ── the answer ───────────────────────────────────────────────────────────────
 
@@ -206,8 +205,8 @@ function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<R
   let r: Reply;
   if (url.pathname === '/api/v3/views/me') {
     r = { status: 200, body: { version: 1, changed: false } };
-  } else if (url.pathname === '/api/v3/views/kiosk_notifications') {
-    r = { status: 200, body: { version: 1, changed: false } };
+  } else if (url.pathname === QUEUE_CARD_PATH) {
+    r = { status: 200, body: queueCardUnchanged() };
   } else if (url.pathname === ENDPOINT) {
     r = reply(url.searchParams);
   } else {

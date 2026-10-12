@@ -27,6 +27,7 @@ import { ApiError, type Fetch, type ViewAnswer, type ViewParams } from '../api/c
 import type { Me } from '../api/generated/common';
 import { createSessionStore, endingFetch, endsSession } from './session';
 import { meOf } from '../../test-support/me';
+import { QUEUE_CARD_PATH, QUEUE_CARD_VIEW } from '../testing/page-wide';
 
 // ------------------------------------------------------------------ fixtures
 
@@ -351,7 +352,7 @@ describe('endingFetch (SE5)', () => {
   it('calls onEnd for a view read answering 400 kioskStaff', async () => {
     const onEnd = vi.fn();
     const wrapped = endingFetch(async () => json(400, errorBody('kioskStaff')), onEnd);
-    const got = await wrapped('/api/v3/views/kiosk_notifications', { method: 'GET' });
+    const got = await wrapped(QUEUE_CARD_PATH, { method: 'GET' });
     expect(onEnd).toHaveBeenCalledTimes(1);
     expect(await got.json()).toEqual(errorBody('kioskStaff'));
   });
@@ -470,7 +471,7 @@ describe('sharedApi and sharedSession (SE6, SE7)', () => {
     const m = await fresh();
     const s = m.sharedSession();
     await vi.advanceTimersByTimeAsync(0);
-    await expect(m.sharedApi().view('kiosk_notifications')).rejects.toMatchObject({ status: 400, code: 'kioskStaff' });
+    await expect(m.sharedApi().view(QUEUE_CARD_VIEW)).rejects.toMatchObject({ status: 400, code: 'kioskStaff' });
     expect(s.ended()).toBe('expired');
     expect(s.me()).toEqual(rates);
   });

@@ -15,7 +15,7 @@
 // `new ApiClient()` in its folder, as `admin/main.tsx:11` does (lane controller's decision for every
 // V2 menu, #462). The fake API is therefore the global `fetch` that client calls: it answers the
 // views by name and records every request. The two
-// page-wide reads AppShell makes (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are
+// page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are
 // answered and never counted as the menu's own.
 //
 // The menu is read through an eager glob, so on a branch without it each test fails on an
@@ -31,6 +31,7 @@ import { Dialog, closeDialog } from '../parts/Dialog';
 import { th as partsTh } from '../parts/i18n';
 import { requestRefresh } from '../parts/refresh';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -56,8 +57,6 @@ function texts(): TextsModule {
 }
 
 const VIEW = '/api/v3/views/admin_overview';
-/** AppShell's page-wide reads: answered, never the menu's own requests. */
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 // ── the answer ───────────────────────────────────────────────────────────────
 
@@ -176,8 +175,8 @@ function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
   let reply: Reply;
   if (url.pathname === '/api/v3/views/me') {
     reply = ok(1, { kind: 'owner', id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' });
-  } else if (url.pathname === '/api/v3/views/kiosk_notifications') {
-    reply = { status: 200, body: { version: 1, changed: false } };
+  } else if (url.pathname === QUEUE_CARD_PATH) {
+    reply = { status: 200, body: queueCardUnchanged() };
   } else {
     const handler = handlers[url.pathname];
     reply = handler
