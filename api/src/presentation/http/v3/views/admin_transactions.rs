@@ -13,6 +13,7 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
+use crate::application::executive::channel::Channel;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_transactions::{
     AdminTransactionStatus, AdminTransactionType, AdminTransactionsFilter,
@@ -176,6 +177,20 @@ impl PagedView for AdminTransactionsPagedView {
                 builder.push(" AND lower(t.staff_id) LIKE ");
                 builder.push_bind(pattern);
                 builder.push(" ESCAPE '\\'");
+            }
+
+            if let Some(ref currency) = filter.currency
+                && !currency.is_empty()
+            {
+                builder.push(" AND trim(l.currency::text) = ");
+                builder.push_bind(currency);
+            }
+
+            if let Some(ref channel) = filter.channel
+                && let Some(ch) = Channel::parse(channel)
+            {
+                builder.push(" AND ");
+                builder.push(ch.condition("t"));
             }
 
             builder.push(" ORDER BY t.recorded_at DESC, t.seq DESC LIMIT ");

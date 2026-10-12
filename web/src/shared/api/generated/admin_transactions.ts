@@ -13,4 +13,4 @@ export type AdminTransactionType = "BUY" | "SELL";
 /**
  * Filter for the `admin_transactions` view.
  */
-export type AdminTransactionsFilter = { from?: string, to?: string, q?: string, type?: AdminTransactionType, status?: AdminTransactionStatus, staff?: string, staffQ?: string, };
+export type AdminTransactionsFilter = { from?: string, to?: string, q?: string, type?: AdminTransactionType, status?: AdminTransactionStatus, staff?: string, staffQ?: string, currency?: string, channel?: string, };
