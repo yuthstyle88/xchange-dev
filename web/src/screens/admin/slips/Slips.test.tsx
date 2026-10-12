@@ -31,7 +31,7 @@
 // the menu record's `Component` takes only `AdminMenuProps` (controller decision on #462), so these
 // tests answer at `fetch` — a fake server behind the real `ApiClient`. Branch names come from the
 // shell's `admin_branches` view (same decision).
-// Any other read (the `me` view, the queue card's `kiosk_notifications`, `admin_branches`,
+// Any other read (the `me` view, the queue card's read in `shared/testing/page-wide.ts`, `admin_branches`,
 // `transaction_documents`) is answered and ignored; only `admin_slips` reads are counted.
 //
 // `menu.ts` and `i18n.ts` are read through eager globs, so on a branch without them each test fails
@@ -191,7 +191,7 @@ function serve(input: unknown): Promise<Response> {
     // the detail's receipt section: left loading, it is TransactionDetail's (V2-parts)
     return new Promise<Response>(() => {});
   }
-  // the page-wide reads AppShell makes (`me`, `kiosk_notifications`): answered, ignored
+  // the page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`): answered, ignored
   return Promise.resolve(json(200, { version: 3, changed: false }));
 }
 

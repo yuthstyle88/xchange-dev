@@ -1418,3 +1418,450 @@ to a Blueprint rule.
 | Out-of-bound for a MANUAL side with no reference | out-of-bound (needs OWNER) | nothing to measure it against; §05's guard is a distance from the reference |
 | The header of a draft | `rate_drafts` | implied by RateDraftLine's "unique draft + currency + group" and by the §06 state |
 | Routes to create/edit a draft, decide a request, save a policy, fetch a reference | §4.7 | §10 lists only simulate/submit/publish; these are the steps A02/A06 need before them |
+
+---
+
+## 12. The value-tier switch (R-12e), the organisation's starting price (R-12a) and the sharp-move notice (R-12f) (amendment, 2026-10-11)
+
+> designed-by: claude/5d45b017 on the xchange BE lane controller's order (claude/ad05bf8d, #986) · measured on `main`
+> `37ea2f56` (every `file:line` below; the code files are unchanged since `748e4314`) · reviewers: claude/c954feda
+> (`rate-feed-connector.md`) and claude/ad05bf8d · it lives here, not in `rate-feed-connector.md`, because this file owns
+> `rate_policy_versions` (§4.1, §4.3) and the policy screen, and both new tables are rate-engine tables
+
+### 12.0 Decided
+
+| # | Ruling (verbatim on #986) | What it fixes here |
+|---|---|---|
+| R-12 | *"ใช้ ราคา กลางตั้งต้น แล้ว ดึง BoT ทุก3 ชม เพื่อ อัพเดท แต่ผมให้ สามารถ คอนฟิก จะดีกว่า"* (issuecomment-6103607280) | Counter prices come from BoT through the draft path (`rate-feed-connector.md` §11). Nothing here changes that path's OFF behaviour |
+| R-12a | *"ใช้จนกว่าจะดึง ธปท. ได้ (แนะนำ)"* (issuecomment-6103628051); Blueprint v2 §19: the owner enters one central starting price per currency, once, at organisation level, used by every branch only until the first successful BoT fetch | §12.6–§12.8 |
+| R-12d | *"บวก/ลบตามนโยบายเหมือนเดิม (แนะนำ)"* (issuecomment-6103628051) | `adjust_pct` stays in every price, tiered or not (§12.3) |
+| Q-T (a) | *"(a) ไม่มีขั้นราคา"* (issuecomment-6103658425, -6103662781) | the default: one price per currency and side, `value_tier = 'ALL'` |
+| R-12f | *"ถ้า Rate ขยับแรงให้ แจ้ง admin"* · *"ให้ ตั้งค่าได้ เอง ว่า จะ alertเมื่อมีค่ามากกว่า เท่าไรง"* · *"ประกาศตามปกติ แล้วแจ้ง admin (แนะนำ)"* · *"OWNER และ ADMIN ขององค์กร (แนะนำ)"* · *"แจ้งในหน้า admin ของ v3 (แนะนำ)"* (issuecomment-6103753375) | a sharp move still publishes; the organisation's OWNER and ADMIN get a notice in v3's admin screens; the threshold is owner data with **no default**: no threshold, no notice (§12.8) |
+| R-12e | *"จุดนี้ อาจเปลี่ยนได้ ให้ มี config ได้ไหม"* · *"เผื่อเจ้าของ จะเลือก b"* · *"B: สร้าง config ตอนนี้"*, confirmed directly as "Yes, build switch now" (issuecomment-6103707361) | a switch, **default OFF = Q-T (a)**. ON = **four** value tiers: the BoT base plus an owner-set margin per tier, through §05's formula with `adjust_pct`. The margins are owner data on the policy screen, never constants (A3) |
+
+### 12.1 What exists today (measured)
+
+| Piece | Where | Fact |
+|---|---|---|
+| Policy version | `api/migrations/20261010120000_rate_engine.sql:26-42` | `rate_policy_versions`, **per branch**: `UNIQUE (branch_id, version)`; the current row is `valid_to IS NULL`. `organization_id` was added later with the default org (`20261011100000_organizations.sql:46-67`) |
+| Policy save | `api/src/presentation/http/v3/commands/rate_policy_save.rs:59` (`ratePolicySave`, `POST /api/rate-policies`) | next version `:139`, closes the open row `:152`, inserts `:160-164`; a non-owner may change only the two `adjust_pct` (`:124-135`) |
+| Policy view and screen | `api/src/presentation/http/v3/views/rate_policy.rs:35` (`rate_policy`); `web/src/screens/admin/rates/Rates.tsx:124` (read), `:336-342` (save) | the screen this design extends |
+| The §05 formula | `api/crates/xc-rate/src/domain/draft/rate_proposal.rs:44-48` (buy), `:74-78` (sell) | `base = ref × currency.unit_size ÷ ref.unit_size`; `raw = base × (1 + adjust_pct ÷ 100)`; rounded to 8 places |
+| The guard | `api/crates/xc-rate/src/domain/draft/draft_evaluation.rs:41` (`DraftEvaluation::of`), `:67`, `:100` (`guard_for`) | distance of the proposed rate from its reference, per currency and side |
+| BoT publish | `api/crates/xc-rate/src/application/publication/publish_service.rs:311` (`RateProposal::of`), `:357-360` (insert) | **one line per currency, `denomination_group 'ALL'`**; `value_tier` takes its default `'ALL'`, bands and base rates are NULL. It cannot write tiers today |
+| Tier columns | `api/migrations/20261110100000_rate_feed.sql:33-38`, `:54-55` | `published_rate_lines.value_tier` (`DEFAULT 'ALL'`), `tier_lower_exclusive_thb`, `tier_upper_inclusive_thb`, `base_buy_rate`, `base_sell_rate`; identity `(publication_id, currency_code, denomination_group, value_tier)` |
+| Tier types | `api/crates/xc-rate/src/domain/publication/value_tier.rs:7`, `:44-48`, `:81` | `TierCode`, `TierBand { lower_exclusive_thb, upper_inclusive_thb }`, `TierTable::pick` (None on a gap or overlap) |
+| Tier reader | `api/crates/xc-rate/src/infrastructure/publication/published_rates.rs:135-329` (`line_for`) | one `'ALL'` line → that line; otherwise a quantity is required, every line of `(code, group)` must share one base rate (`:217-235`), the tier is picked on `ExchangeArithmetic::thb(quantity, base_rate, unit)` (`:247`) |
+| Tiered writer | `api/crates/xc-rate/src/application/publication/feed_publisher.rs:71` | the board path; no caller in `api/src`; `validate_tier_bands` `:444-509`. **Not used by this design**: R-12 has no board, and BoT prices are built by the draft path (`rate-feed-connector.md` §11.1) |
+| Starting price | — | no table holds an organisation-level price (searched migrations, `api/src`, crates and web for `seed`, `starting_price`, `initial_rate`) |
+
+### 12.2 Where the switch lives: per branch, on the policy version
+
+**Decision: the switch and the tier table are part of `RatePolicyVersion`, so they are per branch** (accepted in review, PR 1240 issuecomment-6103898696).
+
+- `rate_policy_versions` is already per branch (`UNIQUE (branch_id, version)`), and it already holds the other half of
+  the formula, `adjust_pct` and the guards. The draft path reads exactly one policy version per line
+  (`rate_draft_service.rs:84-86`, `rate_draft_lines.policy_version_id`), and publish stamps it into `source_snapshot`
+  (`publish_service.rs:347-348`). Margins kept there combine with `adjust_pct` in one place, with no second lookup.
+- **Versioning, approval and audit come for free.** A change is a new version through `ratePolicySave`, entered by
+  OWNER, immutable once inserted (§4.3, A3). The switch's history is the policy's history.
+- **Why not per organisation.** An organisation-wide switch would be a second source the draft path must join, plus a
+  precedence rule against the branch policy. Nothing in the rulings asks for one. Turning tiers on everywhere means
+  saving the same tiers on each branch's policy. A "copy to every branch" button is a screen convenience, not designed
+  here.
+
+### 12.3 The tier table and the formula
+
+```sql
+ALTER TABLE rate_policy_versions
+    ADD COLUMN value_tiers_on boolean NOT NULL DEFAULT false;
+
+CREATE TABLE rate_policy_value_tiers (
+    policy_version_id   uuid          NOT NULL REFERENCES rate_policy_versions(id),
+    tier_no             smallint      NOT NULL CHECK (tier_no BETWEEN 1 AND 4),
+    upper_inclusive_thb numeric(20,2) NULL,         -- NULL only for tier 4 (open above)
+    buy_margin_pct      numeric(9,4)  NOT NULL,     -- signed, scale 4, like buy_adjust_pct
+    sell_margin_pct     numeric(9,4)  NOT NULL,
+    PRIMARY KEY (policy_version_id, tier_no),
+    CHECK ((tier_no = 4) = (upper_inclusive_thb IS NULL)),
+    CHECK (upper_inclusive_thb IS NULL OR upper_inclusive_thb > 0)
+);
+```
+
+- **Four tiers** `[required]` (R-12e says four). Tier 1 is open below; tier *n*'s lower bound is tier *n−1*'s upper
+  bound. The uppers must rise strictly: `ratePolicySave` refuses any other set (`validationFailed`). It is a cross-row
+  rule, so the command enforces it, and a test pins it.
+- **The bands are THB value**, the same for every currency of the branch. **The margins are per tier and side**, the
+  same for every currency (owner, O-7, #986 issuecomment-6103819465).
+- **`value_tiers_on` is the switch.** `true` requires exactly four rows; `false` may keep rows, so switching back on
+  later does not lose the owner's numbers. A version is immutable, so its rows are too.
+- **The tier codes** written to `published_rate_lines.value_tier` are `'T1'`…`'T4'` `[required]`. No reader selects by
+  them: `line_for` uses the bands, and lists use `tier_lower_exclusive_thb IS NULL` (`rate-feed-connector.md` §9.1).
+
+**The formula (§05, extended additively; owner, O-9, #986 issuecomment-6103819465).** Per AUTO side, with `base` normalised as in §4.2:
+
+```
+untiered (OFF, unchanged):  rate      = round8( base × (1 + adjust_pct ÷ 100) )
+tier n (ON):                rate_n    = round8( base × (1 + (adjust_pct + margin_pct_n) ÷ 100) )
+                            base_rate = round8( base × (1 + adjust_pct ÷ 100) )   -- the same for all four lines
+```
+
+- **Additive, not compounded:** one multiplication and one rounding, as today. The guard measures the final distance
+  from the reference, which is exactly `adjust_pct + margin_pct_n`.
+- **`base_buy_rate` / `base_sell_rate`** on each tier line is the untiered rate. `line_for` picks the tier on it
+  (`published_rates.rs:247`, Blueprint §02: "the tier is picked on the base, before the margin"), and all four lines
+  share it, as `line_for` requires (`:217-235`).
+- **MANUAL sides** have one person-set value. It is written unchanged on all four tier lines, and the margin does not
+  apply. A MANUAL change already needs a reason and is measured by the guard as today.
+- **Every tier line passes §4.4's checks** after rounding: rate > 0, and buy ≤ sell. A failing tier fails the draft
+  like any line.
+- **The guard is checked per tier.** `DraftEvaluation` measures every tier's rate, so a tier outside the guard makes
+  the draft out of bounds and sends it to OWNER (§4.5, R-12c). To keep the 3-hour refresh from stopping on every
+  batch, `ratePolicySave` refuses a version with `value_tiers_on = true` where `adjust_pct + margin_pct_n` lies
+  outside that version's own guard, for any guarded currency, side or tier (accepted in review, PR 1240 issuecomment-6103898696).
+
+**Worked example** (USD, unit 1; BoT buying transfer 32.4500, selling 32.9000; `buy_adjust_pct` −0.5000,
+`sell_adjust_pct` +0.4000; the bands and margins are illustrative owner data, not values this design fixes):
+
+| Tier | THB band (on the base) | buy margin | sell margin | buy rate | sell rate |
+|---|---|---|---|---|---|
+| base (`base_*_rate`) | — | — | — | 32.45 × 0.9950 = **32.28775000** | 32.90 × 1.0040 = **33.03160000** |
+| T1 | ≤ 20,000.00 | 0.0000 | 0.0000 | 32.28775000 | 33.03160000 |
+| T2 | (20,000.00, 100,000.00] | +0.1000 | −0.1000 | 32.45 × 0.9960 = 32.32020000 | 32.90 × 1.0030 = 32.99870000 |
+| T3 | (100,000.00, 500,000.00] | +0.2000 | −0.2000 | 32.45 × 0.9970 = 32.35265000 | 32.90 × 1.0020 = 32.96580000 |
+| T4 | > 500,000.00 | +0.3000 | −0.3000 | 32.45 × 0.9980 = 32.38510000 | 32.90 × 1.0010 = 32.93290000 |
+
+A customer sells 1,000 USD (the shop's BUY): the base value is `thb(1000, 32.28775000, 1)` = 32,287.75 THB, so it falls
+in T2. The quote is 1,000 × 32.32020000 = **32,320.20 THB**. With the switch OFF the same customer gets 32,287.75 THB.
+
+### 12.4 Who builds tiered lines: the draft path, not `FeedPublisher`
+
+The order named "the F5 publisher path". Measured, `FeedPublisher` (`feed_publisher.rs:71`) is the board's publisher.
+It applies no `adjust_pct` (it reads the policy only for its id and stale hours, `:168-175`) and has no caller in
+`api/src`. Under R-12 every BoT price is built by the draft path that `rate-feed-connector.md` §11 reuses: `copy` →
+`evaluate` → `submit` → `publish`. So tiers are built there, and the refresh loop gets them without any change:
+`copy` points each line at the branch's **active** policy version (`rate_draft_service.rs:84-86`), so a branch whose
+version has `value_tiers_on = true` publishes tiers from its next refresh.
+
+| Step | Change |
+|---|---|
+| price | a new pure `TierProposal::of(proposed: &ProposedLine, line, reference, policy, tiers, units) -> Vec<TierLine>` in its own file. `RateProposal::of` is unchanged, so the OFF path stays byte for byte (`rate_proposal.rs`) |
+| evaluate | `RateDraftService::evaluate` (`rate_draft_service.rs:282`) loads the line's policy tiers and passes them to `DraftEvaluation::of` (`draft_evaluation.rs:41`), which measures every tier against the guard. The tier lines are part of the evaluation, and so of `evaluation_hash`, which publish checks (`publish_service.rs:77`, `:131`) |
+| publish | `PublishService::publish` (`publish_service.rs:311`, `:357-360`): when the line's policy version has `value_tiers_on`, it inserts four lines per currency with `value_tier`, the band and `base_*_rate`, and the source snapshot gains `"tier": {"no", "buy_margin_pct", "sell_margin_pct"}`. OFF inserts exactly today's one line |
+
+### 12.5 Which readers follow the switch
+
+**No reader reads the switch.** Readers follow **the publication's shape**: OFF publications are one `'ALL'` line per
+currency, ON publications are four tier lines. So the ON path needs every reader that assumes one line per currency to
+be tier-safe **before any branch turns the switch on**. Those are exactly the readers `rate-feed-connector.md` §9 listed
+for F7 and F11. Measured again at `37ea2f56`:
+
+| Reader | `file:line` | Today | Fix (unchanged from `rate-feed-connector.md` §9) | Ticket |
+|---|---|---|---|---|
+| quote | `api/src/application/workflows/exchange/quote.rs:103-115` | `line_for` with a quantity | — (already tier-aware, F6) | — |
+| bookings | `api/src/infrastructure/bookings/booking_ports.rs:116-127`, `:166-167` | `line_for` with a quantity; `line_by_id` for the stored line | — (F8) | — |
+| kiosk rate check | `api/src/infrastructure/kiosk/kiosk_ports.rs:416` | `line_in`: `'ALL'` only, so `None` on a tiered publication | price at the tier of the amount (§9.3), payment check by `line_by_id` | F7 #1142 |
+| kiosk counter lists | `kiosk_ports.rs:247-250`, `:296-299`; `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs:670-679`; `api/src/presentation/http/v3/views/kiosk_currencies.rs:165-166` | `denomination_group = 'ALL'`, no tier filter: four rows per currency | first tier (`tier_lower_exclusive_thb IS NULL`, §9.1) | F7 #1142 |
+| published-rate lists | `api/src/presentation/http/v3/views/published_rates.rs:105-106` (used by `staff_published_rates.rs:44` and `branch_rates.rs:45`) | every line, no tier filter | first tier | F11 #1150 |
+| desk and admin snapshot | `api/src/application/compat/snapshot.rs:361-365` (used `:100`, `:148-152`) | group `'ALL'`, no tier filter | first tier | F11 #1150 |
+| admin bookings | `api/src/presentation/http/v3/views/admin_bookings.rs:100-105`, `:307-310` | group `'ALL'` / every line | first tier | F11 #1150 |
+| desk save | `api/src/application/workflows/save_transaction.rs:393-397` | `line_in`, then compares the typed rate (`:402-405`) | `line_for` with the line's quantity, so the check is against the tier the save falls in | F11 #1150 |
+| `PublishedRates::line_for` | `api/crates/xc-rate/src/infrastructure/publication/published_rates.rs:135-329` | tier pick on the base | — (F6). §12.3 writes the same base on all four lines, as it requires | — |
+
+- **F7 and F11 keep their designed scope.** Only their dependency changes: they no longer wait for a board, and they
+  must merge **before VT-4** (§12.10), the ticket that lets `ratePolicySave` set `value_tiers_on = true`. Until VT-4
+  merges, no version can be ON, so no tiered BoT publication can exist.
+- **F11's source guard** (`rate-feed-connector.md` §9.4: a test that fails when a SQL string reads
+  `published_rate_lines` without a tier predicate) is what stops a new reader from forgetting this later.
+- **Not a reader of published lines:** `api/src/presentation/http/v3/views/admin_rates.rs:48-108` reads the legacy
+  `rates` table (`rate_repository.rs:88`). RE-7 (#604) retires it. It is out of scope here.
+
+### 12.6 The organisation's starting price (R-12a)
+
+```sql
+CREATE TABLE org_starting_prices (
+    id              uuid          PRIMARY KEY,
+    organization_id uuid          NOT NULL REFERENCES organizations(id),
+    currency_code   char(3)       NOT NULL REFERENCES currencies(code),
+    version         integer       NOT NULL,
+    unit_size       numeric(20,4) NOT NULL,          -- currencies.unit_size when entered
+    buy             numeric(20,8) NULL,
+    sell            numeric(20,8) NULL,
+    entered_by      text          NOT NULL,
+    entered_at      timestamptz   NOT NULL DEFAULT now(),
+    reason          text          NOT NULL,
+    reference_line_id uuid        NOT NULL REFERENCES rate_reference_lines(id),
+    UNIQUE (organization_id, currency_code, version),
+    CHECK (buy IS NOT NULL OR sell IS NOT NULL),
+    CHECK (buy IS NULL OR buy > 0),
+    CHECK (sell IS NULL OR sell > 0),
+    CHECK (buy IS NULL OR sell IS NULL OR buy <= sell)
+);
+```
+
+- **The owner's record.** One immutable row per entry; a change is a new version. It records who, when and why.
+  OWNER only (A3: the owner enters price frames).
+- **The engine reads it as a reference, so nothing downstream changes (♻️).** In the same transaction, the save command
+  also writes one `rate_reference_batches` row with `provider = 'START:' || organization_id`, `status 'COMPLETE'`,
+  `source_date` = the entry date, `fetched_at` = now and `raw` = the entry. It writes one `rate_reference_lines` row per
+  saved currency with `reference_type = 'START'`, the entry's `unit_size`, `buy` and `sell`. `reference_line_id` links
+  the two.
+  - So `evaluate`, the guard, publish and `source_snapshot` treat a starting price exactly like a BoT reference. The
+    snapshot names the provider, so every publication built on it says it came from the starting price.
+- **"Until the first successful BoT fetch" is per currency.** The AUTO base of a line is the newest `'BOT'` reference
+  line of its currency. If **no** `'BOT'` line has ever been written for that currency, it is the newest `'START'` line
+  of the branch's organisation. Once BoT has quoted a currency, its starting price is never used again.
+  - **A currency BoT never quotes** keeps its starting price as its AUTO base. BoT covers 6 currencies
+    (`bot_rate_source.rs:19`). The owner confirmed it (O-8, #986 issuecomment-6103819465); MANUAL can still price it.
+
+### 12.7 Every branch with a policy gets its first prices
+
+`rate-feed-connector.md` §11.3 step 1: a branch with no publication answers `NothingToCopy`, so the refresh loop never
+gives it prices. R-12a says the starting price is used by **every** branch.
+
+- **`orgStartingPriceSave`**, after writing §12.6's rows, finds every branch of the organisation with
+  `current_publication_id IS NULL`, and splits them in two.
+- **A branch with an active policy version** (`valid_from <= now() AND (valid_to IS NULL OR valid_to > now())`, the
+  query `create` uses, `rate_draft_service.rs:84-86`): in the same transaction, it calls:
+  1. `RateDraftService::create` with an all-AUTO line per currency that has a base (§12.6);
+  2. `submit` as the OWNER actor;
+  3. `PublishService::publish`.
+- **A branch with no active policy version is skipped:** nothing is written for it, no draft and no publication. It
+  is returned in the command's answer as `unpriced: [{ branch, reason: "noPolicy" }]`, and the screen says
+  "no policy: not priced".
+  - **Why.** Without a policy, `RateProposal::of` prices no AUTO side: it needs both a policy and a reference
+    (`rate_proposal.rs:42`, `:72`; otherwise `None` at `:65`, `:95`). A publication would then be every currency
+    unavailable (`rate_engine.sql:99` allows NULL sides), and F10a would copy that empty draft on every batch.
+  - **No policy is invented.** The owner sets a branch's policy first, as with every owner value (U2). After that,
+    saving the starting prices again (or the owner's own draft) prices the branch.
+  - This is the BE lane controller's ruling on the review (PR 1240 issuecomment-6103898696).
+- **No new pricing code.** It calls existing services only, as F10 does (§11.1).
+- **A branch that already has a publication is not touched.** Its prices come from its own drafts and the refresh
+  loop. From the next BoT batch, the loop's `copy` moves every currency BoT quotes onto BoT.
+
+### 12.8 The sharp-move notice (R-12f)
+
+**The threshold: one column on the branch's policy version** (owner, O-10, #986 issuecomment-6103819465).
+
+```sql
+ALTER TABLE rate_policy_versions ADD COLUMN sharp_move_alert_pct numeric(9,4) NULL
+    CHECK (sharp_move_alert_pct IS NULL OR sharp_move_alert_pct > 0);
+```
+
+- **It sits beside the guards and is versioned and entered the same way:** OWNER, through `ratePolicySave` (A3). A
+  change is a new version.
+- **`NULL` means no notice.** No default is given and none is invented, the same "not set ⇒ off" pattern as U2.
+- **Per branch and one value for every currency and side** (owner, O-10, #986 issuecomment-6103819465).
+
+**What "sharp" measures** (R-12f-1: the move of a currency side's price against the price currently published):
+- for each `(currency, denomination_group)` and side, compare the new publication's line with the previous
+  publication's line of the **same currency and group**: `move_pct = |new − old| ÷ old × 100`. Once banknote groups
+  are priced (F3), each group is its own price and is compared on its own;
+- a group that is new in this publication, or gone from it, has nothing to compare, so it gives no notice;
+- notify when `move_pct > sharp_move_alert_pct`;
+- **the compared price** is the line's rate when untiered, and `base_*_rate` when tiered (the price before the tier
+  margin, §12.3), so a tier switch on its own is not a "move" (owner, O-11, #986 issuecomment-6103819465);
+- **no comparison** when the branch had no publication, or either side is NULL (unavailable), so there is no notice.
+
+**Where it runs: every publication** (owner, O-11, #986 issuecomment-6103819465). The check runs in `PublishService::publish`, which every BoT price goes
+through: the owner's drafts and the refresh loop's (`rate-feed-connector.md` §11.1). The previous publication is already
+read there, under the branch lock (`publish_service.rs:40`). It never refuses: it runs after the lines are written,
+and the publication goes ahead whatever it finds (R-12f-2). R-12c alone decides whether a price publishes.
+
+**The notice reuses the customer notifications table; no new table.** Measured at `37ea2f56`:
+- **Staff are `users`.** `notifications.recipient_user_id REFERENCES users(id)`
+  (`api/migrations/20261106100000_customer_app.sql:38-52`), and staff accounts are `users` rows with `user_roles`
+  (`api/migrations/20261011110000_users_roles.sql:44-73`). So a staff member can be a recipient.
+- **The producer port exists.** `xc_kernel::notifications::Notifications::notify_in(tx, &NotificationRequest)`
+  (`api/crates/xc-kernel/src/notifications.rs:110`), implemented by `NotificationService`
+  (`api/crates/xc-notify/src/application/notification_service.rs:198`). It writes inside the caller's transaction and
+  is idempotent per (recipient, event, template).
+- **The reader exists.** The view `my_notifications` (`api/src/presentation/http/v3/views/my_notifications.rs:42`)
+  needs only `SignedIn` (`api/crates/xc-auth/src/domain/policy/areas/notifications.rs:17-21`), so a signed-in OWNER
+  or ADMIN reads their own notices. Reading needs no new route.
+- **Templates are one file each** under `api/crates/xc-notify/src/templates/`, listed by `xc-notify/build.rs:8-39`.
+  Today only `mod.rs` is there. Adding `rate_sharp_move.rs` is the whole template change.
+- **What is missing is only an admin page that lists them.** No file under `web/src` reads `my_notifications`
+  (searched `web/src`).
+
+**The notice:**
+- **Recipients:** every user with an active `user_roles` row (`valid_to IS NULL OR valid_to > now()`) in the branch's
+  organisation, with `role_code IN ('EXECUTIVE', 'ADMIN')` and `branch_id IS NULL`. That is "OWNER and ADMIN of the
+  organisation" (R-12f-3; OWNER = EXECUTIVE, as in §11's mapping).
+- `event_id` = `"rate-sharp-move:<publication_id>:<currency>:<side>"`, so a retry writes nothing twice.
+- `template_key` = `"rate_sharp_move"`.
+- `object` = (`"rate_publication"`, the publication id).
+- `params`: branch code, currency, side, old rate, new rate, `move_pct`, threshold and publication version. These are
+  display values only, no PII, as `NotificationRequest::new` enforces.
+- **No external channel** (R-12f-4): only the IN_APP delivery that `notify_in` writes.
+
+### 12.9 Data migration (one migration, `api/migrations/<next>_rate_tiers_and_starting_prices.sql`)
+
+`<next>` is numbered after the newest migration on `main` when the ticket starts. That is `20261111170000` at
+`37ea2f56`, and RE-7's `20261111180000_drop_rates.sql` comes before it if PR 1205 merges first.
+
+1. **Existing rows after it:**
+   - every `rate_policy_versions` row gets `value_tiers_on = false`, which is OFF, today's behaviour;
+   - every `rate_policy_versions` row gets `sharp_move_alert_pct = NULL`, which means no notice, as R-12f asks
+     until the owner sets one;
+   - `rate_policy_value_tiers` and `org_starting_prices` start empty;
+   - no publication, line or reference row changes.
+2. **Backfill: none.** The default is the old meaning. To look at before deploy:
+   `SELECT count(*) FROM rate_policy_versions;` (rows that take `false`). v3 data is test data, but the count goes in
+   the deploy note.
+3. **Deploy order:** migration first, then the binary.
+   - **Old binary, new schema:** it works. `rate_policy_save.rs:160` names its columns, so both new columns take their
+     defaults, and nothing old reads the new tables.
+   - **Tiered BoT publications** exist only after a version is saved with `value_tiers_on = true`, which only VT-4's
+     binary can do. F2's rule still holds: once tiered publications exist, no rollback to a binary older than F6
+     (`rate-feed-connector.md` §4 item 3). Its check is `SELECT count(*) FROM published_rate_lines WHERE value_tier <> 'ALL'`.
+4. **What a reversal loses:** there is no `down` migration in this repo (`ls api/migrations | grep -ci down` = 0), so
+   reversing means dropping by hand. That drops the owner's tier margins and starting prices (both tables), and every
+   version's switch and sharp-move threshold.
+   - Notices already written stay in `notifications`, which this migration does not own.
+   - Tiered publications stay valid. Their columns belong to F2's migration, not this one.
+   - The 'START' reference batches stay, because reference lines are never deleted (§4.1). So check
+     `SELECT count(*) FROM org_starting_prices` first: a non-zero count is owner data that would be lost.
+
+### 12.10 Tickets (one class set each; no file in two tickets)
+
+| # | Outcome | Files (its `File scope`) | Up-front tests (the ticket author writes them first) | Start after |
+|---|---|---|---|---|
+| VT-1 | the migration of §12.9 (all three rulings) | `api/migrations/<next>_rate_tiers_and_starting_prices.sql`, `api/tests/rate_tiers_migration_test.rs` | existing versions read `false` and a NULL threshold; a threshold ≤ 0 refused; four rows with a rising upper accepted; tier 4 with an upper, or tier 1–3 without one, refused by CHECK; `org_starting_prices` refuses buy > sell and an all-NULL row | PR 1205 (RE-7), for the migration number |
+| VT-2 | the pure types and formula | `api/crates/xc-rate/src/domain/policy/policy_tiers.rs` (new: `PolicyTier`, `PolicyTiers::new` validating four rising bands), `api/crates/xc-rate/src/domain/draft/tier_proposal.rs` (new: `TierProposal::of`, `TierLine`), `api/crates/xc-rate/src/domain/policy/mod.rs`, `api/crates/xc-rate/src/domain/draft/mod.rs`, `api/crates/xc-rate/tests/tier_proposal_test.rs` | §12.3's worked example to the digit; MANUAL equal on all four tiers; the margin is additive (a compounded result fails); the base equals `RateProposal::of`; a tier with buy > sell refused; bands not rising refused | — |
+| VT-3 | the draft path builds tiers | `api/crates/xc-rate/src/application/draft/rate_draft_service.rs`, `api/crates/xc-rate/src/domain/draft/draft_evaluation.rs`, `api/crates/xc-rate/src/application/publication/publish_service.rs`, `api/crates/xc-rate/src/infrastructure/policy/policy_tiers_store.rs` (new), `api/crates/xc-rate/src/application/draft/reference_base.rs` (new: a **pure move** of `create`'s and `copy`'s reference lookup, `rate_draft_service.rs:109`, `:234`), `api/crates/xc-rate/tests/rate_tiers_publish_test.rs` | ON publishes four lines per currency with T1…T4, bands and one base; OFF publishes one `'ALL'` line, identical to today's; a tier outside the guard makes the draft out of bounds; the evaluation hash moves when a margin changes; `line_for` picks T2 for §12.3's 1,000 USD | VT-1, VT-2, PR 1205 (RE-7 edits `publish_service.rs` and the lookup) |
+| VT-4 | the owner can turn it on, and sets the sharp-move threshold | `api/src/presentation/http/v3/commands/rate_policy_save.rs`, `api/src/presentation/http/v3/views/rate_policy.rs`, `api/src/presentation/dto/v3/rate_policy.rs`, `api/tests/rate_policy_tiers_test.rs` | ON needs four rising bands; the threshold saves and reads back, NULL included; `adjust + margin` outside the version's guard refused; the view returns the tiers and the switch; a non-owner cannot change tiers or the switch (as `:124-135`); a version saved OFF keeps its rows | VT-1, VT-3, **F7 #1142, F11 #1150** |
+| VT-5 | the policy screen edits it (FE lane) | `web/src/screens/admin/rates/Rates.tsx`, `web/src/screens/admin/rates/RatesTiers.test.tsx` (new) | the switch and four band/margin rows; amounts as strings; save sends VT-4's DTO | VT-4 |
+| SP-1 | the owner enters starting prices | `api/src/presentation/http/v3/commands/org_starting_price_save.rs` (new), `api/src/presentation/http/v3/views/org_starting_prices.rs` (new), `api/src/presentation/dto/v3/org_starting_prices.rs` (new), `api/tests/org_starting_price_test.rs` | OWNER only; a new version per change; the mirrored `'START'` batch and line; an unpublished branch **with** an active policy gets a publication with priced sides; an unpublished branch **without** one gets no draft and no publication row and is listed in `unpriced` with `noPolicy`; a published branch is untouched | VT-1, SP-2 |
+| SP-2 | the base falls back to the starting price | `api/crates/xc-rate/src/application/draft/reference_base.rs`, `api/crates/xc-rate/tests/reference_base_test.rs` | newest `'BOT'` wins; no `'BOT'` ever for the currency ⇒ the org's newest `'START'`; another organisation's `'START'` is never used; after a `'BOT'` line exists, `'START'` is never used again | VT-3 (which creates the file) |
+| SM-1 | the sharp-move check and its notice | `api/crates/xc-rate/src/domain/publication/sharp_move.rs` (new, pure: `SharpMove::between(old, new, threshold) -> Vec<Move>`), `api/crates/xc-rate/src/domain/publication/mod.rs`, `api/crates/xc-notify/src/templates/rate_sharp_move.rs` (new), `api/crates/xc-rate/tests/sharp_move_test.rs` | NULL threshold ⇒ none; exactly at the threshold ⇒ none; above ⇒ one per currency side; tiered lines compare `base_*_rate`; no previous publication or a NULL side ⇒ none; the template renders TH and EN without PII | — |
+| SM-2 | publish raises the notice | `api/crates/xc-rate/src/application/publication/publish_service.rs`, `api/crates/xc-rate/src/application/publication/sharp_move_notices.rs` (new: recipients query + `notify_in` per recipient), `api/tests/rate_sharp_move_notice_test.rs` | a 3% move with a 2% threshold notifies every org-wide EXECUTIVE and ADMIN once and nobody else; a branch-scoped ADMIN is not told; the publication commits either way; a rollback of the publish writes no notice; a retry writes none twice (the test inserts the policy version with its threshold directly; saving it is VT-4's) | VT-1, SM-1, **VT-3** (both edit `publish_service.rs`; the call is one line after VT-3's insert loop) |
+| SM-3 | the admin notices page (FE lane) | `web/src/screens/admin/notices/` (new directory, whole subtree) | lists `my_notifications` newest first, marks read with `notificationRead`, renders the `rate_sharp_move` params as text | SM-2 |
+| SP-3 | the starting-price screen (FE lane) | `web/src/screens/admin/starting-prices/` (new directory, whole subtree) | entry per currency with buy/sell strings; shows the version history; after a save, lists each `unpriced` branch as "no policy: not priced" | SP-1 |
+
+- **`publish_service.rs` is in VT-3, then SM-2, in that order.** SM-2 adds one call after VT-3's insert loop. Every
+  price is published there, so it is the right place, and splitting the file for one call would add a seam nobody
+  else uses. The order is written as SM-2's "start after", and this line is the root-cause note 🧩 asks for.
+- **`rate_draft_service.rs` is in VT-3 only.** VT-3 first moves the reference lookup into `reference_base.rs`, a pure
+  move. SP-2 then edits only that file, so the two tickets never share a file (📐: the file many tickets touch is split
+  first).
+- **The `pub mod` lines** for the new command and view files in `commands/` and `views/` are generated by `api/build.rs`
+  (the v3 generators), so no shared `mod.rs` is edited.
+- **F7 and F11** keep their files from `rate-feed-connector.md` §9. None of them is in the table above.
+
+```mermaid
+classDiagram
+    direction LR
+    class RatePolicyVersion {
+        <<table rate_policy_versions, per branch>>
+        +buy_adjust_pct
+        +sell_adjust_pct
+        +guards
+        +value_tiers_on: bool
+    }
+    class PolicyTiers {
+        <<xc-rate domain/policy/policy_tiers.rs>>
+        +new(rows) Result~PolicyTiers~
+        +bands() [TierBand; 4]
+        +margin(n, side) RatePercent
+    }
+    class TierProposal {
+        <<xc-rate domain/draft/tier_proposal.rs>>
+        +of(proposed, line, reference, policy, tiers, units) Vec~TierLine~
+    }
+    class RateProposal {
+        <<unchanged, rate_proposal.rs>>
+        +of(line, reference, policy, units) ProposedLine
+    }
+    class DraftEvaluation {
+        <<draft_evaluation.rs>>
+        +of(lines, …, tiers) evaluation
+    }
+    class PublishService {
+        <<publish_service.rs>>
+        +publish(...) one line OFF / four lines ON
+    }
+    class PolicyTiersStore {
+        <<infrastructure/policy/policy_tiers_store.rs>>
+        +for_version(tx, id) Option~PolicyTiers~
+    }
+    class ReferenceBase {
+        <<application/draft/reference_base.rs>>
+        +newest_in(tx, branch, currency) Option~Uuid~
+    }
+    class OrgStartingPriceSave {
+        <<command orgStartingPriceSave>>
+    }
+    class PublishedRates {
+        <<line_for, F6, unchanged>>
+    }
+    class ListReaders {
+        <<F7, F11: first tier>>
+    }
+    RatePolicyVersion "1" --> "0..4" PolicyTiers : rate_policy_value_tiers
+    PolicyTiersStore ..> PolicyTiers : loads
+    TierProposal ..> RateProposal : base_rate = its result
+    TierProposal ..> PolicyTiers
+    DraftEvaluation ..> TierProposal : guard per tier
+    PublishService ..> TierProposal : writes T1..T4
+    PublishService ..> PolicyTiersStore
+    ReferenceBase ..> OrgStartingPriceSave : 'START' lines it wrote
+    OrgStartingPriceSave ..> PublishService : first publication
+    class SharpMove {
+        <<xc-rate domain/publication/sharp_move.rs>>
+        +between(old, new, threshold) Vec~Move~
+    }
+    class SharpMoveNotices {
+        <<application/publication/sharp_move_notices.rs>>
+        +notify_in(tx, branch, moves)
+    }
+    class Notifications {
+        <<xc-kernel port, existing>>
+        +notify_in(tx, request)
+    }
+    PublishService ..> SharpMove : after the lines are written
+    PublishService ..> SharpMoveNotices
+    SharpMoveNotices ..> Notifications : one per EXECUTIVE/ADMIN
+    PublishedRates ..> PublishService : reads its bands and base
+    ListReaders ..> PublishService : reads the first tier
+```
+
+**Who provides, who uses:**
+
+| Provider | Used by | If it has not landed |
+|---|---|---|
+| VT-1's columns and tables | VT-3, VT-4, SP-1, SP-2 | they do not compile against the schema; each starts after VT-1 |
+| `PolicyTiers`, `TierProposal` (VT-2) | VT-3 | VT-3 starts after VT-2 |
+| `reference_base.rs` (VT-3's move) | SP-2 | SP-2 starts after VT-3 |
+| tier-safe readers (F7, F11) | VT-4 (the gate) | VT-4 does not start: no version can be ON, so no tiered BoT publication can exist |
+| `ratePolicySave` with tiers (VT-4) | VT-5 | VT-5 starts after VT-4 |
+| `SharpMove` + the template (SM-1) | SM-2 | SM-2 starts after SM-1 |
+| the notices in `notifications` (SM-2) | SM-3 | SM-3 starts after SM-2; until then the page lists the customer notices the user has, i.e. none for staff |
+
+### 12.11 Decided by the owner on this design (2026-10-11)
+
+The five questions this design first left open were answered by the owner directly in the BE lane controller's session,
+each as recommended here (#986 issuecomment-6103819465, also on PR 1240):
+
+| # | Question | Owner's answer | Where it lands |
+|---|---|---|---|
+| O-7 | Tier margins the same for every currency, or per currency? | **the same for every currency** (one margin per tier and side) | §12.3, VT-1's table key |
+| O-8 | A currency BoT never quotes: does it keep the starting price as its AUTO base? | **yes**; MANUAL can still price it | §12.6, SP-2 |
+| O-9 | Additive or compounded? | **additive**: `base × (1 + (adjust_pct + margin_pct) ÷ 100)`, one rounding | §12.3, VT-2 |
+| O-10 | The sharp-move threshold's scope? | **per branch policy, one value** | §12.8, VT-1, VT-4 |
+| O-11 | Which publications count as a move? | **every publication**, measured on the untiered price (`base_*_rate` when tiered), so turning the switch on is not a move | §12.8, SM-1, SM-2 |
+
+The two choices left to the design review were accepted there (PR 1240 issuecomment-6103898696): the switch's home per branch (§12.2) and
+`ratePolicySave` refusing a margin outside the version's own guard (§12.3).
+
+### 12.12 Conformance with the Blueprint
+
+| Blueprint rule | § | Here |
+|---|---|---|
+| `auto = base × (1 + pct/100)`, signed %, scale 4; rate scale 8 | 05 | the OFF formula is unchanged, and ON adds the tier's signed % to `adjust_pct` in the same formula (§12.3) |
+| **No value tiers.** v2 §05 prices one rate per branch, currency and group | 05 | **an owner-ordered addition, not a change of logic.** The owner's words: *"จุดนี้ อาจเปลี่ยนได้ ให้ มี config ได้ไหม"* · *"เผื่อเจ้าของ จะเลือก b"* · *"B: สร้าง config ตอนนี้"*, confirmed as "Yes, build switch now" (#986 issuecomment-6103707361; Blueprint v2 §19, R-12e). The default is OFF, which is §05 exactly |
+| Policy values are owner data, never constants | 05, A3 | bands and margins are rows of a policy version, entered by OWNER (§12.3) |
+| Out-of-bound → approval | 05, 06 | each tier is measured by the guard (§12.3), so an out-of-bound tier waits for OWNER (R-12c) |
+| Publications immutable; the pointer moves atomically | 05, 09 | tiers are four lines of the same publication, written in the same transaction (§12.4) |
+| The starting price is a seed only, until BoT | 19 (R-12a) | §12.6: per currency, a `'BOT'` line always wins |
+| A sharp move: publish as usual, then tell the organisation's OWNER and ADMIN in v3's admin screens | 19 (R-12f) | §12.8: the check never refuses; IN_APP only; no threshold, no notice |

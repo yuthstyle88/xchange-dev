@@ -1,5 +1,5 @@
 // Step 2, booking (design xchange-v3-wave3-desk.md §3.2 row "2 Booking", §3.9 case 5, D-10; #543 Part 1).
-// `staff` is the signed-in username, read-only. No client-made booking reference: the server numbers the exchange (D-10).
+// `staff` is the signed-in name, read-only. No client-made booking reference: the server numbers the exchange (D-10).
 import { createSignal, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../../shared/i18n';
 import type { DeskStore } from '../../desk-store';

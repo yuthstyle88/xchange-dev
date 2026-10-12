@@ -1,0 +1,16 @@
+/* CA-9b #1372: the cash-transfer limit policy form, in the admin cash page's look */
+.xc-admin .xc-content .cash-policy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.xc-admin .xc-content .cash-policy-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.xc-admin .xc-content .admin-cash-policy-screen {
+  display: block;
+}

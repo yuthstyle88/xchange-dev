@@ -29,7 +29,7 @@
 // - `POST /api/users` (#1157 `userCreate`) — recorded as the action `create` with the body as payload:
 //   `{userId, status, version}`, or the refusal `{"error": {"code", "message"}}`.
 // Every other request is recorded and fails the test. AppShell's page-wide reads
-// (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted.
+// (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and never counted.
 //
 // `menu.ts`, the table and the menu list are read through eager globs, so on a branch without them
 // each test fails on an assertion that the file exists, not on the import.
@@ -44,6 +44,7 @@ import type { AdminMenu } from '../menus';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 interface Table {
   th: Record<string, string>;
@@ -162,7 +163,6 @@ interface Post {
   payload: Record<string, unknown>;
 }
 
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 function people(): Employee[] {
   return [

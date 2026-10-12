@@ -10,7 +10,7 @@ pub fn accepted_keys(view: &str) -> &'static [&'static str] {
     match view {
         // `AdminTransactionsFilter` (`dto/v3/admin_transactions.rs:32`)
         "admin_transactions" => &[
-            "branch", "from", "to", "q", "type", "status", "staff", "staffQ",
+            "branch", "from", "to", "q", "type", "status", "staff", "staffQ", "currency", "channel",
         ],
         // `AdminCustomersFilter` (`dto/v3/admin_customers.rs:32`): organisation-wide, `q` only
         "admin_customers" => &["q"],

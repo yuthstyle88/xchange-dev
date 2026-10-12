@@ -28,6 +28,47 @@ pub struct DocumentLink {
     pub mime: String,
 }
 
+/// What a document is, whatever its label says (design §A D-A5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentKind {
+    Passport,
+    PaymentProof,
+    Receipt,
+}
+
+impl DocumentLink {
+    /// The document's kind, from v2's label.
+    pub fn kind(&self) -> DocumentKind {
+        match self.label.as_str() {
+            PASSPORT => DocumentKind::Passport,
+            RECEIPT => DocumentKind::Receipt,
+            _ => DocumentKind::PaymentProof,
+        }
+    }
+
+    /// v2's download name: `<ref>_<PASSPORT|PAYMENT|RECEIPT_FULL>.<ext>`, the ending from the recorded type.
+    pub fn file_name(&self, document_ref: &str) -> String {
+        let tag = match self.kind() {
+            DocumentKind::Passport => "PASSPORT",
+            DocumentKind::PaymentProof => "PAYMENT",
+            DocumentKind::Receipt => "RECEIPT_FULL",
+        };
+        format!("{document_ref}_{tag}.{}", ending(&self.mime))
+    }
+}
+
+fn ending(mime: &str) -> &'static str {
+    match mime {
+        "image/svg+xml" => "svg",
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "application/pdf" => "pdf",
+        "text/html" => "html",
+        _ => "bin",
+    }
+}
+
 /// The documents of one exchange, in v2's order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Documents {

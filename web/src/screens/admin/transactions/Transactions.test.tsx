@@ -9,7 +9,7 @@
 // first page; `before=<id>` → the older rows the test gives. Assertions read the requests' query
 // keys, so the menu may use `ApiClient.view` for the first page (it carries `since`) and
 // `ApiClient.page` / `walkPages` for older pages (they carry `before`). Reads AppShell makes
-// (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted.
+// (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and never counted.
 //
 // The menu's texts are v2's Thai, verbatim (W6) — asserted as the literals of the served page,
 // since the keys of its `i18n.ts` are the implementer's. Figures are the server's strings (W7):
@@ -24,6 +24,7 @@ import type { AdminMenu } from '../menus';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { toast, Toast } from '../parts/toast';
+import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 const loaded = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 
@@ -161,8 +162,8 @@ class FakeServer {
         return ok({ version: this.version, changed: true, data: { shiftOpen: true, deskUrl: '/desk?branch=B1' } });
       case 'me':
         return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
-      case 'kiosk_notifications':
-        return ok({ version: this.version, changed: false });
+      case QUEUE_CARD_VIEW:
+        return ok(queueCardUnchanged(this.version));
       default:
         return reply(404, { error: { code: 'notFound', message: 'not found' } });
     }

@@ -6,6 +6,7 @@ import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { menu } from './menu';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 interface Row {
   id: string;
@@ -48,7 +49,6 @@ interface Post {
   body: unknown;
 }
 
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 const EDITED_AT = '2026-10-07T20:30:00.000Z';
 const SAVED_AT = '2026-10-08T05:15:00.000Z';

@@ -12,7 +12,7 @@
 // The menu is mounted through its record, `menu.Component({branch, period, shown})`, as the shell
 // mounts it, beside the parts' `<Dialog/>` and `<Toast/>` that the shell renders once. The menu
 // builds its own `new ApiClient()` in its folder (lane controller on #462, decision 1), so the
-// fake sits under it: the global `fetch` answers as the server would, and records every request. The page-wide reads AppShell makes (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`)
+// fake sits under it: the global `fetch` answers as the server would, and records every request. The page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`)
 // are answered and never counted.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -22,6 +22,7 @@ import type { AdminMenu } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 const loadedMenu = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 const loadedTable = import.meta.glob<{ th: Record<string, string>; en: Record<string, string> }>(
@@ -39,7 +40,7 @@ function theMenu(): AdminMenu {
 const BOOKINGS = 'admin_bookings';
 const SETTINGS = 'admin_booking_settings';
 const BRANCHES = 'admin_branches';
-const IGNORED = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
+const IGNORED = PAGE_WIDE;
 const THAI = /[฀-๿]/;
 
 // ── what the server answers ──────────────────────────────────────────────────

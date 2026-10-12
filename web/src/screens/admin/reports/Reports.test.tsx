@@ -16,7 +16,7 @@
 // `Toast` (V2-parts). `AdminMenuProps` carries no `ApiClient`: the menu builds its own with
 // `new ApiClient()` in its folder (lane controller's decision for every V2 menu, #462). The fake
 // server is therefore the global `fetch`: it answers the views by name and records every request.
-// The two page-wide reads AppShell makes (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`)
+// The two page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`)
 // are answered and never counted as the menu's own.
 //
 // The menu's texts are asserted as v2's Thai literals (W6), since the keys of its `i18n.ts` are the
@@ -33,6 +33,7 @@ import { closeDialog, Dialog } from '../parts/Dialog';
 import { th as partsTh } from '../parts/i18n';
 import { requestRefresh } from '../parts/refresh';
 import { toast, Toast } from '../parts/toast';
+import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -326,7 +327,7 @@ class FakeServer {
 
   /** The menu's own requests: everything but AppShell's page-wide reads. */
   own(): Seen[] {
-    return this.requests.filter((r) => r.view !== 'me' && r.view !== 'kiosk_notifications');
+    return this.requests.filter((r) => r.view !== 'me' && r.view !== QUEUE_CARD_VIEW);
   }
 
   answer(url: string, init?: RequestInit): Promise<Response> {
@@ -354,8 +355,8 @@ class FakeServer {
         return ok({ version: this.version, changed: true, data: { ref: p.get('ref'), files: [] } });
       case 'me':
         return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
-      case 'kiosk_notifications':
-        return ok({ version: this.version, changed: false });
+      case QUEUE_CARD_VIEW:
+        return ok(queueCardUnchanged(this.version));
       default:
         return reply(404, { error: { code: 'notFound', message: 'not found' } });
     }

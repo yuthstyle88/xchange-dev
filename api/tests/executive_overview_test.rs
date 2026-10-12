@@ -980,8 +980,8 @@ async fn channel_parse_and_condition_classify_each_row() {
 
 // ------------------------------------------------------------ §9 row 5: drill-down `dropped`
 
-/// A01's drill-down to `admin_transactions` with `currency` and `channel` set: `filter` has neither key, and
-/// `dropped` = `["currency", "channel"]` (until #1103 lands).
+/// A01's drill-down to `admin_transactions` with `currency` and `channel` set: since EX-11a #1103 `filter` has both
+/// keys and `dropped` is empty. The branch row's `dropped` stays `["currency", "channel"]` until #1104 lands.
 #[actix_web::test]
 async fn a_drilldown_to_admin_transactions_drops_currency_and_channel() {
     let room = Room::start().await;
@@ -1002,10 +1002,10 @@ async fn a_drilldown_to_admin_transactions_drops_currency_and_channel() {
             .as_object()
             .unwrap_or_else(|| panic!("{key}'s filter is an object: {dd}"));
         assert!(
-            !filter.contains_key("currency") && !filter.contains_key("channel"),
-            "{key}: the target does not accept them: {dd}"
+            filter.contains_key("currency") && filter.contains_key("channel"),
+            "{key}: the target accepts them since #1103: {dd}"
         );
-        assert_eq!(dd["dropped"], json!(["currency", "channel"]), "{key}");
+        assert_eq!(dd["dropped"], json!([]), "{key}");
     }
     let dd = &branch_row(&d, B1).expect("B1's row")["drilldown"];
     assert_eq!(
@@ -1028,8 +1028,8 @@ fn accepted_keys_follow_the_passed_column_of_design_4_4() {
     }
     for key in ["currency", "channel"] {
         assert!(
-            !tx.contains(&key),
-            "admin_transactions does not accept {key} yet: {tx:?}"
+            tx.contains(&key),
+            "admin_transactions accepts {key} since #1103: {tx:?}"
         );
     }
     let ap = accepted_keys("approval_requests");

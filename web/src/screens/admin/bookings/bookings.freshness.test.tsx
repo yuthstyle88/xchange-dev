@@ -21,6 +21,7 @@ import { th } from '../../../shared/i18n/th';
 import type { AdminMenu } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 const loadedMenu = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 const sources = import.meta.glob<string>('./BookingsScreen.tsx', {
@@ -32,7 +33,7 @@ const sources = import.meta.glob<string>('./BookingsScreen.tsx', {
 const BOOKINGS = 'admin_bookings';
 const SETTINGS = 'admin_booking_settings';
 const BRANCHES = 'admin_branches';
-const IGNORED = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
+const IGNORED = PAGE_WIDE;
 const PUBLISHED_AT = '2026-10-10T03:15:00.123Z';
 
 /** `RateFreshnessDto` on the wire (RF-1, `dto/v3/common.rs`). Declared here so this file does not wait on codegen. */

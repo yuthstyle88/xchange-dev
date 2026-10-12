@@ -34,7 +34,7 @@
 // the menu record's `Component` takes only `AdminMenuProps` (controller decision on #462), so these
 // tests answer at `fetch` — a fake server behind the real `ApiClient`. Branch names come from the
 // shell's `admin_branches` view (same decision). The page-wide reads AppShell makes (the `me` view,
-// the queue card's `kiosk_notifications`) and `transaction_documents` are answered and ignored;
+// the queue card's read, `PAGE_WIDE` in `shared/testing/page-wide.ts`) and `transaction_documents` are answered and ignored;
 // only `admin_customers`, `admin_customer_history` and `/api/bookings` are counted.
 //
 // The rows of `admin_customers` are typed here by hand (`CustomerRow`) so this file compiles before
@@ -319,7 +319,7 @@ function serve(input: unknown, init?: RequestInit): Promise<Response> {
       if (autoBooking) post.respond(autoBooking(post));
     });
   }
-  // the page-wide reads AppShell makes (`me`, `kiosk_notifications`): answered, ignored
+  // the page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`): answered, ignored
   return Promise.resolve(json(200, { version: 3, changed: false }));
 }
 

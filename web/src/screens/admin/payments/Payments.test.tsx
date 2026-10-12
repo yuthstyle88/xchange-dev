@@ -20,7 +20,7 @@
 // - `POST /api/payment-methods` `{action: 'save', payload}` — v2's door, unchanged (ticket §7):
 //   the saved list answer, or v2's refusal `{"error": "<sentence>"}` with v2's status (§5.5.2).
 // Every other request is recorded and fails the test. AppShell's page-wide reads
-// (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are answered and never counted.
+// (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are answered and never counted.
 //
 // `menu.ts`, the table and the menu list are read through eager globs, so on a branch without them
 // each test fails on an assertion that the file exists, not on the import.
@@ -33,6 +33,7 @@ import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
 import { requestRefresh } from '../parts/refresh';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 interface Table {
   th: Record<string, string>;
@@ -177,7 +178,6 @@ interface Post {
   body: unknown;
 }
 
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 /** 03:30 on 8 Oct in Bangkok, still 7 Oct in UTC: a date shown without Asia/Bangkok is wrong. */
 const EDITED_AT = '2026-10-07T20:30:00.000Z';

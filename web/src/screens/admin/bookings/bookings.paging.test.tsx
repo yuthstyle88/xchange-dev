@@ -6,6 +6,7 @@ import { setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
+import { PAGE_WIDE } from '../../../shared/testing/page-wide';
 
 const loadedMenu = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
 
@@ -17,7 +18,7 @@ function theMenu(): AdminMenu {
 
 const BOOKINGS = 'admin_bookings';
 const SETTINGS = 'admin_booking_settings';
-const IGNORED = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
+const IGNORED = PAGE_WIDE;
 
 interface Row {
   id: string;

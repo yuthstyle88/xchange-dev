@@ -19,6 +19,7 @@
 // (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { employeeOf, meOf } from '../../test-support/me';
+import { QUEUE_CARD_PATH, QUEUE_PANEL_PATH } from '../../shared/testing/page-wide';
 
 const disposers: Array<() => void> = [];
 
@@ -58,7 +59,7 @@ function serve(input: unknown): Promise<Response> | Response {
   switch (url.pathname) {
     case '/api/v3/views/me':
       return meAnswer();
-    case '/api/v3/views/kiosk_notifications':
+    case QUEUE_CARD_PATH:
       return json({
         version: 7,
         changed: true,
@@ -73,7 +74,7 @@ function serve(input: unknown): Promise<Response> | Response {
           employee: employeeOf(ME_B2),
         },
       });
-    case '/api/v3/views/kiosk_queue':
+    case QUEUE_PANEL_PATH:
       return json({ version: 7, changed: true, data: [] });
     case '/health/ready':
       return json({ status: 'ok', database: true, version: '3.0.0', build: 'abc', builtAt: '2026-10-10T00:00:00Z', channel: 'staging', ui: 'built' });
@@ -90,7 +91,7 @@ function branchesRead(): string[] {
 }
 
 function queueReads(): string[] {
-  return urls.filter((u) => u.startsWith('/api/v3/views/kiosk_queue'));
+  return urls.filter((u) => u.startsWith(QUEUE_PANEL_PATH));
 }
 
 async function flush(): Promise<void> {

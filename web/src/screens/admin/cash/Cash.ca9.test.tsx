@@ -40,6 +40,7 @@ import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
 import { menu } from './menu';
 import { en, th } from './i18n';
+import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 // ── fixtures ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -165,8 +166,8 @@ class Server {
       switch (u.pathname) {
         case '/api/v3/views/me':
           return ok(this.me);
-        case '/api/v3/views/kiosk_notifications':
-          return json(200, { version: 1, changed: false });
+        case QUEUE_CARD_PATH:
+          return json(200, queueCardUnchanged());
         case '/api/v3/views/admin_branches':
           return ok({ branches: [{ id: 'MAIN', name: 'สำนักงานใหญ่' }] });
         case '/api/v3/views/admin_cash':

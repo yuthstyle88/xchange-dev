@@ -8,14 +8,17 @@
 //! transfer commands live in `commands/cash/`. Every file declares `INHERITS` on a `CommandAction` (`or4_routes_guard_test`).
 
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::count::count_service::CountVerified;
@@ -25,6 +28,7 @@ use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
 use xc_cash::domain::transfer::cash_transfer::TransferError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -32,6 +36,9 @@ use crate::presentation::dto::v3::cash::{
     CashLineInput, CashReceivedLineInput, CashRecordInput, CashRecordOutput, CountSubmitInput,
     CountSubmitOutput, CountVerifyOutput, HandoverStartInput, TransferCreateInput,
     TransferReceiveInput, TransferReconcileInput,
+};
+use crate::presentation::dto::v3::cash_transfer_policy::{
+    CashTransferPolicyData, TransferPolicySaveInput,
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
@@ -278,6 +285,86 @@ impl CommandAction for CountVerify {
     }
 }
 
+pub struct TransferPolicySave;
+
+impl TransferPolicySave {
+    pub fn new(_pool: PgPool) -> Self {
+        Self
+    }
+}
+
+impl CommandAction for TransferPolicySave {
+    const NAME: &'static str = "transferPolicySave";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "transferPolicySave");
+    type Input = TransferPolicySaveInput;
+    type Output = CashTransferPolicyData;
+    const ROUTE: &'static str = "/api/cash-transfer-policy";
+    const METHOD: Method = Method::PUT;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        who: &User,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let org_uuid = Uuid::parse_str(&who.organization_id).map_err(|_| server_error())?;
+        let user_uuid = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
+
+        for (curr, amount_str) in &input.limits {
+            let code = CurrencyCode::parse(curr.trim())
+                .map_err(|_| validation_failed("currency", "unknown currency"))?;
+
+            let minor_unit: Option<i16> =
+                sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
+                    .bind(code.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|_| server_error())?;
+
+            let minor = match minor_unit {
+                Some(m) => m,
+                None => return Err(validation_failed("currency", "unknown currency")),
+            };
+
+            let dec = Decimal::from_str(amount_str.trim())
+                .map_err(|e| validation_failed("limits", e.to_string()))?;
+
+            if dec < Decimal::ZERO {
+                return Err(validation_failed("limits", "amount must be non-negative"));
+            }
+
+            if dec.scale() > (minor as u32) {
+                return Err(from_cash_error(CashError::TooManyDecimals.into()));
+            }
+        }
+
+        let version = Uuid::new_v4().to_string();
+        let limits_val = serde_json::to_value(&input.limits).map_err(|_| server_error())?;
+
+        let created_at: DateTime<Utc> = sqlx::query_scalar(
+            "INSERT INTO cash_transfer_policy_versions (version, organization_id, limits, set_by, created_at) \
+             VALUES ($1, $2, $3, $4, now()) \
+             RETURNING created_at",
+        )
+        .bind(&version)
+        .bind(org_uuid)
+        .bind(limits_val)
+        .bind(user_uuid)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+
+        Ok(CashTransferPolicyData {
+            version,
+            limits: input.limits,
+            set_by: who.user_id.clone(),
+            created_at: created_at.to_rfc3339(),
+        })
+    }
+}
+
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     CommandEndpoint::register(cfg, Arc::new(CountSubmit::new(pool.clone())));
@@ -289,7 +376,8 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferSubmit::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferDispatch::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferReceive::new(pool.clone())));
-    CommandEndpoint::register(cfg, Arc::new(transfers::TransferReconcile::new(pool)));
+    CommandEndpoint::register(cfg, Arc::new(transfers::TransferReconcile::new(pool.clone())));
+    CommandEndpoint::register(cfg, Arc::new(TransferPolicySave::new(pool)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
@@ -305,5 +393,6 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     CountSubmitOutput::export_all(&cfg)?;
     CountVerifyOutput::export_all(&cfg)?;
     CashRecordOutput::export_all(&cfg)?;
+    TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }

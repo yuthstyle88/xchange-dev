@@ -11,7 +11,7 @@
 // - The menu is `./menu.ts`'s `menu.Component(props: AdminMenuProps)`, id `alert-settings` (the
 //   folder name, as `collectMenus` requires), mounted as the shell mounts it, beside the page's one
 //   `Dialog` and `Toast`. It builds its own `new ApiClient()`, so the fake API is the global `fetch`.
-//   AppShell's page-wide reads (`/api/v3/views/me`, `/api/v3/views/kiosk_notifications`) are
+//   AppShell's page-wide reads (`PAGE_WIDE`, `shared/testing/page-wide.ts`) are
 //   answered and never counted as the menu's own. Which roles see the menu is not pinned here: the
 //   menu's field moves with OR-7.7 #1030, and the API refuses every other role.
 // - On show it reads `GET /api/v3/views/branch_alert_settings?branch=<picked branch>`, which answers
@@ -48,6 +48,7 @@ import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 import { meOf } from '../../../test-support/me';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -80,7 +81,6 @@ function say(key: K, lang: 'th' | 'en' = 'th'): string {
 
 const VIEW = '/api/v3/views/branch_alert_settings';
 const SAVE = '/api/v3/commands/branch_alert_settings_save';
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 
 const B01 = 'XC-B01';
 /** The codes the fake server's `currencies` register holds. */
@@ -141,7 +141,7 @@ function answer(s: Sent): Reply {
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) return { status: 200, body: queueCardUnchanged() };
   if (path === VIEW && method === 'GET') {
     const branch = params.get('branch') ?? '';
     const data = structuredClone(stored[branch] ?? empty(branch));

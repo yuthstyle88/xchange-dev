@@ -1,0 +1,31 @@
+/* #1349 V3-documents: v2's documents pages (src/devices.mjs, http/documents.rs before #1349), inside the shell */
+.documents-screen {
+  max-width: 700px;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.documents-screen .documents-title {
+  margin: 0 0 8px;
+}
+
+.documents-screen .documents-ref {
+  margin: 0 0 12px;
+}
+
+.documents-screen .documents-list li {
+  margin: 20px 0;
+}
+
+.documents-screen a {
+  color: #ab0044;
+}
+
+.documents-screen .documents-refusal {
+  color: var(--danger, #a5003c);
+}
+
+.documents-screen .documents-back {
+  display: inline-block;
+  margin-top: 12px;
+}

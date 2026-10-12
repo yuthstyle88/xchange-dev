@@ -34,7 +34,7 @@ OQ-1…OQ-5 one by one in the same session and chose, verbatim (record: #557 iss
 | OQ-5 | whether branch-desk checks replace C10, and who does them | *"ได้ ผู้ตรวจเอกสารที่สาขาทำ (แนะนำ)"* | (new on 2026-10-11) |
 
 Blueprint §19 has no verification row yet (re-measured at `748e4314`); a §19 row for these answers is a separate doc-only PR,
-like R-12's. The storage items S-1…S-5 (§12) are **not** decided.
+like R-12's. The storage items S-1…S-5 (§12) were decided by the owner: S-1…S-4 on 2026-10-11 and S-5 on 2026-10-12.
 
 | Item | State | Source |
 |---|---|---|
@@ -48,7 +48,7 @@ like R-12's. The storage items S-1…S-5 (§12) are **not** decided.
 | Retention periods are settings, nothing is purged until a period is set | **decided by the owner** (for customer data) | `customer-identity-consent.md` U2 (`:16`) |
 | The PII key is a file on the v3 host, backups hold ciphertext only | **decided by the owner** (for identity values) | `customer-identity-consent.md` U3 (`:17`) |
 | One passport or Thai national ID per case (OQ-1); retention per document type as EXECUTIVE data (OQ-2); reviewer only, no provider (OQ-3); a VERIFIED case expires on the document's expiry date entered by the reviewer (OQ-4); a VERIFICATION_REVIEWER may review at the branch when the policy allows (OQ-5) | **decided by the owner** | #557 issuecomment-6103706908; #557 issuecomment-6095110325; §11 |
-| S-1…S-5: where the document store lives, encryption at rest, link lifetime, the desk's existing scans, the reason-code list | **S-1…S-4 decided by the owner 2026-10-11 (§12); S-5 open** (new work, BE fact *"no object store, no encryption at rest, no signed links"*) | §12 |
+| S-1…S-5: where the document store lives, encryption at rest, link lifetime, the desk's existing scans, the reason-code list | **S-1…S-4 decided by the owner 2026-10-11, S-5 on 2026-10-12 (§12)** (new work, BE fact *"no object store, no encryption at rest, no signed links"*) | §12 |
 
 ## 1. v3 today (measured at `b28725d1`)
 
@@ -477,7 +477,7 @@ line and keeps both sides on a rebase). Measured on `748e4314`:
 | VF-1 | schema M1 (§4.1) | `api/migrations/<version>_verification.sql`, `api/tests/verification_schema_test.rs` | this design | 4 (C10 + F02) — **held until phase 2 closes** |
 | VF-2 | the store: `DocumentStore`, `FsDocumentStore`, one configuration key | `api/crates/xc-kernel/src/document_store.rs` (+ its `pub mod` line), `api/src/infrastructure/document_store/fs_document_store.rs`, `api/src/infrastructure/document_store/mod.rs`, the `verification.store_dir` key in `api/configuration/base.yaml` | this design, **S-1, S-2**; the infra.md row for the directory | 4 (C10 + F02) — **held until phase 2 closes** |
 | VF-3 | crate and customer side: domain (including `CaseMachine` accepting a branch reviewer for open/add/submit, V17), repository, `CaseService` | `api/crates/xc-verification/{Cargo.toml,src/lib.rs}`, `xc-verification/src/domain/**`, `xc-verification/src/infrastructure/pg_case_repository.rs`, `xc-verification/src/application/case_service.rs`, `xc-verification/tests/case_service_test.rs` | VF-1, VF-2 | 4 (C10 + F02) — **held until phase 2 closes** |
-| VF-4 | reviewer side: `ReviewService` | `xc-verification/src/application/review_service.rs`, `xc-verification/tests/review_service_test.rs` | VF-3; **S-5** (the reason-code list) | 4 (C10 + F02) — **held until phase 2 closes** |
+| VF-4 | reviewer side: `ReviewService` | `xc-verification/src/application/review_service.rs`, `xc-verification/tests/review_service_test.rs` | VF-3; S-5 (the reason-code list, decided 2026-10-12) | 4 (C10 + F02) — **held until phase 2 closes** |
 | VF-5 | links: `DocumentAccess`, `DownloadLink` | `xc-verification/src/application/access/**`, `xc-verification/tests/document_access_test.rs` | VF-3; **S-3** | 4 (C10 + F02) — **held until phase 2 closes** |
 | VF-6 | sweeper (expire, purge), `Readiness`, retention data types | `xc-verification/src/application/{sweeper.rs,readiness.rs}`, `xc-verification/tests/{sweeper_test.rs,readiness_test.rs}` | VF-4 | 4 (C10 + F02) — **held until phase 2 closes** |
 | VF-7 | F02 API: area rows, five reviewer commands, the reviewer link, two views, the content route | `api/crates/xc-auth/src/domain/policy/areas/verification_review.rs`, `api/src/presentation/http/v3/commands/verification_case_start_review.rs`, `…/verification_case_approve.rs`, `…/verification_case_reject.rs`, `…/verification_case_request_update.rs`, `…/verification_case_revoke.rs`, `…/verification_document_link.rs`, `api/src/presentation/http/v3/views/verification_queue.rs`, `…/verification_case.rs`, `api/src/presentation/http/verification_content.rs`, their generated TS in `web/src/shared/api/generated/`, `api/tests/verification_f02_test.rs` | VF-4, VF-5, VF-6 | 4 (F02) — **held until phase 2 closes** |
@@ -608,7 +608,7 @@ and the lane controller chooses when to ask. Tickets that depend on them say so 
 | S-2 | Encrypt document bytes at rest | the field name `encrypted_object_ref` (§16) | **decided (owner, 2026-10-11):** *"เข้ารหัสด้วยกุญแจ PII เดิม (แนะนำ)"*: `PiiCipher` with `/etc/xc-v3/pii.key` (#557, latest owner-answer comment) |
 | S-3 | Link lifetime and binding | *"short-lived authorized download"* (§16) | **decided (owner, 2026-10-11):** *"60 วินาที ผูกกับ session (แนะนำ)"*: 60 s, bound to the session (#557, latest owner-answer comment) |
 | S-4 | The desk's existing PASSPORT scans (`files` + `transaction_files`) | nothing: they are not `VerificationDocument`s | **decided (owner, 2026-10-11):** *"ไม่ย้าย ตอนนี้ (แนะนำ)"*: the scans stay where they are; no M2, no VF-11 for now (#557, latest owner-answer comment) |
-| S-5 | The list of `decision_reason_code` values | the field (§16) | the codes [proposed: `DOCUMENT_UNREADABLE`, `DOCUMENT_EXPIRED`, `DETAILS_MISMATCH`, `DOCUMENT_NOT_ACCEPTED`, `SUSPECTED_FRAUD`, `OTHER`]; no free text is stored, because free text is where identity values leak |
+| S-5 | The list of `decision_reason_code` values | the field (§16) | **decided (owner, 2026-10-12, in claude/5edf7bb5's session: "Use these 6"):** `DOCUMENT_UNREADABLE`, `DOCUMENT_EXPIRED`, `DETAILS_MISMATCH`, `DOCUMENT_NOT_ACCEPTED`, `SUSPECTED_FRAUD`, `OTHER`. No free text is stored, because free text is where identity values leak |
 
 ## 13. Changes from the 2026-10-10 draft (`2beba1ea`)
 

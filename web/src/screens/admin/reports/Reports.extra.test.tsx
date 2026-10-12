@@ -13,6 +13,7 @@ import { closeDialog, Dialog } from '../parts/Dialog';
 import { formatBangkokTime } from '../parts/TransactionTable';
 import { toast, Toast } from '../parts/toast';
 import { menu } from './menu';
+import { QUEUE_CARD_VIEW, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 const REPORTS = 'admin_reports';
 const TRANSACTIONS = 'admin_transactions';
@@ -182,8 +183,8 @@ class FakeServer {
         return ok({ version: 1, changed: true, data: { ref: p.get('ref'), files: [] } });
       case 'me':
         return ok({ version: 1, changed: true, data: { kind: 'owner', id: 'owner', role: 'OWNER', branch: null } });
-      case 'kiosk_notifications':
-        return ok({ version: 1, changed: false });
+      case QUEUE_CARD_VIEW:
+        return ok(queueCardUnchanged());
       default:
         return Promise.resolve(new Response('not found', { status: 404 }));
     }

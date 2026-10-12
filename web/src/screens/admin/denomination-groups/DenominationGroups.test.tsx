@@ -46,6 +46,7 @@ import { setLang } from '../../../shared/i18n';
 import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
+import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -88,7 +89,6 @@ const VIEW = '/api/v3/views/admin_denomination_groups';
 const CREATE = '/api/denomination-groups';
 const MAP = '/api/denomination-groups/map';
 const REMOVE = '/api/denomination-groups/remove';
-const PAGE_WIDE = ['/api/v3/views/me', '/api/v3/views/kiosk_notifications'];
 const THAI = /[฀-๿]/;
 
 // ── the fake API ─────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ async function answer(s: Sent): Promise<Reply> {
       },
     };
   }
-  if (path === '/api/v3/views/kiosk_notifications') return { status: 200, body: { version: 1, changed: false } };
+  if (path === QUEUE_CARD_PATH) return { status: 200, body: queueCardUnchanged() };
   if (path === VIEW && method === 'GET') {
     const since = p.get('since');
     if (since !== null && Number(since) === version) return { status: 200, body: { version, changed: false } };
