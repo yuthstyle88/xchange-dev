@@ -20,13 +20,14 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 
 use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
-use crate::domain::posting::{CashPlace, CashPostings};
+use crate::domain::ledger::posting::{SourceRef, SourceType};
+use crate::domain::posting::{CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
 };
 use crate::domain::transfer::kinds::TransferKinds;
 use crate::domain::transfer::transfer_repository::TransferRepository;
-use crate::infrastructure::interim_postings::InterimCashPostings;
+use crate::infrastructure::ledger_postings::LedgerCashPostings;
 use crate::infrastructure::transfer_repository::PgTransferRepository;
 
 pub struct TransferFlow {
@@ -74,7 +75,7 @@ impl TransferFlow {
 
     pub fn pg(pool: PgPool) -> Self {
         let repo = Arc::new(PgTransferRepository::new(pool.clone()));
-        let postings = Arc::new(InterimCashPostings::new());
+        let postings = Arc::new(LedgerCashPostings::new());
         let kinds = TransferKinds::standard();
 
         let mut registry = ApprovalRegistry::new();
@@ -202,8 +203,9 @@ impl TransferFlow {
             .await
     }
 
-    /// Receives a transfer in the destination branch's `BranchTx` (the move's own branch for a
-    /// single-branch kind): `receive_in` at that branch, under that lock.
+    /// Receives a transfer in the `BranchTx` of both its branches (L-5, §8.1): the receipt moves the
+    /// sender's IN_TRANSIT as well as the destination, so both versions move. `receive_in` runs at the
+    /// destination (the move's own branch for a single-branch kind, where the pair is one branch).
     pub async fn receive(
         &self,
         who: &Actor,
@@ -218,7 +220,7 @@ impl TransferFlow {
         let id_owned = id.to_owned();
         let at = branch.clone();
         self.branch_tx
-            .run(&branch, move |tx| {
+            .run_pair(&t.from_branch, &branch, move |tx| {
                 Box::pin(async move {
                     Self::receive_on(&parts, tx, &at, &who, &id_owned, counted, now).await
                 })
@@ -226,8 +228,8 @@ impl TransferFlow {
             .await
     }
 
-    /// Reconciles a transfer in RECEIVED status in the destination branch's `BranchTx` (as
-    /// `receive`): `reconcile_in` under that lock.
+    /// Reconciles a transfer in RECEIVED status in the `BranchTx` of both its branches (as `receive`,
+    /// L-5): the remainder goes to the sender's VARIANCE, so the sender's version moves too.
     pub async fn reconcile(
         &self,
         who: &Actor,
@@ -241,7 +243,7 @@ impl TransferFlow {
         let id_owned = id.to_owned();
         let note = note.to_owned();
         self.branch_tx
-            .run(&destination(&t), move |tx| {
+            .run_pair(&t.from_branch, &destination(&t), move |tx| {
                 Box::pin(async move {
                     Self::reconcile_on(&parts, tx, &who, &id_owned, &note, now).await
                 })
@@ -512,7 +514,10 @@ impl TransferFlow {
                         ));
                     }
                 }
-                CashPlace::InTransit(_) | CashPlace::Customer | CashPlace::Bank => {}
+                CashPlace::InTransit(_)
+                | CashPlace::Customer
+                | CashPlace::Bank
+                | CashPlace::Variance(_) => {}
             }
         }
 
@@ -615,6 +620,34 @@ impl TransferFlow {
             .map_err(|e| AppError::Domain(e.code().to_string()))?;
 
         parts.repo.mark_reconciled(tx, id, who, note, now).await?;
+        let t = parts
+            .repo
+            .find_by_id_in(tx, id)
+            .await?
+            .ok_or_else(|| not_found(id))?;
+        // What is still in transit goes to the sender's VARIANCE (§4.4 row 6): a shortfall out of
+        // IN_TRANSIT, an overage back into it.
+        let mut left: Vec<(CurrencyCode, Decimal)> = Vec::new();
+        for line in &t.lines {
+            let qty = line.qty_sent - line.qty_received.unwrap_or(0);
+            let amount = Decimal::new(line.face_value.minor(), 2) * Decimal::from(qty);
+            match left.iter_mut().find(|(c, _)| *c == line.currency) {
+                Some((_, a)) => *a += amount,
+                None => left.push((line.currency, amount)),
+            }
+        }
+        let gone: Vec<(CurrencyCode, Decimal)> = left.into_iter().map(|(c, a)| (c, -a)).collect();
+        let reqs = differences(
+            &CashPlace::InTransit(t.id.clone()),
+            &CashPlace::Variance(t.from_branch.clone()),
+            &gone,
+            &SourceRef {
+                source_type: SourceType::Transfer,
+                source_id: t.id.clone(),
+                source_key: "reconcile".to_string(),
+            },
+        );
+        parts.postings.post_in(tx, &reqs, None).await?;
         parts
             .repo
             .find_by_id_in(tx, id)

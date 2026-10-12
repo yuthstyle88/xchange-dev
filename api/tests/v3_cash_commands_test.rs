@@ -268,6 +268,25 @@ impl Room {
             .execute(&pool)
             .await
             .expect("the branch's safe");
+            // LG-4 (#929, 1:1): the same USD 500.00 in the ledger's SAFE, which the cutover reads, and THB for
+            // the OPEN counts, which now take their cash out of the safe (design §4.4).
+            let safe = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(branch));
+            lg4_fund(
+                &pool,
+                xc_cash::domain::posting::CashPlace::Bank,
+                safe(),
+                "USD",
+                "500.00",
+            )
+            .await;
+            lg4_fund(
+                &pool,
+                xc_cash::domain::posting::CashPlace::Bank,
+                safe(),
+                "THB",
+                "1000000.00",
+            )
+            .await;
         }
         Self { pool, schema }
     }
@@ -1981,4 +2000,46 @@ async fn transfer_branches_lists_the_organisations_other_branches_by_name() {
     assert!(a.status.is_client_error(), "{outsider:?}: {}", a.text);
     assert_eq!(code(&a), "roleNotAllowedHere", "{outsider:?}: {}", a.text);
     room.finish().await;
+}
+
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LG-4 (#929, lane controller's 1:1 ruling): moves `currency amount` from `from` into `to` through the ledger
+/// (`OPENING`), the store the cutover reads; before it, this file seeded `ops_state.safe` / `shift_balances`.
+pub async fn lg4_fund(
+    pool: &sqlx::PgPool,
+    from: xc_cash::domain::posting::CashPlace,
+    to: xc_cash::domain::posting::CashPlace,
+    currency: &str,
+    amount: &str,
+) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from,
+                to,
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund through the ledger");
+    tx.commit().await.expect("commit");
 }

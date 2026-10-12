@@ -146,6 +146,8 @@ async fn each_branch_kiosk_reads_its_own_switch() {
         .as_str()
         .expect("the new branch")
         .to_string();
+    // LG-4 (#929, 1:1): the airport's opening below leaves its ledger SAFE (design §4.4).
+    snapshot_common::lg4_fund_safe(&counter.desk.db.pool, &airport).await;
     // #756 (RE-4b, rates.md D-3, §4.9): the kiosk's counter rate is the current publication.
     // Re-expected for RE-7 #604 by the ticket author: no `adminSaveRate` first (design §9 removes
     // the action); the publication alone sets the airport's dollar.

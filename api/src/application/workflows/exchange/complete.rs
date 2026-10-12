@@ -257,7 +257,7 @@ async fn branch_day_in(
 impl CompleteExchange {
     /// `[required]` (#873 Q1, Q4, Q8): the posting port and the effects are injected, so a test passes its own;
     /// `files` writes the receipt (`FileService::store_receipt_in`, as today's save).
-    /// The route passes `InterimCashPostings` until LG-4's cutover (design §6.1), today's save steps, and
+    /// The route passes `LedgerCashPostings` (LG-4's cutover, design §6.1), today's save steps, and
     /// `ExchangeEffects::new(vec![])`.
     pub fn new(
         pool: PgPool,

@@ -34,7 +34,6 @@ use xc_cash::domain::posting::{
     ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, PostingResult,
     ReversedCost, TransactionLineId,
 };
-use xc_cash::infrastructure::interim_postings::InterimCashPostings;
 use xc_cash::infrastructure::inventory::repository::PgInventoryRepository;
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
@@ -388,8 +387,8 @@ async fn fund_drawer_thb(
         .expect("fund: SAFE -> DRAWER (OPENING)");
 }
 
-/// `Money` carries at most `Money::MAX_INPUT_UNITS` (100,000,000.00), and `InterimCashPostings::expected_in`
-/// drops a balance it cannot parse (`interim_postings.rs`, `Money::parse`). Amounts above it are left out
+/// `Money` carries at most `Money::MAX_INPUT_UNITS` (100,000,000.00), and `expected_in` answers `Money`, so it
+/// cannot carry a balance above it. Amounts above it are left out
 /// of the comparison on every side, and the cases where that happens are listed in the skip table.
 const CAP_MINOR: i64 = 10_000_000_000;
 
@@ -567,12 +566,11 @@ fn opening_legs(
         .collect()
 }
 
-/// One step through both ports. `InterimCashPostings` keys `stock_movements` by `(branch, source_id)`, so
-/// it gets one call per leg with the leg's index on the id; `LedgerCashPostings` gets the posting whole.
+/// One step through the port. LG-4 (#929, lane controller's 1:1 ruling): `InterimCashPostings` is removed, so
+/// only its side of this replay goes; `LedgerCashPostings` still gets the posting whole.
 async fn post_both(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     ledger: &LedgerCashPostings,
-    interim: &InterimCashPostings,
     reqs: &[PostingRequest],
     what: &str,
 ) {
@@ -583,18 +581,10 @@ async fn post_both(
         .post_in(tx, reqs, None)
         .await
         .unwrap_or_else(|e| panic!("{what}: LedgerCashPostings refused: {e:?}"));
-    for (i, r) in reqs.iter().enumerate() {
-        let mut leg = r.clone();
-        leg.source.source_id = format!("{}#{i}", r.source.source_id);
-        interim
-            .post_in(tx, std::slice::from_ref(&leg), None)
-            .await
-            .unwrap_or_else(|e| panic!("{what}: InterimCashPostings refused: {e:?}"));
-    }
 }
 
 /// Where v2 refused for stock, `LedgerCashPostings` refuses `stockInsufficient` (§4.5). Run in a
-/// savepoint so the replay goes on; the interim port has no such refusal and is not called.
+/// savepoint so the replay goes on.
 async fn ledger_refuses_stock(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     ledger: &LedgerCashPostings,
@@ -611,11 +601,10 @@ async fn ledger_refuses_stock(
     sp.rollback().await.expect("rollback savepoint");
 }
 
-/// After a step: the drawer through both ports equals the case's `expected`.
+/// After a step: the drawer through the port equals the case's `expected` (LG-4: the interim side is removed).
 async fn assert_drawer(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     ledger: &LedgerCashPostings,
-    interim: &InterimCashPostings,
     shift_id: &str,
     expected: &Value,
     what: &str,
@@ -625,16 +614,7 @@ async fn assert_drawer(
         .expected_in(tx, &place)
         .await
         .unwrap_or_else(|e| panic!("{what}: ledger expected_in: {e:?}"));
-    let i = interim
-        .expected_in(tx, &place)
-        .await
-        .unwrap_or_else(|e| panic!("{what}: interim expected_in: {e:?}"));
     let (want, dropped) = from_fixture(expected);
-    assert_eq!(
-        from_balances(&l),
-        from_balances(&i),
-        "{what}: LedgerCashPostings and InterimCashPostings disagree on the drawer"
-    );
     assert_eq!(
         from_balances(&l),
         want,
@@ -733,7 +713,7 @@ const SKIPPED_DELTA_REFUSALS: usize = 4; // not a stock currency code (`NOT_A_ST
 
 /// Row 1: v2 parity row (§10.1; R2). Every case of `v2_shift_cases.json` (30 scenarios) and
 /// `v2_stock_cases.json` (604 deltas, 40 scenarios) gives the same drawer through
-/// `LedgerCashPostings` as through `InterimCashPostings`, and both equal the fixture.
+/// `LedgerCashPostings`, equal to the fixture (LG-4: the `InterimCashPostings` side is removed).
 ///
 /// Mapping (test-author choice 6, accepted in issuecomment-6097791219): `open` = OPENING SAFE→DRAWER;
 /// `move` = SAFE↔DRAWER; `tx` = the two legs (Cash THB in `Drawer`, other methods in `Bank`);
@@ -747,7 +727,6 @@ async fn v2_parity_shift_and_stock_cases() {
 
     let (pool, branch) = db().await;
     let ledger = LedgerCashPostings::new();
-    let interim = InterimCashPostings::new();
     let mut tx = pool.begin().await.expect("begin");
     fund_parity_branch(&mut tx, &pool, &ledger, &branch).await;
 
@@ -821,7 +800,7 @@ async fn v2_parity_shift_and_stock_cases() {
                         let s = next_shift(&pool, &branch).await;
                         let reqs = opening_legs(&branch, &s, &st["payload"]["opening"], &id);
                         shifts.push(s);
-                        post_both(&mut tx, &ledger, &interim, &reqs, &what).await;
+                        post_both(&mut tx, &ledger, &reqs, &what).await;
                         posted += 1;
                     } else {
                         replays += 1;
@@ -836,14 +815,7 @@ async fn v2_parity_shift_and_stock_cases() {
                         let s = shift_of(&st["payload"]).unwrap_or_else(|| {
                             panic!("{what}: an accepted move names a known shift")
                         });
-                        post_both(
-                            &mut tx,
-                            &ledger,
-                            &interim,
-                            &[move_req(&st["payload"], &s)],
-                            &what,
-                        )
-                        .await;
+                        post_both(&mut tx, &ledger, &[move_req(&st["payload"], &s)], &what).await;
                         posted += 1;
                     } else {
                         replays += 1;
@@ -852,14 +824,7 @@ async fn v2_parity_shift_and_stock_cases() {
                 ("tx", None) => {
                     let s = open_shift
                         .unwrap_or_else(|| panic!("{what}: an accepted tx has an open shift"));
-                    post_both(
-                        &mut tx,
-                        &ledger,
-                        &interim,
-                        &exchange_legs(&s, &st["tx"], &id),
-                        &what,
-                    )
-                    .await;
+                    post_both(&mut tx, &ledger, &exchange_legs(&s, &st["tx"], &id), &what).await;
                     posted += 1;
                 }
                 // `abandon` resolves a request the screen gave up on: shift-only, nothing to post.
@@ -875,7 +840,6 @@ async fn v2_parity_shift_and_stock_cases() {
                 let dropped = assert_drawer(
                     &mut tx,
                     &ledger,
-                    &interim,
                     s,
                     &after[k]["expected"],
                     &format!("{what}, shift {k}"),
@@ -932,9 +896,9 @@ async fn v2_parity_shift_and_stock_cases() {
         let s = next_shift(&pool, &branch).await;
         let id = format!("d{n}");
         let mut reqs = opening_legs(&branch, &s, &opening, &format!("{id}-open"));
-        post_both(&mut tx, &ledger, &interim, &reqs, &what).await;
+        post_both(&mut tx, &ledger, &reqs, &what).await;
         reqs = exchange_legs(&s, dl, &id);
-        post_both(&mut tx, &ledger, &interim, &reqs, &what).await;
+        post_both(&mut tx, &ledger, &reqs, &what).await;
         let mut expected: HashMap<String, Decimal> = HashMap::new();
         for (c, v) in opening
             .as_object()
@@ -950,7 +914,7 @@ async fn v2_parity_shift_and_stock_cases() {
                 .map(|(c, v)| (c, Value::String(v.to_string())))
                 .collect(),
         );
-        if assert_drawer(&mut tx, &ledger, &interim, &s, &expected, &what).await {
+        if assert_drawer(&mut tx, &ledger, &s, &expected, &what).await {
             skip_table.push(format!(
                 "{what}: an amount above 100,000,000 left out of the comparison"
             ));
@@ -991,7 +955,7 @@ async fn v2_parity_shift_and_stock_cases() {
             *balance.entry(c.clone()).or_insert(Decimal::ZERO) += jdec(v);
         }
         let open = opening_legs(&branch, &s, &sc["opening"], &format!("ss{n}-open"));
-        post_both(&mut tx, &ledger, &interim, &open, &what).await;
+        post_both(&mut tx, &ledger, &open, &what).await;
         // Each transaction and movement, with its effect on the drawer.
         let mut ops: Vec<StockOp> = Vec::new();
         for (k, t) in sc["transactions"]
@@ -1055,16 +1019,9 @@ async fn v2_parity_shift_and_stock_cases() {
             for (c, v) in effect {
                 *balance.entry(c).or_insert(Decimal::ZERO) += v;
             }
-            post_both(
-                &mut tx,
-                &ledger,
-                &interim,
-                &reqs,
-                &format!("{what} {label}"),
-            )
-            .await;
+            post_both(&mut tx, &ledger, &reqs, &format!("{what} {label}")).await;
         }
-        if assert_drawer(&mut tx, &ledger, &interim, &s, &sc["v2"], &what).await {
+        if assert_drawer(&mut tx, &ledger, &s, &sc["v2"], &what).await {
             skip_table.push(format!(
                 "{what}: an amount above 100,000,000 left out of the comparison"
             ));

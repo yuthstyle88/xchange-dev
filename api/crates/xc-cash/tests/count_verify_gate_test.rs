@@ -31,9 +31,6 @@ use xc_cash::application::ledger_approval::count_difference::register as registe
 use xc_cash::domain::count::{CashCount, CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -114,6 +111,7 @@ impl Db {
             .execute(&self.pool)
             .await
             .expect("insert a branch");
+        lg4_fund_safe(&self.pool, &id, "THB", "1000000.00").await;
         BranchId::new(id)
     }
 
@@ -178,15 +176,6 @@ impl Db {
 
     fn counts(&self) -> CashCountService {
         CashCountService::pg(self.pool.clone())
-    }
-
-    fn shifts(&self) -> ShiftService {
-        ShiftService::new(
-            std::sync::Arc::new(PgShiftRepository::new(self.pool.clone())),
-            xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(
-                self.pool.clone(),
-            )),
-        )
     }
 
     async fn shift_status(&self, id: &str) -> String {
@@ -906,19 +895,7 @@ async fn verify_failure_due_to_balances_changed_leaves_no_orphan_request() {
 
     // An exchange occurs after count was submitted, moving shift balance
     let mut tx = db.pool.begin().await.expect("begin");
-    db.shifts()
-        .apply_delta_for_teller_in(
-            &mut tx,
-            &branch,
-            &teller.user_id,
-            &StockDelta::for_movement(
-                xc_kernel::money::CurrencyCode::parse("THB").unwrap(),
-                Direction::In,
-                xc_kernel::money::Money::parse("100").unwrap(),
-            ),
-        )
-        .await
-        .expect("apply delta");
+    lg4_exchange_for_teller(&mut tx, &teller.user_id, "THB", "100").await; // was ShiftService::apply_delta_for_teller_in, "apply delta"
     tx.commit().await.expect("commit");
 
     // Verify should fail with BalancesChanged before gate (§3 step 1)
@@ -966,4 +943,82 @@ fn cash_error_display_contains_request_id() {
         rejected.contains("req-xyz-000"),
         "RejectedByFinance Display must contain request id: {rejected}"
     );
+}
+
+/// LG-4 (#929, lane controller's 1:1 ruling): an OPEN count takes its counted cash out of the branch's SAFE
+/// (design §4.4 row 1), so a branch's SAFE is funded through the ledger first. Before the cutover this file needed
+/// no funding because nothing was taken from the safe; THB is not inventory, so the funding moves no position.
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(BranchId::new(branch)),
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
+}
+
+/// LG-4 (#929, 1:1): after the cutover an exchange moves the drawer through the ledger (TX-5's `post_in`), no
+/// longer through `ShiftService::apply_delta_for_teller_in`; this posts the same `currency amount` into the
+/// teller's OPEN shift's DRAWER as an `EXCHANGE`, on the caller's transaction.
+async fn lg4_exchange_for_teller(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    teller_user_id: &str,
+    currency: &str,
+    amount: &str,
+) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let shift: String =
+        sqlx::query_scalar("SELECT id FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN'")
+            .bind(teller_user_id)
+            .fetch_one(&mut **tx)
+            .await
+            .expect("the teller's OPEN shift");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            tx,
+            &[PostingRequest {
+                from: CashPlace::Customer,
+                to: CashPlace::Drawer(shift.clone()),
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Exchange,
+                    source_id: format!("lg4-exchange:{shift}:{currency}:{amount}"),
+                    source_key: "complete".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("the exchange posts to the teller's drawer");
 }

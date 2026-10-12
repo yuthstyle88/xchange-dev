@@ -147,6 +147,9 @@ impl Db {
         .execute(&self.pool)
         .await
         .expect("the branch's safe");
+        // LG-4 (#929, 1:1): the same USD 500.00 is the safe's figure in the ledger, which now holds it.
+        lg4_fund_safe(&self.pool, &id, "USD", "500.00").await;
+        lg4_fund_safe(&self.pool, &id, "THB", "1000000.00").await;
         BranchId::new(id)
     }
 
@@ -1046,9 +1049,13 @@ async fn create_in_twice_with_one_key_on_one_tx_is_the_same_transfer() {
     tx.rollback().await.expect("roll back");
 }
 
+/// LG-4 (#929, 1:1): the branch's SAFE USD in minor units, as the ledger holds it: the sum
+/// `CashPostings::expected_in(Safe(branch))` takes, as SQL so it runs on a transaction or on committed state as before.
 fn safe_usd(branch: &BranchId) -> String {
     format!(
-        "SELECT coalesce((safe->>'USD')::bigint, 0) FROM ops_state WHERE branch_id = '{}'",
+        "SELECT coalesce((sum(e.quantity_signed) * 100)::bigint, 0) FROM ledger_entries e \
+         JOIN cash_accounts a ON a.id = e.account_id \
+         WHERE a.kind = 'SAFE' AND a.branch_id = '{}' AND trim(a.currency) = 'USD'",
         branch.as_str()
     )
 }
@@ -1409,4 +1416,41 @@ async fn the_verify_wrapper_still_maps_awaiting_finance_to_an_error_after_commit
         }
         other => panic!("Err(AwaitingFinance), got {other:?}"),
     }
+}
+
+/// LG-4 (#929, lane controller's 1:1 ruling): an OPEN count takes its counted cash out of the branch's SAFE
+/// (design §4.4 row 1), so a branch's SAFE is funded through the ledger first. Before the cutover this file needed
+/// no funding because nothing was taken from the safe; THB is not inventory, so the funding moves no position.
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(BranchId::new(branch)),
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
 }

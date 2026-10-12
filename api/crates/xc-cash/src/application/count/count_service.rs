@@ -27,10 +27,12 @@ use crate::application::ledger_approval::count_difference::{
 };
 use crate::domain::count::{CashCount, CountKind, CountLine};
 use crate::domain::error::CashError;
+use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::person_rules::PersonRules;
+use crate::domain::posting::{CashPlace, CashPostings, differences, moves};
 use crate::domain::repository::{CashRepository, CountTotal};
-use crate::infrastructure::interim_postings::InterimCashPostings;
 use crate::infrastructure::inventory::repository::PgInventoryRepository;
+use crate::infrastructure::ledger_postings::LedgerCashPostings;
 use crate::infrastructure::repository::PgCashRepository;
 
 #[derive(Debug, Clone)]
@@ -47,7 +49,7 @@ pub struct SubmitCount {
 pub struct CashCountService {
     pool: PgPool,
     repo: Arc<PgCashRepository>,
-    postings: Arc<InterimCashPostings>,
+    postings: Arc<dyn CashPostings>,
     shifts: ShiftService<PgShiftRepository>,
     gate: Arc<CountDifferenceGate>,
     approvals_repo: Arc<PgApprovalRepository>,
@@ -57,7 +59,7 @@ impl CashCountService {
     pub fn new(
         pool: PgPool,
         repo: Arc<PgCashRepository>,
-        postings: Arc<InterimCashPostings>,
+        postings: Arc<dyn CashPostings>,
         shifts: ShiftService<PgShiftRepository>,
         gate: Arc<CountDifferenceGate>,
         approvals_repo: Arc<PgApprovalRepository>,
@@ -74,7 +76,7 @@ impl CashCountService {
 
     pub fn pg(pool: PgPool) -> Self {
         let repo = Arc::new(PgCashRepository::new(pool.clone()));
-        let postings = Arc::new(InterimCashPostings::new());
+        let postings: Arc<dyn CashPostings> = Arc::new(LedgerCashPostings::new());
         let shift_repo = Arc::new(PgShiftRepository::new(pool.clone()));
         let transactor = Transactor::new(pool.clone());
         let branch_tx = BranchTx::new(transactor);
@@ -98,8 +100,31 @@ impl CashCountService {
         Self::new(pool, repo, postings, shifts, gate, approvals_repo)
     }
 
-    pub fn postings(&self) -> &Arc<InterimCashPostings> {
+    pub fn postings(&self) -> &Arc<dyn CashPostings> {
         &self.postings
+    }
+
+    /// A drawer's balances in the ledger (L-4: balances are derived from the ledger), as
+    /// (currency, amount) for each currency it holds.
+    pub async fn drawer_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        shift_id: &str,
+    ) -> AppResult<Vec<(String, Decimal)>> {
+        let held = self
+            .postings
+            .expected_in(tx, &CashPlace::Drawer(shift_id.to_owned()))
+            .await?;
+        Ok(held
+            .non_zero()
+            .into_iter()
+            .map(|(c, m)| {
+                (
+                    c.as_str().trim().to_owned(),
+                    Decimal::from_i128_with_scale(m.minor_i128(), 2),
+                )
+            })
+            .collect())
     }
 
     pub fn repo(&self) -> &Arc<PgCashRepository> {
@@ -222,7 +247,43 @@ mod tests {
                 .execute(&self.pool)
                 .await
                 .expect("insert branch");
-            BranchId::new(id)
+            let branch = BranchId::new(id);
+            // LG-4 (#929, lane controller's 1:1 ruling): an OPEN count's cash now leaves the branch's ledger SAFE
+            // (design §4.4), so the safe holds 1,000,000,000 of every register currency (`OPENING` from BANK, one
+            // posting per currency). Before the cutover nothing had to be there.
+            let codes: Vec<String> =
+                sqlx::query_scalar("SELECT trim(code) FROM currencies ORDER BY 1")
+                    .fetch_all(&self.pool)
+                    .await
+                    .expect("the currency register");
+            let mut tx = self.pool.begin().await.expect("begin");
+            for code in codes {
+                let request = crate::domain::posting::PostingRequest {
+                    from: crate::domain::posting::CashPlace::Bank,
+                    to: crate::domain::posting::CashPlace::Safe(branch.clone()),
+                    currency: xc_kernel::money::CurrencyCode::parse(&code).expect("a currency"),
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(
+                        1_000_000_000_i64,
+                    )),
+                    source: crate::domain::ledger::posting::SourceRef {
+                        source_type: crate::domain::ledger::posting::SourceType::Opening,
+                        source_id: unique(&format!("lg4-fund-{code}")),
+                        source_key: "fund".to_string(),
+                    },
+                    line: None,
+                    reverses: None,
+                };
+                crate::domain::posting::CashPostings::post_in(
+                    &crate::infrastructure::ledger_postings::LedgerCashPostings::new(),
+                    &mut tx,
+                    &[request],
+                    None,
+                )
+                .await
+                .expect("fund the safe through the ledger");
+            }
+            tx.commit().await.expect("commit");
+            branch
         }
 
         async fn person(&self, name: &str, roles: &[Role]) -> Actor {
@@ -809,17 +870,13 @@ impl CashCountService {
             });
         }
 
+        let held = match cmd.shift_id {
+            Some(ref s_id) => self.drawer_in(tx, s_id).await?,
+            None => Vec::new(),
+        };
         if cmd.kind == CountKind::Close {
-            if let Some(ref s_id) = cmd.shift_id {
-                let held_codes: Vec<String> =
-                    sqlx::query_scalar("SELECT code FROM shift_balances WHERE shift_id = $1")
-                        .bind(s_id)
-                        .fetch_all(&mut **tx)
-                        .await?;
-
-                for code in held_codes {
-                    totals_map.entry(code).or_insert(Decimal::ZERO);
-                }
+            for (code, _) in &held {
+                totals_map.entry(code.clone()).or_insert(Decimal::ZERO);
             }
         }
 
@@ -842,18 +899,7 @@ impl CashCountService {
 
         let mut totals = Vec::new();
         for (curr, counted) in totals_map {
-            let expected = if let Some(ref s_id) = cmd.shift_id {
-                let exp: Option<Decimal> = sqlx::query_scalar(
-                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-                )
-                .bind(s_id)
-                .bind(&curr)
-                .fetch_optional(&mut **tx)
-                .await?;
-                exp
-            } else {
-                None
-            };
+            let expected = held_of(&held, &curr);
 
             totals.push(CountTotal {
                 currency: curr,
@@ -939,12 +985,14 @@ impl CashCountService {
 
             let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
             let mut opening_pairs = Vec::new();
+            let mut opening = Vec::new();
             for t in &totals {
-                CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                let code = CurrencyCode::parse(t.currency.trim()).map_err(|_| {
                     AppError::Internal(format!("unknown currency code in count: {}", t.currency))
                 })?;
                 if !t.counted.is_zero() {
                     opening_pairs.push((t.currency.clone(), t.counted));
+                    opening.push((code, t.counted));
                 }
             }
             let shift = self
@@ -958,6 +1006,16 @@ impl CashCountService {
                     now,
                 )
                 .await?;
+            // §4.4 row 1: the counted cash leaves the branch's SAFE for the new drawer.
+            post_opening_in(
+                self.postings.as_ref(),
+                tx,
+                CashPlace::Safe(count.branch_id.clone()),
+                &shift.id,
+                &opening,
+                count_id,
+            )
+            .await?;
 
             self.repo
                 .update_count_verified(
@@ -981,29 +1039,19 @@ impl CashCountService {
             let shift_id = count.shift_id.as_deref().ok_or(ShiftError::NoOpenShift)?;
             let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
 
-            let held: Vec<(String, Decimal)> =
-                sqlx::query_as("SELECT code, expected FROM shift_balances WHERE shift_id = $1")
-                    .bind(shift_id)
-                    .fetch_all(&mut **tx)
-                    .await?;
+            let held = self.drawer_in(tx, shift_id).await?;
 
-            for (code, _exp) in held {
+            for (code, _exp) in &held {
                 if !totals
                     .iter()
-                    .any(|t| t.currency.eq_ignore_ascii_case(&code))
+                    .any(|t| t.currency.trim().eq_ignore_ascii_case(code))
                 {
                     return Err(CashError::BalancesChanged.into());
                 }
             }
 
             for t in &totals {
-                let current_exp: Option<Decimal> = sqlx::query_scalar(
-                    "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-                )
-                .bind(shift_id)
-                .bind(&t.currency)
-                .fetch_optional(&mut **tx)
-                .await?;
+                let current_exp = held_of(&held, &t.currency);
 
                 if current_exp != t.expected {
                     return Err(CashError::BalancesChanged.into());
@@ -1078,6 +1126,24 @@ impl CashCountService {
                     }
                 }
             }
+
+            // §4.4 row 7: the difference goes between the drawer and the branch's VARIANCE.
+            let mut diffs = Vec::new();
+            for t in &updated_totals {
+                let code = CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
+                })?;
+                diffs.push((code, t.difference.unwrap_or(Decimal::ZERO)));
+            }
+            post_difference_in(
+                self.postings.as_ref(),
+                tx,
+                shift_id,
+                &count.branch_id,
+                &diffs,
+                count_id,
+            )
+            .await?;
 
             let mut close_balances = Vec::new();
             for t in &updated_totals {
@@ -1155,4 +1221,64 @@ impl CashCountService {
         verified_count.verified_at = Some(now);
         Ok(CountVerified::Verified(Box::new(verified_count)))
     }
+}
+
+/// The amount `held` (a drawer's ledger balances) has of `currency`, if it holds any.
+pub(crate) fn held_of(held: &[(String, Decimal)], currency: &str) -> Option<Decimal> {
+    held.iter()
+        .find(|(code, _)| code.eq_ignore_ascii_case(currency.trim()))
+        .map(|(_, amount)| *amount)
+}
+
+/// Opens `DRAWER(shift)`: one `OPENING` posting named by `source_id`, moving each currency's amount
+/// from `from` into the drawer, one entry pair per currency (§4.4 rows 1 and 2; #929 option A). The OPEN
+/// count, the hand-over and `adminOpenShift` all open a drawer here. A `from` that cannot cover it is
+/// refused `stockInsufficient` by the port.
+pub async fn post_opening_in(
+    postings: &dyn CashPostings,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    from: CashPlace,
+    shift_id: &str,
+    amounts: &[(CurrencyCode, Decimal)],
+    source_id: &str,
+) -> AppResult<()> {
+    let source = SourceRef {
+        source_type: SourceType::Opening,
+        source_id: source_id.to_owned(),
+        source_key: "open".to_string(),
+    };
+    let reqs = moves(
+        &from,
+        &CashPlace::Drawer(shift_id.to_owned()),
+        amounts,
+        &source,
+    );
+    postings.post_in(tx, &reqs, None).await?;
+    Ok(())
+}
+
+/// A drawer's count difference, (currency, counted − expected): one `COUNT` posting named by
+/// `source_id`, a shortfall `DRAWER → VARIANCE(branch)` and an overage `VARIANCE → DRAWER` (§4.4 row 7).
+/// The verified CLOSE count and `adminCloseShift` both post it here.
+pub async fn post_difference_in(
+    postings: &dyn CashPostings,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    shift_id: &str,
+    branch: &BranchId,
+    diffs: &[(CurrencyCode, Decimal)],
+    source_id: &str,
+) -> AppResult<()> {
+    let source = SourceRef {
+        source_type: SourceType::Count,
+        source_id: source_id.to_owned(),
+        source_key: "difference".to_string(),
+    };
+    let reqs = differences(
+        &CashPlace::Drawer(shift_id.to_owned()),
+        &CashPlace::Variance(branch.clone()),
+        diffs,
+        &source,
+    );
+    postings.post_in(tx, &reqs, None).await?;
+    Ok(())
 }

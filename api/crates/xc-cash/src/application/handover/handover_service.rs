@@ -10,10 +10,12 @@ use xc_kernel::money::CurrencyCode;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use crate::application::count::CashCountService;
+use crate::application::count::count_service::{held_of, post_opening_in};
 use crate::domain::count::{CashCount, CountKind, CountLine};
 use crate::domain::error::CashError;
 use crate::domain::handover::{Handover, HandoverError, HandoverStatus};
 use crate::domain::person_rules::PersonRules;
+use crate::domain::posting::CashPlace;
 use crate::domain::repository::{CashRepository, CountTotal};
 
 pub struct StartHandover {
@@ -213,15 +215,10 @@ impl HandoverService {
             }
         }
 
+        let held = self.counts.drawer_in(tx, &cmd.from_shift_id).await?;
         let mut totals = Vec::new();
         for (curr, counted) in totals_map {
-            let exp: Option<Decimal> = sqlx::query_scalar(
-                "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-            )
-            .bind(&cmd.from_shift_id)
-            .bind(&curr)
-            .fetch_optional(&mut **tx)
-            .await?;
+            let exp = held_of(&held, &curr);
 
             totals.push(CountTotal {
                 currency: curr,
@@ -302,30 +299,19 @@ impl HandoverService {
 
         let repo = self.counts.repo().clone();
         let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
-        let held: Vec<(String, Decimal)> = sqlx::query_as(
-            "SELECT code, expected FROM shift_balances WHERE shift_id = $1 AND expected <> 0",
-        )
-        .bind(&h.from_shift_id)
-        .fetch_all(&mut **tx)
-        .await?;
-        for (code, exp) in held {
+        let held = self.counts.drawer_in(tx, &h.from_shift_id).await?;
+        for (code, exp) in &held {
             if !totals.iter().any(|t| t.currency.trim() == code.trim()) {
                 totals.push(CountTotal {
-                    currency: code,
+                    currency: code.clone(),
                     counted: Decimal::ZERO,
-                    expected: Some(exp),
+                    expected: Some(*exp),
                     difference: None,
                 });
             }
         }
         for t in &totals {
-            let cur: Option<Decimal> = sqlx::query_scalar(
-                "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-            )
-            .bind(&h.from_shift_id)
-            .bind(&t.currency)
-            .fetch_optional(&mut **tx)
-            .await?;
+            let cur = held_of(&held, &t.currency);
             if cur != t.expected {
                 return Err(dom(CashError::BalancesChanged));
             }
@@ -342,7 +328,7 @@ impl HandoverService {
             return Err(dom(CashError::ShiftAlreadyOpen));
         }
         let mut updated = Vec::new();
-        let (mut counted, mut diffs) = (Vec::new(), Vec::new());
+        let (mut counted, mut diffs, mut handed) = (Vec::new(), Vec::new(), Vec::new());
         for t in totals {
             let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
             if !diff.is_zero() {
@@ -366,9 +352,10 @@ impl HandoverService {
                 .execute(&mut **tx)
                 .await?;
             }
-            CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
+            let code = CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
             if !t.counted.is_zero() {
                 counted.push((t.currency.clone(), t.counted));
+                handed.push((code, t.counted));
             }
             diffs.push((t.currency.clone(), t.counted, diff));
             updated.push(CountTotal {
@@ -390,6 +377,16 @@ impl HandoverService {
                 now,
             )
             .await?;
+        // §4.4 row 2: what the hand-over counted moves from the giver's drawer into the new one.
+        post_opening_in(
+            self.counts.postings().as_ref(),
+            tx,
+            CashPlace::Drawer(h.from_shift_id.clone()),
+            &b.id,
+            &handed,
+            &h.id,
+        )
+        .await?;
         repo.update_count_verified(&mut *tx, &h.count_id, &actor.user_id, now, None, &updated)
             .await?;
         let res = sqlx::query(

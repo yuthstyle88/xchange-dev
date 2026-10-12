@@ -2,7 +2,7 @@
 //! exchange is completed by `CompleteExchange` in the command's one transaction. It inherits `(Rpc,
 //! "saveTransaction")`, as TX-4's confirm and cancel do.
 //!
-//! Until LG-4's cutover the posting is `InterimCashPostings` (design §6.1, #873 ruling Q9).
+//! The posting is the ledger's `LedgerCashPostings` (LG-4 #929, design §6.1).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
-use xc_cash::infrastructure::interim_postings::InterimCashPostings;
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 use xc_kernel::ids::BranchId;
 
@@ -126,7 +126,7 @@ impl TransactionCompleteCommand {
             service: CompleteExchange::new(
                 pool,
                 files,
-                Arc::new(InterimCashPostings::new()),
+                Arc::new(LedgerCashPostings::new()),
                 steps,
                 Arc::new(ExchangeEffects::new(Vec::new())),
             ),

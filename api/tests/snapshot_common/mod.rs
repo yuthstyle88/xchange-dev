@@ -450,6 +450,8 @@ impl TestDb {
             .execute(&self.pool)
             .await
             .expect("insert into branches");
+        // LG-4 (#929, 1:1): a shift's opening now leaves the branch's ledger SAFE.
+        lg4_fund_safe(&self.pool, id).await;
     }
 
     /// Drop the schema. Reached only by a test that passed; a failed test
@@ -1887,3 +1889,7 @@ pub async fn seed_passport_identity(
     .await
     .expect("insert the passport identity");
 }
+
+#[path = "../lg4_fund/mod.rs"]
+mod lg4_fund;
+pub use lg4_fund::lg4_fund_safe;
