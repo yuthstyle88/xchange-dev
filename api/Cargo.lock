@@ -4184,6 +4184,7 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
+ "xc-alert",
  "xc-app",
  "xc-approval",
  "xc-auth",

@@ -34,6 +34,7 @@ impl RolePermissions {
                 Permission::ReportsExport,
                 Permission::AlertSettingsSave,
                 Permission::CashTransferPolicySet,
+                Permission::RateAlertSettingsSave,
             ],
             Role::Admin => &[
                 Permission::BranchesManage,

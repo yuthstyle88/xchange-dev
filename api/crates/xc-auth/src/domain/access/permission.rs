@@ -62,4 +62,6 @@ pub enum Permission {
     AlertSettingsSave,
     /// CA-0p (#1272, cash-shift-transfer blueprint §3.1, §9): set cash-transfer limit policy. EXECUTIVE only.
     CashTransferPolicySet,
+    /// RA-2b (#1429, rate-alerts design §3): configure the organisation's rate alert settings. EXECUTIVE only.
+    RateAlertSettingsSave,
 }
