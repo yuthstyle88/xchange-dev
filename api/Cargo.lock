@@ -3924,6 +3924,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-booking"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "futures",
+ "pos-error",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+ "xc-customer",
+ "xc-kernel",
+ "xc-rate",
+ "xc-referral",
+]
+
+[[package]]
 name = "xc-cash"
 version = "0.1.0"
 dependencies = [
