@@ -18,7 +18,8 @@ const MAIN: &str = "MAIN";
 
 #[actix_web::test]
 async fn currency_with_no_units_row_returns_error_never_one() {
-    let desk = Desk::open().await;
+    // LG-4 (#929): no funded SAFE, whose accounts would hold the currency this test deletes.
+    let desk = Desk::open_without_cash().await;
     let state = desk.state();
     let branch = BranchId::new(MAIN);
 
@@ -63,7 +64,8 @@ async fn currency_with_no_units_row_returns_error_never_one() {
 
 #[actix_web::test]
 async fn http_endpoint_returns_server_error_when_units_row_is_missing() {
-    let desk = Desk::open().await;
+    // LG-4 (#929): no funded SAFE, whose accounts would hold the currency this test deletes.
+    let desk = Desk::open_without_cash().await;
     let app = rpc_app!(desk);
     let people = one_of_each_role();
     desk.employ(&people).await;

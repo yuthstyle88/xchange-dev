@@ -283,6 +283,16 @@ impl Desk {
     /// A fresh schema with `api/migrations/` applied (so `MAIN` exists) and the
     /// owner `owner`, as after `xchange create-owner --username owner`.
     pub async fn open() -> Desk {
+        let desk = Desk::open_without_cash().await;
+        // LG-4 (#929, lane controller's 1:1 ruling): a shift's opening now leaves the ledger's SAFE (design §4.4),
+        // which v2 never had to hold. MAIN's safe holds enough for every opening a test makes.
+        crate::snapshot_common::lg4_fund_safe(&desk.db.pool, "MAIN").await;
+        desk
+    }
+
+    /// [`Desk::open`] without MAIN's ledger SAFE funded (LG-4 #929): for a test that opens no shift and removes a
+    /// currency from the register, which a funded SAFE's accounts would hold on to.
+    pub async fn open_without_cash() -> Desk {
         let db = TestDb::start().await;
         AccountService::new(
             Arc::new(PgAccountRepository::new(db.pool.clone())),
@@ -1064,6 +1074,14 @@ impl<'f> Replay<'f> {
         let call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
         let answer = self.app.send(call).await;
         let label = self.label(step);
+        // LG-4 (#929, 1:1): a branch a recording creates gets a funded ledger SAFE, as `seed_branch` gives one,
+        // because a shift's opening now leaves it (design §4.4).
+        if action_of(step).as_deref() == Some("adminCreateBranch")
+            && answer.status == 200
+            && let Some(made) = answer.json().get("branchId").and_then(Value::as_str)
+        {
+            crate::snapshot_common::lg4_fund_safe(&self.desk.db.pool, made).await;
+        }
 
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
         #[allow(clippy::collapsible_if)]

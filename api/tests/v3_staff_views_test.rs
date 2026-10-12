@@ -49,6 +49,7 @@
 //!   signed-in user's id (`Actor::id()` of the staff session = `users.id`).
 
 mod common;
+mod lg4_fund;
 mod quote_common;
 
 use std::future::Future;
@@ -236,6 +237,10 @@ impl Floor {
     async fn start() -> Self {
         let db = TestDb::start().await;
         db.branch(B2).await;
+        // LG-4 (#929, 1:1): an OPEN count's cash now leaves the branch's ledger SAFE (design §4.4).
+        for branch in ["MAIN", B2] {
+            lg4_fund::lg4_fund_safe(&db.pool, branch).await;
+        }
         Self { db }
     }
 

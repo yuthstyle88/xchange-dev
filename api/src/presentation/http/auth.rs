@@ -27,6 +27,7 @@ use crate::presentation::extractors::actor::{
     STAFF_COOKIE, accounts, answer, cookie, failure, payload_of, read, refuse, same_origin,
     server_error, set_cookie,
 };
+use crate::presentation::extractors::session_actor::actor_of_user;
 use crate::presentation::http::client_address::{CLIENT_ADDRESS_HEADER, client_address};
 use crate::presentation::http::v3::me::me_of;
 use crate::presentation::pages::{self, SessionReader};
@@ -139,7 +140,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     }
 }
 
-fn refusal_response(status: u16, code: &str, message: &str) -> HttpResponse {
+pub(crate) fn refusal_response(status: u16, code: &str, message: &str) -> HttpResponse {
     HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap())
         .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
         .json(json!({
@@ -147,7 +148,7 @@ fn refusal_response(status: u16, code: &str, message: &str) -> HttpResponse {
         }))
 }
 
-fn handle_session_error(err: SessionError) -> HttpResponse {
+pub(crate) fn handle_session_error(err: SessionError) -> HttpResponse {
     if let SessionError::Identity(IdentityError::Unavailable { path, status, code }) = &err {
         tracing::error!(
             path = %path,
@@ -160,7 +161,10 @@ fn handle_session_error(err: SessionError) -> HttpResponse {
     refusal_response(status, code, &msg)
 }
 
-fn attach_signin_cookies(builder: &mut actix_web::HttpResponseBuilder, session_token: &str) {
+pub(crate) fn attach_signin_cookies(
+    builder: &mut actix_web::HttpResponseBuilder,
+    session_token: &str,
+) {
     let session_cookie = format!(
         "__Host-xc_session={session_token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=43200"
     );
@@ -372,13 +376,11 @@ async fn v3_session_branch(
     };
     let s = active.switchable(now);
     let chosen = xc_kernel::ids::BranchId::new(branch);
-    let access_actor = xc_auth::domain::access::Actor::new(
-        &active.user.id,
-        &active.user.organization_id,
-        active.roles,
-        None,
-    )
-    .with_branch(Some(chosen.clone()));
+    // #654: the actor with its customer link, in the branch just chosen.
+    let Some(access_actor) = actor_of_user(&state.db, &active.user, active.roles).await else {
+        return server_error();
+    };
+    let access_actor = access_actor.with_branch(Some(chosen.clone()));
     // The same `Me` the `me` view answers (#1030: from the Blueprint actor itself).
     match me_of(&state.db, &access_actor, &chosen, Some(s)).await {
         Ok(me) => HttpResponse::Ok()

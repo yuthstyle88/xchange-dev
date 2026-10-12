@@ -315,6 +315,44 @@ impl Plan {
         Ok(cost)
     }
 
+    /// Puts `q` units back at the position's average, with no lot: an overage out of `VARIANCE` is no
+    /// purchase (§4.4 row 7). From an empty position, at the last `average_after` (§4.5).
+    async fn adjust_in(
+        &mut self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &str,
+        currency: CurrencyCode,
+        q: Decimal,
+    ) -> AppResult<Decimal> {
+        let pos = self.position(tx, branch, currency).await?;
+        let before = pos.now;
+        let unit = if before.quantity.is_zero() {
+            pos.last_average.unwrap_or(Decimal::ZERO)
+        } else {
+            before.cost_thb / before.quantity
+        };
+        let cost = round2(q * unit);
+        pos.now = WeightedAverage {
+            quantity: before.quantity + q,
+            cost_thb: before.cost_thb + cost,
+        };
+        let average_after = average(pos.now);
+        if average_after.is_some() {
+            pos.last_average = average_after;
+        }
+        self.movements.push(MovementPlan {
+            branch: branch.to_owned(),
+            currency,
+            lot_id: None,
+            line: None,
+            movement_type: MovementType::Adjust,
+            quantity_signed: q,
+            cost_thb_signed: cost,
+            average_after,
+        });
+        Ok(cost)
+    }
+
     /// The line of the latest disposal that left this position below zero: the one Q-4's `ADJUST`
     /// corrects.
     async fn short_sale_line(
@@ -364,7 +402,9 @@ async fn branch_of(
                 .map(Some)
                 .ok_or_else(|| validation("the drawer's shift does not exist"))
         }
-        CashPlace::Safe(branch) => Ok(Some(branch.as_str().to_owned())),
+        CashPlace::Safe(branch) | CashPlace::Variance(branch) => {
+            Ok(Some(branch.as_str().to_owned()))
+        }
         CashPlace::InTransit(transfer) => {
             // The IN_TRANSIT account belongs to the sender (§4.4).
             let branch: Option<String> =
@@ -387,6 +427,7 @@ fn kind_of(place: &CashPlace) -> AccountKind {
         CashPlace::InTransit(_) => AccountKind::InTransit,
         CashPlace::Customer => AccountKind::Customer,
         CashPlace::Bank => AccountKind::Bank,
+        CashPlace::Variance(_) => AccountKind::Variance,
     }
 }
 
@@ -395,6 +436,10 @@ fn is_inside(place: &CashPlace) -> bool {
         place,
         CashPlace::Drawer(_) | CashPlace::Safe(_) | CashPlace::InTransit(_)
     )
+}
+
+fn is_variance(place: &CashPlace) -> bool {
+    matches!(place, CashPlace::Variance(_))
 }
 
 async fn line_row(
@@ -443,6 +488,13 @@ fn check_requests(req: &[PostingRequest]) -> AppResult<&SourceRef> {
         if r.reverses.is_some() && r.source.source_type != SourceType::Reversal {
             return Err(validation(
                 "reverses is sent only with source_type REVERSAL",
+            ));
+        }
+        if (r.line.is_some() || r.reverses.is_some())
+            && (is_variance(&r.from) || is_variance(&r.to))
+        {
+            return Err(validation(
+                "line and reverses are not sent on a VARIANCE leg",
             ));
         }
         if (r.line.is_some() || r.reverses.is_some()) && is_inside(&r.from) == is_inside(&r.to) {
@@ -513,7 +565,12 @@ impl LedgerCashPostings {
             .sum();
         let foreign_exchange_legs = req
             .iter()
-            .filter(|r| !is_thb(r.currency) && is_inside(&r.from) != is_inside(&r.to))
+            .filter(|r| {
+                !is_thb(r.currency)
+                    && !is_variance(&r.from)
+                    && !is_variance(&r.to)
+                    && is_inside(&r.from) != is_inside(&r.to)
+            })
             .count();
 
         let mut plan = Plan {
@@ -536,6 +593,24 @@ impl LedgerCashPostings {
             let valuation = if is_thb(r.currency) {
                 // THB is not inventory and moves at face value (§3.1, §4.3).
                 q
+            } else if is_variance(&r.from) || is_variance(&r.to) {
+                // A difference is no sale and no purchase: an `ADJUST` at the average (§4.4 rows 6, 7).
+                match (is_inside(&r.from), is_inside(&r.to)) {
+                    (true, false) => {
+                        plan.dispose(
+                            tx,
+                            &from_branch,
+                            r.currency,
+                            q,
+                            None,
+                            None,
+                            MovementType::Adjust,
+                        )
+                        .await?
+                    }
+                    (false, true) => plan.adjust_in(tx, &to_branch, r.currency, q).await?,
+                    _ => Decimal::ZERO,
+                }
             } else {
                 match (is_inside(&r.from), is_inside(&r.to)) {
                     (true, true) if from_branch == to_branch => {
@@ -1073,7 +1148,7 @@ impl CashPostings for LedgerCashPostings {
                     .fetch_all(&mut **tx)
                     .await?
                 }
-                CashPlace::Safe(_) | CashPlace::InTransit(_) => {
+                CashPlace::Safe(_) | CashPlace::InTransit(_) | CashPlace::Variance(_) => {
                     let branch = branch_of(tx, place).await?;
                     sqlx::query_as(
                         "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \

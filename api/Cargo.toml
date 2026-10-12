@@ -22,6 +22,7 @@ xc-outbox = { path = "crates/xc-outbox" }
 xc-notify = { path = "crates/xc-notify" }
 xc-cash = { path = "crates/xc-cash" }
 xc-queue = { path = "crates/xc-queue" }
+xc-alert = { path = "crates/xc-alert" }
 
 [package]
 name = "xchange"
@@ -50,6 +51,7 @@ xc-outbox = { workspace = true }
 xc-notify = { workspace = true }
 xc-cash = { workspace = true }
 xc-queue = { workspace = true }
+xc-alert = { workspace = true }
 subtle = "2"
 xc-app = { path = "crates/xc-app" }
 xc-marketing = { path = "crates/xc-marketing" }

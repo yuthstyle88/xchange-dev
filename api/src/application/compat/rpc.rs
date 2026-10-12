@@ -43,6 +43,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::authorizer::Grant;
@@ -54,9 +55,14 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_cash::application::count::count_service::{post_difference_in, post_opening_in};
+use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Money};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
@@ -65,6 +71,8 @@ use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
+use xc_shift::domain::shift::value_objects::balances::Balances;
+use xc_shift::domain::shift::value_objects::stock_delta::Direction;
 
 use crate::application::compat::abandon_request::AbandonRequest;
 use crate::application::compat::actions::{RpcAction, RpcActions, RpcCall};
@@ -407,21 +415,75 @@ impl CompatRpc {
             .run(branch, move |tx| {
                 Box::pin(async move {
                     custody.check_direct_shift_action_in(tx, &here).await?;
+                    // LG-4 (#929): each action also moves the cash in the ledger, as the count
+                    // flow does, through the same posting functions.
+                    let postings = LedgerCashPostings::new();
                     match action.as_str() {
                         "adminOpenShift" => {
                             let command = OpenShift::from_payload(&payload)?;
-                            shifts
+                            let request = command.request_id.clone();
+                            let opening = amounts(&command.opening);
+                            let shift = shifts
                                 .open_in_as(tx, &here, command, &who, session_user, now)
                                 .await?;
+                            post_opening_in(
+                                &postings,
+                                tx,
+                                CashPlace::Safe(here.clone()),
+                                &shift.id,
+                                &opening,
+                                &request,
+                            )
+                            .await?;
                         }
                         "adminMoveStock" => {
                             let command = MoveStock::from_payload(&payload)?;
+                            let (safe, drawer) = (
+                                CashPlace::Safe(here.clone()),
+                                CashPlace::Drawer(command.shift_id.clone()),
+                            );
+                            let (from, to) = match command.direction {
+                                Direction::In => (safe, drawer),
+                                Direction::Out => (drawer, safe),
+                            };
+                            let source = SourceRef {
+                                source_type: SourceType::Transfer,
+                                source_id: command.request_id.clone(),
+                                source_key: "move".to_string(),
+                            };
+                            let moved = [(command.currency, decimal(command.amount))];
                             shifts.move_stock_in(tx, &here, command, &who, now).await?;
+                            postings
+                                .post_in(tx, &moves(&from, &to, &moved, &source), None)
+                                .await?;
                         }
                         _ => {
                             let command = CloseShift::from_payload(&payload)?;
+                            let (request, shift) =
+                                (command.request_id.clone(), command.shift_id.clone());
+                            // counted − the ledger drawer, never the payload's `expected`.
+                            let drawer = postings
+                                .expected_in(tx, &CashPlace::Drawer(shift.clone()))
+                                .await?;
+                            let mut diffs: Vec<(CurrencyCode, Decimal)> = Vec::new();
+                            for (code, _) in command
+                                .counted
+                                .non_zero()
+                                .into_iter()
+                                .chain(drawer.non_zero())
+                            {
+                                if !diffs.iter().any(|(c, _)| *c == code) {
+                                    diffs.push((
+                                        code,
+                                        decimal(command.counted.get(code))
+                                            - decimal(drawer.get(code)),
+                                    ));
+                                }
+                            }
                             shifts
                                 .close_in_as(tx, &here, command, &who, session_user, now)
+                                .await?;
+                            post_difference_in(&postings, tx, &shift, &here, &diffs, &request)
                                 .await?;
                         }
                     }
@@ -512,6 +574,20 @@ fn not_dispatched_yet(route: RpcRoute, caller: &RpcCaller) -> RpcRefusal {
 /// A refusal of `Policy` as the routes print it: its status and sentence,
 /// `no-store` like every answer but the 401 of `/api/rpc` (which the route
 /// layer gives before it ever comes here).
+/// A v2 amount as the ledger's quantity.
+fn decimal(amount: Money) -> Decimal {
+    Decimal::from_i128_with_scale(amount.minor_i128(), 2)
+}
+
+/// A v2 opening's amounts, per currency, as the ledger's quantities.
+fn amounts(balances: &Balances) -> Vec<(CurrencyCode, Decimal)> {
+    balances
+        .non_zero()
+        .into_iter()
+        .map(|(code, amount)| (code, decimal(amount)))
+        .collect()
+}
+
 fn policy_refusal(refusal: PolicyError) -> RpcRefusal {
     RpcRefusal {
         status: refusal.status(),

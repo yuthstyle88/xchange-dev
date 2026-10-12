@@ -115,8 +115,9 @@ impl ExchangeFacts for WideTransactionFacts {
         date: NaiveDate,
     ) -> BoxFuture<'a, AppResult<BranchDayTotals>> {
         Box::pin(async move {
-            // A transaction's line totals go to its first payment's method; every payment's bank fee to its own.
-            let rows: Vec<(String, Decimal, Decimal, Decimal, Decimal)> = sqlx::query_as(
+            // A transaction's line totals, and its count, go to its first payment's method; every payment's bank fee to
+            // its own (FN-1 #1068, ruling Q1).
+            let rows: Vec<(String, Decimal, Decimal, Decimal, Decimal, i64)> = sqlx::query_as(
                 "WITH tx AS ( \
                    SELECT t.id FROM transactions t \
                     WHERE t.branch_id = $1 AND t.value_date = $2 \
@@ -129,12 +130,12 @@ impl ExchangeFacts for WideTransactionFacts {
                      FROM transaction_lines l JOIN tx ON tx.id = l.transaction_id \
                     GROUP BY l.transaction_id \
                  ) \
-                 SELECT m.method, sum(m.buy), sum(m.sell), sum(m.fee), sum(m.bank) FROM ( \
-                   SELECT p.method, lt.buy, lt.sell, lt.fee, 0::numeric AS bank \
+                 SELECT m.method, sum(m.buy), sum(m.sell), sum(m.fee), sum(m.bank), sum(m.n)::bigint FROM ( \
+                   SELECT p.method, lt.buy, lt.sell, lt.fee, 0::numeric AS bank, 1 AS n \
                      FROM lines lt \
                      JOIN transaction_payments p ON p.transaction_id = lt.transaction_id AND p.payment_no = 1 \
                    UNION ALL \
-                   SELECT p.method, 0, 0, 0, p.bank_fee_thb \
+                   SELECT p.method, 0, 0, 0, p.bank_fee_thb, 0 \
                      FROM transaction_payments p JOIN tx ON tx.id = p.transaction_id \
                  ) m \
                  GROUP BY m.method ORDER BY m.method",
@@ -159,12 +160,13 @@ impl ExchangeFacts for WideTransactionFacts {
             Ok(BranchDayTotals {
                 by_method: rows
                     .into_iter()
-                    .map(|(method, buy, sell, fees, bank)| MethodDayTotals {
+                    .map(|(method, buy, sell, fees, bank, count)| MethodDayTotals {
                         method,
                         buy_thb: buy,
                         sell_thb: sell,
                         fees_thb: fees,
                         bank_fees_thb: bank,
+                        count,
                     })
                     .collect(),
                 reversals_thb,

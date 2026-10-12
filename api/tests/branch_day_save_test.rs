@@ -125,6 +125,7 @@ async fn opened(shop: &Shop, teller: &Actor, manager: &Actor) -> String {
     .fetch_one(&shop.pool)
     .await
     .expect("the THB 1000 face value");
+    lg4_fund_safe_thb(&shop.pool, "10000.00").await;
     let counts = CashCountService::pg(shop.pool.clone());
     let count = counts
         .submit(
@@ -567,4 +568,40 @@ async fn before_service_starts_a_tellers_save_is_closed() {
     assert_eq!(refused(answer), CustodyError::SaveClosed.to_string());
     assert_eq!(shop.count("transactions").await, 0);
     shop.finish().await;
+}
+
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LG-4 (#929, lane controller's 1:1 ruling): the OPEN count's cash now leaves MAIN's ledger SAFE (design §4.4),
+/// so the safe holds exactly what the count takes (`OPENING` from BANK). Before the cutover nothing had to be there.
+async fn lg4_fund_safe_thb(pool: &sqlx::PgPool, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(branch(MAIN)),
+                currency: xc_kernel::money::CurrencyCode::THB,
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
 }

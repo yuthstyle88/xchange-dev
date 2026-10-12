@@ -1318,6 +1318,7 @@ async fn branch_day_totals_are_the_seeded_rows_per_payment_method() {
                     sell_thb: d("2000.00"),
                     fees_thb: d("30.00"),
                     bank_fees_thb: d("0.00"),
+                    count: 2,
                 },
                 MethodDayTotals {
                     method: "PromptPay".into(),
@@ -1325,6 +1326,7 @@ async fn branch_day_totals_are_the_seeded_rows_per_payment_method() {
                     sell_thb: d("500.00"),
                     fees_thb: d("5.00"),
                     bank_fees_thb: d("3.00"),
+                    count: 1,
                 },
             ],
             reversals_thb: d("0.00"),
@@ -1439,6 +1441,7 @@ async fn draft_confirmed_and_cancelled_rows_are_in_no_figure() {
                 sell_thb: d("0.00"),
                 fees_thb: d("0.00"),
                 bank_fees_thb: d("0.00"),
+                count: 5,
             }],
             reversals_thb: d("0.00"),
         }

@@ -20,7 +20,7 @@ pub type TransactionLineId = Uuid;
 pub type ApprovalRequestId = xc_approval::domain::request::RequestId;
 
 /// Where money is. `Customer` is an exchange's counterparty; `Bank` takes non-cash payments and the
-/// external moves (§4.1).
+/// external moves (§4.1). `Variance` is a branch's count and transfer differences (§4.4 rows 6 and 7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CashPlace {
     Drawer(ShiftId),
@@ -28,6 +28,7 @@ pub enum CashPlace {
     InTransit(TransferId),
     Customer,
     Bank,
+    Variance(BranchId),
 }
 
 /// One leg of a posting. Every request of one `post_in` call shares its `source`.
@@ -43,6 +44,45 @@ pub struct PostingRequest {
     pub line: Option<TransactionLineId>,
     /// #552: value this leg at that line's frozen cost (§4.6).
     pub reverses: Option<TransactionLineId>,
+}
+
+/// One posting's requests moving `amounts` (currency, quantity) from `from` to `to`: one request per
+/// currency with a positive quantity, all under `source`, so one `post_in` call holds an entry pair
+/// per currency (#929 option A). The OPEN count, the hand-over and the v2 shift actions build their
+/// moves here.
+pub fn moves(
+    from: &CashPlace,
+    to: &CashPlace,
+    amounts: &[(CurrencyCode, rust_decimal::Decimal)],
+    source: &SourceRef,
+) -> Vec<PostingRequest> {
+    amounts
+        .iter()
+        .filter(|(_, q)| *q > rust_decimal::Decimal::ZERO)
+        .map(|(currency, q)| PostingRequest {
+            from: from.clone(),
+            to: to.clone(),
+            currency: *currency,
+            quantity: ForeignAmount::from_decimal(*q),
+            source: source.clone(),
+            line: None,
+            reverses: None,
+        })
+        .collect()
+}
+
+/// A drawer's or a transfer's differences (currency, place − expected) as one posting's requests:
+/// a shortfall moves `place → VARIANCE`, an overage `VARIANCE → place` (§4.4 rows 6 and 7).
+pub fn differences(
+    place: &CashPlace,
+    variance: &CashPlace,
+    diffs: &[(CurrencyCode, rust_decimal::Decimal)],
+    source: &SourceRef,
+) -> Vec<PostingRequest> {
+    let short: Vec<_> = diffs.iter().map(|(c, d)| (*c, -*d)).collect();
+    let mut reqs = moves(place, variance, &short, source);
+    reqs.extend(moves(variance, place, diffs, source));
+    reqs
 }
 
 /// What a posting answers.

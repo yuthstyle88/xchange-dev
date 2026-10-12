@@ -22,7 +22,7 @@
 //! - Who (§3.2): create and dispatch need `CashManage` on the branch (BRANCH_MANAGER or FINANCE). The receiver of a
 //!   drawer is **the teller whose shift it is** (`shifts.teller_id`); of the safe, a holder of `CashManage` on the
 //!   branch; of external money, FINANCE (`CashManage`).
-//! - Interim postings (ruling 2): Drawer = `shift_balances.expected` of the shift plus one `stock_movements` row
+//! - Postings before LG-4 (#929, now the ledger's DRAWER/SAFE; ruling 2): Drawer = `shift_balances.expected` of the shift plus one `stock_movements` row
 //!   (`direction` OUT when the drawer pays out, IN when it takes in; `amount` the currency total; `request_id` = the
 //!   transfer id). Safe = `ops_state.safe`. `InTransit` and `Outside` are not balances.
 //! - A dispatch beyond the drawer's or the safe's expected is `TransferError::StockInsufficient` and moves nothing.
@@ -135,6 +135,16 @@ impl Db {
         .execute(&self.pool)
         .await
         .expect("the branch's safe");
+        // LG-4 (#929, 1:1): the same USD amount is the safe's figure in the ledger, which now holds it.
+        if safe_usd_minor > 0 {
+            lg4_fund_safe(
+                &self.pool,
+                &id,
+                "USD",
+                &rust_decimal::Decimal::new(safe_usd_minor, 2).to_string(),
+            )
+            .await;
+        }
         BranchId::new(id)
     }
 
@@ -182,15 +192,17 @@ impl Db {
         .unwrap_or_else(|e| panic!("the USD {face} face value (A7): {e}"))
     }
 
-    /// `ops_state.safe` USD of a branch, in minor units (0 when absent).
+    /// The branch's SAFE USD, in minor units (0 when absent). LG-4 (#929, 1:1): read through the port,
+    /// `CashPostings::expected_in(Safe(branch))`, instead of `ops_state.safe`.
     async fn safe_usd(&self, branch: &BranchId) -> i64 {
-        sqlx::query_scalar(
-            "SELECT coalesce((safe->>'USD')::bigint, 0) FROM ops_state WHERE branch_id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_one(&self.pool)
-        .await
-        .expect("read the safe")
+        use xc_cash::domain::posting::{CashPlace, CashPostings};
+        let mut tx = self.pool.begin().await.expect("begin");
+        let b = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .expected_in(&mut tx, &CashPlace::Safe(branch.clone()))
+            .await
+            .expect("read the safe");
+        tx.rollback().await.expect("rollback");
+        b.get(usd()).minor()
     }
 
     async fn scalar(&self, sql: &str) -> i64 {
@@ -226,6 +238,15 @@ impl Db {
             .submit(teller, cmd, at(0))
             .await
             .expect("the teller counts");
+        // LG-4 (#929, 1:1): the OPEN count takes its USD out of the safe, so the safe holds exactly that first and
+        // its figure after the opening is the one each test seeded.
+        lg4_fund_safe(
+            &self.pool,
+            branch.as_str(),
+            "USD",
+            &(rust_decimal::Decimal::from(usd_50s) * rust_decimal::Decimal::from(50)).to_string(),
+        )
+        .await;
         let verified = counts
             .verify(manager, &count.id, at(5))
             .await
@@ -233,20 +254,28 @@ impl Db {
         verified.shift_id.expect("the shift it opened")
     }
 
+    /// LG-4 (#929, 1:1): the drawer's USD through the port, `CashPostings::expected_in(Drawer(shift))`, instead of
+    /// `shift_balances.expected`.
     async fn drawer_usd(&self, shift: &str) -> Decimal {
-        sqlx::query_scalar(
-            "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = 'USD'",
-        )
-        .bind(shift)
-        .fetch_one(&self.pool)
-        .await
-        .expect("the drawer's USD")
+        use xc_cash::domain::posting::{CashPlace, CashPostings};
+        let mut tx = self.pool.begin().await.expect("begin");
+        let b = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .expected_in(&mut tx, &CashPlace::Drawer(shift.to_string()))
+            .await
+            .expect("the drawer's USD");
+        tx.rollback().await.expect("rollback");
+        Decimal::new(b.get(usd()).minor(), 2)
     }
 
-    /// `(direction, amount)` of the `stock_movements` rows a transfer wrote on a shift.
+    /// `(direction, amount)` of what a transfer moved on a shift's drawer. LG-4 (#929, 1:1): read from the drawer's
+    /// ledger entries of that transfer's postings (OUT when the drawer pays out, IN when it takes in) instead of
+    /// `stock_movements`.
     async fn movements(&self, shift: &str, transfer: &str) -> Vec<(String, Decimal)> {
         sqlx::query_as(
-            "SELECT direction, amount FROM stock_movements WHERE shift_id = $1 AND request_id = $2 ORDER BY seq",
+            "SELECT CASE WHEN e.quantity_signed < 0 THEN 'OUT' ELSE 'IN' END, abs(e.quantity_signed) \
+             FROM ledger_entries e JOIN cash_accounts a ON a.id = e.account_id \
+             JOIN ledger_postings p ON p.id = e.posting_id \
+             WHERE a.kind = 'DRAWER' AND a.shift_id = $1 AND p.source_id = $2 ORDER BY e.id",
         )
         .bind(shift)
         .bind(transfer)
@@ -624,7 +653,10 @@ async fn a_move_out_of_a_drawer_beyond_its_expected_is_refused_and_nothing_moves
     assert_eq!(db.drawer_usd(&shift).await, d("100"));
     assert_eq!(
         db.scalar(&format!(
-            "SELECT count(*) FROM stock_movements WHERE shift_id = '{shift}'"
+            // LG-4 (#929, 1:1): "nothing moved" read from the drawer's TRANSFER ledger entries, not `stock_movements`
+            "SELECT count(*) FROM ledger_entries e JOIN cash_accounts a ON a.id = e.account_id \
+             JOIN ledger_postings p ON p.id = e.posting_id \
+             WHERE a.kind = 'DRAWER' AND a.shift_id = '{shift}' AND p.source_type = 'TRANSFER'"
         ))
         .await,
         0
@@ -1002,4 +1034,41 @@ async fn two_concurrent_dispatches_of_one_approved_transfer_move_the_safe_once()
             "round {round}: USD 50 left the safe once"
         );
     }
+}
+
+/// LG-4 (#929, lane controller's 1:1 ruling): an OPEN count takes its counted cash out of the branch's SAFE
+/// (design §4.4 row 1), so a branch's SAFE is funded through the ledger first. Before the cutover this file needed
+/// no funding because nothing was taken from the safe; THB is not inventory, so the funding moves no position.
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(BranchId::new(branch)),
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
 }

@@ -190,6 +190,8 @@ impl Desk {
         .create_owner("boss", OWNER_PASSWORD, SystemTime::now().into())
         .await
         .expect("create the owner");
+        // LG-4 (#929, 1:1): a shift's opening now leaves MAIN's ledger SAFE (design §4.4).
+        lg4_fund::lg4_fund_safe(&pool, "MAIN").await;
 
         Self {
             pool,
@@ -817,3 +819,6 @@ pub async fn replay(app: &TestApp, desk: &Desk, story: &Value) {
         );
     }
 }
+
+#[path = "../lg4_fund/mod.rs"]
+mod lg4_fund;

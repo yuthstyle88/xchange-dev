@@ -10,7 +10,7 @@
 //!
 //! [required] by these tests, beside `transfers_test.rs`'s list:
 //! - `xc_cash::application::transfer::TransferFlow`:
-//!   - `TransferFlow::pg(pool: PgPool) -> Self` wires the transfer repository, `InterimCashPostings`, the kinds of
+//!   - `TransferFlow::pg(pool: PgPool) -> Self` wires the transfer repository, `LedgerCashPostings` (LG-4), the kinds of
 //!     `TransferKinds::standard()` and the approval core (`TransferApprovalSubject` + `TransferApprovalPolicy`);
 //!   - `create(&self, who: &Actor, cmd: NewTransfer, now: DateTime<Utc>) -> AppResult<CashTransfer>` → DRAFT;
 //!   - `submit(&self, who: &Actor, id: &str, now) -> AppResult<CashTransfer>`: the creator asks the approval core; the
@@ -27,8 +27,8 @@
 //! - The limit: the newest `cash_transfer_policy_versions` row of the organisation (by `created_at`); `limits` is
 //!   `{"<CUR>": "<amount>"}`. A transfer is within the limit when, for every currency it moves, Σ `qty_sent` ×
 //!   face value ≤ that currency's limit. A currency with no limit, or no policy row at all, is above the limit.
-//! - Postings (ruling 2: `InterimCashPostings` made real): Safe = `ops_state.safe` (`{"<CUR>": <minor units>}`, the
-//!   custody codec). BRANCH: dispatch moves `Safe(from)` out, receipt moves `Safe(to)` in by the counted notes.
+//! - Postings: since LG-4 (#929) the ledger's `Safe(branch)` (before it, ruling 2's interim port read
+//!   `ops_state.safe`). BRANCH: dispatch moves `Safe(from)` out, receipt moves `Safe(to)` in by the counted notes.
 //! - The receipt exception: `qty_received ≠ qty_sent` writes one `cash_exceptions` row on the **destination** branch
 //!   per currency that differs, whose `data` has `transferId`, `currency` and `difference` (received − sent, a
 //!   decimal string).
@@ -137,6 +137,16 @@ impl Db {
         .execute(&self.pool)
         .await
         .expect("the branch's safe");
+        // LG-4 (#929, 1:1): the same USD amount is the safe's figure in the ledger, which now holds it.
+        if safe_usd_minor > 0 {
+            lg4_fund_safe(
+                &self.pool,
+                &id,
+                "USD",
+                &rust_decimal::Decimal::new(safe_usd_minor, 2).to_string(),
+            )
+            .await;
+        }
         BranchId::new(id)
     }
 
@@ -198,15 +208,17 @@ impl Db {
         .expect("a transfer policy version");
     }
 
-    /// `ops_state.safe` USD of a branch, in minor units (0 when absent).
+    /// The branch's SAFE USD, in minor units (0 when absent). LG-4 (#929, 1:1): read through the port,
+    /// `CashPostings::expected_in(Safe(branch))`, instead of `ops_state.safe`.
     async fn safe_usd(&self, branch: &BranchId) -> i64 {
-        sqlx::query_scalar(
-            "SELECT coalesce((safe->>'USD')::bigint, 0) FROM ops_state WHERE branch_id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_one(&self.pool)
-        .await
-        .expect("read the safe")
+        use xc_cash::domain::posting::{CashPlace, CashPostings};
+        let mut tx = self.pool.begin().await.expect("begin");
+        let b = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .expected_in(&mut tx, &CashPlace::Safe(branch.clone()))
+            .await
+            .expect("read the safe");
+        tx.rollback().await.expect("rollback");
+        b.get(usd()).minor()
     }
 
     async fn status(&self, id: &str) -> String {
@@ -698,4 +710,41 @@ async fn the_allowed_end_shapes_are_accepted_for_the_kinds_without_a_shift() {
         .await
         .unwrap_or_else(|e| panic!("{kind}: {e}"));
     }
+}
+
+/// LG-4 (#929, lane controller's 1:1 ruling): an OPEN count takes its counted cash out of the branch's SAFE
+/// (design §4.4 row 1), so a branch's SAFE is funded through the ledger first. Before the cutover this file needed
+/// no funding because nothing was taken from the safe; THB is not inventory, so the funding moves no position.
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(BranchId::new(branch)),
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
 }

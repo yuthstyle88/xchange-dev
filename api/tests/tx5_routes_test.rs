@@ -15,8 +15,8 @@
 //!   `{ number, revision }` beside it (#873 §8 "`TransactionDto` `COMPLETED` + `ReceiptDto`").
 //! - choice: refusals answer `{ "error": { "code" } }` with TX-4's statuses (`commands/transactions.rs::refusal`):
 //!   `staleVersion` 409, `quoteExpired` 409, `outOfScope` 403; a missing key 400; signed out `signIn` 401.
-//! - `[required]` (design §6.1, #873 Q9 ruling issuecomment-6107639056): until LG-4's cutover the route posts
-//!   through `InterimCashPostings`, which moves the drawer for an `EXCHANGE` source as today's save does
+//! - `[required]` (design §6.1, #873 Q9 ruling issuecomment-6107639056): until LG-4's cutover (#929) the route
+//!   posted through the interim port, which moved the drawer for an `EXCHANGE` source as today's save does
 //!   (`ShiftService::apply_delta_in`): it refuses below zero with `stockInsufficient` (409, mapped in TX-5's
 //!   `commands/complete.rs`), updates `shift_balances.expected`, and writes **no** `stock_movements` row.
 //!
@@ -156,16 +156,18 @@ async fn movements(c: &Counter, t: &ExchangeTransaction) -> i64 {
         .await
 }
 
-/// The drawer's expected balance of `code` on MAIN's open shift.
+/// The drawer's expected balance of `code` on MAIN's open shift. LG-4 (#929, 1:1): read through the port,
+/// `CashPostings::expected_in(Drawer(shift))`, instead of `shift_balances.expected`.
 async fn expected(c: &Counter, code: &str) -> String {
-    c.desk
-        .db
-        .text(&format!(
-            "SELECT expected::text FROM shift_balances WHERE shift_id = '{}' AND code = '{code}'",
-            c.shift
-        ))
+    use xc_cash::domain::posting::{CashPlace, CashPostings};
+    let mut tx = c.desk.db.pool.begin().await.expect("begin");
+    let b = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .expected_in(&mut tx, &CashPlace::Drawer(c.shift.clone()))
         .await
-        .unwrap_or_else(|| panic!("a {code} balance on the shift"))
+        .expect("the drawer through the port");
+    tx.rollback().await.expect("rollback");
+    let m = b.get(xc_kernel::money::CurrencyCode::parse(code).expect("a currency"));
+    format!("{:.2}", rust_decimal::Decimal::new(m.minor(), 2))
 }
 
 #[actix_web::test]

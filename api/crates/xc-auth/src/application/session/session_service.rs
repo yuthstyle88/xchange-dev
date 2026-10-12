@@ -15,7 +15,7 @@ use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
     UNAVAILABLE_MESSAGE,
 };
-use crate::domain::token::TokenVerifier;
+use crate::domain::token::{TokenVerifier, VerifiedToken};
 use crate::domain::user::{User, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
@@ -440,6 +440,30 @@ impl SessionService {
         } else {
             raw.to_string()
         }
+    }
+
+    /// Identity's login for `identifier` / `password`, with its access token verified, and no user looked up or
+    /// session made (#654 CI-7: customer register binds the subject first, then signs in with
+    /// [`Self::sign_in_with_login`]). A token the verifier refuses is `identityUnavailable`, as at sign-in.
+    pub async fn verified_login(
+        &self,
+        identifier: &str,
+        password: &str,
+        client_ip: Option<&str>,
+    ) -> Result<(IdentityLoginResponse, VerifiedToken), SessionError> {
+        let identity = self.identity.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/api/app/register", 503, "not_configured")
+        })?;
+        let verifier = self.verifier.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/auth/login", 503, "verifier_not_configured")
+        })?;
+        let login = identity
+            .login(&Self::identity_identifier(identifier), password, client_ip)
+            .await?;
+        let verified = verifier.verify(&login.access_token).await.map_err(|_| {
+            IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
+        })?;
+        Ok((login, verified))
     }
 
     pub async fn login(

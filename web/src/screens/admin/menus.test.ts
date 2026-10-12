@@ -253,7 +253,8 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // Amended by CA-9b (#1372), by its up-front test writer (claude/709ec749): A5's `/admin` cash-policy screen
 // (`docs/design/blueprint/cash-shift-transfer.md` §9 CA-9b) is a v3 menu with no v2 row, pinned in
 // `web/src/screens/admin/cash-policy/CashPolicy.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive', 'cash-policy'];
+// Amended by #1068 (FN-1), by its lane controller's ruling (issuecomment-6110842830): F01 `/admin/reconciliation` is a v3 menu with no v2 row, FINANCE only, pinned in `web/src/screens/admin/reconciliation/Reconciliation.test.tsx`.
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive', 'cash-policy', 'reconciliation'];
 // Amended for OR-7.7 (#1030 §3.10) by the test-writer claude/5d45b017: `roles` becomes `needs`, a
 // Permission name. The served menus need 'all'; the three Blueprint menus need the permission their
 // commands already require (lane controller's ruling, #1030 issuecomment-6105567502).

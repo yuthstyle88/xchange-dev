@@ -291,6 +291,17 @@ impl Counter {
             .await
             .unwrap_or_else(|e| panic!("open a shift: {e}"))
             .id;
+        // LG-4 (#929, 1:1): the same opening in the ledger's drawer, which the route's postings now read.
+        for (code, amount) in [("THB", "10000.00"), ("USD", "1000.00")] {
+            lg4_fund(
+                &pool,
+                xc_cash::domain::posting::CashPlace::Bank,
+                xc_cash::domain::posting::CashPlace::Drawer(shift.clone()),
+                code,
+                amount,
+            )
+            .await;
+        }
         let scratch = std::env::temp_dir().join(unique("xc-tx5"));
         std::fs::create_dir_all(&scratch).unwrap();
         Self {
@@ -542,4 +553,46 @@ pub fn leg(posted: &Posted, currency: CurrencyCode) -> &PostingRequest {
         posted.reqs
     );
     legs[0]
+}
+
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LG-4 (#929, lane controller's 1:1 ruling): moves `currency amount` from `from` into `to` through the ledger
+/// (`OPENING`), the store the cutover reads; before it, this file seeded `ops_state.safe` / `shift_balances`.
+pub async fn lg4_fund(
+    pool: &sqlx::PgPool,
+    from: xc_cash::domain::posting::CashPlace,
+    to: xc_cash::domain::posting::CashPlace,
+    currency: &str,
+    amount: &str,
+) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from,
+                to,
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund through the ledger");
+    tx.commit().await.expect("commit");
 }
