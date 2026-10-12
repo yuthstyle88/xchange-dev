@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Accessor } from 'solid-js';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
 vi.mock('../session/session', async (importOriginal) => {
@@ -51,7 +51,7 @@ function json(body: unknown, status = 200): Response {
 
 function queueReadBranches(): string[] {
   return urls
-    .filter((u) => u.startsWith('/api/v3/views/kiosk_'))
+    .filter((u) => u.startsWith('/api/v3/views/queue_board'))
     .map((u) => new URL(u, 'http://localhost').searchParams.get('branch') ?? '<none>');
 }
 
@@ -80,19 +80,13 @@ beforeEach(() => {
     vi.fn(async (input: unknown) => {
       const u = String(input);
       urls.push(u);
-      const branch = new URL(u, 'http://localhost').searchParams.get('branch') ?? '';
       return json({
         version: 7,
         changed: true,
         data: {
-          serverNow: new Date().toISOString(),
-          branchId: branch,
-          branchName: branch,
-          count: 0,
-          latest: null,
-          workingCount: 0,
-          working: [],
-          employee: employeeOf(ME),
+          waiting: [],
+          called: [],
+          myCounter: null,
         },
       });
     }),

@@ -43,6 +43,35 @@ use kiosk_http_common::{
 use rpc_common::{Call, Rule};
 use serde_json::{Value, json};
 
+/// Amended for QU-6 #1354 (ruling issuecomment-6117792804), setup only: `accept` starts the
+/// request's queue ticket as the accepting teller (queue-tickets.md §4.5), and the queue serves
+/// only a teller with an ACTIVE counter, so the accepting staff of `MAIN` get one (and the `users`
+/// row it references), seeded as `kiosk_accept_queue_ticket_test.rs` seeds them.
+async fn open_counters(pool: &sqlx::PgPool, tellers: &[&str]) {
+    for teller in tellers {
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) \
+             SELECT $2::uuid, organization_id, 'Teller', 'ACTIVE', 'test' FROM branches WHERE id = $1 \
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(rpc_common::MAIN)
+        .bind(teller)
+        .execute(pool)
+        .await
+        .expect("the teller's user row");
+        sqlx::query(
+            "INSERT INTO queue_counters (organization_id, branch_id, teller_id, status) \
+             SELECT organization_id, id, $2::uuid, 'ACTIVE' FROM branches WHERE id = $1 \
+             ON CONFLICT (branch_id, teller_id) DO NOTHING",
+        )
+        .bind(rpc_common::MAIN)
+        .bind(teller)
+        .execute(pool)
+        .await
+        .expect("open the teller's counter");
+    }
+}
+
 /// The steps v2 answered with a sentence of the JavaScript engine (a body that
 /// is not JSON, or `null`): v3 says the route's own "Invalid request.", as
 /// `/api/rpc` does for the same bodies (T11e).
@@ -100,7 +129,7 @@ fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's, so the owner's
     // `list` offers no request to accept or continue.
     let fixture = Fixture::load(name);
-    fixture
+    let mut rules: Vec<(usize, Rule)> = fixture
         .steps()
         .iter()
         .filter(|s| {
@@ -110,8 +139,29 @@ fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
                 && fixture.sender(s).is_some_and(|p| p.is_owner())
         })
         .map(|s| (s.n, Rule::RecordedWith(not_offered_the_queue_work)))
-        .collect()
+        .collect();
+    // QU-6 #1354 (design `queue-tickets.md` §7; QU-3): `accept` starts the request's queue ticket, and a
+    // teller holds one CALLED or SERVING ticket. #197–#203 are second claims by tellers who already hold
+    // one (FR2 #197/#200/#203, BE1 #198/#201, MG1 #199/#202): held to `alreadyServing`, v2's claim applied
+    // behind the routes, so #204, #205 and #212 keep the twelve claims v2 recorded.
+    if name == "kiosk/queue_work.json" {
+        for n in SECOND_CLAIMS {
+            let step = fixture.step(n);
+            assert_eq!(
+                (step.action.as_deref(), step.status),
+                (Some("accept"), Some(200)),
+                "{name}#{n} is a claim v2 accepted"
+            );
+            rules.push((n, Rule::QueueRefuses(ALREADY_SERVING)));
+        }
+    }
+    rules
 }
+
+/// QU-6 #1354: `kiosk/queue_work.json`'s claims by a teller who already holds one.
+const SECOND_CLAIMS: std::ops::RangeInclusive<usize> = 197..=203;
+/// QU-3's refusal of a second CALLED or SERVING ticket, as the kiosk route answers it.
+const ALREADY_SERVING: &str = "alreadyServing";
 
 /// C8: the owner's user holds no QueueOperate, so no row of the owner's `list` can be accepted or
 /// continued.
@@ -131,6 +181,13 @@ async fn replayed(name: &str) -> (Fixture, usize) {
     let fixture = Fixture::load(name);
     let lines = {
         let mut replay = KioskReplay::start(&fixture).await;
+        let staff: Vec<&str> = fixture
+            .people
+            .iter()
+            .filter(|p| !p.is_owner() && p.branch_id.as_deref() == Some(rpc_common::MAIN))
+            .map(|p| p.id.as_str())
+            .collect();
+        open_counters(&replay.replay.desk.db.pool, &staff).await;
         for (n, rule) in changed_since_the_recording(name) {
             replay = replay.rule(n, rule);
         }
@@ -425,6 +482,7 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     let fr1 = person("FR1", "FRONT", 0x11);
     let fr2 = person("FR2", "FRONT", 0x12);
     let counter = Counter::open(&[fr1.clone(), fr2.clone()]).await;
+    open_counters(&counter.desk.db.pool, &[&fr1.id]).await;
     let id = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0001")
         .await;
@@ -576,6 +634,11 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
 async fn a_step_whose_audit_line_fails_is_rolled_back() {
     let fr1 = person("FR1", "FRONT", 0x11);
     let counter = Counter::open(&[fr1]).await;
+    open_counters(
+        &counter.desk.db.pool,
+        &["00000000-0000-4000-8000-000000000011"],
+    )
+    .await;
     let id = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0001")
         .await;
@@ -666,6 +729,7 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
 async fn the_answers_keep_v2s_key_order() {
     let fr1 = person("FR1", "FRONT", 0x11);
     let counter = Counter::open(std::slice::from_ref(&fr1)).await;
+    open_counters(&counter.desk.db.pool, &[&fr1.id]).await;
     counter
         .hands
         .ids
@@ -778,11 +842,72 @@ async fn the_answers_keep_v2s_key_order() {
 
 /// The holder pressing accept again is not refused, and another employee is (ticket #328),
 /// with the 10-06 answers (K-HTTP #329, lane controller's option A).
+/// QU-6 #1354 (ruling issuecomment-6117792804, item 2): an accept the queue refuses for its caller
+/// (`QueueDesk`'s `QueueOperate` check on the branch's organisation) answers the queue's v3 code
+/// `outOfScope` as a 400, not a server error, and nothing moves: the request and its ticket stay
+/// WAITING. The kiosk's policy already holds `accept` to `QueueOperate` (`policy.rs` kiosk row), so
+/// the refusal is reached here with an organisation the caller's old cookie (code "XC") no longer
+/// names.
+#[actix_web::test]
+async fn an_accept_the_queue_refuses_answers_out_of_scope_and_the_request_stays_waiting() {
+    let fr1 = person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(std::slice::from_ref(&fr1)).await;
+    open_counters(&counter.desk.db.pool, &[&fr1.id]).await;
+    let id = counter
+        .waiting_request("00000000-0000-4000-8000-0000000c0001")
+        .await;
+    sqlx::query(
+        "UPDATE organizations SET code = 'XC-ELSEWHERE' \
+         WHERE id = (SELECT organization_id FROM branches WHERE id = $1)",
+    )
+    .bind(rpc_common::MAIN)
+    .execute(&counter.desk.db.pool)
+    .await
+    .expect("rename MAIN's organisation");
+
+    let answer = counter
+        .ask(Some("FR1"), "accept", json!({ "id": id }))
+        .await;
+    assert_eq!(answer.status, 400, "{}", answer.text);
+    assert_eq!(
+        answer.json(),
+        json!({ "error": "outOfScope" }),
+        "{}",
+        answer.text
+    );
+
+    let stored: (String, Option<String>) =
+        sqlx::query_as("SELECT status, staff FROM kiosk_requests WHERE id = $1")
+            .bind(&id)
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("read the request");
+    assert_eq!(
+        stored,
+        ("WAITING".to_string(), None),
+        "the request stays WAITING"
+    );
+    let ticket: (String, Option<String>) = sqlx::query_as(
+        "SELECT status, counter_teller_id::text FROM queue_tickets WHERE kiosk_request_id = $1",
+    )
+    .bind(&id)
+    .fetch_one(&counter.desk.db.pool)
+    .await
+    .expect("read the request's ticket");
+    assert_eq!(
+        ticket,
+        ("WAITING".to_string(), None),
+        "its ticket stays WAITING"
+    );
+    counter.finish().await;
+}
+
 #[actix_web::test]
 async fn a_holder_accepting_again_gets_saved() {
     let fr1 = person("FR1", "FRONT", 0x11);
     let fr2 = person("FR2", "FRONT", 0x12);
     let counter = Counter::open(&[fr1.clone(), fr2.clone()]).await;
+    open_counters(&counter.desk.db.pool, &[&fr1.id]).await;
     let id = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0001")
         .await;

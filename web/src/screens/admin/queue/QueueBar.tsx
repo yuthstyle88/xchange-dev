@@ -9,7 +9,9 @@ import {
   type JSX,
 } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
+import { summarize } from '../../../shared/queue/board';
 import { setQueueBranch, useQueueStore } from '../../../shared/queue/queue-store';
+import { sharedSession } from '../../../shared/session/session';
 import { QueuePanel } from '../../../shared/ui/QueuePanel';
 import * as table from './i18n';
 import './queue.css';
@@ -98,11 +100,9 @@ export function QueueBar(props: {
     }
   });
 
-  // Clear branch awaiting answer once current branch answers
+  // Clear branch awaiting answer once current branch answers: the store followed is that branch's (`useQueueStore`)
   createEffect(() => {
-    const s = state();
-    const current = props.branch();
-    if (s && s.branchId === current) {
+    if (state()) {
       setBranchAwaitingAnswer(false);
     }
   });
@@ -118,12 +118,13 @@ export function QueueBar(props: {
 
   // Track toast notifications
   createEffect(() => {
-    const s = state();
-    if (!s) return;
+    const board = state();
+    if (!board) return;
+    const s = summarize(board);
     const currentBranch = props.branch();
-    if (s.branchId !== currentBranch) return;
 
-    const empId = s.employee?.id;
+    // QU-6 (#1354): `queue_board` names no employee; the key is the signed-in user's, as the card's sound key is.
+    const empId = sharedSession().me()?.id;
     const storageKey = empId ? `xc.queue.popup.${empId}.${currentBranch}` : null;
     const latest = s.latest;
 
@@ -136,7 +137,7 @@ export function QueueBar(props: {
       if (prev !== latest) {
         sessionStorage.setItem(storageKey, latest);
         if (!dialogOpen()) {
-          setToastMessage(t('toastNotice', { count: s.count, branch: s.branchName }));
+          setToastMessage(t('toastNotice', { count: s.count, branch: props.branchLabel() }));
           setToastVisible(true);
         }
       }

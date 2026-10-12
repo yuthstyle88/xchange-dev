@@ -1,8 +1,9 @@
 export type {
-  KioskNotifications,
-  KioskNotificationsEmployee,
-  KioskNotificationsWorking,
-} from '../api/generated/kiosk_notifications';
+  QueueBoardCalled,
+  QueueBoardCounter,
+  QueueBoardData,
+  QueueBoardWaiting,
+} from '../api/generated/queue_board';
 
 export type {
   KioskQueueFilter,

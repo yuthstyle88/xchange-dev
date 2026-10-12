@@ -13,19 +13,25 @@
 // the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The caller's role OWNER → MANAGER (BRANCH_MANAGER): under ruling A on #1030 the
 // former owner no longer holds `QueueOperate`, and every test here needs the card's claim link, which
 // BRANCH_MANAGER keeps. The constant keeps its name.
+//
+// Amended for QU-6 (#1354, ruling issuecomment-6117565689; this directory is the ticket's) by the implementer
+// claude/709ec749: the store's state is `queue_board`'s `QueueBoardData`. `answer()` keeps its arguments and builds
+// that shape: `count` waiting tickets, `latest` the id of the newest, `working` → `called` (as QueueCard.workers maps it);
+// `branchName`/`workingCount` have no field there (the dialog's name is the bar's `branchLabel`). No call or assertion
+// changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../../../shared/api/generated/common';
 import { setLang } from '../../../shared/i18n';
 import { queueStore, type QueueError, type QueueStore } from '../../../shared/queue/queue-store';
-import type { KioskNotifications } from '../../../shared/queue/wire';
+import type { QueueBoardData } from '../../../shared/queue/wire';
 import { QueueCard } from '../../../shared/ui/QueueCard';
 import { QueueBar } from './QueueBar';
-import { employeeOf, meOf } from '../../../test-support/me';
+import { meOf } from '../../../test-support/me';
 
 interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
 }
 
@@ -37,7 +43,7 @@ vi.mock('../../../shared/queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = fake.stores.get(b) as FakeStore | undefined;
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -77,20 +83,38 @@ function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
 }
 
-function answer(b: string, over: Partial<KioskNotifications> = {}) {
+interface OldWorking {
+  id: string;
+  queue: string;
+  staff: string;
+  startedAt: string | null;
+  status: string;
+}
+
+/** The old answer's arguments, as `queue_board`'s shape: `count` waiting tickets, the newest one `latest`. */
+function answer(
+  b: string,
+  over: { count?: number; latest?: string | null; branchName?: string; workingCount?: number; working?: OldWorking[] } = {},
+) {
   const s = store(b);
   s.setError(undefined);
-  s.setState({
-    serverNow: '2026-10-10T03:00:00.000Z',
-    branchId: b,
-    branchName: 'Silom',
-    count: 0,
-    latest: null,
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(OWNER),
-    ...over,
-  });
+  const count = over.count ?? 0;
+  const waiting = Array.from({ length: count }, (_, i) => ({
+    id: i === count - 1 && over.latest ? over.latest : `${b}-W${i + 1}`,
+    displayNumber: `W${String(i + 1).padStart(3, '0')}`,
+    serviceType: 'WALK_IN',
+    sequence: i + 1,
+    issuedAt: '2026-10-10T03:00:00.000Z',
+  }));
+  const called = (over.working ?? []).map((w) => ({
+    id: w.id,
+    displayNumber: w.queue,
+    serviceType: 'WALK_IN',
+    status: 'SERVING',
+    tellerId: w.staff,
+    calledAt: w.startedAt,
+  }));
+  s.setState({ waiting, called, myCounter: null });
 }
 
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));

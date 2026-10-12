@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// QU-6 (#1354, ruling issuecomment-6118321787) by the test-writer claude/14cc24bd: the store holds `queue_board`'s
+// `QueueBoardData`; each answer's count/latest is re-expressed as that many WAITING tickets, the newest with that id.
+// Nothing else changes.
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import type { EndReason, SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { KioskNotifications } from '../queue/wire';
-import { employeeOf, meOf } from '../../test-support/me';
+import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import { meOf } from '../../test-support/me';
 
 interface FakeQueues {
   branch: Accessor<string>;
@@ -17,8 +20,9 @@ interface FakeQueues {
   reset(): void;
 }
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
   setError(v: QueueError | undefined): void;
   refreshes: number;
 }
@@ -32,7 +36,7 @@ vi.mock('../queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = stores.get(b);
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error, setError] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -79,39 +83,36 @@ function queues(): FakeQueues {
 const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
 const NOK: Me = meOf(NOK_V3);
 
-let serverNow = Date.parse('2026-10-08T03:00:00.000Z');
-
-function answer(branch: string, over: Partial<KioskNotifications> = {}) {
-  serverNow += 5000;
-  const s = queues().store(branch);
-  s.setError(undefined);
-  s.setState({
-    serverNow: new Date(serverNow).toISOString(),
-    branchId: branch,
-    branchName: 'Silom',
-    count: 0,
-    latest: null,
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(NOK),
-    ...over,
-  });
+/**
+ * `count` WAITING tickets in call order (`queue_board`'s `waiting`); the newest one (the latest `issuedAt`) has the id
+ * `latest`, so it is the card's "new request" key. The older ones keep the same ids from one answer to the next.
+ */
+function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
+  const list: QueueBoardWaiting[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const newest = i === count;
+    list.push({
+      id: newest && latest !== null ? latest : `older-${i}`,
+      displayNumber: `W${String(i).padStart(3, '0')}`,
+      serviceType: 'WALK_IN',
+      sequence: i,
+      issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
+    });
+  }
+  return list;
 }
 
-function pushState(branch: string, over: Partial<KioskNotifications> = {}) {
-  serverNow += 5000;
+function answer(branch: string, over: Partial<QueueBoardData> = {}) {
   const s = queues().store(branch);
-  s.setState({
-    serverNow: new Date(serverNow).toISOString(),
-    branchId: branch,
-    branchName: 'Silom',
-    count: 1,
-    latest: 'kq-1',
-    workingCount: 0,
-    working: [],
-    employee: employeeOf(NOK),
-    ...over,
-  });
+  s.setError(undefined);
+  const data: QueueBoardData = { waiting: [], called: [], myCounter: null, ...over };
+  s.setState(data);
+}
+
+function pushState(branch: string, over: Partial<QueueBoardData> = {}) {
+  const s = queues().store(branch);
+  const data: QueueBoardData = { waiting: waiting(1, 'kq-1'), called: [], myCounter: null, ...over };
+  s.setState(data);
 }
 
 function fail(branch: string, error: QueueError) {
@@ -257,7 +258,7 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
     const page = await openPage();
     await settle();
     // Turn sound on first with no items waiting
-    answer('B1', { count: 0, latest: null });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     await page.sound.toggleSound();
     await settle();
@@ -265,7 +266,7 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
 
     // Session ends in store with expired; store retains/updates state with count > 0 and latest
     fail('B1', { kind: 'ended', reason: 'expired' });
-    pushState('B1', { count: 1, latest: 'kq-1' });
+    pushState('B1', { waiting: waiting(1, 'kq-1') });
     await settle();
 
     // No announcement chime played for kq-1
@@ -274,7 +275,7 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
 
     // Toggling the branch announces nothing
     fail('B2', { kind: 'ended', reason: 'expired' });
-    pushState('B2', { count: 1, latest: 'kq-2' });
+    pushState('B2', { waiting: waiting(1, 'kq-2') });
     queues().setBranch('B2');
     await settle();
     expect(audio.chimes()).toBe(1);
@@ -293,7 +294,7 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
   it('store error switched: toggling sound or branch announces nothing', async () => {
     const page = await openPage();
     await settle();
-    answer('B1', { count: 0, latest: null });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     await page.sound.toggleSound();
     await settle();
@@ -301,14 +302,14 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
 
     // Session ends in store with switched
     fail('B1', { kind: 'ended', reason: 'switched' });
-    pushState('B1', { count: 2, latest: 'kq-switched' });
+    pushState('B1', { waiting: waiting(2, 'kq-switched') });
     await settle();
     expect(audio.chimes()).toBe(1);
     expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
 
     // Toggling branch
     fail('B2', { kind: 'ended', reason: 'switched' });
-    pushState('B2', { count: 3, latest: 'kq-b2' });
+    pushState('B2', { waiting: waiting(3, 'kq-b2') });
     queues().setBranch('B2');
     await settle();
     expect(audio.chimes()).toBe(1);
@@ -327,7 +328,7 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
   it('session.ended set to switched while store not yet ended: announces nothing', async () => {
     const page = await openPage();
     await settle();
-    answer('B1', { count: 0, latest: null });
+    answer('B1', { waiting: waiting(0, null) });
     await settle();
     await page.sound.toggleSound();
     await settle();
@@ -335,13 +336,13 @@ describe('QueueCard: no chimes after session has ended (#498)', () => {
 
     // Session ended is set to switched on session, but store has not received ended error yet
     page.setEnded('switched');
-    answer('B1', { count: 1, latest: 'kq-switched-session' });
+    answer('B1', { waiting: waiting(1, 'kq-switched-session') });
     await settle();
     expect(audio.chimes()).toBe(1);
     expect(storage.map.has('xc.queue.sound.E7.B1')).toBe(false);
 
     // Toggling branch
-    answer('B2', { count: 2, latest: 'kq-b2-session' });
+    answer('B2', { waiting: waiting(2, 'kq-b2-session') });
     queues().setBranch('B2');
     await settle();
     expect(audio.chimes()).toBe(1);

@@ -6,13 +6,19 @@
 //
 // The panel runs against one fake `ApiClient`, passed both as the panel's `api` prop and as the
 // store's `api` (`queueStore(branch, { api, session })` is created first, so the panel finds it):
-// it answers `kiosk_queue` and `kiosk_notifications` like the server — a `since` equal to the
+// it answers `kiosk_queue` and (the store's poll) `queue_board` like the server — a `since` equal to the
 // branch version gets `changed: false`, `before` starts strictly after that row. Rows are shown
 // in v2's shape: an `<article>` per row, the times in a `<dl>` of `<dt>`/`<dd>`, the message in
 // `role="status"`. Amounts are decimal strings the panel shows through MoneyText (W7).
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// QU-6 (#1354, rulings issuecomment-6117574257 and issuecomment-6118321787) by the test-writer claude/14cc24bd: the
+// shared store polls `queue_board` (the panel itself stays on `kiosk_queue`), so the fake answers the store's poll as
+// `queue_board` (`QueueBoardData`: one WAITING ticket per waiting request) and counts those polls as `boardReads()`.
+// `queue_board` carries no `serverNow`, so the store runs on this browser's clock. Ruling (b): P8 ticks on the client
+// clock; for the same reason the store's `lastUpdated` in P2/P3 and the P14 stamp are the client clock (`T0`), not
+// `T0 + SKEW`. The panel's own `kiosk_queue` rows are still stamped by the server (`SKEW`). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -29,9 +35,10 @@ import { en } from '../i18n/en';
 import { th } from '../i18n/th';
 import type { SessionStore } from '../session/session';
 import { queueStore, type QueueStore } from '../queue/queue-store';
-import type { KioskNotifications, KioskQueueRow } from '../queue/wire';
+import type { QueueBoardData } from '../api/generated/queue_board';
+import type { KioskQueueRow } from '../queue/wire';
 import { QueuePanel } from './QueuePanel';
-import { employeeOf, meOf } from '../../test-support/me';
+import { meOf } from '../../test-support/me';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -80,16 +87,18 @@ class Branch {
   version = 7;
   readonly rows: Record<State, KioskQueueRow[]> = { waiting: [], working: [], completed: [] };
   constructor(readonly id: string) {}
-  notifications(): KioskNotifications {
+  /** The store's poll (`queue_board`): one WAITING ticket per waiting request, in call order. */
+  board(): QueueBoardData {
     return {
-      serverNow: new Date(Date.now() + SKEW).toISOString(),
-      branchId: this.id,
-      branchName: 'Silom',
-      count: this.rows.waiting.length,
-      latest: this.rows.waiting[0]?.id ?? null,
-      workingCount: this.rows.working.length,
-      working: [],
-      employee: employeeOf(ME),
+      waiting: this.rows.waiting.map((r, i) => ({
+        id: r.id,
+        displayNumber: r.queue,
+        serviceType: 'WALK_IN',
+        sequence: i + 1,
+        issuedAt: new Date(T0).toISOString(),
+      })),
+      called: [],
+      myCounter: null,
     };
   }
 }
@@ -160,8 +169,8 @@ class FakeApi {
     return this.calls.filter((c) => c.name === 'kiosk_queue');
   }
 
-  notificationReads(): Call[] {
-    return this.calls.filter((c) => c.name === 'kiosk_notifications');
+  boardReads(): Call[] {
+    return this.calls.filter((c) => c.name === 'queue_board');
   }
 
   readonly api = {
@@ -170,9 +179,9 @@ class FakeApi {
       this.calls.push({ method: 'view', name, params: p });
       await settled();
       const b = this.branch(String(p.branch));
-      if (name === 'kiosk_notifications') {
+      if (name === 'queue_board') {
         if (p.since !== undefined && p.since === b.version) return { version: b.version, changed: false };
-        return { version: b.version, changed: true, data: b.notifications() as unknown as T };
+        return { version: b.version, changed: true, data: b.board() as unknown as T };
       }
       if (name !== 'kiosk_queue') throw new Error(`unexpected view ${name}`);
       const failure = this.failNextRead;
@@ -397,10 +406,10 @@ describe('P13: the panel reads when shown, on a change, and when the store versi
     await flush();
     const reads = fake.queueReads().length;
     const nodes = articles(p.host);
-    const polls = fake.notificationReads().length;
+    const polls = fake.boardReads().length;
 
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(fake.notificationReads().length).toBe(polls + 3);
+    expect(fake.boardReads().length).toBe(polls + 3);
     expect(fake.queueReads().length).toBe(reads);
     expect(articles(p.host)).toEqual(nodes);
     articles(p.host).forEach((a, i) => expect(a).toBe(nodes[i]));
@@ -541,7 +550,7 @@ describe('P2, P3: the status line', () => {
     release();
     await flush();
     const updated = p.store().lastUpdated();
-    expect(updated).toBe(T0 + SKEW);
+    expect(updated).toBe(T0);
     expect(message(p.host)).toBe(`อัปเดต ${stamp(updated!)} · เวลานับตั้งแต่รับเรื่องจนบันทึกสำเร็จ`);
 
     const again = fake.holdNextRead();
@@ -558,9 +567,9 @@ describe('P2, P3: the status line', () => {
     await flush();
     await vi.advanceTimersByTimeAsync(5_000);
     await flush();
-    expect(p.store().lastUpdated()).toBe(T0 + 5_000 + SKEW);
+    expect(p.store().lastUpdated()).toBe(T0 + 5_000);
     expect(message(p.host)).toBe(
-      `อัปเดต ${stamp(T0 + 5_000 + SKEW)} · เวลานับตั้งแต่รับเรื่องจนบันทึกสำเร็จ`,
+      `อัปเดต ${stamp(T0 + 5_000)} · เวลานับตั้งแต่รับเรื่องจนบันทึกสำเร็จ`,
     );
   });
 
@@ -648,10 +657,11 @@ describe('P4–P8: a card per row', () => {
   it("P8: durationSeconds as h/m/s; a started row without it ticks every 1 s on the store's clock; otherwise ยังไม่มีข้อมูล", async () => {
     const p = mount();
     const b = p.branch();
-    const serverNow = T0 + SKEW;
+    // ruling (b): `queue_board` carries no `serverNow`, so the store's clock is this browser's
+    const clockNow = T0;
     p.data().rows.waiting.push(
       row(b, 1, { status: 'COMPLETED', startedAt: '2026-10-08T01:00:00.000Z', completedAt: '2026-10-08T02:02:05.000Z', durationSeconds: 3725, canAccept: false }),
-      row(b, 2, { status: 'ACCEPTED', staff: 'malee', startedAt: new Date(serverNow - 65_000).toISOString(), canAccept: false }),
+      row(b, 2, { status: 'ACCEPTED', staff: 'malee', startedAt: new Date(clockNow - 65_000).toISOString(), canAccept: false }),
       row(b, 3, { status: 'COMPLETED', startedAt: '2026-10-08T01:00:00.000Z', canAccept: false }),
       row(b, 4),
     );
@@ -679,7 +689,7 @@ describe('P9: รับเรื่องนี้', () => {
     p.data().rows.waiting.push(row(b, 1), row(b, 2, { canAccept: false }));
     await flush();
     expect([...card(p.host, `${b}-Q2`).querySelectorAll('button')].map(text)).not.toContain('รับเรื่องนี้');
-    const polls = fake.notificationReads().length;
+    const polls = fake.boardReads().length;
 
     button(card(p.host, `${b}-Q1`), 'รับเรื่องนี้').click();
     await flush();
@@ -689,7 +699,7 @@ describe('P9: รับเรื่องนี้', () => {
     expect(fake.queueReads().some((c) => c.params.filter?.state === 'working' && c.params.before === undefined)).toBe(true);
     expect(shownQueues(p.host)).toEqual([`${b}-Q1`]);
     expect(text(p.host)).toContain('หน้า 1');
-    expect(fake.notificationReads().length).toBeGreaterThan(polls);
+    expect(fake.boardReads().length).toBeGreaterThan(polls);
     expect(onClaimed).toHaveBeenCalledWith(`${b}-kq-1`);
   });
 
@@ -742,14 +752,14 @@ describe('P9: รับเรื่องนี้', () => {
     fake.branch(other).rows.waiting.push(row(other, 1));
     p.setBranch(other);
     await flush();
-    const polls = fake.notificationReads().length;
+    const polls = fake.boardReads().length;
 
     release();
     await flush();
     expect(fake.posts[0]!.body).toEqual({ action: 'accept', payload: { id: `${b}-kq-1`, branchId: b } });
     expect(pressed(p.host)).toEqual(['รอรับเรื่อง']);
     expect(shownQueues(p.host)).toEqual([`${other}-Q1`]);
-    expect(fake.notificationReads().length).toBeGreaterThan(polls);
+    expect(fake.boardReads().length).toBeGreaterThan(polls);
   });
 });
 
@@ -887,7 +897,7 @@ describe('P14: lang en', () => {
     for (const thai of ['รอรับเรื่อง', 'กำลังทำรายการ', 'เสร็จสิ้น', 'โหลดล่าสุด']) {
       expect(labels.some((l) => enOf([thai]).includes(l)), thai).toBe(true);
     }
-    expect(message(p.host)).toContain(stamp(T0 + SKEW, 'en-GB'));
+    expect(message(p.host)).toContain(stamp(T0, 'en-GB'));
 
     fake.failNextRead = new ApiError({ code: 'queueDown', message: 'boom', status: 502 });
     const reload = labels.find((l) => enOf(['โหลดล่าสุด']).includes(l))!;

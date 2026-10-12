@@ -16,17 +16,21 @@
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 // The bar's line `Nok · nok · FRONT` → `Nok · <shell.account.role.teller>` (ruling (a): name, then the role
 // labels held at me.branch; no username), read from the shared table, not hard-coded.
+// QU-6 (#1354, rulings issuecomment-6117574257 and issuecomment-6118321787) by the test-writer claude/14cc24bd: the
+// store holds `queue_board`'s `QueueBoardData` (one WAITING ticket `kq-1` is the new request). Ruling (a): a session
+// without QueueOperate (RATES) gets no card at all. Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { KioskNotifications } from '../queue/wire';
-import { employeeOf, meOf, roleLabel } from '../../test-support/me';
+import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import { meOf, roleLabel } from '../../test-support/me';
 
-interface FakeStore extends QueueStore {
-  setState(v: KioskNotifications | undefined): void;
+interface FakeStore extends Omit<QueueStore, 'state'> {
+  state: Accessor<QueueBoardData | undefined>;
+  setState(v: QueueBoardData | undefined): void;
 }
 
 const fake = vi.hoisted(() => ({ store: undefined as unknown, reset: undefined as unknown }));
@@ -38,7 +42,7 @@ vi.mock('../queue/queue-store', async () => {
   const store = (b: string): FakeStore => {
     let s = stores.get(b);
     if (!s) {
-      const [state, setState] = solid.createSignal<KioskNotifications | undefined>(undefined);
+      const [state, setState] = solid.createSignal<QueueBoardData | undefined>(undefined);
       const [error] = solid.createSignal<QueueError | undefined>(undefined);
       const [lastUpdated] = solid.createSignal<number | undefined>(undefined);
       const [version] = solid.createSignal<number | undefined>(undefined);
@@ -117,6 +121,15 @@ const OPEN = 'เปิดคิว / รับเรื่อง →';
 const NOK_V3 = { id: 'E7', role: 'FRONT', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] };
 const NOK: Me = meOf(NOK_V3);
 const RATES: Me = meOf({ id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', branchName: 'B1', branches: [] });
+
+/** One WAITING ticket, issued now: `queue_board`'s `waiting` row. */
+const KQ1: QueueBoardWaiting = {
+  id: 'kq-1',
+  displayNumber: 'W001',
+  serviceType: 'WALK_IN',
+  sequence: 1,
+  issuedAt: '2026-10-08T03:00:05.000Z',
+};
 
 const disposers: Array<() => void> = [];
 
@@ -221,9 +234,9 @@ describe('AccountBar renders the queue card (KQ3)', () => {
     while (disposers.length) disposers.pop()?.();
     document.body.innerHTML = '';
 
+    // QU-6 ruling (a): RATES holds no QueueOperate, so it gets no card at all (and so no link).
     await mountBar(RATES);
-    expect(cards()).toHaveLength(1);
-    expect(shown(linkIn(cards()[0], OPEN))).toBe(false);
+    expect(cards()).toEqual([]);
   });
 
   it('the sound key carries the bar’s user: xc.queue.sound.<me().id>.<branch>', async () => {
@@ -235,14 +248,9 @@ describe('AccountBar renders the queue card (KQ3)', () => {
     sound?.click();
     await settle();
     (fake.store as (b: string) => FakeStore)('B1').setState({
-      serverNow: '2026-10-08T03:00:05.000Z',
-      branchId: 'B1',
-      branchName: 'Silom',
-      count: 1,
-      latest: 'kq-1',
-      workingCount: 0,
-      working: [],
-      employee: employeeOf(NOK),
+      waiting: [KQ1],
+      called: [],
+      myCounter: null,
     });
     await settle();
     expect(storage.get('xc.queue.sound.E7.B1')).toBe('kq-1');
