@@ -3,7 +3,7 @@
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_kernel::ids::BranchId;
 
 use crate::domain::draft::rate_draft::DraftId;

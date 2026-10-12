@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
 
@@ -145,7 +145,7 @@ impl PublishService {
         .bind(next_version)
         .bind(req_id)
         .bind(id.as_uuid())
-        .bind(who.id())
+        .bind(who.user_id.as_str())
         .execute(&mut **tx)
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;

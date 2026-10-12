@@ -3,7 +3,7 @@
 /**
  * A "ต้องดำเนินการ" item (design §4.3).
  */
-export type AlertDto = { kind: "ratePending" | "staleData" | "countDifference", branchId: string, since: string | null, detail: string, drilldown: DrilldownDto | null, };
+export type AlertDto = { kind: "ratePending" | "staleData" | "countDifference" | "lowStock", branchId: string, since: string | null, detail: string, drilldown: DrilldownDto | null, };
 
 /**
  * A row of the branch table (design §4.2).

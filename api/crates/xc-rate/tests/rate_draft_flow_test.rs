@@ -70,7 +70,6 @@ use sqlx::{Postgres, Transaction};
 use tokio::sync::Barrier;
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::money::{Side, UnitSize};
 use xc_rate::application::draft::rate_draft_service::SubmitOutcome;
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, LineSide, RateDraft};
@@ -97,7 +96,7 @@ async fn settle<T>(
     }
 }
 
-async fn create(db: &TestDb, e: &Engine, who: &Actor, lines: Vec<DraftLine>) -> RateDraft {
+async fn create(db: &TestDb, e: &Engine, who: &access::Actor, lines: Vec<DraftLine>) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e.drafts.create(&mut tx, &main_branch(), who, lines).await;
     settle(tx, got).await.expect("the draft is created")
@@ -126,7 +125,7 @@ async fn submit(db: &TestDb, e: &Engine, who: &access::Actor, draft: &RateDraft)
 async fn try_edit(
     db: &TestDb,
     e: &Engine,
-    who: &Actor,
+    who: &access::Actor,
     draft: &RateDraft,
     expected_version: i32,
     lines: Vec<DraftLine>,
@@ -158,7 +157,7 @@ async fn try_publish(
         .publish(
             &mut tx,
             &main_branch(),
-            &owner(),
+            &owner_user(),
             &draft.id,
             expected_version,
         )
@@ -168,7 +167,7 @@ async fn try_publish(
 
 /// An OWNER draft under no policy: out-of-bound, so OWNER's own decision approves it at submit.
 async fn approved(db: &TestDb, e: &Engine, lines: Vec<DraftLine>) -> RateDraft {
-    let d = create(db, e, &owner(), lines).await;
+    let d = create(db, e, &owner_user(), lines).await;
     let outcome = submit(db, e, &owner_user(), &d).await;
     assert_eq!(
         outcome.status,
@@ -271,7 +270,7 @@ async fn an_in_bound_submit_by_rates_is_approved_by_the_policy_in_the_same_trans
     let db = TestDb::start().await;
     let e = db.engine();
     let policy_id = seed_usd(&db).await;
-    let d = create(&db, &e, &rates(), in_bound_usd()).await;
+    let d = create(&db, &e, &rates_user(), in_bound_usd()).await;
     assert_eq!(d.status, DraftStatus::Draft);
     assert_eq!(d.version, 1);
 
@@ -315,7 +314,7 @@ async fn an_out_of_bound_submit_by_rates_waits_for_the_owner_and_no_other_rates_
     let db = TestDb::start().await;
     let e = db.engine();
     seed_usd(&db).await;
-    let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
+    let d = create(&db, &e, &rates_user(), out_of_bound_usd()).await;
     let outcome = submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(outcome.status, DraftStatus::PendingApproval);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
@@ -389,8 +388,7 @@ async fn an_out_of_bound_submit_by_an_executive_without_admin_is_approved_by_dec
         )],
         None,
     );
-    // `create` keeps the old actor (OR-7.1 moves `submit` only); it reads the id alone
-    let d = create(&db, &e, &Actor::owner("exec-1"), out_of_bound_usd()).await;
+    let d = create(&db, &e, &executive, out_of_bound_usd()).await;
     let outcome = submit(&db, &e, &executive, &d).await;
     assert_eq!(outcome.status, DraftStatus::Approved);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
@@ -413,7 +411,7 @@ async fn an_out_of_bound_submit_by_the_owner_is_approved_by_decide_self_and_rate
     seed_usd(&db).await;
 
     // OWNER: approved at submit, by OWNER's own decision, reason proposer_is_owner
-    let d = create(&db, &e, &owner(), out_of_bound_usd()).await;
+    let d = create(&db, &e, &owner_user(), out_of_bound_usd()).await;
     let outcome = submit(&db, &e, &owner_user(), &d).await;
     assert_eq!(outcome.status, DraftStatus::Approved);
     let (request_id, status, _) = exactly_one_request(&db, &d).await;
@@ -441,7 +439,7 @@ async fn an_out_of_bound_submit_by_the_owner_is_approved_by_decide_self_and_rate
     );
 
     // RATES: the same lines wait; RATES may not close its own request through decide_self
-    let r = create(&db, &e, &rates(), out_of_bound_usd()).await;
+    let r = create(&db, &e, &rates_user(), out_of_bound_usd()).await;
     let pending = submit(&db, &e, &rates_user(), &r).await;
     assert_eq!(pending.status, DraftStatus::PendingApproval);
     let mut tx = db.begin().await;
@@ -486,16 +484,16 @@ async fn an_edit_moves_the_version_and_an_edit_after_submit_is_refused() {
     let db = TestDb::start().await;
     let e = db.engine();
     seed_usd(&db).await;
-    let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
+    let d = create(&db, &e, &rates_user(), out_of_bound_usd()).await;
 
     // before submit: the expected version must be the current one, and an edit moves it
-    let edited = try_edit(&db, &e, &rates(), &d, 1, in_bound_usd())
+    let edited = try_edit(&db, &e, &rates_user(), &d, 1, in_bound_usd())
         .await
         .expect("an edit at the current version");
     assert_eq!(edited.version, 2);
     assert_eq!(edited.lines, in_bound_usd());
     assert_eq!(
-        try_edit(&db, &e, &rates(), &d, 1, out_of_bound_usd())
+        try_edit(&db, &e, &rates_user(), &d, 1, out_of_bound_usd())
             .await
             .map(|_| ()),
         Err("staleVersion"),
@@ -505,7 +503,7 @@ async fn an_edit_moves_the_version_and_an_edit_after_submit_is_refused() {
     // after submit: refused at the current version too, and nothing changes
     submit(&db, &e, &rates_user(), &d).await;
     assert_eq!(
-        try_edit(&db, &e, &rates(), &d, 2, out_of_bound_usd())
+        try_edit(&db, &e, &rates_user(), &d, 2, out_of_bound_usd())
             .await
             .map(|_| ()),
         Err("staleVersion"),
@@ -536,7 +534,7 @@ async fn a_manual_side_without_a_reason_is_refused_at_save_and_writes_nothing() 
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .create(&mut tx, &main_branch(), &rates(), no_reason)
+        .create(&mut tx, &main_branch(), &rates_user(), no_reason)
         .await;
     assert_eq!(settle(tx, got).await.map(|_| ()), Err("validationFailed"));
     assert_eq!(db.count("rate_drafts").await, 0);
@@ -551,7 +549,7 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
     let db = TestDb::start().await;
     let e = db.engine();
     seed_usd(&db).await;
-    let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
+    let d = create(&db, &e, &rates_user(), out_of_bound_usd()).await;
     let pending = submit(&db, &e, &rates_user(), &d).await;
     decide(
         &db,
@@ -568,7 +566,7 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
 
     // nothing moves it any more
     assert_eq!(
-        try_edit(&db, &e, &rates(), &d, 1, in_bound_usd())
+        try_edit(&db, &e, &rates_user(), &d, 1, in_bound_usd())
             .await
             .map(|_| ()),
         Err("staleVersion")
@@ -592,7 +590,7 @@ async fn rejected_is_final_and_a_new_draft_is_a_copy_with_a_new_id() {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .copy(&mut tx, &main_branch(), &rates(), &d.id)
+        .copy(&mut tx, &main_branch(), &rates_user(), &d.id)
         .await;
     let copy = settle(tx, got).await.expect("a copy of a rejected draft");
     assert_ne!(copy.id, d.id, "never the same draft");
@@ -618,7 +616,7 @@ async fn publishing_a_pending_draft_is_approval_required_and_writes_nothing() {
     let db = TestDb::start().await;
     let e = db.engine();
     seed_usd(&db).await;
-    let d = create(&db, &e, &rates(), out_of_bound_usd()).await;
+    let d = create(&db, &e, &rates_user(), out_of_bound_usd()).await;
     // a draft never submitted, and a draft waiting for OWNER
     assert_eq!(
         try_publish(&db, &e, &d, None).await.map(|_| ()),
@@ -776,7 +774,7 @@ async fn two_concurrent_publishes_of_one_branch_have_exactly_one_winner() {
                 let mut tx = pool.begin().await.expect("begin");
                 barrier.wait().await;
                 let got = publisher
-                    .publish(&mut tx, &main_branch(), &owner(), &draft.id, expected)
+                    .publish(&mut tx, &main_branch(), &owner_user(), &draft.id, expected)
                     .await;
                 match got {
                     Ok(p) => {

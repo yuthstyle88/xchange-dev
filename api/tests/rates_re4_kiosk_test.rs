@@ -54,7 +54,6 @@ use kiosk_http_common::{Counter, audit_since};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
@@ -254,9 +253,7 @@ async fn publish_auto(
     .await
     .expect("insert into rate_policy_versions");
 
-    let owner = Actor::owner("owner");
-    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
-    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = xc_auth::domain::access::Actor::new(
         "owner",
         "00000000-0000-0000-0000-000000000001",
@@ -296,7 +293,7 @@ async fn publish_auto(
     ];
     let mut tx = pool.begin().await.expect("begin");
     let draft = drafts
-        .create(&mut tx, &main, &owner, lines)
+        .create(&mut tx, &main, &owner_user, lines)
         .await
         .unwrap_or_else(|e| panic!("create the draft: {}", e.code()));
     tx.commit().await.expect("commit the draft");
@@ -315,7 +312,7 @@ async fn publish_auto(
     .expect("read the current version");
     let mut tx = pool.begin().await.expect("begin");
     publisher
-        .publish(&mut tx, &main, &owner, &draft.id, expected)
+        .publish(&mut tx, &main, &owner_user, &draft.id, expected)
         .await
         .unwrap_or_else(|e| panic!("publish the draft: {}", e.code()));
     tx.commit().await.expect("commit the publish");

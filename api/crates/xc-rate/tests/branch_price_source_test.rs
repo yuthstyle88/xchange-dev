@@ -32,7 +32,7 @@ use rate_engine_common::*;
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::branch::price_source::{BranchPriceSource, PriceSource};
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, RateDraft};
@@ -68,7 +68,7 @@ async fn source_of(db: &TestDb, branch: &BranchId) -> Result<PriceSource, &'stat
 
 async fn set(
     db: &TestDb,
-    who: &Actor,
+    who: &access::Actor,
     branch: &BranchId,
     to: PriceSource,
 ) -> Result<(), &'static str> {
@@ -109,7 +109,7 @@ async fn approved_draft(db: &TestDb) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), lines)
+        .create(&mut tx, &main_branch(), &owner_user(), lines)
         .await;
     let d = settle(tx, got).await.expect("the draft is created");
     let mut tx = db.begin().await;
@@ -132,7 +132,7 @@ async fn draft_only(db: &TestDb) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), lines)
+        .create(&mut tx, &main_branch(), &owner_user(), lines)
         .await;
     settle(tx, got).await.expect("the draft is created")
 }
@@ -150,7 +150,7 @@ async fn a_branch_starts_on_bot_drafts() {
 #[tokio::test]
 async fn the_owner_switches_a_branch_to_the_board_and_it_is_audited() {
     let db = TestDb::start().await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("OWNER may switch");
     assert_eq!(column(&db, MAIN).await, "RATE_BOARD");
@@ -162,7 +162,7 @@ async fn the_owner_switches_a_branch_to_the_board_and_it_is_audited() {
     let rows = audit_rows(&db).await;
     assert_eq!(rows.len(), 1, "one audit event per switch");
     let (role, branch, before, after) = &rows[0];
-    assert_eq!(role, "OWNER");
+    assert_eq!(role, "EXECUTIVE");
     assert_eq!(branch, MAIN);
     assert!(
         before
@@ -187,7 +187,7 @@ async fn the_owner_switches_a_branch_to_the_board_and_it_is_audited() {
 async fn only_the_owner_may_switch() {
     let db = TestDb::start().await;
     assert_eq!(
-        set(&db, &rates(), &main_branch(), PriceSource::RateBoard).await,
+        set(&db, &rates_user(), &main_branch(), PriceSource::RateBoard).await,
         Err("outOfScope")
     );
     assert_eq!(column(&db, MAIN).await, "BOT_DRAFT", "nothing changed");
@@ -198,7 +198,7 @@ async fn only_the_owner_may_switch() {
 #[tokio::test]
 async fn setting_the_current_source_writes_nothing() {
     let db = TestDb::start().await;
-    set(&db, &owner(), &main_branch(), PriceSource::BotDraft)
+    set(&db, &owner_user(), &main_branch(), PriceSource::BotDraft)
         .await
         .expect("the same value is accepted");
     assert_eq!(column(&db, MAIN).await, "BOT_DRAFT");
@@ -215,7 +215,7 @@ async fn an_unknown_branch_is_not_found() {
     assert_eq!(
         set(
             &db,
-            &owner(),
+            &owner_user(),
             &BranchId::new("NO-SUCH-BRANCH"),
             PriceSource::RateBoard
         )
@@ -230,7 +230,7 @@ async fn a_bot_draft_cannot_be_published_on_a_board_branch() {
     let db = TestDb::start().await;
     let draft = approved_draft(&db).await;
     let before = db.publications(MAIN).await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("switch");
 
@@ -238,7 +238,7 @@ async fn a_bot_draft_cannot_be_published_on_a_board_branch() {
     let mut tx = db.begin().await;
     let got = e
         .publisher
-        .publish(&mut tx, &main_branch(), &owner(), &draft.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &draft.id, None)
         .await;
     assert_eq!(settle(tx, got).await.map(|_| ()), Err("validationFailed"));
     assert_eq!(
@@ -252,11 +252,11 @@ async fn a_bot_draft_cannot_be_published_on_a_board_branch() {
 #[tokio::test]
 async fn switching_back_with_set_alone_is_refused() {
     let db = TestDb::start().await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("switch");
     assert_eq!(
-        set(&db, &owner(), &main_branch(), PriceSource::BotDraft).await,
+        set(&db, &owner_user(), &main_branch(), PriceSource::BotDraft).await,
         Err("validationFailed"),
         "board prices must not keep selling after the board stops: switch back with a draft"
     );
@@ -268,14 +268,14 @@ async fn switching_back_with_set_alone_is_refused() {
 async fn switching_back_publishes_the_draft_in_the_same_transaction() {
     let db = TestDb::start().await;
     let draft = approved_draft(&db).await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("switch");
     let before = db.publications(MAIN).await.len();
 
     let mut tx = db.begin().await;
     let got = sources(&db)
-        .switch_back(&mut tx, &owner(), &main_branch(), &draft.id, None)
+        .switch_back(&mut tx, &owner_user(), &main_branch(), &draft.id, None)
         .await;
     settle(tx, got)
         .await
@@ -312,14 +312,20 @@ async fn switching_back_publishes_the_draft_in_the_same_transaction() {
 async fn a_failed_switch_back_leaves_the_branch_on_the_board() {
     let db = TestDb::start().await;
     let not_approved = draft_only(&db).await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("switch");
     let before = db.publications(MAIN).await;
 
     let mut tx = db.begin().await;
     let got = sources(&db)
-        .switch_back(&mut tx, &owner(), &main_branch(), &not_approved.id, None)
+        .switch_back(
+            &mut tx,
+            &owner_user(),
+            &main_branch(),
+            &not_approved.id,
+            None,
+        )
         .await;
     assert!(
         settle(tx, got).await.is_err(),
@@ -342,12 +348,12 @@ async fn a_failed_switch_back_leaves_the_branch_on_the_board() {
 async fn only_the_owner_may_switch_back() {
     let db = TestDb::start().await;
     let draft = approved_draft(&db).await;
-    set(&db, &owner(), &main_branch(), PriceSource::RateBoard)
+    set(&db, &owner_user(), &main_branch(), PriceSource::RateBoard)
         .await
         .expect("switch");
     let mut tx = db.begin().await;
     let got = sources(&db)
-        .switch_back(&mut tx, &rates(), &main_branch(), &draft.id, None)
+        .switch_back(&mut tx, &rates_user(), &main_branch(), &draft.id, None)
         .await;
     assert_eq!(settle(tx, got).await.map(|_| ()), Err("outOfScope"));
     assert_eq!(column(&db, MAIN).await, "RATE_BOARD");

@@ -21,7 +21,7 @@ use crate::application::executive::overview::{BranchHead, ExecutiveOverviewServi
 use crate::application::executive::ports::{BrokerNotConnected, ExecutiveFilter};
 use crate::bootstrap::AppState;
 use crate::infrastructure::executive::alert_facts::PgAlertFacts;
-use crate::infrastructure::executive::shift_balance_cash_facts::ShiftBalanceCashFacts;
+use crate::infrastructure::executive::ledger_cash_facts::LedgerCashFacts;
 use crate::infrastructure::executive::wide_transaction_facts::WideTransactionFacts;
 use crate::presentation::dto::v3::executive_overview::{
     ExecutiveOverviewData, ExecutiveOverviewFilter, OrgViewAnswer,
@@ -40,10 +40,11 @@ pub struct ExecutiveOverviewView {
 
 impl ExecutiveOverviewView {
     pub fn new(pool: PgPool) -> Self {
+        let cash = Arc::new(LedgerCashFacts::new(pool.clone()));
         let service = ExecutiveOverviewService::new(
             Arc::new(WideTransactionFacts::new(pool.clone())),
-            Arc::new(ShiftBalanceCashFacts::new(pool.clone())),
-            Arc::new(PgAlertFacts::new(pool.clone())),
+            cash.clone(),
+            Arc::new(PgAlertFacts::new(pool.clone(), cash)),
             Arc::new(BrokerNotConnected),
         );
         Self { pool, service }

@@ -45,7 +45,6 @@ use xc_approval::domain::approval_repository::ApprovalRepository;
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate};
@@ -269,8 +268,7 @@ impl TestDb {
         let approvals = Arc::new(ApprovalService::new(registry, repository, audit));
         let drafts = RateDraftService::new(self.pool.clone(), approvals);
         let publisher = PublishService::new(self.pool.clone());
-        let owner = Actor::owner("owner");
-        // OR-7.1 #1020 (§3.3): `submit` takes the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+        // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
         let owner_user = xc_auth::domain::access::Actor::new(
             "owner",
             "00000000-0000-0000-0000-000000000001",
@@ -308,7 +306,7 @@ impl TestDb {
 
         let mut tx = self.pool.begin().await.expect("begin");
         let draft = drafts
-            .create(&mut tx, &b, &owner, draft_lines)
+            .create(&mut tx, &b, &owner_user, draft_lines)
             .await
             .unwrap_or_else(|e| panic!("create the draft: {}", e.code()));
         tx.commit().await.expect("commit the draft");
@@ -323,7 +321,7 @@ impl TestDb {
         let mut tx = self.pool.begin().await.expect("begin");
         let expected = self.current_version(&mut tx, branch_id).await;
         let published = publisher
-            .publish(&mut tx, &b, &owner, &draft.id, expected)
+            .publish(&mut tx, &b, &owner_user, &draft.id, expected)
             .await
             .unwrap_or_else(|e| panic!("publish the draft: {}", e.code()));
         tx.commit().await.expect("commit the publish");

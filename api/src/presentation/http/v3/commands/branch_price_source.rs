@@ -14,7 +14,6 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -30,8 +29,7 @@ use xc_rate::infrastructure::branch::price_source::PgBranchPriceSource;
 use super::commands::map_rate_engine_error;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::extractors::actor::legacy_actor;
-use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -86,8 +84,6 @@ impl CommandAction for BranchPriceSourceCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        // OR-7 bridge, removed by #1026
-        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         match (input.price_source, input.draft_id) {
             (PriceSource::BotDraft, Some(draft_id_str)) => {
                 let draft_uuid = Uuid::from_str(&draft_id_str).map_err(|_| {
@@ -103,7 +99,7 @@ impl CommandAction for BranchPriceSourceCommand {
                     .sources
                     .switch_back(
                         tx,
-                        &legacy,
+                        who,
                         branch,
                         &draft_id,
                         input.expected_version,
@@ -120,7 +116,7 @@ impl CommandAction for BranchPriceSourceCommand {
             }
             (PriceSource::BotDraft, None) => {
                 self.sources
-                    .set(tx, &legacy, branch, PriceSource::BotDraft)
+                    .set(tx, who, branch, PriceSource::BotDraft)
                     .await
                     .map_err(map_rate_engine_error)?;
 
@@ -133,7 +129,7 @@ impl CommandAction for BranchPriceSourceCommand {
             }
             (PriceSource::RateBoard, _) => {
                 self.sources
-                    .set(tx, &legacy, branch, PriceSource::RateBoard)
+                    .set(tx, who, branch, PriceSource::RateBoard)
                     .await
                     .map_err(map_rate_engine_error)?;
 

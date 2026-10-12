@@ -55,7 +55,7 @@ async fn create(db: &TestDb, e: &Engine, lines: Vec<DraftLine>) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), lines)
+        .create(&mut tx, &main_branch(), &owner_user(), lines)
         .await;
     settle(tx, got).await.expect("the draft is created")
 }
@@ -67,7 +67,7 @@ async fn edit(db: &TestDb, e: &Engine, draft: &RateDraft, lines: Vec<DraftLine>)
         .edit(
             &mut tx,
             &main_branch(),
-            &owner(),
+            &owner_user(),
             &draft.id,
             draft.version,
             lines,
@@ -89,7 +89,7 @@ async fn publish(db: &TestDb, e: &Engine, draft: &RateDraft) -> PublicationRef {
     let mut tx = db.begin().await;
     let got = e
         .publisher
-        .publish(&mut tx, &main_branch(), &owner(), &draft.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &draft.id, None)
         .await;
     settle(tx, got).await.expect("the publish is accepted")
 }

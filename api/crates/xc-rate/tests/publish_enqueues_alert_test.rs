@@ -103,7 +103,7 @@ async fn approved(db: &TestDb, e: &Engine, branch: &BranchId) -> RateDraft {
     let mut tx = db.begin().await;
     let got = e
         .drafts
-        .create(&mut tx, branch, &owner(), out_of_bound_usd())
+        .create(&mut tx, branch, &owner_user(), out_of_bound_usd())
         .await;
     let d = settle(tx, got).await.expect("the draft is created");
     let mut tx = db.begin().await;
@@ -131,7 +131,7 @@ async fn publish(
     let mut tx = db.begin().await;
     let got = e
         .publisher
-        .publish(&mut tx, branch, &owner(), &draft.id, expected_version)
+        .publish(&mut tx, branch, &owner_user(), &draft.id, expected_version)
         .await;
     settle(tx, got).await
 }
@@ -249,7 +249,7 @@ async fn a_publish_whose_caller_rolls_back_writes_no_row() {
     let second = approved(&db, &e, &main_branch()).await;
     let mut tx = db.begin().await;
     e.publisher
-        .publish(&mut tx, &main_branch(), &owner(), &second.id, Some(1))
+        .publish(&mut tx, &main_branch(), &owner_user(), &second.id, Some(1))
         .await
         .expect("the second publish succeeds inside the caller's transaction");
     tx.rollback().await.expect("the caller rolls back");

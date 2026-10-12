@@ -69,7 +69,7 @@ async fn publish_with_reference_aged(db: &TestDb, e: &Engine, age_hours: i64) ->
     let mut tx = db.begin().await;
     let d = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), lines)
+        .create(&mut tx, &main_branch(), &owner_user(), lines)
         .await
         .expect("create");
     tx.commit().await.expect("commit");
@@ -87,7 +87,7 @@ async fn publish_with_reference_aged(db: &TestDb, e: &Engine, age_hours: i64) ->
     );
     let mut tx = db.begin().await;
     e.publisher
-        .publish(&mut tx, &main_branch(), &owner(), &d.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &d.id, None)
         .await
         .expect("publish");
     tx.commit().await.expect("commit");

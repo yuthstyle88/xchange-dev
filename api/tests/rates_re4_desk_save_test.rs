@@ -81,7 +81,6 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use save_common::rates_re4c_common::{d, line, publish};
 use save_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::application::booking::service::BookingService;
 use xc_exchange::infrastructure::booking::booking_ids::UuidBookingIds;
@@ -858,9 +857,7 @@ async fn a_reference_rate_sent_per_1_is_stored_per_unit() {
 /// Publish `lines` (AUTO or MANUAL) as the next publication of `branch`, as the owner, through
 /// the rate engine, as `rates_re4_common::publish` does for MANUAL lines.
 async fn publish_lines(shop: &Shop, branch_id: &str, lines: Vec<DraftLine>) {
-    let owner = Actor::owner("owner");
-    // OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: `submit` takes the
-    // owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
+    // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = xc_auth::domain::access::Actor::new(
         "owner",
         "00000000-0000-0000-0000-000000000001",
@@ -885,7 +882,7 @@ async fn publish_lines(shop: &Shop, branch_id: &str, lines: Vec<DraftLine>) {
     let publisher = PublishService::new(shop.pool.clone());
     let mut tx = shop.pool.begin().await.expect("begin");
     let draft = drafts
-        .create(&mut tx, &b, &owner, lines)
+        .create(&mut tx, &b, &owner_user, lines)
         .await
         .unwrap_or_else(|e| panic!("create the draft: {}", e.code()));
     tx.commit().await.expect("commit the draft");
@@ -905,7 +902,7 @@ async fn publish_lines(shop: &Shop, branch_id: &str, lines: Vec<DraftLine>) {
     .expect("read the current version");
     let mut tx = shop.pool.begin().await.expect("begin");
     publisher
-        .publish(&mut tx, &b, &owner, &draft.id, expected)
+        .publish(&mut tx, &b, &owner_user, &draft.id, expected)
         .await
         .unwrap_or_else(|e| panic!("publish the draft: {}", e.code()));
     tx.commit().await.expect("commit the publish");

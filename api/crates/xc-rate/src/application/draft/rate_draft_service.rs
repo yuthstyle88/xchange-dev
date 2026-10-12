@@ -8,8 +8,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
 use xc_approval::domain::request::RequestId;
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
 
@@ -58,7 +57,7 @@ impl RateDraftService {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &access::Actor,
         lines: Vec<DraftLine>,
     ) -> Result<RateDraft, RateEngineError> {
         // Validate manual reasons upfront
@@ -77,7 +76,7 @@ impl RateDraftService {
 
         let draft_id = DraftId::generate();
         let branch_str = branch.as_str();
-        let who_str = who.id();
+        let who_str = who.user_id.as_str();
 
         // Find active policy version for branch
         let policy_row: Option<(Uuid,)> = sqlx::query_as(
@@ -159,7 +158,7 @@ impl RateDraftService {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        _who: &access::Actor,
         id: &DraftId,
         expected_version: i32,
         lines: Vec<DraftLine>,
@@ -458,7 +457,7 @@ impl RateDraftService {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
-        who: &AccessActor,
+        who: &access::Actor,
         id: &DraftId,
         key: &str,
     ) -> Result<SubmitOutcome, RateEngineError> {
@@ -556,7 +555,7 @@ impl RateDraftService {
                 .await;
             decide_res.map_err(|e| RateEngineError::Internal(e.to_string()))?;
             DraftStatus::Approved
-        } else if who.roles.iter().any(|r| r.role == AccessRole::Executive) {
+        } else if who.roles.iter().any(|r| r.role == access::Role::Executive) {
             let decide_res = self
                 .approvals
                 .decide_self(tx, &request.id, who, "proposer_is_owner")
@@ -582,7 +581,7 @@ impl RateDraftService {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        who: &access::Actor,
         from: &DraftId,
     ) -> Result<RateDraft, RateEngineError> {
         let from_row: Option<(String,)> =

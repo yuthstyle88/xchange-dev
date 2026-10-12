@@ -82,7 +82,12 @@ async fn publish_stale_usd(
     let mut tx = db.begin().await;
     let d = e
         .drafts
-        .create(&mut tx, &main_branch(), &owner(), vec![auto_line("USD")])
+        .create(
+            &mut tx,
+            &main_branch(),
+            &owner_user(),
+            vec![auto_line("USD")],
+        )
         .await
         .expect("create");
     tx.commit().await.expect("commit");
@@ -100,7 +105,7 @@ async fn publish_stale_usd(
     );
     let mut tx = db.begin().await;
     e.publisher
-        .publish(&mut tx, &main_branch(), &owner(), &d.id, None)
+        .publish(&mut tx, &main_branch(), &owner_user(), &d.id, None)
         .await
         .expect("publish");
     tx.commit().await.expect("commit");
