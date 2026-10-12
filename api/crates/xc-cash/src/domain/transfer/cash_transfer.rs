@@ -132,6 +132,16 @@ pub struct TransferLine {
     pub qty_received: Option<i32>,
 }
 
+impl TransferLine {
+    pub fn sent_minor(&self) -> i64 {
+        self.face_value.minor() * (self.qty_sent as i64)
+    }
+
+    pub fn received_minor(&self) -> i64 {
+        self.face_value.minor() * (self.qty_received.unwrap_or(0) as i64)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CashTransfer {
     pub id: String,

@@ -216,13 +216,15 @@ impl ReconciliationService {
         }
     }
 
-    /// What F01's view and command run on: EX-3's exchange facts and, until FN-2 swaps this line,
-    /// `UnavailableParts`.
+    /// What F01's view and command run on: EX-3's exchange facts and FN-2's `SheetParts`.
     pub fn standard(pool: PgPool) -> Self {
         Self::new(
             pool.clone(),
-            Arc::new(WideTransactionFacts::new(pool)),
-            Arc::new(UnavailableParts),
+            Arc::new(WideTransactionFacts::new(pool.clone())),
+            Arc::new(super::sheet_parts::SheetParts::new(
+                pool,
+                Arc::new(xc_cash::application::reconcile::Reconcile::standard()),
+            )),
         )
     }
 

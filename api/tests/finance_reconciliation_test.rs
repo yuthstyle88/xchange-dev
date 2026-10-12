@@ -1198,20 +1198,16 @@ async fn a_certification_cannot_be_updated_or_deleted() {
 
 // ------------------------------------------------------------ §9 row 11: UnavailableParts
 
-/// §9 "`UnavailableParts`": until FN-2, counts, transfers, integrity and reversalsPending read `available: false`,
-/// each naming the ticket it waits for, with no data.
+/// §9: FN-2 #1069 made them available; counts, transfers, integrity and reversalsPending read `available: true`
+/// through the real `ReconciliationService::standard` wiring.
 #[actix_web::test]
 async fn the_four_fn2_parts_are_unavailable_with_their_tickets() {
     let room = Room::start().await;
     let s = sheet(&room, CERTIFIER, B1, DAY).await;
-    for (part, ticket) in WAITING {
+    for (part, _) in WAITING {
         let p = &s[part];
-        assert_eq!(p["available"], false, "{part}: {s}");
-        let reason = p["reason"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{part}.reason is a string: {s}"));
-        assert!(reason.contains(ticket), "{part} waits for {ticket}: {s}");
-        assert!(p["data"].is_null(), "{part}.data: {s}");
+        assert_eq!(p["available"], true, "{part}: {s}");
+        assert!(!p["data"].is_null(), "{part}.data: {s}");
     }
     room.finish().await;
 }
