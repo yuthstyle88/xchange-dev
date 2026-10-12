@@ -128,6 +128,7 @@ pub fn actor_of(who: &SignedIn) -> Option<Actor> {
     }
 }
 
+use crate::presentation::extractors::session_actor::{actor_of_user, resolve_session_actor};
 use chrono::{DateTime, Utc};
 use xc_auth::application::session::SessionService;
 use xc_auth::domain::access::ScopedRole;
@@ -205,18 +206,16 @@ impl SessionReader for AccountSessionReader {
             if !session_token.is_empty() {
                 if let Some(session_svc) = req.app_data::<web::Data<SessionService>>() {
                     let now_utc = Utc::now();
-                    if let Ok(Some(session)) =
-                        session_svc.active_session(&session_token, now_utc).await
+                    // SB-1 §14.3: the actor works in the session's effective branch. Reading never writes it.
+                    // #654: its `customer_id` comes from the customer link (`resolve_session_actor`).
+                    if let Some(access_actor) = resolve_session_actor(
+                        session_svc,
+                        session_svc.pool(),
+                        &session_token,
+                        now_utc,
+                    )
+                    .await
                     {
-                        // SB-1 §14.3: the actor works in the session's effective branch. Reading never writes it.
-                        let branch = session.effective_branch(now_utc);
-                        let access_actor = xc_auth::domain::access::Actor::new(
-                            &session.user.id,
-                            &session.user.organization_id,
-                            session.roles,
-                            None,
-                        )
-                        .with_branch(branch);
                         let legacy = legacy_actor(&access_actor, now_utc);
                         let (owner, staff) = match legacy.as_ref().map(|l| l.kind()) {
                             Some(ActorKind::Owner) => (legacy.clone(), None),
@@ -331,6 +330,18 @@ pub async fn identity_session(
         .await
         .ok()
         .flatten()
+}
+
+/// The Blueprint session a request carries as its user and `access::Actor` (`customer_id` from the customer link,
+/// #654), or `None` as [`identity_session`] answers it.
+pub async fn identity_session_actor(
+    req: &HttpRequest,
+    now: DateTime<Utc>,
+) -> Option<(xc_auth::domain::user::User, xc_auth::domain::access::Actor)> {
+    let (user, roles) = identity_session(req, now).await?;
+    let sessions = req.app_data::<web::Data<SessionService>>()?;
+    let actor = actor_of_user(sessions.pool(), &user, roles).await?;
+    Some((user, actor))
 }
 
 pub async fn callers(req: &HttpRequest) -> Callers {

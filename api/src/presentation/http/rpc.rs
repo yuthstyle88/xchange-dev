@@ -72,8 +72,8 @@ use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
-    Accounts, accounts, actor_of, identity_session, legacy_actor, password_session, same_origin,
-    server_error, staff_actor, staff_password_session,
+    Accounts, accounts, actor_of, identity_session, identity_session_actor, legacy_actor,
+    password_session, same_origin, server_error, staff_actor, staff_password_session,
 };
 use crate::presentation::pages;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
@@ -300,9 +300,7 @@ pub(crate) async fn caller_of_rpc(
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
-    if let Some((user, roles)) = identity_session(req, now).await {
-        let access_actor =
-            xc_auth::domain::access::Actor::new(&user.id, &user.organization_id, roles, None);
+    if let Some((user, access_actor)) = identity_session_actor(req, now).await {
         return Ok(legacy_actor(&access_actor, now).map(|actor| RpcCaller {
             actor,
             username: user.id,
@@ -321,9 +319,7 @@ async fn caller_of_staff_rpc(
     now: DateTime<Utc>,
 ) -> Result<RpcCaller, RpcFailure> {
     let route = RpcRoute::StaffRpc;
-    if let Some((user, roles)) = identity_session(req, now).await {
-        let access_actor =
-            xc_auth::domain::access::Actor::new(&user.id, &user.organization_id, roles, None);
+    if let Some((user, access_actor)) = identity_session_actor(req, now).await {
         return match legacy_actor(&access_actor, now) {
             Some(actor) if actor.kind() == ActorKind::Staff => Ok(RpcCaller {
                 actor,

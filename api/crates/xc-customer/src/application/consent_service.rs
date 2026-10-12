@@ -110,45 +110,64 @@ impl ConsentService {
         reg: Registration,
         now: DateTime<Utc>,
     ) -> AppResult<String> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        let customer_id = Self::register_in(&mut tx, org, reg, now).await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(customer_id)
+    }
+
+    /// The newest version of `purpose`'s text in `lang`, or `None` when none is published (§4.3).
+    pub async fn current_version_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: &str,
+        purpose: Purpose,
+        lang: &str,
+    ) -> AppResult<Option<i32>> {
+        let org_id = Uuid::parse_str(org).map_err(|e| AppError::Domain(e.to_string()))?;
+        sqlx::query_scalar(
+            "SELECT MAX(version) FROM consent_texts \
+             WHERE organization_id = $1 AND purpose = $2 AND lang = $3",
+        )
+        .bind(org_id)
+        .bind(purpose.as_str())
+        .bind(lang)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    /// [`Self::register`] in the caller's transaction (#654 CI-7: customer register writes the user, its role and
+    /// the customer in one transaction). The TERMS text (and MARKETING's, when channels are chosen) must exist in
+    /// `reg.lang`; otherwise `ConsentError::TextMissing` and nothing is written.
+    pub async fn register_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: &str,
+        reg: Registration,
+        now: DateTime<Utc>,
+    ) -> AppResult<String> {
         let org_id = Uuid::parse_str(org).map_err(|e| AppError::Domain(e.to_string()))?;
         let user_id = Uuid::parse_str(&reg.user_id).map_err(|e| AppError::Domain(e.to_string()))?;
 
-        let terms_version: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(version) FROM consent_texts \
-             WHERE organization_id = $1 AND purpose = 'TERMS' AND lang = $2",
-        )
-        .bind(org_id)
-        .bind(&reg.lang)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(AppError::Database)?;
-
-        let terms_ver = terms_version.ok_or(ConsentError::TextMissing)?;
+        let terms_ver = Self::current_version_in(tx, org, Purpose::Terms, &reg.lang)
+            .await?
+            .ok_or(ConsentError::TextMissing)?;
 
         let marketing_ver = if !reg.marketing.is_empty() {
-            let m_ver: Option<i32> = sqlx::query_scalar(
-                "SELECT MAX(version) FROM consent_texts \
-                 WHERE organization_id = $1 AND purpose = 'MARKETING' AND lang = $2",
+            Some(
+                Self::current_version_in(tx, org, Purpose::Marketing, &reg.lang)
+                    .await?
+                    .ok_or(ConsentError::TextMissing)?,
             )
-            .bind(org_id)
-            .bind(&reg.lang)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(AppError::Database)?;
-
-            Some(m_ver.ok_or(ConsentError::TextMissing)?)
         } else {
             None
         };
-
-        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
 
         let next_val: i64 = sqlx::query_scalar(
             "INSERT INTO counters (key, value) VALUES ('customer-LIVE', 1) \
              ON CONFLICT (key) DO UPDATE SET value = counters.value + 1 WHERE counters.value < 999999999 \
              RETURNING value",
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
@@ -166,7 +185,7 @@ impl ConsentService {
         .bind(&reg.lang)
         .bind(user_id)
         .bind(now)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
@@ -183,7 +202,7 @@ impl ConsentService {
         .bind(&reg.lang)
         .bind(now)
         .bind(&reg.evidence_ref)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
@@ -203,13 +222,11 @@ impl ConsentService {
                 .bind(&reg.lang)
                 .bind(now)
                 .bind(&reg.evidence_ref)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await
                 .map_err(AppError::Database)?;
             }
         }
-
-        tx.commit().await.map_err(AppError::Database)?;
 
         Ok(customer_id)
     }
@@ -220,10 +237,24 @@ impl ConsentService {
         choice: ConsentChoice,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        Self::record_in(&mut tx, customer_id, choice, now).await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(())
+    }
+
+    /// [`Self::record`] in the caller's transaction (#654 CI-7: `consentRecord` runs in the command seam's).
+    /// Answers the text version the choice was recorded against.
+    pub async fn record_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        customer_id: &str,
+        choice: ConsentChoice,
+        now: DateTime<Utc>,
+    ) -> AppResult<i32> {
         let org_id: Option<Uuid> =
             sqlx::query_scalar("SELECT organization_id FROM customers WHERE id = $1")
                 .bind(customer_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -232,18 +263,10 @@ impl ConsentService {
             id: customer_id.to_string(),
         })?;
 
-        let version: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(version) FROM consent_texts \
-             WHERE organization_id = $1 AND purpose = $2 AND lang = $3",
-        )
-        .bind(org_id)
-        .bind(choice.purpose.as_str())
-        .bind(&choice.lang)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(AppError::Database)?;
-
-        let version = version.ok_or(ConsentError::TextMissing)?;
+        let version =
+            Self::current_version_in(tx, &org_id.to_string(), choice.purpose, &choice.lang)
+                .await?
+                .ok_or(ConsentError::TextMissing)?;
 
         let rec_by = choice
             .recorded_by
@@ -269,11 +292,11 @@ impl ConsentService {
         .bind(now)
         .bind(&choice.evidence_ref)
         .bind(rec_by)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
-        Ok(())
+        Ok(version)
     }
 
     pub async fn marketing_allowed(&self, customer_id: &str, channel: Channel) -> AppResult<bool> {

@@ -2,6 +2,7 @@
 pub mod auth;
 pub mod bookings;
 pub mod client_address;
+pub mod customer_register;
 pub mod customers;
 pub mod device_agent;
 pub mod device_setup;
@@ -26,6 +27,7 @@ use crate::bootstrap::AppState;
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     health::configure(cfg);
     auth::configure(cfg, state);
+    customer_register::configure(cfg);
     bookings::configure(cfg, state);
     customers::configure(cfg, state);
     device_agent::configure(cfg, state);
