@@ -140,7 +140,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python3 - <<'PY'
-          import json, os, sys, urllib.request
+          import json, os, sys, time, urllib.request
 
           LINUX_POOL = '["self-hosted","Linux","X64"]'
           FAST_MAC_POOL = '["self-hosted","macOS","ARM64","fast-mac"]'
@@ -154,7 +154,11 @@ jobs:
                   with open(output_file, "a") as f:
                       f.write(f"runs_on={val}\n")
 
+          start = time.monotonic()
+
           def fetch_json(url):
+              if time.monotonic() - start > 45:
+                  raise Exception("overall deadline exceeded (> 45s)")
               req = urllib.request.Request(
                   url,
                   headers={
@@ -163,7 +167,7 @@ jobs:
                       "User-Agent": "api-pool-select",
                   }
               )
-              with urllib.request.urlopen(req, timeout=15) as resp:
+              with urllib.request.urlopen(req, timeout=5) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
           try:
