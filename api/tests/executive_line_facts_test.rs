@@ -390,6 +390,24 @@ async fn reversal(
     .await
     .expect("its approval request");
     let posted = status == "POSTED";
+    let posting_id = if posted {
+        let pid = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+             VALUES ($1, $2::uuid, $3, 'REVERSAL', $4, 'reversal', 'POSTED', $5, 'finance')",
+        )
+        .bind(pid)
+        .bind(ORG)
+        .bind(branch)
+        .bind(original.0.to_string())
+        .bind(at)
+        .execute(&room.pool)
+        .await
+        .expect("ledger posting");
+        Some(pid)
+    } else {
+        None
+    };
     sqlx::query(
         "INSERT INTO reversals (organization_id, branch_id, original_transaction_id, status, reason, amount_thb, \
            business_date, approval_request_id, posting_id, receipt_id, requested_by, requested_at, posted_by, posted_at, created_at, updated_at) \
@@ -402,7 +420,7 @@ async fn reversal(
     .bind(amount)
     .bind(ORIGINAL_DAY)
     .bind(request)
-    .bind(posted.then(Uuid::new_v4))
+    .bind(posting_id)
     .bind(posted.then_some(original.1))
     .bind(posted.then_some("finance"))
     .bind(posted.then_some(at))

@@ -799,13 +799,26 @@ impl Day {
         .execute(&pool)
         .await
         .expect("the reversal's receipt row");
+        let posting_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+             VALUES ($1, $2::uuid, $3, 'REVERSAL', $4, 'reversal', 'POSTED', $5, 'employee-manager')",
+        )
+        .bind(posting_id)
+        .bind(ORG_1)
+        .bind(MAIN)
+        .bind(original.0.to_string())
+        .bind(at)
+        .execute(&pool)
+        .await
+        .expect("ledger posting");
         let mut tx = pool.begin().await.unwrap();
         PgReversalRepository::new(pool.clone())
             .post_in(
                 &mut tx,
                 reversal.id,
                 &PostedReversalRow {
-                    posting_id: uuid::Uuid::new_v4(),
+                    posting_id,
                     receipt_id: receipt,
                     shift_id: None,
                     posted_by: "employee-manager".to_owned(),

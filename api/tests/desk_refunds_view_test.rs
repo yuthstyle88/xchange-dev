@@ -314,8 +314,14 @@ async fn reversal_of(
                 'RECEIPT-{branch}', 'REVERSAL', '{POSTED_AT}', '{POSTED_AT}')"
         ))
         .await;
+        let posting_id = uuid::Uuid::new_v4().to_string();
+        db.exec(&format!(
+            "INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, source_key, status, posted_at, posted_by) \
+             VALUES ('{posting_id}', {org}, '{branch}', 'REVERSAL', '{id}', 'reversal', 'POSTED', '{POSTED_AT}', 'EMP-FRONT')"
+        ))
+        .await;
         (
-            format!("'{}'", uuid::Uuid::new_v4()),
+            format!("'{posting_id}'"),
             format!("'{receipt}'"),
             "'EMP-FRONT'".to_owned(),
             format!("'{POSTED_AT}'"),

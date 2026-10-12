@@ -1069,7 +1069,7 @@ async fn a_pending_rate_request_is_one_alert_with_its_drilldown() {
 /// Realized margin, booking conversion and commission are `unavailable` with `AwaitsLedger`,
 /// `AwaitsBookingDesign` and `AwaitsBroker` (D-2): no value poses as a figure.
 #[actix_web::test]
-async fn the_three_unavailable_metrics_carry_their_reasons() {
+async fn the_unavailable_metrics_carry_their_reasons_and_an_empty_booking_cohort_is_no_data() {
     let room = Room::start().await;
     room.exchange(Ex {
         side: "SELL",
@@ -1086,13 +1086,18 @@ async fn the_three_unavailable_metrics_carry_their_reasons() {
     assert_eq!(keys, KPI_KEYS, "the six KPIs of E-1, in order");
     for (key, reason) in [
         ("realized_margin_thb", "awaitsLedger"),
-        ("booking_conversion", "awaitsBookingDesign"),
         ("commission_thb", "awaitsBroker"),
     ] {
         let m = kpi(&d, key);
         assert!(m["value"].is_null(), "{key} has no value: {m}");
         assert_eq!(m["unavailable"], reason, "{key}: {m}");
     }
+    let m = kpi(&d, "booking_conversion");
+    assert!(m["value"].is_null(), "booking_conversion has no value: {m}");
+    assert!(
+        m["unavailable"].is_null(),
+        "booking_conversion is available with no data: {m}"
+    );
     for key in ["buy_volume_thb", "sell_volume_thb", "repeat_customers"] {
         let m = kpi(&d, key);
         assert!(m["unavailable"].is_null(), "{key} is available: {m}");
