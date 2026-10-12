@@ -107,14 +107,16 @@ impl TestDb {
         migrator
     }
 
-    /// Apply every migration except M1 — the state of a database deployed before QU-A1.
+    /// Apply every migration except M1 — the state of a database deployed before QU-A1. BK-1's
+    /// `*_booking_slots.sql` re-points `queue_tickets.booking_id`, so it deploys after M1 and is held back
+    /// with it (`docs/design/blueprint/booking-slots.md` §8 M1 item 3).
     pub async fn migrate_all_but_m1(&self) {
         let _slot = STARTING.acquire().await.expect("never closed");
         let mut migrator = self.migrator().await;
         let kept: Vec<_> = migrator
             .migrations
             .iter()
-            .filter(|m| m.version != M1)
+            .filter(|m| m.version != M1 && m.description != "booking slots")
             .cloned()
             .collect();
         migrator.migrations = Cow::Owned(kept);
@@ -227,13 +229,27 @@ impl TestDb {
         .await;
     }
 
-    /// A CONFIRMED booking (the shape `20261008130000_bookings.sql` and later migrations need).
+    /// A CONFIRMED Blueprint booking of `branch` (BK-1's `*_booking_slots.sql`: `queue_tickets.booking_id`
+    /// names the new `bookings`), with its own customer and OPEN slot.
     pub async fn add_booking(&self, branch: &str, id: &str) {
         self.exec(&format!(
-            "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
-                 amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by) \
-             VALUES ('{id}', '{branch}', 'req-{id}', 'hash', 'Booked', '0800000000', 'BUY', 'USD', \
-                 100.00, 35.0000, 'CONFIRMED', now(), 'test', now() + interval '1 hour', now(), 'test')"
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             SELECT 'CU-{id}', organization_id, 'CU-{id}', 'Booked', 'LIVE', now() FROM branches WHERE id = '{branch}'"
+        ))
+        .await;
+        self.exec(&format!(
+            "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, \
+                 capacity, reserved, status) \
+             SELECT gen_random_uuid(), organization_id, id, current_date, now() + interval '1 hour', \
+                 now() + interval '90 minutes', 4, 1, 'OPEN' FROM branches WHERE id = '{branch}'"
+        ))
+        .await;
+        self.exec(&format!(
+            "INSERT INTO bookings (id, organization_id, branch_id, booking_no, customer_id, slot_id, shop_side, \
+                 requested_currency, requested_quantity, source_channel, status, qr_token_hash, created_by) \
+             SELECT '{id}', s.organization_id, s.branch_id, 'B-{id}', 'CU-{id}', s.id, 'BUY', 'USD', 100, 'DESK', \
+                 'CONFIRMED', convert_to('qr-{id}', 'UTF8'), 'test' \
+             FROM booking_slots s WHERE s.branch_id = '{branch}' ORDER BY s.created_at DESC LIMIT 1"
         ))
         .await;
     }

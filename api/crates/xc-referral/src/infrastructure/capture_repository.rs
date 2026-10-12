@@ -48,12 +48,9 @@ impl CaptureRepository for PgCaptureRepository {
                     }
                 }
                 CaptureTarget::Booking(booking_id) => {
+                    // A Blueprint booking (BK-1 M1); a v2 booking id is not in `bookings`, so it is `NoSuchTarget`.
                     let row = sqlx::query(
-                        "SELECT bk.branch_id, b.organization_id, m.customer_id \
-                         FROM bookings bk \
-                         JOIN branches b ON b.id = bk.branch_id \
-                         LEFT JOIN members m ON m.id = bk.member_id \
-                         WHERE bk.id = $1",
+                        "SELECT branch_id, organization_id, customer_id FROM bookings WHERE id = $1",
                     )
                     .bind(booking_id)
                     .fetch_optional(&mut **tx)
@@ -61,17 +58,11 @@ impl CaptureRepository for PgCaptureRepository {
                     .map_err(CaptureError::from)?;
 
                     match row {
-                        Some(r) => {
-                            let customer_id: Option<String> = r.get("customer_id");
-                            match customer_id {
-                                Some(cid) => Ok(TargetInfo {
-                                    organization_id: r.get("organization_id"),
-                                    branch_id: r.get("branch_id"),
-                                    customer_id: cid,
-                                }),
-                                None => Err(CaptureError::NoCustomer),
-                            }
-                        }
+                        Some(r) => Ok(TargetInfo {
+                            organization_id: r.get("organization_id"),
+                            branch_id: r.get("branch_id"),
+                            customer_id: r.get("customer_id"),
+                        }),
                         None => Err(CaptureError::NoSuchTarget),
                     }
                 }

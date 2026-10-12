@@ -253,6 +253,11 @@ async fn old_row(db: &TestDb, t: &Old, receipt: bool, slip: bool) -> String {
     id
 }
 
+/// `booking_sql` on a database past BK-1's `*_booking_slots.sql` (#1377), where v2's table is `v2_bookings`.
+fn v2_booking_sql(id: &str, org: &str, branch: &str, number: &str) -> String {
+    booking_sql(id, org, branch, number).replacen("INTO bookings", "INTO v2_bookings", 1)
+}
+
 /// A booking USED by the exchange numbered `number`, in `org`'s branch `branch`.
 fn booking_sql(id: &str, org: &str, branch: &str, number: &str) -> String {
     format!(
@@ -811,18 +816,19 @@ async fn a_booking_points_at_a_number_of_its_own_organisation() {
     db.exec(&tx_sql(COMPLETED)).await;
     let number = "TEST-XC-20261006-000009";
     assert_eq!(
-        db.outcome(&booking_sql("BK-1", ORG_1, "MAIN", number))
+        db.outcome(&v2_booking_sql("BK-1", ORG_1, "MAIN", number))
             .await,
         "ok",
         "a booking of org 1 used by org 1's exchange"
     );
     assert_eq!(
-        db.outcome(&booking_sql("BK-2", ORG_2, "B2", number)).await,
+        db.outcome(&v2_booking_sql("BK-2", ORG_2, "B2", number))
+            .await,
         FOREIGN_KEY,
         "a booking of org 2 cannot point at org 1's number"
     );
     assert_eq!(
-        db.outcome(&booking_sql(
+        db.outcome(&v2_booking_sql(
             "BK-3",
             ORG_1,
             "MAIN",

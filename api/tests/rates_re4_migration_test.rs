@@ -562,7 +562,8 @@ async fn migration_5_adds_a_nullable_line_id_referencing_published_rate_lines() 
         .await
         .expect("apply api/migrations");
 
-    for table in ["transactions", "kiosk_requests", "bookings"] {
+    // Every migration ran, so v2's `bookings` is `v2_bookings` (BK-1's `*_booking_slots.sql`, #1377).
+    for table in ["transactions", "kiosk_requests", "v2_bookings"] {
         let column: Option<(String, String)> = sqlx::query_as(
             "SELECT data_type, is_nullable FROM information_schema.columns \
              WHERE table_schema = current_schema() AND table_name = $1 \

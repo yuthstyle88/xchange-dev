@@ -654,15 +654,7 @@ async fn ticket_commands_change_the_stored_state() {
     };
 
     // A BOOKING ticket with a later sequence than two WALK_INs: call order takes it first (QU-3).
-    sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
-             amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by) \
-         VALUES ('BK-E1', $1, 'req-bk-e1', 'he1', 'Booked', '0800000009', 'BUY', 'USD', 100, 35, 'CONFIRMED', now(), 't', now() + interval '1h', now(), 't')",
-    )
-    .bind(B01)
-    .execute(&db.pool)
-    .await
-    .expect("insert booking");
+    blueprint_booking(&db.pool, B01, "BK-E1").await;
     let (b7, w1, w2) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     sqlx::query(
         "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, issued_at, idempotency_key, booking_id) \
@@ -904,17 +896,8 @@ async fn queue_board_view_returns_waiting_in_call_order_called_and_my_counter() 
     let t_called = Uuid::new_v4();
 
     // Insert dummy booking rows for the booking tickets
-    sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
-             amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by) \
-         VALUES \
-           ('BK-1', $1, 'req-bk-1', 'h1', 'Booked 1', '0800000001', 'BUY', 'USD', 100, 35, 'CONFIRMED', now(), 't', now() + interval '1h', now(), 't'), \
-           ('BK-2', $1, 'req-bk-2', 'h2', 'Booked 2', '0800000002', 'BUY', 'USD', 100, 35, 'CONFIRMED', now(), 't', now() + interval '1h', now(), 't')",
-    )
-    .bind(B01)
-    .execute(&db.pool)
-    .await
-    .expect("insert bookings");
+    blueprint_booking(&db.pool, B01, "BK-1").await;
+    blueprint_booking(&db.pool, B01, "BK-2").await;
 
     sqlx::query(
         "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, issued_at, idempotency_key, booking_id) \
@@ -1496,5 +1479,30 @@ fn policy_rows_are_named_as_the_ruling_requires() {
             Some(Need::Permission(Permission::BranchDayOperate)),
             "Rpc {name} needs BranchDayOperate"
         );
+    }
+}
+
+/// A CONFIRMED Blueprint booking `id` of `branch`, with its own customer and OPEN slot: `queue_tickets.booking_id`
+/// names the new `bookings` (BK-1's `*_booking_slots.sql`).
+async fn blueprint_booking(pool: &PgPool, branch: &str, id: &str) {
+    for sql in [
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         SELECT 'CU-' || $2, organization_id, 'CU-' || $2, 'Booked', 'LIVE', now() FROM branches WHERE id = $1",
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, capacity, \
+             reserved, status) \
+         SELECT gen_random_uuid(), organization_id, id, current_date, now() + interval '1 hour', \
+             now() + interval '90 minutes', 4, 1, 'OPEN' FROM branches WHERE id = $1 AND $2 IS NOT NULL",
+        "INSERT INTO bookings (id, organization_id, branch_id, booking_no, customer_id, slot_id, shop_side, \
+             requested_currency, requested_quantity, source_channel, status, qr_token_hash, created_by) \
+         SELECT $2, s.organization_id, s.branch_id, 'B-' || $2, 'CU-' || $2, s.id, 'BUY', 'USD', 100, 'DESK', \
+             'CONFIRMED', convert_to('qr-' || $2, 'UTF8'), 'test' \
+         FROM booking_slots s WHERE s.branch_id = $1 ORDER BY s.created_at DESC, s.id LIMIT 1",
+    ] {
+        sqlx::query(sql)
+            .bind(branch)
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("seed booking {id}: {e}"));
     }
 }

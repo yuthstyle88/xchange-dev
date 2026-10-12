@@ -30,7 +30,7 @@ const LIST_BOOKINGS: &str = "\
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
            submission_id, transaction_ref, \
            unit_size::text AS unit_size, published_rate_line_id \
-    FROM bookings \
+    FROM v2_bookings \
     WHERE branch_id = $1 \
     ORDER BY created_at DESC, id DESC \
     LIMIT $2";
@@ -41,7 +41,7 @@ const FIND_BOOKING: &str = "\
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
            submission_id, transaction_ref, \
            unit_size::text AS unit_size, published_rate_line_id \
-    FROM bookings \
+    FROM v2_bookings \
     WHERE branch_id = $1 AND id = $2";
 
 const FIND_REQUEST: &str = "\
@@ -50,11 +50,11 @@ const FIND_REQUEST: &str = "\
            created_at, created_by, expires_at, confirmed_at, confirmed_by, \
            submission_id, transaction_ref, \
            unit_size::text AS unit_size, published_rate_line_id \
-    FROM bookings \
+    FROM v2_bookings \
     WHERE branch_id = $1 AND request_id = $2";
 
 const INSERT_BOOKING: &str = "\
-    INSERT INTO bookings ( \
+    INSERT INTO v2_bookings ( \
         id, branch_id, request_id, request_hash, name, phone, member_id, \
         type, code, amount, rate, status, created_at, created_by, \
         expires_at, confirmed_at, confirmed_by, submission_id, transaction_ref, \
@@ -67,17 +67,17 @@ const INSERT_BOOKING: &str = "\
     )";
 
 const CONFIRM_BOOKING: &str = "\
-    UPDATE bookings \
+    UPDATE v2_bookings \
     SET expires_at = $3, confirmed_at = $4, confirmed_by = $5, status = 'CONFIRMED' \
     WHERE branch_id = $1 AND id = $2 AND status = 'PENDING'";
 
 const CANCEL_BOOKING: &str = "\
-    UPDATE bookings \
+    UPDATE v2_bookings \
     SET status = 'CANCELLED' \
     WHERE branch_id = $1 AND id = $2 AND status IN ('PENDING', 'CONFIRMED')";
 
 const MARK_USED_BOOKING: &str = "\
-    UPDATE bookings \
+    UPDATE v2_bookings \
     SET status = 'USED', submission_id = $3, transaction_ref = $4 \
     WHERE branch_id = $1 AND id = $2 AND status = 'CONFIRMED'";
 

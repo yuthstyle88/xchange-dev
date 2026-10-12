@@ -22,7 +22,7 @@ impl FeedCustomerKeys for BookingMemberKeys {
             let phone: Option<String> = sqlx::query_scalar(
                 "SELECT m.phone \
                  FROM transactions t \
-                 JOIN bookings b ON b.transaction_ref = t.document_ref \
+                 JOIN v2_bookings b ON b.transaction_ref = t.document_ref \
                  JOIN members m ON m.id = b.member_id \
                  WHERE t.id = $1::uuid AND m.verified_at IS NOT NULL \
                  LIMIT 1",

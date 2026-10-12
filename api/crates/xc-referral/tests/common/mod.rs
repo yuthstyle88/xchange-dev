@@ -190,7 +190,7 @@ impl TestDb {
     /// A USED booking that became `document_ref`, made by `member_id` (or by nobody).
     pub async fn seed_used_booking(&self, member_id: Option<&str>, document_ref: &str) {
         sqlx::query(
-            "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+            "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
                  type, code, amount, rate, status, created_at, created_by, expires_at, submission_id, \
                  transaction_ref) \
              VALUES ($1, $2, $3, 'h', 'Name', '0899999999', $4, 'SELL', 'USD', 100, 32.6, 'USED', \

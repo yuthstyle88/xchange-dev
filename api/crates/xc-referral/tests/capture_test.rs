@@ -3,6 +3,11 @@
 //! Written before the implementation by the ticket author (claude/89bd61d9). Do not edit, delete
 //! or weaken; add tests in a file of your own.
 //!
+//! BK-1 (#1377, `docs/design/blueprint/booking-slots.md` §8 M1 item 1, §9.1) re-seeded the booking captures on a
+//! Blueprint booking (the new `bookings`, whose `customer_id` is NOT NULL) and replaced the anonymous-booking
+//! `NoCustomer` case: from M1 on, a v2 booking id (`v2_bookings`) is `NoSuchTarget`. Written before BK-1's
+//! implementation by the ticket author (claude/89bd61d9); the same rule applies.
+//!
 //! Uses FD-1's harness (`tests/common/mod.rs`): a schema per test with `api/migrations/` applied,
 //! so the table comes from this ticket's migration. Needs `TEST_DATABASE_URL`; nothing skips.
 
@@ -109,22 +114,59 @@ async fn exchange_of(db: &TestDb, customer: &str) -> Uuid {
     db.seed_transaction(customer).await.0
 }
 
-/// A CONFIRMED booking of MAIN, made by `member` (or by nobody); answers its id.
-async fn booking(db: &TestDb, member: Option<&str>) -> String {
+/// A CONFIRMED DESK booking of MAIN for `customer`, in a slot of its own (the Blueprint `bookings`, BK-1 M1);
+/// answers its id.
+async fn booking(db: &TestDb, customer: &str) -> String {
+    let slot = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, \
+             capacity, reserved, status) \
+         VALUES ($1, $2::uuid, $3, DATE '2026-10-20', \
+             TIMESTAMPTZ '2026-10-20 03:00:00+00' + make_interval(mins => $4), \
+             TIMESTAMPTZ '2026-10-20 03:30:00+00' + make_interval(mins => $4), 4, 1, 'OPEN')",
+    )
+    .bind(slot)
+    .bind(ORG)
+    .bind(MAIN)
+    .bind(i32::try_from(slot.as_u128() % 100_000).expect("fits"))
+    .execute(&db.pool)
+    .await
+    .expect("insert into booking_slots");
     let id = unique("BK");
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+        "INSERT INTO bookings (id, organization_id, branch_id, booking_no, customer_id, slot_id, \
+             shop_side, requested_currency, requested_quantity, source_channel, status, qr_token_hash, \
+             created_by) \
+         VALUES ($1, $2::uuid, $3, $4, $5, $6, 'BUY', 'USD', 100, 'DESK', 'CONFIRMED', \
+             decode(md5($1), 'hex'), 'teller-1')",
+    )
+    .bind(&id)
+    .bind(ORG)
+    .bind(MAIN)
+    .bind(unique("B"))
+    .bind(customer)
+    .bind(slot)
+    .execute(&db.pool)
+    .await
+    .expect("insert into bookings");
+    id
+}
+
+/// A CONFIRMED v2 booking of MAIN made by nobody, kept by M1 as `v2_bookings`; answers its id.
+async fn v2_booking(db: &TestDb) -> String {
+    let id = unique("BK");
+    sqlx::query(
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
              type, code, amount, rate, status, created_at, created_by, expires_at) \
-         VALUES ($1, $2, $3, 'h', 'Name', '0899999999', $4, 'SELL', 'USD', 100, 32.6, \
+         VALUES ($1, $2, $3, 'h', 'Name', '0899999999', NULL, 'SELL', 'USD', 100, 32.6, \
              'CONFIRMED', now(), 'owner', now() + interval '1 hour')",
     )
     .bind(&id)
     .bind(MAIN)
     .bind(unique("req"))
-    .bind(member)
     .execute(&db.pool)
     .await
-    .expect("insert into bookings");
+    .expect("insert into v2_bookings");
     id
 }
 
@@ -236,8 +278,7 @@ async fn the_partial_unique_indexes_refuse_a_second_active_row_too() {
     let on_tx = capture(&db, on_transaction(tx_id, "AB12CD", None))
         .await
         .expect("on the exchange");
-    db.seed_member("M-1", "C-1").await;
-    let bk = booking(&db, Some("M-1")).await;
+    let bk = booking(&db, "C-1").await;
     let on_bk = capture(&db, on_booking(&bk, "AB12CD", None))
         .await
         .expect("on the booking");
@@ -313,16 +354,17 @@ async fn a_rolled_back_capture_writes_neither_row() {
 }
 
 #[tokio::test]
-async fn a_booking_capture_takes_the_customer_of_the_bookings_member() {
+async fn a_booking_capture_takes_the_organisation_branch_and_customer_of_the_booking() {
     let db = TestDb::start().await;
     db.seed_customer("C-1").await;
-    db.seed_member("M-1", "C-1").await;
-    let bk = booking(&db, Some("M-1")).await;
+    let bk = booking(&db, "C-1").await;
     let id = capture(&db, on_booking(&bk, "AB12CD", None))
         .await
         .expect("captured");
     let r = row(&db, &id).await;
     assert_eq!(r["customer_id"], "C-1");
+    assert_eq!(r["organization_id"], ORG);
+    assert_eq!(r["branch_id"], MAIN);
     assert_eq!(r["booking_id"], bk.as_str());
     assert_eq!(r["transaction_id"], Value::Null);
     assert_eq!(r["source"], "BOOKING");
@@ -331,11 +373,14 @@ async fn a_booking_capture_takes_the_customer_of_the_bookings_member() {
 }
 
 #[tokio::test]
-async fn a_target_with_no_customer_or_no_row_is_refused() {
+async fn a_v2_booking_or_a_target_with_no_row_is_refused() {
     let db = TestDb::start().await;
-    let anonymous = booking(&db, None).await;
-    let out = capture(&db, on_booking(&anonymous, "AB12CD", None)).await;
-    assert!(matches!(out, Err(CaptureError::NoCustomer)), "got {out:?}");
+    let v2 = v2_booking(&db).await;
+    let out = capture(&db, on_booking(&v2, "AB12CD", None)).await;
+    assert!(
+        matches!(out, Err(CaptureError::NoSuchTarget)),
+        "a v2 booking is not a Blueprint booking (BK-1 M1 item 1), got {out:?}"
+    );
 
     let out = capture(&db, on_booking("BK-nope", "AB12CD", None)).await;
     assert!(
@@ -475,8 +520,7 @@ async fn superseding_a_row_that_is_no_longer_active_is_refused() {
 async fn a_known_sub_pushes_each_waiting_active_capture_once() {
     let db = TestDb::start().await;
     let tx_id = exchange_of(&db, "C-1").await;
-    db.seed_member("M-1", "C-1").await;
-    let bk = booking(&db, Some("M-1")).await;
+    let bk = booking(&db, "C-1").await;
     let on_tx = capture(&db, on_transaction(tx_id, "AB12CD", None))
         .await
         .expect("on the exchange");
@@ -538,8 +582,7 @@ async fn a_known_sub_pushes_each_waiting_active_capture_once() {
 async fn linking_moves_the_bookings_capture_onto_the_exchange_and_keeps_one_row() {
     let db = TestDb::start().await;
     let tx_id = exchange_of(&db, "C-1").await;
-    db.seed_member("M-1", "C-1").await;
-    let bk = booking(&db, Some("M-1")).await;
+    let bk = booking(&db, "C-1").await;
     let id = capture(&db, on_booking(&bk, "AB12CD", None))
         .await
         .expect("on the booking");
@@ -573,8 +616,7 @@ async fn linking_moves_the_bookings_capture_onto_the_exchange_and_keeps_one_row(
 async fn linking_a_booking_with_no_capture_is_a_no_op() {
     let db = TestDb::start().await;
     let tx_id = exchange_of(&db, "C-1").await;
-    db.seed_member("M-1", "C-1").await;
-    let bk = booking(&db, Some("M-1")).await;
+    let bk = booking(&db, "C-1").await;
     let mut tx = db.begin().await;
     service(&db)
         .link_transaction_in(&mut tx, &bk, tx_id)

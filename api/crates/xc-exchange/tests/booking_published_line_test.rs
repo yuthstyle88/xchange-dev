@@ -410,7 +410,7 @@ async fn seed_line(db: &TestDb, currency: &str, unit_size: &str, buy: &str, sell
 /// `(published_rate_line_id, rate, unit_size)` as stored.
 async fn columns(db: &TestDb, id: &str) -> (Option<String>, Decimal, Decimal) {
     sqlx::query_as(
-        "SELECT published_rate_line_id::text, rate, unit_size FROM bookings WHERE id = $1",
+        "SELECT published_rate_line_id::text, rate, unit_size FROM v2_bookings WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&db.pool)

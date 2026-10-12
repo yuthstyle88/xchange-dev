@@ -574,7 +574,7 @@ struct ChannelRows {
 /// A USED booking `id` at B1 whose `transaction_ref` is the number `doc` (the row redeemed it).
 async fn booking_for(room: &Room, id: &str, doc: &str) {
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, amount, rate, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, amount, rate, \
            status, created_at, created_by, submission_id, transaction_ref, organization_id) \
          VALUES ($1, $2, $1, 'h', 'n', '0800000000', 'BUY', 'USD', 1, 1, 'USED', now(), 'test', $1, $3, $4::uuid)",
     )

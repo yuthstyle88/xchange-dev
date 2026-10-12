@@ -124,7 +124,7 @@ async fn book(replay: &Replay<'_>, id: &str, fields: Value) {
     }
     let text = |k: &str| row[k].as_str().map(str::to_owned);
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
          type, code, amount, rate, status, created_at, created_by, expires_at) \
          VALUES ($1, $2, $1, $1, 'Booked Customer', '0812345678', $3, $4, $5, $6::numeric, \
          $7::numeric, $8, '2026-10-06T06:00:00.000Z'::timestamptz, 'owner', $9::timestamptz)",
@@ -145,12 +145,13 @@ async fn book(replay: &Replay<'_>, id: &str, fields: Value) {
 
 /// The stored status of booking `id`, what used it and the document it became.
 async fn booking_row(replay: &Replay<'_>, id: &str) -> Value {
-    let (status, submission, document): (String, Option<String>, Option<String>) =
-        sqlx::query_as("SELECT status, submission_id, transaction_ref FROM bookings WHERE id = $1")
-            .bind(id)
-            .fetch_one(&replay.desk.db.pool)
-            .await
-            .unwrap_or_else(|e| panic!("read booking {id}: {e}"));
+    let (status, submission, document): (String, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT status, submission_id, transaction_ref FROM v2_bookings WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&replay.desk.db.pool)
+    .await
+    .unwrap_or_else(|e| panic!("read booking {id}: {e}"));
     json!({ "status": status, "submission_id": submission, "transaction_ref": document })
 }
 
@@ -453,15 +454,15 @@ async fn cancelled_or_expired_refused() {
     // what the desk read with `get` changed before the save
     for (sql, id) in [
         (
-            "UPDATE bookings SET status = 'CANCELLED' WHERE id = $1",
+            "UPDATE v2_bookings SET status = 'CANCELLED' WHERE id = $1",
             "BK-cancelled",
         ),
         (
-            "UPDATE bookings SET expires_at = '2026-10-06T07:00:00.000Z'::timestamptz WHERE id = $1",
+            "UPDATE v2_bookings SET expires_at = '2026-10-06T07:00:00.000Z'::timestamptz WHERE id = $1",
             "BK-at-the-instant",
         ),
         (
-            "UPDATE bookings SET expires_at = '2026-10-06T06:59:59.999Z'::timestamptz WHERE id = $1",
+            "UPDATE v2_bookings SET expires_at = '2026-10-06T06:59:59.999Z'::timestamptz WHERE id = $1",
             "BK-before",
         ),
     ] {

@@ -357,6 +357,24 @@ fn migration_names() -> Vec<String> {
     names
 }
 
+/// BK-1's M1 `-- down:` section, uncommented.
+fn booking_slots_down() -> String {
+    let name = migration_names()
+        .into_iter()
+        .find(|n| n.ends_with("_booking_slots.sql"))
+        .expect("BK-1's *_booking_slots.sql");
+    let text = std::fs::read_to_string(migrations().join(name)).expect("read BK-1's M1");
+    text.lines()
+        .skip_while(|l| l.trim() != "-- down:")
+        .skip(1)
+        .map(|l| {
+            let t = l.trim_start().strip_prefix("--").unwrap_or(l);
+            t.strip_prefix(' ').unwrap_or(t)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn the_file_name() -> String {
     let ours: Vec<String> = migration_names()
         .into_iter()
@@ -418,7 +436,7 @@ fn the_file_creates_two_tables_and_one_index_and_touches_nothing_else() {
 async fn the_tables_start_empty_on_a_database_with_branches() {
     let shop = Shop::open().await;
     assert!(shop.count("SELECT count(*) FROM branches").await >= 2);
-    assert_eq!(shop.count("SELECT count(*) FROM bookings").await, 0);
+    assert_eq!(shop.count("SELECT count(*) FROM v2_bookings").await, 0);
     assert_eq!(shop.count("SELECT count(*) FROM members").await, 0);
     assert_eq!(
         shop.count("SELECT count(*) FROM branch_settings WHERE name = 'bookingRules'")
@@ -469,7 +487,7 @@ async fn the_columns_are_the_designs() {
         ]
     );
     assert_eq!(
-        columns(&shop.db, "bookings").await,
+        columns(&shop.db, "v2_bookings").await,
         vec![
             col("id", "text", "NO"),
             col("branch_id", "text", "NO"),
@@ -501,7 +519,7 @@ async fn the_columns_are_the_designs() {
         "SELECT column_name::text, character_maximum_length::int4, numeric_precision::int4, \
              numeric_scale::int4 \
          FROM information_schema.columns \
-         WHERE table_schema = current_schema() AND table_name = 'bookings' \
+         WHERE table_schema = current_schema() AND table_name = 'v2_bookings' \
            AND column_name IN ('code', 'amount', 'rate') ORDER BY ordinal_position",
     )
     .fetch_all(&shop.db.pool)
@@ -572,7 +590,7 @@ impl Row {
 
     fn sql(&self) -> String {
         format!(
-            "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+            "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
                  type, code, amount, rate, status, created_at, created_by, expires_at, \
                  submission_id, transaction_ref) \
              VALUES ('{}', '{}', '{}', 'hash', 'Name', '0812345678', {}, '{}', '{}', {}, {}, \
@@ -745,12 +763,12 @@ async fn the_bookings_table_keeps_its_rules() {
             ..Row::valid(9)
         };
         assert_eq!(run(db, &row.sql()).await, Ok(()), "{status} with a member");
-        run(db, "DELETE FROM bookings WHERE id = 'BK-row-9'")
+        run(db, "DELETE FROM v2_bookings WHERE id = 'BK-row-9'")
             .await
             .expect("clean up");
     }
     assert_eq!(
-        shop.count("SELECT count(*) FROM bookings").await,
+        shop.count("SELECT count(*) FROM v2_bookings").await,
         2,
         "only the two valid rows"
     );
@@ -852,7 +870,7 @@ async fn confirmed_needs_an_expiry_and_used_needs_its_save() {
         run(db, &used(6, Some("sub-6"), Some("XC-DOC-1")).sql()).await,
         Ok(())
     );
-    assert_eq!(shop.count("SELECT count(*) FROM bookings").await, 1);
+    assert_eq!(shop.count("SELECT count(*) FROM v2_bookings").await, 1);
     shop.finish().await;
 }
 
@@ -887,6 +905,14 @@ async fn dropping_the_two_tables_by_hand_loses_only_them() {
     .expect("its history");
     let branches = shop.count("SELECT count(*) FROM branches").await;
     let customers = shop.count("SELECT count(*) FROM customers").await;
+
+    // Downs run newest first: BK-1's M1 (`*_booking_slots.sql`, #1377) renamed this table to
+    // `v2_bookings`, and its down renames it back and re-points the two booking keys at it before this
+    // migration's down runs. What this test asserts about the two tables is unchanged.
+    sqlx::raw_sql(AssertSqlSafe(booking_slots_down()))
+        .execute(&db.pool)
+        .await
+        .expect("BK-1 M1's down: v2's table is `bookings` again");
 
     assert!(
         run(db, "DROP TABLE members").await.is_err(),
@@ -1066,7 +1092,7 @@ async fn the_same_request_id_is_one_booking_per_branch() {
             .is_err(),
         "a second booking for one request id of a branch"
     );
-    assert_eq!(shop.count("SELECT count(*) FROM bookings").await, 2);
+    assert_eq!(shop.count("SELECT count(*) FROM v2_bookings").await, 2);
     shop.finish().await;
 }
 

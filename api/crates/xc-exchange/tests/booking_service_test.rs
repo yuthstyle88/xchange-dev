@@ -708,7 +708,7 @@ async fn seed_transaction(db: &TestDb, branch_id: &str, document_ref: &str, cust
 /// `n` created `n` seconds after `at(0)`.
 async fn bulk_bookings(db: &TestDb, branch_id: &str, first: i32, last: i32) {
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
              amount, rate, status, created_at, created_by, expires_at) \
          SELECT 'BK-BULK-' || $1::text || '-' || lpad(n::text, 4, '0'), $1::text, \
              'REQ-BULK-' || n, 'bulk', \
@@ -795,7 +795,7 @@ async fn every_action_refuses_an_unknown_branch() {
         "members"
     );
 
-    assert_eq!(shop.count("bookings").await, 1, "nothing was stored");
+    assert_eq!(shop.count("v2_bookings").await, 1, "nothing was stored");
     assert_eq!(shop.count("members").await, 0, "nothing was stored");
     assert_eq!(
         shop.stored(MAIN, "BK-MAIN-1").await,
@@ -956,7 +956,7 @@ async fn create_refuses_a_customer_without_a_member_of_this_branch() {
             .await;
         assert_eq!(refusal(got), NO_MEMBER, "{why}");
     }
-    assert_eq!(shop.count("bookings").await, 0, "nothing was stored");
+    assert_eq!(shop.count("v2_bookings").await, 0, "nothing was stored");
     assert_eq!(shop.versions().await, before, "every refusal rolled back");
     shop.finish().await;
 }
@@ -1000,7 +1000,7 @@ async fn create_reads_the_rules_shift_and_rate_of_its_own_branch() {
         ),
         CLOSED
     );
-    assert_eq!(shop.count("bookings").await, 0);
+    assert_eq!(shop.count("v2_bookings").await, 0);
 
     // MAIN, with its shift open and no rules, still takes bookings.
     let made = s
@@ -1008,7 +1008,7 @@ async fn create_reads_the_rules_shift_and_rate_of_its_own_branch() {
         .await
         .expect("MAIN is open");
     assert_eq!(made.branch_id, branch(MAIN));
-    assert_eq!(shop.count("bookings").await, 1);
+    assert_eq!(shop.count("v2_bookings").await, 1);
     shop.finish().await;
 }
 
@@ -1035,7 +1035,7 @@ async fn create_is_idempotent() {
         .await
         .expect("the same request again");
     assert_eq!(again, first, "the stored booking, as stored");
-    assert_eq!(shop.count("bookings").await, 1, "no second row");
+    assert_eq!(shop.count("v2_bookings").await, 1, "no second row");
 
     let mut other = order("R-1", "32.6");
     other.amount = money("1000.51");
@@ -1049,7 +1049,7 @@ async fn create_is_idempotent() {
         refusal(s.create(&branch(MAIN), renamed, "FRONT-1", at(600)).await),
         CHANGED
     );
-    assert_eq!(shop.count("bookings").await, 1);
+    assert_eq!(shop.count("v2_bookings").await, 1);
     assert_eq!(
         shop.stored(MAIN, &first.id).await,
         first,
@@ -1065,7 +1065,7 @@ async fn create_is_idempotent() {
         .expect("a request id of another branch is not a repeat");
     assert_ne!(there.id, first.id);
     assert_eq!(there.amount, money("75"));
-    assert_eq!(shop.count("bookings").await, 2);
+    assert_eq!(shop.count("v2_bookings").await, 2);
     shop.finish().await;
 }
 
