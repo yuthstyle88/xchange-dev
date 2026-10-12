@@ -17,9 +17,13 @@ use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
 use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, MoneyDelta};
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
+use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
+use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::ledger_approval::count_difference::{
@@ -756,9 +760,9 @@ mod tests {
         assert_eq!(usd_cnt, Decimal::from(500));
         assert_eq!(usd_diff, Decimal::ZERO);
 
-        // Check cash_exceptions: exactly 1 row, for THB with diff -1000
+        // Check cash_exceptions: exactly 1 row, for THB with diff -1000 in CA-7d shape
         let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
-            "SELECT branch_id, data FROM cash_exceptions WHERE data->>'countId' = $1",
+            "SELECT branch_id, data FROM cash_exceptions WHERE data->>'requestId' = $1",
         )
         .bind(&close_count.id)
         .fetch_all(&db.pool)
@@ -766,11 +770,15 @@ mod tests {
         .expect("fetch exceptions");
 
         assert_eq!(exceptions.len(), 1, "exactly one exception row");
-        assert_eq!(exceptions[0].1["currency"], "THB");
-        assert_eq!(
-            Decimal::from_str(exceptions[0].1["difference"].as_str().unwrap()).unwrap(),
-            Decimal::from(-1000)
-        );
+        let exc = &exceptions[0].1;
+        assert_eq!(exc["status"], "OPEN");
+        assert_eq!(exc["note"], format!("COUNT {}", close_count.id));
+        assert_eq!(exc["cashVariance"]["THB"], -100000);
+        assert!(exc["safeVariance"].is_null());
+        assert!(exc["targetDifference"].is_null());
+        assert_eq!(exc["at"], now.timestamp_millis());
+        assert!(exc["reviewedBy"].is_null());
+        assert!(exc["reviewedAt"].is_null());
     }
 }
 
@@ -1146,35 +1154,37 @@ impl CashCountService {
             .await?;
 
             let mut close_balances = Vec::new();
+            let mut delta_pairs = Vec::new();
             for t in &updated_totals {
                 let diff = t.difference.unwrap_or(Decimal::ZERO);
                 if !diff.is_zero() {
-                    let exc_id = format!("EX-{}", uuid::Uuid::new_v4());
-                    let pos: i32 = sqlx::query_scalar(
-                        "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
-                    )
-                    .bind(count.branch_id.as_str())
-                    .fetch_one(&mut **tx)
-                    .await?;
-
-                    let exc_data = serde_json::json!({
-                        "countId": count_id,
-                        "currency": t.currency.trim(),
-                        "difference": diff.to_string(),
-                    });
-
-                    sqlx::query(
-                        "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
-                    )
-                    .bind(exc_id)
-                    .bind(count.branch_id.as_str())
-                    .bind(pos)
-                    .bind(exc_data)
-                    .execute(&mut **tx)
-                    .await?;
+                    let code = CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                        AppError::Internal(format!(
+                            "unknown currency code in count: {}",
+                            t.currency
+                        ))
+                    })?;
+                    let mut d = diff;
+                    d.rescale(2);
+                    delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
                 }
-
                 close_balances.push((t.currency.clone(), t.counted, diff));
+            }
+
+            if !delta_pairs.is_empty() {
+                let exc = CashException {
+                    id: format!("EX-{}", uuid::Uuid::new_v4()),
+                    request_id: count_id.to_string(),
+                    status: ExceptionStatus::Open,
+                    target_difference: None,
+                    cash_variance: Some(StockDelta::of(&delta_pairs)),
+                    safe_variance: None,
+                    note: format!("COUNT {count_id}"),
+                    at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+                    reviewed_by: None,
+                    reviewed_at: None,
+                };
+                append_cash_exception_in(tx, &count.branch_id, &exc).await?;
             }
 
             self.shifts

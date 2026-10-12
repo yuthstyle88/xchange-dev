@@ -194,15 +194,14 @@ impl Db {
             .expect("read count verified_by")
     }
 
-    async fn cash_exceptions_for_count(&self, count_id: &str) -> Vec<(String, String)> {
-        sqlx::query_as(
-            "SELECT data->>'currency', data->>'difference' FROM cash_exceptions \
-             WHERE data->>'countId' = $1",
-        )
-        .bind(count_id)
-        .fetch_all(&self.pool)
-        .await
-        .expect("read cash exceptions")
+    async fn cash_exceptions_for_count(&self, count_id: &str) -> Vec<serde_json::Value> {
+        let rows: Vec<(serde_json::Value,)> =
+            sqlx::query_as("SELECT data FROM cash_exceptions WHERE data->>'requestId' = $1")
+                .bind(count_id)
+                .fetch_all(&self.pool)
+                .await
+                .expect("read cash exceptions");
+        rows.into_iter().map(|(d,)| d).collect()
     }
 
     async fn approval_requests_for_count(
@@ -370,8 +369,12 @@ async fn verify_count_difference_within_branch_limit_verifies_without_approval_r
         1,
         "exactly one cash_exceptions row for difference"
     );
-    assert_eq!(exceptions[0].0, "THB");
-    assert_eq!(d(&exceptions[0].1), d("-100"));
+    let exc = &exceptions[0];
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("COUNT {}", close.id));
+    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(660).timestamp_millis());
 
     let requests = db.approval_requests_for_count(&close.id).await;
     assert!(
@@ -654,8 +657,12 @@ async fn verify_count_after_finance_approves_succeeds_and_closes_shift() {
     // Cash exceptions row is written on verified count
     let exceptions = db.cash_exceptions_for_count(&close.id).await;
     assert_eq!(exceptions.len(), 1);
-    assert_eq!(exceptions[0].0, "THB");
-    assert_eq!(d(&exceptions[0].1), d("-100"));
+    let exc = &exceptions[0];
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("COUNT {}", close.id));
+    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(700).timestamp_millis());
 
     // Still one request, now APPROVED
     let requests = db.approval_requests_for_count(&close.id).await;

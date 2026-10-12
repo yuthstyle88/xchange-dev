@@ -583,17 +583,22 @@ async fn a_transfer_walks_the_five_states_moves_the_safes_and_a_short_receipt_is
         15_000,
         "B2's safe gains what was counted (C4)"
     );
-    let exceptions = format!(
-        "SELECT count(*) FROM cash_exceptions WHERE branch_id = '{}' AND data->>'transferId' = '{}' \
-         AND data->>'currency' = 'USD' AND (data->>'difference')::numeric = -50",
-        c.b2.as_str(),
-        t.id
-    );
-    assert_eq!(
-        db.scalar(&exceptions).await,
-        1,
-        "one exception, never forced to match"
-    );
+    let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT branch_id, data FROM cash_exceptions \
+         WHERE branch_id = $1 AND data->>'requestId' = $2",
+    )
+    .bind(c.b2.as_str())
+    .bind(&t.id)
+    .fetch_all(&db.pool)
+    .await
+    .expect("read cash exceptions");
+    assert_eq!(exceptions.len(), 1, "one exception, never forced to match");
+    let exc = &exceptions[0].1;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("TRANSFER {}", t.id));
+    assert_eq!(exc["safeVariance"]["USD"], -5000);
+    assert!(exc["cashVariance"].is_null());
+    assert_eq!(exc["at"], at(40).timestamp_millis());
 
     assert!(
         flow.reconcile(&c.receiver_b2, &t.id, "n", at(50))
@@ -639,7 +644,7 @@ async fn a_full_receipt_writes_no_exception() {
     .await
     .unwrap();
     let sql = format!(
-        "SELECT count(*) FROM cash_exceptions WHERE data->>'transferId' = '{}'",
+        "SELECT count(*) FROM cash_exceptions WHERE data->>'requestId' = '{}'",
         t.id
     );
     assert_eq!(db.scalar(&sql).await, 0);

@@ -763,13 +763,22 @@ async fn a_short_receipt_of_a_move_writes_an_exception_on_its_branch() {
         .receive(&other_finance, &t.id, counted(&db, 3).await, at(21))
         .await
         .expect("receive 3 of 4");
-    let sql = format!(
-        "SELECT count(*) FROM cash_exceptions WHERE branch_id = '{}' AND data->>'transferId' = '{}' \
-         AND (data->>'difference')::numeric = -50",
-        s.b1.as_str(),
-        t.id
-    );
-    assert_eq!(db.scalar(&sql).await, 1);
+    let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT branch_id, data FROM cash_exceptions \
+         WHERE branch_id = $1 AND data->>'requestId' = $2",
+    )
+    .bind(s.b1.as_str())
+    .bind(&t.id)
+    .fetch_all(&db.pool)
+    .await
+    .expect("read cash exceptions");
+    assert_eq!(exceptions.len(), 1);
+    let exc = &exceptions[0].1;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("TRANSFER {}", t.id));
+    assert_eq!(exc["safeVariance"]["USD"], -5000);
+    assert!(exc["cashVariance"].is_null());
+    assert_eq!(exc["at"], at(21).timestamp_millis());
 }
 
 // ── #621 rework: rulings Q1, Q2 and the tightened CHECK (added by claude/dell-claude-6) ──────────────

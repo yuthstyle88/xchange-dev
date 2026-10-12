@@ -616,9 +616,9 @@ async fn a_short_handover_count_opens_b_on_the_counted_lines_and_writes_one_exce
         f.db.total(&h.count_id, "THB").await,
         (d("2200"), Some(d("2300")), Some(d("-100")))
     );
-    let exceptions: Vec<(String, String)> = sqlx::query_as(
-        "SELECT data->>'currency', data->>'difference' FROM cash_exceptions \
-         WHERE branch_id = $1 AND data->>'countId' = $2",
+    let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT branch_id, data FROM cash_exceptions \
+         WHERE branch_id = $1 AND data->>'requestId' = $2",
     )
     .bind(f.main.as_str())
     .bind(&h.count_id)
@@ -630,8 +630,12 @@ async fn a_short_handover_count_opens_b_on_the_counted_lines_and_writes_one_exce
         1,
         "a difference is an exception, not a block (C4): {exceptions:?}"
     );
-    assert_eq!(exceptions[0].0, "THB");
-    assert_eq!(d(&exceptions[0].1), d("-100"));
+    let exc = &exceptions[0].1;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("HANDOVER {}", h.id));
+    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(660).timestamp_millis());
 }
 
 #[tokio::test]
@@ -853,9 +857,9 @@ async fn a_currency_a_holds_but_the_handover_count_omits_reads_as_zero() {
         0,
         "B is handed no USD"
     );
-    let exceptions: Vec<(String, String)> = sqlx::query_as(
-        "SELECT data->>'currency', data->>'difference' FROM cash_exceptions \
-         WHERE branch_id = $1 AND data->>'countId' = $2",
+    let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT branch_id, data FROM cash_exceptions \
+         WHERE branch_id = $1 AND data->>'requestId' = $2",
     )
     .bind(main.as_str())
     .bind(&h.count_id)
@@ -863,8 +867,12 @@ async fn a_currency_a_holds_but_the_handover_count_omits_reads_as_zero() {
     .await
     .expect("read the exceptions");
     assert_eq!(exceptions.len(), 1, "{exceptions:?}");
-    assert_eq!(exceptions[0].0, "USD");
-    assert_eq!(d(&exceptions[0].1), d("-100"));
+    let exc = &exceptions[0].1;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("HANDOVER {}", h.id));
+    assert_eq!(exc["cashVariance"]["USD"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(660).timestamp_millis());
 }
 
 /// #620 question 2 (lane controller's ruling, 2026-10-10): a HANDOVER_OUT count is verified only through

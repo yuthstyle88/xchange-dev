@@ -755,9 +755,9 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
         db.total(&close.id, "THB").await,
         (d("2200"), Some(d("2300")), Some(d("-100")))
     );
-    let exceptions: Vec<(String, String)> = sqlx::query_as(
-        "SELECT data->>'currency', data->>'difference' FROM cash_exceptions \
-         WHERE branch_id = $1 AND data->>'countId' = $2",
+    let exceptions: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT branch_id, data FROM cash_exceptions \
+         WHERE branch_id = $1 AND data->>'requestId' = $2",
     )
     .bind(main.as_str())
     .bind(&close.id)
@@ -765,8 +765,12 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
     .await
     .expect("read the exceptions");
     assert_eq!(exceptions.len(), 1, "{exceptions:?}");
-    assert_eq!(exceptions[0].0, "THB");
-    assert_eq!(d(&exceptions[0].1), d("-100"));
+    let exc = &exceptions[0].1;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("COUNT {}", close.id));
+    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(660).timestamp_millis());
 
     let even_close = counts
         .submit(
@@ -782,7 +786,7 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
         .expect("an even count verifies");
     assert_eq!(
         db.count(&format!(
-            "SELECT count(*) FROM cash_exceptions WHERE data->>'countId' = '{}'",
+            "SELECT count(*) FROM cash_exceptions WHERE data->>'requestId' = '{}'",
             even_close.id
         ))
         .await,

@@ -627,7 +627,7 @@ async fn verify_in_writes_the_count_exception_on_the_caller_tx_and_rolls_back_wi
         .expect("a CLOSE count 100 THB short, within the 500 THB limit")
         .id;
     let exceptions =
-        format!("SELECT count(*) FROM cash_exceptions WHERE data->>'countId' = '{close}'");
+        format!("SELECT count(*) FROM cash_exceptions WHERE data->>'requestId' = '{close}'");
 
     let mut tx = db.locked(&[&f.branch]).await;
     let answer = within(
@@ -645,6 +645,18 @@ async fn verify_in_writes_the_count_exception_on_the_caller_tx_and_rolls_back_wi
         1,
         "the count's exception is written on the caller's transaction"
     );
+    let exc_data: (serde_json::Value,) = sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT data FROM cash_exceptions WHERE data->>'requestId' = '{close}'"
+    )))
+    .fetch_one(&mut *tx)
+    .await
+    .expect("fetch exception on tx");
+    let exc = &exc_data.0;
+    assert_eq!(exc["status"], "OPEN");
+    assert_eq!(exc["note"], format!("COUNT {close}"));
+    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert!(exc["safeVariance"].is_null());
+    assert_eq!(exc["at"], at(660).timestamp_millis());
     tx.rollback().await.expect("the caller rolls back");
 
     assert_eq!(
