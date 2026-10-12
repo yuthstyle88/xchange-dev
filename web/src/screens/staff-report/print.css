@@ -1,0 +1,18 @@
+/* V3-staff-report #1350: the print sheet (B.1 row 21, D-B8). A4 with a 12mm margin; the tools and the shell's chrome
+   are not printed. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  .staff-report-tools,
+  .xc-shell .account-bar,
+  .xc-shell nav {
+    display: none !important;
+  }
+
+  .staff-report {
+    color: #000;
+  }
+}

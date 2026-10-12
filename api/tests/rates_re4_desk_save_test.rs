@@ -1324,7 +1324,7 @@ fn booking_flow(shop: &Shop) -> SaveTransactionWorkflow {
 /// this test does not depend on the booking's create.
 async fn confirmed_booking(shop: &Shop, id: &str, line_id: &str, rate: &str) {
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
          amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by, \
          unit_size, published_rate_line_id) \
          VALUES ($1, $2, $3, 'hash', 'Walk In', '0800000000', 'BUY', 'USD', 100, $4::numeric, \
@@ -1404,7 +1404,7 @@ async fn a_booked_save_stores_the_bookings_line() {
         "the booking's line and rate"
     );
     let (status, used_by): (String, Option<String>) =
-        sqlx::query_as("SELECT status, transaction_ref FROM bookings WHERE id = $1")
+        sqlx::query_as("SELECT status, transaction_ref FROM v2_bookings WHERE id = $1")
             .bind("BK-re4c-0001")
             .fetch_one(&shop.pool)
             .await
@@ -1468,7 +1468,7 @@ async fn a_booked_save_at_another_rate_is_refused() {
         before,
         "the refused save wrote nothing"
     );
-    let status: String = sqlx::query_scalar("SELECT status FROM bookings WHERE id = $1")
+    let status: String = sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
         .bind("BK-re4c-0002")
         .fetch_one(&shop.pool)
         .await
@@ -1481,7 +1481,7 @@ async fn a_booked_save_at_another_rate_is_refused() {
 /// `line_id`, written as RE-4d's create writes it (§4.9 R1).
 async fn confirmed_krw_booking(shop: &Shop, id: &str, line_id: &str, rate: &str) {
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
          amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by, \
          unit_size, published_rate_line_id) \
          VALUES ($1, $2, $3, 'hash', 'Walk In', '0800000000', 'BUY', 'KRW', 100000, \
@@ -1542,7 +1542,7 @@ async fn counter_prepared(shop: &Shop) -> (String, String) {
 
 /// The status of booking `id`.
 async fn booking_status(shop: &Shop, id: &str) -> String {
-    sqlx::query_scalar("SELECT status FROM bookings WHERE id = $1")
+    sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
         .bind(id)
         .fetch_one(&shop.pool)
         .await

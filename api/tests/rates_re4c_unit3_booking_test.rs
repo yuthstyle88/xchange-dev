@@ -39,7 +39,7 @@ async fn booking_with_unit_size_3_answers_500_on_list() {
 
     // Insert a booking with unit_size 3
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
          amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by, \
          unit_size) \
          VALUES ($1, $2, $3, 'hash', 'Test Unit3', '0800000000', 'BUY', 'USD', 100, 32.1, \

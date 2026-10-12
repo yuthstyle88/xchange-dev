@@ -420,7 +420,7 @@ impl Room {
         created_at: DateTime<Utc>,
     ) {
         sqlx::query(
-            "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+            "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
              type, code, amount, rate, status, created_at, created_by, expires_at) \
              VALUES ($1, 'MAIN', $1, $1, $1, '0812345678', $2, $3, $4, 500::numeric, \
              10::numeric, $5, $6, 'owner', $7)",
@@ -1000,7 +1000,7 @@ async fn a_pending_row_carries_the_counter_rate_and_principal() {
     assert_eq!(row(&rows, &buy)["rate"], json!("36.2500"));
     assert_eq!(row(&rows, &buy)["counterRate"], json!("36.5000"));
     let (stored_line,): (Option<String>,) =
-        sqlx::query_as("SELECT published_rate_line_id::text FROM bookings WHERE id = $1")
+        sqlx::query_as("SELECT published_rate_line_id::text FROM v2_bookings WHERE id = $1")
             .bind(&buy)
             .fetch_one(&room.desk.db.pool)
             .await
@@ -1323,7 +1323,7 @@ async fn the_desk_hand_off_moves_the_version_and_the_row_reads_used() {
     let step = replay.fixture.step(LIVE_BUY);
     replay.desk.clock.set(time(&step.at));
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
          type, code, amount, rate, status, created_at, created_by, expires_at) \
          VALUES ('BK-hand', 'MAIN', 'BK-hand', 'BK-hand', 'Booked Customer', '0812345678', NULL, \
          'BUY', 'USD', 100::numeric, 32.2::numeric, 'CONFIRMED', \

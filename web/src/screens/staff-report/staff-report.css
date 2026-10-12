@@ -1,0 +1,79 @@
+/* V3-staff-report #1350: the look of /staff/report (D-B8, LK-6). Every class the screen uses has a rule here. */
+.staff-report {
+  display: grid;
+  gap: 16px;
+}
+
+.staff-report-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.staff-report-loading,
+.staff-report-refusal {
+  padding: 12px 0;
+}
+
+.staff-report-sheet {
+  display: grid;
+  gap: 16px;
+}
+
+.staff-report-heading h2,
+.staff-report-heading h3 {
+  margin: 0;
+}
+
+.staff-report-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.staff-report-status {
+  margin: 4px 0 0;
+}
+
+.staff-report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.staff-report-metrics p {
+  margin: 0;
+}
+
+.staff-report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.staff-report-table th,
+.staff-report-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid currentColor;
+  text-align: right;
+}
+
+.staff-report-table th:first-child,
+.staff-report-table td:first-child {
+  text-align: left;
+}
+
+.staff-report-checks,
+.staff-report-signers,
+.staff-report-footer {
+  display: grid;
+  gap: 4px;
+}
+
+.staff-report-note {
+  margin: 0;
+}
+
+.staff-report-footer {
+  font-size: 12px;
+}

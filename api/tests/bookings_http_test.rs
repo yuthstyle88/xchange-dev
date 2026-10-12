@@ -993,7 +993,7 @@ async fn every_refusal_is_json() {
 #[actix_web::test]
 async fn a_database_failure_is_the_shared_500() {
     let room = Room::open().await;
-    sqlx::query("DROP TABLE bookings CASCADE")
+    sqlx::query("DROP TABLE v2_bookings CASCADE")
         .execute(&room.desk.db.pool)
         .await
         .expect("take the bookings table away");

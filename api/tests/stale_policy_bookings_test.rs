@@ -122,7 +122,7 @@ impl Room {
     }
 
     async fn bookings(&self) -> i64 {
-        sqlx::query_scalar("SELECT count(*) FROM bookings")
+        sqlx::query_scalar("SELECT count(*) FROM v2_bookings")
             .fetch_one(&self.desk.db.pool)
             .await
             .expect("count bookings")
@@ -137,7 +137,7 @@ impl Room {
             .as_str()
             .unwrap_or_else(|| panic!("{what}: the booking's id: {}", answer.text))
             .to_owned();
-        sqlx::query_scalar("SELECT published_rate_line_id::text FROM bookings WHERE id = $1")
+        sqlx::query_scalar("SELECT published_rate_line_id::text FROM v2_bookings WHERE id = $1")
             .bind(&id)
             .fetch_one(&self.desk.db.pool)
             .await

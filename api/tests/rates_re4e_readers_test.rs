@@ -403,7 +403,8 @@ async fn convert_as_migration_5(pool: &PgPool) {
     let end = MIGRATION_5
         .find("-- down:")
         .expect("migration 5 has a down note");
-    let conversion = MIGRATION_5[start..end].to_owned();
+    // BK-1's M1 renames v2's `bookings` to `v2_bookings`; the conversion's booking step targets it there.
+    let conversion = MIGRATION_5[start..end].replace("UPDATE bookings", "UPDATE v2_bookings");
     assert!(
         conversion.contains("UPDATE transactions"),
         "the conversion converts transactions: {conversion}"

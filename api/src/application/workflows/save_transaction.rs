@@ -345,7 +345,7 @@ impl SaveTransactionWorkflow {
                             if let Some(claim) = booking {
                                 let row: Option<(Decimal, Decimal, Option<uuid::Uuid>)> =
                                     sqlx::query_as(
-                                        "SELECT rate, unit_size, published_rate_line_id FROM bookings WHERE branch_id = $1 AND id = $2",
+                                        "SELECT rate, unit_size, published_rate_line_id FROM v2_bookings WHERE branch_id = $1 AND id = $2",
                                     )
                                     .bind(branch.as_str())
                                     .bind(&claim.booking_id)

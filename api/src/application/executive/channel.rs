@@ -60,7 +60,7 @@ impl Channel {
 
 fn booked(alias: &str) -> String {
     format!(
-        "EXISTS (SELECT 1 FROM bookings ch_b \
+        "EXISTS (SELECT 1 FROM v2_bookings ch_b \
          WHERE ch_b.organization_id = {alias}.organization_id AND ch_b.id = {alias}.booking_no \
          AND ch_b.transaction_ref = {alias}.document_ref)"
     )

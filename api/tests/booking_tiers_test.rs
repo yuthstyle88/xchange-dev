@@ -196,7 +196,7 @@ async fn pending_booking(db: &TestDb, line_id: &str) {
     .await;
     // A pending member booking of 500 USD bought at T2 (31.70), quoted from the T2 line.
     db.exec(&format!(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, type, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, type, \
              code, amount, rate, status, created_at, created_by, unit_size, published_rate_line_id) \
          VALUES ('BK-TIER', 'MAIN', 'req-tier', 'hash', 'Tier Member', '0800000001', 'MB-TIER', \
              'BUY', 'USD', 500, 31.70, 'PENDING', now(), 'member', 1, '{}'::uuid)",
@@ -229,7 +229,7 @@ async fn confirm(db: &TestDb) -> pos_error::AppResult<()> {
 }
 
 async fn status(db: &TestDb) -> Option<String> {
-    db.text("SELECT status FROM bookings WHERE id = 'BK-TIER'")
+    db.text("SELECT status FROM v2_bookings WHERE id = 'BK-TIER'")
         .await
 }
 

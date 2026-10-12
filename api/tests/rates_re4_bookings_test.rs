@@ -200,7 +200,7 @@ impl Room {
     }
 
     async fn bookings(&self) -> i64 {
-        sqlx::query_scalar("SELECT count(*) FROM bookings")
+        sqlx::query_scalar("SELECT count(*) FROM v2_bookings")
             .fetch_one(&self.desk.db.pool)
             .await
             .expect("count bookings")
@@ -210,7 +210,7 @@ impl Room {
         sqlx::query_as(
             "SELECT published_rate_line_id::text AS published_rate_line_id, rate, unit_size, \
                     amount, status, expires_at, confirmed_at, confirmed_by \
-             FROM bookings WHERE id = $1",
+             FROM v2_bookings WHERE id = $1",
         )
         .bind(id)
         .fetch_one(&self.desk.db.pool)
@@ -630,7 +630,7 @@ async fn a_booking_written_before_re4_cannot_be_confirmed() {
     let member = room.member().await;
     publish(&pool, MAIN, &[("USD", "36.25", "36.75")]).await;
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
              type, code, amount, rate, status, created_at, created_by, unit_size, \
              published_rate_line_id) \
          VALUES ('BK-OLD', 'MAIN', 'req-old', 'h', 'Somchai Jaidee', '081-234-5678', $1, 'BUY', \

@@ -66,13 +66,13 @@ impl PagedView for AdminBookingsPagedView {
             let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
                 "SELECT id, branch_id, name, phone, member_id, type, code, amount, rate, status, \
                  created_at, expires_at, transaction_ref \
-                 FROM bookings \
+                 FROM v2_bookings \
                  WHERE branch_id = ",
             );
             qb.push_bind(branch.as_str());
 
             if let Some(ref before_id) = before {
-                qb.push(" AND (created_at, id) < (SELECT created_at, id FROM bookings WHERE id = ");
+                qb.push(" AND (created_at, id) < (SELECT created_at, id FROM v2_bookings WHERE id = ");
                 qb.push_bind(before_id);
                 qb.push(" AND branch_id = ");
                 qb.push_bind(branch.as_str());

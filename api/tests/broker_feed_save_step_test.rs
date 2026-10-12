@@ -73,7 +73,7 @@ fn claiming(payload: &Value, id: &str) -> Value {
 /// [`TYPED_PHONE`], for `member` when given.
 async fn book(replay: &Replay<'_>, id: &str, member: Option<&str>) {
     sqlx::query(
-        "INSERT INTO bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
+        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
          type, code, amount, rate, status, created_at, created_by, expires_at) \
          VALUES ($1, 'MAIN', $1, $1, 'Booked Customer', $2, $3, 'BUY', 'USD', 100, 32.2, \
          'CONFIRMED', '2026-10-06T06:00:00.000Z'::timestamptz, 'owner', $4::timestamptz)",
