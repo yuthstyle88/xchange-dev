@@ -84,18 +84,32 @@ get_base_max() {
 
 fetch_open_prs() {
   local pr_json
-  if ! pr_json=$(gh pr list --state open --limit 500 --json number,headRefName,files 2>&1); then
-    echo "migration-slot: gh pr list failed: $pr_json" >&2
+  local errf
+  errf=$(mktemp)
+
+  if ! pr_json=$(gh pr list --state open --limit 500 --json number,headRefName,files 2>"$errf"); then
+    echo "migration-slot: gh pr list failed: $(cat "$errf")" >&2
+    rm -f "$errf"
     return 1
   fi
 
-  local truncated_pr
-  truncated_pr=$(echo "$pr_json" | jq -r '.[] | select((.files | length) == 100) | .number' | head -n 1)
-  if [ -n "$truncated_pr" ]; then
-    echo "migration-slot: PR #$truncated_pr file list may be truncated (100 files)" >&2
-    return 1
+  local truncated_prs
+  truncated_prs=$(echo "$pr_json" | jq -r '.[] | select((.files | length) == 100) | .number')
+  if [ -n "$truncated_prs" ]; then
+    for pr_num in $truncated_prs; do
+      local full_files_raw full_files_json
+      if ! full_files_raw=$(gh api "repos/{owner}/{repo}/pulls/$pr_num/files" --paginate --jq '.[].filename' 2>"$errf"); then
+        echo "migration-slot: gh api failed for PR #$pr_num: $(cat "$errf")" >&2
+        rm -f "$errf"
+        return 1
+      fi
+      full_files_json=$(printf '%s\n' "$full_files_raw" | jq -n -R '[inputs | select(length > 0) | {path: .}]')
+      pr_json=$(echo "$pr_json" | jq --argjson num "$pr_num" --argjson files "$full_files_json" \
+        'map(if .number == $num then .files = $files else . end)')
+    done
   fi
 
+  rm -f "$errf"
   echo "$pr_json"
 }
 

@@ -34,6 +34,14 @@
 #       each with the exact subject
 #   R5  renumber refuses a dirty tree and a checkout that is not the PR's branch
 #   R6  renumber with gh failing -> non-zero, nothing renamed, HEAD unchanged
+#   T1  next with a 100-file PR listing 120 files via REST, including a
+#       migration = skips that migration's slot
+#   T2  next with a 100-file PR listing 100 non-migration files via REST =
+#       no refusal, main's max + 1h
+#   T3  next with a 100-file PR whose REST call fails -> non-zero exit,
+#       message on stderr, nothing on stdout
+#   T4  renumber with a 100+ file PR holding a migration -> new slot lands
+#       above it
 #   G1  migration-order.sh failure prints the fix command with PR_NUMBER, and a
 #       <pr-number> placeholder without it
 set -uo pipefail
@@ -124,7 +132,8 @@ fixture() {
   : > "$GH_LOG"
   echo '[]' > "$GH_STUB_JSON"
   unset GH_STUB_EXIT
-  export GH_LOG GH_STUB_JSON
+  unset GH_API_STUB_EXIT GH_API_STUB_FAIL_PR
+  export GH_LOG GH_STUB_JSON T
 
   mkdir -p "$T/bin"
   cat > "$T/bin/gh" << 'STUB'
@@ -134,22 +143,48 @@ if [ -n "${GH_STUB_EXIT:-}" ]; then
   echo "gh: stub failure (HTTP 502)" >&2
   exit "$GH_STUB_EXIT"
 fi
-if [ "${1:-}" != "pr" ] || [ "${2:-}" != "list" ]; then
+if [ "${1:-}" = "pr" ] && [ "${2:-}" = "list" ]; then
+  jq_expr=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --jq|-q) jq_expr="$2"; shift 2 ;;
+      --jq=*) jq_expr="${1#--jq=}"; shift ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$jq_expr" ]; then
+    jq -r "$jq_expr" "$GH_STUB_JSON"
+  else
+    cat "$GH_STUB_JSON"
+  fi
+  exit 0
+elif [ "${1:-}" = "api" ]; then
+  if [ -n "${GH_API_STUB_EXIT:-}" ]; then
+    echo "gh: stub api failure (HTTP 404)" >&2
+    exit "$GH_API_STUB_EXIT"
+  fi
+  endpoint="${2:-}"
+  if [[ "$endpoint" =~ pulls/([0-9]+)/files ]]; then
+    pr_n="${BASH_REMATCH[1]}"
+    if [ -n "${GH_API_STUB_FAIL_PR:-}" ] && [ "$pr_n" = "$GH_API_STUB_FAIL_PR" ]; then
+      echo "gh: stub api failure for PR #$pr_n (HTTP 404)" >&2
+      exit 1
+    fi
+    file_list="$T/files-$pr_n.txt"
+    if [ -f "$file_list" ]; then
+      cat "$file_list"
+      exit 0
+    else
+      echo "gh stub: per-PR file list not found: $file_list" >&2
+      exit 1
+    fi
+  else
+    echo "gh stub: unexpected api endpoint: $endpoint" >&2
+    exit 99
+  fi
+else
   echo "gh stub: unexpected call: gh $*" >&2
   exit 99
-fi
-jq_expr=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --jq|-q) jq_expr="$2"; shift 2 ;;
-    --jq=*) jq_expr="${1#--jq=}"; shift ;;
-    *) shift ;;
-  esac
-done
-if [ -n "$jq_expr" ]; then
-  jq -r "$jq_expr" "$GH_STUB_JSON"
-else
-  cat "$GH_STUB_JSON"
 fi
 STUB
   chmod +x "$T/bin/gh"
@@ -387,6 +422,92 @@ unset GH_STUB_EXIT
 if [ "$RC" -eq 0 ] || [ "$RC" -eq 2 ]; then fail "exit $RC, want non-zero and not the scaffold's 2"; fi
 if [ "$(git -C "$WORK" rev-parse HEAD)" != "$before" ]; then fail "HEAD moved"; fi
 if [ -n "$(git -C "$WORK" status --porcelain)" ]; then fail "tree changed"; fi
+end
+
+# --- 100+ file PRs and REST pagination (T1-T4, #1529) ---------------------
+
+begin "T1 next with 100-file PR listing 120 files via REST skips migration slot"
+fixture
+python3 -c '
+import json
+files = [{"path": f"src/file_{i}.rs", "additions": 1, "deletions": 0} for i in range(100)]
+data = [{"number": 120, "headRefName": "feat/big", "files": files}]
+print(json.dumps(data))
+' > "$GH_STUB_JSON"
+python3 -c '
+for i in range(119):
+    print(f"src/file_{i}.rs")
+print("api/migrations/20261111120000_foo.sql")
+' > "$T/files-120.txt"
+run_sut next
+if [ "$RC" -ne 0 ]; then fail "exit $RC (stderr: $(cat "$ERR"))"; fi
+got=$(cat "$OUT")
+if [ "$got" != "20261111130000" ]; then fail "stdout '$got', want '20261111130000'"; fi
+end
+
+begin "T2 next with 100-file PR listing 100 non-migration files via REST does not refuse"
+fixture
+python3 -c '
+import json
+files = [{"path": f"src/file_{i}.rs", "additions": 1, "deletions": 0} for i in range(100)]
+data = [{"number": 121, "headRefName": "feat/clean", "files": files}]
+print(json.dumps(data))
+' > "$GH_STUB_JSON"
+python3 -c '
+for i in range(100):
+    print(f"src/file_{i}.rs")
+' > "$T/files-121.txt"
+run_sut next
+if [ "$RC" -ne 0 ]; then fail "exit $RC (stderr: $(cat "$ERR"))"; fi
+got=$(cat "$OUT")
+if [ "$got" != "20261110110000" ]; then fail "stdout '$got', want '20261110110000'"; fi
+end
+
+begin "T3 next with 100-file PR whose REST call fails exits non-zero"
+fixture
+python3 -c '
+import json
+files = [{"path": f"src/file_{i}.rs", "additions": 1, "deletions": 0} for i in range(100)]
+data = [{"number": 122, "headRefName": "feat/failing", "files": files}]
+print(json.dumps(data))
+' > "$GH_STUB_JSON"
+GH_API_STUB_FAIL_PR=122
+export GH_API_STUB_FAIL_PR
+run_sut next
+unset GH_API_STUB_FAIL_PR
+if [ "$RC" -eq 0 ] || [ "$RC" -eq 2 ]; then fail "exit $RC, want 1"; fi
+if [ -s "$OUT" ]; then fail "stdout not empty: $(cat "$OUT")"; fi
+if ! grep -q "gh api failed for PR #122" "$ERR"; then
+  fail "stderr does not name PR and API failure: $(cat "$ERR")"
+fi
+end
+
+begin "T4 renumber with 100+ file PR holding a migration lands above it"
+fixture
+branch_from commitA feat/outbox "$M/20261109110000_outbox.sql"
+python3 -c '
+import json
+files_888 = [{"path": f"src/file_{i}.rs", "additions": 1, "deletions": 0} for i in range(100)]
+files_1016 = [{"path": "api/migrations/20261109110000_outbox.sql", "additions": 1, "deletions": 0}]
+data = [
+    {"number": 888, "headRefName": "feat/big", "files": files_888},
+    {"number": 1016, "headRefName": "feat/outbox", "files": files_1016}
+]
+print(json.dumps(data))
+' > "$GH_STUB_JSON"
+python3 -c '
+for i in range(119):
+    print(f"src/file_{i}.rs")
+print("api/migrations/20261112100000_big_mig.sql")
+' > "$T/files-888.txt"
+run_sut renumber 1016
+if [ "$RC" -ne 0 ]; then fail "exit $RC (stderr: $(cat "$ERR"))"; fi
+if [ ! -f "$WORK/$M/20261112110000_outbox.sql" ]; then
+  fail "want $M/20261112110000_outbox.sql, files: $(ls "$WORK/$M")"
+fi
+if ! grep -qF '20261109110000 → 20261112110000' "$OUT"; then
+  fail "stdout does not report old -> new: $(cat "$OUT")"
+fi
 end
 
 # --- the gate's fix line -------------------------------------------------

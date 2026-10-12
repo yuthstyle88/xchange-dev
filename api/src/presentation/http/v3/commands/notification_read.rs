@@ -5,20 +5,35 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::notifications::NotificationId;
 use xc_notify::application::notification_service::NotificationService;
 use xc_notify::application::template_registry::TemplateRegistry;
+use xc_notify::domain::error::NotifyError;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
+use crate::presentation::http::v3::command::{server_error, CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
+
+fn to_v3_error(err: NotifyError) -> V3Error {
+    match err {
+        NotifyError::NotFound => {
+            V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND)
+        }
+        NotifyError::OutOfScope => {
+            V3Error::new("outOfScope", None, "out of scope", StatusCode::FORBIDDEN)
+        }
+        NotifyError::Store(e) => {
+            tracing::error!(error = %e, "notification service error");
+            server_error()
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +50,6 @@ pub struct NotificationReadOutput {
 }
 
 pub struct NotificationReadCommand {
-    #[allow(dead_code)]
     service: Arc<NotificationService>,
 }
 
@@ -61,55 +75,14 @@ impl CommandAction for NotificationReadCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let user_uuid = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
-        let notif_uuid = Uuid::parse_str(&input.id)
-            .map_err(|_| V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND))?;
-
-        let row: Option<(Uuid, Option<DateTime<Utc>>)> = sqlx::query_as(
-            "SELECT recipient_user_id, read_at FROM notifications WHERE id = $1",
-        )
-        .bind(notif_uuid)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to query notification");
-            server_error()
-        })?;
-
-        let (recipient, read_at) = row.ok_or_else(|| {
-            V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND)
-        })?;
-
-        if recipient != user_uuid {
-            return Err(V3Error::new(
-                "outOfScope",
-                None,
-                "out of scope",
-                StatusCode::FORBIDDEN,
-            ));
-        }
-
-        if let Some(existing) = read_at {
-            return Ok(NotificationReadOutput {
-                read_at: existing.to_rfc3339(),
-            });
-        }
-
-        let updated: DateTime<Utc> = sqlx::query_scalar(
-            "UPDATE notifications SET read_at = now() \
-             WHERE id = $1 AND read_at IS NULL \
-             RETURNING read_at",
-        )
-        .bind(notif_uuid)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to update notification read_at");
-            server_error()
-        })?;
+        let read_at = self
+            .service
+            .mark_read_in(tx, &who.user_id, &NotificationId(input.id))
+            .await
+            .map_err(to_v3_error)?;
 
         Ok(NotificationReadOutput {
-            read_at: updated.to_rfc3339(),
+            read_at: read_at.to_rfc3339(),
         })
     }
 }
@@ -128,7 +101,6 @@ pub struct NotificationReadAllOutput {
 }
 
 pub struct NotificationReadAllCommand {
-    #[allow(dead_code)]
     service: Arc<NotificationService>,
 }
 
@@ -154,23 +126,13 @@ impl CommandAction for NotificationReadAllCommand {
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let user_uuid = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
+        let count = self
+            .service
+            .mark_all_read_in(tx, &who.user_id)
+            .await
+            .map_err(to_v3_error)?;
 
-        let res = sqlx::query(
-            "UPDATE notifications SET read_at = now() \
-             WHERE recipient_user_id = $1 AND read_at IS NULL",
-        )
-        .bind(user_uuid)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to mark all notifications read");
-            server_error()
-        })?;
-
-        Ok(NotificationReadAllOutput {
-            count: res.rows_affected(),
-        })
+        Ok(NotificationReadAllOutput { count })
     }
 }
 
