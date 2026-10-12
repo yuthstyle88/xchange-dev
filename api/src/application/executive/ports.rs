@@ -136,6 +136,7 @@ pub enum AlertKind {
     RatePending,
     StaleData,
     CountDifference,
+    LowStock,
 }
 
 impl AlertKind {
@@ -144,6 +145,7 @@ impl AlertKind {
             AlertKind::RatePending => "ratePending",
             AlertKind::StaleData => "staleData",
             AlertKind::CountDifference => "countDifference",
+            AlertKind::LowStock => "lowStock",
         }
     }
 }

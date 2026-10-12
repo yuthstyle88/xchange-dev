@@ -123,7 +123,7 @@ pub struct BranchRowDto {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "executive_overview.ts")]
 pub struct AlertDto {
-    #[ts(type = "\"ratePending\" | \"staleData\" | \"countDifference\"")]
+    #[ts(type = "\"ratePending\" | \"staleData\" | \"countDifference\" | \"lowStock\"")]
     pub kind: String,
     pub branch_id: String,
     pub since: Option<String>,

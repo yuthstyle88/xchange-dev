@@ -17,16 +17,26 @@ use xc_kernel::ids::BranchId;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::infrastructure::custody::decode::exception_from_row;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use xc_kernel::money::CurrencyCode;
+
 use crate::application::executive::drilldown::Drilldown;
-use crate::application::executive::ports::{Alert, AlertFacts, AlertKind, BoxFuture};
+use crate::application::executive::ports::{Alert, AlertFacts, AlertKind, BoxFuture, CashFacts};
 
 pub struct PgAlertFacts {
     pool: PgPool,
+    cash: Arc<dyn CashFacts>,
 }
 
 impl PgAlertFacts {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, cash: Arc<dyn CashFacts>) -> Self {
+        Self { pool, cash }
+    }
+
+    pub fn cash(&self) -> &Arc<dyn CashFacts> {
+        &self.cash
     }
 
     async fn rate_pending(&self, scope: &[String]) -> AppResult<Vec<Alert>> {
@@ -132,6 +142,54 @@ impl PgAlertFacts {
         }
         Ok(alerts)
     }
+
+    async fn low_stock(&self, scope: &[BranchId]) -> AppResult<Vec<Alert>> {
+        let ids: Vec<String> = scope.iter().map(|b| b.as_str().to_owned()).collect();
+        let rows: Vec<(String, String, Decimal, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT branch_id, currency, min_quantity, updated_at FROM branch_stock_floors \
+              WHERE branch_id = ANY($1) AND min_quantity > 0 \
+              ORDER BY branch_id, currency",
+        )
+        .bind(&ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        let mut alerts = Vec::new();
+        let mut on_hand_cache: HashMap<BranchId, Vec<(CurrencyCode, Decimal)>> = HashMap::new();
+
+        for (branch_str, currency, floor, updated_at) in rows {
+            let code = currency.trim().to_string();
+            let branch = BranchId::new(branch_str.clone());
+
+            let on_hand_list = if let Some(cached) = on_hand_cache.get(&branch) {
+                cached
+            } else {
+                let fetched = self.cash.on_hand_by_currency(&branch).await?;
+                on_hand_cache.entry(branch.clone()).or_insert(fetched)
+            };
+
+            let on_hand = on_hand_list
+                .iter()
+                .find(|(c, _)| c.as_str() == code)
+                .map(|(_, q)| *q)
+                .unwrap_or(Decimal::ZERO);
+
+            if on_hand < floor {
+                alerts.push(Alert {
+                    kind: AlertKind::LowStock,
+                    drilldown: Some(Drilldown::to(
+                        "admin_cash",
+                        vec![("branch", branch_str), ("currency", code.clone())],
+                    )),
+                    branch,
+                    since: Some(updated_at),
+                    detail: format!("{code}: on hand {on_hand}, floor {floor}"),
+                });
+            }
+        }
+        Ok(alerts)
+    }
 }
 
 /// Neither `cash_counts` (CA-8 #624) nor `finance_reconciliation` (FN-1 #1068) is on `main`: no drill-down.
@@ -169,6 +227,7 @@ impl AlertFacts for PgAlertFacts {
             let mut alerts = self.rate_pending(&ids).await?;
             alerts.extend(self.stale_data(&ids).await?);
             alerts.extend(self.count_difference(&ids).await?);
+            alerts.extend(self.low_stock(scope).await?);
             Ok(alerts)
         })
     }
