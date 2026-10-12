@@ -2154,3 +2154,293 @@ async fn the_report_carries_every_figure_and_no_customer() {
     let _ = BTreeMap::<u8, u8>::new();
     d.finish().await;
 }
+
+// ------------------------------------------------------------ issue #1521: overnight shifts and close counts
+
+/// Issue #1521, row 1: shift opened D 22:00 local, CLOSE counted and verified D+1 01:00.
+/// Day D: drawer includes it, signers include its two users, status closed-awaiting.
+/// Day D+1: drawer and signers exclude it.
+#[actix_web::test]
+async fn overnight_shift_opened_d_evening_close_counted_and_verified_d_plus_1_morning() {
+    let d = Day::start().await;
+    let reader = d.reader().await;
+    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
+
+    let open_time = local(bangkok(), day(), 22, 0, 0);
+    let close_time = local(bangkok(), day().succ_opt().unwrap(), 1, 0, 0);
+
+    let (teller, shift) = d
+        .counted_shift(
+            &manager,
+            &[("THB", "1000", 5), ("USD", "100", 3)],
+            open_time,
+        )
+        .await;
+
+    let close_count = d
+        .close(
+            &teller,
+            &manager,
+            &shift,
+            &[("THB", "1000", 5), ("USD", "100", 3)],
+            None,
+            close_time,
+            true,
+        )
+        .await;
+
+    // Day D's report: drawer includes it, signers include teller and manager, status closedAwaitingReconciliation
+    let report_d = d.report(&reader, Some(day())).await;
+    assert_eq!(
+        report_d["status"], "closedAwaitingReconciliation",
+        "Day D status is closedAwaitingReconciliation: {report_d}"
+    );
+    for (key, column) in [
+        ("drawerCounted", "counted"),
+        ("drawerExpected", "expected"),
+        ("drawerDifference", "difference"),
+    ] {
+        for code in ["THB", "USD"] {
+            let want = d.summed(column, &[&close_count], code).await;
+            let got = &row(&report_d, code)[key];
+            match want {
+                Some(w) => assert_eq!(
+                    number(got, key),
+                    w,
+                    "Day D {code} {key} includes the overnight shift: {report_d}"
+                ),
+                None => assert!(got.is_null(), "{code} {key}: {report_d}"),
+            }
+        }
+    }
+    let mut got_signers_d: Vec<(String, String)> = report_d["signers"]
+        .as_array()
+        .unwrap_or_else(|| panic!("signers: {report_d}"))
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap_or("").to_owned(),
+                s["capacity"].as_str().unwrap_or("").to_owned(),
+            )
+        })
+        .collect();
+    got_signers_d.sort();
+    let mut want_signers_d = vec![
+        (teller.name.clone(), "counted".to_owned()),
+        (manager.name.clone(), "verified".to_owned()),
+    ];
+    want_signers_d.sort();
+    assert_eq!(
+        got_signers_d, want_signers_d,
+        "Day D signers include both users: {report_d}"
+    );
+
+    // Day D+1's report: drawer and signers exclude it
+    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
+    for code in ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "AUD"] {
+        for key in ["drawerCounted", "drawerExpected", "drawerDifference"] {
+            assert!(
+                row(&report_d1, code)[key].is_null(),
+                "Day D+1 {code} {key} must exclude the overnight shift: {report_d1}"
+            );
+        }
+    }
+    assert_eq!(
+        report_d1["signers"],
+        json!([]),
+        "Day D+1 signers exclude the overnight shift: {report_d1}"
+    );
+
+    d.finish().await;
+}
+
+/// Issue #1521, row 2: shift opened and closed on D (unchanged).
+/// Day D: included.
+/// Day D+1: excluded.
+#[actix_web::test]
+async fn shift_opened_and_closed_on_d_is_included_in_d_and_excluded_in_d_plus_1() {
+    let d = Day::start().await;
+    let reader = d.reader().await;
+    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
+
+    let open_time = local(bangkok(), day(), 9, 0, 0);
+    let close_time = local(bangkok(), day(), 17, 0, 0);
+
+    let (teller, shift) = d
+        .counted_shift(&manager, &[("THB", "1000", 5)], open_time)
+        .await;
+
+    let close_count = d
+        .close(
+            &teller,
+            &manager,
+            &shift,
+            &[("THB", "1000", 5)],
+            None,
+            close_time,
+            true,
+        )
+        .await;
+
+    // Day D: included
+    let report_d = d.report(&reader, Some(day())).await;
+    assert_eq!(
+        report_d["status"], "closedAwaitingReconciliation",
+        "Day D status: {report_d}"
+    );
+    let want_thb = d.summed("counted", &[&close_count], "THB").await.unwrap();
+    assert_eq!(
+        number(&row(&report_d, "THB")["drawerCounted"], "drawerCounted"),
+        want_thb,
+        "Day D drawer includes the shift: {report_d}"
+    );
+    let mut got_signers: Vec<(String, String)> = report_d["signers"]
+        .as_array()
+        .unwrap_or_else(|| panic!("signers: {report_d}"))
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap_or("").to_owned(),
+                s["capacity"].as_str().unwrap_or("").to_owned(),
+            )
+        })
+        .collect();
+    got_signers.sort();
+    let mut want_signers = vec![
+        (teller.name.clone(), "counted".to_owned()),
+        (manager.name.clone(), "verified".to_owned()),
+    ];
+    want_signers.sort();
+    assert_eq!(got_signers, want_signers, "Day D signers: {report_d}");
+
+    // Day D+1: excluded
+    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
+    assert!(
+        row(&report_d1, "THB")["drawerCounted"].is_null(),
+        "Day D+1 drawer excludes Day D shift: {report_d1}"
+    );
+    assert_eq!(
+        report_d1["signers"],
+        json!([]),
+        "Day D+1 signers exclude Day D shift: {report_d1}"
+    );
+
+    d.finish().await;
+}
+
+/// Issue #1521, row 3: a verified CLOSE whose shift is v2-opened (`opened_by_count IS NULL`).
+/// Day D: excluded.
+/// Day D+1: excluded.
+#[actix_web::test]
+async fn verified_close_whose_shift_is_v2_opened_is_excluded_from_both_days() {
+    let d = Day::start().await;
+    let reader = d.reader().await;
+    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
+    let teller = d.person(Role::Teller, Some(MAIN)).await;
+
+    // Create a v2-opened shift directly in DB with opened_by_count NULL on Day D
+    let shift_id = unique("v2-shift");
+    let open_req = unique("open-req");
+    d.db()
+        .exec(&format!(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
+             VALUES ('{shift_id}', '{MAIN}', 'CLOSED', '{}', 'owner', '{open_req}', '{}'::uuid, NULL)",
+            local(bangkok(), day(), 10, 0, 0),
+            teller.id
+        ))
+        .await;
+
+    // Verified CLOSE count for that v2-opened shift on Day D
+    d.close(
+        &teller,
+        &manager,
+        &shift_id,
+        &[("THB", "1000", 5)],
+        None,
+        noon(3_600),
+        true,
+    )
+    .await;
+
+    // Day D: excluded
+    let report_d = d.report(&reader, Some(day())).await;
+    assert!(
+        row(&report_d, "THB")["drawerCounted"].is_null(),
+        "Day D drawer must exclude v2-opened shift's CLOSE count: {report_d}"
+    );
+    assert_eq!(
+        report_d["signers"],
+        json!([]),
+        "Day D signers must exclude v2-opened shift's CLOSE count: {report_d}"
+    );
+
+    // Day D+1: excluded
+    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
+    assert!(
+        row(&report_d1, "THB")["drawerCounted"].is_null(),
+        "Day D+1 drawer must exclude v2-opened shift's CLOSE count: {report_d1}"
+    );
+    assert_eq!(
+        report_d1["signers"],
+        json!([]),
+        "Day D+1 signers must exclude v2-opened shift's CLOSE count: {report_d1}"
+    );
+
+    d.finish().await;
+}
+
+/// Issue #1521, row 4: an unverified CLOSE of a D shift.
+/// Day D: excluded.
+/// Day D+1: excluded.
+#[actix_web::test]
+async fn unverified_close_of_d_shift_is_excluded_from_both_days() {
+    let d = Day::start().await;
+    let reader = d.reader().await;
+    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
+
+    let (teller, shift) = d
+        .counted_shift(&manager, &[("THB", "1000", 5)], noon(0))
+        .await;
+
+    // Unverified CLOSE count on Day D
+    d.close(
+        &teller,
+        &manager,
+        &shift,
+        &[("THB", "1000", 5)],
+        None,
+        noon(3_600),
+        false,
+    )
+    .await;
+
+    // Day D: excluded (and status is preliminary because the shift is not verified-closed)
+    let report_d = d.report(&reader, Some(day())).await;
+    assert_eq!(
+        report_d["status"], "preliminary",
+        "Day D status with unverified close is preliminary: {report_d}"
+    );
+    assert!(
+        row(&report_d, "THB")["drawerCounted"].is_null(),
+        "Day D drawer excludes unverified CLOSE count: {report_d}"
+    );
+    assert_eq!(
+        report_d["signers"],
+        json!([]),
+        "Day D signers exclude unverified CLOSE count: {report_d}"
+    );
+
+    // Day D+1: excluded
+    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
+    assert!(
+        row(&report_d1, "THB")["drawerCounted"].is_null(),
+        "Day D+1 drawer excludes unverified CLOSE count: {report_d1}"
+    );
+    assert_eq!(
+        report_d1["signers"],
+        json!([]),
+        "Day D+1 signers exclude unverified CLOSE count: {report_d1}"
+    );
+
+    d.finish().await;
+}

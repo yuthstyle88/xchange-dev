@@ -168,12 +168,14 @@ impl StaffDailyReportView {
         .await
         .map_err(db)?;
 
-        // B.1 row 7, Q-SR1: every verified CLOSE count of the day.
+        // B.1 row 7, Q-SR1: every verified CLOSE count of the day's counted shifts.
         let close_counts: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
-            "SELECT id, counted_by, verified_by FROM cash_counts \
-             WHERE branch_id = $1 AND kind = 'CLOSE' AND verified_at IS NOT NULL \
-               AND counted_at >= $2 AND counted_at < $3 \
-             ORDER BY verified_at, id",
+            "SELECT c.id, c.counted_by, c.verified_by \
+             FROM cash_counts c JOIN shifts s ON s.id = c.shift_id \
+             WHERE s.branch_id = $1 AND s.opened_by_count IS NOT NULL \
+               AND s.opened_at >= $2 AND s.opened_at < $3 \
+               AND c.kind = 'CLOSE' AND c.verified_at IS NOT NULL \
+             ORDER BY c.verified_at, c.id",
         )
         .bind(b)
         .bind(from)
