@@ -33,6 +33,31 @@ fn parse_alert_id(id_opt: Option<&str>) -> Result<RateAlertId, V3Error> {
     }
 }
 
+fn validation_failed(field: &'static str, message: impl Into<String>) -> V3Error {
+    V3Error::new(
+        "validationFailed",
+        Some(field),
+        message.into(),
+        StatusCode::BAD_REQUEST,
+    )
+}
+
+fn parse_expected_version(v: i64) -> Result<i32, V3Error> {
+    if v < 0 {
+        return Err(validation_failed(
+            "expectedVersion",
+            "expectedVersion must be non-negative",
+        ));
+    }
+    i32::try_from(v).map_err(|_| {
+        validation_failed(
+            "expectedVersion",
+            "expectedVersion out of range",
+        )
+    })
+}
+
+
 pub struct RateAlertPauseCommand {
     pool: PgPool,
 }
@@ -61,7 +86,7 @@ impl CommandAction for RateAlertPauseCommand {
     ) -> Result<Self::Output, V3Error> {
         let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
-        let expected_version = i32::try_from(input.expected_version).unwrap_or(i32::MAX);
+        let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
@@ -104,7 +129,7 @@ impl CommandAction for RateAlertResumeCommand {
     ) -> Result<Self::Output, V3Error> {
         let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
-        let expected_version = i32::try_from(input.expected_version).unwrap_or(i32::MAX);
+        let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
@@ -147,7 +172,7 @@ impl CommandAction for RateAlertDeleteCommand {
     ) -> Result<Self::Output, V3Error> {
         let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
-        let expected_version = i32::try_from(input.expected_version).unwrap_or(i32::MAX);
+        let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service

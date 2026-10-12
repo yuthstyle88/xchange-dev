@@ -879,3 +879,170 @@ async fn only_executive_saves_or_reads_the_settings_admin_included() {
     );
     room.finish().await;
 }
+
+// ------------------------------------------------------------ expectedVersion validation (#1470)
+
+#[actix_web::test]
+async fn lifecycle_commands_refuse_out_of_range_expected_version_with_validation_failed() {
+    let room = Room::start().await;
+    room.settings(10).await;
+    let cx1 = room.customer(CX1).await;
+
+    const OVERFLOW: i64 = 2_147_483_648; // i32::MAX as i64 + 1
+    const NEGATIVE: i64 = -1;
+
+    for bad_version in [OVERFLOW, NEGATIVE] {
+        // 1. pause on an active alert
+        let (id_pause, v_pause) = id_version(
+            &create(&room, &cx1, usd_above("34.10"), &unique("key")).await,
+            "create for pause",
+        );
+        let a = lifecycle(&room, &cx1, &id_pause, "pause", bad_version, &unique("key")).await;
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "pause with version {bad_version}: expected 400, got {} {}",
+            a.status,
+            a.text
+        );
+        assert_eq!(
+            a.code(),
+            "validationFailed",
+            "pause with version {bad_version}: expected validationFailed, got {}",
+            a.text
+        );
+        assert_eq!(
+            a.body["error"]["field"].as_str(),
+            Some("expectedVersion"),
+            "pause with version {bad_version}: expected field 'expectedVersion', got {}",
+            a.text
+        );
+        let v_after: i32 =
+            sqlx::query_scalar("SELECT version FROM rate_alerts WHERE id::text = $1")
+                .bind(&id_pause)
+                .fetch_one(&room.pool)
+                .await
+                .expect("read version after refused pause");
+        let enabled_after: bool =
+            sqlx::query_scalar("SELECT enabled FROM rate_alerts WHERE id::text = $1")
+                .bind(&id_pause)
+                .fetch_one(&room.pool)
+                .await
+                .expect("read enabled after refused pause");
+        assert_eq!(
+            i64::from(v_after),
+            v_pause,
+            "pause refusal wrote no version"
+        );
+        assert!(enabled_after, "pause refusal left alert enabled");
+
+        // 2. resume on a paused alert
+        let (id_resume, v_created) = id_version(
+            &create(&room, &cx1, usd_above("34.10"), &unique("key")).await,
+            "create for resume",
+        );
+        let (_, v_resume) = id_version(
+            &lifecycle(&room, &cx1, &id_resume, "pause", v_created, &unique("key")).await,
+            "pause to set up resume",
+        );
+        let a = lifecycle(
+            &room,
+            &cx1,
+            &id_resume,
+            "resume",
+            bad_version,
+            &unique("key"),
+        )
+        .await;
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "resume with version {bad_version}: expected 400, got {} {}",
+            a.status,
+            a.text
+        );
+        assert_eq!(
+            a.code(),
+            "validationFailed",
+            "resume with version {bad_version}: expected validationFailed, got {}",
+            a.text
+        );
+        assert_eq!(
+            a.body["error"]["field"].as_str(),
+            Some("expectedVersion"),
+            "resume with version {bad_version}: expected field 'expectedVersion', got {}",
+            a.text
+        );
+        let v_after: i32 =
+            sqlx::query_scalar("SELECT version FROM rate_alerts WHERE id::text = $1")
+                .bind(&id_resume)
+                .fetch_one(&room.pool)
+                .await
+                .expect("read version after refused resume");
+        let enabled_after: bool =
+            sqlx::query_scalar("SELECT enabled FROM rate_alerts WHERE id::text = $1")
+                .bind(&id_resume)
+                .fetch_one(&room.pool)
+                .await
+                .expect("read enabled after refused resume");
+        assert_eq!(
+            i64::from(v_after),
+            v_resume,
+            "resume refusal wrote no version"
+        );
+        assert!(!enabled_after, "resume refusal left alert paused");
+
+        // 3. delete on an active alert
+        let (id_delete, v_delete) = id_version(
+            &create(&room, &cx1, usd_above("34.10"), &unique("key")).await,
+            "create for delete",
+        );
+        let a = lifecycle(
+            &room,
+            &cx1,
+            &id_delete,
+            "delete",
+            bad_version,
+            &unique("key"),
+        )
+        .await;
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "delete with version {bad_version}: expected 400, got {} {}",
+            a.status,
+            a.text
+        );
+        assert_eq!(
+            a.code(),
+            "validationFailed",
+            "delete with version {bad_version}: expected validationFailed, got {}",
+            a.text
+        );
+        assert_eq!(
+            a.body["error"]["field"].as_str(),
+            Some("expectedVersion"),
+            "delete with version {bad_version}: expected field 'expectedVersion', got {}",
+            a.text
+        );
+        let deleted_count: i64 = room
+            .count(&format!(
+                "SELECT count(*) FROM rate_alerts WHERE id::text = '{id_delete}' AND deleted_at IS NOT NULL"
+            ))
+            .await;
+        assert_eq!(deleted_count, 0, "delete refusal did not set deleted_at");
+        let v_after: i32 =
+            sqlx::query_scalar("SELECT version FROM rate_alerts WHERE id::text = $1")
+                .bind(&id_delete)
+                .fetch_one(&room.pool)
+                .await
+                .expect("read version after refused delete");
+        assert_eq!(
+            i64::from(v_after),
+            v_delete,
+            "delete refusal wrote no version"
+        );
+    }
+
+    room.finish().await;
+}
