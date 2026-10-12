@@ -4035,6 +4035,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-marketing"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "rust_decimal",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "xc-notify"
 version = "0.1.0"
 dependencies = [
@@ -4179,6 +4192,7 @@ dependencies = [
  "xc-exchange",
  "xc-kernel",
  "xc-kiosk",
+ "xc-marketing",
  "xc-notify",
  "xc-outbox",
  "xc-queue",
