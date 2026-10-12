@@ -3,9 +3,8 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
-
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -118,6 +117,45 @@ impl PagedView for AdminCustomersPagedView {
                     OR EXISTS (SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' AND lower(normalize(ci.nationality, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(");
                 builder.push_bind(q.as_str());
                 builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\'))");
+            }
+
+            let has_period = filter.from.as_ref().is_some_and(|f| !f.is_empty())
+                || filter.to.as_ref().is_some_and(|t| !t.is_empty());
+            let is_repeat = filter.repeat == Some(true);
+
+            if has_period || is_repeat {
+                builder.push(
+                    " AND EXISTS (SELECT 1 FROM transactions tx \
+                     WHERE tx.branch_id = b.id \
+                       AND tx.customer_id = c.id \
+                       AND tx.mode = 'LIVE' \
+                       AND tx.status = 'COMPLETED'",
+                );
+                if let Some(ref from) = filter.from
+                    && !from.is_empty()
+                    && let Ok(d) = NaiveDate::parse_from_str(from, "%Y-%m-%d")
+                {
+                    builder.push(" AND tx.value_date >= ");
+                    builder.push_bind(d);
+                }
+                if let Some(ref to) = filter.to
+                    && !to.is_empty()
+                    && let Ok(d) = NaiveDate::parse_from_str(to, "%Y-%m-%d")
+                {
+                    builder.push(" AND tx.value_date <= ");
+                    builder.push_bind(d);
+                }
+                if is_repeat {
+                    builder.push(
+                        " AND EXISTS (SELECT 1 FROM transactions e \
+                         WHERE e.organization_id = b.organization_id \
+                           AND e.customer_id = c.id \
+                           AND e.mode = 'LIVE' \
+                           AND e.status = 'COMPLETED' \
+                           AND (e.value_date, e.recorded_at) < (tx.value_date, tx.recorded_at))",
+                    );
+                }
+                builder.push(")");
             }
 
             builder.push(
