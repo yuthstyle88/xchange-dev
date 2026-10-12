@@ -17,7 +17,8 @@ use super::metrics::{
     thb,
 };
 use super::ports::{
-    Alert, AlertFacts, CashFacts, CommissionSource, ExchangeFacts, ExecutiveFilter, ShiftStatus,
+    Alert, AlertFacts, BookingConversion, CashFacts, CommissionSource, ExchangeFacts,
+    ExecutiveFilter, ShiftStatus,
 };
 
 /// What A01 knows of a branch before its figures: its name and when its data last changed (D-4).
@@ -104,7 +105,7 @@ impl ExecutiveOverviewService {
                 repeat.to_string(),
                 Some(customers_drilldown(filter)),
             ),
-            Metric::unavailable(BOOKING_CONVERSION, MetricUnavailable::AwaitsBookingDesign),
+            conversion_metric(self.exchange.booking_conversion(scope, filter).await?),
             money_metric(COMMISSION_THB, commission)?,
         ];
 
@@ -156,6 +157,19 @@ fn money_metric(key: &'static str, m: Result<Money, MetricUnavailable>) -> AppRe
             Ok(Metric::value(key, thb(amount), None))
         }
         Err(reason) => Ok(Metric::unavailable(key, reason)),
+    }
+}
+
+fn conversion_metric(m: Result<BookingConversion, MetricUnavailable>) -> Metric {
+    match m {
+        Ok(conv) => Metric {
+            key: BOOKING_CONVERSION,
+            value: (conv.denominator() > 0)
+                .then(|| format!("{}%", (conv.numerator() * 100) / conv.denominator())),
+            unavailable: None,
+            drilldown: None,
+        },
+        Err(reason) => Metric::unavailable(BOOKING_CONVERSION, reason),
     }
 }
 

@@ -65,6 +65,35 @@ pub struct BranchDayTotals {
     pub reversals_thb: Decimal,
 }
 
+/// The booking conversion totals over the scope and the filter (design §3, §8).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BookingConversion {
+    pub total: (i64, i64),
+    pub by_branch: BTreeMap<BranchId, (i64, i64)>,
+}
+
+impl BookingConversion {
+    pub fn new(total: (i64, i64), by_branch: BTreeMap<BranchId, (i64, i64)>) -> Self {
+        Self { total, by_branch }
+    }
+
+    pub fn numerator(&self) -> i64 {
+        self.total.0
+    }
+
+    pub fn denominator(&self) -> i64 {
+        self.total.1
+    }
+
+    pub fn completed(&self) -> i64 {
+        self.total.0
+    }
+
+    pub fn confirmed(&self) -> i64 {
+        self.total.1
+    }
+}
+
 /// The exchange facts A01 and F01 read. Only COMPLETED, LIVE transactions count.
 pub trait ExchangeFacts: Send + Sync {
     /// Gross THB volumes per shop side over `scope` and the filter.
@@ -91,6 +120,17 @@ pub trait ExchangeFacts: Send + Sync {
 
     /// The branch's unfinished LIVE transactions (DRAFT, PENDING_APPROVAL, CONFIRMED): design §3 `data_freshness`.
     fn unfinished<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<i64>>;
+
+    /// Completed / confirmed bookings of the same appointment day (design §3).
+    /// Default body answers today's `Unavailable(AwaitsBookingDesign)`.
+    fn booking_conversion<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+        filter: &'a ExecutiveFilter,
+    ) -> BoxFuture<'a, AppResult<Result<BookingConversion, MetricUnavailable>>> {
+        let _ = (branches, filter);
+        Box::pin(async { Ok(Err(MetricUnavailable::AwaitsBookingDesign)) })
+    }
 }
 
 /// A branch's shifts for the branch table's ปิดกะ column (design §4.2).
