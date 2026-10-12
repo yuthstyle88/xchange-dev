@@ -51,6 +51,9 @@ pub struct MethodDayTotals {
     pub sell_thb: Decimal,
     pub fees_thb: Decimal,
     pub bank_fees_thb: Decimal,
+    /// The COMPLETED transactions whose first payment (`payment_no = 1`) is this method: the same transactions
+    /// whose line totals this row carries (FN-1 #1068, ruling Q1).
+    pub count: i64,
 }
 
 /// A branch-day's completed exchange totals: per payment method, ordered by method; posted reversals apart.
