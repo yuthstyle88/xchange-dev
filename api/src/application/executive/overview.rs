@@ -47,6 +47,8 @@ pub struct Overview {
     pub branches: Vec<BranchRow>,
     pub alerts: Vec<Alert>,
     pub definitions: &'static [Definition],
+    pub buy_reversed_thb: Decimal,
+    pub sell_reversed_thb: Decimal,
 }
 
 pub struct ExecutiveOverviewService {
@@ -140,6 +142,8 @@ impl ExecutiveOverviewService {
             branches,
             alerts,
             definitions: definitions(),
+            buy_reversed_thb: volumes.buy_reversed_thb,
+            sell_reversed_thb: volumes.sell_reversed_thb,
         })
     }
 }
