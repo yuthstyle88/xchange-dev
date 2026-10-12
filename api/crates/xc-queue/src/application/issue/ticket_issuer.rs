@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::{IssuedTicket, QueueTicketSource, QueueTickets};
@@ -96,7 +96,16 @@ impl TicketIssuer {
             TicketStatus::Called => {
                 desk.start_in(tx, actor, branch, &ticket.id, now).await?;
             }
-            TicketStatus::Serving => {}
+            TicketStatus::Serving => {
+                let is_serving_teller = ticket.counter_teller_id.as_deref() == Some(&actor.user_id);
+                let is_branch_manager = actor.roles.iter().any(|r| {
+                    r.role == Role::BranchManager
+                        && r.branch.as_ref().is_none_or(|b| b == &ticket.branch_id)
+                });
+                if !is_serving_teller && !is_branch_manager {
+                    return Err(QueueError::NotYourTicket.into());
+                }
+            }
             // A skipped, cancelled or finished ticket is not started again (§4.3).
             TicketStatus::Completed | TicketStatus::Cancelled | TicketStatus::NoShow => {
                 return Err(QueueError::StaleVersion.into());
