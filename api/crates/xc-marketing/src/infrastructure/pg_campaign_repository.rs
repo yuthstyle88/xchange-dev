@@ -269,3 +269,101 @@ impl CampaignRepository for PgCampaignRepository {
         })
     }
 }
+
+impl crate::domain::engine::active_rules::ActiveRules for PgCampaignRepository {
+    fn active_for<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: Uuid,
+        branch: &'a str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> BoxFuture<'a, pos_error::AppResult<Vec<crate::domain::engine::active_rules::ActiveRule>>>
+    {
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "SELECT \
+                    r.id AS rule_id, \
+                    r.campaign_version_id, \
+                    r.benefit_type, \
+                    r.benefit_class, \
+                    r.eligibility, \
+                    r.calculation, \
+                    r.caps, \
+                    r.requires_coupon, \
+                    r.rule_no, \
+                    v.stack_group, \
+                    v.priority, \
+                    v.id AS version_id, \
+                    v.created_at AS version_created_at, \
+                    v.segment_snapshot_id \
+                 FROM campaign_versions v \
+                 JOIN campaign_branches b ON b.campaign_version_id = v.id \
+                 JOIN benefit_rules r ON r.campaign_version_id = v.id \
+                 WHERE v.organization_id = $1 \
+                   AND v.status = 'APPROVED' \
+                   AND v.starts_at <= $2 \
+                   AND v.ends_at > $2 \
+                   AND b.branch_id = $3 \
+                 ORDER BY v.stack_group ASC, v.priority DESC, r.rule_no ASC",
+            )
+            .bind(organization_id)
+            .bind(now)
+            .bind(branch)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
+
+            let mut result = Vec::with_capacity(rows.len());
+
+            for row in rows {
+                let benefit_class_str: String = row.get("benefit_class");
+                let benefit_class = match benefit_class_str.as_str() {
+                    "PRICE" => crate::domain::benefit::rule::BenefitClass::Price,
+                    "REWARD" => crate::domain::benefit::rule::BenefitClass::Reward,
+                    other => {
+                        return Err(pos_error::AppError::Internal(format!(
+                            "unknown benefit class: {other}"
+                        )));
+                    }
+                };
+
+                let eligibility_val: serde_json::Value = row.get("eligibility");
+                let eligibility: crate::domain::benefit::eligibility::Eligibility =
+                    serde_json::from_value(eligibility_val).map_err(|e| {
+                        pos_error::AppError::Internal(format!("failed to decode eligibility: {e}"))
+                    })?;
+
+                let calculation: serde_json::Value = row.get("calculation");
+
+                let caps_val: serde_json::Value = row.get("caps");
+                let caps: crate::domain::benefit::rule::BenefitCaps =
+                    serde_json::from_value(caps_val).map_err(|e| {
+                        pos_error::AppError::Internal(format!("failed to decode caps: {e}"))
+                    })?;
+
+                let rule = crate::domain::benefit::rule::BenefitRule {
+                    id: row.get("rule_id"),
+                    campaign_version_id: row.get("campaign_version_id"),
+                    benefit_type: row.get("benefit_type"),
+                    benefit_class,
+                    eligibility,
+                    calculation,
+                    caps,
+                    requires_coupon: row.get("requires_coupon"),
+                    rule_no: row.get("rule_no"),
+                };
+
+                result.push(crate::domain::engine::active_rules::ActiveRule {
+                    rule,
+                    stack_group: row.get("stack_group"),
+                    priority: row.get("priority"),
+                    version_id: row.get("version_id"),
+                    version_created_at: row.get("version_created_at"),
+                    segment_snapshot_id: row.get("segment_snapshot_id"),
+                });
+            }
+
+            Ok(result)
+        })
+    }
+}

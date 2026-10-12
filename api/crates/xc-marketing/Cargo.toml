@@ -14,5 +14,12 @@ rust_decimal = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "rust_decimal"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "rust_decimal", "migrate", "json"] }
 sha2 = "0.10"
+serde = { workspace = true }
+serde_json = { workspace = true }
+xc-kernel = { workspace = true }
+pos-error = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
