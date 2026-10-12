@@ -15,8 +15,9 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
+use super::caller::Caller;
 use super::error::V3Error;
-use super::view::{authenticate_and_authorize, parse_branch, require_branch};
+use super::view::{authenticate_caller, parse_branch, require_branch};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
 use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
@@ -60,6 +61,26 @@ pub trait CommandAction: Send + Sync + 'static {
         input: Self::Input,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Self::Output, V3Error>> + Send + 'a;
+
+    /// APP-18 #1373 (option B): `run` with the seam's [`Caller`]; the default calls `run` with `caller.user` and
+    /// answers `signIn` when there is none.
+    fn run_as<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        caller: &'a Caller,
+        input: Self::Input,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Self::Output, V3Error>> + Send + 'a {
+        async move {
+            match caller.user.as_ref() {
+                Some(who) => self.run(tx, branch, who, input, key).await,
+                None => Err(V3Error::from(
+                    xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn,
+                )),
+            }
+        }
+    }
 }
 
 /// Helper for commands to map internal failures to `500 serverError`.
@@ -113,7 +134,7 @@ async fn handle_command<C: CommandAction>(
     command: Arc<C>,
 ) -> HttpResponse {
     // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
-    let who = match authenticate_and_authorize(&req, C::INHERITS).await {
+    let caller = match authenticate_caller(&req, C::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -230,7 +251,7 @@ async fn handle_command<C: CommandAction>(
     let now = chrono::Utc::now();
     let action_vo = Action::new(C::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&who),
+        caller.user.as_ref(),
         C::INHERITS.0,
         &action_vo,
         named_branch.as_ref(),
@@ -357,7 +378,7 @@ async fn handle_command<C: CommandAction>(
     let captured_error_clone = captured_error.clone();
     let command_clone = command.clone();
     let branch_clone = branch.clone();
-    let who_clone = who.clone();
+    let caller_clone = caller.clone();
     let idem_key_clone = idem_key.clone();
     let claim_token_clone = claim_token.clone();
     let store_clone = store.clone();
@@ -371,7 +392,7 @@ async fn handle_command<C: CommandAction>(
                             &command_clone,
                             tx,
                             &branch_clone,
-                            &who_clone,
+                            &caller_clone,
                             input,
                             &idem_key_clone,
                             &claim_token_clone,
@@ -391,7 +412,7 @@ async fn handle_command<C: CommandAction>(
                             &command_clone,
                             tx,
                             &branch_clone,
-                            &who_clone,
+                            &caller_clone,
                             input,
                             &idem_key_clone,
                             &claim_token_clone,
@@ -428,14 +449,17 @@ async fn execute_in_tx<C: CommandAction>(
     command: &Arc<C>,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     branch: &BranchId,
-    who: &Actor,
+    caller: &Caller,
     input: C::Input,
     idem_key: &IdempotencyKey,
     claim_token: &crate::infrastructure::idempotency::store::ClaimToken,
     store: &Arc<PgIdempotencyStore>,
     captured_error: &Arc<std::sync::Mutex<Option<V3Error>>>,
 ) -> pos_error::AppResult<Value> {
-    let output = match command.run(tx, branch, who, input, idem_key.clone()).await {
+    let output = match command
+        .run_as(tx, branch, caller, input, idem_key.clone())
+        .await
+    {
         Ok(out) => out,
         Err(err) => {
             *captured_error.lock().unwrap() = Some(err);

@@ -19,6 +19,7 @@ use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::validation::NO_SUCH_BRANCH;
 
+use super::caller::Caller;
 use super::error::V3Error;
 use super::export_gate::ExportGate;
 use crate::bootstrap::AppState;
@@ -55,6 +56,21 @@ pub trait BranchView: Send + Sync + 'static {
         who: &Actor,
         filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send;
+    /// APP-18 #1373 (option B): `load` with the seam's [`Caller`]. By default it calls `load` with `caller.user`, and
+    /// answers `signIn` when there is none; a view that serves an anonymous or app-session caller overrides it.
+    fn load_as(
+        &self,
+        branch: &BranchId,
+        caller: &Caller,
+        filter: &Self::Filter,
+    ) -> impl Future<Output = AppResult<Self::Data>> + Send {
+        async move {
+            match caller.user.as_ref() {
+                Some(who) => self.load(branch, who, filter).await,
+                None => Err(AppError::Unauthenticated),
+            }
+        }
+    }
     /// The refusal this view answers for a `load` error, instead of the core's 500 (#1349 ruling A).
     /// None = the core's answer.
     fn refusal(&self, _err: &AppError) -> Option<V3Error> {
@@ -75,6 +91,23 @@ pub trait PagedView: Send + Sync + 'static {
         before: Option<RowId>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send;
+    /// APP-18 #1373 (option B): `page` with the seam's [`Caller`]; the default calls `page` with `caller.user` and
+    /// answers `signIn` when there is none.
+    fn page_as(
+        &self,
+        branch: &BranchId,
+        caller: &Caller,
+        filter: &Self::Filter,
+        before: Option<RowId>,
+        limit: u16,
+    ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
+        async move {
+            match caller.user.as_ref() {
+                Some(who) => self.page(branch, who, filter, before, limit).await,
+                None => Err(AppError::Unauthenticated),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -449,8 +482,33 @@ pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Resu
     }
 }
 
+pub(crate) use super::caller::authenticate_caller;
+
+async fn get_branch_version(req: &HttpRequest, branch: &BranchId) -> Result<i64, V3Error> {
+    let pool = match req.app_data::<web::Data<AppState>>() {
+        Some(state) => state.db.clone(),
+        None => {
+            return Err(V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    let versions = BranchVersions::new(pool);
+    versions.current(branch).await.map_err(|_| {
+        V3Error::new(
+            "serverError",
+            None,
+            "เซิร์ฟเวอร์ขัดข้อง",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })
+}
+
 async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let who = match authenticate_and_authorize(req, V::INHERITS).await {
+    let caller = match authenticate_caller(req, V::INHERITS).await {
         Ok(res) => res,
         Err(resp) => return resp,
     };
@@ -467,7 +525,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
     let now = chrono::Utc::now();
     let action = Action::new(V::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&who),
+        caller.user.as_ref(),
         V::INHERITS.0,
         &action,
         query.named_branch.as_ref(),
@@ -487,35 +545,13 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Err(e) => return e.error_response(),
     };
 
-    let version = if let Some(own_ver) = match view.own_version(&branch, &who).await {
-        Ok(v) => v,
-        Err(_) => {
-            return V3Error::new(
-                "serverError",
-                None,
-                "เซิร์ฟเวอร์ขัดข้อง",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-            .error_response();
-        }
-    } {
-        own_ver
-    } else {
-        let pool = match req.app_data::<web::Data<AppState>>() {
-            Some(state) => state.db.clone(),
-            None => {
-                return V3Error::new(
-                    "serverError",
-                    None,
-                    "เซิร์ฟเวอร์ขัดข้อง",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .error_response();
-            }
-        };
-        let versions = BranchVersions::new(pool);
-        match versions.current(&branch).await {
-            Ok(v) => v,
+    let version = if let Some(who) = caller.user.as_ref() {
+        match view.own_version(&branch, who).await {
+            Ok(Some(own_ver)) => own_ver,
+            Ok(None) => match get_branch_version(req, &branch).await {
+                Ok(v) => v,
+                Err(e) => return e.error_response(),
+            },
             Err(_) => {
                 return V3Error::new(
                     "serverError",
@@ -525,6 +561,11 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
                 )
                 .error_response();
             }
+        }
+    } else {
+        match get_branch_version(req, &branch).await {
+            Ok(v) => v,
+            Err(e) => return e.error_response(),
         }
     };
 
@@ -540,7 +581,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
             .json(answer);
     }
 
-    match view.load(&branch, &who, &filter).await {
+    match view.load_as(&branch, &caller, &filter).await {
         Ok(data) => {
             let answer = ViewAnswer {
                 version,
@@ -552,6 +593,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
                 .insert_header((header::CACHE_CONTROL, "no-store"))
                 .json(answer)
         }
+        Err(AppError::Unauthenticated) => V3Error::from(PolicyError::SignIn).error_response(),
         Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
             V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
         }
@@ -569,7 +611,7 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
 }
 
 async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpResponse {
-    let who = match authenticate_and_authorize(req, V::INHERITS).await {
+    let caller = match authenticate_caller(req, V::INHERITS).await {
         Ok(res) => res,
         Err(resp) => return resp,
     };
@@ -582,7 +624,7 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     let now = chrono::Utc::now();
     let action = Action::new(V::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&who),
+        caller.user.as_ref(),
         V::INHERITS.0,
         &action,
         query.named_branch.as_ref(),
@@ -595,10 +637,15 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
 
     // EX-9 (#1147): an export needs `ReportsExport` at the branch the view resolved, before any row is read.
     let export = match query.purpose {
-        Some(Purpose::Export) => match ExportGate::check(&who, &branch, now) {
-            Ok(grant) => Some(grant),
-            Err(e) => return e.error_response(),
-        },
+        Some(Purpose::Export) => {
+            let Some(ref who) = caller.user else {
+                return V3Error::from(PolicyError::SignIn).error_response();
+            };
+            match ExportGate::check(who, &branch, now) {
+                Ok(grant) => Some(grant),
+                Err(e) => return e.error_response(),
+            }
+        }
         None => None,
     };
 
@@ -651,7 +698,10 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     }
 
     let limit = query.limit.unwrap_or(50);
-    match view.page(&branch, &who, &filter, query.before, limit).await {
+    match view
+        .page_as(&branch, &caller, &filter, query.before, limit)
+        .await
+    {
         Ok(rows) => {
             // One audit row per answered export request; no audit, no rows (fail closed).
             if let Some(grant) = &export
@@ -670,6 +720,7 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
                 .insert_header((header::CACHE_CONTROL, "no-store"))
                 .json(answer)
         }
+        Err(AppError::Unauthenticated) => V3Error::from(PolicyError::SignIn).error_response(),
         Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
             V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
         }

@@ -1,0 +1,77 @@
+//! The v3 endpoint seam's caller (APP-18 #1373; design `docs/design/blueprint/customer-app.md` §9 APP-18 row; the lane
+//! controller's rulings on #1373: `Caller { user, app_session }`, no legacy actor; option B, the `*_as` methods sit
+//! alongside today's `&access::Actor` methods).
+//!
+//! SCAFFOLD (#1373 up-front tests): the type the provided tests use. The seam does not build it yet; APP-18 does.
+
+use actix_web::{HttpRequest, HttpResponse, ResponseError};
+use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSession, AppSessionId};
+use xc_auth::domain::access::Actor;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
+use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
+
+use super::error::V3Error;
+use crate::presentation::pages;
+
+/// Who called a v3 route: the signed-in user, if any, and the anonymous app session the request carried, if any
+/// (`xc_app_sid`; the seam reads an existing one and never issues one, ruling 4).
+#[derive(Debug, Clone)]
+pub struct Caller {
+    pub user: Option<Actor>,
+    pub app_session: Option<AppSession>,
+}
+
+/// Resolves the caller for a v3 route, checking policy admission.
+///
+/// Ruling 1: Admission without a session is allowed ONLY on `EntryPath::Rpc` when `Need::Public`.
+/// Non-Public rows and Kiosk Public rows without session still answer `signIn` (401).
+///
+/// Ruling 2: A CUSTOMER-only user reaches the handler with `caller.user = Some(actor)` where `actor.customer_id` is set.
+///
+/// Ruling 4: Reads `APP_SESSION_COOKIE` (`xc_app_sid`) if present and valid; never issues one and never sends `Set-Cookie`.
+pub(crate) async fn authenticate_caller(
+    req: &HttpRequest,
+    inherits: (EntryPath, &'static str),
+) -> Result<Caller, HttpResponse> {
+    let callers = pages::get_callers(req).await;
+    let now = chrono::Utc::now();
+    let action = Action::new(inherits.1);
+
+    let user = match inherits.0 {
+        EntryPath::StaffRpc => callers.staff_user,
+        _ => callers.user,
+    };
+
+    let user = match user {
+        Some(u) => {
+            if let Err(e) = Policy::authorize(Some(&u), inherits.0, &action, None, now) {
+                return Err(V3Error::from(e).error_response());
+            }
+            Some(u)
+        }
+        None => {
+            if inherits.0 == EntryPath::Rpc
+                && Policy::need(inherits.0, &action) == Some(Need::Public)
+            {
+                None
+            } else {
+                let err = Policy::authorize(None, inherits.0, &action, None, now)
+                    .err()
+                    .unwrap_or(PolicyError::SignIn);
+                return Err(V3Error::from(err).error_response());
+            }
+        }
+    };
+
+    let app_session = req
+        .cookie(APP_SESSION_COOKIE)
+        .and_then(|c| AppSessionId::parse(c.value()))
+        .map(|id| {
+            let hash = id.hash();
+            AppSession { id, hash }
+        });
+
+    Ok(Caller { user, app_session })
+}
