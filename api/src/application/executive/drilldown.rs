@@ -21,7 +21,7 @@ pub fn accepted_keys(view: &str) -> &'static [&'static str] {
         // `AdminCashFilter` (`dto/v3/admin_cash.rs:12`)
         "admin_cash" => &["branch", "all"],
         // `AdminOverviewFilter` (`dto/v3/admin_overview.rs:15`)
-        "admin_overview" => &["branch", "from", "to"],
+        "admin_overview" => &["branch", "from", "to", "currency", "channel"],
         _ => &[],
     }
 }

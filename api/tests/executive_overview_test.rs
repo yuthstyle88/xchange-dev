@@ -1007,12 +1007,9 @@ async fn a_drilldown_to_admin_transactions_drops_currency_and_channel() {
         );
         assert_eq!(dd["dropped"], json!([]), "{key}");
     }
+    // EX-11b #1104: the branch row's target takes both keys, so it drops nothing.
     let dd = &branch_row(&d, B1).expect("B1's row")["drilldown"];
-    assert_eq!(
-        dd["dropped"],
-        json!(["currency", "channel"]),
-        "B1's row: {dd}"
-    );
+    assert_eq!(dd["dropped"], json!([]), "B1's row: {dd}");
     room.finish().await;
 }
 

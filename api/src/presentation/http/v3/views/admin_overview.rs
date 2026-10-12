@@ -18,6 +18,7 @@ use xc_kernel::money::{fixed2, round_cents};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
+use crate::application::executive::channel::Channel;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_overview::{
     AdminOverviewData, AdminOverviewFilter, AdminOverviewStatus, AdminOverviewTotals,
@@ -70,6 +71,50 @@ impl BranchView for AdminOverviewBranchView {
                 None => (false, None),
             };
 
+            let has_currency_or_channel = filter
+                .currency
+                .as_ref()
+                .is_some_and(|c| !c.is_empty())
+                || filter
+                    .channel
+                    .as_ref()
+                    .is_some_and(|ch| Channel::parse(ch).is_some());
+
+            let banner_pending_count: u32 = if has_currency_or_channel {
+                let mut banner_builder = sqlx::QueryBuilder::new(
+                    "SELECT COALESCE(count(*) FILTER (WHERE t.status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED')), 0) \
+                     FROM transactions t \
+                     WHERE t.branch_id = ",
+                );
+                banner_builder.push_bind(branch.as_str());
+                banner_builder.push(" AND t.mode = 'LIVE'");
+
+                if let Some(ref from) = filter.from
+                    && !from.is_empty()
+                    && let Ok(d) = NaiveDate::parse_from_str(from, "%Y-%m-%d")
+                {
+                    banner_builder.push(" AND t.value_date >= ");
+                    banner_builder.push_bind(d);
+                }
+
+                if let Some(ref to) = filter.to
+                    && !to.is_empty()
+                    && let Ok(d) = NaiveDate::parse_from_str(to, "%Y-%m-%d")
+                {
+                    banner_builder.push(" AND t.value_date <= ");
+                    banner_builder.push_bind(d);
+                }
+
+                let count: (i64,) = banner_builder
+                    .build_query_as()
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(AppError::Database)?;
+                count.0 as u32
+            } else {
+                0
+            };
+
             let mut count_builder = sqlx::QueryBuilder::new(
                 "SELECT \
                  COALESCE(count(*) FILTER (WHERE t.status = 'COMPLETED'), 0) AS completed_count, \
@@ -97,11 +142,32 @@ impl BranchView for AdminOverviewBranchView {
                 count_builder.push_bind(d);
             }
 
+            if let Some(ref currency) = filter.currency
+                && !currency.is_empty()
+            {
+                count_builder.push(" AND EXISTS (SELECT 1 FROM transaction_lines l WHERE l.transaction_id = t.id AND l.line_no = 1 AND trim(l.currency::text) = ");
+                count_builder.push_bind(currency);
+                count_builder.push(")");
+            }
+
+            if let Some(ref channel) = filter.channel
+                && let Some(ch) = Channel::parse(channel)
+            {
+                count_builder.push(" AND ");
+                count_builder.push(ch.condition("t"));
+            }
+
             let counts: StatusCounts = count_builder
                 .build_query_as()
                 .fetch_one(&pool)
                 .await
                 .map_err(AppError::Database)?;
+
+            let status_pending_count = if has_currency_or_channel {
+                banner_pending_count
+            } else {
+                counts.pending_count as u32
+            };
 
             let mut builder = sqlx::QueryBuilder::new("SELECT ");
             builder.push(ROW_COLUMNS);
@@ -125,6 +191,20 @@ impl BranchView for AdminOverviewBranchView {
             {
                 builder.push(" AND t.value_date <= ");
                 builder.push_bind(d);
+            }
+
+            if let Some(ref currency) = filter.currency
+                && !currency.is_empty()
+            {
+                builder.push(" AND trim(l.currency::text) = ");
+                builder.push_bind(currency);
+            }
+
+            if let Some(ref channel) = filter.channel
+                && let Some(ch) = Channel::parse(channel)
+            {
+                builder.push(" AND ");
+                builder.push(ch.condition("t"));
             }
 
             builder.push(" ORDER BY t.recorded_at DESC, t.seq DESC");
@@ -228,7 +308,7 @@ impl BranchView for AdminOverviewBranchView {
 
             let status = AdminOverviewStatus {
                 shift_open,
-                pending_count: counts.pending_count as u32,
+                pending_count: status_pending_count,
                 opened_by,
             };
 
