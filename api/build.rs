@@ -78,6 +78,9 @@ mod outbox_handlers_gen;
 #[path = "build_support/approval_subjects.rs"]
 mod approval_subjects_gen;
 
+#[path = "build_support/exchange_effects.rs"]
+mod exchange_effects_gen;
+
 use std::path::Path;
 
 fn main() {
@@ -327,6 +330,46 @@ fn main() {
     )
     .expect("write outbox_handlers.rs");
     println!("cargo:rerun-if-changed=src/bootstrap/outbox_handlers");
+
+    // Generate the exchange-effect list (XS-0, #1375)
+    let effects_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bootstrap/exchange_effects");
+    let mut effect_files = Vec::new();
+    if effects_dir.exists() {
+        for entry in std::fs::read_dir(&effects_dir).expect("read bootstrap/exchange_effects") {
+            let path = entry.expect("exchange effect entry").path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                effect_files.push((name, content));
+            }
+        }
+    }
+    let effect_refs: Vec<(&str, &str)> = effect_files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    let effect_table = exchange_effects_gen::exchange_effects_table(&effect_refs)
+        .unwrap_or_else(|e| panic!("exchange_effects_table failed: {e}"));
+    let mut effects_code = String::new();
+    for e in &effect_table {
+        let file_path = effects_dir.join(&e.file);
+        effects_code.push_str(&format!(
+            "#[path = {:?}]\nmod {};\n",
+            file_path.to_str().unwrap(),
+            e.module
+        ));
+    }
+    effects_code.push_str("pub const EXCHANGE_EFFECTS: &[EffectFn] = &[\n");
+    for e in &effect_table {
+        effects_code.push_str(&format!("    {}::effect,\n", e.module));
+    }
+    effects_code.push_str("];\n");
+    std::fs::write(
+        Path::new(&out_dir).join("exchange_effects.rs"),
+        effects_code,
+    )
+    .expect("write exchange_effects.rs");
+    println!("cargo:rerun-if-changed=src/bootstrap/exchange_effects");
 
     // Generate approval subjects table (#1146 ticket B)
     let subjects_dir =

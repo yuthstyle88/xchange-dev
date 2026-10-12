@@ -1,6 +1,7 @@
 //! Bootstrap and server initialization.
 
 pub mod approval_subjects;
+pub mod exchange_effects;
 pub mod outbox_handlers;
 
 use std::future::Future;
