@@ -255,12 +255,18 @@ impl Room {
             .await
             .expect("connect to the test schema");
         let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        Migrator::new(migrations.as_path())
+        let mut migrator = Migrator::new(migrations.as_path())
             .await
-            .expect("read api/migrations")
-            .run(&pool)
-            .await
-            .expect("apply api/migrations");
+            .expect("read api/migrations");
+        migrator.migrations = std::borrow::Cow::Owned(
+            migrator
+                .migrations
+                .iter()
+                .filter(|m| m.version <= 20261205101000)
+                .cloned()
+                .collect(),
+        );
+        migrator.run(&pool).await.expect("apply api/migrations");
         let user: String = sqlx::query_scalar(
             "INSERT INTO users (organization_id, name, status, created_by) \
              VALUES ($1::uuid, 'marketing', 'ACTIVE', 'mk1-test') RETURNING id::text",

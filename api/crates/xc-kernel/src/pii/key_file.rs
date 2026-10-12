@@ -82,6 +82,16 @@ impl PiiKeys {
         (&last.0, &last.1)
     }
 
+    /// Derives a 32-byte key using HKDF-SHA256 over the current key with the given info (D-9).
+    pub fn derive_key(&self, info: &[u8]) -> [u8; 32] {
+        let (_, key) = self.current_key();
+        let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, key);
+        let mut out = [0u8; 32];
+        hk.expand(info, &mut out)
+            .expect("32 bytes is valid expand length for HKDF-SHA256");
+        out
+    }
+
     /// Returns the oldest (first) 32-byte key used for hash derivation.
     pub(crate) fn oldest_key(&self) -> &[u8; 32] {
         &self.keys.first().expect("keys is non-empty").1
