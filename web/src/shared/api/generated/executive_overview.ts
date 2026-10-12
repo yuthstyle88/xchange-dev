@@ -17,7 +17,7 @@ export type DefinitionDto = { key: string, th: string, en: string, };
  */
 export type DrilldownDto = { view: string, filter: Record<string, string>, dropped: Array<string>, };
 
-export type ExecutiveOverviewData = { period: OverviewPeriod, kpis: Array<MetricDto>, branches: Array<BranchRowDto>, alerts: Array<AlertDto>, definitions: Array<DefinitionDto>, };
+export type ExecutiveOverviewData = { period: OverviewPeriod, kpis: Array<MetricDto>, branches: Array<BranchRowDto>, alerts: Array<AlertDto>, definitions: Array<DefinitionDto>, buyReversedThb: string, sellReversedThb: string, };
 
 /**
  * A01's query keys (design §4.1, §8.1). `branches` is comma-separated; `versions` is a JSON map of branch to

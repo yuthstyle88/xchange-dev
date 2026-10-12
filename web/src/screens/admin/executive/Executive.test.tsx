@@ -164,6 +164,8 @@ function data(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOverviewData 
     branches: [branchRow('B1'), branchRow('B2')],
     alerts: alerts(),
     definitions: DEFINITIONS,
+    buyReversedThb: '0.00',
+    sellReversedThb: '0.00',
     ...over,
   };
 }
@@ -753,6 +755,8 @@ describe('EX-4 A01: polling every 60 s with the versions it holds (§4.5, D-5)',
         branches: [branchRow('B2', { volumeThb: '999.99' })],
         alerts: [],
         definitions: DEFINITIONS,
+        buyReversedThb: '0.00',
+        sellReversedThb: '0.00',
       });
     await vi.advanceTimersByTimeAsync(60_000);
     await settle();

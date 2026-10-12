@@ -53,6 +53,8 @@ pub struct ExecutiveOverviewData {
     pub branches: Vec<BranchRowDto>,
     pub alerts: Vec<AlertDto>,
     pub definitions: Vec<DefinitionDto>,
+    pub buy_reversed_thb: String,
+    pub sell_reversed_thb: String,
 }
 
 /// The business dates asked for; `null` means today in each branch's timezone.
@@ -218,6 +220,8 @@ impl ExecutiveOverviewData {
                     en: d.en.to_owned(),
                 })
                 .collect(),
+            buy_reversed_thb: crate::application::executive::metrics::thb(o.buy_reversed_thb),
+            sell_reversed_thb: crate::application::executive::metrics::thb(o.sell_reversed_thb),
         }
     }
 }

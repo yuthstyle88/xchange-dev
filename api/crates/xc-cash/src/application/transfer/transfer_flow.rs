@@ -17,7 +17,11 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
+use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
 use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
 use crate::domain::ledger::posting::{SourceRef, SourceType};
@@ -304,12 +308,13 @@ async fn locked(
     Ok(t)
 }
 
-/// One `cash_exceptions` row on `branch` per currency whose counted total differs from the sent one.
+/// Writes a cash exception row if the counted total differs from the sent one (CA-7d #1425).
 async fn write_exceptions(
     tx: &mut Transaction<'_, Postgres>,
     id: &str,
     branch: &BranchId,
     t: &CashTransfer,
+    now: DateTime<Utc>,
 ) -> AppResult<()> {
     let mut sent_totals: HashMap<CurrencyCode, i64> = HashMap::new();
     let mut recv_totals: HashMap<CurrencyCode, i64> = HashMap::new();
@@ -320,32 +325,38 @@ async fn write_exceptions(
         *recv_totals.entry(line.currency).or_insert(0) += recv_minor;
     }
 
+    let mut delta_pairs = Vec::new();
     for (cur, sent_minor) in sent_totals {
         let recv_minor = recv_totals.get(&cur).copied().unwrap_or(0);
-        if recv_minor == sent_minor {
-            continue;
+        if recv_minor != sent_minor {
+            delta_pairs.push((
+                cur,
+                MoneyDelta::from_minor((recv_minor - sent_minor) as i128),
+            ));
         }
-        let diff_dec = Decimal::new(recv_minor - sent_minor, 2);
-        let pos: i32 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_one(&mut **tx)
-        .await?;
-        let exc_data = serde_json::json!({
-            "transferId": id,
-            "currency": cur.as_str(),
-            "difference": diff_dec.to_string(),
-        });
-        sqlx::query(
-            "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(format!("EX-{}", Uuid::new_v4()))
-        .bind(branch.as_str())
-        .bind(pos)
-        .bind(exc_data)
-        .execute(&mut **tx)
-        .await?;
+    }
+
+    if !delta_pairs.is_empty() {
+        let delta = StockDelta::of(&delta_pairs);
+        let (cash_variance, safe_variance) = if t.to_shift.is_some() {
+            (Some(delta), None)
+        } else {
+            (None, Some(delta))
+        };
+
+        let exc = CashException {
+            id: format!("EX-{}", Uuid::new_v4()),
+            request_id: id.to_string(),
+            status: ExceptionStatus::Open,
+            target_difference: None,
+            cash_variance,
+            safe_variance,
+            note: format!("TRANSFER {id}"),
+            at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+            reviewed_by: None,
+            reviewed_at: None,
+        };
+        append_cash_exception_in(tx, branch, &exc).await?;
     }
     Ok(())
 }
@@ -581,7 +592,7 @@ impl TransferFlow {
             .ok_or_else(|| not_found(id))?;
         let reqs = ends.on_receive(&updated_t);
         parts.postings.post_in(tx, &reqs, None).await?;
-        write_exceptions(tx, id, branch, &updated_t).await?;
+        write_exceptions(tx, id, branch, &updated_t, now).await?;
         parts
             .repo
             .find_by_id_in(tx, id)

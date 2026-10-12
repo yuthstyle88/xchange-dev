@@ -12,8 +12,9 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
+use super::caller::Caller;
 use super::error::V3Error;
-use super::view::{authenticate_and_authorize, parse_branch, require_branch};
+use super::view::{authenticate_caller, parse_branch, require_branch};
 use crate::presentation::extractors::origin::same_origin;
 
 /// A compute-only action that takes typed inputs, computes, and answers without writing (§12.20.3).
@@ -34,6 +35,24 @@ pub trait ComputeAction: Send + Sync + 'static {
         who: &Actor,
         request: Self::Request,
     ) -> impl Future<Output = Result<Self::Answer, V3Error>> + Send;
+
+    /// APP-18 #1373 (option B): `compute` with the seam's [`Caller`]; the default calls `compute` with `caller.user`
+    /// and answers `signIn` when there is none.
+    fn compute_as(
+        &self,
+        branch: &BranchId,
+        caller: &Caller,
+        request: Self::Request,
+    ) -> impl Future<Output = Result<Self::Answer, V3Error>> + Send {
+        async move {
+            match caller.user.as_ref() {
+                Some(who) => self.compute(branch, who, request).await,
+                None => Err(V3Error::from(
+                    xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn,
+                )),
+            }
+        }
+    }
 }
 
 /// Helper for actions to map internal failures to `500 serverError` (§12.20.3).
@@ -68,7 +87,7 @@ async fn handle_compute<A: ComputeAction>(
     action: Arc<A>,
 ) -> HttpResponse {
     // Step 1: Sign-in and Policy::authorize(actor, INHERITS)
-    let who = match authenticate_and_authorize(&req, A::INHERITS).await {
+    let caller = match authenticate_caller(&req, A::INHERITS).await {
         Ok(w) => w,
         Err(res) => return res,
     };
@@ -155,7 +174,7 @@ async fn handle_compute<A: ComputeAction>(
     let now = chrono::Utc::now();
     let action_vo = Action::new(A::INHERITS.1);
     let grant = match Policy::authorize(
-        Some(&who),
+        caller.user.as_ref(),
         A::INHERITS.0,
         &action_vo,
         named_branch.as_ref(),
@@ -183,8 +202,8 @@ async fn handle_compute<A: ComputeAction>(
         }
     };
 
-    // Step 7: action.compute
-    let answer = match action.compute(&branch, &who, request).await {
+    // Step 7: action.compute_as
+    let answer = match action.compute_as(&branch, &caller, request).await {
         Ok(ans) => ans,
         Err(e) => return e.error_response(),
     };

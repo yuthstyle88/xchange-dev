@@ -261,6 +261,33 @@ fn exception_data(exc: &CashException) -> Value {
     })
 }
 
+/// Appends a cash exception to the branch's dense, 0-based exceptions list (CA-7d #1425).
+pub async fn append_cash_exception_in(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    exception: &CashException,
+) -> AppResult<()> {
+    let position: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM cash_exceptions WHERE branch_id = $1",
+    )
+    .bind(branch.as_str())
+    .fetch_one(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO cash_exceptions (id, branch_id, position, data) \
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&exception.id)
+    .bind(branch.as_str())
+    .bind(position)
+    .bind(exception_data(exception))
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 /// The items of `after` that have to be written, with their position: those
 /// `before` does not hold under the same id, holds at another position, or
 /// holds with other values. Each comes with the item it replaces, if any.

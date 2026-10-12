@@ -2,4 +2,5 @@
 //!
 //! AL-4 adds one line here for `evaluator` (an unreserved one-line registration).
 
+pub mod evaluator;
 pub mod rate_alert_service;

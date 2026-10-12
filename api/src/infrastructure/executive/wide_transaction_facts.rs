@@ -44,6 +44,23 @@ fn completed_in_period(filter: &ExecutiveFilter) -> String {
     )
 }
 
+fn reversed_in_period(filter: &ExecutiveFilter) -> String {
+    let channel = filter
+        .channel
+        .map(|c| format!(" AND {}", c.condition("t")))
+        .unwrap_or_default();
+    format!(
+        "reversals r \
+         JOIN branches b ON b.organization_id = r.organization_id AND b.id = r.branch_id \
+         JOIN transactions t ON t.id = r.original_transaction_id \
+         JOIN transaction_lines l ON l.transaction_id = t.id \
+         WHERE r.status = 'POSTED' AND t.mode = 'LIVE' AND r.branch_id = ANY($1) \
+           AND (r.posted_at AT TIME ZONE b.timezone)::date >= coalesce($2::date, (now() AT TIME ZONE b.timezone)::date) \
+           AND (r.posted_at AT TIME ZONE b.timezone)::date <= coalesce($3::date, (now() AT TIME ZONE b.timezone)::date) \
+           AND ($4::text IS NULL OR l.currency = $4::text){channel}"
+    )
+}
+
 fn ids(scope: &[BranchId]) -> Vec<String> {
     scope.iter().map(|b| b.as_str().to_owned()).collect()
 }
@@ -80,6 +97,27 @@ impl ExchangeFacts for WideTransactionFacts {
                 }
             }
             v.by_branch = by_branch;
+
+            let rev_sql = format!(
+                "SELECT l.shop_side, coalesce(sum(r.amount_thb), 0) FROM {} GROUP BY l.shop_side",
+                reversed_in_period(filter)
+            );
+            let rev_rows: Vec<(String, Decimal)> = sqlx::query_as(AssertSqlSafe(rev_sql))
+                .bind(ids(scope))
+                .bind(filter.from)
+                .bind(filter.to)
+                .bind(filter.currency.as_ref().map(|c| c.to_string()))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+            for (side, thb) in rev_rows {
+                if side == "BUY" {
+                    v.buy_reversed_thb += thb;
+                } else {
+                    v.sell_reversed_thb += thb;
+                }
+            }
+
             Ok(v)
         })
     }

@@ -68,7 +68,8 @@ fn average(p: WeightedAverage) -> Option<Decimal> {
 }
 
 fn minor(v: Decimal) -> AppResult<i128> {
-    round2(v * Decimal::from(100))
+    (v * Decimal::from(100))
+        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
         .to_i128()
         .ok_or_else(|| AppError::Internal("ledger amount out of range".into()))
 }
@@ -1186,5 +1187,35 @@ impl CashPostings for LedgerCashPostings {
             }
             Ok(Balances::of(&pairs))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_minor_rounds_positive_half_up() {
+        let v = Decimal::from_str("0.125").unwrap();
+        assert_eq!(minor(v).unwrap(), 13);
+    }
+
+    #[test]
+    fn test_minor_rounds_negative_half_away_from_zero() {
+        let v = Decimal::from_str("-0.125").unwrap();
+        assert_eq!(minor(v).unwrap(), -13);
+    }
+
+    #[test]
+    fn test_minor_rounds_below_half_down() {
+        let v = Decimal::from_str("0.124").unwrap();
+        assert_eq!(minor(v).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_minor_whole_satang() {
+        let v = Decimal::from_str("1.00").unwrap();
+        assert_eq!(minor(v).unwrap(), 100);
     }
 }

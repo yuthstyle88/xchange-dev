@@ -4,6 +4,17 @@ import './desk.css';
 import * as screenI18n from './i18n';
 import type { DeskStep, FrameStore } from './steps';
 
+interface TaskMod<S> {
+  createTask?(props: { store: S }): {
+    nav(): JSX.Element;
+    panel(): JSX.Element;
+    isOpen(): boolean;
+  };
+}
+
+const taskMods = import.meta.glob<TaskMod<any>>('./steps/refunds/task.tsx', { eager: true });
+const taskMod = taskMods['./steps/refunds/task.tsx'];
+
 export function DeskPage<S extends FrameStore>(props: {
   store: S;
   steps: DeskStep<S>[];
@@ -11,6 +22,7 @@ export function DeskPage<S extends FrameStore>(props: {
 }): JSX.Element {
   const t = screenT('desk', screenI18n);
   const current = () => props.steps.find((s) => s.index === props.store.step());
+  const task = taskMod?.createTask?.({ store: props.store });
 
   return (
     <div class="desk-page">
@@ -28,19 +40,27 @@ export function DeskPage<S extends FrameStore>(props: {
             )}
           </For>
         </ol>
+        {task?.nav()}
       </nav>
 
       <div class="desk-body">
         <section class="panel" id="panel">
           <Show
-            when={current()}
-            fallback={<div class="desk-empty">{t('empty')}</div>}
+            when={task?.isOpen()}
+            fallback={
+              <Show
+                when={current()}
+                fallback={<div class="desk-empty">{t('empty')}</div>}
+              >
+                {(step) => (
+                  <div class="desk-step-content">
+                    {step().component({ store: props.store })}
+                  </div>
+                )}
+              </Show>
+            }
           >
-            {(step) => (
-              <div class="desk-step-content">
-                {step().component({ store: props.store })}
-              </div>
-            )}
+            {task?.panel()}
           </Show>
         </section>
 

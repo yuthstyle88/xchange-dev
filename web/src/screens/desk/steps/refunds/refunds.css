@@ -1,0 +1,207 @@
+.desk-task-nav-btn {
+  padding: 8px 16px;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1976d2;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.desk-task-nav-btn:hover {
+  background: #e3f2fd;
+}
+
+.desk-refunds-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.desk-refunds-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 8px;
+}
+
+.desk-refunds-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.desk-refunds-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.desk-refunds-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
+.desk-refunds-btn:hover {
+  background: #e0e0e0;
+}
+
+.desk-refunds-success {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  border-radius: 4px;
+}
+
+.desk-refunds-doc {
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.desk-refunds-print {
+  background: #2e7d32;
+  color: #ffffff;
+  border-color: #2e7d32;
+}
+
+.desk-refunds-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #ffebee;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+}
+
+.desk-refunds-error-msg {
+  color: #c62828;
+  font-weight: 500;
+}
+
+.desk-refunds-retry {
+  background: #c62828;
+  color: #ffffff;
+  border-color: #c62828;
+}
+
+.desk-refunds-empty {
+  padding: 32px;
+  text-align: center;
+  color: #757575;
+}
+
+.desk-refunds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.desk-refund-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.desk-refund-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.desk-refund-receipt-no {
+  font-weight: 600;
+}
+
+.desk-refund-amount {
+  font-weight: 600;
+  color: #d32f2f;
+}
+
+.desk-refund-reason {
+  color: #616161;
+}
+
+.desk-refund-link {
+  color: #1976d2;
+  text-decoration: underline;
+}
+
+.desk-refund-post-btn {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #1976d2;
+  background: #1976d2;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.desk-refund-post-btn:hover {
+  background: #1565c0;
+}
+
+.desk-refund-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.desk-refund-line {
+  display: flex;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.desk-refund-side {
+  font-weight: 500;
+}
+
+.desk-refund-currency {
+  font-weight: 500;
+}
+
+.desk-refund-qty {
+  color: #424242;
+}
+
+.desk-refund-settle {
+  color: #424242;
+}
+
+.desk-refund-payments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.desk-refund-payment {
+  display: flex;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.desk-refund-method {
+  font-weight: 500;
+}
+
+.desk-refund-pay-amount {
+  color: #424242;
+}

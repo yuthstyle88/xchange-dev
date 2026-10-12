@@ -6,8 +6,12 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
+use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
+use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
 use crate::application::count::CashCountService;
 use crate::application::count::count_service::{held_of, post_opening_in};
@@ -329,30 +333,15 @@ impl HandoverService {
         }
         let mut updated = Vec::new();
         let (mut counted, mut diffs, mut handed) = (Vec::new(), Vec::new(), Vec::new());
+        let mut delta_pairs = Vec::new();
         for t in totals {
             let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
-            if !diff.is_zero() {
-                let pos: i32 = sqlx::query_scalar(
-                    "SELECT COALESCE(MAX(position), 0) + 1 FROM cash_exceptions WHERE branch_id = $1",
-                )
-                .bind(h.branch_id.as_str())
-                .fetch_one(&mut **tx)
-                .await?;
-                sqlx::query(
-                    "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ($1, $2, $3, $4)",
-                )
-                .bind(format!("EX-{}", uuid::Uuid::new_v4()))
-                .bind(h.branch_id.as_str())
-                .bind(pos)
-                .bind(serde_json::json!({
-                    "countId": h.count_id,
-                    "currency": t.currency.trim(),
-                    "difference": diff.to_string(),
-                }))
-                .execute(&mut **tx)
-                .await?;
-            }
             let code = CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
+            if !diff.is_zero() {
+                let mut d = diff;
+                d.rescale(2);
+                delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
+            }
             if !t.counted.is_zero() {
                 counted.push((t.currency.clone(), t.counted));
                 handed.push((code, t.counted));
@@ -362,6 +351,21 @@ impl HandoverService {
                 difference: Some(diff),
                 ..t
             });
+        }
+        if !delta_pairs.is_empty() {
+            let exc = CashException {
+                id: format!("EX-{}", uuid::Uuid::new_v4()),
+                request_id: h.count_id.clone(),
+                status: ExceptionStatus::Open,
+                target_difference: None,
+                cash_variance: Some(StockDelta::of(&delta_pairs)),
+                safe_variance: None,
+                note: format!("HANDOVER {}", h.id),
+                at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+                reviewed_by: None,
+                reviewed_at: None,
+            };
+            append_cash_exception_in(tx, &h.branch_id, &exc).await?;
         }
         let shifts = self.counts.shifts();
         shifts

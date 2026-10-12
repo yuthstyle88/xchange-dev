@@ -98,6 +98,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.executive-kpi-reversed {
+  font-size: 0.85rem;
+  color: var(--muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+
 .executive-kpi-definition {
   margin: 0;
   font-size: 0.8rem;

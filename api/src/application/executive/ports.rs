@@ -33,6 +33,8 @@ pub struct ExecutiveFilter {
 pub struct Volumes {
     pub buy_thb: Decimal,
     pub sell_thb: Decimal,
+    pub buy_reversed_thb: Decimal,
+    pub sell_reversed_thb: Decimal,
     pub by_branch: BTreeMap<BranchId, SideVolumes>,
 }
 

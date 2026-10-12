@@ -1,6 +1,7 @@
 //! v3 HTTP presentation module (§7.7).
 
 pub mod action;
+pub mod caller;
 pub mod command;
 pub mod commands;
 pub mod desk;
