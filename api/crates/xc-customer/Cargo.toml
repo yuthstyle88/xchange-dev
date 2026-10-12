@@ -13,6 +13,7 @@ pos-error = { workspace = true }
 pos-infra = { workspace = true }
 xc-kernel = { workspace = true }
 xc-auth = { workspace = true }
+xc-approval = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
