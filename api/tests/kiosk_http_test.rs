@@ -859,8 +859,8 @@ async fn the_answers_keep_v2s_key_order() {
 /// (`QueueDesk`'s `QueueOperate` check on the branch's organisation) answers the queue's v3 code
 /// `outOfScope` as a 400, not a server error, and nothing moves: the request and its ticket stay
 /// WAITING. The kiosk's policy already holds `accept` to `QueueOperate` (`policy.rs` kiosk row), so
-/// the refusal is reached here with an organisation the caller's old cookie (code "XC") no longer
-/// names.
+/// the refusal is reached here with the branch belonging to a different organisation from the
+/// caller's old cookie (code "XC").
 #[actix_web::test]
 async fn an_accept_the_queue_refuses_answers_out_of_scope_and_the_request_stays_waiting() {
     let fr1 = person("FR1", "FRONT", 0x11);
@@ -869,14 +869,26 @@ async fn an_accept_the_queue_refuses_answers_out_of_scope_and_the_request_stays_
     let id = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0001")
         .await;
+    let other_org = "00000000-0000-0000-0000-000000000002";
     sqlx::query(
-        "UPDATE organizations SET code = 'XC-ELSEWHERE' \
-         WHERE id = (SELECT organization_id FROM branches WHERE id = $1)",
+        "INSERT INTO organizations (id, code, legal_name, timezone, created_at) \
+         VALUES ($1::uuid, 'OTHER', 'Other Org', 'Asia/Bangkok', now())",
     )
-    .bind(rpc_common::MAIN)
+    .bind(other_org)
     .execute(&counter.desk.db.pool)
     .await
-    .expect("rename MAIN's organisation");
+    .expect("insert other organisation");
+
+    sqlx::query(
+        "DO $$ \
+         BEGIN \
+           SET LOCAL session_replication_role = 'replica'; \
+           UPDATE branches SET organization_id = '00000000-0000-0000-0000-000000000002'::uuid WHERE id = 'MAIN'; \
+         END $$;",
+    )
+    .execute(&counter.desk.db.pool)
+    .await
+    .expect("repoint MAIN to other organisation");
 
     let answer = counter
         .ask(Some("FR1"), "accept", json!({ "id": id }))

@@ -20,7 +20,7 @@
 //! shift's `expected` (`xc-shift` `StockDelta::for_tx`, `apply_delta_in`). Where the two could
 //! differ — anything that changes `expected` without being an exchange or a movement of the
 //! shift — **the metric is the server's stored `expected`**, never a recomputation. The test
-//! `the_balance_is_the_shifts_stored_figure_never_a_recomputation` pins that by changing the
+//! `the_balance_comes_from_the_ledger_not_the_legacy_shift_balances_table` pins that by changing the
 //! stored figure behind the routes.
 //!
 //! Everything goes through the server's whole route table (`bootstrap::configure`) with real
@@ -52,10 +52,13 @@ use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, ScopedRole};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::application::count::{CashCountService, SubmitCount};
+use xc_cash::domain::count::{CountKind, CountLine};
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -345,6 +348,120 @@ impl Room {
                     "expected": expected, "counted": counted, "note": "นับเงินปิดกะ" }),
         )
         .await;
+    }
+
+    /// A helper closing the open shift of `branch` by count: the shift's own teller
+    /// submits a CLOSE count through CashCountService, and a different user (a MANAGER) verifies it.
+    async fn close_shift_by_count(&self, branch: &str, counted: Value) {
+        let shift_id = self.open_shift_id(branch).await;
+        let (teller_id, org_id): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+            "SELECT s.teller_id, u.organization_id FROM shifts s \
+             JOIN users u ON u.id = s.teller_id \
+             WHERE s.id = $1",
+        )
+        .bind(&shift_id)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("shift teller and org");
+
+        let teller_actor = AuthActor::new(
+            &teller_id.to_string(),
+            &org_id.to_string(),
+            vec![ScopedRole::new(
+                AuthRole::Teller,
+                Some(BranchId::new(branch)),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
+
+        let (verifier_user_id, _): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+            "SELECT u.id, u.organization_id FROM users u \
+             JOIN employees e ON e.id = u.legacy_employee_id \
+             WHERE e.role IN ('BRANCH_MANAGER', 'MANAGER') AND e.branch_id = $1 AND u.id != $2",
+        )
+        .bind(branch)
+        .bind(teller_id)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("verifier user");
+
+        let verifier_actor = AuthActor::new(
+            &verifier_user_id.to_string(),
+            &org_id.to_string(),
+            vec![ScopedRole::new(
+                AuthRole::BranchManager,
+                Some(BranchId::new(branch)),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
+
+        let mut lines = Vec::new();
+        if let Some(obj) = counted.as_object() {
+            for (currency, val) in obj {
+                let mut remaining = match val {
+                    Value::String(s) => Decimal::from_str(s).expect("amount string"),
+                    Value::Number(n) => Decimal::from_str(&n.to_string()).expect("amount number"),
+                    _ => panic!("unexpected counted value: {val:?}"),
+                };
+                let denoms: Vec<(i64, Decimal)> = sqlx::query_as(
+                    "SELECT id, face_value FROM denominations WHERE currency_code = $1 AND face_value IS NOT NULL ORDER BY face_value DESC",
+                )
+                .bind(currency)
+                .fetch_all(&self.desk.db.pool)
+                .await
+                .expect("denominations");
+
+                for (denom_id, face) in denoms {
+                    if remaining >= face {
+                        let qty = (remaining / face).floor();
+                        let qty_i32 = qty.to_string().parse::<i32>().expect("qty i32");
+                        lines.push(CountLine::new(currency, denom_id, qty_i32));
+                        remaining -= face * qty;
+                    }
+                }
+                assert_eq!(
+                    remaining,
+                    Decimal::ZERO,
+                    "counted amount {val} for {currency} must be representable by denominations"
+                );
+            }
+        }
+
+        sqlx::query(
+            "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             VALUES ($1, $2, 100000.00, 'test', now()) \
+             ON CONFLICT (organization_id, branch_id) DO UPDATE SET count_difference_limit_thb = 100000.00",
+        )
+        .bind(org_id)
+        .bind(branch)
+        .execute(&self.desk.db.pool)
+        .await
+        .expect("set cash limit");
+
+        let counts = CashCountService::pg(self.desk.db.pool.clone());
+        let submit_time = self.tick();
+        let cmd = SubmitCount {
+            branch: BranchId::new(branch),
+            shift_id: Some(shift_id),
+            kind: CountKind::Close,
+            lines,
+            note: Some("นับเงินปิดกะ".to_string()),
+            idempotency_key: format!("count-close-{}", next()),
+        };
+        let count = counts
+            .submit(&teller_actor, cmd, submit_time)
+            .await
+            .expect("submit close count");
+
+        let verify_time = self.tick();
+        counts
+            .verify(&verifier_actor, &count.id, verify_time)
+            .await
+            .expect("verify close count");
     }
 
     /// One exchange of USD saved through the real workflow behind the routes, in `mode`
@@ -1128,7 +1245,7 @@ async fn the_balance_is_the_open_shifts_expected_or_the_closed_shifts_counted() 
         "the server's own figure"
     );
 
-    room.close_shift(MAIN, json!({ "THB": "2139.75", "USD": "100.50" }))
+    room.close_shift_by_count(MAIN, json!({ "THB": "2139.75", "USD": "100.50" }))
         .await;
     assert_eq!(
         balance().await,
@@ -1145,10 +1262,10 @@ async fn the_balance_is_the_open_shifts_expected_or_the_closed_shifts_counted() 
     room.finish().await;
 }
 
-/// The metric is the server's stored `expected`: changed behind the routes, the view shows
-/// the stored figure, which no sum of opening + exchanges + movements gives.
+/// The metric comes from the ledger via ShiftBalances: after a direct `UPDATE shift_balances ...`,
+/// the view still shows the ledger figure (1790.00 THB), proving it no longer reads the legacy table.
 #[actix_web::test]
-async fn the_balance_is_the_shifts_stored_figure_never_a_recomputation() {
+async fn the_balance_comes_from_the_ledger_not_the_legacy_shift_balances_table() {
     let room = Room::open().await;
     room.open_shift(MAIN, json!({ "THB": 5000, "USD": 100 }))
         .await;
@@ -1162,7 +1279,7 @@ async fn the_balance_is_the_shifts_stored_figure_never_a_recomputation() {
     .await
     .expect("change the stored figure");
     let data = room.data("OWNER", &path("devices", "branch=MAIN")).await;
-    assert_eq!(data["balanceThb"], json!("4321.09"), "{data}");
+    assert_eq!(data["balanceThb"], json!("1790.00"), "{data}");
     assert_eq!(data["balanceUsd"], json!("200.00"), "{data}");
     room.finish().await;
 }

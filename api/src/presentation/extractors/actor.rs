@@ -196,6 +196,7 @@ pub fn legacy_actor(actor: &xc_auth::domain::access::Actor, now: DateTime<Utc>) 
 /// The reader `pages.rs` looks up as `web::Data<dyn SessionReader>`.
 pub struct AccountSessionReader {
     pub accounts: Accounts,
+    pub org_id: String,
 }
 
 impl SessionReader for AccountSessionReader {
@@ -256,21 +257,7 @@ impl SessionReader for AccountSessionReader {
                 Ok(Some(who @ SignedIn::Employee(_))) => actor_of(&who),
                 _ => None,
             };
-            let epoch = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
-            let org = "XC";
-            let staff_user = staff
-                .as_ref()
-                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch));
-            let user = owner
-                .as_ref()
-                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch))
-                .or_else(|| staff_user.clone());
-            Callers {
-                owner,
-                staff,
-                user,
-                staff_user,
-            }
+            crate::presentation::pages::old_cookie_callers(Sessions { owner, staff }, &self.org_id)
         })
     }
 

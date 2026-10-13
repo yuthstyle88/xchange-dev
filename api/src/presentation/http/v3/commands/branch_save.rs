@@ -55,11 +55,10 @@ impl CommandAction for BranchSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        // #945 ruling 1: a branch of another organisation is out of the caller's scope. An old cookie's actor names
-        // its organisation by code ("XC"), an Identity session's by id.
+        // #945 ruling 1: a branch of another organisation is out of the caller's scope.
         let ours: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM branches b JOIN organizations o ON o.id = b.organization_id \
-             WHERE b.id = $1 AND (o.id::text = $2 OR o.code = $2))",
+             WHERE b.id = $1 AND o.id::text = $2)",
         )
         .bind(branch.as_str())
         .bind(&who.organization_id)

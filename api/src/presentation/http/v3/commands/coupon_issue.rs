@@ -16,7 +16,7 @@ use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
@@ -124,16 +124,8 @@ impl CommandAction for CouponIssueCommand {
 
         let user_id = resolve_user_id(tx, who, org_id).await;
 
-        let hasher = match xc_customer::get_pii_keys() {
-            Ok(keys) => CouponCodeHasher::new(&keys),
-            Err(_) => {
-                let fallback = xc_kernel::pii::PiiKeys::parse(
-                    "default:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-                )
-                .unwrap();
-                CouponCodeHasher::new(&fallback)
-            }
-        };
+        let keys = xc_customer::get_pii_keys().map_err(|_| server_error())?;
+        let hasher = CouponCodeHasher::new(&keys);
 
         // Install idempotency strip trigger for coupon replay (§7, §9 edge case 6)
         sqlx::query(

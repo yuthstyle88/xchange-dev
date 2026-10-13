@@ -3,3 +3,4 @@
 pub mod alert_event;
 pub mod feed_publisher;
 pub mod publish_service;
+pub mod sharp_move_notices;

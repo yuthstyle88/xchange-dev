@@ -285,7 +285,7 @@ mod tests {
                 let since = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
                 let user = Actor::new(
                     "owner-1",
-                    "XC",
+                    crate::presentation::pages::SEEDED_XC_ORG_ID,
                     vec![
                         ScopedRole::new(Role::Executive, None, since, None),
                         ScopedRole::new(Role::Admin, None, since, None),

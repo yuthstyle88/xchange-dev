@@ -56,7 +56,7 @@ impl BranchView for MyNotificationsBranchView {
             let user_uuid = Uuid::parse_str(&user_id)
                 .map_err(|e| AppError::Validation(format!("invalid user_id: {e}")))?;
             let version: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(MAX(seq), 0) FROM notifications WHERE recipient_user_id = $1",
+                "SELECT COALESCE(MAX(seq), 0) + COUNT(read_at) FROM notifications WHERE recipient_user_id = $1",
             )
             .bind(user_uuid)
             .fetch_one(&pool)

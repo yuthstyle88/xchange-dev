@@ -1,6 +1,5 @@
 //! The `devices` view (§7.1).
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -12,6 +11,7 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
@@ -25,15 +25,21 @@ struct DevicesBranchView {
     pool: PgPool,
     repo: PgDeviceRepository,
     printer_models: Arc<PrinterModels>,
+    shift_balances: Arc<dyn ShiftBalances>,
 }
 
 impl DevicesBranchView {
-    fn new(pool: PgPool, printer_models: Arc<PrinterModels>) -> Self {
+    fn new(
+        pool: PgPool,
+        printer_models: Arc<PrinterModels>,
+        shift_balances: Arc<dyn ShiftBalances>,
+    ) -> Self {
         let repo = PgDeviceRepository::new(pool.clone());
         Self {
             pool,
             repo,
             printer_models,
+            shift_balances,
         }
     }
 }
@@ -53,6 +59,7 @@ impl BranchView for DevicesBranchView {
         let pool = self.pool.clone();
         let repo = self.repo.clone();
         let printer_models = self.printer_models.clone();
+        let shift_balances = self.shift_balances.clone();
         let branch = branch.clone();
         async move {
             // 1. Branches list
@@ -105,20 +112,17 @@ impl BranchView for DevicesBranchView {
             .map_err(AppError::Database)?;
 
             let (balance_thb, balance_usd) = if let Some(shift_id) = open_shift {
-                let rows: Vec<(String, String)> = sqlx::query_as(
-                    "SELECT code::text, COALESCE(expected::text, '0.00') FROM shift_balances WHERE shift_id = $1",
-                )
-                .bind(shift_id)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
-
-                let map: HashMap<String, String> =
-                    rows.into_iter().map(|(c, v)| (c.trim().to_string(), v)).collect();
-                (
-                    Money(map.get("THB").cloned().unwrap_or_else(|| "0.00".to_string())),
-                    Money(map.get("USD").cloned().unwrap_or_else(|| "0.00".to_string())),
-                )
+                let balances = shift_balances.shift_balances(&shift_id).await?;
+                let mut thb = "0.00".to_string();
+                let mut usd = "0.00".to_string();
+                for b in balances {
+                    match b.currency.as_str() {
+                        "THB" => thb = b.expected.to_string(),
+                        "USD" => usd = b.expected.to_string(),
+                        _ => {}
+                    }
+                }
+                (Money(thb), Money(usd))
             } else {
                 let last_shift: Option<String> = sqlx::query_scalar(
                     "SELECT id FROM shifts WHERE branch_id = $1 ORDER BY seq DESC LIMIT 1",
@@ -129,20 +133,25 @@ impl BranchView for DevicesBranchView {
                 .map_err(AppError::Database)?;
 
                 if let Some(shift_id) = last_shift {
-                    let rows: Vec<(String, String)> = sqlx::query_as(
-                        "SELECT code::text, COALESCE(counted::text, '0.00') FROM shift_balances WHERE shift_id = $1",
-                    )
-                    .bind(shift_id)
-                    .fetch_all(&pool)
-                    .await
-                    .map_err(AppError::Database)?;
-
-                    let map: HashMap<String, String> =
-                        rows.into_iter().map(|(c, v)| (c.trim().to_string(), v)).collect();
-                    (
-                        Money(map.get("THB").cloned().unwrap_or_else(|| "0.00".to_string())),
-                        Money(map.get("USD").cloned().unwrap_or_else(|| "0.00".to_string())),
-                    )
+                    let balances = shift_balances.shift_balances(&shift_id).await?;
+                    let mut thb = "0.00".to_string();
+                    let mut usd = "0.00".to_string();
+                    for b in balances {
+                        match b.currency.as_str() {
+                            "THB" => {
+                                if let Some(counted) = b.counted {
+                                    thb = counted.to_string();
+                                }
+                            }
+                            "USD" => {
+                                if let Some(counted) = b.counted {
+                                    usd = counted.to_string();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    (Money(thb), Money(usd))
                 } else {
                     (Money("0.00".to_string()), Money("0.00".to_string()))
                 }
@@ -180,7 +189,11 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     );
     ViewEndpoint::register(
         cfg,
-        Arc::new(DevicesBranchView::new(state.db.clone(), printer_models)),
+        Arc::new(DevicesBranchView::new(
+            state.db.clone(),
+            printer_models,
+            state.shift_balances.clone(),
+        )),
     );
 }
 
