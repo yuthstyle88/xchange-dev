@@ -19,6 +19,8 @@ sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
 xc-kernel = { workspace = true }
+xc-approval = { workspace = true }
+xc-auth = { workspace = true }
 pos-error = { workspace = true }
 
 [dev-dependencies]

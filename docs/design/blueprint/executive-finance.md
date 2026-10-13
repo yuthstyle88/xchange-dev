@@ -105,8 +105,8 @@ until TX-2 every row is completed. LIVE only; DEMO rows never count.
 | `rfm` | RFM / มูลค่า | Recency = latest completed; Frequency = count; Value = THB volume **and** realized contribution, over **12 rolling months** (E-4) | R, F and THB value from `transactions`; contribution part unavailable | contribution part after LG-4 + Broker | drill-down (customer list) |
 | `data_freshness` | เวลา sync | `as_of` per branch and pending events | `branch_versions.changed_at` (D-4); pending = unfinished transactions (none before TX-2) | + `outbox_events` PENDING/FAILED for the branch (OB-1, `broker-seam.md:265-286`) | branch table |
 
-Reasons are an enum (`MetricUnavailable::{AwaitsLedger, AwaitsBookingDesign, AwaitsBroker, AwaitsCampaigns}`) so the
-screen shows a fixed sentence, never an error. Partner conversion and campaign effect (§11) belong to Broker-Platform
+Reasons are an enum (`MetricUnavailable::{AwaitsLedger, AwaitsBookingDesign, AwaitsBroker, AwaitsCampaigns, NoBookingsInPeriod}`) so the
+screen shows a fixed sentence, never an error (`noBookingsInPeriod`: no booking in the period's cohort). Partner conversion and campaign effect (§11) belong to Broker-Platform
 and M04 respectively and are not on A01.
 
 ---

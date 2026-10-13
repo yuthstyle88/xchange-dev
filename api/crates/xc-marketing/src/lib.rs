@@ -14,6 +14,9 @@ pub mod infrastructure {
 }
 
 pub mod application {
+    pub mod approval;
+    pub mod campaign_service;
     pub mod coupon_service;
     pub mod redeemer;
+    pub mod simulator;
 }

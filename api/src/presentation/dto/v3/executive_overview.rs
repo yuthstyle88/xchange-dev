@@ -73,7 +73,7 @@ pub struct OverviewPeriod {
 pub struct MetricDto {
     pub key: String,
     pub value: Option<String>,
-    #[ts(type = "\"awaitsLedger\" | \"awaitsBookingDesign\" | \"awaitsBroker\" | \"awaitsCampaigns\" | null")]
+    #[ts(type = "\"awaitsLedger\" | \"awaitsBookingDesign\" | \"awaitsBroker\" | \"awaitsCampaigns\" | \"noBookingsInPeriod\" | null")]
     pub unavailable: Option<String>,
     pub drilldown: Option<DrilldownDto>,
 }

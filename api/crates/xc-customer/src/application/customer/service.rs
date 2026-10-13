@@ -28,6 +28,15 @@ pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ค�
 pub const BAD_DATE: &str = "วันที่ไม่ถูกต้อง";
 pub const BAD_MODE: &str = "กรุณาเลือกประเภทรายการ";
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ReservedCustomerNumber {
+    Existing(String),
+    New {
+        customer_id: String,
+        created_at: DateTime<Utc>,
+    },
+}
+
 #[derive(Clone)]
 pub struct CustomerService {
     branch_tx: BranchTx,
@@ -42,6 +51,48 @@ impl CustomerService {
 
     pub fn branch_tx(&self) -> &BranchTx {
         &self.branch_tx
+    }
+
+    pub(crate) async fn reserve_customer_number_in_tx(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        org_id: uuid::Uuid,
+        lookup_hash: &[u8],
+        mode: Mode,
+        now: DateTime<Utc>,
+    ) -> AppResult<ReservedCustomerNumber> {
+        let lock_key = i64::from_be_bytes(lookup_hash[0..8].try_into().unwrap());
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(lock_key)
+            .execute(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+
+        if let Some(existing_id) = Self::find_existing_in_tx(tx, org_id, lookup_hash).await? {
+            return Ok(ReservedCustomerNumber::Existing(existing_id));
+        }
+
+        let counter_key = match mode {
+            Mode::Live => "customer-LIVE",
+            Mode::Demo => "customer-DEMO",
+        };
+        let next_val = PgCustomerRepository::increment_counter_in_tx(tx, counter_key)
+            .await?
+            .ok_or_else(|| AppError::Domain(COUNTER_EXHAUSTED.to_owned()))?;
+
+        let customer_id = match mode {
+            Mode::Live => format!("CX-{next_val:08}"),
+            Mode::Demo => format!("TEST-CX-{next_val:08}"),
+        };
+
+        let created_at = Utc
+            .timestamp_millis_opt(now.timestamp_millis())
+            .single()
+            .unwrap_or(now);
+
+        Ok(ReservedCustomerNumber::New {
+            customer_id,
+            created_at,
+        })
     }
 
     pub async fn reserve(
@@ -71,49 +122,33 @@ impl CustomerService {
         })?;
 
         let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
-        let lock_key = i64::from_be_bytes(lookup_hash[0..8].try_into().unwrap());
 
         self.branch_tx
             .run(branch, move |tx| {
                 let keys = keys.clone();
                 let details = details.clone();
                 Box::pin(async move {
-                    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                        .bind(lock_key)
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-
-                    if let Some(existing_id) = PgCustomerRepository::find_existing_in_tx(
+                    let reserved = Self::reserve_customer_number_in_tx(
                         tx,
                         org_id,
                         lookup_hash.as_slice(),
+                        details.mode,
+                        now,
                     )
-                    .await?
-                    {
-                        return Ok(Reservation {
-                            customer_id: existing_id,
-                            existing: true,
-                        });
-                    }
+                    .await?;
 
-                    let counter_key = match details.mode {
-                        Mode::Live => "customer-LIVE",
-                        Mode::Demo => "customer-DEMO",
+                    let (customer_id, created_at) = match reserved {
+                        ReservedCustomerNumber::Existing(customer_id) => {
+                            return Ok(Reservation {
+                                customer_id,
+                                existing: true,
+                            });
+                        }
+                        ReservedCustomerNumber::New {
+                            customer_id,
+                            created_at,
+                        } => (customer_id, created_at),
                     };
-                    let next_val = PgCustomerRepository::increment_counter_in_tx(tx, counter_key)
-                        .await?
-                        .ok_or_else(|| AppError::Domain(COUNTER_EXHAUSTED.to_owned()))?;
-
-                    let customer_id = match details.mode {
-                        Mode::Live => format!("CX-{next_val:08}"),
-                        Mode::Demo => format!("TEST-CX-{next_val:08}"),
-                    };
-
-                    let created_at = Utc
-                        .timestamp_millis_opt(now.timestamp_millis())
-                        .single()
-                        .unwrap_or(now);
 
                     let cipher = PiiCipher::new(keys);
                     let aad = format!("{customer_id}PASSPORT");

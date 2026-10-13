@@ -21,6 +21,7 @@ export const th = {
   awaitsBookingDesign: 'รอการออกแบบระบบจอง ยังคำนวณไม่ได้',
   awaitsBroker: 'รอระบบนายหน้า ยังคำนวณไม่ได้',
   awaitsCampaigns: 'รอระบบแคมเปญ ยังคำนวณไม่ได้',
+  noBookingsInPeriod: 'ช่วงนี้ยังไม่มีการจอง',
   // the branch table (§4.2)
   colBranch: 'สาขา',
   colVolume: 'ยอด',
@@ -71,6 +72,7 @@ export const en: Record<keyof typeof th, string> = {
   awaitsBookingDesign: 'Awaits the booking design; not computed yet',
   awaitsBroker: 'Awaits the broker system; not computed yet',
   awaitsCampaigns: 'Awaits campaigns; not computed yet',
+  noBookingsInPeriod: 'No bookings in this period',
   colBranch: 'Branch',
   colVolume: 'Volume',
   colCash: 'Cash on hand',

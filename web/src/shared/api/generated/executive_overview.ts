@@ -28,7 +28,7 @@ export type ExecutiveOverviewFilter = { from?: string, to?: string, branches?: s
 /**
  * A figure: a value, or why there is none (D-2).
  */
-export type MetricDto = { key: string, value: string | null, unavailable: "awaitsLedger" | "awaitsBookingDesign" | "awaitsBroker" | "awaitsCampaigns" | null, drilldown: DrilldownDto | null, };
+export type MetricDto = { key: string, value: string | null, unavailable: "awaitsLedger" | "awaitsBookingDesign" | "awaitsBroker" | "awaitsCampaigns" | "noBookingsInPeriod" | null, drilldown: DrilldownDto | null, };
 
 /**
  * An organisation view's answer (D-5): the versions of the branches in scope; `data` only when one moved.

@@ -47,6 +47,7 @@ const REASON: Record<Reason, Key> = {
   awaitsBookingDesign: 'awaitsBookingDesign',
   awaitsBroker: 'awaitsBroker',
   awaitsCampaigns: 'awaitsCampaigns',
+  noBookingsInPeriod: 'noBookingsInPeriod',
 };
 
 /** The wire kinds of #1071's ruling; any other kind shows its raw key. */

@@ -162,13 +162,14 @@ fn money_metric(key: &'static str, m: Result<Money, MetricUnavailable>) -> AppRe
 
 fn conversion_metric(m: Result<BookingConversion, MetricUnavailable>) -> Metric {
     match m {
-        Ok(conv) => Metric {
-            key: BOOKING_CONVERSION,
-            value: (conv.denominator() > 0)
-                .then(|| format!("{}%", (conv.numerator() * 100) / conv.denominator())),
-            unavailable: None,
-            drilldown: None,
-        },
+        Ok(conv) if conv.denominator() == 0 => {
+            Metric::unavailable(BOOKING_CONVERSION, MetricUnavailable::NoBookingsInPeriod)
+        }
+        Ok(conv) => Metric::value(
+            BOOKING_CONVERSION,
+            format!("{}%", (conv.numerator() * 100) / conv.denominator()),
+            None,
+        ),
         Err(reason) => Metric::unavailable(BOOKING_CONVERSION, reason),
     }
 }

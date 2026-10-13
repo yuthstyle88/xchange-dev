@@ -14,7 +14,7 @@ impl CouponCodeHasher {
     /// The hasher for this PII key file (D-9: no second key file).
     pub fn new(keys: &PiiKeys) -> Self {
         Self {
-            key: keys.derive_key(b"xc-coupon-v1"),
+            key: xc_kernel::pii::derive_subkey(keys, b"xc-coupon-v1"),
         }
     }
 

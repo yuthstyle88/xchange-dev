@@ -1069,7 +1069,7 @@ async fn a_pending_rate_request_is_one_alert_with_its_drilldown() {
 /// Realized margin, booking conversion and commission are `unavailable` with `AwaitsLedger`,
 /// `AwaitsBookingDesign` and `AwaitsBroker` (D-2): no value poses as a figure.
 #[actix_web::test]
-async fn the_unavailable_metrics_carry_their_reasons_and_an_empty_booking_cohort_is_no_data() {
+async fn the_unavailable_metrics_carry_their_reasons_and_an_empty_booking_cohort_says_so() {
     let room = Room::start().await;
     room.exchange(Ex {
         side: "SELL",
@@ -1094,9 +1094,9 @@ async fn the_unavailable_metrics_carry_their_reasons_and_an_empty_booking_cohort
     }
     let m = kpi(&d, "booking_conversion");
     assert!(m["value"].is_null(), "booking_conversion has no value: {m}");
-    assert!(
-        m["unavailable"].is_null(),
-        "booking_conversion is available with no data: {m}"
+    assert_eq!(
+        m["unavailable"], "noBookingsInPeriod",
+        "booking_conversion: {m}"
     );
     for key in ["buy_volume_thb", "sell_volume_thb", "repeat_customers"] {
         let m = kpi(&d, key);
