@@ -8,4 +8,4 @@ export type AdminCustomerRow = { id: string, name: string, nationality: string, 
 /**
  * Filter for the `admin_customers` view.
  */
-export type AdminCustomersFilter = { q?: string, };
+export type AdminCustomersFilter = { q?: string, from?: string, to?: string, repeat?: boolean, };

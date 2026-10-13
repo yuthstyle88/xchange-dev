@@ -1034,8 +1034,8 @@ fn accepted_keys_follow_the_passed_column_of_design_4_4() {
         assert!(ap.contains(&key), "approval_requests accepts {key}: {ap:?}");
     }
     assert!(
-        !accepted_keys("admin_customers").contains(&"from"),
-        "admin_customers takes q only"
+        accepted_keys("admin_customers").contains(&"from"),
+        "admin_customers takes the period since EX-11c #1105"
     );
 }
 

@@ -195,11 +195,9 @@ function posted(id: string): ReversalSummaryDto {
 
 let app: HTMLDivElement;
 
-const realSetTimeout = globalThis.setTimeout;
 async function settle(): Promise<void> {
-  for (let i = 0; i < 12; i++) {
-    if (globalThis.setTimeout !== realSetTimeout) await vi.advanceTimersByTimeAsync(0);
-    else await new Promise((r) => realSetTimeout(r, 0));
+  for (let i = 0; i < 20; i++) {
+    await vi.advanceTimersByTimeAsync(0);
   }
 }
 
@@ -221,6 +219,7 @@ async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTML
 beforeEach(() => {
   setLang('th');
   vi.resetModules();
+  vi.useFakeTimers();
   app = document.createElement('div');
   app.id = 'app';
   document.body.appendChild(app);
@@ -477,7 +476,7 @@ describe('RF-18: opening and closing the step leaves the exchange as it was', ()
     const currentStep = () => text(app.querySelector('ol.steps li[aria-current="step"]'));
     const currency = () => app.querySelector<HTMLSelectElement>('select[name="currency"]');
     const amount = () => app.querySelector<HTMLInputElement>('input[name="amount"]');
-    await vi.waitFor(() => expect(currency()).not.toBeNull());
+    expect(currency()).not.toBeNull();
     currency()!.value = 'USD';
     currency()!.dispatchEvent(new Event('change', { bubbles: true }));
     amount()!.value = '150.25';
