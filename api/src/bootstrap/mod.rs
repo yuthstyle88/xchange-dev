@@ -58,8 +58,10 @@ impl DatabaseProbe for PgPool {
     }
 }
 
+use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
+use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -68,18 +70,21 @@ pub struct AppState {
     pub build: BuildInfo,
     pub database_probe: Arc<dyn DatabaseProbe>,
     pub rate_source: Arc<dyn RateSource>,
+    pub shift_balances: Arc<dyn ShiftBalances>,
 }
 
 impl AppState {
     pub fn new(settings: Arc<Settings>, db: PgPool) -> Self {
         let probe = Arc::new(db.clone());
         let rate_source = choose_rate_source(&settings.bot, Arc::new(BotRateSource::bot()));
+        let shift_balances = Arc::new(PgLedgerShiftBalances::new(db.clone()));
         Self {
             settings,
             db,
             build: BuildInfo::current(),
             database_probe: probe,
             rate_source,
+            shift_balances,
         }
     }
 
@@ -95,6 +100,11 @@ impl AppState {
 
     pub fn with_rate_source(mut self, source: Arc<dyn RateSource>) -> Self {
         self.rate_source = source;
+        self
+    }
+
+    pub fn with_shift_balances(mut self, shift_balances: Arc<dyn ShiftBalances>) -> Self {
+        self.shift_balances = shift_balances;
         self
     }
 }

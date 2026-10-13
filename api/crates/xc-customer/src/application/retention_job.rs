@@ -117,6 +117,36 @@ impl RetentionJob {
 
                     total_deleted += result.rows_affected();
                 }
+                "ASSISTANT_CONVERSATION" => {
+                    sqlx::query(
+                        "DELETE FROM assistant_messages \
+                         WHERE conversation_id IN ( \
+                             SELECT id FROM assistant_conversations \
+                             WHERE organization_id = $1 \
+                               AND (expires_at <= $2 OR (expires_at IS NULL AND created_at < $3)) \
+                         )",
+                    )
+                    .bind(org_id)
+                    .bind(now)
+                    .bind(cutoff)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    let result = sqlx::query(
+                        "DELETE FROM assistant_conversations \
+                         WHERE organization_id = $1 \
+                           AND (expires_at <= $2 OR (expires_at IS NULL AND created_at < $3))",
+                    )
+                    .bind(org_id)
+                    .bind(now)
+                    .bind(cutoff)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    total_deleted += result.rows_affected();
+                }
                 _ => {
                     // CLOSED_CUSTOMER is ruled out of CI-6
                 }

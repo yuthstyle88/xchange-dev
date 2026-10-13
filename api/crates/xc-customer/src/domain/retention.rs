@@ -15,6 +15,10 @@ pub enum DataType {
     ClosedCustomer,
     #[serde(rename = "RATE_ALERT")]
     RateAlert,
+    #[serde(rename = "ASSISTANT_CONVERSATION")]
+    AssistantConversation,
+    #[serde(rename = "PLANNER_DRAFT")]
+    PlannerDraft,
 }
 
 impl DataType {
@@ -24,6 +28,8 @@ impl DataType {
             DataType::Contact => "CONTACT",
             DataType::ClosedCustomer => "CLOSED_CUSTOMER",
             DataType::RateAlert => "RATE_ALERT",
+            DataType::AssistantConversation => "ASSISTANT_CONVERSATION",
+            DataType::PlannerDraft => "PLANNER_DRAFT",
         }
     }
 }
@@ -43,6 +49,8 @@ impl FromStr for DataType {
             "CONTACT" => Ok(DataType::Contact),
             "CLOSED_CUSTOMER" => Ok(DataType::ClosedCustomer),
             "RATE_ALERT" => Ok(DataType::RateAlert),
+            "ASSISTANT_CONVERSATION" => Ok(DataType::AssistantConversation),
+            "PLANNER_DRAFT" => Ok(DataType::PlannerDraft),
             _ => Err(format!("unknown data type: {s}")),
         }
     }
