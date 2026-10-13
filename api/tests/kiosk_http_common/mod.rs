@@ -557,7 +557,7 @@ impl<'f> KioskReplay<'f> {
                     .unwrap_or("00000000-0000-4000-8000-000000000007");
                 let operator = AccessActor::new(
                     manager_id,
-                    crate::rpc_common::ORGANIZATION,
+                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
                     vec![ScopedRole::new(
                         AccessRole::BranchManager,
                         Some(branch.clone()),

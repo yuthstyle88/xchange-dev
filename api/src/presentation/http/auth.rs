@@ -39,6 +39,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     );
     let reader: Arc<dyn SessionReader> = Arc::new(AccountSessionReader {
         accounts: service.clone(),
+        org_id: state.old_cookie_org_id.clone(),
     });
     cfg.app_data(web::Data::new(service));
     cfg.app_data(web::Data::from(reader));

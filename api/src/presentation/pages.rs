@@ -33,6 +33,34 @@ pub struct Callers {
     pub staff_user: Option<xc_auth::domain::access::Actor>,
 }
 
+/// Organization ID seeded in migration 20261011100000_organizations.sql:9-10.
+pub const SEEDED_XC_ORG_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+/// Builds `Callers` from `Sessions` using the resolved old-cookie organisation ID.
+///
+/// Shared builder (lane controller ruling, 2026-10-12, #1463 issuecomment-6126805322):
+/// both `AccountSessionReader::callers` in production and test callers build old-cookie actors
+/// through this one shared builder that uses the startup-resolved organisation id rather than
+/// the literal code 'XC'.
+pub fn old_cookie_callers(sessions: Sessions, org_id: &str) -> Callers {
+    let epoch = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+    let staff_user = sessions
+        .staff
+        .as_ref()
+        .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org_id, epoch));
+    let user = sessions
+        .owner
+        .as_ref()
+        .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org_id, epoch))
+        .or_else(|| staff_user.clone());
+    Callers {
+        owner: sessions.owner,
+        staff: sessions.staff,
+        user,
+        staff_user,
+    }
+}
+
 /// Reads the sessions of a request. Declared here until ticket T4c, which
 /// implements it in `presentation/extractors/actor.rs`; it may move there then.
 pub trait SessionReader: Send + Sync {
@@ -42,24 +70,26 @@ pub trait SessionReader: Send + Sync {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let s = self.sessions(req).await;
-            let epoch = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
-            let org = "XC";
-            let staff_user = s
-                .staff
-                .as_ref()
-                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch));
-            let user = s
-                .owner
-                .as_ref()
-                .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org, epoch))
-                .or_else(|| staff_user.clone());
-            Callers {
-                owner: s.owner,
-                staff: s.staff,
-                user,
-                staff_user,
-            }
+            old_cookie_callers(s, SEEDED_XC_ORG_ID)
         })
+    }
+}
+
+/// Resolves the old-cookie organisation id (code 'XC') from `organizations` at startup.
+///
+/// Lookup (lane controller ruling, 2026-10-12): an organisation's code-to-id mapping never
+/// changes, so the id of the old cookie's organisation (code XC) is resolved once at startup
+/// from `organizations` and held by `SessionReader`. If the row is missing at startup, boot
+/// fails with a clear message rather than serving refused sessions.
+pub async fn resolve_old_cookie_org_id(pool: &sqlx::PgPool) -> Result<String, String> {
+    let id: Option<String> =
+        sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = 'XC'")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("failed to query organization row for code 'XC': {e}"))?;
+    match id {
+        Some(id) => Ok(id),
+        None => Err("organization row with code 'XC' not found in organizations table".to_string()),
     }
 }
 

@@ -174,7 +174,7 @@ fn user_of(spec: &str) -> Option<User> {
     let branch = (branch != "*").then(|| BranchId::new(branch));
     Some(User::new(
         &user_id(spec),
-        "XC",
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
         vec![ScopedRole::new(
             role,
             branch,

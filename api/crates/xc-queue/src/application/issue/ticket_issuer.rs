@@ -82,7 +82,6 @@ impl TicketIssuer {
             return Ok(false);
         };
         let actor = self.actor.as_ref().ok_or(AppError::Forbidden)?;
-        let actor = &in_branch_org(tx, branch, actor).await?;
         let desk = QueueDesk::new(
             self.branch_tx.clone(),
             self.repo.clone(),
@@ -266,36 +265,6 @@ impl TicketIssuer {
 
         Ok(ticket)
     }
-}
-
-/// stopgap (#1354 ruling issuecomment-6118023291): the root cause is that an old cookie's actor is
-/// built with the organisation code "XC" (`presentation/pages.rs:46`), #1463; once it names the id,
-/// this goes.
-///
-/// The actor with its organisation named by id. An old cookie's actor names its organisation by
-/// code ("XC"), an Identity session's by id (#945 ruling 1, `branch_save.rs`); `QueueDesk` compares
-/// ids, so a code naming the branch's own organisation becomes that id. Any other value is kept,
-/// and `QueueDesk` refuses it.
-async fn in_branch_org(
-    tx: &mut Transaction<'_, Postgres>,
-    branch: &BranchId,
-    actor: &Actor,
-) -> AppResult<Actor> {
-    let id: Option<String> = sqlx::query_scalar(
-        "SELECT o.id::text FROM branches b JOIN organizations o ON o.id = b.organization_id \
-         WHERE b.id = $1 AND o.code = $2",
-    )
-    .bind(branch.as_str())
-    .bind(&actor.organization_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    Ok(match id {
-        Some(organization_id) => Actor {
-            organization_id,
-            ..actor.clone()
-        },
-        None => actor.clone(),
-    })
 }
 
 impl QueueTickets for TicketIssuer {
