@@ -4099,6 +4099,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "xc-approval",
+ "xc-auth",
  "xc-kernel",
 ]
 
