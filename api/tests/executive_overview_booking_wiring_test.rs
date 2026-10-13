@@ -416,7 +416,7 @@ async fn test_executive_overview_view_wired_booking_conversion() {
         ..ExecutiveFilter::default()
     };
     let data = view
-        .load(&scope, &filter, &[BranchId::new(B1)])
+        .load(ORG, &scope, &filter, &[BranchId::new(B1)])
         .await
         .expect("load overview data");
 

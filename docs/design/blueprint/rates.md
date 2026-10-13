@@ -1603,8 +1603,8 @@ CREATE TABLE org_starting_prices (
   OWNER only (A3: the owner enters price frames).
 - **The engine reads it as a reference, so nothing downstream changes (♻️).** In the same transaction, the save command
   also writes one `rate_reference_batches` row with `provider = 'START:' || organization_id`, `status 'COMPLETE'`,
-  `source_date` = the entry date, `fetched_at` = now and `raw` = the entry. It writes one `rate_reference_lines` row per
-  saved currency with `reference_type = 'START'`, the entry's `unit_size`, `buy` and `sell`. `reference_line_id` links
+  `source_date` = the entry date, `fetched_at` = now and `raw_checksum` = the checksum of the entry. It writes one `rate_reference_lines` row per
+  saved currency with `reference_type = 'START'`, the entry's `unit_size`, `buy`, `sell` and `raw` = the entry. `reference_line_id` links
   the two.
   - So `evaluate`, the guard, publish and `source_snapshot` treat a starting price exactly like a BoT reference. The
     snapshot names the provider, so every publication built on it says it came from the starting price.

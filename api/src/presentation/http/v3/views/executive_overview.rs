@@ -102,6 +102,7 @@ impl OrgView for ExecutiveOverviewView {
 
     fn versions_in(
         &self,
+        _organization_id: &str,
         scope: &BranchScope,
     ) -> impl Future<Output = AppResult<BTreeMap<BranchId, i64>>> + Send {
         let pool = self.pool.clone();
@@ -126,6 +127,7 @@ impl OrgView for ExecutiveOverviewView {
 
     fn load(
         &self,
+        _organization_id: &str,
         scope: &BranchScope,
         filter: &Self::Filter,
         changed: &[BranchId],

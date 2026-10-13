@@ -6,11 +6,13 @@ pub mod domain {
     pub mod campaign;
     pub mod coupon;
     pub mod engine;
+    pub mod performance;
 }
 
 pub mod infrastructure {
     pub mod pg_budget_ledger;
     pub mod pg_campaign_repository;
+    pub mod pg_performance;
 }
 
 pub mod application {

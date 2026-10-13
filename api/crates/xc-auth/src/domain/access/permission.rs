@@ -64,4 +64,6 @@ pub enum Permission {
     CashTransferPolicySet,
     /// RA-2b (#1429, rate-alerts design §3): configure the organisation's rate alert settings. EXECUTIVE only.
     RateAlertSettingsSave,
+    /// SP-1 (#1585, rates design §12.6, §12.10): enter org starting prices. EXECUTIVE only.
+    OrgStartingPricesManage,
 }

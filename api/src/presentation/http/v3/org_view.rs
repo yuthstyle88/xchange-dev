@@ -46,12 +46,14 @@ pub trait OrgView: Send + Sync + 'static {
     /// The current version of every branch in `scope`.
     fn versions_in(
         &self,
+        organization_id: &str,
         scope: &BranchScope,
     ) -> impl Future<Output = AppResult<BTreeMap<BranchId, i64>>> + Send;
 
     /// The answer over `scope`, with the per-branch parts of `changed` only.
     fn load(
         &self,
+        organization_id: &str,
         scope: &BranchScope,
         filter: &Self::Filter,
         changed: &[BranchId],
@@ -203,7 +205,10 @@ async fn answer<V: OrgView>(
     };
 
     let scope = BranchScope::Branches(branches.clone());
-    let current = view.versions_in(&scope).await.map_err(|_| server_error())?;
+    let current = view
+        .versions_in(&user.organization_id, &scope)
+        .await
+        .map_err(|_| server_error())?;
     let changed: Vec<BranchId> = branches
         .iter()
         // a branch with no version row has never changed: unchanged while the client holds none for it either
@@ -226,7 +231,7 @@ async fn answer<V: OrgView>(
         }
     } else {
         let data = view
-            .load(&scope, &filter, &changed)
+            .load(&user.organization_id, &scope, &filter, &changed)
             .await
             .map_err(|_| server_error())?;
         OrgViewAnswer {

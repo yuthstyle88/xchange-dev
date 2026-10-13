@@ -56,4 +56,20 @@ pub const ROWS: &[AreaRow] = &[
         action: "marginGuardSet",
         need: Need::Permission(Permission::RatePolicySave),
     },
+    // MK-7 (#1406, ruling 1): the three marketing views (design §4.5).
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "campaigns",
+        need: Need::Permission(Permission::MarketingCampaigns),
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "campaign",
+        need: Need::Permission(Permission::MarketingCampaigns),
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "campaignPerformance",
+        need: Need::Permission(Permission::MarketingPerformance),
+    },
 ];
