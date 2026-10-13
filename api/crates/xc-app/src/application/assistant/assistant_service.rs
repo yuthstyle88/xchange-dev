@@ -11,9 +11,10 @@ use crate::domain::app_error::CustomerAppError;
 use crate::domain::app_session::SessionHash;
 use crate::domain::assistant::conversation::MessageRole;
 use crate::domain::assistant::conversation::{AssistantConversation, AssistantMessage};
-use crate::domain::assistant::intent::IntentParser;
+use crate::domain::assistant::intent::{IntentKind, IntentParser};
 use crate::domain::assistant::repository::AssistantRepository;
 use crate::domain::owner::DraftOwner;
+use crate::domain::planner::planner_draft::{DraftAmount, DraftPlan};
 use crate::infrastructure::assistant_repository::PgAssistantRepository;
 
 /// The answer returned by `AssistantService::ask`.
@@ -28,7 +29,6 @@ pub struct AssistantAnswer {
 pub struct AssistantService {
     pool: PgPool,
     repo: PgAssistantRepository,
-    #[allow(dead_code)]
     preview: PlannerPreview,
 }
 
@@ -54,7 +54,7 @@ impl AssistantService {
         now: DateTime<Utc>,
     ) -> Result<AssistantAnswer, CustomerAppError> {
         let redacted = xc_kernel::pii::redact_text(text);
-        let parsed_intent = IntentParser::parse(&redacted, locale);
+        let parsed_intent = IntentParser::parse_in(text, &redacted, locale);
 
         // Find active conversation or create a new one
         let conversation = match self
@@ -120,7 +120,7 @@ impl AssistantService {
             conversation_id: conversation.id,
             role: MessageRole::Customer,
             redacted_text: redacted,
-            parsed_intent: Some(parsed_intent),
+            parsed_intent: Some(parsed_intent.clone()),
             quote_id: None,
             idempotency_key: idempotency_key.map(|k| k.to_string()),
             created_at: now,
@@ -146,11 +146,31 @@ impl AssistantService {
         };
         self.repo.insert_message_in(tx, &assistant_reply).await?;
 
+        let preview = if parsed_intent.kind == IntentKind::Quote {
+            if let (Some(currency), Some(customer_side), Some(quantity)) = (
+                parsed_intent.currency,
+                parsed_intent.customer_side,
+                parsed_intent.quantity,
+            ) {
+                let plan = DraftPlan {
+                    branch_id: parsed_intent.branch.clone(),
+                    currency,
+                    customer_side,
+                    amount: DraftAmount::Quantity(quantity),
+                };
+                self.preview.estimate(tx, &plan, now).await.ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(AssistantAnswer {
             conversation_id: conversation.id,
             customer_message,
             assistant_reply,
-            preview: None,
+            preview,
         })
     }
 

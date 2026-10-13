@@ -1,0 +1,171 @@
+[
+  {
+    "th": "อยากได้ 500 USD พรุ่งนี้ที่ MAIN",
+    "en": "I want 500 USD tomorrow at MAIN",
+    "zh": "我明天想在 MAIN 买 500 USD",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "USD",
+      "customerSide": "CUSTOMER_BUY",
+      "quantity": "500",
+      "budgetThb": null,
+      "branch": "MAIN"
+    }
+  },
+  {
+    "th": "ต้องการซื้อ 1000 USD ที่สาขา MAIN",
+    "en": "I want to buy 1000 USD at MAIN",
+    "zh": "我想在 MAIN 分行买 1000 USD",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "USD",
+      "customerSide": "CUSTOMER_BUY",
+      "quantity": "1000",
+      "budgetThb": null,
+      "branch": "MAIN"
+    }
+  },
+  {
+    "th": "ต้องการขาย 20000 JPY พรุ่งนี้ที่ MAIN",
+    "en": "I want to sell 20000 JPY tomorrow at MAIN",
+    "zh": "我明天想在 MAIN 卖 20000 JPY",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "JPY",
+      "customerSide": "CUSTOMER_SELL",
+      "quantity": "20000",
+      "budgetThb": null,
+      "branch": "MAIN"
+    }
+  },
+  {
+    "th": "ต้องการซื้อ 500 USD",
+    "en": "I want to buy 500 USD",
+    "zh": "我想买 500 USD",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "USD",
+      "customerSide": "CUSTOMER_BUY",
+      "quantity": "500",
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "อยากได้ 300 USD พรุ่งนี้",
+    "en": "I want 300 USD tomorrow",
+    "zh": "我明天想买 300 USD",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "USD",
+      "customerSide": "CUSTOMER_BUY",
+      "quantity": "300",
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "ต้องการขาย 10000 JPY",
+    "en": "I want to sell 10000 JPY",
+    "zh": "我想卖 10000 JPY",
+    "intent": {
+      "kind": "QUOTE",
+      "currency": "JPY",
+      "customerSide": "CUSTOMER_SELL",
+      "quantity": "10000",
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "ขอรับบัตรคิวที่สาขา MAIN",
+    "en": "Get queue ticket at MAIN",
+    "zh": "在 MAIN 分行取排队号",
+    "intent": {
+      "kind": "QUEUE",
+      "currency": null,
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": "MAIN"
+    }
+  },
+  {
+    "th": "ตรวจสอบสถานะคิว",
+    "en": "Check queue status",
+    "zh": "查询排队状态",
+    "intent": {
+      "kind": "QUEUE",
+      "currency": null,
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "ตั้งเตือนเรท USD",
+    "en": "Set rate alert for USD",
+    "zh": "设置 USD 汇率提醒",
+    "intent": {
+      "kind": "ALERT",
+      "currency": "USD",
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "แจ้งเตือนเมื่อเงินเยน JPY ลดลง",
+    "en": "Notify me when JPY drops",
+    "zh": "当日元 JPY 下跌时提醒我",
+    "intent": {
+      "kind": "ALERT",
+      "currency": "JPY",
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "วันนี้อากาศดีมากเลย",
+    "en": "The weather is really nice today",
+    "zh": "今天天气真好",
+    "intent": {
+      "kind": "UNKNOWN",
+      "currency": null,
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "ช่วยแนะนำหนังสือดีๆ สักเล่มได้ไหม",
+    "en": "Can you recommend a good book?",
+    "zh": "你能推荐一本好书吗？",
+    "intent": {
+      "kind": "UNKNOWN",
+      "currency": null,
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  },
+  {
+    "th": "วิธีทำเค้กช็อกโกแลตทำอย่างไร",
+    "en": "How do I make chocolate cake?",
+    "zh": "巧克力蛋糕怎么做？",
+    "intent": {
+      "kind": "UNKNOWN",
+      "currency": null,
+      "customerSide": null,
+      "quantity": null,
+      "budgetThb": null,
+      "branch": null
+    }
+  }
+]
