@@ -3929,16 +3929,23 @@ dependencies = [
 name = "xc-booking"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "futures",
+ "hmac 0.12.1",
  "pos-error",
+ "pos-infra",
+ "rust_decimal",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "thiserror",
  "tokio",
  "tracing",
  "uuid",
+ "xc-approval",
  "xc-customer",
  "xc-kernel",
  "xc-rate",
