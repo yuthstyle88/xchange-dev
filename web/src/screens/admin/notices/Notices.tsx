@@ -1,11 +1,7 @@
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
-import type {
-  MyNotificationItem,
-  MyNotificationsData,
-  MyNotificationsFilter,
-} from '../../../shared/api/generated/my_notifications';
-import { errorText, locale, screenT } from '../../../shared/i18n';
+import { For, Show, type JSX } from 'solid-js';
+import { ApiClient } from '../../../shared/api/client';
+import { locale, screenT } from '../../../shared/i18n';
+import { createNotifications } from '../../../shared/notifications';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './notices.css';
@@ -16,80 +12,21 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
-function refusalText(err: unknown): string {
-  if (err instanceof ApiError) {
-    return errorText(err.code, err.message);
-  }
-  return err instanceof Error ? err.message : String(err);
-}
-
 export function Notices(_props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
-
-  const [loading, setLoading] = createSignal(true);
-  const [loadError, setLoadError] = createSignal<string | null>(null);
-  const [actionError, setActionError] = createSignal<string | null>(null);
-  const [items, setItems] = createSignal<MyNotificationItem[]>([]);
-  const [unreadOnly, setUnreadOnly] = createSignal(false);
-  const [markingIds, setMarkingIds] = createSignal<Set<string>>(new Set());
-  const [markingAll, setMarkingAll] = createSignal(false);
-
-  const load = async (filter?: MyNotificationsFilter) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const res = await api.view<MyNotificationsData, MyNotificationsFilter>('my_notifications', {
-        filter,
-      });
-      const raw = res.data?.items ?? [];
-      const sorted = [...raw].sort((a, b) => b.seq - a.seq);
-      setItems(sorted);
-    } catch (e) {
-      setLoadError(refusalText(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  createEffect(() => {
-    const filter = unreadOnly() ? { unread: true } : undefined;
-    void load(filter);
-  });
-
-  const refetch = () => {
-    const filter = unreadOnly() ? { unread: true } : undefined;
-    void load(filter);
-  };
-
-  const markOneRead = async (id: string) => {
-    setActionError(null);
-    setMarkingIds((prev) => new Set(prev).add(id));
-    try {
-      await api.command('POST', `/api/app/notifications/${encodeURIComponent(id)}/read`, { id }, crypto.randomUUID());
-      refetch();
-    } catch (e) {
-      setActionError(refusalText(e));
-    } finally {
-      setMarkingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
-
-  const markAllRead = async () => {
-    setActionError(null);
-    setMarkingAll(true);
-    try {
-      await api.command('POST', '/api/app/notifications/read-all', {}, crypto.randomUUID());
-      refetch();
-    } catch (e) {
-      setActionError(refusalText(e));
-    } finally {
-      setMarkingAll(false);
-    }
-  };
+  const {
+    items,
+    loading,
+    loadError,
+    actionError,
+    unreadOnly,
+    setUnreadOnly,
+    markingIds,
+    markingAll,
+    refetch,
+    markOneRead,
+    markAllRead,
+  } = createNotifications(api);
 
   return (
     <div class="admin-notices">
