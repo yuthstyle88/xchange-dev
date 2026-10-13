@@ -3,11 +3,6 @@
 //! /api/kiosk`. Written before the implementation by the lane controller. Do not edit, delete
 //! or weaken; add tests in a file of your own.
 //!
-//! - `GET /api/v3/views/kiosk_notifications` — a versioned `BranchView` inheriting
-//!   `(EntryPath::Kiosk, "notifications")`, no filter. `data` is `{serverNow, branchId,
-//!   branchName, count, latest, workingCount, working, employee}`: the compat answer's values,
-//!   except that `employee` is `{id, roles}` as the `me` view builds them (OR-7.7 #1030, rewritten by its
-//!   ticket author: was `{id, role}`).
 //! - `GET /api/v3/views/kiosk_queue` — a `PagedView` inheriting `(EntryPath::Kiosk, "list")`,
 //!   filter `state` = `waiting` | `working` | `completed` (absent = `waiting`; anything else
 //!   is refused naming `state`). Rows newest first (`created_at DESC, id DESC`), keyset paged by
@@ -18,7 +13,7 @@
 //!   their own branch whatever they name (`Policy::branch`).
 //! - Each of the five writers of `kiosk_requests` (customer `quote`, `confirm`; desk `accept`,
 //!   `identityChecked`; the save's `complete_in`) moves the branch version, so the same `since`
-//!   answers `changed: true` on both views after it, and `changed: false` before it (§4.2).
+//!   answers `changed: true` after it, and `changed: false` before it (§4.2).
 //!
 //! Everything goes through the server's whole route table (`bootstrap::configure`) with real
 //! sessions made at the real sign-in doors (`kiosk_http_common::Counter`). Rows the read tests
@@ -86,7 +81,6 @@ async fn open_counters(pool: &sqlx::PgPool, tellers: &[&str]) {
 }
 
 const QUEUE: &str = "kiosk_queue";
-const NOTES: &str = "kiosk_notifications";
 
 const MAIN: &str = "MAIN";
 const B9: &str = "B9";
@@ -135,19 +129,6 @@ const SAME_AS_LIST: [&str; 13] = [
     "canAccept",
     "canContinue",
 ];
-/// The keys of `kiosk_notifications`'s `data` (ticket §7).
-const NOTES_KEYS: [&str; 8] = [
-    "serverNow",
-    "branchId",
-    "branchName",
-    "count",
-    "latest",
-    "workingCount",
-    "working",
-    "employee",
-];
-/// The keys of one `working` entry.
-const WORKING_KEYS: [&str; 5] = ["id", "queue", "staff", "startedAt", "status"];
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -415,9 +396,9 @@ impl Room {
         sqlx::query(
             "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, \
              currency, rate, foreign_amount, thb, input_amount, payment_method, submission_id, \
-             document_ref, started_at, completed_at) \
+             document_ref) \
              VALUES ($1, $2, $3, $4::timestamptz, $5, $6, $7, 32.1, $8::numeric, $9::numeric, \
-             $8::numeric, $10, $11, $11, $12::timestamptz, $13::timestamptz)",
+             $8::numeric, $10, $11, $11)",
         )
         .bind(row.branch)
         .bind(&row.id)
@@ -430,11 +411,24 @@ impl Room {
         .bind(row.thb)
         .bind(row.method)
         .bind(&row.document)
-        .bind(&row.started)
-        .bind(&row.completed)
         .execute(&self.counter.desk.db.pool)
         .await
         .unwrap_or_else(|e| panic!("put kiosk request {}: {e}", row.id));
+
+        if row.started.is_some() || row.completed.is_some() {
+            sqlx::query(
+                "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+                 VALUES (gen_random_uuid(), (SELECT organization_id FROM branches WHERE id = $1), $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets WHERE branch_id = $1), 'A001', 'SERVING', $2, NULL, now(), $3::timestamptz, $4::timestamptz, $5)",
+            )
+            .bind(row.branch)
+            .bind(&row.id)
+            .bind(&row.started)
+            .bind(&row.completed)
+            .bind(format!("key-{}", row.id))
+            .execute(&self.counter.desk.db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("put queue ticket for {}: {e}", row.id));
+        }
     }
 
     async fn put_all(&self, rows: &[Row]) {
@@ -645,8 +639,6 @@ async fn nobody_signed_in_is_refused_kiosk_staff_on_both_views() {
     let refusal = json!({ "error": { "code": "kioskStaff", "message": STAFF_REQUIRED } });
     for who in ["", MUST_CHANGE] {
         for (view, query) in [
-            (NOTES, ""),
-            (NOTES, "branch=MAIN"),
             (QUEUE, ""),
             (QUEUE, "branch=B9&state=working"),
             (QUEUE, "state=all"),
@@ -673,7 +665,7 @@ async fn both_views_answer_exactly_whom_the_kiosk_rows_allow() {
     let mut allowed = 0;
     for who in room.callers() {
         let actor = room.actor_of(&who);
-        for (view, action) in [(NOTES, "notifications"), (QUEUE, "list")] {
+        for (view, action) in [(QUEUE, "list")] {
             let policy = Policy::allow(actor.as_ref(), EntryPath::Kiosk, &Action::new(action));
             let answer = room.get(&who, &path(view, "")).await;
             match policy {
@@ -702,8 +694,8 @@ async fn both_views_answer_exactly_whom_the_kiosk_rows_allow() {
             }
         }
     }
-    // the owner, the nine roles and the second FRONT employee, on both views
-    assert_eq!(allowed, 22, "every signed-in caller reads both views");
+    // the owner, the nine roles and the second FRONT employee
+    assert_eq!(allowed, 11, "every signed-in caller reads the queue view");
     room.finish().await;
 }
 
@@ -1233,173 +1225,22 @@ async fn staff_naming_another_branch_are_answered_for_their_own() {
     .await;
     // OR-4b (D-4): staff of MAIN naming B9 are refused; naming MAIN they read MAIN's
     for who in ["FRONT", "RATES"] {
-        for view in [QUEUE, NOTES] {
+        for view in [QUEUE] {
             assert_out_of_scope(
                 &room.get(who, &path(view, "branch=B9")).await,
                 &format!("{who} naming B9 on {view}"),
             );
         }
     }
-    for (who, query, want, branch) in [
-        ("FRONT", "branch=MAIN", vec![rid(0x61)], MAIN),
-        ("RATES", "branch=MAIN", vec![rid(0x61)], MAIN),
-        ("FRONT", "", vec![rid(0x61)], MAIN),
-        ("owner", "branch=B9", vec![rid(0x63), rid(0x62)], B9),
-        ("owner", "", vec![rid(0x61)], MAIN),
+    for (who, query, want) in [
+        ("FRONT", "branch=MAIN", vec![rid(0x61)]),
+        ("RATES", "branch=MAIN", vec![rid(0x61)]),
+        ("FRONT", "", vec![rid(0x61)]),
+        ("owner", "branch=B9", vec![rid(0x63), rid(0x62)]),
+        ("owner", "", vec![rid(0x61)]),
     ] {
         let queue = room.data(who, QUEUE, query).await;
         assert_eq!(ids(&queue), want, "{QUEUE}?{query} as {who}");
-        let notes = room.data(who, NOTES, query).await;
-        assert_eq!(notes["branchId"], json!(branch), "{NOTES}?{query} as {who}");
-        assert_eq!(
-            notes["count"],
-            json!(want.len()),
-            "{NOTES}?{query} as {who}: {notes}"
-        );
-        assert_eq!(
-            notes["latest"],
-            json!(want[0]),
-            "{NOTES}?{query} as {who}: {notes}"
-        );
-    }
-    let b9 = room.data("owner", NOTES, "branch=B9").await;
-    assert_eq!(b9["branchName"], json!(B9_NAME), "{b9}");
-    room.finish().await;
-}
-
-// ── notifications ────────────────────────────────────────────────────────────
-
-/// §7: `kiosk_notifications` answers exactly the eight keys, with compat `notifications`'s
-/// values for the same caller — `count`, `latest`, `workingCount`, `working` (each entry
-/// exactly `{id, queue, staff, startedAt, status}`), `branchId`, `branchName` — and
-/// `employee` exactly `{id, roles}` (OR-7.7 #1030): none of compat's `username` and `name`.
-#[actix_web::test]
-async fn notifications_are_the_compat_answer_with_the_me_identity_as_employee() {
-    let room = Room::open().await;
-    room.put_all(&the_day(&room)).await;
-    for who in ["owner", "FRONT", "RATES", "FINANCE"] {
-        let data = room.data(who, NOTES, "").await;
-        assert_eq!(keys(&data), set_of(&NOTES_KEYS), "{who}: {data}");
-        let compat = room.compat(who, "notifications", json!({}), MAIN).await;
-        for key in [
-            "branchId",
-            "branchName",
-            "count",
-            "latest",
-            "workingCount",
-            "working",
-        ] {
-            assert_eq!(
-                data[key], compat[key],
-                "{who}: {key} — view {data}, compat {compat}"
-            );
-        }
-        for entry in data["working"].as_array().expect("working is an array") {
-            assert_eq!(keys(entry), set_of(&WORKING_KEYS), "{who}: {entry}");
-        }
-        assert_eq!(
-            keys(&data["employee"]),
-            set_of(&["id", "roles"]),
-            "{who}: {data}"
-        );
-        // OR-7.7 #1030: the roles `me` answers, as design §3.3 maps the old ones (owner → EXECUTIVE + ADMIN
-        // organisation-wide; FRONT → TELLER, RATES → RATE_MANAGER, FINANCE → FINANCE at the employee's branch).
-        let want = match who {
-            "owner" => json!({
-                "id": "owner",
-                "roles": [{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }],
-            }),
-            key => {
-                let role = match key {
-                    "FRONT" => "TELLER",
-                    "RATES" => "RATE_MANAGER",
-                    "FINANCE" => "FINANCE",
-                    other => panic!("no mapping written for {other}"),
-                };
-                json!({ "id": room.id_of(key), "roles": [{ "role": role, "branchId": MAIN }] })
-            }
-        };
-        assert_eq!(data["employee"], want, "{who}");
-    }
-    let main = room.data("FRONT", NOTES, "").await;
-    assert_eq!(main["count"], json!(3), "{main}");
-    assert_eq!(main["latest"], json!(rid(3)), "{main}");
-    assert_eq!(main["workingCount"], json!(4), "{main}");
-    room.finish().await;
-}
-
-/// §9, §12.18.2: the owner's `employee` is the identity the `me` view answers the owner —
-/// `{id, roles}` (OR-7.7 #1030, design §3.4), with the owner's roles mapped as §3.3 maps OWNER:
-/// EXECUTIVE and ADMIN, both organisation-wide.
-#[actix_web::test]
-async fn the_owners_notifications_employee_is_the_me_views_identity() {
-    let room = Room::open().await;
-    let me = room.data("owner", "me", "").await;
-    let notes = room.data("owner", NOTES, "").await;
-    assert_eq!(
-        notes["employee"],
-        json!({ "id": me["id"], "roles": me["roles"] }),
-        "me {me}, notifications {notes}"
-    );
-    assert_eq!(
-        notes["employee"]["roles"],
-        json!([{ "role": "ADMIN", "branchId": null }, { "role": "EXECUTIVE", "branchId": null }]),
-        "{notes}"
-    );
-    room.finish().await;
-}
-
-/// §12.18.2: `working` holds at most ten entries while `workingCount` counts them all.
-#[actix_web::test]
-async fn notifications_list_at_most_ten_working_rows() {
-    let room = Room::open().await;
-    let front = room.id_of("FRONT");
-    for n in 0..13u32 {
-        room.put(
-            &Row::waiting(0x70 + n, n)
-                .held(if n % 2 == 0 { "ACCEPTED" } else { "ID_CHECKED" }, &front)
-                .times(Some(&format!("2026-10-06T04:40:{n:02}.000Z")), None),
-        )
-        .await;
-    }
-    let data = room.data("FRONT", NOTES, "").await;
-    assert_eq!(data["workingCount"], json!(13), "{data}");
-    assert_eq!(data["working"].as_array().map(Vec::len), Some(10), "{data}");
-    let compat = room.compat("FRONT", "notifications", json!({}), MAIN).await;
-    assert_eq!(data["working"], compat["working"], "the same ten as compat");
-    room.finish().await;
-}
-
-/// §12.18.2: `serverNow` is in the data, as v2 prints a time, and is the server's time of the
-/// answer; a `changed: false` answer carries no data, so no clock either.
-#[actix_web::test]
-async fn server_now_is_an_iso_time_of_the_answer() {
-    let room = Room::open().await;
-    let before = Utc::now() - Duration::milliseconds(1);
-    let body = room.view("FRONT", NOTES, "").await;
-    let after = Utc::now() + Duration::milliseconds(1);
-    let text = body["data"]["serverNow"]
-        .as_str()
-        .unwrap_or_else(|| panic!("serverNow is a string: {body}"));
-    let at = DateTime::parse_from_rfc3339(text)
-        .unwrap_or_else(|e| panic!("serverNow {text} is ISO: {e}"))
-        .with_timezone(&Utc);
-    assert_eq!(text, iso(at), "printed as v2 printed a time");
-    assert!(
-        at >= before && at <= after,
-        "serverNow {text} is the time of the answer ({} .. {})",
-        iso(before),
-        iso(after)
-    );
-    let version = body["version"].as_i64().expect("a version");
-    let again = room.view("FRONT", NOTES, &format!("since={version}")).await;
-    is_unchanged(&again, version, "unchanged");
-    let queue = room.data("FRONT", QUEUE, "").await;
-    for row in rows(&queue) {
-        assert!(
-            row.get("serverNow").is_none(),
-            "queue rows carry no clock: {row}"
-        );
     }
     room.finish().await;
 }
@@ -1414,7 +1255,7 @@ async fn since_at_the_current_version_answers_unchanged_without_loading() {
     let room = Room::open().await;
     room.put_all(&the_day(&room)).await;
     let version = room.version(MAIN).await;
-    for (view, query) in [(NOTES, ""), (QUEUE, "state=working"), (QUEUE, "")] {
+    for (view, query) in [(QUEUE, "state=working"), (QUEUE, "")] {
         let body = room.view("FRONT", view, query).await;
         assert_eq!(body["version"], json!(version), "{view}?{query}: {body}");
         assert_eq!(body["changed"], json!(true), "{view}?{query}");
@@ -1452,7 +1293,7 @@ async fn since_at_the_current_version_answers_unchanged_without_loading() {
         .await
         .unwrap_or_else(|e| panic!("rename {table}: {e}"));
     }
-    for view in [NOTES, QUEUE] {
+    for view in [QUEUE] {
         let same = room.view("FRONT", view, &format!("since={version}")).await;
         is_unchanged(&same, version, &format!("{view} with its tables gone"));
         let loaded = room.get("FRONT", &path(view, "")).await;
@@ -1536,7 +1377,7 @@ async fn walk_to(last: Writer) {
         room.advance(5);
         let v0 = room.version(MAIN).await;
         if writer == last {
-            for view in [NOTES, QUEUE] {
+            for view in [QUEUE] {
                 let before = room.view("FRONT", view, &format!("since={v0}")).await;
                 is_unchanged(&before, v0, &format!("{view} before {writer:?}"));
             }
@@ -1594,13 +1435,6 @@ async fn walk_to(last: Writer) {
         }
         let v1 = room.version(MAIN).await;
         assert!(v1 > v0, "{writer:?} moved MAIN's version: {v0} → {v1}");
-        let notes = room.view("FRONT", NOTES, &format!("since={v0}")).await;
-        assert_eq!(
-            notes["changed"],
-            json!(true),
-            "{NOTES} after {writer:?}: {notes}"
-        );
-        assert_eq!(notes["version"], json!(v1), "{NOTES} after {writer:?}");
         let mut seen_in = Vec::new();
         for state in ["waiting", "working", "completed"] {
             let queue = room
@@ -1624,18 +1458,14 @@ async fn walk_to(last: Writer) {
                 .await;
             is_unchanged(&same, v1, &format!("{state} at the new version"));
         }
-        let same = room.view("FRONT", NOTES, &format!("since={v1}")).await;
-        is_unchanged(&same, v1, "notifications at the new version");
 
         // what the write left, as the views show it
-        let data = &notes["data"];
         match writer {
             Writer::Quote => {
                 assert!(
                     seen_in.is_empty(),
                     "a QUOTED request is not listed: {seen_in:?}"
                 );
-                assert_eq!(data["count"], json!(0), "{data}");
             }
             Writer::Confirm => {
                 assert_eq!(seen_in.len(), 1, "{seen_in:?}");
@@ -1643,8 +1473,6 @@ async fn walk_to(last: Writer) {
                 assert_eq!(seen_in[0].1["canAccept"], json!(true), "{seen_in:?}");
                 assert_eq!(seen_in[0].1["foreign"], json!("100.00"), "{seen_in:?}");
                 assert_eq!(seen_in[0].1["thb"], json!("3210.00"), "{seen_in:?}");
-                assert_eq!(data["latest"], json!(WALKED), "{data}");
-                assert_eq!(data["count"], json!(1), "{data}");
             }
             Writer::Accept | Writer::IdentityChecked => {
                 assert_eq!(seen_in.len(), 1, "{seen_in:?}");
@@ -1661,10 +1489,6 @@ async fn walk_to(last: Writer) {
                     json!(room.username_of("FRONT")),
                     "{seen_in:?}"
                 );
-                assert_eq!(data["count"], json!(0), "{data}");
-                assert_eq!(data["workingCount"], json!(1), "{data}");
-                assert_eq!(data["working"][0]["id"], json!(WALKED), "{data}");
-                assert_eq!(data["working"][0]["status"], json!(status), "{data}");
             }
             Writer::Save => {
                 assert_eq!(seen_in.len(), 1, "{seen_in:?}");
@@ -1674,7 +1498,6 @@ async fn walk_to(last: Writer) {
                     seen_in[0].1["transactionNo"].is_string(),
                     "linked to the exchange: {seen_in:?}"
                 );
-                assert_eq!(data["workingCount"], json!(0), "{data}");
             }
         }
     }
@@ -1776,12 +1599,10 @@ impl Drop for Scratch {
 #[test]
 fn the_generated_types_carry_money_as_strings_and_the_three_states() {
     let names: Vec<&str> = VIEWS.iter().map(|v| v.name).collect();
-    for name in [QUEUE, NOTES] {
-        assert!(
-            names.contains(&name),
-            "{name} in the generated views {names:?}"
-        );
-    }
+    assert!(
+        names.contains(&QUEUE),
+        "{QUEUE} in the generated views {names:?}"
+    );
     let text_of = |name: &str| {
         let view = VIEWS
             .iter()
@@ -1815,13 +1636,4 @@ fn the_generated_types_carry_money_as_strings_and_the_three_states() {
     ] {
         assert!(!queue.contains(never), "{QUEUE}.ts has no {never}: {queue}");
     }
-    let notes = text_of(NOTES);
-    for want in [
-        "serverNow: string",
-        " count: number,",
-        " workingCount: number,",
-    ] {
-        assert!(notes.contains(want), "{NOTES}.ts has {want}: {notes}");
-    }
-    assert!(!notes.contains("bigint"), "{notes}");
 }

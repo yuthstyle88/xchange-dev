@@ -75,14 +75,20 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use serde_json::{Map, Value, json};
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole, ScopedRole};
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
+use xc_kernel::queue_tickets::QueueTickets;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
+use xc_queue::application::issue::ticket_issuer::TicketIssuer;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::kiosk::KioskIds;
@@ -521,7 +527,7 @@ impl<'f> KioskReplay<'f> {
         let source: Arc<dyn RateSource> = self.replay.desk.bank.clone();
         let service = KioskService::new(
             self.replay.desk.db.branch_tx(),
-            Arc::new(PgKioskPorts::new(pool, audit, source)),
+            Arc::new(PgKioskPorts::new(pool.clone(), audit, source)),
         );
         let owner = KioskActor::Staff {
             username: "owner".to_string(),
@@ -531,10 +537,54 @@ impl<'f> KioskReplay<'f> {
         let now = crate::snapshot_common::time(&step.at);
         match step.action.as_deref() {
             Some("accept") => {
+                // Blueprint: the owner cannot operate the queue (C8). The behind-the-routes accept starts the ticket as the branch's queue operator, as a teller's accept would.
+                let manager_id = self
+                    .replay
+                    .fixture
+                    .people
+                    .iter()
+                    .find(|p| {
+                        p.role == "MANAGER" && p.branch_id.as_deref() == Some(branch.as_str())
+                    })
+                    .or_else(|| {
+                        self.replay
+                            .fixture
+                            .people
+                            .iter()
+                            .find(|p| p.role == "MANAGER")
+                    })
+                    .map(|p| p.id.as_str())
+                    .unwrap_or("00000000-0000-4000-8000-000000000007");
+                let operator = AccessActor::new(
+                    manager_id,
+                    crate::rpc_common::ORGANIZATION,
+                    vec![ScopedRole::new(
+                        AccessRole::BranchManager,
+                        Some(branch.clone()),
+                        DateTime::<Utc>::UNIX_EPOCH,
+                        None,
+                    )],
+                    None,
+                );
+                let issuer = TicketIssuer::new(
+                    BranchTx::new(Transactor::new(pool.clone())),
+                    Arc::new(PgQueueRepository::new(pool.clone())),
+                )
+                .acting_as(operator);
+                let queue: Arc<dyn QueueTickets> = Arc::new(issuer);
                 service
-                    .accept(&branch, &owner, id, now)
+                    .accept_with_queue(&branch, &owner, id, now, queue)
                     .await
                     .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+                sqlx::query(
+                    "UPDATE queue_tickets SET counter_teller_id = NULL \
+                     WHERE branch_id = $1 AND kiosk_request_id = $2",
+                )
+                .bind(branch.as_str())
+                .bind(id)
+                .execute(&pool)
+                .await
+                .expect("clear operator from behind-the-routes ticket");
             }
             Some("identityChecked") => {
                 let confirmed = payload
@@ -612,6 +662,18 @@ impl<'f> KioskReplay<'f> {
             .accept(&branch, &claimant, id, now)
             .await
             .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+        // Stand in for QU-6 QueueRefuses steps per the controller ruling on #1267 so recorded startedAt replays.
+        sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'SERVING', served_at = $3 \
+             WHERE branch_id = $1 AND kiosk_request_id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(now)
+        .execute(&self.replay.desk.db.pool)
+        .await
+        .expect("mark ticket serving behind routes");
         self.replay.tally.applied_behind.push(step.n);
     }
 

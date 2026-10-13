@@ -161,9 +161,9 @@ impl Room {
         sqlx::query(
             "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, \
              currency, rate, foreign_amount, thb, input_amount, payment_method, submission_id, \
-             document_ref, started_at, completed_at) \
+             document_ref) \
              VALUES ($1, $2, $3, $4::timestamptz, $5, $6, $7, 32.0, $8::numeric, $9::numeric, \
-             $8::numeric, $10, $11, $11, $12::timestamptz, $13::timestamptz)",
+             $8::numeric, $10, $11, $11)",
         )
         .bind(row.branch)
         .bind(&row.id)
@@ -176,11 +176,24 @@ impl Room {
         .bind(row.thb)
         .bind(row.method)
         .bind(&row.document)
-        .bind(&row.started)
-        .bind(&row.completed)
         .execute(&self.counter.desk.db.pool)
         .await
         .unwrap_or_else(|e| panic!("put kiosk request {}: {e}", row.id));
+
+        if row.started.is_some() || row.completed.is_some() {
+            sqlx::query(
+                "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+                 VALUES (gen_random_uuid(), (SELECT organization_id FROM branches WHERE id = $1), $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets WHERE branch_id = $1), 'A001', 'SERVING', $2, NULL, now(), $3::timestamptz, $4::timestamptz, $5)",
+            )
+            .bind(row.branch)
+            .bind(&row.id)
+            .bind(&row.started)
+            .bind(&row.completed)
+            .bind(format!("key-{}", row.id))
+            .execute(&self.counter.desk.db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("put queue ticket for {}: {e}", row.id));
+        }
     }
 
     async fn put_all(&self, rows: &[Row]) {

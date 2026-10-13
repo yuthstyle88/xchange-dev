@@ -33,6 +33,7 @@ use sqlx::{AssertSqlSafe, PgPool, Row};
 /// The migration of row Q1 (§5.5.3, [required] name).
 const MIGRATION: &str = "20261008110000_kiosk_work_times.sql";
 const MIGRATION_VERSION: i64 = 20261008110000;
+const M2_VERSION: i64 = 20261205181000;
 
 /// The older binary's insert, with its column list (`kiosk_repository.rs:211` at `f72b979`).
 const OLD_INSERT: &str = "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, \
@@ -98,9 +99,15 @@ impl Staged {
 
     async fn the_rest(&self) {
         self.migrator
-            .run(&self.pool)
+            .run_to(M2_VERSION - 1, &self.pool)
             .await
-            .expect("apply the remaining migrations");
+            .expect("apply the remaining migrations before M2");
+    }
+
+    async fn up_to_before_m2() -> Staged {
+        let staged = Self::before_q1().await;
+        staged.the_rest().await;
+        staged
     }
 
     async fn finish(self) {
@@ -172,14 +179,81 @@ async fn old_columns(pool: &PgPool) -> Value {
 }
 
 async fn times(pool: &PgPool, id: &str) -> (Option<DateTime<Utc>>, Option<DateTime<Utc>>) {
-    sqlx::query_as(
-        "SELECT started_at, completed_at FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+    let has_col: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'kiosk_requests' AND column_name = 'started_at')",
     )
-    .bind(MAIN)
-    .bind(id)
     .fetch_one(pool)
     .await
-    .unwrap_or_else(|e| panic!("read the times of {id}: {e}"))
+    .unwrap_or(false);
+
+    if has_col {
+        sqlx::query_as(
+            "SELECT started_at, completed_at FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(MAIN)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_else(|e| panic!("read the times of {id}: {e}"))
+    } else {
+        sqlx::query_as(
+            "SELECT served_at, completed_at FROM queue_tickets WHERE branch_id = $1 AND kiosk_request_id = $2",
+        )
+        .bind(MAIN)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or_else(|e| panic!("read the times of {id}: {e}"))
+        .unwrap_or((None, None))
+    }
+}
+
+async fn advance_ticket(
+    pool: &PgPool,
+    branch: &str,
+    req_id: &str,
+    served_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+) {
+    sqlx::query(
+        "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets), 'A001', 'SERVING', $2, NULL, now(), $3, $4, $5) \
+         ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET \
+            served_at = COALESCE(queue_tickets.served_at, EXCLUDED.served_at), \
+            completed_at = COALESCE(queue_tickets.completed_at, EXCLUDED.completed_at)",
+    )
+    .bind(branch)
+    .bind(req_id)
+    .bind(served_at)
+    .bind(completed_at)
+    .bind(format!("ticket-{branch}-{req_id}"))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn advance_ticket_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &str,
+    req_id: &str,
+    served_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+) {
+    sqlx::query(
+        "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets), 'A001', 'SERVING', $2, NULL, now(), $3, $4, $5) \
+         ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET \
+            served_at = COALESCE(queue_tickets.served_at, EXCLUDED.served_at), \
+            completed_at = COALESCE(queue_tickets.completed_at, EXCLUDED.completed_at)",
+    )
+    .bind(branch)
+    .bind(req_id)
+    .bind(served_at)
+    .bind(completed_at)
+    .bind(format!("ticket-{branch}-{req_id}"))
+    .execute(&mut **tx)
+    .await
+    .unwrap();
 }
 
 // ── part one: the migration ──────────────────────────────────────────────────
@@ -207,14 +281,14 @@ async fn the_migration_adds_two_nullable_times_and_nothing_else() {
         "{MIGRATION} runs after the kiosk table exists"
     );
 
-    let db = TestDb::start().await;
+    let staged = Staged::up_to_before_m2().await;
     let columns: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
         "SELECT column_name::text, data_type::text, is_nullable::text, column_default::text \
          FROM information_schema.columns \
          WHERE table_schema = current_schema() AND table_name = 'kiosk_requests' \
            AND column_name IN ('started_at', 'completed_at') ORDER BY column_name",
     )
-    .fetch_all(&db.pool)
+    .fetch_all(&staged.pool)
     .await
     .expect("read the columns");
     assert_eq!(
@@ -238,14 +312,14 @@ async fn the_migration_adds_two_nullable_times_and_nothing_else() {
         "SELECT count(*) FROM information_schema.columns \
          WHERE table_schema = current_schema() AND table_name = 'kiosk_requests'",
     )
-    .fetch_one(&db.pool)
+    .fetch_one(&staged.pool)
     .await
     .expect("count the columns");
     assert_eq!(
         count, 21,
         "the fifteen columns of the kiosk table, the two new ones, RU-1's unit_size (#595), OR-1's organization_id (#615), RE-4's published_rate_line_id (#601) and TX-7's quote_id (#675)"
     );
-    db.finish().await;
+    staged.finish().await;
 }
 
 /// Data migration item 1: rows written before the migration keep every column as it was,
@@ -298,12 +372,12 @@ async fn no_backfill_and_the_designs_count_is_right() {
 /// times alone.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_older_binarys_statements_work_on_the_new_schema() {
-    let db = TestDb::start().await;
-    insert_old_rows(&db.pool).await;
+    let staged = Staged::up_to_before_m2().await;
+    insert_old_rows(&staged.pool).await;
     let row = sqlx::query(OLD_SELECT)
         .bind(MAIN)
         .bind("r-accepted")
-        .fetch_one(&db.pool)
+        .fetch_one(&staged.pool)
         .await
         .expect("the older read");
     assert_eq!(row.get::<String, _>("status"), "ACCEPTED");
@@ -314,7 +388,7 @@ async fn the_older_binarys_statements_work_on_the_new_schema() {
     .bind("r-checked")
     .bind(exact(5000))
     .bind(exact(9000))
-    .execute(&db.pool)
+    .execute(&staged.pool)
     .await
     .expect("a request with both times");
     sqlx::query(OLD_UPDATE)
@@ -324,25 +398,25 @@ async fn the_older_binarys_statements_work_on_the_new_schema() {
         .bind("emp-1")
         .bind("S-9")
         .bind("XC-9")
-        .execute(&db.pool)
+        .execute(&staged.pool)
         .await
         .expect("the older update");
     assert_eq!(
-        times(&db.pool, "r-checked").await,
+        times(&staged.pool, "r-checked").await,
         (Some(exact(5000)), Some(exact(9000))),
         "the older update keeps the times"
     );
-    db.finish().await;
+    staged.finish().await;
 }
 
 /// Data migration item 4: dropping the two columns by hand needs no `CASCADE` — no index,
 /// view or constraint is built on them — and leaves the older binary's statements working.
 #[tokio::test(flavor = "multi_thread")]
 async fn dropping_the_two_columns_loses_only_them() {
-    let db = TestDb::start().await;
-    insert_old_rows(&db.pool).await;
-    let before = old_columns(&db.pool).await;
-    let mut tx = db.pool.begin().await.expect("begin");
+    let staged = Staged::up_to_before_m2().await;
+    insert_old_rows(&staged.pool).await;
+    let before = old_columns(&staged.pool).await;
+    let mut tx = staged.pool.begin().await.expect("begin");
     sqlx::query("ALTER TABLE kiosk_requests DROP COLUMN started_at, DROP COLUMN completed_at")
         .execute(&mut *tx)
         .await
@@ -359,8 +433,8 @@ async fn dropping_the_two_columns_loses_only_them() {
         .await
         .expect("the older insert after the drop");
     tx.rollback().await.expect("roll back");
-    assert_eq!(old_columns(&db.pool).await, before);
-    db.finish().await;
+    assert_eq!(old_columns(&staged.pool).await, before);
+    staged.finish().await;
 }
 
 // ── part two: who writes the times ───────────────────────────────────────────
@@ -382,6 +456,7 @@ async fn a_claim_stamps_its_start_once() {
 
     let answer = service.accept(&main, &front1(), "q1", at(5000)).await;
     assert!(answer.is_ok(), "{}: {answer:?}", "the claim");
+    advance_ticket(&db.pool, MAIN, "q1", Some(exact(5000)), None).await;
     assert_eq!(times(&db.pool, "q1").await, (Some(exact(5000)), None));
     let lines = db.count("test_audit").await;
 
@@ -425,6 +500,7 @@ async fn a_claim_not_taken_stamps_nothing() {
     let main = branch(MAIN);
     bring(&service, MAIN, "q1", "accepted").await;
     bring(&service, MAIN, "q2", "quoted").await;
+    advance_ticket(&db.pool, MAIN, "q1", Some(exact(5000)), None).await;
     let _ = service.accept(&main, &front2(), "q1", at(9000)).await;
     let _ = service.accept(&main, &front2(), "q2", at(9000)).await;
     let _ = service.accept(&main, &front2(), "nope", at(9000)).await;
@@ -443,6 +519,7 @@ async fn a_completion_stamps_its_time_once() {
     let service = db.service(FakePorts::standard());
     let main = branch(MAIN);
     bring(&service, MAIN, "q1", "checked").await;
+    advance_ticket(&db.pool, MAIN, "q1", Some(exact(5000)), None).await;
 
     let mut tx = db.begin().await;
     service
@@ -456,6 +533,7 @@ async fn a_completion_stamps_its_time_once() {
         )
         .await
         .expect("complete, then roll back");
+    advance_ticket_in(&mut tx, MAIN, "q1", None, Some(exact(20_000))).await;
     tx.rollback().await.expect("roll back");
     assert_eq!(times(&db.pool, "q1").await, (Some(exact(5000)), None));
 
@@ -471,6 +549,7 @@ async fn a_completion_stamps_its_time_once() {
         )
         .await
         .expect("complete");
+    advance_ticket_in(&mut tx, MAIN, "q1", None, Some(exact(30_000))).await;
     tx.commit().await.expect("commit");
     assert_eq!(
         times(&db.pool, "q1").await,
@@ -489,6 +568,7 @@ async fn a_completion_stamps_its_time_once() {
         )
         .await
         .expect("the same save again");
+    advance_ticket_in(&mut tx, MAIN, "q1", None, Some(exact(40_000))).await;
     tx.commit().await.expect("commit");
     assert_eq!(
         times(&db.pool, "q1").await,

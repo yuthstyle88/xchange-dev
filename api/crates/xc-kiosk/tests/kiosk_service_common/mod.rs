@@ -1137,10 +1137,25 @@ pub async fn play(name: &str) -> Vec<String> {
                         .collect(),
                 )
             }),
-            "accept" => service
-                .accept(&b, &actor, id, now)
-                .await
-                .and_then(accept_answer),
+            "accept" => {
+                let outcome = service.accept(&b, &actor, id, now).await;
+                if let Ok(AcceptOutcome::Claimed(ref times)) = outcome {
+                    if let Some(started) = times.started_at {
+                        let _ = sqlx::query(
+                            "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, idempotency_key) \
+                             VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets), 'A001', 'SERVING', $2, NULL, now(), $3, $4) \
+                             ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET served_at = COALESCE(queue_tickets.served_at, EXCLUDED.served_at)",
+                        )
+                        .bind(b.as_str())
+                        .bind(id)
+                        .bind(exact(started.epoch_millis() - T0))
+                        .bind(format!("ticket-{}-{id}", b.as_str()))
+                        .execute(&db.pool)
+                        .await;
+                    }
+                }
+                outcome.and_then(accept_answer)
+            }
             "get" => service.get(&b, &actor, id).await.map(|r| {
                 let queue = KioskMachine::identity(Some(&r), kiosk_time(now))
                     .expect("identity of a stored request")
@@ -1199,6 +1214,19 @@ pub async fn play(name: &str) -> Vec<String> {
                     let l = link(&save.submission_id, &text(&step["documentRef"]));
                     service.complete_in(&mut tx, &b, id, &l, &actor, now).await
                 };
+                if op == "complete" && out.is_ok() {
+                    let _ = sqlx::query(
+                        "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, completed_at, idempotency_key) \
+                         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets), 'A001', 'COMPLETED', $2, NULL, now(), $3, $4) \
+                         ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET completed_at = COALESCE(queue_tickets.completed_at, EXCLUDED.completed_at)",
+                    )
+                    .bind(b.as_str())
+                    .bind(id)
+                    .bind(exact(ms))
+                    .bind(format!("ticket-{}-{id}", b.as_str()))
+                    .execute(&mut *tx)
+                    .await;
+                }
                 match &out {
                     Ok(()) => tx.commit().await.expect("commit"),
                     Err(_) => tx.rollback().await.expect("rollback"),
