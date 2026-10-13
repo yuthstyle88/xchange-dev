@@ -17,6 +17,8 @@ use pos_error::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
+use xc_customer::domain::retention::DataType;
+use xc_kernel::pii::identity_type::IdentityType;
 
 use crate::domain::case::case_error::CaseError;
 use crate::domain::case::case_machine::CaseMachine;
@@ -25,6 +27,7 @@ use crate::domain::case::decision_reason::DecisionReason;
 use crate::domain::case::reviewer_actor::{ReviewerActor, ReviewerScope};
 use crate::domain::case::verification_case::VerificationCase;
 use crate::domain::case_repository::CaseRepository;
+use crate::domain::document::retention_clock::RetentionClock;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReviewError {
@@ -338,7 +341,7 @@ impl ReviewService {
         .execute(&mut *tx)
         .await?;
 
-        // VF-6 seam: ending a case (REJECTED) will call RetentionClock here
+        Self::set_case_retention(&mut tx, case.id, case.organization_id, now).await?;
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
@@ -468,7 +471,7 @@ impl ReviewService {
         .execute(&mut *tx)
         .await?;
 
-        // VF-6 seam: ending a case (REVOKED) will call RetentionClock here
+        Self::set_case_retention(&mut tx, case.id, case.organization_id, now).await?;
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
@@ -492,5 +495,52 @@ impl ReviewService {
         tx.commit().await?;
 
         Ok(updated)
+    }
+
+    pub(crate) async fn set_case_retention(
+        tx: &mut Transaction<'_, Postgres>,
+        case_id: Uuid,
+        org_id: Uuid,
+        ended_at: DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        let docs: Vec<(Uuid, String)> = sqlx::query_as(
+            "SELECT id, document_type FROM verification_documents WHERE case_id = $1",
+        )
+        .bind(case_id)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        for (doc_id, doc_type) in docs {
+            let identity_type = match doc_type.as_str() {
+                "PASSPORT" => IdentityType::Passport,
+                "NATIONAL_ID" => IdentityType::NationalId,
+                _ => continue,
+            };
+            let data_type = match identity_type {
+                IdentityType::Passport => DataType::VerificationPassport,
+                IdentityType::NationalId => DataType::VerificationNationalId,
+                _ => continue,
+            };
+
+            let period_days: Option<i32> = sqlx::query_scalar(
+                "SELECT period_days FROM retention_policies WHERE organization_id = $1 AND data_type = $2",
+            )
+            .bind(org_id)
+            .bind(data_type.as_str())
+            .fetch_optional(&mut **tx)
+            .await?
+            .flatten();
+
+            let period = period_days.map(|d| chrono::Duration::days(d as i64));
+            let retention_until = RetentionClock::retention_until(ended_at, period);
+
+            sqlx::query("UPDATE verification_documents SET retention_until = $2 WHERE id = $1")
+                .bind(doc_id)
+                .bind(retention_until)
+                .execute(&mut **tx)
+                .await?;
+        }
+
+        Ok(())
     }
 }

@@ -19,6 +19,10 @@ pub enum DataType {
     AssistantConversation,
     #[serde(rename = "PLANNER_DRAFT")]
     PlannerDraft,
+    #[serde(rename = "VERIFICATION_PASSPORT")]
+    VerificationPassport,
+    #[serde(rename = "VERIFICATION_NATIONAL_ID")]
+    VerificationNationalId,
 }
 
 impl DataType {
@@ -30,6 +34,8 @@ impl DataType {
             DataType::RateAlert => "RATE_ALERT",
             DataType::AssistantConversation => "ASSISTANT_CONVERSATION",
             DataType::PlannerDraft => "PLANNER_DRAFT",
+            DataType::VerificationPassport => "VERIFICATION_PASSPORT",
+            DataType::VerificationNationalId => "VERIFICATION_NATIONAL_ID",
         }
     }
 }
@@ -51,6 +57,8 @@ impl FromStr for DataType {
             "RATE_ALERT" => Ok(DataType::RateAlert),
             "ASSISTANT_CONVERSATION" => Ok(DataType::AssistantConversation),
             "PLANNER_DRAFT" => Ok(DataType::PlannerDraft),
+            "VERIFICATION_PASSPORT" => Ok(DataType::VerificationPassport),
+            "VERIFICATION_NATIONAL_ID" => Ok(DataType::VerificationNationalId),
             _ => Err(format!("unknown data type: {s}")),
         }
     }
