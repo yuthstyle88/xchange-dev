@@ -16,24 +16,25 @@ export function AppShell(props: {
   ownsMain?: boolean;
   look?: AppShellLook;
   banner?: JSX.Element;
+  staffSession?: boolean;
 }): JSX.Element {
-  const session = sharedSession();
+  const session = props.staffSession !== false ? sharedSession() : undefined;
 
   return (
     <div class={props.look ? `xc-shell xc-${props.look}` : 'xc-shell'}>
       {props.banner ? <div class="xc-shell-banner">{props.banner}</div> : null}
-      <AccountBar session={session} />
+      {session ? <AccountBar session={session} /> : null}
       <header class="xc-shell-header">
         {props.nav ? <div class="xc-shell-nav">{props.nav}</div> : null}
         <h1 class="xc-shell-title">{props.title}</h1>
         <LangSwitch />
       </header>
-      <Show when={session.ended()}>
-        <p role="alert" class="xc-shell-alert">{t(`shell.session.${session.ended()!}` as Key)}</p>
+      <Show when={session && session.ended()}>
+        <p role="alert" class="xc-shell-alert">{t(`shell.session.${session!.ended()!}` as Key)}</p>
       </Show>
       <fieldset
         class="xc-lock"
-        disabled={session.ended() !== undefined}
+        disabled={session ? session.ended() !== undefined : false}
         style="border: 0; padding: 0; margin: 0; min-width: 0"
       >
         {props.ownsMain ? (

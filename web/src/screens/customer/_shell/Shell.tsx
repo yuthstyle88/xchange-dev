@@ -63,7 +63,7 @@ export function CustomerShell(props: { route: CustomerRoute; children?: JSX.Elem
   const current = () => NAV_OF[props.route];
 
   return (
-    <AppShell title={tr('title')} ownsMain>
+    <AppShell title={tr('title')} ownsMain staffSession={false}>
       <div class="xc-customer-bar">
         <Show when={profile()}>
           {(p) => (
