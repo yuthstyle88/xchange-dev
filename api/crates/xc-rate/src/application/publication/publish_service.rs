@@ -6,15 +6,18 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
+use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, Side, UnitSize};
 
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
+use crate::domain::draft::tier_proposal::TierProposal;
+use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 pub struct PublishService {
     _pool: PgPool,
@@ -164,6 +167,9 @@ impl PublishService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+        let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
+            std::collections::HashMap::new();
+
         for r in &db_lines {
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
@@ -175,6 +181,18 @@ impl PublishService {
             let reason: Option<String> = r.get("reason");
             let ref_id: Option<Uuid> = r.get("reference_line_id");
             let pol_id: Option<Uuid> = r.get("policy_version_id");
+
+            let policy_tiers = if let Some(pid) = pol_id {
+                if let Some(cached) = policy_tiers_cache.get(&pid) {
+                    cached.clone()
+                } else {
+                    let loaded = PolicyTiersStore::for_version(tx, &pid).await?;
+                    policy_tiers_cache.insert(pid, loaded.clone());
+                    loaded
+                }
+            } else {
+                None
+            };
 
             let buy = match buy_mode.as_str() {
                 "AUTO" => LineSide::Auto,
@@ -370,20 +388,76 @@ impl PublishService {
                 snapshot["partner"] = serde_json::Value::Null;
             }
 
-            sqlx::query(
-                "INSERT INTO published_rate_lines \
-                 (id, publication_id, currency_code, denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
-                 VALUES (gen_random_uuid(), $1, $2, 'ALL', $3, $4, $5, $6)",
-            )
-            .bind(pub_id.as_uuid())
-            .bind(c.as_str())
-            .bind(unit_val)
-            .bind(prop.buy.map(|r| r.value()))
-            .bind(prop.sell.map(|r| r.value()))
-            .bind(&snapshot)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            if let Some(pt) = policy_tiers {
+                let tier_lines = TierProposal::of(
+                    &prop,
+                    &line,
+                    reference.as_ref(),
+                    policy.as_ref(),
+                    &pt,
+                    &units,
+                )?;
+
+                for (idx, tl) in tier_lines.into_iter().enumerate() {
+                    let tier_no = (idx + 1) as u8;
+                    let buy_margin = pt.margin(tier_no, Side::Buy);
+                    let sell_margin = pt.margin(tier_no, Side::Sell);
+
+                    let mut tier_snapshot = snapshot.clone();
+                    tier_snapshot["tier"] = json!({
+                        "no": tier_no,
+                        "buy_margin_pct": buy_margin.to_string(),
+                        "sell_margin_pct": sell_margin.to_string(),
+                    });
+
+                    let lower_dec = tl
+                        .band
+                        .lower_exclusive_thb
+                        .map(|m| Decimal::from_str_exact(&m.to_string()).unwrap());
+                    let upper_dec = tl
+                        .band
+                        .upper_inclusive_thb
+                        .map(|m| Decimal::from_str_exact(&m.to_string()).unwrap());
+
+                    sqlx::query(
+                        "INSERT INTO published_rate_lines \
+                         (id, publication_id, currency_code, denomination_group, unit_size, \
+                          buy_rate, sell_rate, source_snapshot, value_tier, \
+                          tier_lower_exclusive_thb, tier_upper_inclusive_thb, \
+                          base_buy_rate, base_sell_rate) \
+                         VALUES (gen_random_uuid(), $1, $2, 'ALL', $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                    )
+                    .bind(pub_id.as_uuid())
+                    .bind(c.as_str())
+                    .bind(unit_val)
+                    .bind(tl.buy.map(|r| r.value()))
+                    .bind(tl.sell.map(|r| r.value()))
+                    .bind(&tier_snapshot)
+                    .bind(tl.code.as_str())
+                    .bind(lower_dec)
+                    .bind(upper_dec)
+                    .bind(tl.base_buy.map(|r| r.value()))
+                    .bind(tl.base_sell.map(|r| r.value()))
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| RateEngineError::Database(e.to_string()))?;
+                }
+            } else {
+                sqlx::query(
+                    "INSERT INTO published_rate_lines \
+                     (id, publication_id, currency_code, denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+                     VALUES (gen_random_uuid(), $1, $2, 'ALL', $3, $4, $5, $6)",
+                )
+                .bind(pub_id.as_uuid())
+                .bind(c.as_str())
+                .bind(unit_val)
+                .bind(prop.buy.map(|r| r.value()))
+                .bind(prop.sell.map(|r| r.value()))
+                .bind(&snapshot)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            }
         }
 
         sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
