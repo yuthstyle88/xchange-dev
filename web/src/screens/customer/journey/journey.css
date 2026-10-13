@@ -1,0 +1,274 @@
+/* C09 customer journey screen styling (design customer-app.md §4.5, §9.1) */
+
+.xc-journey-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 1.25rem 1.5rem;
+  background-color: var(--xc-bg, #f8fafc);
+  color: var(--xc-text, #0f172a);
+  font-family: inherit;
+  gap: 1.5rem;
+}
+
+.xc-journey-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--xc-border, #e2e8f0);
+}
+
+.xc-journey-title-group h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-journey-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-journey-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.xc-journey-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.xc-journey-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.xc-journey-section-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-journey-card {
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e2e8f0);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.xc-journey-ticket-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  border-left: 4px solid var(--xc-primary, #2563eb);
+}
+
+.xc-journey-ticket-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.xc-journey-ticket-number {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--xc-primary, #2563eb);
+  letter-spacing: 0.05em;
+}
+
+.xc-journey-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.xc-journey-badge-waiting {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.xc-journey-badge-called {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.xc-journey-badge-serving {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.xc-journey-badge-completed {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.xc-journey-badge-cancelled,
+.xc-journey-badge-no-show {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.xc-journey-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.xc-journey-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.xc-journey-field-label {
+  font-size: 0.75rem;
+  color: var(--xc-text-muted, #64748b);
+  font-weight: 500;
+}
+
+.xc-journey-field-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--xc-text, #0f172a);
+}
+
+.ticket-branch {
+  color: var(--xc-text, #0f172a);
+}
+
+.ticket-service-type {
+  color: var(--xc-text-muted, #64748b);
+}
+
+.tickets-ahead {
+  color: var(--xc-text, #0f172a);
+}
+
+.wait-estimate {
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-journey-loading,
+.xc-journey-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem;
+  font-size: 1rem;
+  color: var(--xc-text-muted, #64748b);
+  text-align: center;
+  background: var(--xc-surface, #ffffff);
+  border: 1px dashed var(--xc-border, #cbd5e1);
+  border-radius: 0.75rem;
+}
+
+.xc-journey-error {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  color: var(--xc-danger, #ef4444);
+  font-size: 0.9375rem;
+  text-align: center;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.75rem;
+}
+
+.xc-journey-retry-btn,
+.xc-journey-refresh-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid var(--xc-border, #cbd5e1);
+  background: var(--xc-surface, #ffffff);
+  color: var(--xc-text, #0f172a);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.xc-journey-retry-btn:hover,
+.xc-journey-refresh-btn:hover {
+  background: var(--xc-surface-hover, #f1f5f9);
+}
+
+.xc-journey-drafts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.xc-journey-draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e2e8f0);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.xc-journey-draft-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.xc-journey-draft-side {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--xc-primary, #2563eb);
+}
+
+.xc-journey-draft-currency {
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
+  background: #f1f5f9;
+  border-radius: 0.25rem;
+  color: #334155;
+}
+
+.xc-journey-draft-amount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-journey-draft-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--xc-text-muted, #64748b);
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--xc-border, #f1f5f9);
+}
+
+.draft-branch {
+  color: var(--xc-text-muted, #64748b);
+}
+
+.draft-expires {
+  color: var(--xc-text-muted, #64748b);
+}

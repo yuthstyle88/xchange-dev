@@ -17,10 +17,12 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use chrono::Utc;
 use serde_json::{Value, json};
+use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSessionId};
 use xc_auth::application::session::SessionService;
 use xc_auth::domain::identity::identity_client::UNAVAILABLE_MESSAGE;
 use xc_customer::domain::consent::Channel;
 
+use crate::application::app_session_claim::claim_session_for;
 use crate::application::customer_signup::{SignupError, SignupInput, register_customer};
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::origin::same_origin;
@@ -141,6 +143,13 @@ async fn register(
     let ip = client_address(&req);
     match register_customer(&session, &state.db, input, Some(ip), Utc::now()).await {
         Ok((tail, customer_id)) => {
+            // #998 APP-7 (P6): the anonymous app session this browser carries becomes the new customer's.
+            if let Some(app) = req
+                .cookie(APP_SESSION_COOKIE)
+                .and_then(|c| AppSessionId::parse(c.value()))
+            {
+                claim_session_for(&state.db, &app.hash(), &customer_id, Utc::now()).await;
+            }
             let mut response = HttpResponse::Ok();
             attach_signin_cookies(&mut response, &tail.session_token);
             response

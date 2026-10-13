@@ -45,15 +45,33 @@ const SHELL_LESS_PUBLIC_PAGES: Record<string, string> = {
   'rates.html': 'P01 public board: no shell, no session (rate-display.md D3, D8)',
 };
 
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\r\n]*/g, '');
+}
+
 function hasShellOrAuthLayoutImport(source: string): boolean {
+  const clean = stripComments(source);
   return (
-    /(?:^|\n)\s*import\s+[^;]*from\s+['"][^'"]*(?:AppShell|AuthLayout)['"]/.test(source) ||
-    /(?:^|\n)\s*import\s+['"][^'"]*(?:AppShell|AuthLayout)['"]/.test(source)
+    /(?:^|\n)\s*import\s+[^;]*from\s+['"][^'"]*(?:AppShell|AuthLayout)['"]/.test(clean) ||
+    /(?:^|\n)\s*import\s+['"][^'"]*(?:AppShell|AuthLayout)['"]/.test(clean)
   );
 }
 
 function rendersShellOrAuthLayout(source: string): boolean {
-  return /<\s*(AppShell|AuthLayout)\b/.test(source);
+  const clean = stripComments(source);
+  return /<\s*(AppShell|AuthLayout)\b/.test(clean);
+}
+
+function hasCustomerShellImport(source: string): boolean {
+  const clean = stripComments(source);
+  return /(?:^|\n)\s*import\s+\{[^}]*\bCustomerShell\b[^}]*\}\s*from\s+['"][^'"]*(?:screens\/customer\/)?_shell\/Shell(?:\.tsx)?['"]/.test(clean);
+}
+
+function rendersCustomerShell(source: string): boolean {
+  const clean = stripComments(source);
+  return /<\s*CustomerShell\b/.test(clean);
 }
 
 
@@ -91,11 +109,26 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       const scriptFullPath = path.join(WEB_ROOT, scriptRelative);
 
       expect(fs.existsSync(scriptFullPath), `${scriptFullPath} exists`).toBe(true);
-      const scriptSource = fs.readFileSync(scriptFullPath, 'utf-8');
+      const scriptSource = stripComments(fs.readFileSync(scriptFullPath, 'utf-8'));
 
       if (Object.prototype.hasOwnProperty.call(SHELL_LESS_PUBLIC_PAGES, file)) {
         // A named shell-less public page; the guard test below pins it to `anyone`.
         continue;
+      }
+
+      if (file.startsWith('app-')) {
+        // Customer screen entry reaches AppShell via CustomerShell (#998)
+        if (hasCustomerShellImport(scriptSource) && rendersCustomerShell(scriptSource)) {
+          continue;
+        }
+        expect(
+          hasCustomerShellImport(scriptSource),
+          `Customer entry ${file} (${scriptRelative}) must import CustomerShell from .../screens/customer/_shell/Shell`,
+        ).toBe(true);
+        expect(
+          rendersCustomerShell(scriptSource),
+          `Customer entry ${file} (${scriptRelative}) must render <CustomerShell`,
+        ).toBe(true);
       }
 
       if (hasShellOrAuthLayoutImport(scriptSource) && rendersShellOrAuthLayout(scriptSource)) {
@@ -130,7 +163,7 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
         ).toBe(true);
 
         // Assert that the child module imports and renders AppShell or AuthLayout
-        const childSource = fs.readFileSync(childFullPath, 'utf-8');
+        const childSource = stripComments(fs.readFileSync(childFullPath, 'utf-8'));
         expect(
           hasShellOrAuthLayoutImport(childSource),
           `Child module ${childRel} reached from ${file} must import AppShell or AuthLayout`,
@@ -141,6 +174,19 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
         ).toBe(true);
       }
     }
+
+    // Customer app shell composition: Shell.tsx must exist and compose AppShell
+    const customerShellPath = path.join(WEB_ROOT, 'src/screens/customer/_shell/Shell.tsx');
+    expect(fs.existsSync(customerShellPath), 'web/src/screens/customer/_shell/Shell.tsx must exist').toBe(true);
+    const customerShellSource = stripComments(fs.readFileSync(customerShellPath, 'utf-8'));
+    expect(
+      hasShellOrAuthLayoutImport(customerShellSource),
+      'web/src/screens/customer/_shell/Shell.tsx must import AppShell',
+    ).toBe(true);
+    expect(
+      rendersShellOrAuthLayout(customerShellSource),
+      'web/src/screens/customer/_shell/Shell.tsx must render <AppShell',
+    ).toBe(true);
   });
 
   it('every shell-less public page exists in web/pages and is an anyone page', () => {
@@ -154,6 +200,50 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       const gates = [...htmlContent.matchAll(/<meta\s+name=["']xc-gate["']\s+content=["']([^"']*)["']/gi)].map((m) => m[1]);
       expect(gates, `${file}: exactly one xc-gate, and it is anyone`).toEqual(['anyone']);
     }
+  });
+
+  it('detector: a bare import plus a comment fails the shell gate', () => {
+    // Fake customer shell: bare import plus JSX in comment
+    const fakeCustomer = `
+      import '../_shell/Shell';
+      // <CustomerShell />
+    `;
+    expect(
+      hasCustomerShellImport(fakeCustomer) && rendersCustomerShell(fakeCustomer),
+      'bare import plus comment must fail customer rule',
+    ).toBe(false);
+    expect(hasCustomerShellImport(fakeCustomer), 'bare CustomerShell import is rejected').toBe(false);
+    expect(rendersCustomerShell(fakeCustomer), 'commented <CustomerShell /> is not rendered').toBe(false);
+
+    // Fake AppShell: bare import plus JSX in comment
+    const fakeAppShell = `
+      import '../../../shared/ui/AppShell';
+      // <AppShell />
+    `;
+    expect(
+      hasShellOrAuthLayoutImport(fakeAppShell) && rendersShellOrAuthLayout(fakeAppShell),
+      'bare import plus comment must fail AppShell rule',
+    ).toBe(false);
+    expect(rendersShellOrAuthLayout(fakeAppShell), 'commented <AppShell /> is not rendered').toBe(false);
+
+    // Also verify block comments
+    const fakeBlockCustomer = `
+      import '../_shell/Shell';
+      /* <CustomerShell /> */
+    `;
+    expect(
+      hasCustomerShellImport(fakeBlockCustomer) && rendersCustomerShell(fakeBlockCustomer),
+      'bare import plus block comment must fail customer rule',
+    ).toBe(false);
+
+    const fakeBlockAppShell = `
+      import '../../../shared/ui/AppShell';
+      /* <AppShell /> */
+    `;
+    expect(
+      hasShellOrAuthLayoutImport(fakeBlockAppShell) && rendersShellOrAuthLayout(fakeBlockAppShell),
+      'bare import plus block comment must fail AppShell rule',
+    ).toBe(false);
   });
 
   describe('AppShell look prop rendering (second revision)', () => {
