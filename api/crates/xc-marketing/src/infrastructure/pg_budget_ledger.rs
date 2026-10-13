@@ -186,7 +186,8 @@ impl BudgetLedger {
                 .fetch_optional(&mut **tx)
                 .await?
                 .ok_or(BenefitError::NotFound)?;
-        let caps: BenefitCaps = serde_json::from_value(caps_json).unwrap_or_default();
+        let caps: BenefitCaps = serde_json::from_value(caps_json)
+            .map_err(|e| pos_error::AppError::Internal(format!("failed to decode caps: {e}")))?;
 
         if let Some(per_customer_uses) = caps.per_customer_uses {
             if let Some(customer_id) = request.customer_id.as_deref().filter(|s| !s.is_empty()) {
