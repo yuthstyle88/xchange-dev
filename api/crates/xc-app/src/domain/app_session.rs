@@ -1,5 +1,7 @@
-//! The anonymous app session (design P7): an opaque random id in the `HttpOnly; Secure;
-//! SameSite=Lax` cookie `xc_app_sid`. Only its SHA-256 is stored (`planner_drafts.session_hash`).
+//! The anonymous app session (design P7): an opaque id, either random or, when a command
+//! mints it, derived with a server key from that command's organisation, name and
+//! `Idempotency-Key`, in the `HttpOnly; Secure; SameSite=Lax` cookie `xc_app_sid`.
+//! Only its SHA-256 is stored (`planner_drafts.session_hash`).
 
 /// The cookie that carries the app session id.
 pub const APP_SESSION_COOKIE: &str = "xc_app_sid";
@@ -16,10 +18,15 @@ fn hex(bytes: &[u8]) -> String {
 pub struct AppSessionId(String);
 
 impl AppSessionId {
+    /// A constructor from 32 raw bytes (e.g. derived HMAC-SHA256).
+    pub fn from_bytes(bytes: [u8; ID_BYTES]) -> Self {
+        Self(hex(&bytes))
+    }
+
     /// A new random id (at least 128 bits of randomness).
     pub fn generate() -> Self {
         let bytes: [u8; ID_BYTES] = rand::random();
-        Self(hex(&bytes))
+        Self::from_bytes(bytes)
     }
 
     /// Reads a cookie value. `None` when it is not an id `generate` could have made.

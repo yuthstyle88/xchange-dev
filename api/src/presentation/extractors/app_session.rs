@@ -42,19 +42,25 @@ impl AppSessionCookie {
         self.issued.then(|| session_cookie(&self.session.id))
     }
 
-    fn of_request(req: &HttpRequest) -> Self {
+    /// For commands that issue and limit an app session: uses the request's carried session
+    /// if present and valid, or the derived session id when the request carries none.
+    pub fn for_command(req: &HttpRequest, derived_id: AppSessionId) -> Self {
         let carried = req
             .cookie(APP_SESSION_COOKIE)
             .and_then(|c| AppSessionId::parse(c.value()));
         let (id, issued) = match carried {
             Some(id) => (id, false),
-            None => (AppSessionId::generate(), true),
+            None => (derived_id, true),
         };
         let hash = id.hash();
         Self {
             session: AppSession { id, hash },
             issued,
         }
+    }
+
+    fn of_request(req: &HttpRequest) -> Self {
+        Self::for_command(req, AppSessionId::generate())
     }
 }
 
