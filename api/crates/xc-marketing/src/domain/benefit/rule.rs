@@ -24,7 +24,7 @@ impl BenefitClass {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BenefitCaps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_transaction_max_thb: Option<Decimal>,
