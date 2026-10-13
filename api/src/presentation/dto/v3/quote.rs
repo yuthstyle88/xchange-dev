@@ -76,7 +76,12 @@ impl QuoteDto {
                     published_rate_line_id: line.published_rate_line_id.to_string(),
                 })
                 .collect(),
-            benefits: Vec::new(),
+            benefits: quote
+                .benefit_snapshot
+                .get("applied")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default(),
             stale: quote.stale,
         }
     }

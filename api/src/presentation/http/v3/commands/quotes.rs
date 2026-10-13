@@ -52,6 +52,9 @@ pub struct QuotesCommandInput {
     pub channel: Option<String>,
     #[serde(default)]
     pub lines: Vec<QuotesCommandInputLine>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub coupon_code: Option<String>,
 }
 
 pub struct QuotesCommand {
@@ -211,7 +214,13 @@ impl CommandAction for QuotesCommand {
 
         let quote = match self
             .service
-            .quote_in(tx, req, &save_actor, Utc::now())
+            .quote_with_coupon_in(
+                tx,
+                req,
+                &save_actor,
+                Utc::now(),
+                input.coupon_code.as_deref(),
+            )
             .await
         {
             Ok(q) => q,
