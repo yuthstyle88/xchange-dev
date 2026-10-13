@@ -58,6 +58,7 @@ xc-verification = { workspace = true }
 xc-queue = { workspace = true }
 xc-alert = { workspace = true }
 xc-loyalty = { workspace = true }
+xc-booking = { workspace = true }
 subtle = "2"
 xc-app = { path = "crates/xc-app" }
 xc-marketing = { path = "crates/xc-marketing" }

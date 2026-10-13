@@ -17,6 +17,7 @@ use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::repositories::account_repository::Purged;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_booking::application::sweeper::BookingSweeper;
 use xc_outbox::application::worker::OutboxWorker;
 use xc_outbox::infrastructure::pg_store::PgOutboxStore;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
@@ -227,6 +228,7 @@ pub struct Application {
     outbox: tokio::task::JoinHandle<()>,
     rate_feed_stop: tokio::sync::watch::Sender<bool>,
     rate_feed: tokio::task::JoinHandle<()>,
+    booking_sweep: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for Application {
@@ -236,6 +238,7 @@ impl Drop for Application {
         self.purge.abort();
         self.outbox.abort();
         self.rate_feed.abort();
+        self.booking_sweep.abort();
     }
 }
 
@@ -292,6 +295,18 @@ impl Application {
             .run_forever(),
         );
 
+        let sweeper = BookingSweeper::new(pool.clone());
+        let booking_sweep = tokio::spawn(async move {
+            let mut rounds = tokio::time::interval(Duration::from_secs(60));
+            rounds.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                rounds.tick().await;
+                if let Err(error) = sweeper.run(Utc::now()).await {
+                    tracing::error!(%error, "the booking sweeper failed; the next round will try again");
+                }
+            }
+        });
+
         let (rate_feed_stop, stop_rx) = tokio::sync::watch::channel(false);
         let rate_feed_loop = RateFeedLoop::new(
             pool.clone(),
@@ -325,6 +340,7 @@ impl Application {
             outbox,
             rate_feed_stop,
             rate_feed,
+            booking_sweep,
         })
     }
 

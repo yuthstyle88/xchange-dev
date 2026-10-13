@@ -4271,6 +4271,7 @@ dependencies = [
  "xc-app",
  "xc-approval",
  "xc-auth",
+ "xc-booking",
  "xc-cash",
  "xc-customer",
  "xc-exchange",
