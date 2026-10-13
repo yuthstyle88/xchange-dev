@@ -278,6 +278,7 @@ async fn v3_otp_verify(
     req: HttpRequest,
     bytes: web::Bytes,
     session: web::Data<SessionService>,
+    state: web::Data<AppState>,
 ) -> HttpResponse {
     if !same_origin(&req) {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
@@ -307,6 +308,19 @@ async fn v3_otp_verify(
     let now = Utc::now();
     match session.otp_verify(challenge_id, code, Some(ip), now).await {
         Ok(tail) => {
+            // #998 APP-7 (P6): the anonymous app session this browser carries becomes the customer's.
+            if let Some(app) = req
+                .cookie(xc_app::domain::app_session::APP_SESSION_COOKIE)
+                .and_then(|c| xc_app::domain::app_session::AppSessionId::parse(c.value()))
+            {
+                crate::application::app_session_claim::claim_session_for_user(
+                    &state.db,
+                    &app.hash(),
+                    &tail.user.id,
+                    now,
+                )
+                .await;
+            }
             let mut resp = HttpResponse::Ok();
             attach_signin_cookies(&mut resp, &tail.session_token);
             resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))

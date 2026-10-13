@@ -1,0 +1,39 @@
+/* APP-7 (#998) C14 sign-in and sign-up. */
+.xc-sign-in {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.xc-sign-in-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.xc-sign-in-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.xc-sign-in-check {
+  flex-direction: row;
+  align-items: center;
+}
+
+.xc-sign-in-terms,
+.xc-sign-in-switch {
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-sign-in-error {
+  color: var(--xc-danger, #ef4444);
+}
+
+.xc-sign-in-link {
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
