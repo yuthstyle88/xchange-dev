@@ -445,6 +445,55 @@ The `api` adapters live in `api/src/infrastructure/marketing/`, one file each, b
 | this design `PromoExpenseFacts` | `executive-finance.md`'s `contribution_thb` (clears `AwaitsCampaigns`) | executive keeps `AwaitsCampaigns` until a one-line follow-up in its `ports.rs` |
 | this design `BenefitEngine`, `benefit_snapshot` | #558 customer app (C05 "สิทธิ/คูปอง"), #555 bookings (indicative quotes) | — |
 
+### 6.2 What a coupon replay keeps (#1622)
+
+Added by claude/e92db6 (lane controller), 2026-10-14, measured on `main` `e62eabcd`.
+
+**The rule:** a coupon's code is shown on the first `couponIssue` answer only (§7). A replay with the same `Idempotency-Key` returns the same coupon ids, without codes.
+
+**Where the rule lives:** in the command seam, not in the database. Before this, `coupon_issue.rs:130-183` (on `e62eabcd`) created a function and a `BEFORE UPDATE` trigger on `idempotency_records` inside every request. The trigger check matched `pg_trigger` by name only, so a second schema in the same database skipped it (#1622 §2).
+
+```mermaid
+classDiagram
+  class CommandAction {
+    <<trait api presentation/http/v3/command.rs>>
+    +run(tx) Output
+    +stored_output(&self, output: &Output) serde_json::Result~Value~
+  }
+  class CouponIssueCommand {
+    <<api presentation/http/v3/commands/coupon_issue.rs>>
+    +stored_output() drops every coupon's code
+  }
+  class IdempotencyStore {
+    <<finish_in(tx, name, key, token, Value)>>
+  }
+  CommandAction <|.. CouponIssueCommand
+  CommandAction ..> IdempotencyStore : the seam stores stored_output(&output), answers the full output
+```
+
+- **`stored_output` is a default method:** `serde_json::to_value(output)`. Every other command's stored response stays byte-for-byte the same.
+  - It returns `serde_json::Result`, so the seam maps an error the way it maps a failed `to_value` today (`command.rs:596-603`, `Internal`).
+  - This is #1622 §3's signature with the `Result` added.
+- **The seam serializes twice:** once for the answer (`to_value(&output)`, as today) and once through `stored_output` for the record.
+- **Only `coupon_issue.rs` overrides it.** It serializes the output, then **removes the `code` key** from every coupon object in that `Value`, leaving the coupon ids. It does not set `code: None` and re-serialize: `IssuedCouponDto.code` has no `skip_serializing_if`, so that would store `"code": null`, and #1622's behaviour row 2 says the replay has no `code` field.
+
+**Data migration (the #1622 migration, `api/migrations/<slot>_drop_coupon_strip_trigger.sql`; the implementer takes `<slot>` from `scripts/migration-slot.sh next` at push time, `docs/design/migration-slots.md` §2):**
+
+```sql
+DROP TRIGGER IF EXISTS trg_strip_coupon_codes ON idempotency_records;
+DROP FUNCTION IF EXISTS strip_coupon_codes_on_finish();
+```
+
+1. *Existing rows.*
+   - `idempotency_records` rows are not changed.
+   - A row stored with codes stripped stays stripped.
+   - A row stored with codes, in a schema that missed the trigger, keeps its codes. **FINISHED `idempotency_records` rows never expire** (the only `DELETE` in `pg_store.rs` removes `PENDING` rows on release; there is no TTL or cleanup job), so that row's replay keeps showing its codes for good. This is accepted: such rows exist only in test schemas, since no shop runs v3 (STATE.md). Deleting them would be a Data Risk cleanup needing the owner; this design asks for none.
+2. *Backfill.* None. No shop runs v3 (`xchange-v3.md` D6, STATE.md). Before the deploy, for the record: `SELECT count(*) FROM idempotency_records WHERE operation = 'couponIssue';`.
+3. *Order.* The migration ships with the new binary. The old binary recreates the trigger on its next `couponIssue`, so the migration must not run under the old binary.
+4. *`down`.* None. The objects were never tracked by a migration, and recreating them would bring the flake back.
+
+The migration drops database objects, so it needs the owner's approval before #1622 gets `ready` (rule: migration and destructive ops ask).
+
 ## 7. Edge cases (§09) and the answer
 
 | Case | Answer |
@@ -454,7 +503,7 @@ The `api` adapters live in `api/src/infrastructure/marketing/`, one file each, b
 | A quote expires before completion | its reservation stops counting at `expires_at`; at completion `redeem_in` re-reserves under the lock or refuses `benefitLimitReached`; the teller re-quotes (`quoteExpired` comes first anyway, #551 D-5) |
 | The completion fails after reserving (stock, approval, rollback) | the redemption and consume roll back with it; the reservation stays RESERVED until the quote expires, then stops counting |
 | The same completion retried with the same key | #551's command replay; `UNIQUE (rule_id, transaction_id)` and `reservation_id UNIQUE` make a second redemption impossible |
-| The same command (create, submit, issue coupons) retried | `Idempotency-Key` replay; issuing coupons twice with one key returns the same codes' ids (codes themselves are shown only on the first answer) |
+| The same command (create, submit, issue coupons) retried | `Idempotency-Key` replay; issuing coupons twice with one key returns the same codes' ids (codes themselves are shown only on the first answer: `CouponIssueCommand::stored_output`, §6.2) |
 | A version is edited while PENDING_APPROVAL | refused (`staleVersion`); a new DRAFT is created instead; the request's hash no longer matches if anything changed |
 | A new version is approved while quotes hold reservations on the old | those reservations keep their version id and stay valid until their quote expires; new quotes use the new version |
 | The campaign is paused with live reservations | live reservations are honoured at completion (the customer was quoted); no new ones |

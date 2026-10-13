@@ -1,0 +1,146 @@
+//! APP-10 (#1001, controller ruling on round 1 FAIL, issuecomment-6148491058):
+//! When a ticket has a display number of 4+ digits (e.g. W1000), `NotificationRequest::new`
+//! refuses the parameter due to PII redaction rules. The refusal must NOT fail or roll back the
+//! call itself: `QueueDesk::call` logs a warning without params, skips the notice, and commits.
+//! The ticket becomes CALLED and no notification row is written.
+//!
+//! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`.
+
+mod queue_common;
+mod queue_desk_common;
+
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use futures::future::BoxFuture;
+use pos_error::AppResult;
+use queue_common::*;
+use queue_desk_common::*;
+use sqlx::{Postgres, Transaction};
+use xc_auth::domain::access::Actor;
+use xc_kernel::notifications::{NotificationId, NotificationRequest, Notifications};
+use xc_queue::application::desk::queue_desk::QueueDesk;
+use xc_queue::domain::ticket::issue_source::IssueSource;
+use xc_queue::domain::ticket::queue_ticket::QueueTicket;
+
+/// Writes each request into `app10_probe` through the transaction it is handed.
+struct Probe;
+
+impl Notifications for Probe {
+    fn notify_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        request: &'a NotificationRequest,
+    ) -> BoxFuture<'a, AppResult<NotificationId>> {
+        Box::pin(async move {
+            let params = request
+                .params()
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(";");
+            sqlx::query(
+                "INSERT INTO app10_probe (recipient, event_id, template_key, params) \
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(request.recipient_user_id())
+            .bind(request.event_id())
+            .bind(request.template_key())
+            .bind(params)
+            .execute(&mut **tx)
+            .await?;
+            Ok(NotificationId(uuid::Uuid::new_v4().to_string()))
+        })
+    }
+}
+
+/// One committed request, as `recipient | event | template | params`.
+async fn written(db: &TestDb) -> Vec<String> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT recipient || ' | ' || event_id || ' | ' || template_key || ' | ' || params \
+         FROM app10_probe ORDER BY seq",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .expect("read app10_probe");
+    rows.into_iter().map(|(r,)| r).collect()
+}
+
+/// An open MAIN queue, its services, and a desk wired to the probe.
+async fn open_main() -> (TestDb, Queue, QueueDesk) {
+    let db = TestDb::start().await;
+    db.open_queue("MAIN").await;
+    db.exec(
+        "CREATE TABLE app10_probe (seq bigserial PRIMARY KEY, recipient text NOT NULL, \
+             event_id text NOT NULL, template_key text NOT NULL, params text NOT NULL)",
+    )
+    .await;
+    let q = queue(&db);
+    let desk = q.desk.clone().with_notifications(Arc::new(Probe));
+    (db, q, desk)
+}
+
+fn t(user_id: &str) -> Actor {
+    teller(user_id, "MAIN")
+}
+
+async fn walk_in(db: &TestDb, key: &str, now: DateTime<Utc>) -> QueueTicket {
+    db.issuer()
+        .issue(&main_branch(), IssueSource::Desk, key, now)
+        .await
+        .unwrap_or_else(|e| panic!("issue {key}: {e:?}"))
+}
+
+async fn add_customer(db: &TestDb, has_user: bool) -> (String, String) {
+    let customer = unique("CUST");
+    let user = if has_user {
+        db.add_user(&unique("cust-user")).await
+    } else {
+        String::new()
+    };
+    let user_sql = if has_user {
+        format!("'{user}'::uuid")
+    } else {
+        "NULL".to_owned()
+    };
+    db.exec(&format!(
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at, user_id) \
+         VALUES ('{customer}', '{ORG_1}', '{customer}', 'Somsri Jaidee', 'LIVE', now(), {user_sql})"
+    ))
+    .await;
+    (customer, user)
+}
+
+async fn link(db: &TestDb, ticket: &QueueTicket, customer: &str) {
+    db.exec(&format!(
+        "UPDATE queue_tickets SET customer_id = '{customer}' WHERE id = '{}'::uuid",
+        ticket.id
+    ))
+    .await;
+}
+
+#[tokio::test]
+async fn ticket_w1000_with_customer_user_call_succeeds_is_called_and_no_notification_written() {
+    let (db, q, desk) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let ticket = walk_in(&db, "w1000", at(3, 0)).await;
+    let (customer, _user) = add_customer(&db, true).await;
+    link(&db, &ticket, &customer).await;
+
+    // Set the ticket's display_number to W1000 (4+ digits) so NotificationRequest::new refuses it
+    db.exec(&format!(
+        "UPDATE queue_tickets SET display_number = 'W1000' WHERE id = '{}'::uuid",
+        ticket.id
+    ))
+    .await;
+
+    let called = desk
+        .call(&t(&a), &main_branch(), &ticket.id, at(3, 5))
+        .await
+        .expect("A calls ticket W1000; call succeeds even though notice is refused");
+
+    assert_eq!(called.display_number, "W1000");
+    assert_eq!(stored(&db, &ticket.id).await, "CALLED W1000");
+    assert_eq!(written(&db).await, Vec::<String>::new());
+    db.finish().await;
+}
