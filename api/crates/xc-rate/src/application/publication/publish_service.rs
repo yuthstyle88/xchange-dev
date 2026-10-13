@@ -1,5 +1,7 @@
 //! Publication service: publishing approved drafts into immutable publications.
 
+use std::sync::Arc;
+
 use rust_decimal::Decimal;
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Row, Transaction};
@@ -7,7 +9,11 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, Side, UnitSize};
+use xc_notify::application::notification_service::NotificationService;
+use xc_notify::application::template_registry::TemplateRegistry;
 
+use crate::application::publication::sharp_move_notices::SharpMoveNotices;
+use crate::domain::currency::denomination_groups::GroupCode;
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
@@ -16,16 +22,25 @@ use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
+use crate::domain::publication::sharp_move::{ComparablePrice, SharpMove};
 use crate::domain::reference::reference_batch::ReferenceLine;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 pub struct PublishService {
     _pool: PgPool,
+    notices: SharpMoveNotices,
 }
 
 impl PublishService {
     pub fn new(pool: PgPool) -> Self {
-        Self { _pool: pool }
+        let notices = SharpMoveNotices::new(Arc::new(NotificationService::new(
+            pool.clone(),
+            Arc::new(TemplateRegistry::generated()),
+        )));
+        Self {
+            _pool: pool,
+            notices,
+        }
     }
 
     pub async fn publish(
@@ -169,6 +184,8 @@ impl PublishService {
 
         let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
             std::collections::HashMap::new();
+        let mut line_thresholds: std::collections::HashMap<CurrencyCode, Option<RatePercent>> =
+            std::collections::HashMap::new();
 
         for r in &db_lines {
             let code_str: String = r.get("currency_code");
@@ -223,7 +240,7 @@ impl PublishService {
             // Load policy if any
             let (policy, max_ref_age, pol_buy_pct, pol_sell_pct) = if let Some(pid) = pol_id {
                 let pol_row = sqlx::query(
-                    "SELECT id::text, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours \
+                    "SELECT id::text, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours, sharp_move_alert_pct \
                      FROM rate_policy_versions WHERE id = $1",
                 )
                 .bind(pid)
@@ -237,6 +254,9 @@ impl PublishService {
                     let sell_pct: Decimal = pr.get(2);
                     let guards: serde_json::Value = pr.get(3);
                     let age: Option<i32> = pr.get(4);
+                    let alert_thresh: Option<Decimal> = pr.get(5);
+                    let thresh = alert_thresh.and_then(|d| RatePercent::parse(&d.to_string()).ok());
+                    line_thresholds.insert(c, thresh);
                     let buy_pct_rate = RatePercent::parse(&buy_pct.to_string())
                         .map_err(|e| RateEngineError::Internal(e.to_string()))?;
                     let sell_pct_rate = RatePercent::parse(&sell_pct.to_string())
@@ -253,9 +273,11 @@ impl PublishService {
                         Some(sell_pct),
                     )
                 } else {
+                    line_thresholds.insert(c, None);
                     (None, None, None, None)
                 }
             } else {
+                line_thresholds.insert(c, None);
                 (None, None, None, None)
             };
 
@@ -467,6 +489,36 @@ impl PublishService {
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+        // Sharp-move check and notices (SM-2 #1584, rates.md §12.8, §12.10)
+        let moves = if let Some(old_pub_id) = current_pub_id {
+            let old_prices = load_comparable_prices(tx, &old_pub_id).await?;
+            let new_prices = load_comparable_prices(tx, &pub_id.as_uuid()).await?;
+
+            let mut all_moves = Vec::new();
+            for (curr, thresh) in line_thresholds {
+                if thresh.is_none() {
+                    continue;
+                }
+                let old_curr: Vec<_> = old_prices
+                    .iter()
+                    .filter(|p| p.currency == curr)
+                    .cloned()
+                    .collect();
+                let new_curr: Vec<_> = new_prices
+                    .iter()
+                    .filter(|p| p.currency == curr)
+                    .cloned()
+                    .collect();
+                let curr_moves = SharpMove::between(&old_curr, &new_curr, thresh);
+                all_moves.extend(curr_moves);
+            }
+            all_moves
+        } else {
+            Vec::new()
+        };
+
+        self.notices.notify_in(tx, branch, &moves).await?;
+
         let payload = json!({
             "branchId": branch_str,
             "publicationId": pub_id.to_string(),
@@ -496,4 +548,66 @@ impl PublishService {
             version: next_version,
         })
     }
+}
+
+async fn load_comparable_prices(
+    tx: &mut Transaction<'_, Postgres>,
+    pub_id: &Uuid,
+) -> Result<Vec<ComparablePrice>, RateEngineError> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT ON (currency_code, denomination_group) \
+                currency_code, denomination_group, \
+                COALESCE(base_buy_rate, buy_rate) AS buy, \
+                COALESCE(base_sell_rate, sell_rate) AS sell \
+         FROM published_rate_lines \
+         WHERE publication_id = $1 \
+         ORDER BY currency_code, denomination_group, value_tier",
+    )
+    .bind(pub_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+    let mut prices = Vec::new();
+    for r in rows {
+        let code_str: String = r.get("currency_code");
+        let group_str: String = r.get("denomination_group");
+        let buy_dec: Option<Decimal> = r.get("buy");
+        let sell_dec: Option<Decimal> = r.get("sell");
+
+        let curr = CurrencyCode::parse(code_str.trim())
+            .map_err(|e| RateEngineError::Internal(format!("invalid currency: {e}")))?;
+        let grp = GroupCode::new(group_str.trim())
+            .map_err(|e| RateEngineError::Internal(format!("invalid group: {e}")))?;
+
+        let buy_rate = match buy_dec {
+            Some(d) => Some(
+                Rate::parse(&d.to_string())
+                    .map_err(|e| RateEngineError::Internal(e.to_string()))?,
+            ),
+            None => None,
+        };
+        let sell_rate = match sell_dec {
+            Some(d) => Some(
+                Rate::parse(&d.to_string())
+                    .map_err(|e| RateEngineError::Internal(e.to_string()))?,
+            ),
+            None => None,
+        };
+
+        prices.push(ComparablePrice {
+            currency: curr,
+            group: grp.clone(),
+            side: Side::Buy,
+            rate: buy_rate,
+        });
+        prices.push(ComparablePrice {
+            currency: curr,
+            group: grp,
+            side: Side::Sell,
+            rate: sell_rate,
+        });
+    }
+
+    Ok(prices)
 }

@@ -1691,8 +1691,7 @@ and the publication goes ahead whatever it finds (R-12f-2). R-12c alone decides 
 - `event_id` = `"rate-sharp-move:<publication_id>:<currency>:<side>"`, so a retry writes nothing twice.
 - `template_key` = `"rate_sharp_move"`.
 - `object` = (`"rate_publication"`, the publication id).
-- `params`: branch code, currency, side, old rate, new rate, `move_pct`, threshold and publication version. These are
-  display values only, no PII, as `NotificationRequest::new` enforces.
+- `params`: `{ branch, currency, side }` (the rest resolves through the `object` ref).
 - **No external channel** (R-12f-4): only the IN_APP delivery that `notify_in` writes.
 
 ### 12.9 Data migration (one migration, `api/migrations/<next>_rate_tiers_and_starting_prices.sql`)
