@@ -48,6 +48,10 @@ pub struct MyRateAlertItem {
     pub condition: String,
     pub target: String,
     pub enabled: bool,
+    pub branch: String,
+    pub unit_size: String,
+    pub current_rate: Option<String>,
+    pub rate_published_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

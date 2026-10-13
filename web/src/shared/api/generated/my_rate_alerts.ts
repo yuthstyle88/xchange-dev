@@ -2,7 +2,7 @@
 
 export type CreateRateAlertInput = { branch: string, currency: string, customerSide: string, condition: string, target: string, expiresAt?: string, };
 
-export type MyRateAlertItem = { id: string, version: number, currency: string, customerSide: string, condition: string, target: string, enabled: boolean, };
+export type MyRateAlertItem = { id: string, version: number, currency: string, customerSide: string, condition: string, target: string, enabled: boolean, branch: string, unitSize: string, currentRate: string | null, ratePublishedAt: string | null, };
 
 export type MyRateAlertsData = { alerts: Array<MyRateAlertItem>, };
 
