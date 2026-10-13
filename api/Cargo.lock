@@ -4208,6 +4208,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-verification"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "pos-error",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "xc-approval",
+ "xc-customer",
+ "xc-kernel",
+]
+
+[[package]]
 name = "xchange"
 version = "1.0.0"
 dependencies = [
@@ -4250,6 +4269,7 @@ dependencies = [
  "xc-rate",
  "xc-referral",
  "xc-shift",
+ "xc-verification",
 ]
 
 [[package]]
