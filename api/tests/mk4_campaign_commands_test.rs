@@ -127,6 +127,8 @@ impl Room {
         .await
         .expect("seed test user");
 
+        common::install_test_pii_keys();
+
         Self {
             pool,
             schema,
