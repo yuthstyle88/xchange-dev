@@ -16,6 +16,8 @@ pub enum MetricUnavailable {
     AwaitsBroker,
     /// Promotion and reward expense needs campaigns (§05).
     AwaitsCampaigns,
+    /// No bookings in the period's cohort.
+    NoBookingsInPeriod,
 }
 
 impl MetricUnavailable {
@@ -25,6 +27,7 @@ impl MetricUnavailable {
             MetricUnavailable::AwaitsBookingDesign => "awaitsBookingDesign",
             MetricUnavailable::AwaitsBroker => "awaitsBroker",
             MetricUnavailable::AwaitsCampaigns => "awaitsCampaigns",
+            MetricUnavailable::NoBookingsInPeriod => "noBookingsInPeriod",
         }
     }
 }

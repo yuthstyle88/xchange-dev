@@ -110,7 +110,7 @@ function kpis(): MetricDto[] {
     metric('sell_volume_thb', '765.40', null, drill('admin_transactions', { from: FROM, to: TO, type: 'SELL' })),
     metric('realized_margin_thb', null, 'awaitsLedger'),
     metric('repeat_customers', '12', null, drill('admin_customers', {}, ['repeat', 'from', 'to'])),
-    metric('booking_conversion', null, 'awaitsBookingDesign'),
+    metric('booking_conversion', null, 'noBookingsInPeriod' as unknown as MetricDto['unavailable']),
     metric('commission_thb', null, 'awaitsBroker'),
   ];
 }
@@ -448,22 +448,41 @@ describe('EX-4 A01: the header and the six KPI tiles (§4.2, E-1, D-2)', () => {
     expect(rest, 'the tile says why there is no figure').not.toBe('');
   });
 
-  it('each reason has its own fixed sentence: the same tile reads differently for each of the four', async () => {
-    const reasons: NonNullable<MetricDto['unavailable']>[] = ['awaitsLedger', 'awaitsBookingDesign', 'awaitsBroker', 'awaitsCampaigns'];
+  it('the A01 booking tile for an empty cohort shows the noBookingsInPeriod sentence and no digit', async () => {
+    const m = mount();
+    await settle();
+    const t = text(tile(m.el, 'booking_conversion'));
+    expect(/\d/.test(t), `no digit in the tile: ${t}`).toBe(false);
+    expect(t).not.toContain('null');
+    expect(t).toContain('ช่วงนี้ยังไม่มีการจอง');
+  });
+
+  it('each reason has its own fixed sentence: the same tile reads differently for each of the five', async () => {
+    const reasons: (NonNullable<MetricDto['unavailable']> | 'noBookingsInPeriod')[] = [
+      'awaitsLedger',
+      'awaitsBookingDesign',
+      'awaitsBroker',
+      'awaitsCampaigns',
+      'noBookingsInPeriod',
+    ];
     const seen: string[] = [];
     for (const reason of reasons) {
       reply = () =>
-        answered(VERSIONS, data({ kpis: kpis().map((k) => (k.key === 'commission_thb' ? metric(k.key, null, reason) : k)) }));
+        answered(
+          VERSIONS,
+          data({ kpis: kpis().map((k) => (k.key === 'commission_thb' ? metric(k.key, null, reason as unknown as MetricDto['unavailable']) : k)) }),
+        );
       const m = mount();
       await settle();
       const t = text(tile(m.el, 'commission_thb'));
       expect(/\d/.test(t), `${reason}: no digit`).toBe(false);
+      expect(t, `${reason}: a real sentence, not a missing key`).not.toContain('admin.executive.');
       seen.push(t);
       dispose?.();
       dispose = undefined;
       root.remove();
     }
-    expect(new Set(seen).size, `four different sentences: ${JSON.stringify(seen)}`).toBe(4);
+    expect(new Set(seen).size, `five different sentences: ${JSON.stringify(seen)}`).toBe(5);
   });
 });
 
