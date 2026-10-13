@@ -7,6 +7,7 @@
 //! `StatusService::refresh_in`. Start, finish and recall act only on the caller's own ticket,
 //! unless the caller is BRANCH_MANAGER (`notYourTicket`).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -15,6 +16,7 @@ use sqlx::{Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::notifications::{NotificationRequest, Notifications};
 
 use crate::application::status::status_service::StatusService;
 use crate::domain::repository::{BranchFacts, QueueRepository};
@@ -28,6 +30,7 @@ pub struct QueueDesk {
     branch_tx: BranchTx,
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
+    notifications: Option<Arc<dyn Notifications>>,
 }
 
 async fn check_counter_active(
@@ -164,7 +167,75 @@ impl QueueDesk {
             branch_tx,
             repo,
             status,
+            notifications: None,
         }
+    }
+
+    pub fn with_notifications(mut self, notifications: Arc<dyn Notifications>) -> Self {
+        self.notifications = Some(notifications);
+        self
+    }
+
+    async fn notify_called_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        ticket: &QueueTicket,
+    ) -> AppResult<()> {
+        let notifications = match &self.notifications {
+            Some(n) => n,
+            None => return Ok(()),
+        };
+
+        let customer_id = match &ticket.customer_id {
+            Some(c) if !c.is_empty() => c,
+            _ => return Ok(()),
+        };
+
+        let recipient: Option<String> = sqlx::query_as::<_, (String,)>(
+            "SELECT user_id::text FROM customers WHERE id = $1 AND user_id IS NOT NULL",
+        )
+        .bind(customer_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .map(|(u,)| u);
+
+        let user_id = match recipient {
+            Some(u) if !u.is_empty() => u,
+            _ => return Ok(()),
+        };
+
+        let (count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM queue_events WHERE ticket_id = $1::uuid AND kind IN ('CALL', 'RECALL')",
+        )
+        .bind(&ticket.id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        let branch_name: String =
+            sqlx::query_as::<_, (String,)>("SELECT name FROM branches WHERE id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await?
+                .map(|(n,)| n)
+                .unwrap_or_else(|| branch.as_str().to_string());
+
+        let mut params = BTreeMap::new();
+        params.insert("displayNumber".to_string(), ticket.display_number.clone());
+        params.insert("branchName".to_string(), branch_name);
+
+        let event_id = format!("queue.called:{}:{count}", ticket.id);
+        let req = match NotificationRequest::new(user_id, event_id, "queue_called", None, params) {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::warn!(ticket = %ticket.id, error = %err, "queue_called notice refused");
+                return Ok(());
+            }
+        };
+
+        notifications.notify_in(tx, &req).await?;
+
+        Ok(())
     }
 
     async fn authorize_in(
@@ -259,6 +330,7 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+        self.notify_called_in(tx, branch, &ticket).await?;
 
         Ok(QueueTicket {
             status: TicketStatus::Called,
@@ -333,6 +405,7 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+        self.notify_called_in(tx, branch, &ticket).await?;
 
         Ok(QueueTicket {
             status: TicketStatus::Called,
@@ -390,6 +463,7 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+        self.notify_called_in(tx, branch, &ticket).await?;
 
         Ok(ticket)
     }
