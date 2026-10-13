@@ -13,14 +13,11 @@ pub struct CustomerReservation {
     pub existing: bool,
 }
 
-pub struct ContactReserve {
-    #[allow(dead_code)]
-    branch_tx: BranchTx,
-}
+pub struct ContactReserve;
 
 impl ContactReserve {
-    pub fn new(branch_tx: BranchTx) -> Self {
-        Self { branch_tx }
+    pub fn new(_branch_tx: BranchTx) -> Self {
+        Self
     }
 
     pub fn reserve_in<'a>(
@@ -40,31 +37,27 @@ impl ContactReserve {
             let lookup_hash = xc_kernel::pii::LookupHasher::new(&keys)
                 .hash(xc_kernel::pii::IdentityType::Phone, &normalized);
 
-            let lock_key = i64::from_be_bytes(lookup_hash[0..8].try_into().unwrap());
-            sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                .bind(lock_key)
-                .execute(&mut **tx)
-                .await
-                .map_err(pos_error::AppError::Database)?;
+            let reserved = super::CustomerService::reserve_customer_number_in_tx(
+                tx,
+                org_id,
+                &lookup_hash,
+                xc_kernel::mode::Mode::Live,
+                now,
+            )
+            .await?;
 
-            if let Some(customer_id) =
-                super::CustomerService::find_existing_in_tx(tx, org_id, &lookup_hash).await?
-            {
-                return Ok(CustomerReservation {
+            let (customer_id, created_at) = match reserved {
+                super::service::ReservedCustomerNumber::Existing(customer_id) => {
+                    return Ok(CustomerReservation {
+                        customer_id,
+                        existing: true,
+                    });
+                }
+                super::service::ReservedCustomerNumber::New {
                     customer_id,
-                    existing: true,
-                });
-            }
-
-            let counter_key = "customer-LIVE";
-            let next_val = crate::infrastructure::customer::customer_repository::PgCustomerRepository::increment_counter_in_tx(tx, counter_key)
-                .await?
-                .ok_or_else(|| pos_error::AppError::Domain("ตัวนับรหัสไม่ถูกต้อง".to_owned()))?;
-            let customer_id = format!("CX-{next_val:08}");
-
-            let created_at = chrono::TimeZone::timestamp_millis_opt(&Utc, now.timestamp_millis())
-                .single()
-                .unwrap_or(now);
+                    created_at,
+                } => (customer_id, created_at),
+            };
 
             let cipher = xc_kernel::pii::PiiCipher::new(keys);
             let aad = format!("{customer_id}PHONE");
