@@ -299,18 +299,34 @@ impl ConsentService {
         Ok(version)
     }
 
+    const MARKETING_ALLOWED_SQL: &'static str = "SELECT granted FROM consents \
+         WHERE customer_id = $1 AND purpose = 'MARKETING' AND channel = $2 \
+         ORDER BY effective_at DESC, created_at DESC \
+         LIMIT 1";
+
     pub async fn marketing_allowed(&self, customer_id: &str, channel: Channel) -> AppResult<bool> {
-        let granted: Option<bool> = sqlx::query_scalar(
-            "SELECT granted FROM consents \
-             WHERE customer_id = $1 AND purpose = 'MARKETING' AND channel = $2 \
-             ORDER BY effective_at DESC, created_at DESC \
-             LIMIT 1",
-        )
-        .bind(customer_id)
-        .bind(channel.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(AppError::Database)?;
+        let granted: Option<bool> = sqlx::query_scalar(Self::MARKETING_ALLOWED_SQL)
+            .bind(customer_id)
+            .bind(channel.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+        Ok(granted.unwrap_or(false))
+    }
+
+    pub async fn marketing_allowed_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        customer_id: &str,
+        channel: Channel,
+    ) -> AppResult<bool> {
+        let granted: Option<bool> = sqlx::query_scalar(Self::MARKETING_ALLOWED_SQL)
+            .bind(customer_id)
+            .bind(channel.as_str())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
 
         Ok(granted.unwrap_or(false))
     }

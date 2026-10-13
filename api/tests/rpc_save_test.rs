@@ -226,6 +226,33 @@ async fn the_links_of_a_save_name_its_own_branch() {
     let mut replay = Replay::start(desk, app, &fixture).await;
     let (branch, customer, passport, teller) = a_second_branch(&mut replay).await;
 
+    // Re-expected for TX-6 by the test-writer, decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one, so
+    // in a branch that publishes nothing it is refused; the branch then publishes the dollar at the
+    // rate the save names (1), and the save's links are what this test holds.
+    replay
+        .app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "saveTransaction",
+                demo_save(
+                    &branch,
+                    &customer,
+                    &passport,
+                    "00000000-0000-4000-8000-0000000c0005",
+                ),
+            )
+            .cookie(&replay.cookies[&teller]),
+        )
+        .await
+        .assert_refused(
+            400,
+            "rateUnavailable: no published line",
+            "a DEMO save with nothing published (decision A2)",
+        );
+    snapshot_common::publish_rate_per_one(&replay.desk.db.pool, &branch, "USD", "1", "1").await;
+
     let answer = replay
         .app
         .send(

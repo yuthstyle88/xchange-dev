@@ -279,6 +279,27 @@ impl FileService {
         Ok(row.map(|(key, mime, sha256)| Attachment { key, mime, sha256 }))
     }
 
+    /// The record of an upload this owner stored in this branch, within an ongoing transaction.
+    pub async fn attachment_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        key: &str,
+        owner_id: &str,
+        branch: &BranchId,
+    ) -> AppResult<Option<Attachment>> {
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT key, mime, sha256 FROM files \
+             WHERE key = $1 AND owner_id = $2 AND branch_id = $3",
+        )
+        .bind(key)
+        .bind(owner_id)
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(row.map(|(key, mime, sha256)| Attachment { key, mime, sha256 }))
+    }
+
     /// Whether the bytes of a key are on the disk.
     pub fn on_disk(&self, key: &str) -> bool {
         self.dir.join(key).is_file()

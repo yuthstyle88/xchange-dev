@@ -803,18 +803,22 @@ async fn a_refused_save_leaves_nothing_behind() {
         refusal(shop.save(MAIN, cmd.clone(), at(0)).await),
         NO_OPEN_SHIFT
     );
-    // no shift is told before a wrong rate and before a currency the shop does not trade
+    // Re-pinned for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1, #674;
+    // lane controller's ruling, Fact 3 option (i)): the save is quoted first, so a wrong rate and a
+    // currency the shop does not trade are told before the missing shift
     let mut wrong_rate = cmd.clone();
     wrong_rate.rate = "1".to_owned();
     assert_eq!(
         refusal(shop.save(MAIN, wrong_rate, at(0)).await),
-        NO_OPEN_SHIFT
+        RATE_MISMATCH,
+        "decision A3: the quote comes first"
     );
     let mut no_rate = cmd;
     no_rate.currency = "EUR".to_owned();
     assert_eq!(
         refusal(shop.save(MAIN, no_rate, at(0)).await),
-        NO_OPEN_SHIFT
+        RATE_MISMATCH,
+        "decision A3: the quote comes first"
     );
     assert_eq!(shop.everything().await, closed);
     assert_eq!(

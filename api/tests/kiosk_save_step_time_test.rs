@@ -36,6 +36,8 @@ type Asked<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 struct Counter {
     lines: Mutex<Vec<(String, AuditLine, DateTime<Utc>)>>,
     audit_fails: AtomicBool,
+    /// A3 (kiosk): the shop's pool, for the quote the kiosk asks for (`quote_in`).
+    pool: std::sync::OnceLock<sqlx::PgPool>,
 }
 
 impl Counter {
@@ -131,6 +133,27 @@ impl KioskPorts for Counter {
     ) -> Asked<'a, bool> {
         Box::pin(async { Ok(true) })
     }
+
+    /// A3 (kiosk) (TX-6 #674, lane controller's ruling R2, design quote-transaction.md §4.6.1): the kiosk's quote,
+    /// through `QuoteService` with channel KIOSK as the real port asks for it (TX-7), so a request carries the
+    /// quote the save completes. The trait's default answered no quote.
+    fn quote_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: xc_kernel::money::CurrencyCode,
+        side: Side,
+        quantity: xc_kernel::money::ForeignAmount,
+        now: DateTime<Utc>,
+    ) -> Asked<'a, Option<String>> {
+        Box::pin(async move {
+            let pool = self
+                .pool
+                .get()
+                .expect("the scene gave the counter the shop's pool");
+            kiosk_quote_in(pool, tx, branch, currency, side, quantity, now).await
+        })
+    }
 }
 
 fn staff(id: &str, role: Role) -> SaveActor {
@@ -172,6 +195,10 @@ impl Scene {
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());
+        counter
+            .pool
+            .set(shop.pool.clone())
+            .expect("the counter is new");
         let kiosk = KioskService::new(branch_tx.clone(), counter.clone());
         let steps: Vec<Arc<dyn SaveStep>> = vec![Arc::new(KioskSaveStep::new(kiosk.clone()))];
         let flow = SaveTransactionWorkflow::new(branch_tx, shop.shifts.clone(), shop.files.clone())

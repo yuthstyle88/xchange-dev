@@ -531,15 +531,18 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         replay.tally.replayed.len(),
         107 + (43 - part_two.len()) - owners_c2_c3.len()
     );
-    // the three uploads, and — while the save is not wired — the four accepted
+    // the three uploads, and — while the save is not wired — the three accepted
     // saves (one of them sent twice)
-    // and (OR-4b, C2, C3) the ten steps v2 accepted of the owner's refused ones, and (RE-7
-    // #604) the five accepted direct saves, published behind
+    // and (OR-4b, C2, C3) the nine steps v2 accepted of the owner's refused ones, and (RE-7
+    // #604) the five accepted direct saves, published behind.
+    // Re-expected for TX-6 #674 by the test-writer (decision A2, owner 2026-10-11, design
+    // quote-transaction.md §4.6.1): #125, the DEMO save at rate 1, is now the refusal
+    // RATE_MISMATCH (fixture step 125), so nothing of it is applied behind the routes.
     let mut applied_behind = vec![
-        23, 24, 25, 28, 29, 63, 64, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124, 125,
+        23, 24, 25, 28, 29, 63, 64, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124,
     ];
     if !Family::Save.wired() {
-        applied_behind.extend([120, 121, 123, 125]);
+        applied_behind.extend([120, 121, 123]);
     }
     applied_behind.sort_unstable();
     let mut tallied = replay.tally.applied_behind.clone();

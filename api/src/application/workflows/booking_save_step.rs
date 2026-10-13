@@ -359,7 +359,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unpinned_currency_refuses_with_form_mismatch_never_500() {
+    /// Re-pinned for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1, #674;
+    /// lane controller's ruling, Fact 3 option (i)): the save is quoted before `BookingSaveStep`,
+    /// so a currency nobody publishes is refused at the quote, still never a 500.
+    async fn unpinned_currency_is_refused_at_the_quote_never_500() {
         let db = TestDb::new("unpinned").await;
         db.seed_setup().await;
 
@@ -428,10 +431,10 @@ mod tests {
             )
             .await;
 
-        // Must answer FORM_MISMATCH domain error, NEVER a 500
+        // Must answer the quote's RATE_MISMATCH domain error (decision A3), NEVER a 500
         match result {
-            Err(AppError::Domain(msg)) => assert_eq!(msg, FORM_MISMATCH),
-            other => panic!("expected Domain({FORM_MISMATCH}), got {other:?}"),
+            Err(AppError::Domain(msg)) => assert_eq!(msg, RATE_MISMATCH),
+            other => panic!("expected Domain({RATE_MISMATCH}), got {other:?}"),
         }
 
         db.teardown().await;

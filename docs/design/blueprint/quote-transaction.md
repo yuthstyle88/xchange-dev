@@ -489,7 +489,7 @@ issuecomment-6109664380). Every `file:line` is on `main` `d9440858`.
   - §6.4 already decides that a booking does not set the rate (desk D-13).
   - A booked save is quoted at the current published line like a walk-in. The booking's stored rate and unit
     (`save_transaction.rs:345-370`) are not used, and `BookingSaveStep` still marks the booking `USED`.
-- **For every non-kiosk compat save, the adapter checks the client rate.**
+- **For every compat save, the adapter checks the client rate (a kiosk save compares against the request's own quote, after KioskSaveStep's currency/amount check).**
   - The adapter compares `form.client_rate` with `CompatRate::per_one(quote.final_rate, quote.unit_size)` and refuses
     `RATE_MISMATCH` when they differ. That is today's walk-in check (`:454-458`), so today's answers stay the same.
   - Without it, a desk that showed one rate could save at another. The receipt now prints the stored rate
@@ -638,7 +638,7 @@ phase 6.
 The completion calls **only** `CashPostings::post_in` (PR 590 §4.6), in the completion's transaction. Today's
 `ShiftService::apply_delta_in` call (`save_transaction.rs:334-342`) is what `InterimCashPostings` does for a drawer
 (PR 590), so the stock behaviour of an exchange is unchanged until #553 replaces the implementation. #553 also writes
-`cost_basis_thb` and `realized_margin_thb` on the line it posts (weighted average, Q10).
+`cost_basis_thb` and `realized_margin_thb` on the line it posts (weighted average, Q10). A leg whose THB amount is 0 is not posted; `CashPostings::post_in` is called only for non-zero legs (TX-6, #674).
 
 PR 590's `post_in` takes the caller's `&mut Transaction<'_, Postgres>` (`cash-shift-transfer.md:246-247` at PR 590
 `aa2fc85`), so the completion calls it inside its own `BranchTx` closure.

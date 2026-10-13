@@ -6,11 +6,12 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Rate, Side, UnitSize};
 
 use crate::domain::quote::quote::{Quote, QuoteChannel, QuoteStatus};
 use crate::domain::quote::quote_line::QuoteLine;
 use crate::domain::quote::repository::QuoteRepository;
+use crate::infrastructure::parse_stored_money;
 
 pub struct PgQuoteRepository {
     #[allow(dead_code)]
@@ -179,12 +180,9 @@ impl QuoteRepository for PgQuoteRepository {
                 .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
             let final_rate = Rate::parse(&final_rate_dec.to_string())
                 .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
-            let thb_amount = Money::parse(&thb_amount_dec.to_string())
-                .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
-            let fee_thb = Money::parse(&fee_thb_dec.to_string())
-                .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
-            let settle_thb = Money::parse(&settle_thb_dec.to_string())
-                .map_err(|e| pos_error::AppError::Domain(e.to_string()))?;
+            let thb_amount = parse_stored_money(&thb_amount_dec.to_string())?;
+            let fee_thb = parse_stored_money(&fee_thb_dec.to_string())?;
+            let settle_thb = parse_stored_money(&settle_thb_dec.to_string())?;
 
             lines.push(QuoteLine {
                 id: l_id,

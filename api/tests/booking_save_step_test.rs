@@ -259,29 +259,28 @@ async fn refused_and_kept(
     );
 }
 
-/// The booked rate stands: a booking at 32.1 is saved at 32.1 while the counter buys at 32.2, and
-/// the booking becomes USED by this submission and its document.
+/// Re-expected for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556): a booking no longer sets the rate. A booked save
+/// is quoted at the current published line like a walk-in, so a booking at 32.1 sent at 32.1 while
+/// the counter buys at 32.2 is refused `RATE_MISMATCH`, and the booking stays as it was. (Before
+/// TX-6 the booked rate stood and skipped the counter check.)
 #[actix_web::test]
-async fn booked_rate_skips_counter_check() {
+async fn a_booked_rate_off_the_counter_is_refused() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
     book(&replay, "BK-rate", json!({ "rate": "32.1" })).await;
     let mut payload = claiming(&payload_of(&replay, LIVE_BUY), "BK-rate");
     payload["rate"] = json!(32.1);
 
-    let answer = save(&replay, TELLER, RPC, &payload).await;
-    let document = saved_ref(&answer, "a booking at 32.1, the counter at 32.2");
-    let after = kept(&replay).await;
-    assert_eq!(
-        exchange(&after, &document)["rate"].to_string(),
-        "32.1",
-        "saved at the booked rate"
-    );
-    let submission = payload["submissionId"].as_str().expect("a submission");
-    assert_eq!(
-        booking_row(&replay, "BK-rate").await,
-        used_by(submission, &document)
-    );
+    refused_and_kept(
+        &replay,
+        TELLER,
+        RPC,
+        &payload,
+        RATE_MISMATCH,
+        "BK-rate",
+        "a booking at 32.1, the counter at 32.2 (decision A3)",
+    )
+    .await;
     replay.finish().await;
 }
 
@@ -363,9 +362,11 @@ async fn second_submission_refused() {
 async fn repeat_passes() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    book(&replay, "BK-repeat", json!({ "rate": "32.1" })).await;
+    // Re-expected for TX-6 by the test-writer (decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556)): the booking is at the counter rate 32.2,
+    // because a booked save is quoted at the published line; the repeat is what this test holds.
+    book(&replay, "BK-repeat", json!({ "rate": "32.2" })).await;
     let mut payload = claiming(&payload_of(&replay, LIVE_BUY), "BK-repeat");
-    payload["rate"] = json!(32.1);
+    payload["rate"] = json!(32.2);
     let document = saved_ref(
         &save(&replay, TELLER, RPC, &payload).await,
         "the first save",
@@ -533,34 +534,50 @@ async fn unknown_or_other_branch_booking_refused() {
 }
 
 /// The form must be the booking's: LIVE, its type, currency, amount and rate, `booking` naming
-/// it, and the customer ticked with JSON `true`. A form at the counter rate does not pass for a
-/// booking at another rate.
+/// it, and the customer ticked with JSON `true`.
+///
+/// Re-expected for TX-6 by the test-writer (decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556)): the booking is at the counter rate 32.2,
+/// because a booked save is quoted at the published line. A form at another rate is now refused by
+/// the quote's client-rate check, which comes before the booking step, so that one case answers
+/// `RATE_MISMATCH`; every other case is the booking step's, as before.
 #[actix_web::test]
 async fn form_must_match_the_booking() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    book(&replay, "BK-match", json!({ "rate": "32.1" })).await;
+    book(&replay, "BK-match", json!({ "rate": "32.2" })).await;
     let mut good = claiming(&payload_of(&replay, LIVE_BUY), "BK-match");
-    good["rate"] = json!(32.1);
+    good["rate"] = json!(32.2);
 
     let variant = |key: &str, value: Value| {
         let mut p = good.clone();
         p[key] = value;
         p
     };
+    let mut another_currency = variant("currency", json!("EUR"));
+    another_currency["rate"] = json!(37.5);
+    let mut another_type = variant("type", json!("SELL"));
+    another_type["rate"] = json!(32.7);
     let mut unticked = good.clone();
     unticked
         .as_object_mut()
         .expect("a payload")
         .remove("onlineBookingCustomerConfirmed");
+    refused_and_kept(
+        &replay,
+        TELLER,
+        RPC,
+        &variant("rate", json!(32.1)),
+        RATE_MISMATCH,
+        "BK-match",
+        "a rate that is neither the counter's nor the booked one (decision A3: refused at the quote)",
+    )
+    .await;
     let cases = [
-        (
-            variant("rate", json!(32.2)),
-            "the counter rate, not the booked one",
-        ),
         (variant("amount", json!(99)), "another amount"),
-        (variant("currency", json!("EUR")), "another currency"),
-        (variant("type", json!("SELL")), "another type"),
+        // decision A3: sent at the counter rate of the other currency or side, so the quote passes and
+        // the booking step is what refuses it
+        (another_currency, "another currency"),
+        (another_type, "another type"),
         (variant("booking", json!("WALK-IN")), "booking not the id"),
         (
             variant("onlineBookingCustomerConfirmed", json!("true")),
@@ -772,8 +789,12 @@ async fn two_saves_at_once_use_the_booking_once() {
     replay.finish().await;
 }
 
-/// The staff route saves through the same action: a Front's save from a booking at a rate the
-/// counter no longer sells at is saved, and uses the booking.
+/// The staff route saves through the same action: a Front's save from a booking is saved, and uses
+/// the booking.
+///
+/// Re-expected for TX-6 by the test-writer (decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556)): the booking is at the counter's selling rate
+/// 32.7, because a booked save is quoted at the published line (before TX-6 it was at 32.65, a rate
+/// the counter no longer sold at). The save with no booking at 32.65 is still refused.
 #[actix_web::test]
 async fn the_staff_route_uses_the_booking_too() {
     let fixture = Fixture::load(FILE);
@@ -794,19 +815,20 @@ async fn the_staff_route_uses_the_booking_too() {
     book(
         &replay,
         "BK-staff",
-        json!({ "type": "SELL", "amount": "20", "rate": "32.65" }),
+        json!({ "type": "SELL", "amount": "20", "rate": "32.7" }),
     )
     .await;
     let mut payload = claiming(&payload_of(&replay, LIVE_SELL), "BK-staff");
     payload["passport"] = json!({ "uploadKey": keys[0] });
     payload["slip"] = json!({ "uploadKey": keys[1] });
-    payload["rate"] = json!(32.65);
+    payload["rate"] = json!(32.7);
 
     let mut no_claim = payload.clone();
     no_claim
         .as_object_mut()
         .expect("a payload")
         .remove("onlineBookingId");
+    no_claim["rate"] = json!(32.65);
     refused_and_kept(
         &replay,
         "FR1",
@@ -824,8 +846,8 @@ async fn the_staff_route_uses_the_booking_too() {
     );
     assert_eq!(
         exchange(&kept(&replay).await, &document)["rate"].to_string(),
-        "32.65",
-        "saved at the booked rate"
+        "32.7",
+        "saved at the booked rate, the counter's (decision A3)"
     );
     let submission = payload["submissionId"].as_str().expect("a submission");
     assert_eq!(

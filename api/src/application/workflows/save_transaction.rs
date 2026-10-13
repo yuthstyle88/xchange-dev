@@ -6,30 +6,40 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
-use xc_exchange::domain::exchange::entities::receipt::receipt_html;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
-use xc_exchange::domain::exchange::value_objects::document_ref::DocumentRef;
 use xc_exchange::domain::exchange::value_objects::transaction_form::{
-    FILE_MISSING, TOO_MANY_DECIMALS, TransactionForm,
+    FILE_MISSING, TransactionForm,
 };
+use xc_exchange::domain::quote::quote::QuoteChannel;
+use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
+use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{
-    CompatRate, CurrencyCode, ExchangeArithmetic, ForeignAmount, Rate, Side, UnitSize,
-};
+use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
-use xc_rate::domain::publication::published_rates::PublishedRates;
-use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
+use crate::application::workflows::exchange::complete::{
+    CompleteExchange, CompletedExchange, ExchangeEffects,
+};
+use crate::application::workflows::exchange::confirm::{ConfirmOutcome, ConfirmTransaction};
+use crate::application::workflows::exchange::create::{
+    CreatePayment, CreateRequest, CreateTransaction,
+};
+use crate::application::workflows::exchange::quote::{
+    QuoteRequest, QuoteRequestLine, QuoteService,
+};
 use crate::application::workflows::save_step::{
     BookingClaim, SaveActor, SaveContext, SaveExtras, SaveStep,
 };
@@ -41,6 +51,7 @@ pub const ATTACHMENT_NOT_FOUND: &str = "ไม่พบไฟล์แนบข�
 pub const ATTACHMENT_NOT_READY: &str = "ไฟล์แนบยังไม่พร้อม";
 pub const CHANGED: &str = "รายการเดิมมีข้อมูลเปลี่ยน ห้ามใช้รหัสส่งซ้ำกับข้อมูลใหม่";
 pub const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ";
+pub const TOO_MANY_DECIMALS: &str = "ทศนิยมเกินกำหนด";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedTransaction {
@@ -70,9 +81,22 @@ fn refuse<T>(sentence: &str) -> AppResult<T> {
 /// compared as text.
 fn digest(form: &TransactionForm, passport_sha256: &str, slip_sha256: Option<&str>) -> String {
     let date = |d: Option<chrono::NaiveDate>| d.map(|d| d.to_string()).unwrap_or_default();
+    let passport_part = if let Ok(keys) = xc_customer::get_pii_keys() {
+        let normalized = xc_kernel::pii::normalize(
+            xc_kernel::pii::IdentityType::Passport,
+            &form.customer.passport_no,
+            Some(&form.customer.nationality),
+        )
+        .unwrap_or_else(|_| form.customer.passport_no.trim().to_uppercase());
+        let hash = xc_kernel::pii::LookupHasher::new(&keys)
+            .hash(xc_kernel::pii::IdentityType::Passport, &normalized);
+        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    } else {
+        form.customer.passport_no.clone()
+    };
     let parts = [
         form.customer.name.clone(),
-        form.customer.passport_no.clone(),
+        passport_part,
         form.customer.nationality.clone(),
         date(form.customer.birth_date),
         date(form.customer.passport_expiry),
@@ -111,22 +135,6 @@ fn digest(form: &TransactionForm, passport_sha256: &str, slip_sha256: Option<&st
     format!("{:x}", hasher.finalize())
 }
 
-/// The OPEN shift of the teller whose `users.id` is `user_id`, in `branch`.
-async fn teller_shift_in(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    branch: &BranchId,
-    user_id: &str,
-) -> AppResult<Option<String>> {
-    sqlx::query_scalar(
-        "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2::uuid AND status = 'OPEN'",
-    )
-    .bind(branch.as_str())
-    .bind(user_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(AppError::Database)
-}
-
 fn answer(t: &Transaction) -> SavedTransaction {
     SavedTransaction {
         mode: t.mode,
@@ -138,6 +146,26 @@ fn answer(t: &Transaction) -> SavedTransaction {
             .map(|k| format!("/files/{k}"))
             .unwrap_or_default(),
         receipt_url: format!("/files/{}", t.receipt_key),
+    }
+}
+
+fn answer_from_completed(completed: &CompletedExchange) -> SavedTransaction {
+    SavedTransaction {
+        mode: completed.transaction.mode,
+        document_ref: completed
+            .transaction
+            .document_ref
+            .clone()
+            .unwrap_or_default(),
+        passport_url: format!("/files/{}", completed.transaction.passport_file_key),
+        slip_url: completed
+            .transaction
+            .payment
+            .slip_file_key
+            .as_ref()
+            .map(|k| format!("/files/{k}"))
+            .unwrap_or_default(),
+        receipt_url: format!("/files/{}", completed.receipt.document_ref),
     }
 }
 
@@ -281,7 +309,7 @@ impl SaveTransactionWorkflow {
             Some(key) => Some(self.attachment(key, actor_id, branch).await?),
             None => None,
         };
-        let branch_name = self.branches.require(branch).await?.name;
+        let _ = self.branches.require(branch).await?;
         let form = TransactionForm::parse(&cmd)?;
         // a form that parsed names a passport file
         let Some(passport) = passport else {
@@ -295,7 +323,17 @@ impl SaveTransactionWorkflow {
             slip.as_ref().map(|s| s.sha256.as_str()),
         );
 
-        let (this, branch, actor_id) = (self.clone(), branch.clone(), actor_id.to_owned());
+        let save_actor = stepped
+            .as_ref()
+            .map(|(_, _, a)| a.clone())
+            .unwrap_or_else(|| SaveActor {
+                id: actor_id.to_owned(),
+                username: cmd.staff.clone(),
+                employee_id: None,
+                role: Role::System,
+            });
+
+        let (this, branch) = (self.clone(), branch.clone());
         let lock = branch.clone();
         self.branch_tx
             .run(&lock, move |tx| {
@@ -306,88 +344,24 @@ impl SaveTransactionWorkflow {
                         .find_submission_in(tx, &branch, mode, &form.submission_id)
                         .await?;
 
-                    let mut stored_line_id: Option<uuid::Uuid> = None;
-                    let mut stored_rate: Rate = form.rate;
-                    let mut stored_unit_size: UnitSize = UnitSize::ONE;
-
-                    if prior.is_none()
-                        && let Some((extras, booking, _)) = &stepped
-                    {
-                            if let Some(req_id) =
-                                extras.kiosk_request_id.as_deref().filter(|s| !s.is_empty())
-                            {
-                                let row: Option<(Decimal, Decimal, Option<uuid::Uuid>)> =
-                                    sqlx::query_as(
-                                        "SELECT rate, unit_size, published_rate_line_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
-                                    )
-                                    .bind(branch.as_str())
-                                    .bind(req_id)
-                                    .fetch_optional(&mut **tx)
-                                    .await
-                                    .map_err(AppError::Database)?;
-
-                                if let Some((req_rate, req_unit, req_line_id)) = row {
-                                    let unit_size = UnitSize::from_decimal(req_unit)
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    let req_rate_vo = Rate::parse(&req_rate.normalize().to_string())
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    let req_per_one = CompatRate::per_one(req_rate_vo, unit_size)
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    if form.client_rate != req_per_one {
-                                        return refuse(RATE_MISMATCH);
-                                    }
-                                    stored_line_id = req_line_id;
-                                    stored_rate = req_rate_vo;
-                                    stored_unit_size = unit_size;
-                                }
-                            }
-
-                            if let Some(claim) = booking {
-                                let row: Option<(Decimal, Decimal, Option<uuid::Uuid>)> =
-                                    sqlx::query_as(
-                                        "SELECT rate, unit_size, published_rate_line_id FROM v2_bookings WHERE branch_id = $1 AND id = $2",
-                                    )
-                                    .bind(branch.as_str())
-                                    .bind(&claim.booking_id)
-                                    .fetch_optional(&mut **tx)
-                                    .await
-                                    .map_err(AppError::Database)?;
-
-                                if let Some((bk_rate, bk_unit, bk_line_id)) = row {
-                                    let unit_size = UnitSize::from_decimal(bk_unit)
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    let bk_rate_vo = Rate::parse(&bk_rate.normalize().to_string())
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    let bk_per_one = CompatRate::per_one(bk_rate_vo, unit_size)
-                                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                                    if bk_line_id.is_some() && form.client_rate != bk_per_one {
-                                        return refuse(RATE_MISMATCH);
-                                    }
-                                    stored_line_id = bk_line_id;
-                                    stored_rate = bk_rate_vo;
-                                    stored_unit_size = unit_size;
-                                }
-                            }
-                    }
-
-                    if let Some((extras, booking, actor)) = &stepped {
-                        let ctx = SaveContext {
-                            branch: &branch,
-                            form: &form,
-                            extras,
-                            booking: booking.as_ref(),
-                            actor,
-                            teller: teller.as_ref(),
-                            now,
-                            prior: prior.as_ref().map(|(saved, _)| saved),
-                        };
-                        for step in &this.steps {
-                            step.before_in(tx, &ctx).await?;
-                        }
-                    }
-                    CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
-                        .await?;
                     if let Some((saved, hash)) = &prior {
+                        if let Some((extras, booking, actor)) = &stepped {
+                            let ctx = SaveContext {
+                                branch: &branch,
+                                form: &form,
+                                extras,
+                                booking: booking.as_ref(),
+                                actor,
+                                teller: teller.as_ref(),
+                                now,
+                                prior: Some(saved),
+                            };
+                            for step in &this.steps {
+                                step.before_in(tx, &ctx).await?;
+                            }
+                        }
+                        CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
+                            .await?;
                         if *hash != payload_hash {
                             return refuse(CHANGED);
                         }
@@ -409,75 +383,125 @@ impl SaveTransactionWorkflow {
                         return Ok(answer(saved));
                     }
 
-                    let mut shift_id = None;
-                    if mode == Mode::Live {
-                        // CA-7 (#623): a Blueprint-session teller posts to their own OPEN shift, never the
-                        // branch's v2 one.
-                        let open = match &teller {
-                            Some(t) => teller_shift_in(tx, &branch, &t.user_id).await?.is_some(),
-                            None => this.shifts.active_in(tx, &branch).await?.is_some(),
+                    // Step 1: Quote
+                    let extras = stepped.as_ref().map(|(e, _, _)| e);
+                    let kiosk_req_id = extras
+                        .and_then(|e| e.kiosk_request_id.as_deref())
+                        .filter(|s| !s.is_empty());
+
+                    let (quote_id, quote_unit_size, quote_published_line_id) = if let Some(req_id) = kiosk_req_id {
+                        // A kiosk save first passes KioskSaveStep's currency/amount check.
+                        if let Some((extras, booking, actor)) = &stepped {
+                            let ctx = SaveContext {
+                                branch: &branch,
+                                form: &form,
+                                extras,
+                                booking: booking.as_ref(),
+                                actor,
+                                teller: teller.as_ref(),
+                                now,
+                                prior: None,
+                            };
+                            for step in &this.steps {
+                                step.before_in(tx, &ctx).await?;
+                            }
+                        }
+
+                        // Then compares form.client_rate with the request's own quote.
+                        // A kiosk request with no quote is refused with RATE_MISMATCH. Never synthesize a quote (D-1).
+                        let row: Option<(Option<Uuid>,)> = sqlx::query_as(
+                            "SELECT quote_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2"
+                        )
+                        .bind(branch.as_str())
+                        .bind(req_id)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+
+                        let Some((Some(qid),)) = row else {
+                            return refuse(RATE_MISMATCH);
                         };
-                        if !open {
-                            return Err(ShiftError::NoOpenShift.into());
+
+                        let quote_repo = PgQuoteRepository::new(this.branch_tx.pool().clone());
+                        let Some(quote) = quote_repo.find_in(tx, qid).await? else {
+                            return refuse(RATE_MISMATCH);
+                        };
+                        let line = quote.lines.first().ok_or_else(|| {
+                            AppError::Internal(format!("quote {qid} has no line"))
+                        })?;
+                        let per_one = CompatRate::per_one(line.final_rate, line.unit_size)
+                            .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                        if form.client_rate != per_one {
+                            return refuse(RATE_MISMATCH);
                         }
-                        let code = CurrencyCode::parse(&form.currency).ok();
-                        let vouched = stored_line_id.is_some()
-                            || stepped.as_ref().is_some_and(|(extras, booking, actor)| {
-                                let ctx = SaveContext {
-                                    branch: &branch,
-                                    form: &form,
-                                    extras,
-                                    booking: booking.as_ref(),
-                                    actor,
-                                    teller: teller.as_ref(),
-                                    now,
-                                    prior: None,
-                                };
-                                this.steps.iter().any(|s| s.vouches_for_rate(&ctx))
-                            });
-                        if !vouched {
-                            let Some(code) = code else {
-                                return refuse(RATE_MISMATCH);
-                            };
-                            if code.is_thb() {
-                                return refuse(RATE_MISMATCH);
-                            }
-                            let published_rates =
-                                PgPublishedRates::new(this.shifts.branch_tx().pool().clone());
-                            let published_side = published_rates
-                                .line_in(tx, &branch, code, form.side)
-                                .await?;
-                            let Some(side) = published_side else {
-                                return refuse(RATE_MISMATCH);
-                            };
-
-                            let per_one = CompatRate::per_one(side.rate, side.unit_size)
-                                .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                            if form.client_rate != per_one {
-                                return refuse(RATE_MISMATCH);
-                            }
-
-                            if side.stale {
-                                let stale_policy =
-                                    published_rates.stale_policy_in(tx, &side).await?;
-                                let foreign = ForeignAmount::from_decimal(
-                                    Decimal::from_i128_with_scale(
-                                        form.amount.minor_i128(),
-                                        2,
-                                    ),
-                                );
-                                let thb_amount =
-                                    ExchangeArithmetic::thb(foreign, side.rate, side.unit_size);
-                                if stale_policy.admits(&side, thb_amount).is_err() {
-                                    return refuse(RATE_MISMATCH);
-                                }
-                            }
-
-                            stored_line_id = Some(side.line_id.as_uuid());
-                            stored_rate = side.rate;
-                            stored_unit_size = side.unit_size;
+                        (qid, line.unit_size, Some(line.published_rate_line_id))
+                    } else {
+                        // Non-kiosk save (desk / booking): quote first.
+                        let Ok(code) = CurrencyCode::parse(&form.currency) else {
+                            return refuse(RATE_MISMATCH);
+                        };
+                        if code.is_thb() {
+                            return refuse(RATE_MISMATCH);
                         }
-                        let Some(code) = code else {
+                        let quote_req = QuoteRequest {
+                            branch_id: branch.clone(),
+                            customer_id: None,
+                            channel: QuoteChannel::Desk,
+                            lines: vec![QuoteRequestLine {
+                                currency: code,
+                                shop_side: form.side,
+                                quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
+                                    form.amount.minor_i128(),
+                                    2,
+                                )),
+                                fee_thb: Some(form.fee),
+                                denomination_group: GroupCode::all(),
+                            }],
+                        };
+                        let quote_service = QuoteService::new(this.branch_tx.pool().clone());
+                        let quote = match quote_service.quote_in(tx, quote_req, &save_actor, now).await {
+                            Ok(q) => q,
+                            Err(AppError::Domain(msg))
+                                if mode == Mode::Live && msg.starts_with("rateUnavailable") =>
+                            {
+                                return refuse(RATE_MISMATCH);
+                            }
+                            Err(e) => return Err(e),
+                        };
+                        let line = quote.lines.first().ok_or_else(|| {
+                            AppError::Internal(format!("quote {} has no line", quote.id))
+                        })?;
+                        let per_one = CompatRate::per_one(line.final_rate, line.unit_size)
+                            .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                        if form.client_rate != per_one {
+                            return refuse(RATE_MISMATCH);
+                        }
+
+                        // Then run steps.before_in
+                        if let Some((extras, booking, actor)) = &stepped {
+                            let ctx = SaveContext {
+                                branch: &branch,
+                                form: &form,
+                                extras,
+                                booking: booking.as_ref(),
+                                actor,
+                                teller: teller.as_ref(),
+                                now,
+                                prior: None,
+                            };
+                            for step in &this.steps {
+                                step.before_in(tx, &ctx).await?;
+                            }
+                        }
+
+                        (quote.id, line.unit_size, Some(line.published_rate_line_id))
+                    };
+
+                    CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
+                        .await?;
+
+                    if mode == Mode::Live {
+                        let Ok(code) = CurrencyCode::parse(&form.currency) else {
                             return refuse(RATE_MISMATCH);
                         };
                         let delta = StockDelta::for_tx(
@@ -488,18 +512,42 @@ impl SaveTransactionWorkflow {
                             form.method.is_cash(),
                         )
                         .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                        shift_id = Some(match &teller {
+                        match &teller {
                             Some(t) => {
                                 this.shifts
                                     .apply_delta_for_teller_in(tx, &branch, &t.user_id, &delta)
-                                    .await?
+                                    .await?;
                             }
-                            None => this.shifts.apply_delta_in(tx, &branch, &delta).await?,
-                        });
+                            None => {
+                                this.shifts.apply_delta_in(tx, &branch, &delta).await?;
+                            }
+                        }
                     }
 
+                    // Step 2: Create Transaction
+                    let create_req = CreateRequest {
+                        branch_id: branch.clone(),
+                        quote_id,
+                        customer_id: form.customer_id.clone(),
+                        booking_id: stepped.as_ref().and_then(|(_, b, _)| b.as_ref().map(|c| c.booking_id.clone())),
+                        kiosk_request_id: extras.and_then(|e| e.kiosk_request_id.clone()),
+                        staff_draft_id: extras.and_then(|e| e.staff_draft_id.clone()),
+                        passport_key: passport.key.clone(),
+                        payment: CreatePayment {
+                            method: form.method,
+                            reference: form.payment_ref.clone(),
+                            account: form.account.clone(),
+                            slip_key: slip.as_ref().map(|s| s.key.clone()),
+                            bank_fee_thb: form.bank_fee,
+                            paid_at: form.paid_at,
+                        },
+                        value_date: form.value_date,
+                        notes: form.notes.clone(),
+                        count_confirmed: true,
+                    };
+
                     let stored_reference_rate = if let Some(client_ref) = form.client_reference_rate {
-                        let per_unit_ref = client_ref * stored_unit_size.value();
+                        let per_unit_ref = client_ref * quote_unit_size.value();
                         let parsed = Rate::parse(&per_unit_ref.normalize().to_string())
                             .map_err(|_| AppError::Domain(TOO_MANY_DECIMALS.to_owned()))?;
                         Some(parsed)
@@ -507,119 +555,87 @@ impl SaveTransactionWorkflow {
                         form.reference_rate
                     };
 
-                    let org = PgTransactionRepository::organization_of_in(tx, &branch).await?;
-                    let number = this
-                        .transactions
-                        .next_number_in(tx, &DocumentRef::counter_key(org, mode, now))
+                    let teller_user_id = teller.as_ref().and_then(|t| Uuid::parse_str(&t.user_id).ok());
+                    let create_tx = CreateTransaction::new(this.branch_tx.pool().clone(), this.files.clone());
+                    let draft = create_tx
+                        .run_for_save_in(
+                            tx,
+                            create_req,
+                            &save_actor,
+                            teller_user_id,
+                            Some(form.submission_id.clone()),
+                            Some(payload_hash.clone()),
+                            mode,
+                            form.customer.name.clone(),
+                            form.customer.nationality.clone(),
+                            stored_reference_rate,
+                            now,
+                        )
                         .await?;
-                    let document_ref = DocumentRef::format(mode, now, number);
-                    let html = receipt_html(&form, &document_ref, &branch_name);
-                    let receipt_key = this
-                        .files
-                        .store_receipt_in(tx, &branch, &actor_id, &html, now)
+                    // Step 3: Confirm Transaction
+                    let approvals = crate::presentation::http::v3::commands::make_approval_service(
+                        this.branch_tx.pool().clone(),
+                    );
+                    let confirm_tx = ConfirmTransaction::new(this.branch_tx.pool().clone(), approvals, vec![]);
+                    let confirm_extras = extras.cloned().unwrap_or_default();
+                    let outcome = confirm_tx
+                        .run_in(tx, draft.id, &save_actor, &confirm_extras, now)
                         .await?;
-                    let saved = Transaction {
-                        document_ref: document_ref.clone(),
-                        branch_id: branch.clone(),
-                        mode,
-                        shift_id,
-                        submission_id: form.submission_id.clone(),
-                        customer_id: form.customer_id.clone(),
-                        customer_name: form.customer.name.clone(),
-                        nationality: form.customer.nationality.clone(),
-                        side: form.side,
-                        currency: form.currency.clone(),
-                        amount: form.amount,
-                        rate: stored_rate,
-                        reference_rate: stored_reference_rate,
-                        principal: form.quote.principal,
-                        fee: form.fee,
-                        bank_fee: form.bank_fee,
-                        received: form.quote.received,
-                        paid: form.quote.paid,
-                        method: form.method,
-                        payment_ref: form.payment_ref.clone(),
-                        account: form.account.clone(),
-                        staff: form.staff.clone(),
-                        booking: form.booking.clone(),
-                        notes: form.notes.clone(),
-                        value_date: form.value_date,
-                        paid_at: form.paid_at,
-                        passport_key: passport.key,
-                        slip_key: slip.map(|s| s.key),
-                        receipt_key,
-                        recorded_at: now,
-                        recorded_by: actor_id.clone(),
+                    match outcome {
+                        ConfirmOutcome::Confirmed => {}
+                        ConfirmOutcome::PendingApproval(req_id) => {
+                            return Err(AppError::Domain(format!("approvalRequired: request {req_id}")));
+                        }
+                    }
+
+                    // Step 4: Complete Exchange
+                    let complete_steps = if stepped.is_some() {
+                        this.steps.clone()
+                    } else {
+                        vec![]
                     };
-                    this.transactions
-                        .record_in(tx, &saved, &payload_hash)
+                    let complete_tx = CompleteExchange::new(
+                        this.branch_tx.pool().clone(),
+                        this.files.clone(),
+                        Arc::new(LedgerCashPostings::new()),
+                        complete_steps,
+                        Arc::new(ExchangeEffects::new(vec![])),
+                    );
+                    let completed = complete_tx
+                        .run_in(tx, draft.id, &save_actor, now)
                         .await?;
-                    if let Some(line_id) = stored_line_id {
+
+                    sqlx::query(
+                        "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, 'RECEIPT', $2) \
+                         ON CONFLICT (transaction_id, kind) DO UPDATE SET file_key = EXCLUDED.file_key",
+                    )
+                    .bind(draft.id.0)
+                    .bind(&completed.receipt.document_ref)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    if let Some(pub_line_id) = quote_published_line_id {
                         sqlx::query(
-                            "UPDATE transactions SET published_rate_line_id = $1, unit_size = $2::numeric WHERE document_ref = $3 AND branch_id = $4",
+                            "UPDATE transactions SET published_rate_line_id = $1 WHERE id = $2",
                         )
-                        .bind(line_id)
-                        .bind(stored_unit_size.value())
-                        .bind(&document_ref)
-                        .bind(branch.as_str())
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-                        sqlx::query(
-                            "UPDATE transaction_lines SET unit_size = $1::numeric \
-                             WHERE transaction_id = (SELECT id FROM transactions WHERE document_ref = $2 AND branch_id = $3)",
-                        )
-                        .bind(stored_unit_size.value())
-                        .bind(&document_ref)
-                        .bind(branch.as_str())
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-                    } else if stored_unit_size != UnitSize::ONE {
-                        sqlx::query(
-                            "UPDATE transactions SET unit_size = $1::numeric WHERE document_ref = $2 AND branch_id = $3",
-                        )
-                        .bind(stored_unit_size.value())
-                        .bind(&document_ref)
-                        .bind(branch.as_str())
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-                        sqlx::query(
-                            "UPDATE transaction_lines SET unit_size = $1::numeric \
-                             WHERE transaction_id = (SELECT id FROM transactions WHERE document_ref = $2 AND branch_id = $3)",
-                        )
-                        .bind(stored_unit_size.value())
-                        .bind(&document_ref)
-                        .bind(branch.as_str())
+                        .bind(pub_line_id)
+                        .bind(draft.id.0)
                         .execute(&mut **tx)
                         .await
                         .map_err(AppError::Database)?;
                     }
+
                     CustomerService::record_exchange_in(
                         tx,
                         &branch,
                         &form.customer_id,
                         &form.customer,
-                        &document_ref,
+                        completed.transaction.document_ref.as_deref().unwrap_or(""),
                     )
                     .await?;
-                    if let Some((extras, booking, actor)) = &stepped {
-                        let ctx = SaveContext {
-                            branch: &branch,
-                            form: &form,
-                            extras,
-                            booking: booking.as_ref(),
-                            actor,
-                            teller: teller.as_ref(),
-                            now,
-                            prior: None,
-                        };
-                        for step in &this.steps {
-                            step.after_in(tx, &ctx, &saved).await?;
-                        }
-                    }
-                    Ok(answer(&saved))
+
+                    Ok(answer_from_completed(&completed))
                 })
             })
             .await

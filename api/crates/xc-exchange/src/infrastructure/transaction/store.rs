@@ -6,8 +6,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    CurrencyCode, ForeignAmount, Money, MoneyDelta, NumberError, Rate, Side, UnitSize,
-    plain_decimal,
+    CurrencyCode, ForeignAmount, MoneyDelta, Rate, Side, UnitSize, plain_decimal,
 };
 
 use crate::domain::customer::value_objects::mode::Mode;
@@ -20,6 +19,7 @@ use crate::domain::transaction::repository::{LineCosts, StatusMove, TransactionS
 use crate::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
+use crate::infrastructure::parse_stored_money;
 
 #[derive(Clone)]
 pub struct PgTransactionStore {
@@ -33,11 +33,10 @@ impl PgTransactionStore {
     }
 }
 
-/// A signed `numeric` read back: `-20.00` is `MoneyDelta(-2000)`.
-fn signed_money(text: &str) -> Result<MoneyDelta, NumberError> {
+fn parse_signed_stored_money(text: &str) -> AppResult<MoneyDelta> {
     match text.strip_prefix('-') {
-        Some(abs) => Money::parse(abs).map(|m| MoneyDelta::ZERO.minus(m)),
-        None => Money::parse(text).map(MoneyDelta::from),
+        Some(abs) => parse_stored_money(abs).map(|m| MoneyDelta::ZERO.minus(m)),
+        None => parse_stored_money(text).map(MoneyDelta::from),
     }
 }
 
@@ -322,29 +321,19 @@ impl TransactionStore for PgTransactionStore {
                 })
                 .transpose()?;
             let thb_str: String = lr.try_get("thb_amount").map_err(AppError::Database)?;
-            let thb_amount = Money::parse(&thb_str)
-                .map_err(|e| AppError::Internal(format!("thb_amount: {e}")))?;
+            let thb_amount = parse_stored_money(&thb_str)?;
             let fee_str: String = lr.try_get("fee_thb").map_err(AppError::Database)?;
-            let fee_thb =
-                Money::parse(&fee_str).map_err(|e| AppError::Internal(format!("fee_thb: {e}")))?;
+            let fee_thb = parse_stored_money(&fee_str)?;
             let settle_str: String = lr.try_get("settle_thb").map_err(AppError::Database)?;
-            let settle_thb = Money::parse(&settle_str)
-                .map_err(|e| AppError::Internal(format!("settle_thb: {e}")))?;
+            let settle_thb = parse_stored_money(&settle_str)?;
             let cost_opt: Option<String> =
                 lr.try_get("cost_basis_thb").map_err(AppError::Database)?;
-            let cost_basis_thb = cost_opt
-                .map(|s| {
-                    Money::parse(&s).map_err(|e| AppError::Internal(format!("cost_basis: {e}")))
-                })
-                .transpose()?;
+            let cost_basis_thb = cost_opt.map(|s| parse_stored_money(&s)).transpose()?;
             let margin_opt: Option<String> = lr
                 .try_get("realized_margin_thb")
                 .map_err(AppError::Database)?;
             let realized_margin_thb = margin_opt
-                .map(|s| {
-                    signed_money(&s)
-                        .map_err(|e| AppError::Internal(format!("realized_margin: {e}")))
-                })
+                .map(|s| parse_signed_stored_money(&s))
                 .transpose()?;
 
             lines.push(TransactionLine {
@@ -383,11 +372,9 @@ impl TransactionStore for PgTransactionStore {
         let p_method_str: String = p_row.try_get("method").map_err(AppError::Database)?;
         let p_method = parse_payment_method(&p_method_str)?;
         let p_amount_str: String = p_row.try_get("amount_thb").map_err(AppError::Database)?;
-        let p_amount = Money::parse(&p_amount_str)
-            .map_err(|e| AppError::Internal(format!("payment amount: {e}")))?;
+        let p_amount = parse_stored_money(&p_amount_str)?;
         let p_fee_str: String = p_row.try_get("bank_fee_thb").map_err(AppError::Database)?;
-        let p_fee =
-            Money::parse(&p_fee_str).map_err(|e| AppError::Internal(format!("bank fee: {e}")))?;
+        let p_fee = parse_stored_money(&p_fee_str)?;
 
         let payment = TransactionPayment {
             id: p_row.try_get("id").map_err(AppError::Database)?,

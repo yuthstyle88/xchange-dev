@@ -30,6 +30,8 @@ const TELLER: &str = "FR1";
 /// #125 a DEMO BUY of USD 100 at 1.
 const LIVE_BUY: usize = 120;
 const DEMO_BUY: usize = 125;
+/// A save at a rate other than the published one (decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): DEMO too).
+const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ";
 /// A booking of #120's day, open until after its save.
 const OPEN_UNTIL: &str = "2026-10-06T07:30:00.000Z";
 /// The phone typed on a booking, and a verified member's phone: never the same, so the test
@@ -251,7 +253,16 @@ async fn a_demo_save_writes_no_feed_row() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, DEMO_BUY - 1).await;
     let before = feed_rows(&replay).await;
-    let document = saved_ref(&save(&replay, &payload_of(&replay, DEMO_BUY)).await, "#125");
+    // Re-expected for TX-6 by the test-writer, decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one,
+    // so #125's rate 1 is refused; the save is sent at the published 32.2 and still writes no feed row.
+    let mut payload = payload_of(&replay, DEMO_BUY);
+    save(&replay, &payload).await.assert_refused(
+        400,
+        RATE_MISMATCH,
+        "#125 at rate 1 (decision A2)",
+    );
+    payload["rate"] = json!(32.2);
+    let document = saved_ref(&save(&replay, &payload).await, "#125");
     assert_eq!(
         feed_of(&replay, &document).await,
         None,

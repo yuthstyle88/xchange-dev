@@ -12,6 +12,7 @@ pub mod finance;
 pub mod idempotency;
 pub mod kiosk;
 pub mod loyalty;
+pub mod marketing;
 pub mod notify;
 pub mod rate_feed;
 pub mod settings;

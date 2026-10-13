@@ -51,7 +51,8 @@ const DOCUMENTS_NOT_READABLE: &str = "บทบาทนี้ไม่มีส
 const CASH: &str = "XC-20261006-000001";
 /// The exchange of #18: a transfer saved by a Front — with a payment proof.
 const TRANSFER: &str = "XC-20261006-000003";
-/// The exchange of #23: a DEMO save.
+/// The DEMO number v2 gave #23. Re-expected for TX-6 #674 by the test-writer (decision A2, owner
+/// 2026-10-11, design quote-transaction.md §4.6.1): #23 is now refused, so no save made it.
 const DEMO: &str = "TEST-XC-20261006-000001";
 
 /// The last step of the recorded day that writes something.
@@ -69,7 +70,12 @@ async fn the_recorded_day(fixture: &Fixture) -> Replay<'_> {
     }
     // the day as recorded: the saves answered the numbers the tests ask for
     assert_eq!(fixture.step(18).json()["documentRef"], json!(TRANSFER));
-    assert_eq!(fixture.step(23).json()["documentRef"], json!(DEMO));
+    // decision A2 (#674): #23, a DEMO SELL at 99 against the published 32.6, is refused RATE_MISMATCH
+    assert_eq!(fixture.step(23).status, Some(400));
+    assert_eq!(
+        fixture.step(23).json()["error"],
+        json!("เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ")
+    );
     replay
 }
 
@@ -321,8 +327,11 @@ async fn the_ref_is_compared_as_v2_compares_it() {
             "the key the page uses",
             json!({ "id": CASH, "receiptNo": CASH }),
         ),
-        // a DEMO save has no documents (v2 looks in the LIVE book only)
-        ("a DEMO exchange", json!({ "ref": DEMO })),
+        // a DEMO number has no documents (v2 looks in the LIVE book only; decision A2: no save made this one)
+        (
+            "a DEMO number no save made (decision A2)",
+            json!({ "ref": DEMO }),
+        ),
     ];
     for (what, payload) in not_found {
         let answer = documents(&replay, "FR1", payload).await;

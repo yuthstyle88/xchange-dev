@@ -315,6 +315,27 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
         .expect("the passport's key")
         .to_string();
 
+    // Re-expected for TX-6 by the test-writer, decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one, so
+    // with nothing published it is refused; MAIN then publishes the dollar at the rate the save names
+    // (1), and the drawerOrderId comparison below is unchanged.
+    room.app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "saveTransaction",
+                demo_save(&customer, &passport, "00000000-0000-4000-8000-0000000d0009"),
+            )
+            .cookie(teller),
+        )
+        .await
+        .assert_refused(
+            400,
+            "rateUnavailable: no published line",
+            "a DEMO save with nothing published (decision A2)",
+        );
+    snapshot_common::publish_rate_per_one(&room.desk.db.pool, "MAIN", "USD", "1", "1").await;
+
     // accepted: the same keys, the same mode, numbers one apart
     let plain = ok(
         &room.app,
