@@ -1,0 +1,58 @@
+// APP-11 customer history texts (C04, design customer-app.md §3, §4.5, §9.1).
+
+export const th = {
+  title: 'ประวัติรายการ',
+  loading: 'กำลังโหลด…',
+  empty: 'ไม่มีรายการ',
+  loadFailed: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
+  retry: 'ลองใหม่',
+  status_reversed: 'ยกเลิกรายการแล้ว',
+  status_completed: 'สำเร็จ',
+  date: 'วันที่',
+  branch: 'สาขา',
+  type: 'ประเภท',
+  buy: 'ซื้อ',
+  sell: 'ขาย',
+  amount: 'จำนวนเงิน',
+  rate: 'อัตราแลกเปลี่ยน',
+  settlement: 'ยอดชำระ',
+  receipt: 'ใบเสร็จ',
+};
+
+export const en = {
+  title: 'Transaction History',
+  loading: 'Loading…',
+  empty: 'No transactions',
+  loadFailed: 'Failed to load transactions',
+  retry: 'Retry',
+  status_reversed: 'Reversed',
+  status_completed: 'Completed',
+  date: 'Date',
+  branch: 'Branch',
+  type: 'Type',
+  buy: 'Buy',
+  sell: 'Sell',
+  amount: 'Amount',
+  rate: 'Rate',
+  settlement: 'Settlement',
+  receipt: 'Receipt',
+};
+
+export const zh = {
+  title: '交易记录',
+  loading: '正在加载…',
+  empty: '暂无交易记录',
+  loadFailed: '加载交易失败',
+  retry: '重试',
+  status_reversed: '已撤销',
+  status_completed: '已完成',
+  date: '日期',
+  branch: '分行',
+  type: '类型',
+  buy: '买入',
+  sell: '卖出',
+  amount: '金额',
+  rate: '汇率',
+  settlement: '结算金额',
+  receipt: '收据',
+};

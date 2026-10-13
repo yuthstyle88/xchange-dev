@@ -1,4 +1,5 @@
 //! HTTP route handlers.
+pub mod app_receipts;
 pub mod auth;
 pub mod bookings;
 pub mod client_address;
@@ -28,6 +29,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     health::configure(cfg);
     auth::configure(cfg, state);
     customer_register::configure(cfg);
+    app_receipts::configure(cfg, state);
     bookings::configure(cfg, state);
     customers::configure(cfg, state);
     device_agent::configure(cfg, state);

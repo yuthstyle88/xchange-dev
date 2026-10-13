@@ -20,7 +20,6 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role; // OR-7 bridge, removed by #1024
 use xc_exchange::application::booking::service::BookingService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -67,7 +66,6 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::transaction::TransactionDto;
-use crate::presentation::extractors::actor::legacy_actor;
 use crate::presentation::http::v3::command::{
     role_not_allowed_here,
     CommandAction, CommandEndpoint, out_of_scope, server_error,
@@ -186,14 +184,7 @@ fn payment_method(text: &str) -> Option<PaymentMethod> {
 
 /// The signed-in caller as the exchange workflows are told who acts.
 fn save_actor(who: &Actor) -> Result<SaveActor, V3Error> {
-    // OR-7 bridge, removed by #1024
-    let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
-    Ok(SaveActor {
-        id: legacy.id().to_owned(),
-        username: legacy.id().to_owned(),
-        employee_id: (legacy.role() != Role::Owner).then(|| legacy.id().to_owned()),
-        role: legacy.role(),
-    })
+    SaveActor::from_actor(who).ok_or_else(role_not_allowed_here)
 }
 
 fn transaction_id(id: &str) -> Result<TransactionId, V3Error> {

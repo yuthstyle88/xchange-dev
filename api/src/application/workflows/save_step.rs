@@ -31,6 +31,66 @@ pub struct SaveActor {
     pub role: Role,
 }
 
+impl SaveActor {
+    /// Builds a `SaveActor` from an `access::Actor` at `Utc::now()`.
+    pub fn from_actor(actor: &xc_auth::domain::access::Actor) -> Option<Self> {
+        Self::from_actor_at(actor, Utc::now())
+    }
+
+    /// Builds a `SaveActor` from an `access::Actor` valid at `now`.
+    pub fn from_actor_at(
+        actor: &xc_auth::domain::access::Actor,
+        now: DateTime<Utc>,
+    ) -> Option<Self> {
+        let valid_roles: Vec<&xc_auth::domain::access::ScopedRole> = actor
+            .roles
+            .iter()
+            .filter(|r| r.valid_from <= now && r.valid_to.is_none_or(|to| to > now))
+            .collect();
+
+        let has_org_exec = valid_roles
+            .iter()
+            .any(|r| r.role == xc_auth::domain::access::Role::Executive && r.branch.is_none());
+        let has_org_admin = valid_roles
+            .iter()
+            .any(|r| r.role == xc_auth::domain::access::Role::Admin && r.branch.is_none());
+
+        if has_org_exec && has_org_admin {
+            return Some(Self {
+                id: actor.user_id.clone(),
+                username: actor.user_id.clone(),
+                employee_id: None,
+                role: Role::Owner,
+            });
+        }
+
+        let priority = [
+            (xc_auth::domain::access::Role::Teller, Role::Front),
+            (xc_auth::domain::access::Role::BranchManager, Role::Manager),
+            (xc_auth::domain::access::Role::RateManager, Role::Rates),
+            (xc_auth::domain::access::Role::Finance, Role::Finance),
+            (xc_auth::domain::access::Role::Admin, Role::System),
+            (
+                xc_auth::domain::access::Role::VerificationReviewer,
+                Role::DocumentReview,
+            ),
+        ];
+
+        for (access_role, v2_role) in priority {
+            if valid_roles.iter().any(|r| r.role == access_role) {
+                return Some(Self {
+                    id: actor.user_id.clone(),
+                    username: actor.user_id.clone(),
+                    employee_id: Some(actor.user_id.clone()),
+                    role: v2_role,
+                });
+            }
+        }
+
+        None
+    }
+}
+
 /// What the screens send with a save that is not part of the exchange itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SaveExtras {
