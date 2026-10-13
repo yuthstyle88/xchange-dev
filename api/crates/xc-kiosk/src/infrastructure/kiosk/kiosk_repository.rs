@@ -43,14 +43,16 @@ const SELECT_QUEUE: &str =
 macro_rules! queue_queries {
     (@sql $pred:literal, $keyset:literal, $limit:literal) => {
         concat!(
-            "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
-             unit_size, published_rate_line_id::text AS published_rate_line_id, \
-             foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
-             started_at, completed_at \
-             FROM kiosk_requests WHERE branch_id = $1 AND ",
+            "SELECT r.id, r.status, r.created_at, r.staff, r.side, r.currency::text AS currency, r.rate, \
+             r.unit_size, r.published_rate_line_id::text AS published_rate_line_id, \
+             r.foreign_amount, r.thb, r.input_amount, r.payment_method, r.submission_id, r.document_ref, \
+             t.served_at AS started_at, t.completed_at \
+             FROM kiosk_requests r \
+             LEFT JOIN queue_tickets t ON t.branch_id = r.branch_id AND t.kiosk_request_id = r.id \
+             WHERE r.branch_id = $1 AND ",
             $pred,
             $keyset,
-            " ORDER BY created_at DESC, id DESC LIMIT ",
+            " ORDER BY r.created_at DESC, r.id DESC LIMIT ",
             $limit
         )
     };
@@ -60,7 +62,7 @@ macro_rules! queue_queries {
             const $first: &str = queue_queries!(@sql $pred, "", "$2");
             const $before: &str = queue_queries!(
                 @sql $pred,
-                " AND (created_at, id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2)",
+                " AND (r.created_at, r.id) < (SELECT created_at, id FROM kiosk_requests WHERE branch_id = $1 AND id = $2)",
                 "$3"
             );
         )*
@@ -72,25 +74,25 @@ queue_queries!(
         SELECT_QUEUE_PAGE_ALL,
         SELECT_QUEUE_FIRST_ALL,
         SELECT_QUEUE_BEFORE_ALL,
-        "status <> 'QUOTED'"
+        "r.status <> 'QUOTED'"
     ),
     (
         SELECT_QUEUE_PAGE_WAITING,
         SELECT_QUEUE_FIRST_WAITING,
         SELECT_QUEUE_BEFORE_WAITING,
-        "status = 'WAITING'"
+        "r.status = 'WAITING'"
     ),
     (
         SELECT_QUEUE_PAGE_WORKING,
         SELECT_QUEUE_FIRST_WORKING,
         SELECT_QUEUE_BEFORE_WORKING,
-        "status IN ('ACCEPTED', 'ID_CHECKED')"
+        "r.status IN ('ACCEPTED', 'ID_CHECKED')"
     ),
     (
         SELECT_QUEUE_PAGE_COMPLETED,
         SELECT_QUEUE_FIRST_COMPLETED,
         SELECT_QUEUE_BEFORE_COMPLETED,
-        "status = 'COMPLETED'"
+        "r.status = 'COMPLETED'"
     ),
 );
 
@@ -108,10 +110,10 @@ pub fn queue_statuses(filter: QueueFilter) -> &'static [&'static str] {
 /// The literal SQL status predicate for each queue filter.
 pub fn queue_predicate(filter: QueueFilter) -> &'static str {
     match filter {
-        QueueFilter::All => "status <> 'QUOTED'",
-        QueueFilter::Waiting => "status = 'WAITING'",
-        QueueFilter::Working => "status IN ('ACCEPTED', 'ID_CHECKED')",
-        QueueFilter::Completed => "status = 'COMPLETED'",
+        QueueFilter::All => "r.status <> 'QUOTED'",
+        QueueFilter::Waiting => "r.status = 'WAITING'",
+        QueueFilter::Working => "r.status IN ('ACCEPTED', 'ID_CHECKED')",
+        QueueFilter::Completed => "r.status = 'COMPLETED'",
     }
 }
 
@@ -543,9 +545,10 @@ impl KioskRepository for PgKioskRepository {
         }
 
         let rows = sqlx::query_as::<_, WorkingRow>(
-            "SELECT id, staff, started_at, status FROM kiosk_requests \
-             WHERE branch_id = $1 AND status IN ('ACCEPTED', 'ID_CHECKED') \
-             ORDER BY started_at ASC NULLS LAST, id ASC LIMIT $2",
+            "SELECT r.id, r.staff, t.served_at AS started_at, r.status FROM kiosk_requests r \
+             LEFT JOIN queue_tickets t ON t.branch_id = r.branch_id AND t.kiosk_request_id = r.id \
+             WHERE r.branch_id = $1 AND r.status IN ('ACCEPTED', 'ID_CHECKED') \
+             ORDER BY t.served_at ASC NULLS LAST, r.id ASC LIMIT $2",
         )
         .bind(branch.as_str())
         .bind(limit)
@@ -566,47 +569,33 @@ impl KioskRepository for PgKioskRepository {
 
     async fn mark_started_in(
         &self,
-        tx: Tx<'_, '_>,
-        branch: &BranchId,
-        id: &str,
-        at: DateTime<Utc>,
+        _tx: Tx<'_, '_>,
+        _branch: &BranchId,
+        _id: &str,
+        _at: DateTime<Utc>,
     ) -> AppResult<()> {
-        sqlx::query("UPDATE kiosk_requests SET started_at = $3 WHERE branch_id = $1 AND id = $2")
-            .bind(branch.as_str())
-            .bind(id)
-            .bind(at)
-            .execute(&mut **tx)
-            .await?;
         Ok(())
     }
 
     async fn mark_completed_in(
         &self,
-        tx: Tx<'_, '_>,
-        branch: &BranchId,
-        id: &str,
-        at: DateTime<Utc>,
+        _tx: Tx<'_, '_>,
+        _branch: &BranchId,
+        _id: &str,
+        _at: DateTime<Utc>,
     ) -> AppResult<()> {
-        sqlx::query(
-            "UPDATE kiosk_requests SET completed_at = COALESCE(completed_at, $3) WHERE branch_id = $1 AND id = $2",
-        )
-        .bind(branch.as_str())
-        .bind(id)
-        .bind(at)
-        .execute(&mut **tx)
-        .await?;
         Ok(())
     }
 
     async fn times_in(&self, tx: Tx<'_, '_>, branch: &BranchId, id: &str) -> AppResult<WorkTimes> {
         #[derive(sqlx::FromRow)]
         struct TimesRow {
-            started_at: Option<DateTime<Utc>>,
+            served_at: Option<DateTime<Utc>>,
             completed_at: Option<DateTime<Utc>>,
         }
 
         let row = sqlx::query_as::<_, TimesRow>(
-            "SELECT started_at, completed_at FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+            "SELECT served_at, completed_at FROM queue_tickets WHERE branch_id = $1 AND kiosk_request_id = $2",
         )
         .bind(branch.as_str())
         .bind(id)
@@ -614,7 +603,7 @@ impl KioskRepository for PgKioskRepository {
         .await?;
         match row {
             Some(r) => Ok(WorkTimes {
-                started_at: r.started_at.map(time_from),
+                started_at: r.served_at.map(time_from),
                 completed_at: r.completed_at.map(time_from),
             }),
             None => Ok(WorkTimes::default()),
@@ -800,14 +789,14 @@ mod tests {
                 .iter()
                 .copied()
                 .filter(|&status| {
-                    if pred == "status <> 'QUOTED'" {
+                    if pred == "r.status <> 'QUOTED'" {
                         status != "QUOTED"
                     } else if let Some(exact) = pred
-                        .strip_prefix("status = '")
+                        .strip_prefix("r.status = '")
                         .and_then(|s| s.strip_suffix('\''))
                     {
                         status == exact
-                    } else if pred.starts_with("status IN (") {
+                    } else if pred.starts_with("r.status IN (") {
                         pred.contains(&format!("'{status}'"))
                     } else {
                         panic!("unrecognized predicate format: {pred}");

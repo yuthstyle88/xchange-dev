@@ -311,18 +311,31 @@ async fn a_completed_request_shows_its_times_and_names_its_holder() {
     ] {
         sqlx::query(
             "UPDATE kiosk_requests SET status = 'COMPLETED', staff = $2, \
-             submission_id = $3, document_ref = $4, \
-             started_at = $5::timestamptz, completed_at = $6::timestamptz WHERE id = $1",
+             submission_id = $3, document_ref = $4 WHERE id = $1",
         )
         .bind(id)
         .bind(&fr1.id)
         .bind(format!("sub-{id}"))
         .bind(format!("XC-{id}"))
-        .bind(started)
-        .bind(completed)
         .execute(&counter.desk.db.pool)
         .await
         .expect("complete the request by hand");
+
+        if started.is_some() || completed.is_some() {
+            sqlx::query(
+                "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+                 VALUES (gen_random_uuid(), (SELECT organization_id FROM branches WHERE id = $1), $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets WHERE branch_id = $1), 'A001', 'COMPLETED', $2, NULL, now(), $3::timestamptz, $4::timestamptz, $5) \
+                 ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET served_at = EXCLUDED.served_at, completed_at = EXCLUDED.completed_at, status = EXCLUDED.status",
+            )
+            .bind(rpc_common::MAIN)
+            .bind(id)
+            .bind(started)
+            .bind(completed)
+            .bind(format!("key-{id}"))
+            .execute(&counter.desk.db.pool)
+            .await
+            .expect("put queue ticket for request");
+        }
     }
 
     let list = counter

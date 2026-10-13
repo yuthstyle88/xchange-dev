@@ -5,10 +5,11 @@ use std::sync::{Arc, OnceLock};
 
 use actix_web::cookie::Cookie;
 use actix_web::http::{Method, StatusCode};
-use actix_web::{FromRequest, HttpRequest, HttpResponse, ResponseError, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use pos_infra::transactions::Transactor;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use xc_app::domain::app_session::AppSessionId;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
@@ -155,11 +156,70 @@ fn app_session_guard(req: &HttpRequest) -> &AppSessionGuard {
     }
 }
 
+fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
+    let mut k_pad = [0u8; 64];
+    if key.len() > 64 {
+        let hash = Sha256::digest(key);
+        k_pad[..32].copy_from_slice(&hash);
+    } else {
+        k_pad[..key.len()].copy_from_slice(key);
+    }
+
+    let mut k_ipad = [0u8; 64];
+    let mut k_opad = [0u8; 64];
+    for i in 0..64 {
+        k_ipad[i] = k_pad[i] ^ 0x36;
+        k_opad[i] = k_pad[i] ^ 0x5c;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(k_ipad);
+    for part in parts {
+        inner.update(part);
+    }
+    let inner_hash = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(k_opad);
+    outer.update(inner_hash);
+    let result = outer.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&result);
+    out
+}
+
+fn current_pii_keys() -> Result<Arc<xc_kernel::pii::PiiKeys>, V3Error> {
+    xc_customer::get_pii_keys().map_err(|_| server_error())
+}
+
+fn derive_session_id(
+    pii_keys: &xc_kernel::pii::PiiKeys,
+    org_id: &str,
+    command_name: &str,
+    idempotency_key: &str,
+) -> AppSessionId {
+    let subkey = xc_kernel::pii::derive_subkey(pii_keys, b"xc-app-session-v1");
+    let mac = hmac_sha256(
+        &subkey,
+        &[
+            org_id.as_bytes(),
+            b"\0",
+            command_name.as_bytes(),
+            b"\0",
+            idempotency_key.as_bytes(),
+        ],
+    );
+    AppSessionId::from_bytes(mac)
+}
+
 /// [`AppSessionUse::IssueAndLimit`] for a caller who is not a signed-in customer: the request's
-/// session, or a new one, admitted by the guard. Answers the `Set-Cookie` of a new session.
+/// session, or a derived one (#1565), admitted by the guard. Answers the `Set-Cookie` of an issued session.
 async fn issue_and_limit(
     req: &HttpRequest,
     caller: &mut Caller,
+    org_id: &str,
+    command_name: &str,
+    raw_key: &str,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<Cookie<'static>>, V3Error> {
     if caller
@@ -169,9 +229,9 @@ async fn issue_and_limit(
     {
         return Ok(None);
     }
-    let cookie = AppSessionCookie::extract(req)
-        .await
-        .map_err(|_| server_error())?;
+    let pii = current_pii_keys()?;
+    let derived_id = derive_session_id(&pii, org_id, command_name, raw_key);
+    let cookie = AppSessionCookie::for_command(req, derived_id);
     app_session_guard(req).admit_draft_write(&cookie.session().hash, now)?;
     caller.app_session = Some(cookie.session().clone());
     Ok(cookie.issued_cookie())
@@ -235,7 +295,7 @@ async fn handle_command<C: CommandAction>(
             .error_response();
         }
     };
-    let idem_key = IdempotencyKey::new(raw_key);
+    let idem_key = IdempotencyKey::new(raw_key.clone());
 
     // Step 4: Body parsing and path parameters
     const MAX_BODY: usize = 65_536;
@@ -400,13 +460,15 @@ async fn handle_command<C: CommandAction>(
         }
     }
 
-    // Step 6.9: The app session, for a command that issues and limits it (#994 option A)
+    // Step 6.9: The app session, for a command that issues and limits it (#994 option A; #1565)
     let session_cookie = match C::APP_SESSION {
         AppSessionUse::ReadOnly => None,
-        AppSessionUse::IssueAndLimit => match issue_and_limit(&req, &mut caller, now).await {
-            Ok(cookie) => cookie,
-            Err(e) => return e.error_response(),
-        },
+        AppSessionUse::IssueAndLimit => {
+            match issue_and_limit(&req, &mut caller, &org_id, C::NAME, &raw_key, now).await {
+                Ok(cookie) => cookie,
+                Err(e) => return e.error_response(),
+            }
+        }
     };
 
     // Step 7: Request hash & idempotency claim

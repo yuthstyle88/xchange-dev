@@ -15,11 +15,13 @@
 
 mod kiosk_service_common;
 
+use chrono::{DateTime, Utc};
 use kiosk_service_common::{
     FakePorts, KioskStatus, KioskTime, MAIN, T0, TestDb, at, branch, bring, exact, front1, front2,
     link, owner,
 };
 use serde_json::{Value, json};
+use sqlx::PgPool;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 use xc_kiosk::domain::kiosk::value_objects::notifications::WorkingRequest;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
@@ -31,6 +33,30 @@ const FILTER_INVALID: &str = "ตัวกรองไม่ถูกต้อ�
 
 fn ms(n: i64) -> KioskTime {
     KioskTime::from_epoch_millis(T0 + n)
+}
+
+async fn seed_ticket(
+    pool: &PgPool,
+    branch: &str,
+    req_id: &str,
+    served_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+) {
+    sqlx::query(
+        "INSERT INTO queue_tickets (id, organization_id, branch_id, service_date, service_type, sequence, display_number, status, kiosk_request_id, counter_teller_id, issued_at, served_at, completed_at, idempotency_key) \
+         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, $1, current_date, 'WALK_IN', (SELECT COALESCE(MAX(sequence), 0) + 1 FROM queue_tickets), 'A001', 'SERVING', $2, NULL, now(), $3, $4, $5) \
+         ON CONFLICT (branch_id, kiosk_request_id) DO UPDATE SET \
+            served_at = COALESCE(EXCLUDED.served_at, queue_tickets.served_at), \
+            completed_at = COALESCE(EXCLUDED.completed_at, queue_tickets.completed_at)",
+    )
+    .bind(branch)
+    .bind(req_id)
+    .bind(served_at)
+    .bind(completed_at)
+    .bind(format!("ticket-{branch}-{req_id}"))
+    .execute(pool)
+    .await
+    .unwrap();
 }
 
 fn times(started: Option<i64>, completed: Option<i64>) -> WorkTimes {
@@ -166,6 +192,7 @@ async fn accept_answers_the_four_outcomes() {
         .await
         .expect("the claim");
     assert_eq!(claimed, AcceptOutcome::Claimed(times(Some(5000), None)));
+    seed_ticket(&db.pool, MAIN, "q1", Some(exact(5000)), None).await;
     let lines = db.count("test_audit").await;
 
     for (who, want) in [
@@ -262,6 +289,7 @@ async fn list_filters_and_orders_the_queue() {
         .accept(&main, &front1(), "q2", at(5000))
         .await
         .expect("q2 claimed");
+    seed_ticket(&db.pool, MAIN, "q2", Some(exact(5000)), None).await;
 
     let list = |filter: QueueFilter| {
         let service = service.clone();
@@ -341,17 +369,20 @@ async fn list_pages_by_fifty() {
 async fn working_row(db: &TestDb, id: &str, staff: &str, status: &str, started: Option<i64>) {
     sqlx::query(
         "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
-         rate, foreign_amount, thb, input_amount, payment_method, started_at) \
-         VALUES ('MAIN', $1, $2, $3, $4, 'BUY', 'USD', 32.1, 100, 3210, 100, 'Cash', $5)",
+         rate, foreign_amount, thb, input_amount, payment_method) \
+         VALUES ('MAIN', $1, $2, $3, $4, 'BUY', 'USD', 32.1, 100, 3210, 100, 'Cash')",
     )
     .bind(id)
     .bind(status)
     .bind(exact(0))
     .bind(staff)
-    .bind(started.map(exact))
     .execute(&db.pool)
     .await
     .unwrap_or_else(|e| panic!("{id}: {e}"));
+
+    if let Some(s) = started {
+        seed_ticket(&db.pool, "MAIN", id, Some(exact(s)), None).await;
+    }
 }
 
 /// `server.mjs:8015-8018`: every ACCEPTED / ID_CHECKED request is counted; up to ten are

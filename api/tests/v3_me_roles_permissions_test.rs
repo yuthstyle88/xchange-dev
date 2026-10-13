@@ -18,7 +18,6 @@
 //!     oracle rather than copy a scope rule.
 //! - The `me` version moves when a role row is granted or revoked (`identity_version` over `user_id` and the sorted
 //!   `role@branch` list).
-//! - `GET /api/v3/views/kiosk_notifications` → `data.employee` = `{id, roles}`, the same values `me` answers.
 //! - `GET /api/v3/views/admin_branches` → `data.branches` lists exactly the branches the caller may switch to
 //!   (SB-1's `SessionBranch::switchable`).
 //! - `PUT /api/branches/profile` (`branchSave`, #945) on another organisation's branch answers `outOfScope` (#945
@@ -534,32 +533,7 @@ async fn an_old_owner_cookie_still_reads_me_with_no_name() {
     desk.drop_schema().await;
 }
 
-// ── kiosk_notifications and admin_branches (§3.4, §3.6) ───────────────────
-
-/// §9: `kiosk_notifications`'s `employee` is `{id, roles}`, equal to what `me` answers for the same caller.
-#[actix_web::test]
-async fn kiosk_notifications_names_the_caller_as_me_does() {
-    let (desk, identity, app, reader) = setup().await;
-    bound_user(
-        &desk.pool,
-        SUB_A,
-        "ACTIVE",
-        "Nok",
-        &[("TELLER", Some("B1")), ("FINANCE", Some("B3"))],
-    )
-    .await;
-    let token = sign_in(&app, &identity, VALID_A).await;
-
-    let me = me(&reader, &token).await;
-    let notes = read(&reader, &token, "/api/v3/views/kiosk_notifications").await["data"].clone();
-    let employee = &notes["employee"];
-    let want: BTreeSet<String> = ["id", "roles"].into_iter().map(str::to_owned).collect();
-    assert_eq!(keys(employee), want, "{notes}");
-    assert_eq!(employee["id"], me["id"]);
-    assert_eq!(employee["roles"], me["roles"]);
-    drop(reader);
-    desk.drop_schema().await;
-}
+// ── admin_branches (§3.6) ───────────────────────────────────────────────
 
 /// §9: `admin_branches` lists the branches the caller may switch to, not one branch and not all.
 #[actix_web::test]

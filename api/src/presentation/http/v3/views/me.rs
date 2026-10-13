@@ -36,7 +36,7 @@ fn valid_at(row: &ScopedRole, now: DateTime<Utc>) -> bool {
 }
 
 /// `Me.roles` (#1030 §3.3): the actor's valid-now rows in the sign-in session route's shape, ordered by role name,
-/// then branch id. `kiosk_notifications` names its caller with the same rows.
+/// then branch id.
 pub(crate) fn me_roles(who: &Actor, now: DateTime<Utc>) -> Vec<MeRole> {
     let mut rows: Vec<MeRole> = who
         .roles

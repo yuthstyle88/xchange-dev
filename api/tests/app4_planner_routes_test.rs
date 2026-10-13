@@ -112,6 +112,8 @@ impl Room {
             .await
             .expect("apply api/migrations");
 
+        common::install_test_pii_keys();
+
         let room = Self {
             pool,
             schema,
