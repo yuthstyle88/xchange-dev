@@ -283,6 +283,22 @@ async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
             Arc::new(Telling::new("B", &seen)),
         ],
     );
+    // A3 (kiosk) (TX-6 #674, lane controller's ruling R2, design quote-transaction.md §4.6.1): the request the
+    // save names exists and carries the kiosk's own quote, which the save completes; a request with no quote is
+    // refused, and one nobody made asks for none. What the steps are told is unchanged.
+    checked_kiosk_request_with_quote(
+        &shop.pool,
+        MAIN,
+        "kiosk-9",
+        &me.id,
+        Side::Buy,
+        "USD",
+        "100",
+        "32.1",
+        "3210.00",
+        at(-1),
+    )
+    .await;
     let extras = SaveExtras {
         staff_draft_id: Some("draft-1".to_owned()),
         count_confirmed: true,
@@ -448,9 +464,31 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
         Vec::<String>::new(),
         "no step was asked about a save that was not well-formed"
     );
-    // … and before the customer, the shift, the rate and the stock
-    let mut wrong = form("refuse-0004-aaaaaaaaa", "CX-99999999", &passport);
-    wrong.rate = "1".to_owned();
+    // … after the quote's rate check (re-pinned for TX-6 by the test-writer, decision A3, design
+    // quote-transaction.md §4.6.1, #674; lane controller's ruling, Fact 3 option (i)) …
+    let mut wrong_rate = form("refuse-0004-aaaaaaaaa", &customer, &passport);
+    wrong_rate.rate = "1".to_owned();
+    let got = flow
+        .save_as(
+            &branch(MAIN),
+            wrong_rate,
+            &SaveExtras::default(),
+            &owner(),
+            at(0),
+        )
+        .await;
+    assert_eq!(
+        refusal(got),
+        RATE_MISMATCH,
+        "decision A3: the quote comes first"
+    );
+    assert_eq!(
+        told(&seen),
+        Vec::<String>::new(),
+        "no step was asked about a save at a rate the shop did not publish"
+    );
+    // … and before the customer, the shift and the stock
+    let mut wrong = form("refuse-0005-aaaaaaaaa", "CX-99999999", &passport);
     wrong.amount = "99999999".to_owned();
     let got = flow
         .save_as(
@@ -504,6 +542,9 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
     );
 
     // a save refused after the steps were asked undoes what they wrote, and runs no `after`
+    // (re-pinned for TX-6 by the test-writer, decision A3, design quote-transaction.md §4.6.1, #674;
+    // lane controller's ruling, Fact 3 option (i): a wrong rate is now refused at the quote, before
+    // any step, so the refusal after the steps is the stock's)
     let ok = workflow(&shop, vec![Arc::new(Telling::new("A", &seen))]);
     let mut wrong_rate = form("undo-0002-aaaaaaaaaaa", &customer, &passport);
     wrong_rate.rate = "32.2".to_owned();
@@ -516,7 +557,24 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
             at(0),
         )
         .await;
-    assert_eq!(refusal(got), RATE_MISMATCH);
+    assert_eq!(
+        refusal(got),
+        RATE_MISMATCH,
+        "decision A3: the quote comes first"
+    );
+    assert_eq!(told(&seen), Vec::<String>::new(), "no step was asked");
+    let mut too_much = form("undo-0003-aaaaaaaaaaa", &customer, &passport);
+    too_much.amount = "99999999".to_owned();
+    let got = ok
+        .save_as(
+            &branch(MAIN),
+            too_much,
+            &SaveExtras::default(),
+            &owner(),
+            at(0),
+        )
+        .await;
+    assert_eq!(refusal(got), NOT_ENOUGH_THB);
     let calls = told(&seen);
     assert_eq!(calls.len(), 1, "{calls:?}");
     assert!(calls[0].starts_with("before A "));

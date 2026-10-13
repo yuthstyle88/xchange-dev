@@ -47,6 +47,26 @@ async fn joined(shop: &Shop, number: &str) -> String {
     .unwrap_or_else(|e| panic!("{number} with exactly one line, payment and receipt: {e}"))
 }
 
+/// The id of the `quote_lines` row the save was copied from, found through the transaction's
+/// `quote_id` (ruling R9 on #674: the compat save keeps its quote-line link).
+async fn quote_line_of(shop: &Shop, number: &str) -> String {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT ql.id::text FROM quote_lines ql \
+         JOIN transactions t ON t.quote_id = ql.quote_id \
+         WHERE t.document_ref = $1",
+    )
+    .bind(number)
+    .fetch_all(&shop.pool)
+    .await
+    .expect("read the quote line");
+    assert_eq!(
+        ids.len(),
+        1,
+        "{number}: its quote has exactly one line: {ids:?}"
+    );
+    ids.into_iter().next().expect("one quote line")
+}
+
 #[tokio::test]
 async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide_rows_figures() {
     let shop = Shop::start().await;
@@ -83,6 +103,8 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
     ] {
         assert_eq!(shop.count(table).await, 2, "{table}: one per save");
     }
+    let buy_quote_line = quote_line_of(&shop, &buy.document_ref).await;
+    let sell_quote_line = quote_line_of(&shop, &sell.document_ref).await;
     let t = "true";
     assert_eq!(
         joined(&shop, &buy.document_ref).await,
@@ -99,7 +121,7 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
             t,
             "3210.00",
             "1",
-            "NULL",
+            &buy_quote_line,
             t,
             "Cash",
             "",
@@ -132,7 +154,7 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
             t,
             "8276.50",
             "1",
-            "NULL",
+            &sell_quote_line,
             t,
             "Bank Transfer",
             "TRX-1",

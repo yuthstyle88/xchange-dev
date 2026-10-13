@@ -128,6 +128,9 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .execute(&desk.db.pool)
     .await
     .expect("insert shift balances");
+    // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same opening in the
+    // ledger's drawer of shift-1.
+    snapshot_common::r1_fund_open_drawers(&desk.db.pool).await;
 
     sqlx::query(
         "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \

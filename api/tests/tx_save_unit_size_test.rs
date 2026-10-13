@@ -3,8 +3,9 @@
 //! 1. Scoping by branch_id: two organisations save on the same day (and thus share the same
 //!    XC-YYYYMMDD-000001 document reference per D-4), and each transaction row keeps its own
 //!    unit_size and published_rate_line_id (controller addendum issuecomment-6099329091).
-//! 2. Keep main's unit_size (1) for saves that no rate line vouches (e.g. DEMO / unvouched JPY),
-//!    and write the resolved unit_size (100) when vouched by published rates.
+//! 2. Write the resolved unit_size (100) when vouched by published rates. Re-expected for TX-6 #674 by
+//!    the test-writer (decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674)): the unvouched DEMO save this item kept at main's unit_size 1 no
+//!    longer exists; a DEMO save is quoted like a LIVE one and, with nothing published, is refused.
 
 mod save_common;
 
@@ -175,10 +176,20 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
             (code("USD"), money("10000")),
         ]),
     };
-    shop.shifts
+    let b2_shift = shop
+        .shifts
         .open(&branch("B2"), b2_shift_cmd, "owner", at(-60))
         .await
-        .expect("open shift in B2");
+        .expect("open shift in B2")
+        .id;
+    // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same
+    // opening in B2's ledger drawer.
+    fund_ledger_drawer(
+        &shop.pool,
+        &b2_shift,
+        &[("THB", "100000"), ("USD", "10000")],
+    )
+    .await;
 
     let customer_2 = shop.reserve("B2", person()).await;
     let passport_2 = shop.upload("B2", OWNER, "image/jpeg", JPEG).await;
@@ -272,13 +283,16 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
 }
 
 #[tokio::test]
-async fn unvouched_jpy_save_keeps_main_unit_size_one_while_vouched_records_resolved_unit_size() {
+async fn a_demo_jpy_save_with_nothing_published_is_refused_while_vouched_records_resolved_unit_size()
+ {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "1000000"), ("JPY", "1000000")])
         .await;
     let passport = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
 
-    // 1. DEMO (unvouched) save of JPY: rate is per-one (e.g. 0.2195)
+    // 1. Re-expected for TX-6 by the test-writer, decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one,
+    //    so a DEMO JPY save with no published JPY line is refused `rateUnavailable` and writes nothing
+    //    (v2 and today's save stored it unvouched, unit_size 1).
     let demo_person = ReserveCustomer {
         mode: "DEMO".to_owned(),
         ..person()
@@ -291,49 +305,19 @@ async fn unvouched_jpy_save_keeps_main_unit_size_one_while_vouched_records_resol
     demo_cmd.amount = "10000".to_owned();
     demo_cmd.rate = "0.2195".to_owned();
 
-    let demo_saved = shop
-        .save(MAIN, demo_cmd, at(0))
-        .await
-        .expect("demo JPY save");
-
-    let demo_row = sqlx::query(
-        "SELECT rate, unit_size, published_rate_line_id FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+    assert_eq!(
+        refusal(shop.save(MAIN, demo_cmd, at(0)).await),
+        "rateUnavailable: no published line",
+        "decision A2: a DEMO save with nothing published is refused"
+    );
+    let demo_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM transactions WHERE branch_id = $1 AND submission_id = 'demo-jpy-save-000001'",
     )
-    .bind(&demo_saved.document_ref)
     .bind(MAIN)
     .fetch_one(&shop.pool)
     .await
-    .expect("fetch demo row");
-
-    let demo_rate: Decimal = demo_row.get("rate");
-    let demo_unit_size: Decimal = demo_row.get("unit_size");
-    let demo_line_id: Option<Uuid> = demo_row.get("published_rate_line_id");
-
-    assert_eq!(
-        demo_rate,
-        Decimal::from_str_exact("0.2195").unwrap(),
-        "demo keeps per-1 rate"
-    );
-    assert_eq!(
-        demo_unit_size,
-        Decimal::ONE,
-        "unvouched JPY must keep main's unit_size 1, not currencies 100"
-    );
-    assert_eq!(demo_line_id, None, "unvouched has no published rate line");
-
-    // Also check child transaction_lines for demo
-    let demo_line_row = sqlx::query(
-        "SELECT unit_size, rate_snapshot FROM transaction_lines WHERE transaction_id = (SELECT id FROM transactions WHERE document_ref = $1 AND branch_id = $2)",
-    )
-    .bind(&demo_saved.document_ref)
-    .bind(MAIN)
-    .fetch_one(&shop.pool)
-    .await
-    .expect("fetch demo line row");
-    let demo_line_unit: Decimal = demo_line_row.get("unit_size");
-    let demo_line_rate: Decimal = demo_line_row.get("rate_snapshot");
-    assert_eq!(demo_line_unit, Decimal::ONE);
-    assert_eq!(demo_line_rate, Decimal::from_str_exact("0.2195").unwrap());
+    .expect("count demo rows");
+    assert_eq!(demo_rows, 0, "the refused DEMO save wrote no exchange");
 
     // 2. LIVE vouched save of JPY: published rate line vouches it, so rate is per-100 (21.95) and unit_size is 100
     shop.set_rate(MAIN, "JPY", "0.2195", "0.2295").await;

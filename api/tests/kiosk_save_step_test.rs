@@ -63,6 +63,8 @@ type Asked<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 struct Counter {
     lines: Mutex<Vec<(String, AuditLine)>>,
     audit_fails: AtomicBool,
+    /// A3 (kiosk): the shop's pool, for the quote the kiosk asks for (`quote_in`).
+    pool: std::sync::OnceLock<sqlx::PgPool>,
 }
 
 impl Counter {
@@ -155,6 +157,27 @@ impl KioskPorts for Counter {
     ) -> Asked<'a, bool> {
         Box::pin(async { Ok(true) })
     }
+
+    /// A3 (kiosk) (TX-6 #674, lane controller's ruling R2, design quote-transaction.md §4.6.1): the kiosk's quote,
+    /// through `QuoteService` with channel KIOSK as the real port asks for it (TX-7), so a request carries the
+    /// quote the save completes. The trait's default answered no quote.
+    fn quote_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: xc_kernel::money::CurrencyCode,
+        side: Side,
+        quantity: xc_kernel::money::ForeignAmount,
+        now: DateTime<Utc>,
+    ) -> Asked<'a, Option<String>> {
+        Box::pin(async move {
+            let pool = self
+                .pool
+                .get()
+                .expect("the scene gave the counter the shop's pool");
+            kiosk_quote_in(pool, tx, branch, currency, side, quantity, now).await
+        })
+    }
 }
 
 // ------------------------------------------------------------------ the scene
@@ -202,6 +225,10 @@ impl Scene {
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());
+        counter
+            .pool
+            .set(shop.pool.clone())
+            .expect("the counter is new");
         let kiosk = KioskService::new(branch_tx.clone(), counter.clone());
         let steps: Vec<Arc<dyn SaveStep>> = vec![Arc::new(KioskSaveStep::new(kiosk.clone()))];
         let flow = SaveTransactionWorkflow::new(branch_tx, shop.shifts.clone(), shop.files.clone())
@@ -391,6 +418,9 @@ async fn the_role_of_the_saver_plays_no_part() {
 async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     let s = Scene::start().await;
     s.shop.seed_branch(B2, "Branch two").await;
+    // A3 (kiosk) (TX-6 #674, lane controller's ruling R2): B2's kiosk quotes through the quote service too, which
+    // prices from B2's own publication.
+    s.shop.set_rate(B2, "USD", "32.1", "33").await;
     s.quoted(MAIN, "quoted").await;
     s.waiting(MAIN, "waiting").await;
     s.accepted(MAIN, "accepted", FRONT).await;
@@ -566,14 +596,15 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
     let front = staff(FRONT, Role::Front);
     let before = (s.shop.everything().await, s.requests().await);
 
-    // Amended for #757 (RE-4c, rates.md §4.9 R7, ruling of 2026-10-10): a save completing a
-    // kiosk request stores the request's line and is not re-checked against a newer
-    // publication; what the shop refuses is a rate that is not the request's (32.2 where the
-    // customer was quoted 32.1), `RATE_MISMATCH`, writing nothing.
-    let mut moved = s.form("shop-0001-aaaaaaaaaa");
-    moved.rate = "32.2".to_owned();
-    let got = s.save(moved, &with_kiosk("q1"), &front).await;
-    assert_eq!(refusal(got), RATE_MISMATCH);
+    // Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1; lane controller's
+    // rulings R2 (c) and of the republish/rate question, #674), replacing the amendment for #757 (RE-4c, rates.md
+    // §4.9 R7, ruling of 2026-10-10): a refusal of the shop's own after the kiosk's step (a customer who is not
+    // this passport's, `NOT_THIS_PASSPORT`) writes nothing, and the request stays ready. The rate case is
+    // `a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused`.
+    let mut stranger = s.form("shop-0001-aaaaaaaaaa");
+    stranger.customer_id = "CX-99999999".to_owned();
+    let got = s.save(stranger, &with_kiosk("q1"), &front).await;
+    assert_eq!(refusal(got), NOT_THIS_PASSPORT, "decision A3 (kiosk)");
     assert_eq!((s.shop.everything().await, s.requests().await), before);
     assert!(s.counter.completed().is_empty());
 
@@ -585,6 +616,89 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
         s.requests().await,
         ["MAIN/q1 COMPLETED|shop-0001-aaaaaaaaaa|XC-20261006-000001"]
     );
+    s.shop.finish().await;
+}
+
+/// A3 (kiosk) (design quote-transaction.md §4.6.1; lane controller's ruling on the kiosk rate, #674): a kiosk
+/// save is completed at the request's own quote, and a client rate that is not that quote's (32.2 where the
+/// customer was quoted 32.1) is refused `RATE_MISMATCH` after the kiosk's step. Nothing is written and the request
+/// stays ready; the same request at the quote's rate is then saved.
+#[tokio::test]
+async fn a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused() {
+    let s = Scene::start().await;
+    s.id_checked(MAIN, "q1", FRONT).await;
+    let front = staff(FRONT, Role::Front);
+    let before = (s.shop.everything().await, s.requests().await);
+
+    let mut moved = s.form("rate-0001-aaaaaaaaaa");
+    moved.rate = "32.2".to_owned();
+    let got = s.save(moved, &with_kiosk("q1"), &front).await;
+    assert_eq!(refusal(got), RATE_MISMATCH, "decision A3 (kiosk)");
+    assert_eq!((s.shop.everything().await, s.requests().await), before);
+    assert!(s.counter.completed().is_empty());
+
+    s.save(s.form("rate-0001-aaaaaaaaaa"), &with_kiosk("q1"), &front)
+        .await
+        .expect("the request is still ready");
+    assert_eq!(
+        s.requests().await,
+        ["MAIN/q1 COMPLETED|rate-0001-aaaaaaaaaa|XC-20261006-000001"]
+    );
+    s.shop.finish().await;
+}
+
+/// A3 (kiosk) (design quote-transaction.md §4.6.1: "A request with no `quote_id` is refused `RATE_MISMATCH`";
+/// lane controller's ruling R2 (a), #674): a checked request that carries no quote (one made before TX-7, or
+/// whose quote the port did not return), saved at its own per-1 rate, is refused `RATE_MISMATCH`. No quote is
+/// made for it, its `quote_id` stays NULL, it stays `ID_CHECKED`, and nothing else is written.
+#[tokio::test]
+async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
+    let s = Scene::start().await;
+    sqlx::query(
+        "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
+         rate, foreign_amount, thb, input_amount, payment_method, client_ip, unit_size) \
+         VALUES ($1, 'no-quote', 'ID_CHECKED', now(), $2, 'BUY', 'USD', 32.1, 100, 3210.00, 100, \
+         'Cash', '203.0.113.7', 1)",
+    )
+    .bind(MAIN)
+    .bind(FRONT)
+    .execute(&s.shop.pool)
+    .await
+    .expect("insert a checked request with no quote");
+    let front = staff(FRONT, Role::Front);
+    let quotes = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM quotes")
+            .fetch_one(&s.shop.pool)
+            .await
+            .expect("count the quotes")
+    };
+    let quote_count = quotes().await;
+    let before = (s.shop.everything().await, s.requests().await);
+
+    // the form is the request's: 100 USD bought in cash at 32.1 per 1
+    let got = s
+        .save(
+            s.form("noq-0001-aaaaaaaaaaa"),
+            &with_kiosk("no-quote"),
+            &front,
+        )
+        .await;
+    assert_eq!(refusal(got), RATE_MISMATCH, "decision A3 (kiosk)");
+    assert_eq!(
+        quotes().await,
+        quote_count,
+        "no quote is made for the request"
+    );
+    let (status, quote_id): (String, Option<String>) = sqlx::query_as(
+        "SELECT status, quote_id::text FROM kiosk_requests WHERE branch_id = $1 AND id = 'no-quote'",
+    )
+    .bind(MAIN)
+    .fetch_one(&s.shop.pool)
+    .await
+    .expect("read the request");
+    assert_eq!((status.as_str(), quote_id), ("ID_CHECKED", None));
+    assert_eq!((s.shop.everything().await, s.requests().await), before);
+    assert!(s.counter.completed().is_empty());
     s.shop.finish().await;
 }
 

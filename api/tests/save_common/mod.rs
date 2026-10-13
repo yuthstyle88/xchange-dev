@@ -326,11 +326,17 @@ impl Shop {
             request_id: unique("open-shift").replace('_', "-"),
             opening: Balances::of(&pairs),
         };
-        self.shifts
+        let shift = self
+            .shifts
             .open(&branch(branch_id), cmd, "test", at(-60))
             .await
             .expect("open a shift")
-            .id
+            .id;
+        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same
+        // opening in the ledger's drawer of this shift, so a compat save's posting meets the cash the
+        // v2 shift holds. Equal to the v2 opening, so the v2 check still answers first.
+        fund_ledger_drawer(&self.pool, &shift, opening).await;
+        shift
     }
 
     /// Close the open shift without going through the count (the tables are ticket T7's).
@@ -841,4 +847,165 @@ pub fn fold_aliased_customers(
             c
         })
         .collect()
+}
+
+static LEDGER_FUND: AtomicU64 = AtomicU64::new(0);
+
+/// R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): moves each
+/// `(currency, amount)` of a v2 shift's opening from the BANK into that shift's ledger drawer
+/// (`OPENING`), as `tx5_common`'s `lg4_fund` does for the route harness.
+pub async fn fund_ledger_drawer(pool: &PgPool, shift: &str, opening: &[(&str, &str)]) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    for (currency, amount) in opening {
+        let quantity: rust_decimal::Decimal = amount.parse().expect("an amount");
+        if quantity.is_zero() {
+            continue;
+        }
+        let n = LEDGER_FUND.fetch_add(1, Ordering::Relaxed);
+        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[PostingRequest {
+                    from: CashPlace::Bank,
+                    to: CashPlace::Drawer(shift.to_owned()),
+                    currency: CurrencyCode::parse(currency).expect("a currency"),
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(quantity),
+                    source: SourceRef {
+                        source_type: SourceType::Opening,
+                        source_id: format!("r1-fund:{shift}:{currency}:{n}"),
+                        source_key: "fund".to_string(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("fund the drawer through the ledger");
+    }
+    tx.commit().await.expect("commit");
+}
+
+/// A3 (kiosk) (TX-6 #674, lane controller's ruling R2, design quote-transaction.md §4.6.1): a kiosk request is
+/// saved at its own quote, which the kiosk asks for through `QuoteService` with channel KIOSK when the customer
+/// quotes (TX-7, `xc-kiosk` `customer.rs:118-135`). This is that call as `PgKioskPorts::quote_in` makes it, for a
+/// test's `KioskPorts` fake: one line, no fee, the kiosk as the actor.
+pub async fn kiosk_quote_in(
+    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch_id: &BranchId,
+    currency: CurrencyCode,
+    side: xc_kernel::money::Side,
+    quantity: xc_kernel::money::ForeignAmount,
+    now: DateTime<Utc>,
+) -> AppResult<Option<String>> {
+    use xchange::application::workflows::exchange::quote::{
+        QuoteRequest, QuoteRequestLine, QuoteService,
+    };
+    let request = QuoteRequest {
+        branch_id: branch_id.clone(),
+        customer_id: None,
+        channel: xc_exchange::domain::quote::quote::QuoteChannel::Kiosk,
+        lines: vec![QuoteRequestLine {
+            currency,
+            shop_side: side,
+            quantity,
+            fee_thb: None,
+            denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
+        }],
+    };
+    let kiosk = xchange::application::workflows::save_step::SaveActor {
+        id: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
+        username: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
+        employee_id: None,
+        role: xc_auth::domain::policy::value_objects::role::Role::System,
+    };
+    let quote = QuoteService::new(pool.clone())
+        .quote_in(tx, request, &kiosk, now)
+        .await?;
+    Ok(Some(quote.id.to_string()))
+}
+
+/// A3 (kiosk): quotes kiosk request `id` of `branch_id` through [`kiosk_quote_in`] and writes the quote's id on
+/// the request, as the kiosk does (`KioskRepository::set_quote_id_in`). The request's own rate, line and unit are
+/// left as they are.
+pub async fn quote_kiosk_request(
+    pool: &PgPool,
+    branch_id: &str,
+    id: &str,
+    currency: &str,
+    side: xc_kernel::money::Side,
+    quantity: &str,
+    now: DateTime<Utc>,
+) -> String {
+    let mut tx = pool.begin().await.expect("begin");
+    let quote_id = kiosk_quote_in(
+        pool,
+        &mut tx,
+        &branch(branch_id),
+        code(currency),
+        side,
+        xc_kernel::money::ForeignAmount::from_decimal(quantity.parse().expect("a quantity")),
+        now,
+    )
+    .await
+    .expect("the kiosk's quote")
+    .expect("a quote id");
+    let done = sqlx::query(
+        "UPDATE kiosk_requests SET quote_id = $1::uuid WHERE branch_id = $2 AND id = $3",
+    )
+    .bind(&quote_id)
+    .bind(branch_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .expect("write the request's quote");
+    assert_eq!(
+        done.rows_affected(),
+        1,
+        "kiosk request {branch_id}/{id} exists"
+    );
+    tx.commit().await.expect("commit");
+    quote_id
+}
+
+/// A3 (kiosk): a kiosk request `id` that `staff` accepted and whose passport they checked, for a cash `side` of
+/// `amount` `currency` at `rate` per 1 (unit 1) for `thb`, carrying the kiosk's own quote from
+/// [`quote_kiosk_request`] — a request as the kiosk leaves it since TX-7.
+#[allow(clippy::too_many_arguments)]
+pub async fn checked_kiosk_request_with_quote(
+    pool: &PgPool,
+    branch_id: &str,
+    id: &str,
+    staff: &str,
+    side: xc_kernel::money::Side,
+    currency: &str,
+    amount: &str,
+    rate: &str,
+    thb: &str,
+    now: DateTime<Utc>,
+) -> String {
+    sqlx::query(
+        "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
+         rate, foreign_amount, thb, input_amount, payment_method, client_ip, unit_size) \
+         VALUES ($1, $2, 'ID_CHECKED', now(), $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, \
+         $7::numeric, 'Cash', '203.0.113.7', 1)",
+    )
+    .bind(branch_id)
+    .bind(id)
+    .bind(staff)
+    .bind(match side {
+        xc_kernel::money::Side::Buy => "BUY",
+        xc_kernel::money::Side::Sell => "SELL",
+    })
+    .bind(currency)
+    .bind(rate)
+    .bind(amount)
+    .bind(thb)
+    .execute(pool)
+    .await
+    .expect("insert a checked kiosk request");
+    quote_kiosk_request(pool, branch_id, id, currency, side, amount, now).await
 }

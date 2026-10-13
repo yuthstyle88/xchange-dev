@@ -987,7 +987,7 @@
     },
     {
      "op": "save",
-     "note": "demo with nothing prepared",
+     "note": "demo with nothing prepared — changed by decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one; with no published JPY line it is refused rateUnavailable and writes nothing. v2 saved it (TEST-XC-20261006-000001)",
      "at": "2026-10-06T05:00:00.000Z",
      "branch": "MAIN",
      "form": {
@@ -1018,22 +1018,12 @@
      },
      "passport": "P1",
      "slip": null,
-     "v2Error": null,
-     "saved": {
-      "mode": "DEMO",
-      "documentRef": "TEST-XC-20261006-000001",
-      "passport": "P1",
-      "slip": null,
-      "receiptUrl": "/files/receipt-4488f208043635935f3c8895cd97a9ece825ff1307b884dfb8968be4c997a761",
-      "receiptSha256": "4488f208043635935f3c8895cd97a9ece825ff1307b884dfb8968be4c997a761",
-      "wroteNothing": false
-     },
+     "v2Error": "rateUnavailable: no published line",
+     "saved": null,
      "after": {
       "balances": null,
       "live": [],
-      "demo": [
-       "TEST-XC-20261006-000001"
-      ],
+      "demo": [],
       "shiftOf": {},
       "customers": [
        {
@@ -1041,13 +1031,11 @@
         "name": "Somchai Jaidee",
         "birthDate": null,
         "passportExpiry": null,
-        "lastDocumentRef": "TEST-XC-20261006-000001",
+        "lastDocumentRef": null,
         "mode": "DEMO"
        }
       ],
-      "counters": {
-       "document-DEMO-20261006": "1"
-      }
+      "counters": {}
      }
     },
     {
@@ -1067,7 +1055,7 @@
     },
     {
      "op": "save",
-     "note": "demo against an open shift: its balances stay",
+     "note": "demo against an open shift: its balances stay — changed by decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a SELL at 99 against the published 33 is refused RATE_MISMATCH and writes nothing; the shift's balances stay. v2 saved it (TEST-XC-20261006-000002)",
      "at": "2026-10-06T05:00:00.000Z",
      "branch": "MAIN",
      "form": {
@@ -1098,26 +1086,15 @@
      },
      "passport": "P1",
      "slip": null,
-     "v2Error": null,
-     "saved": {
-      "mode": "DEMO",
-      "documentRef": "TEST-XC-20261006-000002",
-      "passport": "P1",
-      "slip": null,
-      "receiptUrl": "/files/receipt-b450fdca7cb4d1b63faa5d91b46994d603afd6e6af6eafa6bd50d59e78bf2502",
-      "receiptSha256": "b450fdca7cb4d1b63faa5d91b46994d603afd6e6af6eafa6bd50d59e78bf2502",
-      "wroteNothing": false
-     },
+     "v2Error": "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ",
+     "saved": null,
      "after": {
       "balances": {
        "THB": "100.00",
        "USD": "1.00"
       },
       "live": [],
-      "demo": [
-       "TEST-XC-20261006-000001",
-       "TEST-XC-20261006-000002"
-      ],
+      "demo": [],
       "shiftOf": {},
       "customers": [
        {
@@ -1125,13 +1102,11 @@
         "name": "Somchai Jaidee",
         "birthDate": null,
         "passportExpiry": null,
-        "lastDocumentRef": "TEST-XC-20261006-000002",
+        "lastDocumentRef": null,
         "mode": "DEMO"
        }
       ],
-      "counters": {
-       "document-DEMO-20261006": "2"
-      }
+      "counters": {}
      }
     }
    ]
@@ -6407,7 +6382,7 @@
     },
     {
      "op": "save",
-     "note": "a good form, no such customer",
+     "note": "a good form, no such customer, nothing published — changed by decision A3 (lane controller's ruling, Fact 3 option (i); design quote-transaction.md §4.6.1, #674): the save is quoted first, so with no USD line it is refused RATE_MISMATCH before the customer is looked up. v2 answered the customer refusal",
      "at": "2026-10-06T17:00:01.000Z",
      "branch": "MAIN",
      "form": {
@@ -6438,7 +6413,7 @@
      },
      "passport": "P1",
      "slip": null,
-     "v2Error": "รหัสลูกค้าไม่ตรงกับพาสปอร์ต กรุณายืนยันข้อมูลลูกค้าใหม่",
+     "v2Error": "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ",
      "after": {
       "balances": null,
       "live": [],

@@ -31,6 +31,8 @@ const FILE: &str = "rpc/engine_actions.json";
 /// `ExchangeTransact` is TELLER's only (OR-4b #767, design §4.2 C2), and B1 makes FRONT a TELLER.
 const TELLER: &str = "FR1";
 const UNAVAILABLE: &str = "Payment method unavailable. Please contact staff.";
+/// A save at a rate other than the published one (decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): DEMO too).
+const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ";
 
 /// `engine_actions.json`: #119 a LIVE BUY by cash refused by the engine (its notes are too
 /// long), #120 a LIVE BUY by cash, #123 a LIVE SELL by PromptPay with a slip (the second
@@ -221,8 +223,16 @@ async fn a_demo_save_is_not_checked() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, DEMO_BUY_CASH - 1).await;
     owner_switches(&replay, 0, with("Cash", json!({ "buy": false }))).await;
-    let payload = payload_of(&replay, DEMO_BUY_CASH);
+    let mut payload = payload_of(&replay, DEMO_BUY_CASH);
     assert_eq!(payload["mode"], json!("DEMO"));
+    // Re-expected for TX-6 by the test-writer, decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): a DEMO save is quoted like a LIVE one,
+    // so #125's rate 1 is refused; the save is sent at the published 32.2 and is still not checked.
+    save(&replay, TELLER, RPC, &payload).await.assert_refused(
+        400,
+        RATE_MISMATCH,
+        "#125 at rate 1 (decision A2)",
+    );
+    payload["rate"] = json!(32.2);
     let saved = save(&replay, TELLER, RPC, &payload).await;
     assert_eq!(saved.status, 200, "{:.300}", saved.text);
     assert_eq!(saved.json()["mode"], json!("DEMO"));

@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
-use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
@@ -29,12 +28,9 @@ use xc_exchange::domain::transaction::transaction::{
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
-use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
-use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use super::create::check_valid_in;
 use crate::application::workflows::save_step::{
@@ -64,7 +60,6 @@ pub struct CompletedExchange {
 pub struct CompleteExchange {
     store: PgTransactionStore,
     quotes: PgQuoteRepository,
-    shifts: ShiftService,
     saved: PgTransactionRepository,
     files: FileService,
     postings: Arc<dyn CashPostings>,
@@ -117,18 +112,20 @@ fn legs(t: &ExchangeTransaction, shift: &str) -> Vec<PostingRequest> {
             line: Some(line.id),
             reverses: None,
         });
-        reqs.push(PostingRequest {
-            from: thb_from,
-            to: thb_to,
-            currency: CurrencyCode::THB,
-            quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
-                line.settle_thb.minor_i128(),
-                2,
-            )),
-            source: source.clone(),
-            line: None,
-            reverses: None,
-        });
+        if line.settle_thb.minor() > 0 {
+            reqs.push(PostingRequest {
+                from: thb_from,
+                to: thb_to,
+                currency: CurrencyCode::THB,
+                quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
+                    line.settle_thb.minor_i128(),
+                    2,
+                )),
+                source: source.clone(),
+                line: None,
+                reverses: None,
+            });
+        }
     }
     reqs
 }
@@ -177,10 +174,6 @@ impl CompleteExchange {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
-            shifts: ShiftService::new(
-                Arc::new(PgShiftRepository::new(pool.clone())),
-                BranchTx::new(Transactor::new(pool.clone())),
-            ),
             saved: PgTransactionRepository::new(pool.clone()),
             files,
             postings,
@@ -207,13 +200,25 @@ impl CompleteExchange {
             return stale(format!("a {} exchange is not completed", t.status.as_str()));
         }
 
-        // 2. LIVE: the exchange's shift is still the branch's open one; DEMO has none (§4.4 step 2)
+        // 2. LIVE: the exchange's shift is still OPEN; DEMO has none (§4.4 step 2, §4.6 A1)
         let shift = match t.mode {
             Mode::Live => {
-                let open = self.shifts.active_in(tx, &t.branch_id).await?;
-                match (open, t.shift_id.as_deref()) {
-                    (Some(open), Some(shift)) if open.id == shift => Some(open.id),
-                    _ => return Err(ShiftError::NoOpenShift.into()),
+                let Some(shift_id) = t.shift_id.as_deref() else {
+                    return Err(ShiftError::NoOpenShift.into());
+                };
+                let is_open: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM shifts WHERE branch_id = $1 AND id = $2 AND status = 'OPEN')",
+                )
+                .bind(t.branch_id.as_str())
+                .bind(shift_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(AppError::Database)?;
+
+                if is_open {
+                    Some(shift_id.to_string())
+                } else {
+                    return Err(ShiftError::NoOpenShift.into());
                 }
             }
             Mode::Demo => None,

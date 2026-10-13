@@ -88,7 +88,7 @@ use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepositor
 use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Rate};
+use xc_kernel::money::{CurrencyCode, Rate, Side};
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::publication::publish_service::PublishService;
@@ -104,6 +104,8 @@ use xchange::presentation::http::v3::commands::make_approval_service;
 
 const FEE_ABOVE_PRINCIPAL: &str = "ค่าบริการสูงกว่ายอดซื้อ";
 const TOO_MANY_DECIMALS: &str = "ทศนิยมเกินกำหนด";
+/// The booking step's refusal of a form that is not the booking's (`booking_save_step.rs`).
+const NOT_THE_BOOKING: &str = "ข้อมูลรายการไม่ตรงกับการจอง หรือยังไม่ยืนยันลูกค้า";
 
 /// A cash exchange of `amount` `currency` at the per-1 `rate` the v2 desk sends, LIVE, fee 0.
 fn exchange(
@@ -1143,12 +1145,14 @@ async fn checked_request(
     .expect("insert a checked kiosk request");
 }
 
-/// R7 (§9 RE-4c): a desk save that completes a kiosk request stores the request's line and
-/// rate. The customer was quoted version 1's JPY 23.1 per 100 at the kiosk; version 2 says 23.3
-/// since. The save, at the request's per-1 rate 0.231, is accepted, stores version 1's line,
-/// 23.1 per 100, and prices 10,000 JPY at 2310.00; the request is completed with it.
+/// Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1 A3 and D-5; lane
+/// controller's ruling on the republish, #674), replacing R7 (§9 RE-4c, ruling of 2026-10-10): a kiosk save uses
+/// the request's own quote, and a quote is valid only while its publication is the branch's current one. The
+/// customer was quoted version 1's JPY 23.1 per 100 at the kiosk (through the quote service, channel KIOSK, as
+/// TX-7 asks); version 2 says 23.3 since. The save at the request's per-1 rate 0.231 is refused `quoteExpired`,
+/// writes nothing, and the request stays `ID_CHECKED`.
 #[tokio::test]
-async fn a_kiosk_vouched_save_stores_the_requests_line() {
+async fn a_kiosk_save_after_a_republish_is_quote_expired() {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
     let customer = shop.reserve(MAIN, person()).await;
@@ -1161,6 +1165,16 @@ async fn a_kiosk_vouched_save_stores_the_requests_line() {
         "10000",
         (quoted.id.as_str(), "23.1", "100"),
         "2310.00",
+    )
+    .await;
+    quote_kiosk_request(
+        &shop.pool,
+        MAIN,
+        "q-re4c-1",
+        "JPY",
+        Side::Buy,
+        "10000",
+        at(30),
     )
     .await;
     publish(&shop.pool, MAIN, &[("JPY", "23.3", "23.7")]).await;
@@ -1177,7 +1191,8 @@ async fn a_kiosk_vouched_save_stores_the_requests_line() {
         kiosk_request_id: Some("q-re4c-1".to_owned()),
         ..SaveExtras::default()
     };
-    let saved = tokio::time::timeout(
+    let before = shop.everything().await;
+    let refused = tokio::time::timeout(
         MUST_FINISH,
         kiosk_flow(&shop).save_as(
             &branch(MAIN),
@@ -1196,23 +1211,17 @@ async fn a_kiosk_vouched_save_stores_the_requests_line() {
         ),
     )
     .await
-    .expect("a save finishes")
-    .expect("the save completing the request is accepted at the request's rate");
-
-    assert_eq!(
-        row(&shop, &saved.document_ref).await,
-        Row {
-            line_id: Some(quoted.id.clone()),
-            rate: d("23.1"),
-            unit_size: d("100"),
-            amount: d("10000"),
-            principal: d("2310.00"),
-            received: d("0.00"),
-            paid: d("2310.00"),
-        },
-        "the request's line and rate, 10000 × 23.1 ÷ 100"
+    .expect("a save finishes");
+    let sentence = refusal(refused);
+    assert!(
+        sentence.starts_with("quoteExpired"),
+        "decision A3 (kiosk) with D-5: {sentence}"
     );
-    assert_eq!(till(&shop, &["THB", "JPY"]).await, ["97690.00", "10000.00"]);
+    assert_eq!(
+        shop.everything().await,
+        before,
+        "the refused save wrote nothing"
+    );
     let (status, document): (String, Option<String>) = sqlx::query_as(
         "SELECT status, document_ref FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
     )
@@ -1221,10 +1230,7 @@ async fn a_kiosk_vouched_save_stores_the_requests_line() {
     .fetch_one(&shop.pool)
     .await
     .expect("read the request");
-    assert_eq!(
-        (status.as_str(), document.as_deref()),
-        ("COMPLETED", Some(saved.document_ref.as_str()))
-    );
+    assert_eq!((status.as_str(), document.as_deref()), ("ID_CHECKED", None));
     shop.finish().await;
 }
 
@@ -1338,12 +1344,12 @@ async fn confirmed_booking(shop: &Shop, id: &str, line_id: &str, rate: &str) {
     .expect("insert a confirmed booking");
 }
 
-/// Ruling of 2026-10-10 (R7 extended to bookings): a desk save that completes a booking stores
-/// the booking's line, rate and unit, not the current line. The customer booked version 1's USD
-/// 32.1; version 2 says 32.2 since. The save at the booked 32.1 is accepted, stores version 1's
-/// line, and prices 100 USD at 3210.00.
+/// Re-expected for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556), replacing the ruling of 2026-10-10 (R7 extended to
+/// bookings): a booking no longer sets the rate; a booked save is quoted at the current published
+/// line. The customer booked version 1's USD 32.1; version 2 says 32.2 since. The save at the booked
+/// 32.1 is refused `RATE_MISMATCH`, writes nothing, and the booking stays `CONFIRMED`.
 #[tokio::test]
-async fn a_booked_save_stores_the_bookings_line() {
+async fn a_booked_save_at_the_booked_rate_off_the_current_line_is_refused() {
     let shop = Shop::start().await;
     let (customer, passport) = counter(&shop, &[("THB", "100000")]).await;
     publish(&shop.pool, MAIN, &[("USD", "32.1", "33")]).await;
@@ -1372,7 +1378,8 @@ async fn a_booked_save_stores_the_bookings_line() {
         booking_id: "BK-re4c-0001".to_owned(),
         customer_confirmed: true,
     };
-    let saved = tokio::time::timeout(
+    let before = shop.everything().await;
+    let refused = tokio::time::timeout(
         MUST_FINISH,
         booking_flow(&shop).save_as_booked(
             &branch(MAIN),
@@ -1384,38 +1391,26 @@ async fn a_booked_save_stores_the_bookings_line() {
         ),
     )
     .await
-    .expect("a save finishes")
-    .expect("the save completing the booking is accepted at the booked rate");
-
+    .expect("a save finishes");
+    assert_eq!(refusal(refused), RATE_MISMATCH, "decision A3");
     assert_eq!(
-        row(&shop, &saved.document_ref).await,
-        Row {
-            line_id: Some(booked.id.clone()),
-            rate: d("32.1"),
-            unit_size: d("1"),
-            amount: d("100"),
-            principal: d("3210.00"),
-            received: d("0.00"),
-            paid: d("3210.00"),
-        },
-        "the booking's line and rate"
+        shop.everything().await,
+        before,
+        "the refused save wrote nothing"
     );
-    let (status, used_by): (String, Option<String>) =
-        sqlx::query_as("SELECT status, transaction_ref FROM v2_bookings WHERE id = $1")
-            .bind("BK-re4c-0001")
-            .fetch_one(&shop.pool)
-            .await
-            .expect("read the booking");
-    assert_eq!(
-        (status.as_str(), used_by.as_deref()),
-        ("USED", Some(saved.document_ref.as_str()))
-    );
+    let status: String = sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
+        .bind("BK-re4c-0001")
+        .fetch_one(&shop.pool)
+        .await
+        .expect("read the booking");
+    assert_eq!(status, "CONFIRMED");
     shop.finish().await;
 }
 
-/// Ruling of 2026-10-10 (R7 for bookings): a save completing a booking at a per-1 rate that is
-/// not the booking's `per_one` is `RATE_MISMATCH` and writes nothing — even at the current
-/// publication's rate (32.2 where the booking holds 32.1). The booking stays confirmed.
+/// Re-expected for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556), replacing the ruling of 2026-10-10 (R7 for bookings):
+/// a save completing a booking at the current publication's rate (32.2 where the booking holds 32.1)
+/// passes the quote, and the booking step refuses it as not the booking's form. It writes nothing,
+/// and the booking stays confirmed.
 #[tokio::test]
 async fn a_booked_save_at_another_rate_is_refused() {
     let shop = Shop::start().await;
@@ -1459,7 +1454,11 @@ async fn a_booked_save_at_another_rate_is_refused() {
     )
     .await
     .expect("a save finishes");
-    assert_eq!(refusal(refused), RATE_MISMATCH);
+    assert_eq!(
+        refusal(refused),
+        NOT_THE_BOOKING,
+        "decision A3: the booking step refuses it"
+    );
     assert_eq!(
         shop.everything().await,
         before,
