@@ -55,6 +55,7 @@ impl OrgView for CashTransferPolicyView {
 
     fn versions_in(
         &self,
+        _organization_id: &str,
         scope: &BranchScope,
     ) -> impl Future<Output = AppResult<BTreeMap<BranchId, i64>>> + Send {
         let pool = self.pool.clone();
@@ -79,24 +80,15 @@ impl OrgView for CashTransferPolicyView {
 
     fn load(
         &self,
-        scope: &BranchScope,
+        organization_id: &str,
+        _scope: &BranchScope,
         _filter: &Self::Filter,
         _changed: &[BranchId],
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
-        let branch_ids: Vec<String> = scope_ids(scope)
-            .iter()
-            .map(|b| b.as_str().to_owned())
-            .collect();
+        let org_id = Uuid::parse_str(organization_id).ok();
         async move {
-            let Some(org_id): Option<Uuid> = sqlx::query_scalar(
-                "SELECT organization_id FROM branches WHERE id = ANY($1) LIMIT 1",
-            )
-            .bind(&branch_ids)
-            .fetch_optional(&pool)
-            .await
-            .map_err(AppError::Database)?
-            else {
+            let Some(org_id) = org_id else {
                 return Ok(None);
             };
 
