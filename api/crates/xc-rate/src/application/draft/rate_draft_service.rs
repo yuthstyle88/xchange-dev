@@ -12,12 +12,16 @@ use xc_auth::domain::access;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
 
+use super::reference_base::ReferenceBase;
 use crate::domain::draft::draft_evaluation::DraftEvaluation;
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, DraftStatus, LineSide, RateDraft};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
+use crate::domain::draft::tier_proposal::{TierLine, TierProposal};
+use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 #[derive(Debug, Clone)]
 pub struct SubmitOutcome {
@@ -35,6 +39,8 @@ pub struct DraftEvaluationOutcome {
     pub lines: Vec<DraftLine>,
     pub proposals: Vec<crate::domain::draft::rate_proposal::ProposedLine>,
     pub references: Vec<ReferenceLine>,
+    pub tiers: Vec<Option<PolicyTiers>>,
+    pub tier_lines: Vec<Option<Vec<TierLine>>>,
 }
 
 pub struct RateDraftService {
@@ -105,16 +111,7 @@ impl RateDraftService {
         for line in &lines {
             // The newest 'BOT' line of this currency is the AUTO base; a 'PARTNER' line is
             // reference data for `source_snapshot.partner` only (rates.md §4.1 "Partner cost")
-            let ref_row: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT l.id FROM rate_reference_lines l \
-                 JOIN rate_reference_batches b ON b.id = l.batch_id \
-                 WHERE l.currency_code = $1 AND l.reference_type = 'BOT' \
-                 ORDER BY b.fetched_at DESC LIMIT 1",
-            )
-            .bind(line.currency.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            let ref_id = ReferenceBase::newest_in(tx, branch, &line.currency).await?;
 
             let (buy_mode, manual_buy) = match &line.buy {
                 LineSide::Auto => ("AUTO", None),
@@ -134,7 +131,7 @@ impl RateDraftService {
             .bind(draft_id.as_uuid())
             .bind(branch_str)
             .bind(line.currency.as_str())
-            .bind(ref_row.map(|r| r.0))
+            .bind(ref_id)
             .bind(policy_id)
             .bind(buy_mode)
             .bind(sell_mode)
@@ -230,16 +227,7 @@ impl RateDraftService {
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         for line in &lines {
-            let ref_row: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT l.id FROM rate_reference_lines l \
-                 JOIN rate_reference_batches b ON b.id = l.batch_id \
-                 WHERE l.currency_code = $1 AND l.reference_type = 'BOT' \
-                 ORDER BY b.fetched_at DESC LIMIT 1",
-            )
-            .bind(line.currency.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            let ref_id = ReferenceBase::newest_in(tx, branch, &line.currency).await?;
 
             let (buy_mode, manual_buy) = match &line.buy {
                 LineSide::Auto => ("AUTO", None),
@@ -259,7 +247,7 @@ impl RateDraftService {
             .bind(id.as_uuid())
             .bind(branch_str)
             .bind(line.currency.as_str())
-            .bind(ref_row.map(|r| r.0))
+            .bind(ref_id)
             .bind(policy_id)
             .bind(buy_mode)
             .bind(sell_mode)
@@ -309,6 +297,7 @@ impl RateDraftService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         let mut lines = Vec::new();
+        let mut line_policy_ids = Vec::new();
         let mut ref_ids: Vec<Uuid> = Vec::new();
         let mut policy_version_id: Option<Uuid> = None;
 
@@ -323,6 +312,7 @@ impl RateDraftService {
             let reason: Option<String> = r.get("reason");
             let ref_id: Option<Uuid> = r.get("reference_line_id");
             let pol_id: Option<Uuid> = r.get("policy_version_id");
+            line_policy_ids.push(pol_id);
 
             if let Some(rf) = ref_id {
                 if !ref_ids.contains(&rf) {
@@ -413,9 +403,14 @@ impl RateDraftService {
             }
         }
 
-        // Calculate proposals
+        // Calculate proposals and tiers
         let mut proposals = Vec::new();
-        for line in &lines {
+        let mut tiers = Vec::with_capacity(lines.len());
+        let mut tier_lines_vec = Vec::with_capacity(lines.len());
+        let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
+            std::collections::HashMap::new();
+
+        for (i, line) in lines.iter().enumerate() {
             // Read currency units
             let c_row = sqlx::query("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
                 .bind(line.currency.as_str())
@@ -436,10 +431,32 @@ impl RateDraftService {
 
             let ref_line = references.iter().find(|r| r.currency == line.currency);
             let prop = RateProposal::of(line, ref_line, policy.as_ref(), &units)?;
-            proposals.push(prop);
+            proposals.push(prop.clone());
+
+            let line_pol_id = line_policy_ids.get(i).copied().flatten();
+            let pt_opt = if let Some(pid) = line_pol_id {
+                if let Some(cached) = policy_tiers_cache.get(&pid) {
+                    cached.clone()
+                } else {
+                    let loaded = PolicyTiersStore::for_version(tx, &pid).await?;
+                    policy_tiers_cache.insert(pid, loaded.clone());
+                    loaded
+                }
+            } else {
+                None
+            };
+
+            if let Some(ref pt) = pt_opt {
+                let tlines = TierProposal::of(&prop, line, ref_line, policy.as_ref(), pt, &units)?;
+                tier_lines_vec.push(Some(tlines));
+            } else {
+                tier_lines_vec.push(None);
+            }
+            tiers.push(pt_opt);
         }
 
-        let evaluation = DraftEvaluation::of(&lines, &proposals, &references, policy.as_ref());
+        let evaluation =
+            DraftEvaluation::of_tiered(&lines, &proposals, &references, policy.as_ref(), &tiers);
 
         Ok(DraftEvaluationOutcome {
             version,
@@ -450,6 +467,8 @@ impl RateDraftService {
             lines,
             proposals,
             references,
+            tiers,
+            tier_lines: tier_lines_vec,
         })
     }
 
@@ -497,13 +516,34 @@ impl RateDraftService {
             .collect::<Vec<_>>();
 
         // Canonical JSON representation for evaluation and hash
-        let eval_json = json!({
+        let mut eval_json = json!({
             "draft_id": id.to_string(),
             "policy_version_id": eval_res.policy.as_ref().map(|p| p.id()),
             "reference_line_ids": eval_res.ref_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
             "is_in_bound": eval_res.evaluation.is_in_bound(),
             "out_of_bound": out_of_bound,
         });
+
+        let mut all_tier_lines = Vec::new();
+        for (i, opt_lines) in eval_res.tier_lines.iter().enumerate() {
+            if let Some(tlines) = opt_lines {
+                let currency = eval_res.lines[i].currency.as_str();
+                for tl in tlines {
+                    all_tier_lines.push(json!({
+                        "currency": currency,
+                        "tier": tl.code.as_str(),
+                        "buy": tl.buy.map(|r| r.to_string()),
+                        "sell": tl.sell.map(|r| r.to_string()),
+                        "base_buy": tl.base_buy.map(|r| r.to_string()),
+                        "base_sell": tl.base_sell.map(|r| r.to_string()),
+                    }));
+                }
+            }
+        }
+        if !all_tier_lines.is_empty() {
+            eval_json["tiers"] = json!(all_tier_lines);
+        }
+
         let eval_hash = sha256_hex(&serde_json::to_vec(&eval_json).unwrap());
 
         sqlx::query(

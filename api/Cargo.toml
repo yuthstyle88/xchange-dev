@@ -22,6 +22,7 @@ xc-referral = { path = "crates/xc-referral" }
 xc-outbox = { path = "crates/xc-outbox" }
 xc-notify = { path = "crates/xc-notify" }
 xc-cash = { path = "crates/xc-cash" }
+xc-verification = { path = "crates/xc-verification" }
 xc-queue = { path = "crates/xc-queue" }
 xc-alert = { path = "crates/xc-alert" }
 xc-loyalty = { path = "crates/xc-loyalty" }
@@ -53,6 +54,7 @@ xc-referral = { workspace = true }
 xc-outbox = { workspace = true }
 xc-notify = { workspace = true }
 xc-cash = { workspace = true }
+xc-verification = { workspace = true }
 xc-queue = { workspace = true }
 xc-alert = { workspace = true }
 xc-loyalty = { workspace = true }
