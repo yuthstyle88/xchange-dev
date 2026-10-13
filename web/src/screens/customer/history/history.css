@@ -1,0 +1,121 @@
+/* Customer history screen styles (APP-11) */
+
+.xc-history-screen {
+  padding: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.xc-history-loading {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.xc-history-error {
+  text-align: center;
+  padding: 2rem;
+  color: #c00;
+}
+
+.xc-history-retry-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  background-color: #0066cc;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.xc-history-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #888;
+}
+
+.xc-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.xc-history-item {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.xc-history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+.xc-history-date {
+  font-weight: 500;
+}
+
+.xc-history-branch {
+  color: #666;
+}
+
+.xc-history-status {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.xc-history-status-reversed {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+.xc-history-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.xc-history-amount-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.xc-history-type {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+}
+
+.xc-history-currency {
+  font-size: 0.875rem;
+}
+
+.xc-history-settlement-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+.xc-history-label {
+  color: #777;
+}
+
+.xc-history-receipt-row {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.xc-history-receipt-link {
+  color: #1a73e8;
+  text-decoration: none;
+}
