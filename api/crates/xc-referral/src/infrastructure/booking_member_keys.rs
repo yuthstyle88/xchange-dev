@@ -1,6 +1,6 @@
 //! `BookingMemberKeys` (design §6.2): today's `FeedCustomerKeys`. The phone of the booking's
-//! member when the exchange came from a booking with `member_id` (`members.verified_at` is NOT NULL,
-//! so a member's phone was checked by staff); otherwise no keys. `customer_sub` is always `None`
+//! member when the exchange came from a Blueprint booking whose customer has a verified ACTIVE
+//! `PHONE` identity (BK-10, ruling (b)); otherwise no keys. `customer_sub` is always `None`
 //! until #554 swaps in its own implementation.
 
 use futures::future::BoxFuture;
@@ -19,22 +19,50 @@ impl FeedCustomerKeys for BookingMemberKeys {
         transaction_id: Uuid,
     ) -> BoxFuture<'a, AppResult<CustomerKeys>> {
         Box::pin(async move {
-            let phone: Option<String> = sqlx::query_scalar(
-                "SELECT m.phone \
-                 FROM transactions t \
-                 JOIN v2_bookings b ON b.transaction_ref = t.document_ref \
-                 JOIN members m ON m.id = b.member_id \
-                 WHERE t.id = $1::uuid AND m.verified_at IS NOT NULL \
+            let row: Option<(String, Vec<u8>, String)> = sqlx::query_as(
+                "SELECT ci.customer_id, ci.encrypted_value, ci.key_id \
+                 FROM bookings b \
+                 JOIN customer_identities ci ON ci.customer_id = b.customer_id AND ci.organization_id = b.organization_id \
+                 WHERE b.transaction_id = $1 \
+                   AND ci.type = 'PHONE' \
+                   AND ci.status = 'ACTIVE' \
+                   AND ci.verified_at IS NOT NULL \
                  LIMIT 1",
             )
-            .bind(transaction_id.to_string())
+            .bind(transaction_id)
             .fetch_optional(&mut **tx)
             .await
             .map_err(pos_error::AppError::Database)?;
 
+            let Some((customer_id, encrypted_value, key_id)) = row else {
+                return Ok(CustomerKeys {
+                    customer_sub: None,
+                    phone: None,
+                });
+            };
+
+            let keys = xc_customer::get_pii_keys()
+                .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
+            let cipher = xc_kernel::pii::PiiCipher::new(keys);
+            let aad = format!("{customer_id}PHONE");
+            let phone_bytes = cipher
+                .decrypt(
+                    aad.as_bytes(),
+                    &xc_kernel::pii::Sealed {
+                        key_id,
+                        bytes: encrypted_value,
+                    },
+                )
+                .map_err(|e| {
+                    pos_error::AppError::Internal(format!("failed to decrypt phone: {e}"))
+                })?;
+            let phone = String::from_utf8(phone_bytes).map_err(|e| {
+                pos_error::AppError::Internal(format!("invalid utf8 in phone: {e}"))
+            })?;
+
             Ok(CustomerKeys {
                 customer_sub: None,
-                phone,
+                phone: Some(phone),
             })
         })
     }

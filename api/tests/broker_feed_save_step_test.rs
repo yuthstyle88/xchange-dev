@@ -35,9 +35,11 @@ const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน
 /// A booking of #120's day, open until after its save.
 const OPEN_UNTIL: &str = "2026-10-06T07:30:00.000Z";
 /// The phone typed on a booking, and a verified member's phone: never the same, so the test
-/// can tell which one the feed took.
+/// can tell which one the feed took. BK-10 #1412: the member's phone is the customer's verified
+/// ACTIVE `PHONE` identity, which the feed carries in E.164 (ruling 3, issuecomment-6140233542);
+/// v2's `0899000111` is `+66899000111`.
 const TYPED_PHONE: &str = "0812345678";
-const MEMBER_PHONE: &str = "0899000111";
+const MEMBER_PHONE: &str = "+66899000111";
 
 async fn day_up_to(fixture: &Fixture, last: usize) -> Replay<'_> {
     let desk = Desk::open().await;
@@ -89,19 +91,84 @@ async fn book(replay: &Replay<'_>, id: &str, member: Option<&str>) {
     .unwrap_or_else(|e| panic!("book {id}: {e}"));
 }
 
-/// A verified member of `MAIN` for `customer`, with phone [`MEMBER_PHONE`].
-async fn verified_member(replay: &Replay<'_>, id: &str, customer: &str) {
+/// BK-10 #1412: `customer` becomes a member — a verified ACTIVE `PHONE` identity with phone
+/// [`MEMBER_PHONE`], sealed as every `PHONE` identity on `main` is (`ContactReserve`): the E.164
+/// form, AAD `"{customer_id}PHONE"`, `lookup_hash = LookupHasher::hash(IdentityType::Phone, e164)`,
+/// with the PII key the harness installed.
+async fn verified_member(replay: &Replay<'_>, customer: &str) {
+    use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher};
+    let keys = xc_customer::get_pii_keys().expect("the harness installed a PII key");
+    let sealed = PiiCipher::new(keys.clone()).encrypt(
+        format!("{customer}PHONE").as_bytes(),
+        MEMBER_PHONE.as_bytes(),
+    );
+    let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Phone, MEMBER_PHONE);
     sqlx::query(
-        "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, \
-         verified_by) VALUES ($1, 'MAIN', $2, 'Member', $3, $1, \
-         '2026-10-06T06:00:00.000Z'::timestamptz, 'owner')",
+        "INSERT INTO customer_identities (id, customer_id, organization_id, type, encrypted_value, \
+         key_id, lookup_hash, verified_at, status, created_at) \
+         SELECT gen_random_uuid(), c.id, c.organization_id, 'PHONE', $2, $3, $4, \
+         '2026-10-06T06:00:00.000Z'::timestamptz, 'ACTIVE', '2026-10-06T06:00:00.000Z'::timestamptz \
+         FROM customers c WHERE c.id = $1",
+    )
+    .bind(customer)
+    .bind(&sealed.bytes)
+    .bind(&sealed.key_id)
+    .bind(&lookup_hash[..])
+    .execute(&replay.desk.db.pool)
+    .await
+    .unwrap_or_else(|e| panic!("the verified phone of {customer}: {e}"));
+}
+
+/// BK-10 #1412: a Blueprint booking `id` of `customer` at `MAIN`, CHECKED_IN, which the next
+/// exchange of `customer` completes. Nothing on the save path sets `bookings.transaction_id` yet:
+/// BK-7 #1405's `booking_save_step` will write it on completion (lane controller,
+/// issuecomment-6146073973). The feed row is written inside the save's transaction, so the link
+/// cannot be seeded after the save; a trigger stands in for BK-7 instead, linking the booking to
+/// the exchange (and completing it) the moment the exchange's row is inserted, in that same
+/// transaction, before the feed step reads it.
+async fn blueprint_booking_completed_by_the_next_exchange(
+    replay: &Replay<'_>,
+    id: &str,
+    customer: &str,
+) {
+    let pool = &replay.desk.db.pool;
+    sqlx::query(
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, \
+         capacity, reserved, status) \
+         SELECT '00000000-0000-4000-8000-00000000f00d'::uuid, b.organization_id, b.id, \
+         DATE '2026-10-06', '2026-10-06T06:00:00.000Z'::timestamptz, \
+         '2026-10-06T06:30:00.000Z'::timestamptz, 4, 1, 'OPEN' FROM branches b WHERE b.id = 'MAIN'",
+    )
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the slot of {id}: {e}"));
+    sqlx::query(
+        "INSERT INTO bookings (id, organization_id, branch_id, booking_no, customer_id, slot_id, \
+         shop_side, requested_currency, requested_quantity, source_channel, status, qr_token_hash, \
+         checked_in_at, created_by) \
+         SELECT $1, b.organization_id, b.id, 'B261006-0001', $2, \
+         '00000000-0000-4000-8000-00000000f00d'::uuid, 'BUY', 'USD', 100, 'DESK', 'CHECKED_IN', \
+         convert_to($1, 'UTF8'), '2026-10-06T06:00:00.000Z'::timestamptz, 'owner' \
+         FROM branches b WHERE b.id = 'MAIN'",
     )
     .bind(id)
     .bind(customer)
-    .bind(MEMBER_PHONE)
-    .execute(&replay.desk.db.pool)
+    .execute(pool)
     .await
-    .unwrap_or_else(|e| panic!("member {id}: {e}"));
+    .unwrap_or_else(|e| panic!("book {id}: {e}"));
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE FUNCTION bk7_stand_in_complete_booking() RETURNS trigger LANGUAGE plpgsql AS $f$ \
+         BEGIN \
+             UPDATE bookings SET status = 'COMPLETED', transaction_id = NEW.id, updated_at = now() \
+             WHERE id = '{id}' AND customer_id = NEW.customer_id AND transaction_id IS NULL; \
+             RETURN NEW; \
+         END $f$; \
+         CREATE TRIGGER bk7_stand_in_complete_booking AFTER INSERT ON transactions \
+             FOR EACH ROW EXECUTE FUNCTION bk7_stand_in_complete_booking();"
+    )))
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the BK-7 stand-in trigger: {e}"));
 }
 
 async fn save(replay: &Replay<'_>, payload: &Value) -> Answer {
@@ -272,8 +339,10 @@ async fn a_demo_save_writes_no_feed_row() {
     replay.finish().await;
 }
 
-/// A save from a booking of a verified member carries the member's phone: the step runs after
-/// the booking step has written `bookings.transaction_ref`.
+/// A save from a booking of a verified member carries the member's phone: the step reads the
+/// booking the exchange completed. Re-pinned for BK-10 #1412 by claude/29df2ec5 (lane controller,
+/// issuecomment-6146073973): the member is the booking's customer with a verified ACTIVE `PHONE`
+/// identity, the booking a Blueprint one linked by `bookings.transaction_id`; the phone is E.164.
 #[actix_web::test]
 async fn a_booking_of_a_verified_member_carries_the_members_phone() {
     let fixture = Fixture::load(FILE);
@@ -283,12 +352,9 @@ async fn a_booking_of_a_verified_member_carries_the_members_phone() {
         .as_str()
         .expect("the customer")
         .to_string();
-    verified_member(&replay, "MB-feed", &customer).await;
-    book(&replay, "BK-member", Some("MB-feed")).await;
-    let document = saved_ref(
-        &save(&replay, &claiming(&payload, "BK-member")).await,
-        "the member's booking",
-    );
+    verified_member(&replay, &customer).await;
+    blueprint_booking_completed_by_the_next_exchange(&replay, "BK-member", &customer).await;
+    let document = saved_ref(&save(&replay, &payload).await, "the member's booking");
     let row = feed_of(&replay, &document).await.expect("a feed row");
     assert_completed_row(&row, Some(MEMBER_PHONE), "verified member");
     replay.finish().await;

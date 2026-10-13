@@ -142,6 +142,77 @@ impl BranchTx {
         .await
     }
 
+    /// Runs a closure inside a database transaction that holds the locks of every
+    /// branch belonging to `org_id` in one total lock order (Ruling 2′, #1412).
+    ///
+    /// The transaction ensures all branches' rows in `branch_versions` are
+    /// created if absent, locks every branch `FOR UPDATE` in order:
+    /// **`MAIN` first, then branch `id` ascending (`COLLATE "C"`).**
+    ///
+    /// The version of every branch in the organisation rises by 1 on every
+    /// committed run.
+    ///
+    /// **Cost & concurrency:** while a verify runs, it serialises with every
+    /// transaction in that organisation. That is acceptable for a desk action
+    /// taken a few times a day. It is not a pattern for hot paths.
+    ///
+    /// If `f` returns an error, the transaction is rolled back and the original
+    /// error is returned unchanged.
+    pub async fn run_org<T, F>(&self, org_id: &str, f: F) -> AppResult<T>
+    where
+        T: Send,
+        F: for<'a> FnOnce(
+                &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+            ) -> BoxFuture<'a, AppResult<T>>
+            + Send
+            + 'static,
+    {
+        let org_id = org_id.to_string();
+        self.transactor
+            .run(move |tx| {
+                Box::pin(async move {
+                    let branch_ids: Vec<String> = sqlx::query_scalar(
+                        "SELECT id FROM branches \
+                         WHERE organization_id = $1::uuid \
+                         ORDER BY CASE WHEN id = 'MAIN' THEN 0 ELSE 1 END, id COLLATE \"C\" ASC",
+                    )
+                    .bind(&org_id)
+                    .fetch_all(&mut **tx)
+                    .await?;
+
+                    for b in &branch_ids {
+                        sqlx::query(
+                            "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 0) ON CONFLICT (branch_id) DO NOTHING",
+                        )
+                        .bind(b)
+                        .execute(&mut **tx)
+                        .await?;
+
+                        sqlx::query(
+                            "SELECT version FROM branch_versions WHERE branch_id = $1 FOR UPDATE",
+                        )
+                        .bind(b)
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+
+                    let result = f(tx).await?;
+
+                    for b in &branch_ids {
+                        sqlx::query(
+                            "UPDATE branch_versions SET version = version + 1, changed_at = now() WHERE branch_id = $1",
+                        )
+                        .bind(b)
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+
+                    Ok(result)
+                })
+            })
+            .await
+    }
+
     /// Takes the lock of a second branch inside a transaction that
     /// [`BranchTx::run`] started for another one, for a write that depends on
     /// what both branches hold.

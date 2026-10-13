@@ -4195,6 +4195,8 @@ dependencies = [
  "tracing",
  "uuid",
  "xc-approval",
+ "xc-customer",
+ "xc-kernel",
  "xc-outbox",
 ]
 
