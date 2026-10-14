@@ -254,7 +254,8 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
 // (`docs/design/blueprint/cash-shift-transfer.md` §9 CA-9b) is a v3 menu with no v2 row, pinned in
 // `web/src/screens/admin/cash-policy/CashPolicy.test.tsx`.
 // Amended by #1068 (FN-1), by its lane controller's ruling (issuecomment-6110842830): F01 `/admin/reconciliation` is a v3 menu with no v2 row, FINANCE only, pinned in `web/src/screens/admin/reconciliation/Reconciliation.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive', 'cash-policy', 'reconciliation', 'rate-alert-settings', 'notices', 'starting-prices'];
+// Amended by #1645/#1646 (MK-8a/MK-8c): admin menus `campaigns` and `campaign-performance` (`docs/design/blueprint/marketing-campaigns.md` §4.5, §9.1 MK-8).
+const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive', 'cash-policy', 'reconciliation', 'rate-alert-settings', 'notices', 'starting-prices', 'campaigns', 'campaign-performance'];
 // Amended for OR-7.7 (#1030 §3.10) by the test-writer claude/5d45b017: `roles` becomes `needs`, a
 // Permission name. The served menus need 'all'; the three Blueprint menus need the permission their
 // commands already require (lane controller's ruling, #1030 issuecomment-6105567502).
@@ -270,6 +271,8 @@ const BLUEPRINT_NEEDS: Record<string, string> = {
   'cash-policy': 'CashTransferPolicySet',
   'rate-alert-settings': 'RateAlertSettingsSave',
   'starting-prices': 'OrgStartingPricesManage',
+  campaigns: 'MarketingCampaigns',
+  'campaign-performance': 'MarketingPerformance',
 };
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
