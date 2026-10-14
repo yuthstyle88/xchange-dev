@@ -48,13 +48,13 @@ pub struct RatePolicySaveInput {
     pub stale_limit_thb: Option<String>,
     pub reason: String,
     #[serde(default)]
-    #[ts(skip)]
+    #[ts(optional = nullable)]
     pub value_tiers_on: Option<bool>,
     #[serde(default)]
-    #[ts(skip)]
+    #[ts(optional = nullable)]
     pub value_tiers: Option<Vec<ValueTierDto>>,
     #[serde(default, deserialize_with = "deserialize_some")]
-    #[ts(skip)]
+    #[ts(optional = nullable, type = "string | null")]
     pub sharp_move_alert_pct: Option<Value>,
 }
 
