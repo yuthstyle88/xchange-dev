@@ -265,6 +265,7 @@ classDiagram
   class BookingService { <<xc-booking application/booking_service.rs>> +create() +confirm() +cancel() +reschedule() +reissue_qr() }
   class CheckInService { <<xc-booking application/check_in.rs>> +check_in(by) }
   class BookingLifecycle { <<xc-booking application/lifecycle.rs>> +complete_in() }
+  class LifecycleFactory { <<xc-booking infrastructure/lifecycle_factory.rs  #1641>> +pg_booking_lifecycle(pool) Arc~BookingLifecycle~ }
   class BookingSweeper { <<xc-booking application/sweeper.rs>> +run(now) }
   class BookingQueueEvents { <<trait xc-kernel booking_queue_events.rs>> +on_ticket_serving_in() +on_ticket_ended_in() }
   class QueueTickets { <<trait xc-kernel queue_tickets.rs  PR 609 QU-2>> +issue_in() +cancel_active_for_booking_in() }
@@ -296,6 +297,8 @@ classDiagram
   CheckInService --> QueueTickets : issue BOOKING ticket
   BookingLifecycle ..|> BookingQueueEvents
   BookingLifecycle --> BookingMachine
+  LifecycleFactory --> BookingLifecycle : builds with PgBookingRepository + PgSlotRepository
+  LifecycleFactory --> PgSlotRepository
   BookingSweeper --> BookingMachine
   BookingSweeper --> SlotRepository
   QrToken --> PiiKeys
@@ -339,6 +342,7 @@ classDiagram
 | PR 606 `ReferralCaptureService` (RF-1, cut as RA-1 #979) | `referralCode` on DESK/APP create (BK-3) and PARTNER create (BK-12), B13 | none: BK-3 starts after RA-1 #979 merges |
 | #557 verification readiness | `desk_bookings`, `my_booking` | the field reads `unknown` until #557's view exists |
 | this design `BookingQueueEvents` | `xc-queue` | — |
+| #1641 `pg_booking_lifecycle(pool)` (the one place a production `BookingLifecycle` is built, always with slots) | `rpc.rs`, v3 `transactions.rs`, `kiosk.rs`, v3 `queue.rs`, v3 `bookings.rs` | none: until #1641 merges, those sites build it by hand |
 | this design `bookings` (COMPLETED, slot date) | executive EX-8 booking conversion (`executive-finance.md` D-2) | — |
 
 ## 6. Kept, changed, retired
