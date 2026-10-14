@@ -484,7 +484,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
 
-      expect(container.textContent).toContain('Failed to load campaigns');
+      expect(container.textContent).toContain('เซิร์ฟเวอร์ขัดข้อง');
       const retryBtn = [...container.querySelectorAll('button')].find((b) =>
         /retry|ลองใหม่|โหลดใหม่/i.test(b.textContent ?? ''),
       );
