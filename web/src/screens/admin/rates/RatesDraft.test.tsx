@@ -209,6 +209,9 @@ function policyOf(): RatePolicyData {
       validTo: null,
       approvedBy: 'owner-1',
       reason: 'seeded',
+      valueTiersOn: false,
+      valueTiers: [],
+      sharpMoveAlertPct: null,
     },
   };
 }

@@ -18,7 +18,9 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
-use crate::presentation::dto::v3::rate_policy::{RatePolicyData, RatePolicyVersionDto};
+use crate::presentation::dto::v3::rate_policy::{
+    RatePolicyData, RatePolicyVersionDto, ValueTierDto,
+};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct RatePolicyBranchView {
@@ -51,7 +53,7 @@ impl BranchView for RatePolicyBranchView {
             let row = sqlx::query(
                 "SELECT id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, \
                         max_reference_age_hours, on_stale, stale_limit_thb, valid_from, valid_to, \
-                        approved_by, reason \
+                        approved_by, reason, value_tiers_on, sharp_move_alert_pct \
                  FROM rate_policy_versions WHERE branch_id = $1 ORDER BY version DESC LIMIT 1",
             )
             .bind(&branch_id)
@@ -74,6 +76,35 @@ impl BranchView for RatePolicyBranchView {
                     let valid_to: Option<DateTime<Utc>> = r.get(10);
                     let approved_by: String = r.get(11);
                     let reason: Option<String> = r.get(12);
+                    let value_tiers_on: bool = r.get(13);
+                    let sharp_move_alert_pct: Option<Decimal> = r.get(14);
+
+                    let tier_rows = sqlx::query(
+                        "SELECT tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct \
+                         FROM rate_policy_value_tiers \
+                         WHERE policy_version_id = $1 \
+                         ORDER BY tier_no ASC",
+                    )
+                    .bind(id)
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(pos_error::AppError::Database)?;
+
+                    let value_tiers = tier_rows
+                        .into_iter()
+                        .map(|tr| {
+                            let tier_no: i16 = tr.get(0);
+                            let upper_dec: Option<Decimal> = tr.get(1);
+                            let buy_dec: Decimal = tr.get(2);
+                            let sell_dec: Decimal = tr.get(3);
+                            ValueTierDto {
+                                tier_no: tier_no as u8,
+                                upper_inclusive_thb: upper_dec.map(|d| format!("{d:.2}")),
+                                buy_margin_pct: format!("{buy_dec:.4}"),
+                                sell_margin_pct: format!("{sell_dec:.4}"),
+                            }
+                        })
+                        .collect();
 
                     Some(RatePolicyVersionDto {
                         id: id.to_string(),
@@ -89,6 +120,9 @@ impl BranchView for RatePolicyBranchView {
                         valid_to: valid_to.map(|t| t.to_rfc3339()),
                         approved_by,
                         reason,
+                        value_tiers_on,
+                        value_tiers,
+                        sharp_move_alert_pct: sharp_move_alert_pct.map(|d| format!("{d:.4}")),
                     })
                 }
                 None => None,
@@ -105,6 +139,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
+    ValueTierDto::export_all(&cfg)?;
     RatePolicyVersionDto::export_all(&cfg)?;
     RatePolicyData::export_all(&cfg)?;
     Ok(())
