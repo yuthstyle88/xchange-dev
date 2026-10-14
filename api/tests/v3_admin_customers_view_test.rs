@@ -32,9 +32,10 @@
 //! - §4.2: every writer of what the views read goes through `BranchTx` — one write per writer,
 //!   then the same `since` answers `changed: true`. Writers: the customer service
 //!   (`CustomerService::reserve`), the exchange save (`SaveTransactionWorkflow`, which also writes
-//!   `customers` through `confirm_in` / `record_exchange_in`), and the member issue
-//!   (`/api/bookings` `member`, `BookingService::issue_member`, which writes `members` — the table
-//!   the `member` flag is read from).
+//!   `customers` through `confirm_in` / `record_exchange_in`), and the phone verification
+//!   (`customerContactVerify`, `ContactVerify::verify_in`, which writes the verified `PHONE`
+//!   identity the `member` flag is read from — BK-10 #1412 re-pinned this from v2's member issue
+//!   and its `members` table).
 //!
 //! Everything goes through the server's whole route table (`bootstrap::configure`) with real
 //! sessions made at the real sign-in doors (`rpc_common`); exchanges are saved through the real
@@ -62,6 +63,7 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_customer::application::customer::contact_verify::ContactVerify;
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -72,7 +74,6 @@ use xchange::presentation::http::v3::VIEWS;
 const ORIGIN: &str = "http://desk.test";
 const CUSTOMERS: &str = "admin_customers";
 const HISTORY: &str = "admin_customer_history";
-const BOOKINGS: &str = "/api/bookings";
 
 const MAIN: &str = "MAIN";
 const B9: &str = "B9";
@@ -138,11 +139,6 @@ fn next() -> u64 {
 
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
-}
-
-/// A member secret as v2's dialog makes it (`crypto.randomUUID()`, `bookings.js:13`).
-fn member_secret() -> String {
-    format!("{:08x}-0000-4000-8000-{:012x}", next(), next())
 }
 
 fn keys(value: &Value) -> BTreeSet<String> {
@@ -513,25 +509,38 @@ impl Room {
         }
     }
 
-    /// The owner issues a member code for `customer` of `branch` (`/api/bookings` `member`, the
-    /// route `bookings.js:13` calls).
-    async fn issue_member(&self, branch: &str, customer: &str) {
-        self.tick();
-        let call = Call::action(
-            ORIGIN,
-            BOOKINGS,
-            "member",
-            json!({ "branchId": branch, "customerId": customer, "identityConfirmed": true,
-                    "phone": "081-234-5678", "memberSecret": member_secret() }),
-        )
-        .cookie(&self.cookie("OWNER"));
-        let answer = self.app.send(call).await;
-        assert_eq!(
-            answer.status, 200,
-            "issue a member for {customer}: {:.400}",
-            answer.text
+    /// BK-10 (#1412): a Teller of `branch` verifies `customer`'s phone through `ContactVerify`,
+    /// inside `BranchTx::run` on `branch` as the `customerContactVerify` command seam runs it.
+    async fn verify_phone(&self, branch: &str, customer: &str) {
+        let t = self.tick();
+        let here = BranchId::new(branch);
+        let who = xc_auth::domain::access::Actor::new(
+            "00000000-0000-4000-8000-0000000000aa",
+            "00000000-0000-0000-0000-000000000001",
+            vec![xc_auth::domain::access::ScopedRole::new(
+                xc_auth::domain::access::Role::Teller,
+                Some(here.clone()),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
         );
-        assert_eq!(answer.json()["saved"], json!(true), "{:.400}", answer.text);
+        let service = ContactVerify::new(self.desk.db.branch_tx());
+        let customer = customer.to_owned();
+        let acting = here.clone();
+        self.desk
+            .db
+            .branch_tx()
+            .run(&here, move |tx| {
+                Box::pin(async move {
+                    service
+                        .verify_in(tx, &who, &acting, &customer, "081-234-5678", t)
+                        .await
+                        .map_err(|e| pos_error::AppError::Internal(format!("{e:?}")))
+                })
+            })
+            .await
+            .unwrap_or_else(|e| panic!("verify a phone at {branch}: {e:?}"));
     }
 
     async fn finish(self) {
@@ -789,14 +798,16 @@ async fn customers_are_ordered_by_last_activity_then_name_with_no_exchange_last(
 // company customers"; #554 §4.4); its figures stay the branch's.
 
 /// `customers.js:11` shows `Member` for a customer the snapshot marks (`member`, T15-g).
+/// Re-pinned for BK-10 #1412 by claude/29df2ec5 (ruling 1, issuecomment-6140233542): the member
+/// code is dropped; a member is a customer whose phone staff verified (`customerContactVerify`).
 #[actix_web::test]
-async fn a_customer_with_a_member_code_of_the_branch_is_flagged_member() {
+async fn a_customer_with_a_verified_phone_is_flagged_member() {
     let room = Room::open().await;
     let somchai = room
         .save(MAIN, &Who::new("Somchai Jaidee"), Ex::usd())
         .await;
     let other = room.reserve(MAIN, &Who::new("Not A Member")).await;
-    room.issue_member(MAIN, &somchai.customer_id).await;
+    room.verify_phone(MAIN, &somchai.customer_id).await;
     let row = room.customer(&somchai.customer_id).await;
     assert_eq!(row["member"], json!(true), "{row}");
     let row = room.customer(&other.id).await;
@@ -1438,20 +1449,22 @@ async fn an_exchange_save_moves_the_version_both_views_answer() {
     room.finish().await;
 }
 
+/// Re-pinned for BK-10 #1412 by claude/29df2ec5 (ruling 1, issuecomment-6140233542): the writer of
+/// the `member` flag is now the phone verification (`customerContactVerify`), not the member issue.
 #[actix_web::test]
-async fn issuing_a_member_moves_the_version_admin_customers_answers() {
+async fn verifying_a_phone_moves_the_version_admin_customers_answers() {
     let room = Room::open().await;
     let somchai = room.reserve(MAIN, &Who::new("Somchai Jaidee")).await;
     let v = room.version(MAIN).await;
     let since = format!("branch=MAIN&limit=50&since={v}");
     assert_unchanged(&room.view("OWNER", CUSTOMERS, &since).await, v, "before");
 
-    // the member issue, the one writer of `members`
-    room.issue_member(MAIN, &somchai.id).await;
+    // the phone verification, the one writer of the member flag
+    room.verify_phone(MAIN, &somchai.id).await;
     let now = room.version(MAIN).await;
     assert!(
         now > v,
-        "issuing a member moved MAIN's version ({v} → {now})"
+        "verifying a phone moved MAIN's version ({v} → {now})"
     );
     let body = room.view("OWNER", CUSTOMERS, &since).await;
     assert_eq!(body["changed"], json!(true), "{body}");
@@ -1506,8 +1519,12 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
     room.finish().await;
 }
 
+/// Re-pinned for BK-10 #1412 by claude/29df2ec5 (ruling 1, issuecomment-6140233542): the flag was
+/// per branch (a `members` row of that branch); it is now company-wide (design §6, PR 639 K1). A v2
+/// `members` row of B9 flags nobody anywhere; a phone verified at B9 flags the customer at MAIN
+/// and at B9.
 #[actix_web::test]
-async fn member_flag_is_per_branch() {
+async fn member_flag_is_company_wide() {
     let room = Room::open().await;
     let somchai = room.reserve(MAIN, &Who::new("Somchai Cross Branch")).await;
 
@@ -1527,16 +1544,23 @@ async fn member_flag_is_per_branch() {
     assert_eq!(
         row_before["member"],
         json!(false),
-        "member in B9 must not flag customer in MAIN"
+        "a v2 members row of B9 does not flag the customer in MAIN"
     );
 
-    room.issue_member(MAIN, &somchai.id).await;
+    room.verify_phone(B9, &somchai.id).await;
     let row_after = room.customer(&somchai.id).await;
     assert_eq!(
         row_after["member"],
         json!(true),
-        "member in MAIN flags customer in MAIN"
+        "a phone verified at B9 flags the customer in MAIN"
     );
+    let in_b9 = room
+        .rows("OWNER", CUSTOMERS, "branch=B9&limit=100")
+        .await
+        .into_iter()
+        .find(|r| r["id"] == json!(somchai.id))
+        .unwrap_or_else(|| panic!("{} among B9's customers", somchai.id));
+    assert_eq!(in_b9["member"], json!(true), "and in B9: {in_b9}");
     room.finish().await;
 }
 

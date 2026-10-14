@@ -8,13 +8,15 @@
 //! handler registered. Needs `TEST_DATABASE_URL`; nothing skips.
 
 mod common;
+mod member_phone_seeds;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use common::{MEMBER_PHONE, TestDb, at};
+use common::{MAIN, TestDb, at};
+use member_phone_seeds::{MEMBER_E164, TYPED_E164};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -315,19 +317,21 @@ async fn the_request_is_brokers_attribution_call_with_the_rows_key() {
     db.finish().await;
 }
 
+/// Re-pinned for BK-10 #1412 by claude/29df2ec5 (lane controller ruling 1, issuecomment-6140233542):
+/// the member is the booking's customer with a verified ACTIVE `PHONE` identity, sent in E.164
+/// (ruling 3); the phone typed at the desk is the customer's unverified identity
+/// (`ContactReserve`), which never leaves v3.
 #[tokio::test]
 async fn a_verified_members_phone_is_sent_and_a_typed_booking_phone_is_not() {
-    // `members.verified_at` is NOT NULL: a member's phone was checked by staff (D-6). A booking with
-    // no member carries only the phone someone typed (`0899999999` in the harness), which never
-    // leaves v3.
     for member in [true, false] {
         let db = TestDb::start().await;
-        let (id, _, document_ref) = captured(&db).await;
+        let (id, tx_id, _) = captured(&db).await;
         if member {
-            db.seed_member("M-1", "C-1").await;
+            member_phone_seeds::seed_phone(&db.pool, "C-1", MEMBER_E164, true, "ACTIVE").await;
+        } else {
+            member_phone_seeds::seed_phone(&db.pool, "C-1", TYPED_E164, false, "ACTIVE").await;
         }
-        db.seed_used_booking(member.then_some("M-1"), &document_ref)
-            .await;
+        member_phone_seeds::seed_completed_booking(&db.pool, MAIN, "C-1", tx_id).await;
         let broker = FakeBroker::start().await;
         worker(&db, handler(&db, &broker.url))
             .tick()
@@ -337,7 +341,7 @@ async fn a_verified_members_phone_is_sent_and_a_typed_booking_phone_is_not() {
         if member {
             assert_eq!(
                 body,
-                json!({ "code": "AB12CD", "product": PRODUCT, "customerSub": "sub-1", "phone": MEMBER_PHONE })
+                json!({ "code": "AB12CD", "product": PRODUCT, "customerSub": "sub-1", "phone": MEMBER_E164 })
             );
         } else {
             assert_eq!(

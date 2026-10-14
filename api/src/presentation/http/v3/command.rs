@@ -33,6 +33,7 @@ use crate::presentation::extractors::origin::same_origin;
 pub enum Locks {
     One(BranchId),
     Pair(BranchId, BranchId),
+    Org,
 }
 
 /// How a command uses the anonymous app session `xc_app_sid` (#994 ruling option A; design
@@ -413,6 +414,7 @@ async fn handle_command<C: CommandAction>(
                 return out_of_scope().error_response();
             }
         }
+        Locks::Org => {}
     }
 
     let pool = match req.app_data::<web::Data<AppState>>() {
@@ -474,7 +476,7 @@ async fn handle_command<C: CommandAction>(
     // Step 7: Request hash & idempotency claim
     let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
 
-    let store = Arc::new(PgIdempotencyStore::new(pool.clone(), org_id));
+    let store = Arc::new(PgIdempotencyStore::new(pool.clone(), org_id.clone()));
 
     let claim = match store.claim(C::NAME, &idem_key, &hash).await {
         Ok(c) => c,
@@ -534,6 +536,26 @@ async fn handle_command<C: CommandAction>(
         Locks::Pair(a, b) => {
             branch_tx
                 .run_pair(a, b, move |tx| {
+                    Box::pin(async move {
+                        execute_in_tx(
+                            &command_clone,
+                            tx,
+                            &branch_clone,
+                            &caller_clone,
+                            input,
+                            &idem_key_clone,
+                            &claim_token_clone,
+                            &store_clone,
+                            &captured_error_clone,
+                        )
+                        .await
+                    })
+                })
+                .await
+        }
+        Locks::Org => {
+            branch_tx
+                .run_org(&org_id, move |tx| {
                     Box::pin(async move {
                         execute_in_tx(
                             &command_clone,

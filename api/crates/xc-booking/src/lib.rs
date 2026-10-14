@@ -13,6 +13,7 @@ pub mod domain {
 pub mod application {
     pub mod booking_service;
     pub mod slot_service;
+    pub mod sweeper;
 }
 
 pub mod infrastructure {

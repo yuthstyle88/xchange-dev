@@ -4195,6 +4195,8 @@ dependencies = [
  "tracing",
  "uuid",
  "xc-approval",
+ "xc-customer",
+ "xc-kernel",
  "xc-outbox",
 ]
 
@@ -4269,6 +4271,7 @@ dependencies = [
  "xc-app",
  "xc-approval",
  "xc-auth",
+ "xc-booking",
  "xc-cash",
  "xc-customer",
  "xc-exchange",

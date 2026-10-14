@@ -11,7 +11,7 @@
 //!
 //! No SQL here: all services keep theirs behind their own repositories.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use serde_json::json;
 use sqlx::PgPool;
@@ -19,10 +19,8 @@ use std::collections::HashMap;
 use xc_auth::application::account::service::{AccountService, EmployeesAnswer};
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::domain::booking::repositories::member_repository::MemberRepository;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
-use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::UnitSize;
 use xc_kernel::payment::PaymentRules;
@@ -46,7 +44,6 @@ pub struct ServiceSnapshotSources {
     transactions: TransactionService,
     accounts: AccountService<PgAccountRepository>,
     payment_settings: PaymentSettingsService,
-    members: PgMemberRepository,
 }
 
 impl ServiceSnapshotSources {
@@ -59,13 +56,11 @@ impl ServiceSnapshotSources {
         let store = BranchSettingStore::new(pool.clone());
         let branches = PgBranchRepository::new(pool.clone());
         let payment_settings = PaymentSettingsService::new(branch_tx, store, branches);
-        let members = PgMemberRepository::new(pool.clone());
         Self {
             pool,
             transactions,
             accounts,
             payment_settings,
-            members,
         }
     }
 }
@@ -141,12 +136,26 @@ impl SnapshotSources for ServiceSnapshotSources {
 
     fn members<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, Vec<MemberMark>> {
         Box::pin(async move {
-            let members = self.members.list(branch).await?;
-            Ok(members
+            let rows: Vec<(String, Option<DateTime<Utc>>)> = sqlx::query_as(
+                "SELECT ci.customer_id, ci.verified_at \
+                 FROM customer_identities ci \
+                 JOIN branches b ON b.organization_id = ci.organization_id \
+                 WHERE b.id = $1 \
+                   AND ci.type = 'PHONE' \
+                   AND ci.status = 'ACTIVE' \
+                   AND ci.verified_at IS NOT NULL \
+                 ORDER BY ci.verified_at ASC, ci.customer_id ASC",
+            )
+            .bind(branch.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            Ok(rows
                 .into_iter()
-                .map(|m| MemberMark {
-                    customer_id: m.customer_id,
-                    verified_at: Some(m.verified_at),
+                .map(|(customer_id, verified_at)| MemberMark {
+                    customer_id,
+                    verified_at,
                 })
                 .collect())
         })

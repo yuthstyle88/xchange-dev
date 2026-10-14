@@ -16,6 +16,12 @@
 //! build them: `ServiceSnapshotSources::new(transactions, accounts)` — its
 //! signature does not change (§10 [required]).
 //!
+//! Re-pinned for BK-10 #1412 by the ticket author claude/29df2ec5 (lane controller ruling 1,
+//! issuecomment-6140233542): a member is now a customer with a verified ACTIVE `PHONE` identity,
+//! company-wide (booking-slots design §6 `members` row, PR 639 K1). Members are written through
+//! `ContactVerify::verify_in` (BK-10's writer, `customerContactVerify`); a v2 `members` row no
+//! longer marks anybody. Each test keeps its purpose.
+//!
 //! Needs `TEST_DATABASE_URL` (see `save_common/mod.rs`); nothing here skips.
 
 mod compat_common;
@@ -29,8 +35,10 @@ use save_common::{MAIN, Shop, TransactionService, at, branch, person};
 use serde_json::{Value, json};
 use snapshot_common::{NoPorts, RecordedSource};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_customer::application::customer::contact_verify::{ContactSummary, ContactVerify};
 use xc_exchange::domain::booking::entities::member::Member;
 use xc_exchange::domain::booking::repositories::member_repository::MemberRepository;
 use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
@@ -124,6 +132,42 @@ async fn issue(
     stored
 }
 
+/// Verify `phone` as `customer_id`'s phone at `branch_id` through BK-10's writer, as a Teller of
+/// that branch, at `verified_at`, in a transaction of its own, committed.
+async fn verify(
+    shop: &Shop,
+    branch_id: &str,
+    customer_id: &str,
+    phone: &str,
+    verified_at: DateTime<Utc>,
+) -> ContactSummary {
+    let who = User::new(
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-0000-0000-000000000001",
+        vec![ScopedRole::new(
+            Role::Teller,
+            Some(branch(branch_id)),
+            DateTime::<Utc>::UNIX_EPOCH,
+            None,
+        )],
+        None,
+    );
+    let mut tx = shop.pool.begin().await.expect("begin a transaction");
+    let summary = ContactVerify::new(branch_tx(shop))
+        .verify_in(
+            &mut tx,
+            &who,
+            &branch(branch_id),
+            customer_id,
+            phone,
+            verified_at,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("verify {phone} for {customer_id}: {e:?}"));
+    tx.commit().await.expect("commit the verification");
+    summary
+}
+
 /// The admin snapshot of `here`, as JSON.
 async fn snapshot(shop: &Shop, here: &BranchId) -> Value {
     builder(shop)
@@ -158,13 +202,13 @@ fn sorted(mut marks: Vec<MemberMark>) -> Vec<MemberMark> {
 /// §5.6.8 row *the admin snapshot after `member`*: the member is marked with
 /// its verification time (milliseconds, `Z`), the customer beside it is not;
 /// and the six write answers still strip both fields (`snapshot.rs:183`), the
-/// member's included.
+/// member's included. BK-10: the member is the customer whose phone was verified.
 #[tokio::test]
 async fn a_member_of_the_branch_is_marked_and_the_write_answers_strip_both_fields() {
     let shop = Shop::start().await;
     let member = customer(&shop, MAIN, "AA1000001").await;
     let walk_in = customer(&shop, MAIN, "AA1000002").await;
-    issue(&shop, "MB-main-1", MAIN, &member, "hash-main-1", at(100)).await;
+    verify(&shop, MAIN, &member, "081-234-5678", at(100)).await;
 
     let marks = sources(&shop)
         .members(&branch(MAIN))
@@ -209,81 +253,77 @@ async fn a_member_of_the_branch_is_marked_and_the_write_answers_strip_both_field
     shop.finish().await;
 }
 
-/// Members are per branch (§5.6.1 *Member flag*: "from `members` of the
-/// branch"; v2 `ledger.ts:37` `WHERE branch_id=?`). A customer of MAIN whose
-/// only member row is B2's is not a member in MAIN's snapshot, and MAIN's
-/// source names nobody; B2's own member is marked in B2's snapshot.
+/// Which rows mark a member of a branch. v2: per branch (§5.6.1 *Member flag*: "from `members` of
+/// the branch"). BK-10 (design §6, PR 639 K1): company-wide — a phone verified at B2 marks its
+/// customer in MAIN's snapshot and in B2's, and a v2 `members` row marks nobody, here or there.
 #[tokio::test]
-async fn a_member_row_of_another_branch_marks_nobody_here() {
+async fn a_verified_phone_marks_its_customer_at_every_branch_and_a_members_row_marks_nobody() {
     let shop = Shop::start().await;
     shop.seed_branch(B2, "Second").await;
     let at_main = customer(&shop, MAIN, "AA2000001").await;
     let at_b2 = customer(&shop, B2, "AA2000002").await;
-    // a row of B2 naming MAIN's customer: the table's keys allow it
-    issue(&shop, "MB-b2-main", B2, &at_main, "hash-b2-main", at(100)).await;
+    // a v2 member row of B2 for B2's customer: no longer a member anywhere
     issue(&shop, "MB-b2-own", B2, &at_b2, "hash-b2-own", at(200)).await;
+    // MAIN's customer's phone, verified at B2
+    verify(&shop, B2, &at_main, "081-234-5678", at(100)).await;
 
     let sources = sources(&shop);
-    assert_eq!(
-        sources
-            .members(&branch(MAIN))
-            .await
-            .expect("the members of MAIN"),
-        Vec::<MemberMark>::new(),
-        "MAIN has no member row"
-    );
-    assert_eq!(
-        sorted(
-            sources
-                .members(&branch(B2))
-                .await
-                .expect("the members of B2")
-        ),
-        sorted(vec![
-            MemberMark {
+    for here in [MAIN, B2] {
+        assert_eq!(
+            sorted(
+                sources
+                    .members(&branch(here))
+                    .await
+                    .unwrap_or_else(|e| panic!("the members of {here}: {e:?}"))
+            ),
+            vec![MemberMark {
                 customer_id: at_main.clone(),
                 verified_at: Some(at(100)),
-            },
-            MemberMark {
-                customer_id: at_b2.clone(),
-                verified_at: Some(at(200)),
-            },
-        ]),
-        "B2's rows, and only B2's"
-    );
+            }],
+            "{here}: the verified phone's customer, and only that customer"
+        );
+    }
 
     let main_shown = snapshot(&shop, &branch(MAIN)).await;
     assert_eq!(
         flag(printed(&main_shown, &at_main)),
-        json!({ "member": false, "memberVerifiedAt": null }),
-        "a member row of B2 marks nobody in MAIN"
+        json!({ "member": true, "memberVerifiedAt": "2026-10-06T05:01:40.123Z" }),
+        "a phone verified at B2 marks its customer in MAIN"
     );
 
     let b2_shown = snapshot(&shop, &branch(B2)).await;
     assert_eq!(
         flag(printed(&b2_shown, &at_b2)),
-        json!({ "member": true, "memberVerifiedAt": "2026-10-06T05:03:20.123Z" }),
-        "B2's member in B2's snapshot"
+        json!({ "member": false, "memberVerifiedAt": null }),
+        "a v2 members row of B2 marks nobody in B2"
     );
     shop.finish().await;
 }
 
-/// A member re-issued for the same customer keeps its id (T15-b,
-/// `reissue_keeps_id_replaces_hash`) and the snapshot shows the new
-/// verification time — one mark, never two.
+/// A member re-issued — BK-10: the customer's phone verified again with a new number (ruling (a)
+/// on #1412: the old identity is revoked, the new one is ACTIVE) — shows the new verification
+/// time: one mark, never two.
 #[tokio::test]
 async fn a_reissued_member_shows_the_new_verification_time() {
     let shop = Shop::start().await;
     let member = customer(&shop, MAIN, "AA3000001").await;
-    let first = issue(&shop, "MB-first", MAIN, &member, "hash-first", at(100)).await;
+    verify(&shop, MAIN, &member, "081-234-5678", at(100)).await;
     assert_eq!(
         flag(printed(&snapshot(&shop, &branch(MAIN)).await, &member)),
         json!({ "member": true, "memberVerifiedAt": "2026-10-06T05:01:40.123Z" }),
-        "after the first issue"
+        "after the first verification"
     );
 
-    let again = issue(&shop, "MB-second", MAIN, &member, "hash-second", at(300)).await;
-    assert_eq!(again.id, first.id, "the repository keeps the member's id");
+    verify(&shop, MAIN, &member, "089-876-5432", at(300)).await;
+    let active: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM customer_identities \
+         WHERE customer_id = $1 AND type = 'PHONE' AND status = 'ACTIVE'",
+    )
+    .bind(&member)
+    .fetch_one(&shop.pool)
+    .await
+    .expect("count the ACTIVE phones");
+    assert_eq!(active, 1, "one ACTIVE phone after the re-verification");
 
     assert_eq!(
         sources(&shop)
@@ -298,7 +338,7 @@ async fn a_reissued_member_shows_the_new_verification_time() {
     assert_eq!(
         flag(printed(&snapshot(&shop, &branch(MAIN)).await, &member)),
         json!({ "member": true, "memberVerifiedAt": "2026-10-06T05:05:00.123Z" }),
-        "after the re-issue"
+        "after the re-verification"
     );
     shop.finish().await;
 }
@@ -310,11 +350,12 @@ async fn a_reissued_member_shows_the_new_verification_time() {
 async fn a_members_read_that_fails_is_an_error_not_nobody() {
     let shop = Shop::start().await;
     let member = customer(&shop, MAIN, "AA4000001").await;
-    issue(&shop, "MB-gone", MAIN, &member, "hash-gone", at(100)).await;
-    sqlx::query("ALTER TABLE members RENAME TO members_unreadable")
+    verify(&shop, MAIN, &member, "081-234-5678", at(100)).await;
+    // BK-10: the members source reads the customers' identities
+    sqlx::query("ALTER TABLE customer_identities RENAME TO customer_identities_unreadable")
         .execute(&shop.pool)
         .await
-        .expect("hide the members table");
+        .expect("hide the customer_identities table");
 
     match sources(&shop).members(&branch(MAIN)).await {
         Err(_) => {}
@@ -331,9 +372,9 @@ async fn a_members_read_that_fails_is_an_error_not_nobody() {
         ),
     }
 
-    sqlx::query("ALTER TABLE members_unreadable RENAME TO members")
+    sqlx::query("ALTER TABLE customer_identities_unreadable RENAME TO customer_identities")
         .execute(&shop.pool)
         .await
-        .expect("put the members table back");
+        .expect("put the customer_identities table back");
     shop.finish().await;
 }

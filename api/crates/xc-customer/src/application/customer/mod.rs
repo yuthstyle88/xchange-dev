@@ -1,9 +1,11 @@
 pub mod contact_reserve;
+pub mod contact_verify;
 pub mod phone_verification_service;
 pub mod service;
 mod system_phone;
 
 pub use contact_reserve::ContactReserve;
+pub use contact_verify::{ContactSummary, ContactVerify, ContactVerifyError};
 pub use phone_verification_service::{
     PhoneConfirmResult, PhoneStartResult, PhoneVerificationError, PhoneVerificationService,
 };

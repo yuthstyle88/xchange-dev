@@ -92,7 +92,7 @@ impl PagedView for AdminCustomersPagedView {
                      c.display_name AS name, \
                      COALESCE((SELECT ci.nationality FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' LIMIT 1), '') AS nationality, \
                      c.created_at, \
-                     EXISTS(SELECT 1 FROM members m WHERE m.branch_id = b.id AND m.customer_id = c.id) AS member, \
+                     EXISTS(SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PHONE' AND ci.status = 'ACTIVE' AND ci.verified_at IS NOT NULL) AS member, \
                      COUNT(DISTINCT t.id) AS completed, \
                      COALESCE(SUM(tl.thb_amount)::text, '0.00') AS volume, \
                      MAX(t.recorded_at) AS last_at \

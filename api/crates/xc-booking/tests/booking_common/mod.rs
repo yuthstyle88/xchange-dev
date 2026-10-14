@@ -20,6 +20,7 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_booking::application::booking_service::BookingService;
+use xc_booking::application::sweeper::BookingSweeper;
 use xc_booking::infrastructure::booking_repository::PgBookingRepository;
 use xc_booking::infrastructure::slot_repository::PgSlotRepository;
 use xc_customer::application::customer::ContactReserve;
@@ -465,5 +466,9 @@ impl TestDb {
         let transactor = pos_infra::transactions::Transactor::new(self.pool.clone());
         let branch_tx = BranchTx::new(transactor);
         Arc::new(ContactReserve::new(branch_tx))
+    }
+
+    pub fn sweeper(&self) -> BookingSweeper {
+        BookingSweeper::new(self.pool.clone())
     }
 }

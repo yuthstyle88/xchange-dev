@@ -3,8 +3,10 @@
 //! implementation by the ticket author. Do not edit, delete or weaken; add tests in a file of your own.
 
 mod common;
+mod member_phone_seeds;
 
 use common::*;
+use member_phone_seeds::MEMBER_E164;
 use pos_error::AppError;
 use uuid::Uuid;
 
@@ -246,15 +248,17 @@ async fn a_limit_outside_one_to_two_hundred_is_refused() {
 
 // ── customer keys ───────────────────────────────────────────────────────────
 
+/// Re-pinned for BK-10 #1412 by claude/29df2ec5 (lane controller ruling 1, issuecomment-6140233542):
+/// a member is a customer with a verified ACTIVE `PHONE` identity, found through the Blueprint
+/// booking the exchange completed; the phone is answered in E.164 (ruling 3).
 #[tokio::test]
 async fn an_exchange_from_a_members_booking_carries_the_members_verified_phone() {
     let db = TestDb::start().await;
     let customer = unique("CU");
     db.seed_customer(&customer).await;
-    let member = unique("MB");
-    db.seed_member(&member, &customer).await;
-    let (id, document_ref) = db.seed_transaction(&customer).await;
-    db.seed_used_booking(Some(&member), &document_ref).await;
+    member_phone_seeds::seed_phone(&db.pool, &customer, MEMBER_E164, true, "ACTIVE").await;
+    let (id, _) = db.seed_transaction(&customer).await;
+    member_phone_seeds::seed_completed_booking(&db.pool, MAIN, &customer, id).await;
 
     let mut tx = db.begin().await;
     let keys = BookingMemberKeys.keys_in(&mut tx, id).await.expect("keys");
@@ -262,7 +266,7 @@ async fn an_exchange_from_a_members_booking_carries_the_members_verified_phone()
         keys,
         CustomerKeys {
             customer_sub: None,
-            phone: Some(MEMBER_PHONE.into())
+            phone: Some(MEMBER_E164.into())
         }
     );
     drop(tx);
