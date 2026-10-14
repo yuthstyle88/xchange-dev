@@ -1,5 +1,5 @@
 import { batch, createSignal, For, onMount, Show, type JSX } from 'solid-js';
-import { screenT } from '../../shared/i18n';
+import { errorText, screenT } from '../../shared/i18n';
 import { ApiClient, ApiError } from '../../shared/api/client';
 import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
@@ -25,10 +25,27 @@ function formatBangkokTime(iso: string): string {
   }).format(d);
 }
 
+function toWordedError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
+      return errorText('serverError', fallback);
+    }
+    const txt = errorText(err.code, fallback);
+    return txt === err.code ? fallback : txt;
+  }
+  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
+    const code = (err as { code: string }).code;
+    const txt = errorText(code, fallback);
+    return txt === code ? fallback : txt;
+  }
+  return fallback;
+}
+
 export function StaffPage(props: StaffPageProps): JSX.Element {
   const t = screenT('staff', { th, en });
   const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
   const [floor, setFloor] = createSignal<StaffFloorView | undefined>(undefined);
+  const [floorError, setFloorError] = createSignal<string | undefined>(undefined);
 
   const refresh = async (): Promise<void> => {
     let meData: StaffMeView | undefined;
@@ -46,19 +63,23 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
     }
 
     let floorData: StaffFloorView | undefined;
+    let floorErr: string | undefined;
     try {
       const floorRes = await props.api.view<StaffFloorView>('staff_floor');
       floorData = floorRes.data;
-    } catch {
-      // floor view might fail or not be ready
+    } catch (err: unknown) {
+      floorErr = toWordedError(err, t('floorError'));
     }
 
-    if (meData) {
-      batch(() => {
+    batch(() => {
+      if (meData) {
         setMe(meData);
+      }
+      if (floorData !== undefined) {
         setFloor(floorData);
-      });
-    }
+      }
+      setFloorError(floorErr);
+    });
   };
 
   onMount(() => {
@@ -114,6 +135,14 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
                   </Show>
                 </div>
               </header>
+
+              <Show when={floorError()}>
+                {(err) => (
+                  <div role="alert" data-testid="staff-error">
+                    {err()}
+                  </div>
+                )}
+              </Show>
 
               <section class="xc-staff-cards">
                 <For each={sortedCards()}>
