@@ -10,6 +10,7 @@ export const th = {
   boardKey: 'คีย์ป้ายเรท',
   save: 'บันทึก',
   keyRequired: 'กรุณาระบุคีย์ป้ายเรท',
+  providerRequired: 'กรุณาระบุผู้ให้บริการป้ายเรท',
   remove: 'ลบ',
 };
 
@@ -25,5 +26,6 @@ export const en = {
   boardKey: 'Rate Board Key',
   save: 'Save',
   keyRequired: 'Rate board key is required',
+  providerRequired: 'Rate board provider is required',
   remove: 'Remove',
 };
