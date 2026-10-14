@@ -3,6 +3,7 @@
 pub mod cipher;
 pub mod derive;
 pub mod error;
+pub mod hmac;
 pub mod identity_type;
 pub mod key_file;
 pub mod lookup_hash;
@@ -13,6 +14,7 @@ pub mod text_redactor;
 pub use cipher::{PiiCipher, Sealed};
 pub use derive::derive_subkey;
 pub use error::PiiError;
+pub use hmac::hmac_sha256;
 pub use identity_type::{IdentityType, PiiKind};
 pub use key_file::PiiKeys;
 pub use lookup_hash::LookupHasher;
