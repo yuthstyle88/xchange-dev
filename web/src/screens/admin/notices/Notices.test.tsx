@@ -7,7 +7,7 @@
 // 5. Mark all read: one notificationReadAll call.
 // 6. A refused mark-read shows the worded error and keeps the list.
 // 7. A body containing <b>x</b> renders as literal text.
-// 8. The menu has needs: 'all', and menus.test.ts lists it in BLUEPRINT_MENUS.
+// 8. The menu has needs: 'all' and blueprint: true.
 // 9. TH/EN key parity.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -339,7 +339,7 @@ describe('SM-3: Notices (§9 specs)', () => {
     expect(bodyEl?.textContent).toBe('Here is <b>bold</b> text');
   });
 
-  // Edge case 8: The menu has needs: 'all', and menus.test.ts lists it in BLUEPRINT_MENUS.
+  // Edge case 8: The menu has needs: 'all' and blueprint: true.
   it('8. menu has needs: "all" and order is a positive number', () => {
     expect(menu.id).toBe('notices');
     expect(menu.needs).toBe('all');

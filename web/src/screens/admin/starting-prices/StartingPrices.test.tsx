@@ -10,7 +10,7 @@
 // 8. An answer { unpriced: [{ branch: "B2", reason: "noPolicy" }] } lists "B2: no policy: not priced". An unknown reason shows the generic text, and [] shows nothing.
 // 9. After a successful save the view is read again.
 // 10. A reason containing <b>x</b> renders as literal text.
-// 11. The menu has needs: 'OrgStartingPricesManage', and menus.test.ts lists it in BLUEPRINT_MENUS and BLUEPRINT_NEEDS.
+// 11. The menu has needs: 'OrgStartingPricesManage' and blueprint: true.
 // 12. TH/EN key parity.
 
 import { createSignal } from 'solid-js';
@@ -669,8 +669,8 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
     expect(usdRow.querySelector('b')).toBeNull();
   });
 
-  // 11. The menu has needs: 'OrgStartingPricesManage', and menus.test.ts lists it in BLUEPRINT_MENUS and BLUEPRINT_NEEDS.
-  it('11. The menu has needs: OrgStartingPricesManage, and menus.test.ts lists it in BLUEPRINT_MENUS and BLUEPRINT_NEEDS', () => {
+  // 11. The menu has needs: 'OrgStartingPricesManage' and blueprint: true.
+  it('11. The menu has needs: OrgStartingPricesManage and blueprint: true', () => {
     expect(menu.id).toBe('starting-prices');
     expect(menu.needs).toBe('OrgStartingPricesManage');
     expect(menu.order).toBe(22);

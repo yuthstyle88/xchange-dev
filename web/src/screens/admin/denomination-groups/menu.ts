@@ -19,4 +19,5 @@ export const menu: AdminMenu = {
   },
   dated: false,
   Component: DenominationGroups,
+  blueprint: true,
 };

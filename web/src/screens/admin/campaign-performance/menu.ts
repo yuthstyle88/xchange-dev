@@ -20,4 +20,5 @@ export const menu: AdminMenu = {
     subtitle: () => t('subtitle'),
   },
   Component: CampaignPerformance,
+  blueprint: true,
 };

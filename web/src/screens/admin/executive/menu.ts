@@ -21,4 +21,5 @@ export const menu: AdminMenu = {
     subtitle: () => t('subtitle'),
   },
   Component: Executive,
+  blueprint: true,
 };
