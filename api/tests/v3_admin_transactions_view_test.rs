@@ -43,6 +43,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -422,13 +423,13 @@ impl Room {
         )
         .await;
         counter.desk.db.seed_branch(B9, B9_NAME).await;
-        counter
-            .owner_rpc(
-                "adminOpenShift",
-                json!({ "branchId": B9, "requestId": request_id(),
-                        "opening": { "THB": 1000, "USD": 10 } }),
-            )
-            .await;
+        shift_setup_common::open_shift_by_count(
+            &counter.desk.db.pool,
+            B9,
+            json!({ "THB": 1000, "USD": 10 }),
+            chrono::Utc::now(),
+        )
+        .await;
         Room { counter, staff }
     }
 

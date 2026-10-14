@@ -16,6 +16,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use kiosk_http_common::{Counter, as_who};
@@ -157,13 +158,13 @@ async fn each_branch_kiosk_reads_its_own_switch() {
         &[("USD", "32", "32.5")],
     )
     .await;
-    counter
-        .owner_rpc(
-            "adminOpenShift",
-            json!({ "requestId": "00000000-0000-4000-8000-0000000d0103", "branchId": airport,
-                    "opening": { "THB": 100000, "USD": 2000 } }),
-        )
-        .await;
+    shift_setup_common::open_shift_by_count(
+        &counter.desk.db.pool,
+        &airport,
+        json!({ "THB": 100000, "USD": 2000 }),
+        chrono::Utc::now(),
+    )
+    .await;
 
     owner_saves(&counter, "MAIN", 0, switched("Credit Card", false)).await;
     quoted(

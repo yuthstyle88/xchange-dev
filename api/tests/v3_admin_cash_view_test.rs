@@ -515,6 +515,16 @@ impl Room {
     /// A shift is closed by count via CashCountService: the shift's teller submits the CLOSE count,
     /// and a different user (a MANAGER) verifies it, posting the difference and closing the shift.
     async fn close_shift_by_count(&self, branch: &str, counted: Value) -> String {
+        self.close_shift_by_count_with_note(branch, counted, "close by count")
+            .await
+    }
+
+    async fn close_shift_by_count_with_note(
+        &self,
+        branch: &str,
+        counted: Value,
+        note: &str,
+    ) -> String {
         let shift_id = self.open_shift_id(branch).await;
 
         let (teller_user_id, org_id): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
@@ -621,7 +631,7 @@ impl Room {
                     shift_id: Some(shift_id.clone()),
                     kind: CountKind::Close,
                     lines,
-                    note: Some("close by count".to_string()),
+                    note: Some(note.to_string()),
                     idempotency_key: request_id(),
                 },
                 now,
@@ -1367,7 +1377,7 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
     let s1 = room
         .open_shift_with(MAIN, json!({ "THB": "1000", "USD": "100", "EUR": "10" }))
         .await;
-    room.close_shift_counting(
+    room.close_shift_by_count_with_note(
         MAIN,
         json!({ "THB": "1000", "USD": "95", "EUR": "12" }),
         "USD ขาด 5 · EUR เกิน 2",
@@ -1375,7 +1385,8 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
     .await;
     // 2: closed exactly
     let s2 = room.open_shift_with(MAIN, json!({ "THB": "2000" })).await;
-    room.close_shift(MAIN).await;
+    room.close_shift_by_count(MAIN, json!({ "THB": "2000" }))
+        .await;
     // 3: open, with a movement
     let s3 = room
         .open_shift_with(MAIN, json!({ "THB": "3000", "USD": "1" }))

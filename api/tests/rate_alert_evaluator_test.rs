@@ -473,6 +473,64 @@ impl TestDb {
         publication
     }
 
+    pub async fn publish_with_groups(
+        &self,
+        branch: &str,
+        version: i32,
+        lines: Vec<(&'static str, Line)>,
+    ) -> (Uuid, Vec<Uuid>) {
+        let approval: Uuid = sqlx::query_scalar(
+            "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
+             proposed_payload, requested_by, requested_at, status, idempotency_key) \
+             VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, $2, 'h', 'p', '{}', 'test', now(), 'APPROVED', $2) \
+             RETURNING id",
+        )
+        .bind(branch)
+        .bind(unique("pub"))
+        .fetch_one(&self.pool)
+        .await
+        .expect("approved request");
+
+        let publication: Uuid = sqlx::query_scalar(
+            "INSERT INTO rate_publications (id, branch_id, version, published_at, approved_request_id, published_by) \
+             VALUES (gen_random_uuid(), $1, $2, now(), $3, 'test') RETURNING id",
+        )
+        .bind(branch)
+        .bind(version)
+        .bind(approval)
+        .fetch_one(&self.pool)
+        .await
+        .expect("publication");
+
+        let mut ids = Vec::new();
+        for (group, l) in lines {
+            let id: Uuid = sqlx::query_scalar(
+                "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, unit_size, buy_rate, sell_rate, \
+                 source_snapshot) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            )
+            .bind(publication)
+            .bind(l.currency)
+            .bind(group)
+            .bind(dec(l.unit))
+            .bind(l.buy.map(dec))
+            .bind(l.sell.map(dec))
+            .bind(&l.snapshot)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or_else(|e| panic!("line {} ({group}) of v{version}: {e}", l.currency));
+            ids.push(id);
+        }
+
+        sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
+            .bind(publication)
+            .bind(branch)
+            .execute(&self.pool)
+            .await
+            .expect("update current publication");
+
+        (publication, ids)
+    }
+
     pub async fn insert_alert(&self, a: &AlertBuilder) -> Uuid {
         let key = unique("alert_key");
         sqlx::query(
@@ -1637,4 +1695,173 @@ fn test_rate_alert_crossed_template_metadata_and_rendering_th_en_zh() {
             rendered.body
         );
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ticket #1653: Rate-alert evaluator denomination_group = 'ALL' (§9 rows 1–3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// §9 Row 1 (#1653): A publication with USD/ALL and USD/<another group> at different rates;
+/// the alert's target is crossed only by the ALL rate.
+/// Required result: fires once, and published_rate_line_id is the ALL line.
+#[tokio::test]
+async fn test_publication_with_all_and_other_group_crossed_by_all_fires_once_with_all_line_id() {
+    let db = TestDb::world().await;
+    let fake_notify = Arc::new(FakeNotifications::new());
+    let evaluator = RateAlertEvaluator::with_pool(db.pool.clone(), fake_notify.clone());
+
+    let alert_id = db
+        .insert_alert(
+            &AlertBuilder::new()
+                .with_currency("USD")
+                .with_target("35.00")
+                .with_relation("NOT_SATISFIED")
+                .with_cooldown(0)
+                .with_last_version(Some(1)),
+        )
+        .await;
+
+    let branch = BranchId::new(MAIN);
+
+    // ALL line rate 36.00 crosses target 35.00; NOTE_50_100 line rate 34.00 does not cross
+    let (pub_v2, line_ids) = db
+        .publish_with_groups(
+            MAIN,
+            2,
+            vec![
+                ("ALL", line("USD", "1", "36.00", "36.50")),
+                ("NOTE_50_100", line("USD", "1", "34.00", "34.50")),
+            ],
+        )
+        .await;
+    let all_line_id = line_ids[0];
+
+    evaluator
+        .evaluate_publication(&branch, pub_v2)
+        .await
+        .expect("evaluate v2");
+
+    assert_eq!(db.count_events(alert_id).await, 1, "alert must fire once");
+    let events = db.get_events(alert_id).await;
+    assert_eq!(
+        events[0].published_rate_line_id, all_line_id,
+        "published_rate_line_id must be the ALL line"
+    );
+    assert_eq!(events[0].observed_rate, dec("36.00"));
+    assert_eq!(events[0].episode_no, 1);
+
+    let alert = db.get_alert(alert_id).await;
+    assert_eq!(alert.relation, "SATISFIED");
+    assert_eq!(alert.last_publication_version, Some(2));
+
+    let notifications = fake_notify.captured().await;
+    assert_eq!(notifications.len(), 1, "exactly one notification sent");
+
+    db.finish().await;
+}
+
+/// §9 Row 2 (#1653): The same, but crossed only by the other group's rate.
+/// Required result: does not fire.
+#[tokio::test]
+async fn test_publication_with_all_and_other_group_crossed_only_by_other_group_does_not_fire() {
+    let db = TestDb::world().await;
+    let fake_notify = Arc::new(FakeNotifications::new());
+    let evaluator = RateAlertEvaluator::with_pool(db.pool.clone(), fake_notify.clone());
+
+    let alert_id = db
+        .insert_alert(
+            &AlertBuilder::new()
+                .with_currency("USD")
+                .with_target("35.00")
+                .with_relation("NOT_SATISFIED")
+                .with_cooldown(0)
+                .with_last_version(Some(1)),
+        )
+        .await;
+
+    let branch = BranchId::new(MAIN);
+
+    // ALL line rate 34.00 does not cross target 35.00; NOTE_50_100 line rate 36.00 crosses
+    let (pub_v2, _line_ids) = db
+        .publish_with_groups(
+            MAIN,
+            2,
+            vec![
+                ("ALL", line("USD", "1", "34.00", "34.50")),
+                ("NOTE_50_100", line("USD", "1", "36.00", "36.50")),
+            ],
+        )
+        .await;
+
+    evaluator
+        .evaluate_publication(&branch, pub_v2)
+        .await
+        .expect("evaluate v2");
+
+    assert_eq!(
+        db.count_events(alert_id).await,
+        0,
+        "must not fire when crossed only by other denomination group"
+    );
+    let alert = db.get_alert(alert_id).await;
+    assert_eq!(alert.relation, "NOT_SATISFIED");
+    assert_eq!(alert.last_publication_version, Some(2));
+
+    let notifications = fake_notify.captured().await;
+    assert_eq!(notifications.len(), 0, "no notification sent");
+
+    db.finish().await;
+}
+
+/// §9 Row 3 (#1653): The other group's unit_size differs from the alert's; ALL's matches.
+/// Required result: the alert stays enabled (no UNIT_CHANGED).
+#[tokio::test]
+async fn test_other_group_unit_size_differs_from_alert_all_matches_alert_stays_enabled() {
+    let db = TestDb::world().await;
+    let fake_notify = Arc::new(FakeNotifications::new());
+    let evaluator = RateAlertEvaluator::with_pool(db.pool.clone(), fake_notify.clone());
+
+    let alert_id = db
+        .insert_alert(
+            &AlertBuilder::new()
+                .with_currency("USD")
+                .with_unit_size("1")
+                .with_target("35.00")
+                .with_relation("NOT_SATISFIED")
+                .with_cooldown(0)
+                .with_last_version(Some(1)),
+        )
+        .await;
+
+    let branch = BranchId::new(MAIN);
+
+    // ALL line unit_size is 1 (matches alert); NOTE_50_100 line unit_size is 100 (differs)
+    let (pub_v2, _line_ids) = db
+        .publish_with_groups(
+            MAIN,
+            2,
+            vec![
+                ("ALL", line("USD", "1", "34.00", "34.50")),
+                ("NOTE_50_100", line("USD", "100", "3400.00", "3450.00")),
+            ],
+        )
+        .await;
+
+    evaluator
+        .evaluate_publication(&branch, pub_v2)
+        .await
+        .expect("evaluate v2");
+
+    let alert = db.get_alert(alert_id).await;
+    assert!(
+        alert.enabled,
+        "alert must stay enabled when ALL matches unit_size"
+    );
+    assert_eq!(
+        alert.disabled_reason, None,
+        "no UNIT_CHANGED disabled_reason when ALL matches unit_size"
+    );
+    assert_eq!(alert.last_publication_version, Some(2));
+
+    db.finish().await;
 }

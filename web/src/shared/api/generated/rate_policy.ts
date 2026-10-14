@@ -2,4 +2,6 @@
 
 export type RatePolicyData = { policy: RatePolicyVersionDto | null, };
 
-export type RatePolicyVersionDto = { id: string, branchId: string, version: number, buyAdjustPct: string, sellAdjustPct: string, guards: any, maxReferenceAgeHours: number | null, onStale: string | null, staleLimitThb: string | null, validFrom: string, validTo: string | null, approvedBy: string, reason: string | null, };
+export type RatePolicyVersionDto = { id: string, branchId: string, version: number, buyAdjustPct: string, sellAdjustPct: string, guards: any, maxReferenceAgeHours: number | null, onStale: string | null, staleLimitThb: string | null, validFrom: string, validTo: string | null, approvedBy: string, reason: string | null, valueTiersOn: boolean, valueTiers: Array<ValueTierDto>, sharpMoveAlertPct: string | null, };
+
+export type ValueTierDto = { tierNo: number, upperInclusiveThb: string | null, buyMarginPct: string, sellMarginPct: string, };

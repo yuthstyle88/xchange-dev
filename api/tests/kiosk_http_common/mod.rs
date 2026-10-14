@@ -66,6 +66,9 @@
 
 #[path = "../rates_re4_common/mod.rs"]
 pub mod rates_re4_common;
+#[allow(clippy::duplicate_mod)]
+#[path = "../shift_setup_common/mod.rs"]
+pub mod shift_setup_common;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
@@ -1127,13 +1130,13 @@ impl Counter {
         .execute(&counter.desk.db.pool)
         .await
         .expect("open MAIN's queue");
-        counter
-            .owner_rpc(
-                "adminOpenShift",
-                json!({ "requestId": "00000000-0000-4000-8000-0000000b0002",
-                        "opening": { "THB": 100000, "USD": 2000 } }),
-            )
-            .await;
+        shift_setup_common::open_shift_by_count(
+            &counter.desk.db.pool,
+            MAIN,
+            json!({ "THB": 100000, "USD": 2000 }),
+            Utc::now(),
+        )
+        .await;
         counter
     }
 

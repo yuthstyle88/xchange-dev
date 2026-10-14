@@ -75,7 +75,8 @@ impl RateAlertEvaluator {
 
         let line_rows = sqlx::query(
             "SELECT id, currency_code, unit_size, buy_rate, sell_rate, source_snapshot \
-             FROM published_rate_lines WHERE publication_id = $1 AND tier_lower_exclusive_thb IS NULL",
+             FROM published_rate_lines WHERE publication_id = $1 AND tier_lower_exclusive_thb IS NULL \
+             AND denomination_group = 'ALL'",
         )
         .bind(publication)
         .fetch_all(&mut *tx)

@@ -11,6 +11,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::path::Path;
@@ -43,6 +44,7 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[allow(dead_code)]
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
 }
@@ -107,21 +109,14 @@ impl Room {
     }
 
     async fn open_shift(&self, branch: &str) {
-        self.tick();
-        let answer = self
-            .app
-            .send(
-                Call::action(
-                    ORIGIN,
-                    "/api/rpc",
-                    "adminOpenShift",
-                    json!({ "branchId": branch, "requestId": request_id(),
-                            "opening": { "THB": 100000, "USD": 1000 } }),
-                )
-                .cookie(&self.cookies["OWNER"]),
-            )
-            .await;
-        assert_eq!(answer.status, 200, "open a shift: {:.300}", answer.text);
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 100000, "USD": 1000 }),
+            t,
+        )
+        .await;
     }
 
     async fn save(&self, branch: &str, side: &str, amount: &str, fee: &str) -> Saved {

@@ -31,6 +31,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -106,6 +107,7 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[allow(dead_code)]
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
 }
@@ -323,21 +325,14 @@ impl Room {
     }
 
     async fn open_shift(&self, branch: &str) {
-        self.tick();
-        let call = Call::action(
-            ORIGIN,
-            rpc_common::RPC,
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(),
-                    "opening": { "THB": 100000, "USD": 1000, "EUR": 1000 } }),
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 100000, "USD": 1000, "EUR": 1000 }),
+            t,
         )
-        .cookie(&self.cookie("OWNER"));
-        let answer = self.app.send(call).await;
-        assert_eq!(
-            answer.status, 200,
-            "open a shift in {branch}: {:.400}",
-            answer.text
-        );
+        .await;
     }
 
     /// Saves one exchange through the real workflow behind the routes.

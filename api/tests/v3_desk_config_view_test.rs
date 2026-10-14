@@ -31,6 +31,7 @@
 mod common;
 mod compat_common;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -338,19 +339,13 @@ impl Room {
     }
 
     async fn open_shift(&self, branch: &str) {
-        let answer = self
-            .rpc(
-                "OWNER",
-                "adminOpenShift",
-                json!({ "branchId": branch, "requestId": request_id(),
-                        "opening": { "THB": 100000, "USD": 1000 } }),
-            )
-            .await;
-        assert_eq!(
-            answer.status, 200,
-            "adminOpenShift {branch}: {:.300}",
-            answer.text
-        );
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 100000, "USD": 1000 }),
+            chrono::Utc::now(),
+        )
+        .await;
     }
 
     async fn version(&self, branch: &str) -> i64 {

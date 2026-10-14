@@ -551,6 +551,19 @@ fn whole(d: Decimal) -> Decimal {
     d.normalize()
 }
 
+/// 12:00 Asia/Bangkok today as UTC.
+fn business_noon() -> DateTime<Utc> {
+    use chrono::TimeZone;
+    use chrono_tz::Asia::Bangkok;
+
+    let today = Utc::now().with_timezone(&Bangkok).date_naive();
+    Bangkok
+        .from_local_datetime(&today.and_hms_opt(12, 0, 0).expect("12:00:00 is valid"))
+        .single()
+        .expect("12:00 in Asia/Bangkok is unambiguous")
+        .with_timezone(&Utc)
+}
+
 // ============================================================ a reversed BUY
 
 /// §8.1: a reversed BUY returns the THB through the original's place (cash ⇒ the drawer) and takes the foreign back
@@ -559,7 +572,7 @@ fn whole(d: Decimal) -> Decimal {
 #[tokio::test]
 async fn a_reversed_cash_buy_returns_the_thb_to_the_drawer_and_disposes_at_the_original_cost() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -608,7 +621,7 @@ async fn a_reversed_cash_buy_returns_the_thb_to_the_drawer_and_disposes_at_the_o
 #[tokio::test]
 async fn a_reversed_transfer_buy_returns_the_thb_through_the_bank() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::BankTransfer, now)
         .await;
@@ -638,7 +651,7 @@ async fn a_reversed_transfer_buy_returns_the_thb_through_the_bank() {
 #[tokio::test]
 async fn a_reversed_buy_that_empties_the_position_records_the_cost_difference() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let shift = s.c.shift.clone();
     // the counter's USD 1,000 opening leaves, so the BUY's 100 are all the position holds
     s.out_to_bank(&shift, "1000.00").await;
@@ -679,7 +692,7 @@ async fn a_reversed_buy_that_empties_the_position_records_the_cost_difference() 
 async fn a_reversed_sell_brings_the_foreign_back_as_a_lot_at_the_original_unit_cost_and_reverses_the_margin()
  {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let shift = s.c.shift.clone();
     // the position gets a real cost first: the zero-cost opening leaves, 1,000 come in at 32.00
     s.out_to_bank(&shift, "1000.00").await;
@@ -748,7 +761,7 @@ async fn a_reversed_sell_brings_the_foreign_back_as_a_lot_at_the_original_unit_c
 #[tokio::test]
 async fn cash_moves_on_the_posters_open_shift_not_the_originals() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let first = s.c.shift.clone();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
@@ -814,7 +827,7 @@ async fn cash_moves_on_the_posters_open_shift_not_the_originals() {
 #[tokio::test]
 async fn a_poster_with_no_open_shift_is_refused() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -839,7 +852,7 @@ async fn a_poster_with_no_open_shift_is_refused() {
 #[tokio::test]
 async fn a_shortfall_in_the_drawer_is_stock_insufficient_and_writes_nothing() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let shift = s.c.shift.clone();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
@@ -872,7 +885,7 @@ async fn a_shortfall_in_the_drawer_is_stock_insufficient_and_writes_nothing() {
 #[tokio::test]
 async fn a_post_after_the_business_day_is_refused() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -891,7 +904,7 @@ async fn a_post_after_the_business_day_is_refused() {
 #[tokio::test]
 async fn a_reversal_that_is_not_approved_is_stale() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -926,7 +939,7 @@ async fn a_reversal_that_is_not_approved_is_stale() {
 #[tokio::test]
 async fn the_reversal_document_is_revision_2_numbered_r2_and_the_reversal_is_marked_posted() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -989,7 +1002,7 @@ async fn the_reversal_document_is_revision_2_numbered_r2_and_the_reversal_is_mar
 #[tokio::test]
 async fn the_originals_row_lines_and_receipt_are_unchanged() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Sell, "100", PaymentMethod::Cash, now)
         .await;
@@ -1014,7 +1027,7 @@ async fn the_originals_row_lines_and_receipt_are_unchanged() {
 #[tokio::test]
 async fn the_feed_and_each_effect_happen_once_and_a_repeat_posts_once() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -1079,7 +1092,7 @@ async fn the_feed_and_each_effect_happen_once_and_a_repeat_posts_once() {
 #[tokio::test]
 async fn a_refusing_effect_rolls_the_whole_reversal_back() {
     let s = Shop::start().await;
-    let now = whole_second_now();
+    let now = business_noon();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;

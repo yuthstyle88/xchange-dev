@@ -8,12 +8,13 @@ use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::MoneyDelta;
+use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_shifts::{
@@ -46,11 +47,15 @@ fn sorted_currency_codes<I: IntoIterator<Item = S>, S: AsRef<str>>(codes: I) -> 
 
 struct AdminShiftsPagedView {
     pool: PgPool,
+    shift_balances: Arc<dyn ShiftBalances>,
 }
 
 impl AdminShiftsPagedView {
-    fn new(pool: PgPool) -> Self {
-        Self { pool }
+    fn new(pool: PgPool, shift_balances: Arc<dyn ShiftBalances>) -> Self {
+        Self {
+            pool,
+            shift_balances,
+        }
     }
 }
 
@@ -61,15 +66,6 @@ struct ShiftSqlRow {
     opened_at: DateTime<Utc>,
     opened_by: String,
     close_note: String,
-}
-
-#[derive(sqlx::FromRow)]
-struct BalanceSqlRow {
-    code: String,
-    opening: Decimal,
-    expected: Decimal,
-    counted: Option<Decimal>,
-    difference: Option<Decimal>,
 }
 
 impl PagedView for AdminShiftsPagedView {
@@ -87,6 +83,7 @@ impl PagedView for AdminShiftsPagedView {
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
+        let shift_balances = self.shift_balances.clone();
         let branch_id = branch.as_str().to_string();
 
         async move {
@@ -137,19 +134,11 @@ impl PagedView for AdminShiftsPagedView {
             for s in shifts {
                 let is_closed = s.status == "CLOSED";
 
-                let balance_rows: Vec<BalanceSqlRow> = sqlx::query_as(
-                    "SELECT trim(code) as code, opening, expected, counted, difference \
-                     FROM shift_balances \
-                     WHERE shift_id = $1",
-                )
-                .bind(&s.id)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
+                let balance_rows = shift_balances.shift_balances(&s.id).await?;
 
-                let mut b_map: BTreeMap<String, BalanceSqlRow> = BTreeMap::new();
+                let mut b_map: BTreeMap<String, ShiftBalance> = BTreeMap::new();
                 for b in balance_rows {
-                    b_map.insert(b.code.clone(), b);
+                    b_map.insert(b.currency.as_str().to_string(), b);
                 }
 
                 if is_closed {
@@ -164,10 +153,10 @@ impl PagedView for AdminShiftsPagedView {
                     let diff_items: Vec<AdminShiftDifferenceItem> = sorted_diff_codes
                         .into_iter()
                         .map(|code| {
-                            let amt = b_map[&code].difference.unwrap_or(Decimal::ZERO);
+                            let amt = b_map[&code].difference.unwrap_or(MoneyDelta::ZERO);
                             AdminShiftDifferenceItem {
                                 code,
-                                amount: format!("{:.2}", amt),
+                                amount: format!("{amt}"),
                             }
                         })
                         .collect();
@@ -187,11 +176,24 @@ impl PagedView for AdminShiftsPagedView {
                         .into_iter()
                         .map(|code| {
                             let (exp, cnt, diff) = match b_map.get(&code) {
-                                Some(b) => (
-                                    format!("{:.2}", b.expected),
-                                    b.counted.map(|c| format!("{:.2}", c)),
-                                    b.difference.map(|d| format!("{:.2}", d)),
-                                ),
+                                Some(b) => {
+                                    let exp = match (b.counted, b.difference) {
+                                        (Some(c), Some(d)) => {
+                                            format!(
+                                                "{}",
+                                                MoneyDelta::from_minor(
+                                                    c.minor_i128() - d.minor()
+                                                )
+                                            )
+                                        }
+                                        _ => format!("{}", b.expected),
+                                    };
+                                    (
+                                        exp,
+                                        b.counted.map(|c| format!("{c}")),
+                                        b.difference.map(|d| format!("{d}")),
+                                    )
+                                }
                                 None => ("0.00".to_string(), None, None),
                             };
                             AdminShiftBalanceRow {
@@ -226,7 +228,7 @@ impl PagedView for AdminShiftsPagedView {
                         .into_iter()
                         .map(|code| {
                             let exp = match b_map.get(&code) {
-                                Some(b) => format!("{:.2}", b.expected),
+                                Some(b) => format!("{}", b.expected),
                                 None => "0.00".to_string(),
                             };
                             AdminShiftBalanceRow {
@@ -256,7 +258,13 @@ impl PagedView for AdminShiftsPagedView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register_paged(cfg, Arc::new(AdminShiftsPagedView::new(state.db.clone())));
+    ViewEndpoint::register_paged(
+        cfg,
+        Arc::new(AdminShiftsPagedView::new(
+            state.db.clone(),
+            state.shift_balances.clone(),
+        )),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
