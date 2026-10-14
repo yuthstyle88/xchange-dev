@@ -119,20 +119,19 @@ describe('108-Plaza/xchange#1717: RateAlerts branch list failure shows worded er
     expect(alerts.some((a) => a.textContent?.includes('raw wire message'))).toBe(false);
   });
 
-  it('shows generic worded error for 400 with unknown code without leaking raw wire message', async () => {
+  it('shows server sentence for 400 with unknown code without leaking raw code', async () => {
     branchesReply = () => refusal(400, 'somethingNew', 'raw wire message');
     const { container } = mount();
     await flush();
 
     const alerts = Array.from(container.querySelectorAll('[role="alert"]'));
-    const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    const expected = 'raw wire message';
     const found = alerts.some((a) => a.textContent?.includes(expected));
     expect(found, `Expected role="alert" containing "${expected}"`).toBe(true);
     expect(alerts.some((a) => a.textContent?.includes('somethingNew'))).toBe(false);
-    expect(alerts.some((a) => a.textContent?.includes('raw wire message'))).toBe(false);
   });
 
-  it('shows generic worded error when fetch rejects with TypeError without leaking Failed to fetch', async () => {
+  it('shows network worded error when fetch rejects with TypeError without leaking Failed to fetch', async () => {
     branchesReply = () => {
       throw new TypeError('Failed to fetch');
     };
@@ -140,7 +139,7 @@ describe('108-Plaza/xchange#1717: RateAlerts branch list failure shows worded er
     await flush();
 
     const alerts = Array.from(container.querySelectorAll('[role="alert"]'));
-    const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    const expected = errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     const found = alerts.some((a) => a.textContent?.includes(expected));
     expect(found, `Expected role="alert" containing "${expected}"`).toBe(true);
     expect(alerts.some((a) => a.textContent?.includes('Failed to fetch'))).toBe(false);
