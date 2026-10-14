@@ -1,0 +1,353 @@
+/* Desk Bookings Styles - B02 Screen */
+.xc-desk-bookings {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: inherit;
+  color: #1a1a1a;
+}
+
+.xc-refusal {
+  padding: 2rem;
+  margin: 2rem auto;
+  max-width: 600px;
+  background-color: #fff1f0;
+  border: 1px solid #ffa39e;
+  border-radius: 8px;
+  color: #cf1322;
+  text-align: center;
+  font-weight: 500;
+}
+
+.xc-error-banner {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background-color: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  color: #cf1322;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.xc-bookings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+}
+
+.xc-qr-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.xc-qr-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-width: 240px;
+}
+
+.xc-qr-submit {
+  cursor: pointer;
+}
+
+.xc-bookings-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.xc-bookings-refresh {
+  cursor: pointer;
+}
+
+.xc-new-booking-btn {
+  cursor: pointer;
+}
+
+.xc-btn-primary {
+  padding: 0.5rem 1rem;
+  background-color: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-btn-primary:hover {
+  background-color: #40a9ff;
+}
+
+.xc-btn-secondary {
+  padding: 0.5rem 1rem;
+  background-color: white;
+  color: #495057;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-btn-secondary:hover {
+  background-color: #f8f9fa;
+}
+
+.xc-slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.xc-slot-group {
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+}
+
+.xc-slot-header {
+  padding: 0.75rem 1rem;
+  background-color: #f1f3f5;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.xc-slot-bookings {
+  display: flex;
+  flex-direction: column;
+}
+
+.xc-booking-item {
+  padding: 1rem;
+  border-bottom: 1px solid #f1f3f5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.xc-booking-item:last-child {
+  border-bottom: none;
+}
+
+.xc-booking-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.xc-booking-no {
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.xc-customer-name {
+  font-weight: 500;
+}
+
+.xc-phone-last4 {
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.xc-readiness {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.5rem;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  color: #495057;
+}
+
+.xc-ticket-number {
+  font-weight: 700;
+  color: #52c41a;
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.xc-status-tag {
+  font-size: 0.85rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-weight: 500;
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.xc-status-CONFIRMED {
+  background-color: #e6f7ff;
+  color: #096dd9;
+  border-color: #91d5ff;
+}
+
+.xc-status-CHECKED_IN {
+  background-color: #f6ffed;
+  color: #389e0d;
+  border-color: #b7eb8f;
+}
+
+.xc-status-CANCELLED {
+  background-color: #fff1f0;
+  color: #cf1322;
+  border-color: #ffa39e;
+}
+
+.xc-status-COMPLETED {
+  background-color: #f6ffed;
+  color: #389e0d;
+  border-color: #b7eb8f;
+}
+
+.xc-status-PENDING_CUSTOMER_CONFIRMATION {
+  background-color: #fffbe6;
+  color: #d46b08;
+  border-color: #ffe58f;
+}
+
+.xc-status-IN_SERVICE {
+  background-color: #f0f5ff;
+  color: #1d39c4;
+  border-color: #adc6ff;
+}
+
+.xc-status-NO_SHOW {
+  background-color: #fff1f0;
+  color: #cf1322;
+  border-color: #ffa39e;
+}
+
+.xc-status-EXPIRED {
+  background-color: #f5f5f5;
+  color: #8c8c8c;
+  border-color: #d9d9d9;
+}
+
+.xc-booking-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.xc-checkin-btn {
+  cursor: pointer;
+}
+
+.xc-cancel-btn {
+  cursor: pointer;
+}
+
+.xc-reschedule-btn {
+  cursor: pointer;
+}
+
+.xc-retry-btn {
+  cursor: pointer;
+}
+
+.xc-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.xc-modal {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.xc-modal-title {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.xc-form-group {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.xc-form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.xc-form-group input,
+.xc-form-group select,
+.xc-form-group textarea {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.xc-cancel-reason {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.xc-referral-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.xc-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.xc-confirm-cancel {
+  cursor: pointer;
+}
+
+.xc-confirm-reschedule {
+  cursor: pointer;
+}
+
+.xc-submit-booking {
+  cursor: pointer;
+}
+
+.xc-empty-state {
+  padding: 3rem;
+  text-align: center;
+  color: #6c757d;
+  font-size: 1rem;
+}
