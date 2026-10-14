@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
-import { errorText, screenT } from '../../../shared/i18n';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient } from '../../../shared/api/client';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import type { StaffCtx } from '../cards';
@@ -9,21 +10,6 @@ import './rates.css';
 
 export interface RatesCardProps {
   ctx: StaffCtx;
-}
-
-function toErrorText(e: unknown): string {
-  if (e instanceof ApiError) {
-    return errorText(e.code, e.message);
-  }
-  if (e && typeof e === 'object' && 'code' in e && 'message' in e) {
-    const code = String((e as { code: unknown }).code);
-    const msg = String((e as { message: unknown }).message);
-    return errorText(code, msg);
-  }
-  if (e instanceof Error) {
-    return e.message;
-  }
-  return String(e);
 }
 
 export function RatesCard(props: RatesCardProps): JSX.Element {
@@ -43,7 +29,7 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
       setError(null);
     } catch (e: unknown) {
       setRates(null);
-      setError(toErrorText(e));
+      setError(wordedError(e));
     }
   };
 
