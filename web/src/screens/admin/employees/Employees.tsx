@@ -5,11 +5,12 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminEmployeeRow, AdminEmployeesData } from '../../../shared/api/generated/admin_employees';
 import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card } from '../../../shared/ui/Card';
 import { PasswordField } from '../../../shared/ui/PasswordField';
 import { useForm } from '../../../shared/ui/form';
@@ -32,26 +33,6 @@ const ROLES = [
   'VERIFICATION_REVIEWER',
   'ADMIN',
 ] as const;
-
-function toWordedError(err: unknown): string {
-  const generic = errorText('serverError', '');
-  if (err instanceof ApiError) {
-    if (err.code === 'refused' || err.code === 'validationFailed') {
-      const msg = (err as unknown as Record<string, unknown>)['message'];
-      if (typeof msg === 'string' && msg) return msg;
-    }
-    return errorText(err.code, generic);
-  }
-  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
-    const code = (err as { code: string }).code;
-    if (code === 'refused' || code === 'validationFailed') {
-      const msg = (err as Record<string, unknown>)['message'];
-      if (typeof msg === 'string' && msg) return msg;
-    }
-    return errorText(code, generic);
-  }
-  return generic;
-}
 
 export function Employees(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -85,7 +66,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         setEmployeesError(null);
       }
     } catch (err: unknown) {
-      setEmployeesError(toWordedError(err));
+      setEmployeesError(wordedError(err));
       setEmployees([]);
     }
   }
@@ -107,7 +88,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         setOperations(res.data);
       }
     } catch (err: unknown) {
-      setOperationsError(toWordedError(err));
+      setOperationsError(wordedError(err));
       setOperations(null);
     }
   }
@@ -120,7 +101,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         setBranches(res.data.branches);
       }
     } catch (err: unknown) {
-      setBranchesError(toWordedError(err));
+      setBranchesError(wordedError(err));
     }
   }
 
@@ -189,7 +170,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        setError(toWordedError(err));
+        setError(wordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -273,7 +254,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        setError(toWordedError(err));
+        setError(wordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -308,7 +289,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       });
       await reReadBoth();
     } catch (err: unknown) {
-      toast(toWordedError(err));
+      toast(wordedError(err));
     }
   }
 
@@ -329,7 +310,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         toast(t('enabledToast'));
         await reReadBoth();
       } catch (err: unknown) {
-        setError(toWordedError(err));
+        setError(wordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -376,7 +357,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        setError(toWordedError(err));
+        setError(wordedError(err));
       } finally {
         setSubmitting(false);
       }

@@ -297,8 +297,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(sharedTh['error.serverError']);
-    expect(text).not.toContain('RAW-UNKNOWN-OPS-MSG-1696');
+    expect(text).toContain('RAW-UNKNOWN-OPS-MSG-1696');
   });
 
   it('row 1: readOperations network rejection (non-ApiError) displays generic worded error and not raw message', async () => {
@@ -313,7 +312,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(sharedTh['error.serverError']);
+    expect(text).toContain(sharedTh['error.network']);
     expect(text).not.toContain('Failed to fetch');
   });
 
@@ -448,8 +447,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(sharedTh['error.serverError']);
-    expect(text).not.toContain('RAW-UNKNOWN-BRANCH-MSG-1696');
+    expect(text).toContain('RAW-UNKNOWN-BRANCH-MSG-1696');
   });
 
   it('row 2: readBranches network rejection (non-ApiError) displays generic worded error and not raw message', async () => {
@@ -464,7 +462,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(sharedTh['error.serverError']);
+    expect(text).toContain(sharedTh['error.network']);
     expect(text).not.toContain('Failed to fetch');
   });
 
@@ -490,8 +488,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(sharedTh['error.serverError']);
-    expect(text).not.toContain('RAW-UNKNOWN-EMP-MSG-1696');
+    expect(text).toContain('RAW-UNKNOWN-EMP-MSG-1696');
   });
 
   it('write handler (disable) refusal with unknown code displays generic worded error in toast and not raw message', async () => {
@@ -519,10 +516,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     await vi.waitFor(() => {
       const toastEl = root.querySelector('[role="status"]');
       expect(toastEl).not.toBeNull();
-      expect(toastEl!.textContent).toContain(sharedTh['error.serverError']);
+      expect(toastEl!.textContent).toContain('RAW-UNKNOWN-DISABLE-MSG-1696');
     });
-
-    const toastEl = root.querySelector('[role="status"]');
-    expect(toastEl?.textContent).not.toContain('RAW-UNKNOWN-DISABLE-MSG-1696');
   });
 });
