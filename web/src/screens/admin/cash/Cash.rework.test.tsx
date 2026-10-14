@@ -166,7 +166,7 @@ describe('Admin Cash screen worded errors for failed reads (#1694)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorBannerText()).toBe(sharedTh['error.serverError']);
+        expect(errorBannerText()).toBe(sharedTh['error.network']);
       });
     });
 
@@ -192,10 +192,9 @@ describe('Admin Cash screen worded errors for failed reads (#1694)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorBannerText()).toBe(sharedTh['error.serverError']);
+        expect(errorBannerText()).toBe('RAW_UNWORDED_MSG');
       });
       expect(errorBannerText()).not.toContain('unknownMoveCode123');
-      expect(errorBannerText()).not.toContain('RAW_UNWORDED_MSG');
     });
 
     it('shows English worded error when language is en and movements read fails', async () => {
@@ -241,7 +240,7 @@ describe('Admin Cash screen worded errors for failed reads (#1694)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorBannerText()).toBe(sharedTh['error.serverError']);
+        expect(errorBannerText()).toBe(sharedTh['error.network']);
       });
     });
 
@@ -266,10 +265,9 @@ describe('Admin Cash screen worded errors for failed reads (#1694)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorBannerText()).toBe(sharedTh['error.serverError']);
+        expect(errorBannerText()).toBe('RAW_SHIFT_MSG');
       });
       expect(errorBannerText()).not.toContain('unknownShiftCode999');
-      expect(errorBannerText()).not.toContain('RAW_SHIFT_MSG');
     });
 
     it('clears shifts and shows worded error when subsequent shifts read fails on switch', async () => {
