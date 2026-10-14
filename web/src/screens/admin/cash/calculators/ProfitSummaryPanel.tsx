@@ -1,7 +1,8 @@
-import { createSignal, For, type JSX } from 'solid-js';
-import { ApiError, type ApiClient } from '../../../../shared/api/client';
+import { createEffect, createSignal, For, type JSX } from 'solid-js';
+import type { ApiClient } from '../../../../shared/api/client';
 import type { ProfitSummary, ProfitSummaryRequest } from '../../../../shared/api/generated/profit_summary';
-import { errorText, locale, screenT } from '../../../../shared/i18n';
+import { locale, screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import { CardGrid } from '../../../../shared/ui/Card';
 import { StatCard } from '../../../../shared/ui/StatCard';
 import * as table from './i18n';
@@ -33,6 +34,16 @@ export function ProfitSummaryPanel(props: { api: ApiClient; branch: string; shif
   const [result, setResult] = createSignal<ProfitSummary | null>(null);
   const [alert, setAlert] = createSignal('');
   let seq = 0;
+  let currentBranch = props.branch;
+
+  createEffect(() => {
+    const b = props.branch;
+    if (b !== currentBranch) {
+      currentBranch = b;
+      setResult(null);
+      setAlert('');
+    }
+  });
 
   const submit = async (e: Event): Promise<void> => {
     e.preventDefault();
@@ -47,7 +58,7 @@ export function ProfitSummaryPanel(props: { api: ApiClient; branch: string; shif
     } catch (err) {
       if (id !== seq) return;
       setResult(null);
-      setAlert(err instanceof ApiError ? errorText(err.code, err.message) : errorText('serverError', String(err)));
+      setAlert(wordedError(err));
     }
   };
 

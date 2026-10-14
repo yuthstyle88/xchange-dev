@@ -1,11 +1,12 @@
-import { createSignal, For, Show, onMount, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../../shared/api/client';
 import type {
   ShiftValuation,
   ShiftValuationCurrency,
   ShiftValuationRequest,
 } from '../../../../shared/api/generated/shift_valuation';
-import { errorText, locale, screenT } from '../../../../shared/i18n';
+import { locale, screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import { MoneyText, formatMoney } from '../../../../shared/ui/MoneyText';
 import * as table from './i18n';
 
@@ -22,11 +23,6 @@ interface Shown {
   error?: string;
 }
 
-function refusalText(e: unknown): string {
-  if (e instanceof ApiError) return errorText(e.code, e.message);
-  return errorText('serverError', String(e));
-}
-
 export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shiftId: string }): JSX.Element {
   const [currencies, setCurrencies] = createSignal<ShiftValuationCurrency[]>([]);
   const [rates, setRates] = createSignal<Record<string, string>>({});
@@ -35,6 +31,8 @@ export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shi
   const [shown, setShown] = createSignal<Shown | null>(null);
   let listSeq = 0;
   let submitSeq = 0;
+  let currentBranch = props.branch;
+  let currentShiftId = props.shiftId;
 
   type Body = ShiftValuationRequest & { branch: string };
 
@@ -50,12 +48,22 @@ export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shi
       return true;
     } catch (e) {
       if (id !== listSeq) return false;
-      setShown({ error: refusalText(e) });
+      setCurrencies([]);
+      setShown({ error: wordedError(e) });
       return false;
     }
   }
 
-  onMount(() => {
+  createEffect(() => {
+    const b = props.branch;
+    const s = props.shiftId;
+    if (b !== currentBranch || s !== currentShiftId) {
+      currentBranch = b;
+      currentShiftId = s;
+      setShown(null);
+      setCurrencies([]);
+      setRates({});
+    }
     void list();
   });
 
@@ -86,7 +94,7 @@ export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shi
         await list();
         if (id !== submitSeq) return;
       }
-      setShown({ error: refusalText(err) });
+      setShown({ error: wordedError(err) });
     }
   };
 
