@@ -71,6 +71,11 @@ pub trait CommandAction: Send + Sync + 'static {
         Locks::One(branch.clone())
     }
 
+    /// What the idempotency record keeps for a replay; the full output by default.
+    fn stored_output(&self, output: &Self::Output) -> serde_json::Value {
+        serde_json::to_value(output).unwrap_or_default()
+    }
+
     /// Runs the command with authenticated actor, branch, typed input, and idempotency key
     /// within the caller's database transaction.
     fn run<'a>(
@@ -593,7 +598,13 @@ async fn execute_in_tx<C: CommandAction>(
     };
 
     store
-        .finish_in(tx, C::NAME, idem_key, claim_token, response_val.clone())
+        .finish_in(
+            tx,
+            C::NAME,
+            idem_key,
+            claim_token,
+            command.stored_output(&output),
+        )
         .await?;
 
     Ok(response_val)

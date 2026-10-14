@@ -163,7 +163,7 @@ impl BranchView for KioskCurrenciesView {
 
                     let raw_lines = sqlx::query(
                         "SELECT trim(currency_code), denomination_group, unit_size, buy_rate, sell_rate, source_snapshot \
-                         FROM published_rate_lines WHERE publication_id = $1",
+                         FROM published_rate_lines WHERE publication_id = $1 AND tier_lower_exclusive_thb IS NULL",
                     )
                     .bind(pub_id)
                     .fetch_all(&pool)

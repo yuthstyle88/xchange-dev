@@ -204,7 +204,7 @@ async fn publication_freshness(
     let published_at: DateTime<Utc> = r.get(1);
 
     let raw_lines =
-        sqlx::query("SELECT source_snapshot FROM published_rate_lines WHERE publication_id = $1")
+        sqlx::query("SELECT source_snapshot FROM published_rate_lines WHERE publication_id = $1 AND tier_lower_exclusive_thb IS NULL")
             .bind(pub_id)
             .fetch_all(pool)
             .await

@@ -67,15 +67,52 @@ impl KioskService {
             .run(branch, move |tx| {
                 Box::pin(async move {
                     let view = ports.counter_in(tx, &b).await?.ok_or_else(no_such_branch)?;
-                    let facts = match (cmd.input.currency, cmd.input.side) {
+                    let mut facts = match (cmd.input.currency, cmd.input.side) {
                         (Some(currency), Some(side)) => {
                             let currencies = KioskCurrencies::new(&repo.switches_in(tx, &b).await?);
                             view.facts(&currencies, currency, side)
                         }
                         _ => view.facts_without_rate(),
                     };
-                    let request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
+                    let mut request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
                         .map_err(refuse)?;
+
+                    if let (Some(currency), Some(side)) = (cmd.input.currency, cmd.input.side) {
+                        if facts.line.is_some() {
+                            let mut settled = false;
+                            for _round in 0..4 {
+                                let foreign = ForeignAmount::from_decimal(Decimal::new(
+                                    request.quote.foreign.minor(),
+                                    2,
+                                ));
+                                match ports.tier_line_in(tx, &b, currency, side, foreign).await? {
+                                    None => {
+                                        settled = true;
+                                        break;
+                                    }
+                                    Some(tier_line) => {
+                                        if facts.line.as_ref().map(|l| l.line_id)
+                                            == Some(tier_line.line_id)
+                                        {
+                                            settled = true;
+                                            break;
+                                        }
+                                        facts.line = Some(tier_line);
+                                        request = KioskMachine::quote(
+                                            &cmd.input,
+                                            &facts,
+                                            &cmd.new_id,
+                                            now,
+                                        )
+                                        .map_err(refuse)?;
+                                    }
+                                }
+                            }
+                            if !settled {
+                                return Err(refuse(KioskError::AmountOrCurrencyInvalid));
+                            }
+                        }
+                    }
                     // v2's last quote check: the method must be on for the direction.
                     let rules = ports.payment_rules_in(tx, &b).await?;
                     PaymentGate::quote(&request, &rules).map_err(refuse)?;
@@ -190,7 +227,27 @@ impl KioskService {
                             let view =
                                 ports.counter_in(tx, &b).await?.ok_or_else(no_such_branch)?;
                             let currencies = KioskCurrencies::new(&repo.switches_in(tx, &b).await?);
-                            view.facts(&currencies, request.quote.currency, request.quote.side)
+                            let mut f =
+                                view.facts(&currencies, request.quote.currency, request.quote.side);
+                            if f.line.is_some() {
+                                let foreign = ForeignAmount::from_decimal(Decimal::new(
+                                    request.quote.foreign.minor(),
+                                    2,
+                                ));
+                                if let Some(tier_line) = ports
+                                    .tier_line_in(
+                                        tx,
+                                        &b,
+                                        request.quote.currency,
+                                        request.quote.side,
+                                        foreign,
+                                    )
+                                    .await?
+                                {
+                                    f.line = Some(tier_line);
+                                }
+                            }
+                            f
                         }
                         None => NO_COUNTER,
                     };

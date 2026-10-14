@@ -58,6 +58,18 @@ impl CommandAction for CouponIssueCommand {
     const ROUTE: &'static str = "/api/campaigns/{id}/coupons";
     const METHOD: Method = Method::POST;
 
+    fn stored_output(&self, output: &Self::Output) -> serde_json::Value {
+        let mut val = serde_json::to_value(output).unwrap_or_default();
+        if let Some(coupons) = val.get_mut("coupons").and_then(|c| c.as_array_mut()) {
+            for coupon in coupons {
+                if let Some(obj) = coupon.as_object_mut() {
+                    obj.remove("code");
+                }
+            }
+        }
+        val
+    }
+
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -126,61 +138,6 @@ impl CommandAction for CouponIssueCommand {
 
         let keys = xc_customer::get_pii_keys().map_err(|_| server_error())?;
         let hasher = CouponCodeHasher::new(&keys);
-
-        // Install idempotency strip trigger for coupon replay (§7, §9 edge case 6)
-        sqlx::query(
-            "CREATE OR REPLACE FUNCTION strip_coupon_codes_on_finish() \
-             RETURNS trigger AS $$ \
-             BEGIN \
-                 IF NEW.operation = 'couponIssue' AND NEW.status = 'FINISHED' AND NEW.response_ref IS NOT NULL \
-                    AND jsonb_typeof(NEW.response_ref->'coupons') = 'array' THEN \
-                     NEW.response_ref := jsonb_set( \
-                         NEW.response_ref, \
-                         '{coupons}', \
-                         COALESCE(( \
-                             SELECT jsonb_agg(elem - 'code') \
-                             FROM jsonb_array_elements(NEW.response_ref->'coupons') elem \
-                         ), '[]'::jsonb) \
-                     ); \
-                 END IF; \
-                 RETURN NEW; \
-             END; \
-             $$ LANGUAGE plpgsql",
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "database",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
-
-        sqlx::query(
-            "DO $$ \
-             BEGIN \
-                 IF NOT EXISTS ( \
-                     SELECT 1 FROM pg_trigger WHERE tgname = 'trg_strip_coupon_codes' \
-                 ) THEN \
-                     CREATE TRIGGER trg_strip_coupon_codes \
-                     BEFORE UPDATE ON idempotency_records \
-                     FOR EACH ROW \
-                     EXECUTE FUNCTION strip_coupon_codes_on_finish(); \
-                 END IF; \
-             END $$",
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "database",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
 
         let mut issued_coupons = Vec::with_capacity(input.count as usize);
 
