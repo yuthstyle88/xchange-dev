@@ -88,6 +88,7 @@ impl BranchView for MyRateAlertsView {
                    AND prl.currency_code = ra.currency_code \
                    AND prl.denomination_group = 'ALL' \
                    AND prl.unit_size = ra.unit_size \
+                   AND prl.tier_lower_exclusive_thb IS NULL \
                  WHERE ra.customer_id = $1 AND ra.deleted_at IS NULL \
                  ORDER BY ra.created_at DESC",
             )

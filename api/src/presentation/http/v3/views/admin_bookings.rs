@@ -102,7 +102,7 @@ impl PagedView for AdminBookingsPagedView {
                  FROM branches b \
                  JOIN rate_publications p ON p.id = b.current_publication_id \
                  JOIN published_rate_lines l ON l.publication_id = p.id \
-                 WHERE b.id = $1 AND l.denomination_group = 'ALL'",
+                 WHERE b.id = $1 AND l.denomination_group = 'ALL' AND l.tier_lower_exclusive_thb IS NULL",
             )
             .bind(branch.as_str())
             .fetch_all(&db)
@@ -306,7 +306,7 @@ impl BranchView for AdminBookingSettingsBranchView {
 
                     let raw_lines = sqlx::query(
                         "SELECT currency_code, denomination_group, unit_size, buy_rate, sell_rate, source_snapshot \
-                         FROM published_rate_lines WHERE publication_id = $1 \
+                         FROM published_rate_lines WHERE publication_id = $1 AND tier_lower_exclusive_thb IS NULL \
                          ORDER BY currency_code ASC",
                     )
                     .bind(pub_id)

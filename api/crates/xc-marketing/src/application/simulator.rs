@@ -229,7 +229,7 @@ impl CampaignSimulator {
                     "SELECT prl.buy_rate, prl.sell_rate, prl.unit_size \
                      FROM published_rate_lines prl \
                      JOIN branches b ON b.current_publication_id = prl.publication_id \
-                     WHERE b.id = $1 AND prl.currency_code = $2 \
+                     WHERE b.id = $1 AND prl.currency_code = $2 AND prl.tier_lower_exclusive_thb IS NULL \
                      ORDER BY prl.unit_size ASC LIMIT 1",
                 )
                 .bind(&s.branch_id)
