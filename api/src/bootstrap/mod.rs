@@ -13,12 +13,20 @@ use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use sqlx::PgPool;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::repositories::account_repository::Purged;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+
 use xc_booking::application::sweeper::BookingSweeper;
+use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
+use xc_kernel::pii::PiiCipher;
 use xc_outbox::application::worker::OutboxWorker;
+use xc_verification::application::sweeper::VerificationSweeper;
+
+use crate::infrastructure::document_store::FsDocumentStore;
 use xc_outbox::infrastructure::pg_store::PgOutboxStore;
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::publication::publish_service::PublishService;
@@ -73,6 +81,65 @@ pub struct AppState {
     pub rate_source: Arc<dyn RateSource>,
     pub old_cookie_org_id: String,
     pub shift_balances: Arc<dyn ShiftBalances>,
+    pub documents: Arc<dyn DocumentStore>,
+}
+
+struct LazyDocumentStore {
+    dir: PathBuf,
+    store: OnceLock<FsDocumentStore>,
+}
+
+impl LazyDocumentStore {
+    fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            store: OnceLock::new(),
+        }
+    }
+
+    fn store(&self) -> Result<&FsDocumentStore, DocumentStoreError> {
+        if let Some(store) = self.store.get() {
+            return Ok(store);
+        }
+        let keys = xc_customer::get_pii_keys()
+            .map_err(|e| DocumentStoreError::Io(format!("PII keys not available: {e}")))?;
+        let store = FsDocumentStore::new(&self.dir, PiiCipher::new(keys));
+        let _ = self.store.set(store);
+        Ok(self.store.get().expect("store initialized"))
+    }
+}
+
+impl DocumentStore for LazyDocumentStore {
+    fn put<'a>(
+        &'a self,
+        doc_ref: &'a str,
+        bytes: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<String, DocumentStoreError>> + Send + 'a>> {
+        match self.store() {
+            Ok(store) => store.put(doc_ref, bytes),
+            Err(e) => Box::pin(async move { Err(e) }),
+        }
+    }
+
+    fn get<'a>(
+        &'a self,
+        doc_ref: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, DocumentStoreError>> + Send + 'a>> {
+        match self.store() {
+            Ok(store) => store.get(doc_ref),
+            Err(e) => Box::pin(async move { Err(e) }),
+        }
+    }
+
+    fn delete<'a>(
+        &'a self,
+        doc_ref: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DocumentStoreError>> + Send + 'a>> {
+        match self.store() {
+            Ok(store) => store.delete(doc_ref),
+            Err(e) => Box::pin(async move { Err(e) }),
+        }
+    }
 }
 
 impl AppState {
@@ -80,6 +147,9 @@ impl AppState {
         let probe = Arc::new(db.clone());
         let rate_source = choose_rate_source(&settings.bot, Arc::new(BotRateSource::bot()));
         let shift_balances = Arc::new(PgLedgerShiftBalances::new(db.clone()));
+        let documents = Arc::new(LazyDocumentStore::new(
+            settings.verification.store_dir.clone(),
+        ));
         Self {
             settings,
             db,
@@ -88,6 +158,7 @@ impl AppState {
             rate_source,
             old_cookie_org_id: crate::presentation::pages::SEEDED_XC_ORG_ID.to_string(),
             shift_balances,
+            documents,
         }
     }
 
@@ -108,6 +179,11 @@ impl AppState {
 
     pub fn with_shift_balances(mut self, shift_balances: Arc<dyn ShiftBalances>) -> Self {
         self.shift_balances = shift_balances;
+        self
+    }
+
+    pub fn with_documents(mut self, documents: Arc<dyn DocumentStore>) -> Self {
+        self.documents = documents;
         self
     }
 }
@@ -229,6 +305,7 @@ pub struct Application {
     rate_feed_stop: tokio::sync::watch::Sender<bool>,
     rate_feed: tokio::task::JoinHandle<()>,
     booking_sweep: tokio::task::JoinHandle<()>,
+    verification_sweep: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for Application {
@@ -239,6 +316,7 @@ impl Drop for Application {
         self.outbox.abort();
         self.rate_feed.abort();
         self.booking_sweep.abort();
+        self.verification_sweep.abort();
     }
 }
 
@@ -307,6 +385,17 @@ impl Application {
             }
         });
 
+        let verification_sweeper = VerificationSweeper::new(pool.clone(), state.documents.clone());
+        let purge_interval = Duration::from_secs(state.settings.auth.purge_interval_secs);
+        let verification_sweep = tokio::spawn(async move {
+            let mut rounds = tokio::time::interval(purge_interval);
+            rounds.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                rounds.tick().await;
+                verification_sweeper.run_round(Utc::now()).await;
+            }
+        });
+
         let (rate_feed_stop, stop_rx) = tokio::sync::watch::channel(false);
         let rate_feed_loop = RateFeedLoop::new(
             pool.clone(),
@@ -341,6 +430,7 @@ impl Application {
             rate_feed_stop,
             rate_feed,
             booking_sweep,
+            verification_sweep,
         })
     }
 

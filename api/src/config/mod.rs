@@ -46,6 +46,20 @@ pub struct FilesSettings {
     pub dir: String,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+pub struct VerificationSettings {
+    /// Identity documents, sealed with pii.key (VF-2, owner S-1/S-2).
+    pub store_dir: PathBuf,
+}
+
+impl Default for VerificationSettings {
+    fn default() -> Self {
+        Self {
+            store_dir: PathBuf::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct AuthSettings {
     /// Seconds between two purges of expired sessions and past sign-in
@@ -137,6 +151,8 @@ pub struct Settings {
     pub telemetry: TelemetrySettings,
     pub web: WebSettings,
     pub files: FilesSettings,
+    #[serde(default)]
+    pub verification: VerificationSettings,
     #[serde(default)]
     pub auth: AuthSettings,
     #[serde(default)]

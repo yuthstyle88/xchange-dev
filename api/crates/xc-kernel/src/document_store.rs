@@ -39,3 +39,17 @@ pub trait DocumentStore: Send + Sync {
     /// Removes the object stored under `doc_ref`.
     fn delete<'a>(&'a self, doc_ref: &'a str) -> BoxFuture<'a, Result<(), DocumentStoreError>>;
 }
+
+/// Builds an opaque ref for a document attached to `parent` (VF-3, VF-12, #1602).
+pub fn document_ref(parent: &str, key: &str) -> Result<String, DocumentStoreError> {
+    let is_invalid = |s: &str| {
+        s.is_empty() || s.starts_with('.') || s.contains("..") || s.contains(['/', '\\', '\0'])
+    };
+    if is_invalid(parent) {
+        return Err(DocumentStoreError::InvalidRef(parent.to_owned()));
+    }
+    if is_invalid(key) {
+        return Err(DocumentStoreError::InvalidRef(key.to_owned()));
+    }
+    Ok(format!("{parent}_{key}"))
+}

@@ -208,7 +208,8 @@ impl CaseService {
             return Err(CaseError::File(UNSUPPORTED));
         };
 
-        let doc_ref = format!("{case_id}/{idempotency_key}");
+        let doc_ref =
+            xc_kernel::document_store::document_ref(&case_id.to_string(), idempotency_key)?;
         let mut hasher = Sha256::new();
         hasher.update(bytes);
         let checksum = hasher.finalize().to_vec();
