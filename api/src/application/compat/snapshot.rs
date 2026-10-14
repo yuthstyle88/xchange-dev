@@ -379,7 +379,7 @@ async fn published_rates_json(
         "SELECT l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, l.source_snapshot, p.published_at \
          FROM branches b JOIN rate_publications p ON p.id = b.current_publication_id \
          JOIN published_rate_lines l ON l.publication_id = p.id \
-         WHERE b.id = $1 AND l.denomination_group = 'ALL'",
+         WHERE b.id = $1 AND l.denomination_group = 'ALL' AND l.tier_lower_exclusive_thb IS NULL",
     )
     .bind(branch.as_str())
     .fetch_all(pool)

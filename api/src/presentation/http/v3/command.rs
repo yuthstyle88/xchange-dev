@@ -157,38 +157,6 @@ fn app_session_guard(req: &HttpRequest) -> &AppSessionGuard {
     }
 }
 
-fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
-    let mut k_pad = [0u8; 64];
-    if key.len() > 64 {
-        let hash = Sha256::digest(key);
-        k_pad[..32].copy_from_slice(&hash);
-    } else {
-        k_pad[..key.len()].copy_from_slice(key);
-    }
-
-    let mut k_ipad = [0u8; 64];
-    let mut k_opad = [0u8; 64];
-    for i in 0..64 {
-        k_ipad[i] = k_pad[i] ^ 0x36;
-        k_opad[i] = k_pad[i] ^ 0x5c;
-    }
-
-    let mut inner = Sha256::new();
-    inner.update(k_ipad);
-    for part in parts {
-        inner.update(part);
-    }
-    let inner_hash = inner.finalize();
-
-    let mut outer = Sha256::new();
-    outer.update(k_opad);
-    outer.update(inner_hash);
-    let result = outer.finalize();
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&result);
-    out
-}
-
 fn current_pii_keys() -> Result<Arc<xc_kernel::pii::PiiKeys>, V3Error> {
     xc_customer::get_pii_keys().map_err(|_| server_error())
 }
@@ -200,7 +168,7 @@ fn derive_session_id(
     idempotency_key: &str,
 ) -> AppSessionId {
     let subkey = xc_kernel::pii::derive_subkey(pii_keys, b"xc-app-session-v1");
-    let mac = hmac_sha256(
+    let mac = xc_kernel::pii::hmac_sha256(
         &subkey,
         &[
             org_id.as_bytes(),

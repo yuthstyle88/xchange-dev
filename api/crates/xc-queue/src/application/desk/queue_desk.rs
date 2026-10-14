@@ -7,7 +7,6 @@
 //! `StatusService::refresh_in`. Start, finish and recall act only on the caller's own ticket,
 //! unless the caller is BRANCH_MANAGER (`notYourTicket`).
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -16,6 +15,7 @@ use sqlx::{Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::notification_params::{DisplayValue, NotificationParams};
 use xc_kernel::notifications::{NotificationRequest, Notifications};
 
 use crate::application::status::status_service::StatusService;
@@ -230,12 +230,29 @@ impl QueueDesk {
                 .map(|(n,)| n)
                 .unwrap_or_else(|| branch.as_str().to_string());
 
-        let mut params = BTreeMap::new();
-        params.insert("displayNumber".to_string(), ticket.display_number.clone());
-        params.insert("branchName".to_string(), branch_name);
+        let display_number = match DisplayValue::queue_number(
+            ticket.service_type.letter(),
+            ticket.sequence,
+        ) {
+            Ok(dn) => dn,
+            Err(err) => {
+                tracing::warn!(ticket = %ticket.id, error = %err, "queue_called notice refused");
+                return Ok(());
+            }
+        };
+
+        let params = NotificationParams::new()
+            .display("displayNumber", display_number)
+            .text("branchName", branch_name);
 
         let event_id = format!("queue.called:{}:{count}", ticket.id);
-        let req = match NotificationRequest::new(user_id, event_id, "queue_called", None, params) {
+        let req = match NotificationRequest::with_params(
+            user_id,
+            event_id,
+            "queue_called",
+            None,
+            params,
+        ) {
             Ok(r) => r,
             Err(err) => {
                 tracing::warn!(ticket = %ticket.id, error = %err, "queue_called notice refused");
