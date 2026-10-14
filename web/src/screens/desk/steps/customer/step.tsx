@@ -3,8 +3,8 @@
 // alpha-3 picker, never free text (CI-4 ruling (a)); the skip sends `XXX` (owner 2026-10-11). No arithmetic (W7).
 import { createSignal, For, Show, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { ApiError } from '../../../../shared/api/client';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import type { DeskStore, PassportFields } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
@@ -123,9 +123,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       store.setCustomerId(answer.customerId);
       store.go(2);
     } catch (e) {
-      // DK-1: a refusal is the server's sentence, verbatim; anything else is the connection sentence
-      const refused = e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'httpError';
-      const reason = refused ? e.message : t('noServer');
+      const reason = wordedError(e);
       setError(prefix ? prefix(reason) : reason);
     } finally {
       setSending(false);
@@ -153,7 +151,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     try {
       store.setPassport(await noPassportImage());
     } catch (e) {
-      setError(t('skipFailed', { reason: e instanceof Error ? e.message : String(e) }));
+      setError(t('skipFailed', { reason: wordedError(e) }));
       return;
     }
     store.setField('name', 'WALK-IN', 'user');
