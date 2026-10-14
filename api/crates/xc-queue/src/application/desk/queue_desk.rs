@@ -74,7 +74,7 @@ async fn check_not_serving(
     Ok(())
 }
 
-fn check_ticket_owner(actor: &Actor, ticket: &QueueTicket) -> AppResult<()> {
+pub(crate) fn check_ticket_owner(actor: &Actor, ticket: &QueueTicket) -> AppResult<()> {
     if ticket.counter_teller_id.as_deref() == Some(&actor.user_id)
         || actor.roles.iter().any(|r| {
             r.role == Role::BranchManager
