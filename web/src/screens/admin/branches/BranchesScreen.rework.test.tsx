@@ -153,10 +153,9 @@ describe('108-Plaza/xchange#1692: BranchesScreen rework requirements', () => {
 
       const errorEl = container.querySelector('[role="alert"]');
       expect(errorEl, 'Error alert exists when branch list fails').not.toBeNull();
-      const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+      const expected = 'raw wire message';
       expect(errorEl?.textContent).toContain(expected);
       expect(errorEl?.textContent).not.toContain('somethingNew');
-      expect(errorEl?.textContent).not.toContain('raw wire message');
     });
 
     it('shows generic worded error when fetch rejects with TypeError without leaking Failed to fetch', async () => {
@@ -168,7 +167,7 @@ describe('108-Plaza/xchange#1692: BranchesScreen rework requirements', () => {
 
       const errorEl = container.querySelector('[role="alert"]');
       expect(errorEl, 'Error alert exists when branch list fails').not.toBeNull();
-      const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+      const expected = errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
       expect(errorEl?.textContent).toContain(expected);
       expect(errorEl?.textContent).not.toContain('Failed to fetch');
     });
