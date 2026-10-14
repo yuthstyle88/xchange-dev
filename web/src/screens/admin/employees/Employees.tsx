@@ -33,11 +33,35 @@ const ROLES = [
   'ADMIN',
 ] as const;
 
+function toWordedError(err: unknown): string {
+  const generic = errorText('serverError', '');
+  if (err instanceof ApiError) {
+    if (err.code === 'refused' || err.code === 'validationFailed') {
+      const msg = (err as unknown as Record<string, unknown>)['message'];
+      if (typeof msg === 'string' && msg) return msg;
+    }
+    return errorText(err.code, generic);
+  }
+  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
+    const code = (err as { code: string }).code;
+    if (code === 'refused' || code === 'validationFailed') {
+      const msg = (err as Record<string, unknown>)['message'];
+      if (typeof msg === 'string' && msg) return msg;
+    }
+    return errorText(code, generic);
+  }
+  return generic;
+}
+
 export function Employees(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
 
   const [employees, setEmployees] = createSignal<AdminEmployeeRow[]>([]);
-  const [employeesError, setEmployeesError] = createSignal<string | null>(null);
+  const [accountsError, setAccountsError] = createSignal<string | null>(null);
+  const [operationsError, setOperationsError] = createSignal<string | null>(null);
+  const [branchesError, setBranchesError] = createSignal<string | null>(null);
+  const employeesError = () => accountsError() ?? operationsError() ?? branchesError();
+  const setEmployeesError = (err: string | null) => setAccountsError(err);
   const [operations, setOperations] = createSignal<AdminOperationsData | null>(null);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal('');
@@ -61,11 +85,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         setEmployeesError(null);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setEmployeesError(errorText(err.code, err.message));
-      } else {
-        setEmployeesError(String(err));
-      }
+      setEmployeesError(toWordedError(err));
       setEmployees([]);
     }
   }
@@ -82,22 +102,25 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         since: currentOpsVersion,
       });
       currentOpsVersion = res.version;
+      setOperationsError(null);
       if (res.changed && res.data) {
         setOperations(res.data);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setOperationsError(toWordedError(err));
+      setOperations(null);
     }
   }
 
   async function readBranches() {
     try {
       const res = await api.view<AdminBranchesData>('admin_branches');
+      setBranchesError(null);
       if (res.data) {
         setBranches(res.data.branches);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setBranchesError(toWordedError(err));
     }
   }
 
@@ -166,11 +189,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          setError(errorText(err.code, err.message));
-        } else {
-          setError(String(err));
-        }
+        setError(toWordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -254,11 +273,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          setError(errorText(err.code, err.message));
-        } else {
-          setError(String(err));
-        }
+        setError(toWordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -293,11 +308,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       });
       await reReadBoth();
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        toast(errorText(err.code, err.message));
-      } else {
-        toast(String(err));
-      }
+      toast(toWordedError(err));
     }
   }
 
@@ -318,11 +329,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         toast(t('enabledToast'));
         await reReadBoth();
       } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          setError(errorText(err.code, err.message));
-        } else {
-          setError(String(err));
-        }
+        setError(toWordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -369,11 +376,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          setError(errorText(err.code, err.message));
-        } else {
-          setError(String(err));
-        }
+        setError(toWordedError(err));
       } finally {
         setSubmitting(false);
       }
@@ -510,22 +513,24 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
       <details class="workspace-history">
         <summary>{t('workflow')}</summary>
-        <div>
-          <p>{operations()?.enabled ? t('stateOn') : t('stateOff')}</p>
+        <Show when={operations()}>
           <div>
-            <button type="button" class="secondary" onClick={openEntityDialog}>
-              {t('entityButton')}
-            </button>{' '}
-            <button
-              type="button"
-              class="primary"
-              disabled={operations()?.enabled === true}
-              onClick={openEnableDialog}
-            >
-              {t('enableButton')}
-            </button>
+            <p>{operations()?.enabled ? t('stateOn') : t('stateOff')}</p>
+            <div>
+              <button type="button" class="secondary" onClick={openEntityDialog}>
+                {t('entityButton')}
+              </button>{' '}
+              <button
+                type="button"
+                class="primary"
+                disabled={operations()?.enabled === true}
+                onClick={openEnableDialog}
+              >
+                {t('enableButton')}
+              </button>
+            </div>
           </div>
-        </div>
+        </Show>
       </details>
     </>
   );
