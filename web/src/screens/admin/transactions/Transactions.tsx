@@ -8,9 +8,10 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { hashParams } from '../parts/hash';
@@ -55,16 +56,6 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     onCleanup(() => window.removeEventListener('hashchange', onHashChange));
   });
 
-  function toWordedError(err: unknown): string {
-    const fallback = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      if (err.code in th) {
-        return t(err.code as keyof typeof th);
-      }
-      return errorText(err.code, fallback);
-    }
-    return fallback;
-  }
 
   async function loadFirstPage(opts: {
     isRefresh: boolean;
@@ -103,7 +94,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       if (fetchId !== currentFetchId) return;
       setRows([]);
       setHasMore(false);
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -193,7 +184,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       setHasMore(nextRows.length === 100);
     } catch (err: unknown) {
       if (fetchId !== currentFetchId || props.branch() !== branch) return;
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -255,7 +246,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
 
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
