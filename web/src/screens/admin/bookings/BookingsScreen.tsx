@@ -74,6 +74,14 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   let currentBranch: string | undefined;
   let currentQ: string = '';
 
+  function toWordedError(err: unknown): string {
+    const fallback = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      return errorText(err.code, fallback);
+    }
+    return fallback;
+  }
+
   async function fetchBookings(b: string, since?: number, q?: string) {
     if (rows().length === 0 && since === undefined) {
       setLoading(true);
@@ -92,11 +100,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         setHasMore(ans.data.length >= 50);
       }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        setError(String(err));
-      }
+      setError(toWordedError(err));
     } finally {
       setLoading(false);
     }
@@ -112,8 +116,8 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       if (ans.changed && ans.data) {
         setSettings(ans.data);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(toWordedError(err));
     }
   }
 
@@ -292,8 +296,9 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         const found = res.data.branches.find((b) => b.id === props.branch());
         if (found) bName = found.name;
       }
-    } catch {
-      // fallback to current branch id
+    } catch (err) {
+      setError(toWordedError(err));
+      return;
     }
 
     const s = settings();
@@ -363,7 +368,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     const [name, setName] = createSignal('');
     const [phone, setPhone] = createSignal('');
     const [type, setType] = createSignal<'BUY' | 'SELL'>('BUY');
-    const [currency, setCurrency] = createSignal(availableCurrencies()[0] ?? 'EUR');
+    const [currency, setCurrency] = createSignal(availableCurrencies()[0] ?? '');
     const [amount, setAmount] = createSignal('');
     const [customerId, setCustomerId] = createSignal('');
     const [dialogError, setDialogError] = createSignal<string | null>(null);
@@ -388,6 +393,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       const digitCount = (rawPhone.match(/\d/g) || []).length;
       if (!/^[+0-9 ()-]{1,30}$/.test(rawPhone) || digitCount < 7) {
         setDialogError(t('errBadPhone'));
+        return;
+      }
+
+      if (!currency()) {
+        setDialogError(t('noCurrencies'));
         return;
       }
 
@@ -468,11 +478,19 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
             value={currency()}
             onChange={(e) => setCurrency(e.currentTarget.value)}
           >
+            <Show when={availableCurrencies().length === 0}>
+              <option value="" disabled selected>
+                {t('noCurrencies')}
+              </option>
+            </Show>
             <For each={availableCurrencies()}>
               {(c) => <option value={c}>{c}</option>}
             </For>
           </select>
         </label>
+        <Show when={availableCurrencies().length === 0}>
+          <p>{t('noCurrencies')}</p>
+        </Show>
         <label>
           {t('fieldAmount')}
           <input

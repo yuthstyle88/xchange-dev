@@ -39,6 +39,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.base_ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
@@ -49,7 +50,15 @@ jobs:
           # --no-renames: a rename lists only its new path, so moving code into docs/ would
           # read as docs-only and skip the build that just lost a file.
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            files=$(git diff --no-renames --name-only "$PR_BASE...$PR_HEAD")
+            base_ref="${PR_BASE_REF:-${GITHUB_BASE_REF:-main}}"
+            if [ -n "$base_ref" ] && git rev-parse --verify "origin/$base_ref" >/dev/null 2>&1; then
+              BASE=$(git merge-base "origin/$base_ref" "$PR_HEAD" 2>/dev/null || echo "$PR_BASE")
+            elif [ -n "$base_ref" ] && git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+              BASE=$(git merge-base "$base_ref" "$PR_HEAD" 2>/dev/null || echo "$PR_BASE")
+            else
+              BASE="$PR_BASE"
+            fi
+            files=$(git diff --no-renames --name-only "$BASE...$PR_HEAD")
           elif [ "$EVENT_NAME" = "push" ]; then
             if [ "$REF" = "refs/heads/main" ]; then
               before=$(bash .github/scripts/main-push-base.sh web "$PUSH_AFTER" 2>/dev/null || true)

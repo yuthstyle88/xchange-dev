@@ -44,7 +44,7 @@ import type {
   CouponIssueOutput,
   IssuedCouponDto,
 } from '../../../shared/api/generated/coupon_issue';
-import { screenT } from '../../../shared/i18n';
+import { errorText, screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './campaigns.css';
@@ -62,14 +62,17 @@ const ERROR_KEYS: Record<string, string> = {
 };
 
 function formatError(err: unknown): string {
+  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
   if (err instanceof ApiError) {
     const mapped = ERROR_KEYS[err.code];
     if (mapped) {
-      return t(mapped as Parameters<typeof t>[0]);
+      const text = t(mapped as Parameters<typeof t>[0]);
+      if (text && text !== mapped) return text;
     }
-    return err.message || err.code;
+    const text = errorText(err.code, '');
+    return text || generic;
   }
-  return err instanceof Error ? err.message : String(err);
+  return generic;
 }
 
 function formatMoney(value: string | null | undefined): string {
@@ -243,8 +246,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const currentVersion = () => campaignDetail()?.versions[0] ?? null;
 
   const currentStatus = () => {
+    if (loadingDetail()) return 'LOADING';
     const v = currentVersion();
-    return v?.status ?? 'DRAFT';
+    return v?.status ?? 'UNKNOWN';
   };
 
   const isSubmitDisabled = () => {
@@ -740,6 +744,12 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               >
                 {t('back')}
               </button>
+              <span
+                class={`xc-status-badge xc-status-${currentStatus().toLowerCase()}`}
+                data-testid="campaign-status"
+              >
+                {statusLabel(currentStatus())}
+              </span>
             </div>
 
             <div class="xc-detail-actions">

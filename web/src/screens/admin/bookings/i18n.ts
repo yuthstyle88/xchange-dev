@@ -16,6 +16,7 @@ export const th = {
   // Loading and empty
   loading: 'กำลังโหลดการจอง…',
   emptySearch: 'ยังไม่มีการจองที่ตรงกับคำค้นในสาขานี้',
+  noCurrencies: 'ไม่มีสกุลเงินที่เปิดรับจอง',
 
   // Info line
   infoOpen: 'เปิดรับจองเมื่อสาขาเปิดกะและตั้งเรทแล้ว',
@@ -109,6 +110,7 @@ export const en: Record<keyof typeof th, string> = {
   // Loading and empty
   loading: 'Loading bookings…',
   emptySearch: 'No bookings matching search in this branch',
+  noCurrencies: 'No currencies available',
 
   // Info line
   infoOpen: 'Open for bookings when branch shift is open and rates are set',

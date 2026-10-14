@@ -14,7 +14,7 @@ import type {
   RatesReferenceFilter,
   RatesReferenceRow,
 } from '../../../shared/api/generated/rates_reference';
-import { locale, screenT } from '../../../shared/i18n';
+import { errorText, locale, screenT, t as sharedT } from '../../../shared/i18n';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { formatRate } from '../../../shared/ui/rate';
 import type { AdminMenuProps } from '../menus';
@@ -30,6 +30,33 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
+function toErrorText(err: unknown): string {
+  const fallback = sharedT('error.serverError');
+  if (err instanceof ApiError) {
+    if (err.code && err.code !== 'httpError') {
+      if (err.code === 'staleVersion' || err.code === 'approvalRequired') {
+        return err.message || fallback;
+      }
+      const text = errorText(err.code, fallback);
+      if (text && text !== err.code) return text;
+    }
+    return fallback;
+  }
+  if (err && typeof err === 'object' && 'code' in err) {
+    const c = String((err as { code: unknown }).code);
+    if (c && c !== 'httpError') {
+      if (c === 'staleVersion' || c === 'approvalRequired') {
+        const m = 'message' in err ? String((err as { message: unknown }).message) : '';
+        return m || fallback;
+      }
+      const text = errorText(c, fallback);
+      if (text && text !== c) return text;
+    }
+    return fallback;
+  }
+  return fallback;
+}
+
 interface OutOfBoundItem {
   currency: string;
   side: 'BUY' | 'SELL';
@@ -39,9 +66,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
 
   const [pubData, setPubData] = createSignal<PublishedRatesData | null>(null);
+  const [pubError, setPubError] = createSignal<string | null>(null);
   const [, setDraftsData] = createSignal<RateDraftsData | null>(null);
+  const [draftsError, setDraftsError] = createSignal<string | null>(null);
   const [draftDetail, setDraftDetail] = createSignal<RateDraftDetailData | null>(null);
   const [policyData, setPolicyData] = createSignal<RatePolicyData | null>(null);
+  const [policyError, setPolicyError] = createSignal<string | null>(null);
 
   const [refData, setRefData] = createSignal<RatesReferenceData | null>(null);
   const [refVersion, setRefVersion] = createSignal<number | undefined>(undefined);
@@ -70,13 +100,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         setRefError(res.data.error ?? null);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setRefError(err.message);
-      } else if (err && typeof err === 'object' && 'message' in err) {
-        setRefError(String((err as { message: unknown }).message));
-      } else {
-        setRefError(String(err));
-      }
+      setRefError(toErrorText(err));
     } finally {
       setRefLoading(false);
     }
@@ -88,8 +112,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (res.changed && res.data) {
         setPubData(res.data);
       }
-    } catch {
-      // ignore
+      setPubError(null);
+    } catch (err: unknown) {
+      setPubError(toErrorText(err));
     }
   };
 
@@ -114,8 +139,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       } else {
         setDraftDetail(null);
       }
-    } catch {
-      // ignore
+      setDraftsError(null);
+    } catch (err: unknown) {
+      setDraftsError(toErrorText(err));
     }
   };
 
@@ -129,8 +155,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           setAdjustSellPct(res.data.policy.sellAdjustPct);
         }
       }
-    } catch {
-      // ignore
+      setPolicyError(null);
+    } catch (err: unknown) {
+      setPolicyError(toErrorText(err));
     }
   };
 
@@ -254,8 +281,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       await readDrafts(branch);
       setSimulateResult(null);
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      toast(toErrorText(err));
     }
   };
 
@@ -279,8 +305,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       );
       setSimulateResult(res);
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      toast(toErrorText(err));
     }
   };
 
@@ -301,8 +326,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         );
       }
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      toast(toErrorText(err));
     }
   };
 
@@ -321,8 +345,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       await readPublished(branch);
       await readDrafts(branch);
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      toast(toErrorText(err));
     }
   };
 
@@ -332,6 +355,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!draft) return;
     const branch = props.branch();
     const policy = policyData()?.policy;
+    if (!policy) return;
     try {
       await client.command(
         'POST',
@@ -340,11 +364,11 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           branch,
           buyAdjustPct: adjustBuyPct(),
           sellAdjustPct: adjustSellPct(),
-          guards: policy?.guards ?? {},
-          maxReferenceAgeHours: policy?.maxReferenceAgeHours ?? 24,
-          onStale: policy?.onStale ?? 'STOP',
-          staleLimitThb: policy?.staleLimitThb ?? null,
-          reason: policy?.reason || 'adjust all',
+          guards: policy.guards,
+          maxReferenceAgeHours: policy.maxReferenceAgeHours,
+          onStale: policy.onStale,
+          staleLimitThb: policy.staleLimitThb,
+          reason: policy.reason || t('adjustAll'),
         },
         crypto.randomUUID(),
       );
@@ -377,44 +401,47 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         setDraftDetail(updated.data);
       }
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      toast(toErrorText(err));
     }
   };
 
   const openHistory = async () => {
     const branch = props.branch();
-    const res = await client.view<RatePublicationsData>('rate_publications', { branch });
-    const pubs = res.data?.publications ?? [];
-    openDialog(
-      t('historyTitle'),
-      () => (
-        <div class="rate-history-dialog">
-          <div class="table-scroll">
-            <table class="rates-table">
-              <thead>
-                <tr>
-                  <th>{t('headerVersion')}</th>
-                  <th>{t('headerPublishedBy')}</th>
-                  <th>{t('headerPublishedAt')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={pubs}>
-                  {(p) => (
-                    <tr>
-                      <td>{p.version}</td>
-                      <td>{p.publishedBy}</td>
-                      <td>{formatTime(p.publishedAt)}</td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+    try {
+      const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+      const pubs = res.data?.publications ?? [];
+      openDialog(
+        t('historyTitle'),
+        () => (
+          <div class="rate-history-dialog">
+            <div class="table-scroll">
+              <table class="rates-table">
+                <thead>
+                  <tr>
+                    <th>{t('headerVersion')}</th>
+                    <th>{t('headerPublishedBy')}</th>
+                    <th>{t('headerPublishedAt')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={pubs}>
+                    {(p) => (
+                      <tr>
+                        <td>{p.version}</td>
+                        <td>{p.publishedBy}</td>
+                        <td>{formatTime(p.publishedAt)}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      ),
-    );
+        ),
+      );
+    } catch (err: unknown) {
+      toast(toErrorText(err));
+    }
   };
 
   return (
@@ -478,6 +505,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           <Show when={simulateResult() && simulateResult()!.isInBound}>
             <div class="in-bound-status">{t('inBound')}</div>
           </Show>
+          <Show when={draftsError()}>
+            <div class="form-error" role="alert">{draftsError()}</div>
+          </Show>
+          <Show when={policyError()}>
+            <div class="form-error" role="alert">{policyError()}</div>
+          </Show>
         </div>
 
         <Show when={draftDetail()?.draft}>
@@ -502,6 +535,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="btn-adjust-all"
+              disabled={Boolean(policyError()) || !policyData()?.policy}
               onClick={handleAdjustAll}
             >
               {t('adjustAll')}
@@ -561,6 +595,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             </div>
             <div class="rates-pill">{t('ratesPill')}</div>
           </div>
+          <Show when={pubError()}>
+            <div class="form-error" role="alert">{pubError()}</div>
+          </Show>
         </div>
 
         <RateFreshness
@@ -611,7 +648,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                   </p>
                 </Show>
                 <Show when={refError()}>
-                  <p class="bot-error">{refError()}</p>
+                  <p class="bot-error" role="alert">{refError()}</p>
                 </Show>
               </div>
             </div>

@@ -21,6 +21,7 @@ export const th = {
   exportCsv: 'ส่งออกรายการ CSV',
   noTransactionsToExport: 'ไม่มีรายการให้ส่งออก',
   dialogTitle: 'รายละเอียดรายการ',
+  outOfScope: 'สาขานี้อยู่นอกขอบเขตของบัญชีนี้',
 };
 
 export const en = {
@@ -44,4 +45,5 @@ export const en = {
   exportCsv: 'Export CSV',
   noTransactionsToExport: 'No transactions to export',
   dialogTitle: 'Transaction details',
+  outOfScope: 'This branch is outside the scope of this account',
 };

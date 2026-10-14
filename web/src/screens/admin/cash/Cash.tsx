@@ -46,7 +46,15 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   let lastTick: number | undefined = undefined;
   let currentCashVersion: number | undefined = undefined;
 
-  async function readCash(resetVersion = false, all = showAll()) {
+  function toWordedError(err: unknown): string {
+    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      return errorText(err.code, generic);
+    }
+    return generic;
+  }
+
+  async function readCash(resetVersion = false, all = showAll(), isReadAll = false) {
     const curBranch = props.branch();
     if (resetVersion || curBranch !== lastBranch) {
       lastBranch = curBranch;
@@ -61,14 +69,12 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       currentCashVersion = res.version;
       if (res.changed && res.data) {
         setCash(res.data);
-        setCashError(null);
+        if (!isReadAll) {
+          setCashError(null);
+        }
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setCashError(errorText(err.code, err.message));
-      } else {
-        setCashError(String(err));
-      }
+      setCashError(toWordedError(err));
       setCash(null);
     }
   }
@@ -80,8 +86,9 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         limit: 100,
       });
       setMovements(rows);
-    } catch {
+    } catch (err: unknown) {
       setMovements([]);
+      setCashError(toWordedError(err));
     }
   }
 
@@ -92,13 +99,16 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       });
       setShifts(rows);
       setHasMoreShifts(rows.length > 0);
-    } catch {
+    } catch (err: unknown) {
       setShifts([]);
+      setHasMoreShifts(false);
+      setCashError(toWordedError(err));
     }
   }
 
   async function readAll(resetVersion = true) {
-    await Promise.all([readCash(resetVersion, showAll()), readMovements(), readShifts()]);
+    setCashError(null);
+    await Promise.all([readCash(resetVersion, showAll(), true), readMovements(), readShifts()]);
   }
 
   createEffect(() => {

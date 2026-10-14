@@ -40,6 +40,24 @@ export function Overview(props: AdminMenuProps): JSX.Element {
   let activeTo = '';
   let currentFetchId = 0;
 
+  function toWordedError(err: unknown): string {
+    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      if (err.code === 'outOfScope') {
+        return t('outOfScope');
+      }
+      return errorText(err.code, generic);
+    }
+    if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
+      const code = (err as { code: string }).code;
+      if (code === 'outOfScope') {
+        return t('outOfScope');
+      }
+      return errorText(code, generic);
+    }
+    return generic;
+  }
+
   async function loadData(opts: { isRefresh?: boolean } = {}) {
     const branch = props.branch();
     const period = props.period();
@@ -71,12 +89,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (fetchId !== currentFetchId) return;
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
+      setError(toWordedError(err));
     }
   }
 
@@ -155,16 +168,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
         return;
       }
 
-      let branchName = branch;
-      try {
-        const res = await api.view<{
-          branches: { id: string; name: string }[];
-        }>('admin_branches');
-        const b = res.data?.branches?.find((x) => x.id === branch);
-        if (b) branchName = b.name;
-      } catch {
-        // fallback
-      }
+      const res = await api.view<{
+        branches: { id: string; name: string }[];
+      }>('admin_branches');
+      const b = res.data?.branches?.find((x) => x.id === branch);
+      const branchName = b?.name ?? branch;
 
       const todayBangkok = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Bangkok',
@@ -176,9 +184,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      }
+      setError(toWordedError(err));
     }
   }
 

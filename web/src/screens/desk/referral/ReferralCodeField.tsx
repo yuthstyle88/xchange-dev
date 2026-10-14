@@ -1,5 +1,5 @@
 import { createSignal, onMount, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../shared/i18n';
+import { errorText, screenT } from '../../../shared/i18n';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AttachReferralInput, AttachReferralOutput } from '../../../shared/api/generated/attach_referral';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
@@ -10,6 +10,23 @@ import './referral.css';
 export interface ReferralCodeFieldProps {
   transactionId: string;
   api?: ApiClient;
+}
+
+function toWordedError(err: unknown, fallback: string): string {
+  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+  if (err instanceof ApiError) {
+    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
+      return generic;
+    }
+    const txt = errorText(err.code, fallback);
+    return txt === err.code ? fallback : txt;
+  }
+  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
+    const code = (err as { code: string }).code;
+    const txt = errorText(code, fallback);
+    return txt === code ? fallback : txt;
+  }
+  return generic;
 }
 
 export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
@@ -30,8 +47,8 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
           ? res.data
           : (res as unknown as StaffMeView);
       setMe(meData);
-    } catch {
-      // If staff_me fails, the field is hidden.
+    } catch (err: unknown) {
+      setMe(undefined);
     }
   });
 
@@ -56,17 +73,11 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
       setSavedCode(c);
       setLocked(true);
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        if (err.status === 409 || err.code === 'referralAlreadyCaptured') {
-          setError(t('alreadyCaptured'));
-          setLocked(true);
-        } else {
-          setError(err.message || t('invalidCode'));
-        }
-      } else if (err instanceof Error) {
-        setError(err.message);
+      if (err instanceof ApiError && (err.status === 409 || err.code === 'referralAlreadyCaptured')) {
+        setError(t('alreadyCaptured'));
+        setLocked(true);
       } else {
-        setError(String(err));
+        setError(toWordedError(err, t('invalidCode')));
       }
     } finally {
       setSubmitting(false);
