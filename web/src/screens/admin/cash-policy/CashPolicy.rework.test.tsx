@@ -3,7 +3,9 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { CashPolicy } from './CashPolicy';
 import { errorText, setLang } from '../../../shared/i18n';
-import { th, en } from './i18n';
+import { th as sharedTh } from '../../../shared/i18n/th';
+import { en as sharedEn } from '../../../shared/i18n/en';
+import { th } from './i18n';
 import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
 import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_transfer_policy';
 
@@ -134,7 +136,7 @@ describe('#1718 CashPolicy read error handling', () => {
     await vi.waitFor(() => expect(q('[role="alert"]')).not.toBeNull());
 
     let alert = must('[role="alert"]');
-    expect(alert.textContent?.trim()).toBe(th.connectionError);
+    expect(alert.textContent?.trim()).toBe(sharedTh['error.network']);
     expect(alert.textContent).not.toContain('Failed to fetch');
 
     // In English:
@@ -147,11 +149,11 @@ describe('#1718 CashPolicy read error handling', () => {
     await vi.waitFor(() => expect(q('[role="alert"]')).not.toBeNull());
 
     alert = must('[role="alert"]');
-    expect(alert.textContent?.trim()).toBe(en.connectionError);
+    expect(alert.textContent?.trim()).toBe(sharedEn['error.network']);
     expect(alert.textContent).not.toContain('Failed to fetch');
   });
 
-  it('4. unknown refusal code shows worded generic message, never raw code or message', async () => {
+  it('4. unknown refusal code shows server message (W10 point 4)', async () => {
     stubViews({
       admin_cash: async () =>
         json(400, { error: { code: 'UNKNOWN_REFUSAL_CODE', message: 'raw wire message' } }),
@@ -161,9 +163,8 @@ describe('#1718 CashPolicy read error handling', () => {
     await vi.waitFor(() => expect(q('[role="alert"]')).not.toBeNull());
 
     const alert = must('[role="alert"]');
-    expect(alert.textContent?.trim()).toBe(th.connectionError);
+    expect(alert.textContent?.trim()).toBe('raw wire message');
     expect(alert.textContent).not.toContain('UNKNOWN_REFUSAL_CODE');
-    expect(alert.textContent).not.toContain('raw wire message');
   });
 
   it('5. currencies and inputs stay visible when policy was read, but error shows', async () => {
