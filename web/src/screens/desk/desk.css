@@ -7,6 +7,13 @@
   box-sizing: border-box;
 }
 
+.desk-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 ol.steps {
   display: flex;
   flex-wrap: wrap;
@@ -52,6 +59,12 @@ ol.steps li[aria-current="step"] {
   padding: 32px;
   text-align: center;
   color: #888;
+}
+
+.desk-step-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /* steps (DK-C/D/E #539): the form every step draws */

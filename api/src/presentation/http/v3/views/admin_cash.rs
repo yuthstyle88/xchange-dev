@@ -15,8 +15,10 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    fixed2, round_cents, CurrencyCode, ExchangeArithmetic, ForeignAmount, Rate, UnitSize,
+    fixed2, round_cents, CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, MoneyDelta, Rate,
+    UnitSize,
 };
+use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_cash::{
@@ -103,11 +105,15 @@ fn sorted_currency_codes<I: IntoIterator<Item = S>, S: AsRef<str>>(codes: I) -> 
 
 struct AdminCashBranchView {
     pool: PgPool,
+    shift_balances: Arc<dyn ShiftBalances>,
 }
 
 impl AdminCashBranchView {
-    fn new(pool: PgPool) -> Self {
-        Self { pool }
+    fn new(pool: PgPool, shift_balances: Arc<dyn ShiftBalances>) -> Self {
+        Self {
+            pool,
+            shift_balances,
+        }
     }
 }
 
@@ -116,19 +122,6 @@ struct OpenShiftRow {
     id: String,
     opened_at: DateTime<Utc>,
     opened_by: String,
-}
-
-#[derive(sqlx::FromRow)]
-struct CountedRow {
-    code: String,
-    counted: Option<Decimal>,
-}
-
-#[derive(sqlx::FromRow)]
-struct ShiftBalanceRow {
-    code: String,
-    opening: Decimal,
-    expected: Decimal,
 }
 
 #[derive(sqlx::FromRow)]
@@ -154,6 +147,7 @@ impl BranchView for AdminCashBranchView {
         filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let shift_balances = self.shift_balances.clone();
         let branch_id = branch.as_str().to_string();
         let show_all = filter.all;
 
@@ -170,33 +164,27 @@ impl BranchView for AdminCashBranchView {
             .map_err(AppError::Database)?;
 
             let last_counted = if let Some(ref closed_id) = last_closed {
-                let counted_rows: Vec<CountedRow> = sqlx::query_as(
-                    "SELECT trim(code) as code, counted FROM shift_balances WHERE shift_id = $1",
-                )
-                .bind(closed_id)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
+                let closed_balances = shift_balances.shift_balances(closed_id).await?;
 
                 let mut counted_map = BTreeMap::new();
-                for r in counted_rows {
+                for r in closed_balances {
                     if let Some(c) = r.counted {
-                        counted_map.insert(r.code, c);
+                        counted_map.insert(r.currency.as_str().to_string(), c);
                     }
                 }
 
                 let mut items = Vec::new();
                 // THB always (even at zero)
-                let thb_amount = counted_map.get("THB").copied().unwrap_or(Decimal::ZERO);
+                let thb_amount = counted_map.get("THB").copied().unwrap_or(Money::ZERO);
                 items.push(AdminCashCountedItem {
                     code: "THB".to_string(),
-                    amount: format!("{:.2}", thb_amount),
+                    amount: format!("{thb_amount}"),
                 });
 
                 // Other currencies counted > 0, sorted A-Z
                 let mut other_codes: Vec<String> = counted_map
                     .iter()
-                    .filter(|(code, amt)| code.as_str() != "THB" && **amt > Decimal::ZERO)
+                    .filter(|(code, amt)| code.as_str() != "THB" && !amt.is_zero())
                     .map(|(code, _)| code.clone())
                     .collect();
                 other_codes.sort();
@@ -205,7 +193,7 @@ impl BranchView for AdminCashBranchView {
                     let amt = counted_map[&code];
                     items.push(AdminCashCountedItem {
                         code,
-                        amount: format!("{:.2}", amt),
+                        amount: format!("{amt}"),
                     });
                 }
 
@@ -247,17 +235,11 @@ impl BranchView for AdminCashBranchView {
             };
 
             // 3. Stock rows
-            let balance_rows: Vec<ShiftBalanceRow> = sqlx::query_as(
-                "SELECT trim(code) as code, opening, expected FROM shift_balances WHERE shift_id = $1",
-            )
-            .bind(&shift_id)
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
+            let open_balances = shift_balances.shift_balances(&shift_id).await?;
 
-            let mut balance_map: BTreeMap<String, (Decimal, Decimal)> = BTreeMap::new();
-            for r in balance_rows {
-                balance_map.insert(r.code, (r.opening, r.expected));
+            let mut balance_map: BTreeMap<String, ShiftBalance> = BTreeMap::new();
+            for b in open_balances {
+                balance_map.insert(b.currency.as_str().to_string(), b);
             }
 
             // RE-7 #604 (ruling Q1 → B): the "rated" codes are the branch's current
@@ -291,8 +273,11 @@ impl BranchView for AdminCashBranchView {
                 for c in rated_codes {
                     candidates.insert(c);
                 }
-                for (code, (opening, expected)) in &balance_map {
-                    if !opening.is_zero() || !expected.is_zero() || (*expected - *opening) != Decimal::ZERO {
+                for (code, b) in &balance_map {
+                    if !b.opening.is_zero()
+                        || !b.expected.is_zero()
+                        || b.expected.minus(b.opening) != MoneyDelta::ZERO
+                    {
                         candidates.insert(code.clone());
                     }
                 }
@@ -301,23 +286,34 @@ impl BranchView for AdminCashBranchView {
 
             let mut stock = Vec::with_capacity(codes_to_show.len());
             for code in codes_to_show {
-                let (opening, expected) = balance_map
+                let (opening, net, expected) = balance_map
                     .get(&code)
-                    .copied()
-                    .unwrap_or((Decimal::ZERO, Decimal::ZERO));
-                let net = expected - opening;
+                    .map(|b| {
+                        (
+                            b.opening.to_string(),
+                            b.expected.minus(b.opening).to_string(),
+                            b.expected.to_string(),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            "0.00".to_string(),
+                            "0.00".to_string(),
+                            "0.00".to_string(),
+                        )
+                    });
                 stock.push(AdminCashStockRow {
                     code,
-                    opening: format!("{:.2}", opening),
-                    net: format!("{:.2}", net),
-                    expected: format!("{:.2}", expected),
+                    opening,
+                    net,
+                    expected,
                 });
             }
 
             // 4. Stats (cash flow in THB)
-            let thb_opening = balance_map
-                .get("THB")
-                .map(|(o, _)| *o)
+            let thb_balance = balance_map.get("THB");
+            let thb_opening = thb_balance
+                .map(|b| Decimal::from_i128_with_scale(b.opening.minor_i128(), 2))
                 .unwrap_or(Decimal::ZERO);
 
             let cash_received: Decimal = sqlx::query_scalar(
@@ -335,13 +331,9 @@ impl BranchView for AdminCashBranchView {
             .await
             .map_err(AppError::Database)?;
 
-            let thb_in: Decimal = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(amount), 0) FROM stock_movements WHERE shift_id = $1 AND code = 'THB' AND direction = 'IN'",
-            )
-            .bind(&shift_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::Database)?;
+            let thb_in = thb_balance
+                .map(|b| Decimal::from_i128_with_scale(b.moved_in.minor_i128(), 2))
+                .unwrap_or(Decimal::ZERO);
 
             let incoming = cash_received + thb_in;
 
@@ -360,13 +352,9 @@ impl BranchView for AdminCashBranchView {
             .await
             .map_err(AppError::Database)?;
 
-            let thb_out: Decimal = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(amount), 0) FROM stock_movements WHERE shift_id = $1 AND code = 'THB' AND direction = 'OUT'",
-            )
-            .bind(&shift_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::Database)?;
+            let thb_out = thb_balance
+                .map(|b| Decimal::from_i128_with_scale(b.moved_out.minor_i128(), 2))
+                .unwrap_or(Decimal::ZERO);
 
             let outgoing = cash_paid + thb_out;
             let remaining = thb_opening + incoming - outgoing;
@@ -436,7 +424,13 @@ impl BranchView for AdminCashBranchView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(AdminCashBranchView::new(state.db.clone())));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(AdminCashBranchView::new(
+            state.db.clone(),
+            state.shift_balances.clone(),
+        )),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

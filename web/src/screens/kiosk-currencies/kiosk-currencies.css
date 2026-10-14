@@ -33,6 +33,12 @@
   margin: 0 0 24px;
 }
 
+.xc-kiosk .cards {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .xc-kiosk .xc-shell-main .quote {
   padding: 18px 22px;
   background: #fbfafb;

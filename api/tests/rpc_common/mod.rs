@@ -276,6 +276,8 @@ pub struct Desk {
     pub bank: Arc<Bank>,
     pub files: FileService,
     pub workflow: SaveTransactionWorkflow,
+    pub shift_balances:
+        Option<Arc<dyn xc_shift::domain::shift::repositories::shift_balances::ShiftBalances>>,
     scratch: PathBuf,
 }
 
@@ -317,8 +319,17 @@ impl Desk {
             bank: Arc::new(Bank::default()),
             files,
             workflow,
+            shift_balances: None,
             scratch,
         }
+    }
+
+    pub fn with_shift_balances(
+        mut self,
+        sb: Arc<dyn xc_shift::domain::shift::repositories::shift_balances::ShiftBalances>,
+    ) -> Self {
+        self.shift_balances = Some(sb);
+        self
     }
 
     /// The server's state, its upload directory the one [`Desk::files`] keeps
@@ -327,10 +338,14 @@ impl Desk {
     pub fn state(&self) -> AppState {
         let uploads = self.scratch.join("uploads");
         let uploads = uploads.to_str().expect("a scratch path in UTF-8");
-        AppState::new(
+        let mut state = AppState::new(
             Arc::new(settings(&[("APP_FILES__DIR", uploads)])),
             self.db.pool.clone(),
-        )
+        );
+        if let Some(ref sb) = self.shift_balances {
+            state = state.with_shift_balances(sb.clone());
+        }
+        state
     }
 
     /// The employees of a recorded file, with the ids v2 gave them (a staff
@@ -1081,7 +1096,7 @@ impl<'f> Replay<'f> {
         // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): before a recorded save, a
         // shift a recorded step opened (custody's handover opens one in `shift_balances` only) gets its opening in
         // the ledger's drawer.
-        if action_of(step).as_deref() == Some("saveTransaction") {
+        if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
             crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
         }
         let answer = self.app.send(call).await;
