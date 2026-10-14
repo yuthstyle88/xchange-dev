@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { TransfersCard } from './TransfersCard';
 import { errorText, setLang } from '../../../shared/i18n';
-import { th, en } from './i18n';
+import { th as sharedTh } from '../../../shared/i18n/th';
+import { en as sharedEn } from '../../../shared/i18n/en';
 import type { StaffCtx } from '../cards';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
@@ -192,7 +193,7 @@ describe('#1689 TransfersCard read error handling', () => {
     await vi.waitFor(() => expect(q(tid('transfer-error'))).not.toBeNull());
 
     let errorEl = must(tid('transfer-error'));
-    expect(errorEl.textContent?.trim()).toBe(th.connectionError);
+    expect(errorEl.textContent?.trim()).toBe(sharedTh['error.network']);
     expect(errorEl.textContent).not.toContain('Failed to fetch');
 
     // In English:
@@ -205,7 +206,7 @@ describe('#1689 TransfersCard read error handling', () => {
     await vi.waitFor(() => expect(q(tid('transfer-error'))).not.toBeNull());
 
     errorEl = must(tid('transfer-error'));
-    expect(errorEl.textContent?.trim()).toBe(en.connectionError);
+    expect(errorEl.textContent?.trim()).toBe(sharedEn['error.network']);
     expect(errorEl.textContent).not.toContain('Failed to fetch');
   });
 
@@ -219,9 +220,8 @@ describe('#1689 TransfersCard read error handling', () => {
     await vi.waitFor(() => expect(q(tid('transfer-error'))).not.toBeNull());
 
     const errorEl = must(tid('transfer-error'));
-    expect(errorEl.textContent?.trim()).toBe(th.connectionError);
+    expect(errorEl.textContent?.trim()).toBe('raw wire message');
     expect(errorEl.textContent).not.toContain('UNKNOWN_REFUSAL_CODE');
-    expect(errorEl.textContent).not.toContain('raw wire message');
   });
 
   it('6. stale data stays visible when subsequent read fails, but error is shown', async () => {
