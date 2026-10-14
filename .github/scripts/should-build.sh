@@ -72,6 +72,21 @@ fi
 
 range="$base...$head"
 
+# For pull_request events, compute the range against the current base branch
+# (e.g. origin/<base_ref> or <base_ref>), rather than relying on the event's
+# potentially stale base.sha (#1686).
+if [ "$event" = "pull_request" ]; then
+  base_ref="${PR_BASE_REF:-${GITHUB_BASE_REF:-main}}"
+  for candidate in "origin/$base_ref" "$base_ref"; do
+    if git rev-parse --verify "$candidate" >/dev/null 2>&1; then
+      if mb=$(git merge-base "$candidate" "$head" 2>/dev/null) && [ -n "$mb" ]; then
+        range="$mb...$head"
+        break
+      fi
+    fi
+  done
+fi
+
 # 1. Decide "build" by exit code of git diff with pathspecs:
 # Exit 1 => watched path changed => true
 # Any exit other than 0 or 1 => git diff error => true

@@ -27,6 +27,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 REPO_DIR="$TMP_DIR/repo"
 git init "$REPO_DIR" >/dev/null 2>&1
 cd "$REPO_DIR"
+git branch -M main
 
 git config user.email "test@example.com"
 git config user.name "Test User"
@@ -229,6 +230,29 @@ git add web/src/shared/api/generated/common.ts
 git commit -q -m "case g: touch generated/common.ts"
 HEAD_CASE_G=$(git rev-parse HEAD)
 
+# Branches for issue #1686: update-branch with main containing api changes
+git checkout -q -b pr-web-update-branch "$BASE_SHA"
+mkdir -p web/src/screens/admin
+echo "body { color: magenta; }" >> web/src/screens/admin/admin.css
+git add web/src/screens/admin/admin.css
+git commit -q -m "web-only change on branch (#1686)"
+
+git checkout -q main
+echo "api change on main (#1686)" >> api/file.txt
+git commit -q -am "main gains api change (#1686)"
+
+git checkout -q pr-web-update-branch
+git merge -q --no-ff main -m "merge main into pr-web-update-branch"
+HEAD_WEB_UPDATE_BRANCH=$(git rev-parse HEAD)
+
+git checkout -q -b pr-api-update-branch "$BASE_SHA"
+mkdir -p api/src
+echo "pub fn update_branch() {}" >> api/src/new.rs
+git add api/src/new.rs
+git commit -q -m "api change on branch (#1686)"
+git merge -q --no-ff main -m "merge main into pr-api-update-branch"
+HEAD_API_UPDATE_BRANCH=$(git rev-parse HEAD)
+
 total=0
 failed=0
 
@@ -389,6 +413,12 @@ run_api_decision_test "[api decision push] (d) diff touching web/package-lock.js
 run_api_decision_test "[api decision push] (e) diff touching api/src/x.rs -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_E"
 run_api_decision_test "[api decision push] (f) diff touching .github/workflows/api.yml -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_F"
 run_api_decision_test "[api decision push] (g) diff touching web/src/shared/api/generated/common.ts -> true" "true" "push" "$BASE_SHA" "$HEAD_CASE_G"
+
+# Issue #1686: update-branch with main containing api changes
+run_test "[#1686] web-only PR updated onto main with api changes -> false" "false" "api" ".github/workflows/api.yml" "pull_request" "$BASE_SHA" "$HEAD_WEB_UPDATE_BRANCH"
+run_test "[#1686] api PR updated onto main with api changes -> true" "true" "api" ".github/workflows/api.yml" "pull_request" "$BASE_SHA" "$HEAD_API_UPDATE_BRANCH"
+run_api_decision_test "[api decision #1686] web-only PR updated onto main with api changes -> false" "false" "pull_request" "$BASE_SHA" "$HEAD_WEB_UPDATE_BRANCH"
+run_api_decision_test "[api decision #1686] api PR updated onto main with api changes -> true" "true" "pull_request" "$BASE_SHA" "$HEAD_API_UPDATE_BRANCH"
 
 echo "# Results: $total tests, $failed failures"
 if [ "$failed" -eq 0 ]; then
