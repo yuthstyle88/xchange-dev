@@ -75,7 +75,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let body = || web::PayloadConfig::new(1 << 20);
 
     cfg.service(
-        web::resource("/api/bookings")
+        web::resource("/api/v2/bookings")
             .app_data(body())
             .route(web::post().to(owner_bookings))
             .default_service(web::to(pages::fallback)),
@@ -114,7 +114,7 @@ async fn owner_bookings(
         }
     };
 
-    let action_dummy = Action::new("/api/bookings");
+    let action_dummy = Action::new("/api/v2/bookings");
     match Policy::authorize(
         callers.user.as_ref(),
         EntryPath::OwnerRoute,

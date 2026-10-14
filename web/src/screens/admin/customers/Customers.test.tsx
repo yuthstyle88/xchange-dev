@@ -19,10 +19,10 @@
 //   `ประเภท`, `~จำนวน`, `~มูลค่า THB`, `สถานะ` with customers.js's own words), its empty text, `ปิด`.
 // - C3 `admin-workspace.js:99-110`, `:159-161`; `registrations.js:1-4`: two tabs in a
 //   `role="tablist"` named `ข้อมูลลูกค้า` — `รายชื่อลูกค้าและประวัติ` and `คำขอลงทะเบียน`; the second is the
-//   registrations panel, read on show through `/api/bookings` `registrations` `{page, query}`;
+//   registrations panel, read on show through `/api/v2/bookings` `registrations` `{page, query}`;
 //   v3 answers no item (design §12.10), so it shows `ไม่พบการลงทะเบียนในสาขานี้`.
 // - C4 `bookings.js:13-15`: the history dialog's `ยืนยันตัวตนหน้าร้าน / ออกรหัส Member` opens the member
-//   form, which posts `/api/bookings` `member` with a `memberSecret` made when the form opens
+//   form, which posts `/api/v2/bookings` `member` with a `memberSecret` made when the form opens
 //   (`crypto.randomUUID()`), and shows the member card.
 //
 // v3: the list is the paged view `admin_customers` (`?branch=&limit=50&before=` + `q`), the history
@@ -35,7 +35,7 @@
 // tests answer at `fetch` — a fake server behind the real `ApiClient`. Branch names come from the
 // shell's `admin_branches` view (same decision). The page-wide reads AppShell makes (the `me` view,
 // the queue card's read, `PAGE_WIDE` in `shared/testing/page-wide.ts`) and `transaction_documents` are answered and ignored;
-// only `admin_customers`, `admin_customer_history` and `/api/bookings` are counted.
+// only `admin_customers`, `admin_customer_history` and `/api/v2/bookings` are counted.
 //
 // The rows of `admin_customers` are typed here by hand (`CustomerRow`) so this file compiles before
 // the view's generated `admin_customers.ts` exists; its fields are the ones
@@ -214,7 +214,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
 type Refusal = { status: number; code: string; message: string; field?: string };
 type ListAnswer = { rows: CustomerRow[] } | Refusal;
 type HistoryAnswer = { rows: TransactionRow[] } | Refusal;
-/** What `/api/bookings` answers: a JSON body, or v2's refusal `{error: "<sentence>"}`. */
+/** What `/api/v2/bookings` answers: a JSON body, or v2's refusal `{error: "<sentence>"}`. */
 type BookingAnswer = { body: unknown } | { status: number; sentence: string };
 
 interface Read<A> {
@@ -255,7 +255,7 @@ function bookingResponse(answer: BookingAnswer): Response {
   return json(answer.status, { error: answer.sentence });
 }
 
-/** v3's `/api/bookings` (`bookings.rs`): no registration ever; a member card echoing the secret. */
+/** v3's `/api/v2/bookings` (`bookings.rs`): no registration ever; a member card echoing the secret. */
 function bookingDefault(post: Post): BookingAnswer {
   if (post.action === 'registrations') {
     return { body: { items: [], hasMore: false, page: post.payload.page ?? 0 } };
@@ -304,7 +304,7 @@ function serve(input: unknown, init?: RequestInit): Promise<Response> {
     // the detail's receipt section: left loading, it is TransactionDetail's (V2-parts)
     return new Promise<Response>(() => {});
   }
-  if (url.pathname === '/api/bookings') {
+  if (url.pathname === '/api/v2/bookings') {
     const body = JSON.parse(String(init?.body ?? '{}')) as {
       action: string;
       payload: Record<string, unknown>;
@@ -475,7 +475,7 @@ function registrationPosts(): Post[] {
 function lastRegistrations(): Post {
   const all = registrationPosts();
   const p = all[all.length - 1];
-  expect(p, 'a /api/bookings registrations post').toBeDefined();
+  expect(p, 'a /api/v2/bookings registrations post').toBeDefined();
   return p!;
 }
 
@@ -572,7 +572,7 @@ describe('V2-customers: what the list reads (#466 §8, C1; design §12.1, §12.6
     expect(r.params.has('to')).toBe(false);
   });
 
-  it('reads only through ApiClient — v3 views and /api/bookings — and never on a timer', async () => {
+  it('reads only through ApiClient — v3 views and /api/v2/bookings — and never on a timer', async () => {
     autoList = () => ({ rows: customers(1, 3) });
     // fake timers from before the mount, so a timer the menu starts is a fake one; they move
     // with real time too, so the reads still settle
@@ -581,7 +581,7 @@ describe('V2-customers: what the list reads (#466 §8, C1; design §12.1, §12.6
     await until(() => lists.length === 1 && posts.length === 1, 'the first reads');
     for (const call of fetchSpy.mock.calls) {
       const url = String(call[0]);
-      if (url === '/api/bookings') {
+      if (url === '/api/v2/bookings') {
         const init = call[1] as RequestInit;
         expect(init.method).toBe('POST');
         const headers = new Headers(init.headers);
@@ -1190,7 +1190,7 @@ describe('V2-customers: the member button in the history dialog (C4; bookings.js
   });
 
   it('disables the submit while waiting; on a refusal shows the sentence, enables it again, and a retry sends the same secret', async () => {
-    // every /api/bookings post is answered by hand in this test
+    // every /api/v2/bookings post is answered by hand in this test
     autoBooking = null;
     mount();
     await until(() => bodyRows().length === 1, 'one customer');

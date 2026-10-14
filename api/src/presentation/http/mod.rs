@@ -19,6 +19,7 @@ pub mod reference_rates;
 pub mod rpc;
 pub mod users;
 pub mod v3;
+pub mod verification_content;
 
 use actix_web::web;
 
@@ -38,6 +39,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     drawer_passport::configure(cfg, state);
     employees::configure(cfg, state);
     files::configure(cfg, state);
+    verification_content::configure(cfg, state);
     kiosk::configure(cfg, state);
     payment_methods::configure(cfg, state);
     public::configure(cfg, state);

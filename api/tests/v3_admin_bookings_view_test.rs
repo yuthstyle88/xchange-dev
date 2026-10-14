@@ -96,7 +96,7 @@ use xchange::presentation::http::rpc::RpcClock;
 use xchange::presentation::http::v3::VIEWS;
 
 const ORIGIN: &str = "http://desk.test";
-const ROUTE: &str = "/api/bookings";
+const ROUTE: &str = "/api/v2/bookings";
 const RPC: &str = "/api/rpc";
 /// `BookingError::RateMoved` (T15-a), the refusal of a moved counter.
 const RATE_MOVED: &str = "เรทเปลี่ยน กรุณาโหลดใหม่";
@@ -109,7 +109,7 @@ const BOOKINGS: &str = "admin_bookings";
 const SETTINGS: &str = "admin_booking_settings";
 /// The row the owner route checks (`http/bookings.rs`, `owner_bookings` step 1).
 const INHERITS_PATH: EntryPath = EntryPath::OwnerRoute;
-const INHERITS_ACTION: &str = "/api/bookings";
+const INHERITS_ACTION: &str = "/api/v2/bookings";
 
 /// LIVE customers of `MAIN`: (id, name).
 const SOMCHAI: (&str, &str) = ("C-MAIN-1", "สมชาย ใจดี");

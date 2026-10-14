@@ -187,7 +187,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
 
     const confirmRate = async () => {
       try {
-        await api.post('/api/bookings', {
+        await api.post('/api/v2/bookings', {
           action: 'confirm',
           payload: {
             branchId: props.branch(),
@@ -246,7 +246,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   function openCancelDialog(row: AdminBookingRow) {
     const cancelBooking = async () => {
       try {
-        await api.post('/api/bookings', {
+        await api.post('/api/v2/bookings', {
           action: 'cancel',
           payload: {
             branchId: props.branch(),
@@ -303,7 +303,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
 
     const saveSettings = async () => {
       try {
-        await api.post('/api/bookings', {
+        await api.post('/api/v2/bookings', {
           action: 'settings',
           payload: {
             branchId: props.branch(),
@@ -414,7 +414,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       }
 
       try {
-        await api.post('/api/bookings', {
+        await api.post('/api/v2/bookings', {
           action: 'create',
           payload,
         });

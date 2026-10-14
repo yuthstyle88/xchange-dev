@@ -161,9 +161,9 @@ fn a_name_the_bookings_do_not_know_is_a_bad_request() {
 
 #[test]
 fn the_owner_route_is_unchanged() {
-    // `POST /api/bookings` keeps its owner-only check (it asks as "/api/bookings"; BookingsAdmin,
+    // `POST /api/v2/bookings` keeps its owner-only check (it asks as "/api/v2/bookings"; BookingsAdmin,
     // the B1 translation of OWNER, is EXECUTIVE's); the action is judged after it
-    let name = "/api/bookings";
+    let name = "/api/v2/bookings";
     assert_eq!(ask(Some(&owner()), EntryPath::OwnerRoute, name), Ok(()));
     assert_eq!(
         ask(

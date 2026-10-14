@@ -914,7 +914,7 @@ fn the_owner_is_let_through_wherever_a_signed_in_caller_is() {
         (EntryPath::Kiosk, "configure"),
         (EntryPath::OwnerRoute, "employees"),
         (EntryPath::OwnerRoute, "/api/reference-rates"),
-        (EntryPath::OwnerRoute, "/api/bookings"),
+        (EntryPath::OwnerRoute, "/api/v2/bookings"),
         (EntryPath::UserRoute, "documents"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));

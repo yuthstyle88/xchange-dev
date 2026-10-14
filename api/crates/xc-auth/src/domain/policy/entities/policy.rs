@@ -608,7 +608,7 @@ impl Policy {
                 _ => None,
             },
             EntryPath::OwnerRoute => match act {
-                "/api/bookings" => Some(Need::Permission(Permission::BookingsAdmin)),
+                "/api/v2/bookings" => Some(Need::Permission(Permission::BookingsAdmin)),
                 "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
                 _ => Some(Need::Permission(Permission::UsersManage)),
             },

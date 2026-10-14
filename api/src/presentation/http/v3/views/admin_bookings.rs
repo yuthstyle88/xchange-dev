@@ -46,7 +46,7 @@ impl AdminBookingsPagedView {
 
 impl PagedView for AdminBookingsPagedView {
     const NAME: &'static str = "admin_bookings";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::OwnerRoute, "/api/bookings");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::OwnerRoute, "/api/v2/bookings");
     type Row = AdminBookingRow;
     type Filter = AdminBookingFilter;
 
@@ -253,7 +253,7 @@ impl AdminBookingSettingsBranchView {
 
 impl BranchView for AdminBookingSettingsBranchView {
     const NAME: &'static str = "admin_booking_settings";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::OwnerRoute, "/api/bookings");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::OwnerRoute, "/api/v2/bookings");
     const VERSIONED: bool = true;
     type Data = AdminBookingSettingsData;
     type Filter = NoFilter;
