@@ -1,5 +1,6 @@
 //! `xc-kernel` — kernel types for xchange.
 
+pub mod booking_queue_events;
 pub mod branch_tx;
 pub mod branch_versions;
 pub mod document_store;

@@ -36,6 +36,10 @@ use xc_queue::domain::ticket::issue_source::IssueSource;
 use xc_queue::domain::ticket::queue_ticket::QueueTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
+use xc_booking::application::lifecycle::BookingLifecycle;
+use xc_booking::infrastructure::booking_repository::PgBookingRepository;
+use xc_booking::infrastructure::slot_repository::PgSlotRepository;
+
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{
@@ -57,12 +61,18 @@ pub struct QueueServices {
 impl QueueServices {
     pub fn new(pool: PgPool) -> Self {
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
-        let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool));
+        let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
         let status = StatusService::new(branch_tx.clone(), repo.clone());
+        let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
+            Arc::new(
+                BookingLifecycle::new(Arc::new(PgBookingRepository::new(pool.clone())))
+                    .with_slots(Arc::new(PgSlotRepository::new(pool))),
+            );
         Self {
-            desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone()),
+            desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone())
+                .with_booking_events(booking_events.clone()),
             counters: CounterService::new(branch_tx.clone(), repo.clone(), status.clone()),
-            issuer: TicketIssuer::new(branch_tx, repo),
+            issuer: TicketIssuer::new(branch_tx, repo).with_booking_events(booking_events),
             status,
         }
     }

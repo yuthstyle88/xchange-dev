@@ -29,6 +29,7 @@ pub struct TicketIssuer {
     status: StatusService,
     /// The teller the kiosk's `accept` starts tickets for (`acting_as`); `None` refuses it.
     actor: Option<Actor>,
+    booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
 }
 
 fn source_matches_ticket(source: &IssueSource, ticket: &QueueTicket) -> bool {
@@ -51,7 +52,16 @@ impl TicketIssuer {
             repo,
             status,
             actor: None,
+            booking_events: None,
         }
+    }
+
+    pub fn with_booking_events(
+        mut self,
+        booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>,
+    ) -> Self {
+        self.booking_events = Some(booking_events);
+        self
     }
 
     /// This issuer acting for `actor`, the teller whose kiosk `accept` starts a ticket
@@ -82,11 +92,14 @@ impl TicketIssuer {
             return Ok(false);
         };
         let actor = self.actor.as_ref().ok_or(AppError::Forbidden)?;
-        let desk = QueueDesk::new(
+        let mut desk = QueueDesk::new(
             self.branch_tx.clone(),
             self.repo.clone(),
             self.status.clone(),
         );
+        if let Some(events) = &self.booking_events {
+            desk = desk.with_booking_events(events.clone());
+        }
         match ticket.status {
             TicketStatus::Waiting => {
                 desk.call_in(tx, actor, branch, &ticket.id, now).await?;
@@ -265,6 +278,54 @@ impl TicketIssuer {
 
         Ok(ticket)
     }
+
+    /// Cancels any active (WAITING or CALLED) ticket for `booking_id` inside `tx`.
+    pub async fn cancel_active_for_booking_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        booking_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let Some(ticket) = self
+            .repo
+            .find_active_by_booking_in(tx, branch, booking_id)
+            .await?
+        else {
+            return Ok(false);
+        };
+
+        if ticket.status != TicketStatus::Waiting && ticket.status != TicketStatus::Called {
+            return Ok(false);
+        }
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets SET status = 'CANCELLED', ended_reason = 'bookingCancelled' WHERE id = $1::uuid AND status IN ('WAITING', 'CALLED')",
+        )
+        .bind(&ticket.id)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Cancelled,
+            kind: EventKind::Cancel,
+            actor_id: self.actor.as_ref().map(|a| a.user_id.clone()),
+            at: now,
+            reason: Some("bookingCancelled".to_owned()),
+        };
+
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(true)
+    }
 }
 
 impl QueueTickets for TicketIssuer {
@@ -299,5 +360,18 @@ impl QueueTickets for TicketIssuer {
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async move { self.start_for_kiosk_in(tx, branch, request_id, now).await })
+    }
+
+    fn cancel_active_for_booking_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        booking_id: &'a str,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        Box::pin(async move {
+            self.cancel_active_for_booking_in(tx, branch, booking_id, now)
+                .await
+        })
     }
 }

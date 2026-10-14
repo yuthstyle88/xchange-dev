@@ -55,4 +55,14 @@ pub trait QueueTickets: Send + Sync {
         request_id: &'a str,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>>;
+
+    /// Cancels any active (WAITING or CALLED) ticket for `booking_id` inside `tx`.
+    /// Returns `Ok(true)` if an active ticket was cancelled, `Ok(false)` if no active ticket was found.
+    fn cancel_active_for_booking_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        booking_id: &'a str,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>>;
 }

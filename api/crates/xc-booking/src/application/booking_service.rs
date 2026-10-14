@@ -90,6 +90,7 @@ pub struct BookingService {
     contact_reserve: Arc<ContactReserve>,
     referral_capture: Option<Arc<ReferralCaptureService>>,
     pii_keys: xc_kernel::pii::PiiKeys,
+    queue: Option<Arc<dyn xc_kernel::queue_tickets::QueueTickets>>,
 }
 
 impl BookingService {
@@ -108,7 +109,13 @@ impl BookingService {
             contact_reserve,
             referral_capture,
             pii_keys,
+            queue: None,
         }
+    }
+
+    pub fn with_queue(mut self, queue: Arc<dyn xc_kernel::queue_tickets::QueueTickets>) -> Self {
+        self.queue = Some(queue);
+        self
     }
 
     pub fn pool(&self) -> &PgPool {
@@ -611,6 +618,14 @@ impl BookingService {
         };
 
         BookingMachine::cancel(&booking, actor, is_staff, reason, now, &policy, &slot)?;
+
+        if booking.status == BookingStatus::CheckedIn {
+            if let Some(queue) = &self.queue {
+                queue
+                    .cancel_active_for_booking_in(&mut tx, &booking.branch_id, booking_id, now)
+                    .await?;
+            }
+        }
 
         if booking.status.holds_place() {
             self.slots

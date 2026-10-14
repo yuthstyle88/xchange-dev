@@ -212,3 +212,32 @@
   color: var(--xc-text, #0f172a);
   text-align: right;
 }
+
+.xc-rate-display-booking-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.xc-rate-display-booking-qr svg {
+  width: 140px;
+  height: 140px;
+}
+
+.xc-rate-display-booking-qr-caption {
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+  text-align: center;
+}
+
+.xc-rate-display-booking-qr-text {
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+.xc-rate-display-booking-qr-path {
+  font-family: var(--xc-font-mono, monospace);
+  color: var(--xc-text, #0f172a);
+}
