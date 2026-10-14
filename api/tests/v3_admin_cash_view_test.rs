@@ -76,12 +76,16 @@ use rpc_common::{
     Answer, App, Call, Cookies, Desk, INVALID_REQUEST, Replay, Rule, one_of_each_role, sign_in,
 };
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde_json::{Value, json};
+use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, ScopedRole};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::application::count::{CashCountService, SubmitCount};
+use xc_cash::domain::count::{CountKind, CountLine};
 use xc_exchange::application::customer::service::CustomerService;
 use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -506,6 +510,131 @@ impl Room {
         let expected = self.expected_of_open_shift(branch).await;
         self.close_shift_counting(branch, json!(expected), "นับเงินปิดกะ")
             .await
+    }
+
+    /// A shift is closed by count via CashCountService: the shift's teller submits the CLOSE count,
+    /// and a different user (a MANAGER) verifies it, posting the difference and closing the shift.
+    async fn close_shift_by_count(&self, branch: &str, counted: Value) -> String {
+        let shift_id = self.open_shift_id(branch).await;
+
+        let (teller_user_id, org_id): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+            "SELECT u.id, u.organization_id FROM shifts s \
+             JOIN users u ON u.id = s.teller_id \
+             WHERE s.id = $1",
+        )
+        .bind(&shift_id)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("teller user");
+
+        let teller_actor = AuthActor::new(
+            &teller_user_id.to_string(),
+            &org_id.to_string(),
+            vec![ScopedRole::new(
+                AuthRole::Teller,
+                Some(BranchId::new(branch)),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
+
+        let (verifier_user_id, _): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+            "SELECT u.id, u.organization_id FROM users u \
+             JOIN employees e ON e.id = u.legacy_employee_id \
+             WHERE e.role = 'MANAGER' AND e.branch_id = $1",
+        )
+        .bind(branch)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("verifier user");
+
+        let verifier_actor = AuthActor::new(
+            &verifier_user_id.to_string(),
+            &org_id.to_string(),
+            vec![ScopedRole::new(
+                AuthRole::BranchManager,
+                Some(BranchId::new(branch)),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
+            None,
+        );
+
+        sqlx::query(
+            "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             VALUES ($1, $2, 1000000, 'test', now()) \
+             ON CONFLICT (organization_id, branch_id) DO UPDATE SET count_difference_limit_thb = 1000000",
+        )
+        .bind(org_id)
+        .bind(branch)
+        .execute(&self.desk.db.pool)
+        .await
+        .expect("set cash limits");
+
+        let mut lines = Vec::new();
+        if let Some(obj) = counted.as_object() {
+            for (curr, amt_val) in obj {
+                let amt = match amt_val {
+                    Value::String(s) => Decimal::from_str(s).expect("valid decimal string"),
+                    Value::Number(n) => {
+                        Decimal::from_str(&n.to_string()).expect("valid decimal number")
+                    }
+                    _ => panic!("unexpected counted value type for {curr}: {amt_val:?}"),
+                };
+
+                let denom_id: i64 = match sqlx::query_scalar(
+                    "SELECT id FROM denominations WHERE currency_code = $1 AND face_value = 1",
+                )
+                .bind(curr)
+                .fetch_optional(&self.desk.db.pool)
+                .await
+                .expect("query denomination")
+                {
+                    Some(id) => id,
+                    None => {
+                        sqlx::query_scalar(
+                            "INSERT INTO denominations (currency_code, face_value, group_code) VALUES ($1, 1, 'ALL') RETURNING id",
+                        )
+                        .bind(curr)
+                        .fetch_one(&self.desk.db.pool)
+                        .await
+                        .expect("insert denomination")
+                    }
+                };
+
+                let qty = amt
+                    .to_i32()
+                    .expect("amount as integer quantity with face_value 1");
+                lines.push(CountLine::new(curr, denom_id, qty));
+            }
+        }
+
+        let cash_count_service = CashCountService::pg(self.desk.db.pool.clone());
+        let now = self.tick();
+
+        let count = cash_count_service
+            .submit(
+                &teller_actor,
+                SubmitCount {
+                    branch: BranchId::new(branch),
+                    shift_id: Some(shift_id.clone()),
+                    kind: CountKind::Close,
+                    lines,
+                    note: Some("close by count".to_string()),
+                    idempotency_key: request_id(),
+                },
+                now,
+            )
+            .await
+            .expect("teller submits CLOSE count");
+
+        cash_count_service
+            .verify(&verifier_actor, &count.id, now)
+            .await
+            .expect("manager verifies CLOSE count");
+
+        shift_id
     }
 
     /// FINANCE of `branch` moves stock in its open shift; the new movement's id. OR-4b (C3): v2's
@@ -1060,10 +1189,9 @@ async fn last_counted_is_the_last_closed_shifts_count_thb_always_then_the_non_ze
         Value::Null,
         "an open shift is not a closed one"
     );
-    room.close_shift_counting(
+    room.close_shift_by_count(
         MAIN,
         json!({ "THB": "0", "USD": "45", "EUR": "20", "AUD": "0" }),
-        "THB ฝากธนาคาร · USD ขาด 5",
     )
     .await;
     let data = room.cash("branch=MAIN").await;
@@ -1077,7 +1205,8 @@ async fn last_counted_is_the_last_closed_shifts_count_thb_always_then_the_non_ze
 
     room.open_shift_with(MAIN, json!({ "THB": "700", "JPY": "300" }))
         .await;
-    room.close_shift(MAIN).await;
+    room.close_shift_by_count(MAIN, json!({ "THB": "700", "JPY": "300" }))
+        .await;
     assert_eq!(
         room.cash("branch=MAIN").await["lastCounted"],
         json!([ { "code": "THB", "amount": "700.00" },
