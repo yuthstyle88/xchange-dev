@@ -16,6 +16,7 @@ export const th: Record<string, string> = {
   cancel: 'ยกเลิก',
   emptyCounts: 'ไม่มีรายการนับที่รอยืนยัน',
   emptyHandovers: 'ไม่มีรายการส่งมอบ',
+  connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
 };
 
 export const en: Record<string, string> = {
@@ -35,4 +36,5 @@ export const en: Record<string, string> = {
   cancel: 'Cancel',
   emptyCounts: 'No counts to verify',
   emptyHandovers: 'No handovers to me',
+  connectionError: 'Connection error',
 };
