@@ -1,0 +1,134 @@
+/* MK-8c (#1646): Admin Campaign Performance screen styling */
+
+.xc-cp-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.xc-cp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 1rem;
+}
+
+.xc-cp-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background-color: var(--color-danger-bg, #fef2f2);
+  border: 1px solid var(--color-danger-border, #fca5a5);
+  border-radius: 0.5rem;
+  color: var(--color-danger-text, #991b1b);
+}
+
+.xc-cp-retry-btn {
+  padding: 0.375rem 0.75rem;
+  background-color: var(--color-danger-text, #991b1b);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-cp-retry-btn:hover {
+  background-color: #7f1d1d;
+}
+
+.xc-cp-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-muted, #64748b);
+  background-color: var(--color-bg-muted, #f8fafc);
+  border-radius: 0.5rem;
+  border: 1px dashed var(--color-border, #cbd5e1);
+}
+
+.xc-cp-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  background-color: var(--color-surface, #ffffff);
+}
+
+.xc-cp-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.xc-cp-table th {
+  padding: 0.75rem 1rem;
+  background-color: var(--color-bg-muted, #f8fafc);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+  white-space: nowrap;
+}
+
+.xc-cp-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  color: var(--color-text-primary, #1e293b);
+}
+
+.xc-cp-table tr:last-child td {
+  border-bottom: none;
+}
+
+.xc-cp-table tr:hover td {
+  background-color: var(--color-bg-hover, #f8fafc);
+}
+
+.xc-cp-table td.text-right,
+.xc-cp-table th.text-right {
+  text-align: right;
+}
+
+.xc-cp-dimmed {
+  color: var(--color-text-muted, #64748b);
+  font-style: italic;
+}
+
+.xc-campaign-name {
+  font-weight: 500;
+}
+
+.xc-version {
+  color: var(--color-text-secondary, #64748b);
+}
+
+.xc-redemptions {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-price-cost {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-reward-expense {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-volume {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-realized-margin {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-contribution {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}

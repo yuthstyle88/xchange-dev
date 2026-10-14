@@ -25,6 +25,7 @@ export interface AdminMenu {
   heading: AdminMenuHeading;
   dated: boolean;
   Component: (props: AdminMenuProps) => JSX.Element;
+  blueprint?: true;
 }
 
 const ID_SHAPE = /^[a-z][a-z0-9-]*$/;

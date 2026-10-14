@@ -1,0 +1,309 @@
+/* MK-8a (#1645): Admin Marketing Campaigns screen styling */
+
+.xc-campaigns-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.xc-campaigns-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.xc-campaigns-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 1rem;
+}
+
+.xc-campaigns-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background-color: var(--color-danger-bg, #fef2f2);
+  border: 1px solid var(--color-danger-border, #fca5a5);
+  border-radius: 0.5rem;
+  color: var(--color-danger-text, #991b1b);
+}
+
+.xc-campaigns-retry-btn {
+  padding: 0.375rem 0.75rem;
+  background-color: var(--color-danger-text, #991b1b);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-campaigns-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem;
+  text-align: center;
+  color: var(--color-text-muted, #64748b);
+  background-color: var(--color-bg-muted, #f8fafc);
+  border-radius: 0.5rem;
+  border: 1px dashed var(--color-border, #cbd5e1);
+}
+
+.xc-campaigns-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  background-color: var(--color-surface, #ffffff);
+}
+
+.xc-campaigns-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.xc-campaigns-table th {
+  padding: 0.75rem 1rem;
+  background-color: var(--color-bg-muted, #f8fafc);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+  white-space: nowrap;
+}
+
+.xc-campaigns-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  color: var(--color-text-primary, #1e293b);
+}
+
+.xc-campaigns-table tr:hover td {
+  background-color: var(--color-bg-hover, #f8fafc);
+  cursor: pointer;
+}
+
+.xc-campaign-row {
+  cursor: pointer;
+}
+
+.xc-campaigns-table td.text-right,
+.xc-campaigns-table th.text-right {
+  text-align: right;
+}
+
+/* Detail view M02 */
+.xc-campaign-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background-color: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
+
+.xc-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  padding-bottom: 1rem;
+}
+
+.xc-detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.xc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.xc-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.xc-form-group label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-secondary, #475569);
+}
+
+.xc-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.xc-input:focus {
+  outline: none;
+  border-color: var(--color-primary, #2563eb);
+}
+
+.xc-btn-primary {
+  padding: 0.5rem 1rem;
+  background-color: var(--color-primary, #2563eb);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-btn-secondary {
+  padding: 0.5rem 1rem;
+  background-color: var(--color-bg-muted, #f1f5f9);
+  color: var(--color-text-primary, #1e293b);
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-btn-warning {
+  padding: 0.5rem 1rem;
+  background-color: var(--color-warning-bg, #f59e0b);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-btn-success {
+  padding: 0.5rem 1rem;
+  background-color: var(--color-success, #16a34a);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.xc-status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.xc-status-active {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.xc-status-draft {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.xc-status-simulated {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.xc-status-paused {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.xc-status-expired {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.xc-issued-coupons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background-color: var(--color-bg-muted, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.375rem;
+  margin-top: 1rem;
+}
+
+.xc-coupon-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.xc-coupon-id {
+  font-family: monospace;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.8125rem;
+}
+
+.xc-coupon-code {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  background-color: #fef08a;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+.xc-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--color-text-primary, #1e293b);
+  background-color: var(--color-surface, #ffffff);
+}
+
+.xc-campaign-create {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background-color: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
+
+.xc-coupon-issue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  background-color: var(--color-bg-muted, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+}

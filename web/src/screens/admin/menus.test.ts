@@ -230,47 +230,61 @@ describe('V2-shell: collectMenus (#460 §7, §9; design §3.3)', () => {
   });
 });
 
-// Menus the Blueprint adds that v2 never served. Amended by #602 (RE-5), by its ticket author
-// (claude/e5ab6c): A06 `/admin/approvals` (`docs/design/blueprint/rates.md` §4.7, §9 RE-5; Blueprint
-// §03) is a v3 menu with no v2 row, OWNER only (its view and command are OWNER rows), so it can match
-// neither SERVED nor `roles: 'all'`. Its own record is pinned in
-// `web/src/screens/admin/approvals/Approvals.test.tsx`. Every served menu is still held to its row.
-// Amended by #655 (CI-8), by its ticket author's delegate (claude/5edf7bb5): `/admin/consent`
-// (`docs/design/blueprint/customer-identity-consent.md` §4.4, §9 CI-8) is a v3 menu with no v2 row,
-// OWNER only (`consentPolicy` is an owner row, PR 876), pinned in
-// `web/src/screens/admin/consent/Consent.test.tsx`.
-// Amended by the rate feed's F3w, by its ticket author (claude/c954feda): `/admin/denomination-groups`
-// (`docs/design/rate-feed-connector.md` §10.3; owner's ruling R-3 on #986) is a v3 menu with no v2
-// row, OWNER only, pinned in `web/src/screens/admin/denomination-groups/DenominationGroups.test.tsx`.
-// Amended by #946 (OR-5b), by its lane controller's ruling (claude/5edf7bb5): A04 `/admin/branches`
-// and A05 `/admin/users` (`docs/design/blueprint/org-roles-branches.md` §10) are v3 menus with no v2
-// row, ADMIN only, pinned in `web/src/screens/admin/branches/BranchesScreen.test.tsx` and
-// `web/src/screens/admin/users/UsersScreen.test.tsx`.
-// Amended by #1075 (EX-5): A01 `/admin/alert-settings` (`docs/design/blueprint/executive-finance.md`
-// §11.1 EX-5) is a v3 menu with no v2 row, pinned in
-// `web/src/screens/admin/alert-settings/AlertSettings.test.tsx`.
-// Amended by #1186 (EX-4), by its lane controller's ruling (claude/5edf7bb5): A01 `/admin/executive` is a v3 menu with no v2 row, pinned in `web/src/screens/admin/executive/Executive.shell.test.tsx`.
-// Amended by CA-9b (#1372), by its up-front test writer (claude/709ec749): A5's `/admin` cash-policy screen
-// (`docs/design/blueprint/cash-shift-transfer.md` §9 CA-9b) is a v3 menu with no v2 row, pinned in
-// `web/src/screens/admin/cash-policy/CashPolicy.test.tsx`.
-// Amended by #1068 (FN-1), by its lane controller's ruling (issuecomment-6110842830): F01 `/admin/reconciliation` is a v3 menu with no v2 row, FINANCE only, pinned in `web/src/screens/admin/reconciliation/Reconciliation.test.tsx`.
-const BLUEPRINT_MENUS: readonly string[] = ['approvals', 'consent', 'denomination-groups', 'branches', 'users', 'alert-settings', 'executive', 'cash-policy', 'reconciliation', 'rate-alert-settings', 'notices', 'starting-prices'];
-// Amended for OR-7.7 (#1030 §3.10) by the test-writer claude/5d45b017: `roles` becomes `needs`, a
-// Permission name. The served menus need 'all'; the three Blueprint menus need the permission their
-// commands already require (lane controller's ruling, #1030 issuecomment-6105567502).
-const BLUEPRINT_NEEDS: Record<string, string> = {
-  approvals: 'ApprovalsDecide',
-  consent: 'ConsentPolicyManage',
-  'denomination-groups': 'RatesDraft',
-  // #946's two ADMIN-only menus, moved 1:1 by the implementer (#1030 issuecomment-6107651899).
-  branches: 'BranchesManage',
-  users: 'UsersManage',
-  executive: 'OverviewRead',
-  // CA-9b (#1372): the policy screen needs transferPolicySave's permission
-  'cash-policy': 'CashTransferPolicySet',
-  'rate-alert-settings': 'RateAlertSettingsSave',
-  'starting-prices': 'OrgStartingPricesManage',
-};
+// Blueprint menus (marked `blueprint: true` in their own menu.ts, with no v2 SERVED row, #1657).
+// OR-7.7 (#1030 §3.10): served menus need 'all'; Blueprint menus need the permission their
+// commands require (except notices, which is open to all signed-in admin users).
+const KNOWN_PERMISSIONS = new Set([
+  'OverviewRead',
+  'RatesDraft',
+  'RatesHistoryRead',
+  'RatePolicySave',
+  'BranchesManage',
+  'UsersManage',
+  'ApprovalsDecide',
+  'ShiftOperate',
+  'ShiftCloseCertify',
+  'BookingsDesk',
+  'ExchangeTransact',
+  'TransactionRead',
+  'ReceiptReprint',
+  'ReversalRequest',
+  'CashManage',
+  'QueueOperate',
+  'SystemSettings',
+  'CompatRead',
+  'RequestAbandon',
+  'DocumentsList',
+  'FileRead',
+  'ProofUpload',
+  'DeviceQueue',
+  'DeviceProcess',
+  'DevicePrinterOnline',
+  'DrawerPassport',
+  'FinanceReconcile',
+  'VerificationReview',
+  'IdentityDocumentRead',
+  'MarketingCampaigns',
+  'MarketingMembers',
+  'MarketingPerformance',
+  'CustomerSelf',
+  'AttendanceClock',
+  'CustomerHoldPlace',
+  'CashTargetSet',
+  'BranchDayOperate',
+  'SignedIn',
+  'BookingsAdmin',
+  'ReferenceRatesRead',
+  'ConsentPolicyManage',
+  'ReferralAttach',
+  'ReferralSupersede',
+  'ReferralRead',
+  'CashLimitsManage',
+  'ReportsExport',
+  'AlertSettingsSave',
+  'CashTransferPolicySet',
+  'RateAlertSettingsSave',
+  'OrgStartingPricesManage',
+]);
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
   it('lists the merged menu folders sorted by order, ids and orders unique, every one a served menu', () => {
@@ -281,7 +295,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
     expect(new Set(menus.map((m) => m.id)).size).toBe(menus.length);
     expect(new Set(orders).size).toBe(menus.length);
     for (const m of menus) {
-      if (BLUEPRINT_MENUS.includes(m.id)) continue;
+      if (m.blueprint) continue;
       expect(Object.keys(SERVED), `${m.id} is a served menu (referrals is not ported)`).toContain(m.id);
     }
   });
@@ -289,7 +303,7 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
   it("gives each merged menu its served group, order, icon, label, heading and period toolbar, and needs 'all'", () => {
     const { menus } = mod();
     setLang('th');
-    for (const m of menus.filter((x) => !BLUEPRINT_MENUS.includes(x.id))) {
+    for (const m of menus.filter((x) => !x.blueprint)) {
       const s = SERVED[m.id]!;
       expect(m.group, `${m.id}.group`).toBe(s.group);
       expect(m.order, `${m.id}.order`).toBe(s.order);
@@ -306,12 +320,17 @@ describe('V2-shell: every merged menu follows the served nav (#460 §7; design �
 });
 
 describe('OR-7.7: the Blueprint menus need their commands\' permission (#1030 §3.10)', () => {
-  it('approvals needs ApprovalsDecide, consent ConsentPolicyManage, denomination-groups RatesDraft, branches BranchesManage, users UsersManage, executive OverviewRead, cash-policy CashTransferPolicySet', () => {
+  it("every Blueprint menu's needs is a known Permission name and not 'all'", () => {
     const { menus } = mod();
-    for (const [id, needs] of Object.entries(BLUEPRINT_NEEDS)) {
-      const m = menus.find((x) => x.id === id);
-      expect(m, `${id} is a merged menu`).toBeDefined();
-      expect(m!.needs, `${id}.needs`).toBe(needs);
+    const blueprintMenus = menus.filter((x) => x.blueprint);
+    expect(blueprintMenus.length).toBeGreaterThan(0);
+    for (const m of blueprintMenus) {
+      if (m.id === 'notices') {
+        expect(m.needs).toBe('all');
+        continue;
+      }
+      expect(m.needs, `${m.id}.needs must not be 'all'`).not.toBe('all');
+      expect(KNOWN_PERMISSIONS.has(m.needs), `${m.id}.needs (${m.needs}) is a known Permission`).toBe(true);
     }
   });
 
