@@ -106,7 +106,7 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "approvalDecide", p(P::ApprovalsDecide)),
         (E::Rpc, "approvalRead", p(P::ApprovalsDecide)),
         // OWNER-only routes §4.2 does not list: v3-only permissions, EXECUTIVE's
-        (E::OwnerRoute, "/api/bookings", p(P::BookingsAdmin)),
+        (E::OwnerRoute, "/api/v2/bookings", p(P::BookingsAdmin)),
         (E::StaffBookings, "member", p(P::BookingsAdmin)),
         (E::StaffBookings, "settings", p(P::BookingsAdmin)),
         (E::StaffBookings, "registrations", p(P::BookingsAdmin)),

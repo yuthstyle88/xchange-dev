@@ -71,7 +71,7 @@ use snapshot_common::time;
 use xchange::presentation::http::rpc::RpcClock;
 
 const ORIGIN: &str = "http://desk.test";
-const OWNER_ROUTE: &str = "/api/bookings";
+const OWNER_ROUTE: &str = "/api/v2/bookings";
 const STAFF_ROUTE: &str = "/api/staff/bookings";
 const MAIN: &str = "MAIN";
 const AIRPORT: &str = "AIRPORT";

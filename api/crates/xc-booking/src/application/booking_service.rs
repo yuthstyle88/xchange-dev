@@ -122,6 +122,277 @@ impl BookingService {
         &self.pool
     }
 
+    pub async fn create_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        input: CreateBookingInput,
+        now: DateTime<Utc>,
+    ) -> Result<CreatedBooking, BookingError> {
+        // 1. Branch check
+        let booking_enabled: Option<bool> = sqlx::query_scalar(
+            "SELECT booking_enabled FROM branches WHERE id = $1 AND organization_id = $2",
+        )
+        .bind(input.branch_id.as_str())
+        .bind(input.organization_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        match booking_enabled {
+            Some(true) => {}
+            _ => return Err(BookingError::BookingsClosed),
+        }
+
+        // 2. Slot rule check
+        let rule_exists: Option<i32> = sqlx::query_scalar(
+            "SELECT 1 FROM booking_slot_rules WHERE branch_id = $1 AND organization_id = $2",
+        )
+        .bind(input.branch_id.as_str())
+        .bind(input.organization_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        if rule_exists.is_none() {
+            return Err(BookingError::BookingsClosed);
+        }
+
+        // 3. Booking policies check
+        let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
+            "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
+             FROM booking_policies WHERE organization_id = $1",
+        )
+        .bind(input.organization_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        let (cutoff, grace, expiry) = match policy_row {
+            Some(p) => p,
+            None => return Err(BookingError::BookingsClosed),
+        };
+
+        let policy = BookingPolicy {
+            cancel_cutoff_minutes: cutoff,
+            no_show_grace_minutes: grace,
+            confirm_expiry_minutes: expiry,
+        };
+
+        // 4. Slot check
+        let slot_row: Option<SlotQueryRow> = sqlx::query_as(
+            "SELECT service_date, start_at, end_at, capacity, reserved, status \
+             FROM booking_slots \
+             WHERE id = $1 AND organization_id = $2 AND branch_id = $3",
+        )
+        .bind(input.slot_id)
+        .bind(input.organization_id)
+        .bind(input.branch_id.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        let slot_row = match slot_row {
+            Some(s) => s,
+            None => return Err(BookingError::SlotUnavailable),
+        };
+
+        if slot_row.status != "OPEN" || slot_row.start_at <= now {
+            return Err(BookingError::SlotUnavailable);
+        }
+
+        let slot = BookingSlot {
+            id: input.slot_id,
+            organization_id: input.organization_id,
+            branch_id: input.branch_id.clone(),
+            service_date: slot_row.service_date,
+            start_at: slot_row.start_at,
+            end_at: slot_row.end_at,
+            capacity: slot_row.capacity,
+            reserved: slot_row.reserved,
+            status: SlotStatus::Open,
+        };
+
+        // 5. Quote validation
+        if let Some(quote_id) = input.quote_id {
+            let quote_row: Option<(String, String, String, String, String, Decimal)> = sqlx::query_as(
+                "SELECT q.branch_id, q.status, q.channel, ql.shop_side, ql.currency, ql.quantity \
+                 FROM quotes q \
+                 JOIN quote_lines ql ON ql.quote_id = q.id \
+                 WHERE q.id = $1 AND q.organization_id = $2",
+            )
+            .bind(quote_id)
+            .bind(input.organization_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            let (q_branch, q_status, q_channel, q_side, q_curr, q_qty) = match quote_row {
+                Some(r) => r,
+                None => return Err(BookingError::ValidationFailed { field: "quoteId" }),
+            };
+
+            let expected_side = match input.shop_side {
+                Side::Buy => "BUY",
+                Side::Sell => "SELL",
+            };
+
+            if q_branch != input.branch_id.as_str()
+                || q_status == "CANCELLED"
+                || q_channel != "BOOKING"
+                || q_side != expected_side
+                || q_curr != input.requested_currency
+                || q_qty != input.requested_quantity
+            {
+                return Err(BookingError::ValidationFailed { field: "quoteId" });
+            }
+        }
+
+        // 6. Referral code pre-validation
+        if input.channel == SourceChannel::Partner && input.referral_code.is_none() {
+            return Err(BookingError::ValidationFailed {
+                field: "referralCode",
+            });
+        }
+        let parsed_referral_code = if let Some(ref code_str) = input.referral_code {
+            match ReferralCode::parse(code_str) {
+                Ok(code) => Some(code),
+                Err(_) => {
+                    return Err(BookingError::ValidationFailed {
+                        field: "referralCode",
+                    });
+                }
+            }
+        } else {
+            None
+        };
+
+        // Customer resolution
+        let customer_id = if let Some(ref cid) = input.customer_id {
+            let exists: Option<bool> = sqlx::query_scalar(
+                "SELECT true FROM customers WHERE id = $1 AND organization_id = $2",
+            )
+            .bind(cid)
+            .bind(input.organization_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+            if exists.is_none() {
+                return Err(BookingError::NotFound);
+            }
+            cid.clone()
+        } else if let Some(ref contact) = input.contact {
+            let res = self
+                .contact_reserve
+                .reserve_in(
+                    tx,
+                    input.organization_id,
+                    &contact.display_name,
+                    &contact.phone,
+                    now,
+                )
+                .await
+                .map_err(BookingError::Store)?;
+            res.customer_id
+        } else {
+            return Err(BookingError::ValidationFailed {
+                field: "customerId",
+            });
+        };
+
+        // 8. Reserve slot place atomically
+        self.slots
+            .reserve_in(tx, input.slot_id)
+            .await
+            .map_err(BookingError::from)?;
+
+        // 9. Initial status and expiry
+        let initial_status = input.channel.start_status();
+        let confirm_expires_at = if initial_status == BookingStatus::PendingCustomerConfirmation {
+            Some(policy.confirm_expires_at(now, &slot))
+        } else {
+            None
+        };
+
+        // 10. Generate booking id, booking no, qr token
+        let booking_uuid = Uuid::new_v4();
+        let booking_id = format!("BK-{booking_uuid}");
+        let booking_no = self
+            .bookings
+            .next_booking_no(tx, input.organization_id, slot.service_date)
+            .await?;
+
+        let qr_key = QrToken::key_from_pii(&self.pii_keys);
+        let qr_version = 1;
+        let qr_token = QrToken::derive(&qr_key, &booking_uuid, qr_version);
+        let qr_token_hash = QrToken::hash(&qr_token);
+
+        let booking = Booking {
+            id: booking_id,
+            organization_id: input.organization_id,
+            branch_id: input.branch_id.clone(),
+            booking_no,
+            customer_id,
+            slot_id: input.slot_id,
+            quote_id: input.quote_id,
+            shop_side: input.shop_side,
+            requested_currency: input.requested_currency,
+            requested_quantity: input.requested_quantity,
+            source_channel: input.channel,
+            status: initial_status,
+            qr_token_hash,
+            qr_version,
+            confirm_expires_at,
+            checked_in_at: None,
+            transaction_id: None,
+            partner_attribution_id: None,
+            ended_reason: None,
+            created_by: input.actor_id.clone(),
+            created_at: now,
+            updated_at: now,
+        };
+
+        self.bookings.insert_in(tx, &booking).await?;
+
+        // 11. Referral capture
+        if let Some(code) = parsed_referral_code {
+            if let Some(ref referral_capture) = self.referral_capture {
+                let capture_input = xc_referral::application::capture_service::CaptureInput {
+                    code,
+                    on: xc_referral::domain::capture::CaptureTarget::Booking(booking.id.clone()),
+                    source: match input.channel {
+                        SourceChannel::App => xc_referral::domain::capture::CaptureSource::App,
+                        SourceChannel::Desk => xc_referral::domain::capture::CaptureSource::Desk,
+                        SourceChannel::Partner => {
+                            xc_referral::domain::capture::CaptureSource::Booking
+                        }
+                    },
+                    customer_sub: None,
+                    by: input.actor_id.clone(),
+                    at: now,
+                };
+                referral_capture
+                    .capture_in(tx, capture_input)
+                    .await
+                    .map_err(|e| match e {
+                        xc_referral::application::capture_service::CaptureError::BadCode => {
+                            BookingError::ValidationFailed {
+                                field: "referralCode",
+                            }
+                        }
+                        xc_referral::application::capture_service::CaptureError::Store(err) => {
+                            BookingError::Store(err)
+                        }
+                        _ => BookingError::ValidationFailed {
+                            field: "referralCode",
+                        },
+                    })?;
+            }
+        }
+
+        Ok(CreatedBooking { booking, qr_token })
+    }
+
     pub async fn create(
         &self,
         input: CreateBookingInput,
@@ -202,145 +473,6 @@ impl BookingService {
             }
         }
 
-        // 1. Branch check
-        let booking_enabled: Option<bool> = sqlx::query_scalar(
-            "SELECT booking_enabled FROM branches WHERE id = $1 AND organization_id = $2",
-        )
-        .bind(input.branch_id.as_str())
-        .bind(input.organization_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(pos_error::AppError::Database)?;
-
-        match booking_enabled {
-            Some(true) => {}
-            _ => return Err(BookingError::BookingsClosed),
-        }
-
-        // 2. Slot rule check
-        let rule_exists: Option<i32> = sqlx::query_scalar(
-            "SELECT 1 FROM booking_slot_rules WHERE branch_id = $1 AND organization_id = $2",
-        )
-        .bind(input.branch_id.as_str())
-        .bind(input.organization_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(pos_error::AppError::Database)?;
-
-        if rule_exists.is_none() {
-            return Err(BookingError::BookingsClosed);
-        }
-
-        // 3. Booking policies check
-        let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
-            "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
-             FROM booking_policies WHERE organization_id = $1",
-        )
-        .bind(input.organization_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(pos_error::AppError::Database)?;
-
-        let (cutoff, grace, expiry) = match policy_row {
-            Some(p) => p,
-            None => return Err(BookingError::BookingsClosed),
-        };
-
-        let policy = BookingPolicy {
-            cancel_cutoff_minutes: cutoff,
-            no_show_grace_minutes: grace,
-            confirm_expiry_minutes: expiry,
-        };
-
-        // 4. Slot check
-        let slot_row: Option<SlotQueryRow> = sqlx::query_as(
-            "SELECT service_date, start_at, end_at, capacity, reserved, status \
-             FROM booking_slots \
-             WHERE id = $1 AND organization_id = $2 AND branch_id = $3",
-        )
-        .bind(input.slot_id)
-        .bind(input.organization_id)
-        .bind(input.branch_id.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(pos_error::AppError::Database)?;
-
-        let slot_row = match slot_row {
-            Some(s) => s,
-            None => return Err(BookingError::SlotUnavailable),
-        };
-
-        if slot_row.status != "OPEN" || slot_row.start_at <= now {
-            return Err(BookingError::SlotUnavailable);
-        }
-
-        let slot = BookingSlot {
-            id: input.slot_id,
-            organization_id: input.organization_id,
-            branch_id: input.branch_id.clone(),
-            service_date: slot_row.service_date,
-            start_at: slot_row.start_at,
-            end_at: slot_row.end_at,
-            capacity: slot_row.capacity,
-            reserved: slot_row.reserved,
-            status: SlotStatus::Open,
-        };
-
-        // 5. Quote validation
-        if let Some(quote_id) = input.quote_id {
-            let quote_row: Option<(String, String, String, String, String, Decimal)> = sqlx::query_as(
-                "SELECT q.branch_id, q.status, q.channel, ql.shop_side, ql.currency, ql.quantity \
-                 FROM quotes q \
-                 JOIN quote_lines ql ON ql.quote_id = q.id \
-                 WHERE q.id = $1 AND q.organization_id = $2",
-            )
-            .bind(quote_id)
-            .bind(input.organization_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(pos_error::AppError::Database)?;
-
-            let (q_branch, q_status, q_channel, q_side, q_curr, q_qty) = match quote_row {
-                Some(r) => r,
-                None => return Err(BookingError::ValidationFailed { field: "quoteId" }),
-            };
-
-            let expected_side = match input.shop_side {
-                Side::Buy => "BUY",
-                Side::Sell => "SELL",
-            };
-
-            if q_branch != input.branch_id.as_str()
-                || q_status == "CANCELLED"
-                || q_channel != "BOOKING"
-                || q_side != expected_side
-                || q_curr != input.requested_currency
-                || q_qty != input.requested_quantity
-            {
-                return Err(BookingError::ValidationFailed { field: "quoteId" });
-            }
-        }
-
-        // 6. Referral code pre-validation
-        if input.channel == SourceChannel::Partner && input.referral_code.is_none() {
-            return Err(BookingError::ValidationFailed {
-                field: "referralCode",
-            });
-        }
-        let parsed_referral_code = if let Some(ref code_str) = input.referral_code {
-            match ReferralCode::parse(code_str) {
-                Ok(code) => Some(code),
-                Err(_) => {
-                    return Err(BookingError::ValidationFailed {
-                        field: "referralCode",
-                    });
-                }
-            }
-        } else {
-            None
-        };
-
-        // 7. Begin transaction
         let mut tx = self
             .pool
             .begin()
@@ -349,134 +481,12 @@ impl BookingService {
 
         BranchTx::lock_also(&mut tx, &input.branch_id).await?;
 
-        // Customer resolution
-        let customer_id = if let Some(ref cid) = input.customer_id {
-            let exists: Option<bool> = sqlx::query_scalar(
-                "SELECT true FROM customers WHERE id = $1 AND organization_id = $2",
-            )
-            .bind(cid)
-            .bind(input.organization_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(pos_error::AppError::Database)?;
-
-            if exists.is_none() {
-                return Err(BookingError::NotFound);
-            }
-            cid.clone()
-        } else if let Some(ref contact) = input.contact {
-            let res = self
-                .contact_reserve
-                .reserve_in(
-                    &mut tx,
-                    input.organization_id,
-                    &contact.display_name,
-                    &contact.phone,
-                    now,
-                )
-                .await
-                .map_err(BookingError::Store)?;
-            res.customer_id
-        } else {
-            return Err(BookingError::ValidationFailed {
-                field: "customerId",
-            });
-        };
-
-        // 8. Reserve slot place atomically
-        self.slots
-            .reserve_in(&mut tx, input.slot_id)
-            .await
-            .map_err(BookingError::from)?;
-
-        // 9. Initial status and expiry
-        let initial_status = input.channel.start_status();
-        let confirm_expires_at = if initial_status == BookingStatus::PendingCustomerConfirmation {
-            Some(policy.confirm_expires_at(now, &slot))
-        } else {
-            None
-        };
-
-        // 10. Generate booking id, booking no, qr token
-        let booking_uuid = Uuid::new_v4();
-        let booking_id = format!("BK-{booking_uuid}");
-        let booking_no = self
-            .bookings
-            .next_booking_no(&mut tx, input.organization_id, slot.service_date)
-            .await?;
-
-        let qr_key = QrToken::key_from_pii(&self.pii_keys);
-        let qr_version = 1;
-        let qr_token = QrToken::derive(&qr_key, &booking_uuid, qr_version);
-        let qr_token_hash = QrToken::hash(&qr_token);
-
-        let booking = Booking {
-            id: booking_id,
-            organization_id: input.organization_id,
-            branch_id: input.branch_id.clone(),
-            booking_no,
-            customer_id,
-            slot_id: input.slot_id,
-            quote_id: input.quote_id,
-            shop_side: input.shop_side,
-            requested_currency: input.requested_currency,
-            requested_quantity: input.requested_quantity,
-            source_channel: input.channel,
-            status: initial_status,
-            qr_token_hash,
-            qr_version,
-            confirm_expires_at,
-            checked_in_at: None,
-            transaction_id: None,
-            partner_attribution_id: None,
-            ended_reason: None,
-            created_by: input.actor_id.clone(),
-            created_at: now,
-            updated_at: now,
-        };
-
-        self.bookings.insert_in(&mut tx, &booking).await?;
-
-        // 11. Referral capture
-        if let Some(code) = parsed_referral_code {
-            if let Some(ref referral_capture) = self.referral_capture {
-                let capture_input = xc_referral::application::capture_service::CaptureInput {
-                    code,
-                    on: xc_referral::domain::capture::CaptureTarget::Booking(booking.id.clone()),
-                    source: match input.channel {
-                        SourceChannel::App => xc_referral::domain::capture::CaptureSource::App,
-                        SourceChannel::Desk => xc_referral::domain::capture::CaptureSource::Desk,
-                        SourceChannel::Partner => {
-                            xc_referral::domain::capture::CaptureSource::Booking
-                        }
-                    },
-                    customer_sub: None,
-                    by: input.actor_id.clone(),
-                    at: now,
-                };
-                referral_capture
-                    .capture_in(&mut tx, capture_input)
-                    .await
-                    .map_err(|e| match e {
-                        xc_referral::application::capture_service::CaptureError::BadCode => {
-                            BookingError::ValidationFailed {
-                                field: "referralCode",
-                            }
-                        }
-                        xc_referral::application::capture_service::CaptureError::Store(err) => {
-                            BookingError::Store(err)
-                        }
-                        _ => BookingError::ValidationFailed {
-                            field: "referralCode",
-                        },
-                    })?;
-            }
-        }
+        let created = self.create_in(&mut tx, input.clone(), now).await?;
 
         // 12. Idempotency record (never storing plain QR token!)
         if let Some(ref key) = input.idempotency_key {
             let response_ref = serde_json::json!({
-                "booking_id": booking.id,
+                "booking_id": created.booking.id,
             });
             sqlx::query(
                 "INSERT INTO idempotency_records ( \
@@ -495,7 +505,56 @@ impl BookingService {
 
         tx.commit().await.map_err(pos_error::AppError::Database)?;
 
-        Ok(CreatedBooking { booking, qr_token })
+        Ok(created)
+    }
+
+    pub async fn confirm_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        booking_id: &str,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Booking, BookingError> {
+        let booking = self
+            .bookings
+            .by_id(tx, booking_id)
+            .await?
+            .ok_or(BookingError::NotFound)?;
+
+        let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
+            "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
+             FROM booking_policies WHERE organization_id = $1",
+        )
+        .bind(booking.organization_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        let (cutoff, grace, expiry) = policy_row.ok_or(BookingError::BookingsClosed)?;
+        let policy = BookingPolicy {
+            cancel_cutoff_minutes: cutoff,
+            no_show_grace_minutes: grace,
+            confirm_expiry_minutes: expiry,
+        };
+
+        BookingMachine::confirm(&booking, now, &policy)?;
+
+        let updated = self
+            .bookings
+            .transition_in(
+                tx,
+                booking_id,
+                BookingStatus::PendingCustomerConfirmation,
+                BookingStatus::Confirmed,
+                actor,
+                BookingEventKind::Confirm,
+                None,
+                None,
+                now,
+            )
+            .await?;
+
+        Ok(updated)
     }
 
     pub async fn confirm(
@@ -517,70 +576,33 @@ impl BookingService {
 
         BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
-        let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
-            "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
-             FROM booking_policies WHERE organization_id = $1",
-        )
-        .bind(booking.organization_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(pos_error::AppError::Database)?;
-
-        let (cutoff, grace, expiry) = policy_row.ok_or(BookingError::BookingsClosed)?;
-        let policy = BookingPolicy {
-            cancel_cutoff_minutes: cutoff,
-            no_show_grace_minutes: grace,
-            confirm_expiry_minutes: expiry,
-        };
-
-        BookingMachine::confirm(&booking, now, &policy)?;
-
-        let updated = self
-            .bookings
-            .transition_in(
-                &mut tx,
-                booking_id,
-                BookingStatus::PendingCustomerConfirmation,
-                BookingStatus::Confirmed,
-                actor,
-                BookingEventKind::Confirm,
-                None,
-                None,
-                now,
-            )
-            .await?;
+        let updated = self.confirm_in(&mut tx, booking_id, actor, now).await?;
 
         tx.commit().await.map_err(pos_error::AppError::Database)?;
         Ok(updated)
     }
 
-    pub async fn cancel(
+    pub async fn cancel_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         booking_id: &str,
         actor: &str,
         is_staff: bool,
         reason: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Booking, BookingError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(pos_error::AppError::Database)?;
         let booking = self
             .bookings
-            .by_id(&mut tx, booking_id)
+            .by_id(tx, booking_id)
             .await?
             .ok_or(BookingError::NotFound)?;
-
-        BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
         let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
             "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
              FROM booking_policies WHERE organization_id = $1",
         )
         .bind(booking.organization_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -596,7 +618,7 @@ impl BookingService {
              FROM booking_slots WHERE id = $1",
         )
         .bind(booking.slot_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -622,14 +644,14 @@ impl BookingService {
         if booking.status == BookingStatus::CheckedIn {
             if let Some(queue) = &self.queue {
                 queue
-                    .cancel_active_for_booking_in(&mut tx, &booking.branch_id, booking_id, now)
+                    .cancel_active_for_booking_in(tx, &booking.branch_id, booking_id, now)
                     .await?;
             }
         }
 
         if booking.status.holds_place() {
             self.slots
-                .release_in(&mut tx, booking.slot_id)
+                .release_in(tx, booking.slot_id)
                 .await
                 .map_err(BookingError::from)?;
         }
@@ -637,7 +659,7 @@ impl BookingService {
         let updated = self
             .bookings
             .transition_in(
-                &mut tx,
+                tx,
                 booking_id,
                 booking.status,
                 BookingStatus::Cancelled,
@@ -649,16 +671,15 @@ impl BookingService {
             )
             .await?;
 
-        tx.commit().await.map_err(pos_error::AppError::Database)?;
         Ok(updated)
     }
 
-    pub async fn reschedule(
+    pub async fn cancel(
         &self,
         booking_id: &str,
-        new_slot_id: Uuid,
         actor: &str,
         is_staff: bool,
+        reason: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Booking, BookingError> {
         let mut tx = self
@@ -672,18 +693,41 @@ impl BookingService {
             .await?
             .ok_or(BookingError::NotFound)?;
 
+        BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
+
+        let updated = self
+            .cancel_in(&mut tx, booking_id, actor, is_staff, reason, now)
+            .await?;
+
+        tx.commit().await.map_err(pos_error::AppError::Database)?;
+        Ok(updated)
+    }
+
+    pub async fn reschedule_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        booking_id: &str,
+        new_slot_id: Uuid,
+        actor: &str,
+        is_staff: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Booking, BookingError> {
+        let booking = self
+            .bookings
+            .by_id(tx, booking_id)
+            .await?
+            .ok_or(BookingError::NotFound)?;
+
         if booking.slot_id == new_slot_id {
             return Ok(booking);
         }
-
-        BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
         let policy_row: Option<(i32, i32, i32)> = sqlx::query_as(
             "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
              FROM booking_policies WHERE organization_id = $1",
         )
         .bind(booking.organization_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -699,7 +743,7 @@ impl BookingService {
              FROM booking_slots WHERE id = $1",
         )
         .bind(booking.slot_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -726,7 +770,7 @@ impl BookingService {
         )
         .bind(new_slot_id)
         .bind(booking.organization_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -762,17 +806,96 @@ impl BookingService {
         )?;
 
         self.slots
-            .move_in(&mut tx, booking.slot_id, new_slot_id)
+            .move_in(tx, booking.slot_id, new_slot_id)
             .await
             .map_err(BookingError::from)?;
 
         let updated = self
             .bookings
-            .update_slot_in(&mut tx, booking_id, booking.status, new_slot_id, actor, now)
+            .update_slot_in(tx, booking_id, booking.status, new_slot_id, actor, now)
+            .await?;
+
+        Ok(updated)
+    }
+
+    pub async fn reschedule(
+        &self,
+        booking_id: &str,
+        new_slot_id: Uuid,
+        actor: &str,
+        is_staff: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Booking, BookingError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(pos_error::AppError::Database)?;
+        let booking = self
+            .bookings
+            .by_id(&mut tx, booking_id)
+            .await?
+            .ok_or(BookingError::NotFound)?;
+
+        if booking.slot_id == new_slot_id {
+            return Ok(booking);
+        }
+
+        BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
+
+        let updated = self
+            .reschedule_in(&mut tx, booking_id, new_slot_id, actor, is_staff, now)
             .await?;
 
         tx.commit().await.map_err(pos_error::AppError::Database)?;
         Ok(updated)
+    }
+
+    pub async fn reissue_qr_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        booking_id: &str,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ReissuedQr, BookingError> {
+        let booking = self
+            .bookings
+            .by_id(tx, booking_id)
+            .await?
+            .ok_or(BookingError::NotFound)?;
+
+        match booking.status {
+            BookingStatus::PendingCustomerConfirmation
+            | BookingStatus::Confirmed
+            | BookingStatus::CheckedIn => {}
+            _ => return Err(BookingError::StaleVersion),
+        }
+
+        let booking_uuid =
+            Uuid::parse_str(booking.id.strip_prefix("BK-").unwrap_or(&booking.id))
+                .map_err(|e| pos_error::AppError::Domain(format!("invalid booking uuid: {e}")))?;
+        let new_qr_version = booking.qr_version + 1;
+        let qr_key = QrToken::key_from_pii(&self.pii_keys);
+        let qr_token = QrToken::derive(&qr_key, &booking_uuid, new_qr_version);
+        let qr_token_hash = QrToken::hash(&qr_token);
+
+        let updated = self
+            .bookings
+            .reissue_qr_in(
+                tx,
+                booking_id,
+                booking.status,
+                &qr_token_hash,
+                new_qr_version,
+                actor,
+                now,
+            )
+            .await?;
+
+        Ok(ReissuedQr {
+            booking: updated,
+            qr_token,
+        })
     }
 
     pub async fn reissue_qr(
@@ -801,31 +924,9 @@ impl BookingService {
 
         BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
-        let booking_uuid =
-            Uuid::parse_str(booking.id.strip_prefix("BK-").unwrap_or(&booking.id))
-                .map_err(|e| pos_error::AppError::Domain(format!("invalid booking uuid: {e}")))?;
-        let new_qr_version = booking.qr_version + 1;
-        let qr_key = QrToken::key_from_pii(&self.pii_keys);
-        let qr_token = QrToken::derive(&qr_key, &booking_uuid, new_qr_version);
-        let qr_token_hash = QrToken::hash(&qr_token);
-
-        let updated = self
-            .bookings
-            .reissue_qr_in(
-                &mut tx,
-                booking_id,
-                booking.status,
-                &qr_token_hash,
-                new_qr_version,
-                actor,
-                now,
-            )
-            .await?;
+        let res = self.reissue_qr_in(&mut tx, booking_id, actor, now).await?;
 
         tx.commit().await.map_err(pos_error::AppError::Database)?;
-        Ok(ReissuedQr {
-            booking: updated,
-            qr_token,
-        })
+        Ok(res)
     }
 }

@@ -15,7 +15,7 @@ interface DeskPathShape {
   configView: "desk_config" | "staff_desk_config";
   rpc: "/api/rpc" | "/api/staff/rpc";
   upload: "/api/upload" | "/api/staff/upload";
-  bookings: "/api/bookings" | "/api/staff/bookings";
+  bookings: "/api/v2/bookings" | "/api/staff/bookings";
   fileUrl(key: string): string;
   devicesLink: boolean;
   usesDraft: boolean;
@@ -47,7 +47,7 @@ const EXPECTED = {
     configView: "desk_config",
     rpc: "/api/rpc",
     upload: "/api/upload",
-    bookings: "/api/bookings",
+    bookings: "/api/v2/bookings",
     file: "/files/k1",
     devicesLink: true,
     usesDraft: false,

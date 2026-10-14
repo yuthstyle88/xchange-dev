@@ -61,7 +61,7 @@ use sqlx::PgPool;
 use xchange::presentation::http::rpc::RpcClock;
 
 const ORIGIN: &str = "http://desk.test";
-const OWNER_ROUTE: &str = "/api/bookings";
+const OWNER_ROUTE: &str = "/api/v2/bookings";
 const MAIN: &str = "MAIN";
 const RATE_MOVED: &str = "เรทเปลี่ยน กรุณาโหลดใหม่";
 const CUSTOMER: &str = "C-MAIN-1";

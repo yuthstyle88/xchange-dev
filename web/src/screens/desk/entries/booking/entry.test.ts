@@ -92,7 +92,7 @@ const booking = (over: Partial<BookingAnswer> = {}): BookingAnswer => ({
 });
 
 const PATHS = {
-  OWNER_DESK: { kind: "owner", bookings: "/api/bookings" },
+  OWNER_DESK: { kind: "owner", bookings: "/api/v2/bookings" },
   STAFF_DESK: { kind: "staff", bookings: "/api/staff/bookings" },
 } as const;
 

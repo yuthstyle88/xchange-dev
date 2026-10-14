@@ -45,7 +45,7 @@ use stale_policy_769_common::{
 };
 
 const ORIGIN: &str = "http://desk.test";
-const OWNER_ROUTE: &str = "/api/bookings";
+const OWNER_ROUTE: &str = "/api/v2/bookings";
 const MAIN: &str = "MAIN";
 /// USD per 1: BUY 36.25, SELL 36.75.
 const USD: (&str, &str, &str, &str) = ("USD", "1", "36.25", "36.75");

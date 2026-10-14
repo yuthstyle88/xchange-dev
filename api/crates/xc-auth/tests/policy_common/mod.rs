@@ -217,7 +217,7 @@ pub fn path(name: &str) -> EntryPath {
 pub fn asked(route: &str, path: &str, action: &str) -> String {
     match (path, route) {
         ("OwnerRoute", "POST /api/employees") => "employees".to_owned(),
-        ("OwnerRoute", "POST /api/bookings") => "/api/bookings".to_owned(),
+        ("OwnerRoute", "POST /api/bookings") => "/api/v2/bookings".to_owned(),
         ("OwnerRoute", "POST /api/reference-rates") => "/api/reference-rates".to_owned(),
         _ => action.to_owned(),
     }

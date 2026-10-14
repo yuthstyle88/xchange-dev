@@ -15,7 +15,7 @@ export interface DeskPath {
   quoteRoutes: QuoteRoutes;
   rpc: '/api/rpc' | '/api/staff/rpc';
   upload: '/api/upload' | '/api/staff/upload';
-  bookings: '/api/bookings' | '/api/staff/bookings';
+  bookings: '/api/v2/bookings' | '/api/staff/bookings';
   /** '/files/<key>' | '/api/staff/file/<key>' (pages.rs:429-432). */
   fileUrl(key: string): string;
   /** `ดูงานพิมพ์และบันทึกหลังบ้าน →` on /desk only (desk-devices.js:5). */
@@ -36,7 +36,7 @@ export const OWNER_DESK: DeskPath = {
   quoteRoutes: QUOTE_ROUTES,
   rpc: '/api/rpc',
   upload: '/api/upload',
-  bookings: '/api/bookings',
+  bookings: '/api/v2/bookings',
   fileUrl: (key) => `/files/${key}`,
   devicesLink: true,
   usesDraft: false,

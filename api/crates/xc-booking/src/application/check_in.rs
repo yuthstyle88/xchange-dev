@@ -90,27 +90,19 @@ impl CheckInService {
         &self.pii_keys
     }
 
-    /// Check in a booking by QR token or teller identity verification.
-    /// Issues a BOOKING queue ticket and transitions the booking to CHECKED_IN in one transaction.
-    pub async fn check_in(
+    /// Check in a booking by QR token or teller identity verification inside an existing transaction.
+    pub async fn check_in_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         booking_id: &str,
         by: CheckInBy,
         actor_id: &str,
         now: DateTime<Utc>,
     ) -> Result<(Booking, IssuedTicket), CheckInError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(pos_error::AppError::Database)?;
-
-        BranchTx::lock_also(&mut tx, branch).await?;
-
         let booking = self
             .bookings
-            .by_id(&mut tx, booking_id)
+            .by_id(tx, booking_id)
             .await
             .map_err(pos_error::AppError::from)?;
         let booking = booking.ok_or(CheckInError::NotFound)?;
@@ -127,7 +119,7 @@ impl CheckInService {
                 )
                 .bind(branch.as_str())
                 .bind(booking_id)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(pos_error::AppError::Database)?;
 
@@ -158,7 +150,7 @@ impl CheckInService {
         let slot: SlotCheckRow =
             sqlx::query_as("SELECT service_date, start_at FROM booking_slots WHERE id = $1")
                 .bind(booking.slot_id)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await
                 .map_err(pos_error::AppError::Database)?;
 
@@ -166,7 +158,7 @@ impl CheckInService {
             "SELECT o.timezone FROM branches b JOIN organizations o ON o.id = b.organization_id WHERE b.id = $1",
         )
         .bind(branch.as_str())
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
 
@@ -182,7 +174,7 @@ impl CheckInService {
             "SELECT no_show_grace_minutes FROM booking_policies WHERE organization_id = $1",
         )
         .bind(booking.organization_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?
         .unwrap_or(15);
@@ -196,7 +188,7 @@ impl CheckInService {
         let ticket = match self
             .queue
             .issue_in(
-                &mut tx,
+                tx,
                 branch,
                 &xc_kernel::queue_tickets::QueueTicketSource::Booking {
                     booking_id: booking_id.to_string(),
@@ -219,7 +211,7 @@ impl CheckInService {
         let updated_booking = self
             .bookings
             .transition_in(
-                &mut tx,
+                tx,
                 booking_id,
                 booking.status,
                 BookingStatus::CheckedIn,
@@ -240,8 +232,33 @@ impl CheckInService {
                 other => CheckInError::Store(other.into()),
             })?;
 
+        Ok((updated_booking, ticket))
+    }
+
+    /// Check in a booking by QR token or teller identity verification.
+    /// Issues a BOOKING queue ticket and transitions the booking to CHECKED_IN in one transaction.
+    pub async fn check_in(
+        &self,
+        branch: &BranchId,
+        booking_id: &str,
+        by: CheckInBy,
+        actor_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(Booking, IssuedTicket), CheckInError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(pos_error::AppError::Database)?;
+
+        BranchTx::lock_also(&mut tx, branch).await?;
+
+        let res = self
+            .check_in_in(&mut tx, branch, booking_id, by, actor_id, now)
+            .await?;
+
         tx.commit().await.map_err(pos_error::AppError::Database)?;
 
-        Ok((updated_booking, ticket))
+        Ok(res)
     }
 }

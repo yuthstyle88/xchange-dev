@@ -65,7 +65,7 @@ function MemberForm(props: MemberFormProps): JSX.Element {
       const res = await props.api.post<
         Record<string, unknown>,
         { saved: boolean; name: string; memberCode: string }
-      >('/api/bookings', {
+      >('/api/v2/bookings', {
         action: 'member',
         payload: {
           branchId: props.branch,
@@ -466,7 +466,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
       const res = await api.post<
         Record<string, unknown>,
         { items: unknown[]; hasMore: boolean; page: number }
-      >('/api/bookings', {
+      >('/api/v2/bookings', {
         action: 'registrations',
         payload: {
           branchId,

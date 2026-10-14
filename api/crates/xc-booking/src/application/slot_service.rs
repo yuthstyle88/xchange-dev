@@ -59,9 +59,10 @@ impl SlotService {
         Self { pool, slots }
     }
 
-    /// Saves the branch's rule (insert or replace); `by` is the ADMIN's `users.id`.
-    pub async fn set_rule(
+    /// Saves the branch's rule (insert or replace) inside an existing transaction; `by` is the ADMIN's `users.id`.
+    pub async fn set_rule_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         rule: &SlotRule,
         by: Uuid,
@@ -84,7 +85,7 @@ impl SlotService {
         .bind(rule.capacity)
         .bind(rule.horizon_days)
         .bind(by)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -94,9 +95,29 @@ impl SlotService {
         Ok(())
     }
 
-    /// Adds a closure date of the branch; `by` is the ADMIN's `users.id`.
-    pub async fn add_closure(
+    /// Saves the branch's rule (insert or replace); `by` is the ADMIN's `users.id`.
+    pub async fn set_rule(
         &self,
+        branch: &BranchId,
+        rule: &SlotRule,
+        by: Uuid,
+    ) -> Result<(), SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        self.set_rule_in(&mut tx, branch, rule, by).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
+
+    /// Adds a closure date of the branch inside an existing transaction; `by` is the ADMIN's `users.id`.
+    pub async fn add_closure_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         closure: &BranchClosure,
         by: Uuid,
@@ -116,7 +137,7 @@ impl SlotService {
         .bind(closure.closed_on)
         .bind(&closure.reason)
         .bind(by)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -126,18 +147,36 @@ impl SlotService {
         Ok(())
     }
 
-    /// §4.1: a capacity below the slot's `reserved` is `CapacityBelowReserved` and changes nothing.
-    pub async fn set_capacity(&self, slot: Uuid, capacity: i32) -> Result<BookingSlot, SlotError> {
+    /// Adds a closure date of the branch; `by` is the ADMIN's `users.id`.
+    pub async fn add_closure(
+        &self,
+        branch: &BranchId,
+        closure: &BranchClosure,
+        by: Uuid,
+    ) -> Result<(), SlotError> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        self.add_closure_in(&mut tx, branch, closure, by).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
 
+    /// §4.1: a capacity below the slot's `reserved` is `CapacityBelowReserved` and changes nothing.
+    pub async fn set_capacity_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        slot: Uuid,
+        capacity: i32,
+    ) -> Result<BookingSlot, SlotError> {
         let current: Option<(i32,)> =
             sqlx::query_as("SELECT reserved FROM booking_slots WHERE id = $1 FOR UPDATE")
                 .bind(slot)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -157,13 +196,9 @@ impl SlotService {
         )
         .bind(slot)
         .bind(capacity)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
         let (id, org_id, branch_id, service_date, start_at, end_at, capacity, reserved, status) =
             row;
@@ -185,18 +220,33 @@ impl SlotService {
         })
     }
 
-    /// §4.1: a slot with places taken is `SlotHasBookings`; an empty one becomes `CLOSED`.
-    pub async fn close(&self, slot: Uuid) -> Result<BookingSlot, SlotError> {
+    /// §4.1: a capacity below the slot's `reserved` is `CapacityBelowReserved` and changes nothing.
+    pub async fn set_capacity(&self, slot: Uuid, capacity: i32) -> Result<BookingSlot, SlotError> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
+        let slot = self.set_capacity_in(&mut tx, slot, capacity).await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        Ok(slot)
+    }
+
+    /// §4.1: a slot with places taken is `SlotHasBookings`; an empty one becomes `CLOSED`.
+    pub async fn close_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        slot: Uuid,
+    ) -> Result<BookingSlot, SlotError> {
         let current: Option<(i32,)> =
             sqlx::query_as("SELECT reserved FROM booking_slots WHERE id = $1 FOR UPDATE")
                 .bind(slot)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -215,13 +265,9 @@ impl SlotService {
              RETURNING id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status",
         )
         .bind(slot)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
         let (id, org_id, branch_id, service_date, start_at, end_at, capacity, reserved, _status) =
             row;
@@ -238,12 +284,175 @@ impl SlotService {
         })
     }
 
-    /// B2, §4.1: runs [`crate::domain::slot::slot_generator::SlotGenerator::slots_for`] on the branch's rule, hours
-    /// and closures; inserts the planned slots that are missing, closes the branch's empty future slots in
-    /// `[from, from + days)` that are no longer planned, never deletes a slot and never touches one with places
-    /// taken.
-    pub async fn generate(
+    /// §4.1: a slot with places taken is `SlotHasBookings`; an empty one becomes `CLOSED`.
+    pub async fn close(&self, slot: Uuid) -> Result<BookingSlot, SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        let slot = self.close_in(&mut tx, slot).await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        Ok(slot)
+    }
+
+    /// Reopens a closed slot inside an existing transaction.
+    pub async fn open_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        slot: Uuid,
+    ) -> Result<BookingSlot, SlotError> {
+        let row: Option<SlotDbRow> = sqlx::query_as(
+            "UPDATE booking_slots \
+             SET status = 'OPEN', updated_at = now() \
+             WHERE id = $1 \
+             RETURNING id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status",
+        )
+        .bind(slot)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        let Some(row) = row else {
+            return Err(SlotError::NotFound);
+        };
+
+        let (id, org_id, branch_id, service_date, start_at, end_at, capacity, reserved, _status) =
+            row;
+        Ok(BookingSlot {
+            id,
+            organization_id: org_id,
+            branch_id: BranchId::new(branch_id),
+            service_date,
+            start_at,
+            end_at,
+            capacity,
+            reserved,
+            status: SlotStatus::Open,
+        })
+    }
+
+    /// Reopens a closed slot.
+    pub async fn open(&self, slot: Uuid) -> Result<BookingSlot, SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        let slot = self.open_in(&mut tx, slot).await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        Ok(slot)
+    }
+
+    /// Removes a closure date of the branch inside an existing transaction.
+    pub async fn remove_closure_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        date: NaiveDate,
+    ) -> Result<(), SlotError> {
+        sqlx::query("DELETE FROM branch_closures WHERE branch_id = $1 AND closed_on = $2")
+            .bind(branch.as_str())
+            .bind(date)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
+
+    /// Removes a closure date of the branch.
+    pub async fn remove_closure(
+        &self,
+        branch: &BranchId,
+        date: NaiveDate,
+    ) -> Result<(), SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        self.remove_closure_in(&mut tx, branch, date).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
+
+    /// Sets the organisation's booking policy inside an existing transaction.
+    pub async fn set_policy_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org_id: Uuid,
+        cancel_cutoff_minutes: i32,
+        no_show_grace_minutes: i32,
+        confirm_expiry_minutes: i32,
+        by: Option<Uuid>,
+    ) -> Result<(), SlotError> {
+        sqlx::query(
+            "INSERT INTO booking_policies (organization_id, cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes, updated_by, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, now()) \
+             ON CONFLICT (organization_id) DO UPDATE SET \
+                 cancel_cutoff_minutes = EXCLUDED.cancel_cutoff_minutes, \
+                 no_show_grace_minutes = EXCLUDED.no_show_grace_minutes, \
+                 confirm_expiry_minutes = EXCLUDED.confirm_expiry_minutes, \
+                 updated_by = EXCLUDED.updated_by, \
+                 updated_at = now()",
+        )
+        .bind(org_id)
+        .bind(cancel_cutoff_minutes)
+        .bind(no_show_grace_minutes)
+        .bind(confirm_expiry_minutes)
+        .bind(by)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
+
+    /// Sets the organisation's booking policy.
+    pub async fn set_policy(
+        &self,
+        org_id: Uuid,
+        cancel_cutoff_minutes: i32,
+        no_show_grace_minutes: i32,
+        confirm_expiry_minutes: i32,
+        by: Option<Uuid>,
+    ) -> Result<(), SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        self.set_policy_in(
+            &mut tx,
+            org_id,
+            cancel_cutoff_minutes,
+            no_show_grace_minutes,
+            confirm_expiry_minutes,
+            by,
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        Ok(())
+    }
+
+    /// B2, §4.1: runs [`crate::domain::slot::slot_generator::SlotGenerator::slots_for`] on the branch's rule, hours
+    /// and closures inside an existing transaction.
+    pub async fn generate_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         from: NaiveDate,
         days: u32,
@@ -252,7 +461,7 @@ impl SlotService {
             "SELECT organization_id, timezone, opening_hours FROM branches WHERE id = $1",
         )
         .bind(branch.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -264,7 +473,7 @@ impl SlotService {
             "SELECT slot_minutes, capacity, horizon_days FROM booking_slot_rules WHERE branch_id = $1",
         )
         .bind(branch.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -284,7 +493,7 @@ impl SlotService {
         let closure_rows: Vec<(NaiveDate, String)> =
             sqlx::query_as("SELECT closed_on, reason FROM branch_closures WHERE branch_id = $1")
                 .bind(branch.as_str())
-                .fetch_all(&self.pool)
+                .fetch_all(&mut **tx)
                 .await
                 .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -300,12 +509,6 @@ impl SlotService {
 
         let to_date = from + chrono::Duration::days(days as i64);
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
-
         let existing_rows: Vec<ExistingSlotRow> = sqlx::query_as(
             "SELECT id, start_at, end_at, capacity, reserved, status \
              FROM booking_slots \
@@ -315,7 +518,7 @@ impl SlotService {
         .bind(branch.as_str())
         .bind(from)
         .bind(to_date)
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -340,27 +543,25 @@ impl SlotService {
         let mut added = 0;
         for p in &planned {
             if let Some(info) = existing_by_start.get_mut(&p.start_at) {
-                if info.reserved == 0 && p.start_at > now {
-                    // Ruling 2: an empty future slot (reserved = 0, start_at > now) whose start_at equals a new slot's start
-                    // is reshaped in place: its end_at and capacity are updated to the new rule (never status).
-                    if info.end_at != p.end_at || info.capacity != rule.capacity {
-                        sqlx::query(
-                            "UPDATE booking_slots \
-                             SET end_at = $2, capacity = $3, updated_at = now() \
-                             WHERE id = $1",
-                        )
-                        .bind(info.id)
-                        .bind(p.end_at)
-                        .bind(rule.capacity)
-                        .execute(&mut *tx)
-                        .await
-                        .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+                if info.reserved == 0
+                    && p.start_at > now
+                    && (info.end_at != p.end_at || info.capacity != rule.capacity)
+                {
+                    sqlx::query(
+                        "UPDATE booking_slots \
+                         SET end_at = $2, capacity = $3, updated_at = now() \
+                         WHERE id = $1",
+                    )
+                    .bind(info.id)
+                    .bind(p.end_at)
+                    .bind(rule.capacity)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
-                        info.end_at = p.end_at;
-                        info.capacity = rule.capacity;
-                    }
+                    info.end_at = p.end_at;
+                    info.capacity = rule.capacity;
                 }
-                // If reserved > 0 or start_at <= now: keeps its old shape.
             } else {
                 let slot_id = Uuid::new_v4();
                 let res = sqlx::query(
@@ -377,7 +578,7 @@ impl SlotService {
                 .bind(p.start_at)
                 .bind(p.end_at)
                 .bind(rule.capacity)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await
                 .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
@@ -419,15 +620,36 @@ impl SlotService {
                  WHERE id = ANY($1)",
             )
             .bind(&ids_to_close)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
         }
+
+        Ok(Generated { added, closed })
+    }
+
+    /// B2, §4.1: runs [`crate::domain::slot::slot_generator::SlotGenerator::slots_for`] on the branch's rule, hours
+    /// and closures; inserts the planned slots that are missing, closes the branch's empty future slots in
+    /// `[from, from + days)` that are no longer planned, never deletes a slot and never touches one with places
+    /// taken.
+    pub async fn generate(
+        &self,
+        branch: &BranchId,
+        from: NaiveDate,
+        days: u32,
+    ) -> Result<Generated, SlotError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        let res = self.generate_in(&mut tx, branch, from, days).await?;
 
         tx.commit()
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
-        Ok(Generated { added, closed })
+        Ok(res)
     }
 }

@@ -13,7 +13,7 @@ use rpc_common::{Call, Desk, sign_in};
 use serde_json::json;
 
 const ORIGIN: &str = "http://desk.test";
-const OWNER_ROUTE: &str = "/api/bookings";
+const OWNER_ROUTE: &str = "/api/v2/bookings";
 const MAIN: &str = "MAIN";
 
 fn owner() -> Person {

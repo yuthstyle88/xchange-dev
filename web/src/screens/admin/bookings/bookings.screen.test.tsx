@@ -6,7 +6,7 @@
 // `admin-html:19` (the toolbar). v3 reads the two views of `api/tests/v3_admin_bookings_view_test.rs`
 // — `admin_bookings` (rows, filter `q`) and `admin_booking_settings` (rules, member count,
 // public url, counter rates) — plus the shell's `admin_branches` for the branch's name (lane
-// controller on #462, decision 2), and writes through `ApiClient.post('/api/bookings', {action,
+// controller on #462, decision 2), and writes through `ApiClient.post('/api/v2/bookings', {action,
 // payload: {branchId, …}})`, as v2's `bookingApi` does (`bookings.js:5`).
 //
 // The menu is mounted through its record, `menu.Component({branch, period, shown})`, as the shell
@@ -207,7 +207,7 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
       });
     }
   }
-  if (method === 'POST' && url.pathname === '/api/bookings') {
+  if (method === 'POST' && url.pathname === '/api/v2/bookings') {
     return respond(server.post(body?.action ?? '', body?.payload ?? {}));
   }
   return respond({ status: 404, body: { error: { code: 'notFound', message: `no ${method} ${url.pathname}` } } });
@@ -682,7 +682,7 @@ describe('V2-bookings: confirming a member booking (#463 K1; bookings.js:12)', (
     dialogButton('ยืนยันล็อกเรท').click();
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
     const post = posts()[0]!;
-    expect(post.path).toBe('/api/bookings');
+    expect(post.path).toBe('/api/v2/bookings');
     expect(post.headers['x-xchange-request']).toBe('1');
     expect(post.body).toEqual({
       action: 'confirm',
@@ -898,7 +898,7 @@ describe('V2-bookings: creating a booking, a v3 addition (#463 K3; design §12.1
     submitButton(d).click();
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
     const post = posts()[0]!;
-    expect(post.path).toBe('/api/bookings');
+    expect(post.path).toBe('/api/v2/bookings');
     expect(post.body).toEqual({
       action: 'create',
       payload: {
