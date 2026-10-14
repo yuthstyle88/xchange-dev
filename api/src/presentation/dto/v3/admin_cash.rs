@@ -1,9 +1,14 @@
 //! Admin cash view DTOs for v3 (§7, §12.1, §12.6, §12.9).
 
+use actix_web::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::ViewFilter;
+
+/// Filter keys accepted when drilling down from executive overview (G2, ruling on #1106).
+pub const DRILLDOWN_KEYS: &[&str] = &["all", "currency"];
 
 /// Filter for the `admin_cash` view (`all=true` includes all 153 register currencies).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
@@ -11,9 +16,27 @@ use crate::presentation::http::v3::view::ViewFilter;
 #[ts(export_to = "admin_cash.ts")]
 pub struct AdminCashFilter {
     pub all: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub currency: Option<String>,
 }
 
-impl ViewFilter for AdminCashFilter {}
+impl ViewFilter for AdminCashFilter {
+    fn check(&self) -> Result<(), V3Error> {
+        if let Some(ref c) = self.currency
+            && (c.len() != 3 || !c.bytes().all(|b| b.is_ascii_uppercase()))
+        {
+            return Err(V3Error::new(
+                "invalidRequest",
+                Some("currency"),
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        Ok(())
+    }
+}
 
 /// Banner shift summary for the open shift.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

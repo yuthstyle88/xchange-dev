@@ -265,7 +265,7 @@ impl BranchView for AdminCashBranchView {
                 None => register_currencies(),
             };
 
-            let codes_to_show = if show_all {
+            let mut codes_to_show = if show_all {
                 register_currencies()
             } else {
                 let mut candidates = BTreeSet::new();
@@ -283,6 +283,10 @@ impl BranchView for AdminCashBranchView {
                 }
                 sorted_currency_codes(candidates)
             };
+
+            if let Some(ref c) = filter.currency {
+                codes_to_show.retain(|code| code == c);
+            }
 
             let mut stock = Vec::with_capacity(codes_to_show.len());
             for code in codes_to_show {

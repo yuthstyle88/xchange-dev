@@ -334,10 +334,8 @@ async fn floor_usd_500_on_hand_499_9999_is_one_low_stock_alert() {
     let drilldown = &alert["drilldown"];
     assert_eq!(drilldown["view"], "admin_cash");
     assert_eq!(drilldown["filter"]["branch"], B1);
-    assert_eq!(
-        drilldown["dropped"].as_array().unwrap(),
-        &[serde_json::json!("currency")]
-    );
+    assert_eq!(drilldown["filter"]["currency"], "USD");
+    assert_eq!(drilldown["dropped"], serde_json::json!([]));
 
     // Detail naming currency, on hand, and floor
     let detail = alert["detail"].as_str().unwrap_or("");

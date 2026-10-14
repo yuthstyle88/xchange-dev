@@ -13,7 +13,7 @@ export type AdminCashData = { shift: AdminCashShift | null, stock: Array<AdminCa
 /**
  * Filter for the `admin_cash` view (`all=true` includes all 153 register currencies).
  */
-export type AdminCashFilter = { all: boolean, };
+export type AdminCashFilter = { all: boolean, currency?: string, };
 
 /**
  * Reference spread summary over the open shift's exchanges.
