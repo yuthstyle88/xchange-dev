@@ -3,12 +3,10 @@ import {
   createSignal,
   For,
   onCleanup,
-  onMount,
   Show,
   type JSX,
 } from 'solid-js';
 import {
-  ApiError,
   type ApiClient,
   type ViewAnswer,
   type ViewParams,
@@ -17,7 +15,8 @@ import type { DeviceEventRow } from '../../shared/api/generated/device_events';
 import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
 import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
 import type { DevicesOverview } from '../../shared/api/generated/devices';
-import { errorText, locale, screenT, type Locale } from '../../shared/i18n';
+import { locale, screenT, type Locale } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { ViewPoller } from '../../shared/live/view-poller';
 import { sharedSession } from '../../shared/session/session';
 import { AppShell } from '../../shared/ui/AppShell';
@@ -135,14 +134,6 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     },
   };
 
-  function toWordedError(err: unknown): string {
-    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      return errorText(err.code, generic);
-    }
-    return generic;
-  }
-
   async function loadTransactions(branch: string): Promise<void> {
     try {
       const txs = await props.api.page<DeviceTransactionRow>('device_transactions', {
@@ -154,7 +145,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(toWordedError(err));
+      setMessage(wordedError(err));
     }
   }
 
@@ -216,8 +207,16 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     await Promise.all([firstReadsPromise, txPromise]);
   }
 
-  onMount(() => {
-    void initBranch(props.branch);
+  let lastBranch: string | undefined;
+  createEffect(() => {
+    const b = props.branch;
+    if (lastBranch === undefined) {
+      lastBranch = b;
+      void initBranch(b, false);
+    } else if (lastBranch !== b) {
+      lastBranch = b;
+      void initBranch(b, true);
+    }
   });
 
   onCleanup(() => {
@@ -238,11 +237,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       await fn();
       await initBranch(effectiveBranch());
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setMessage(errorText(err.code, err.message));
-      } else if (err instanceof Error) {
-        setMessage(err.message);
-      }
+      setMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
@@ -357,7 +352,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(toWordedError(err));
+      setMessage(wordedError(err));
     }
   }
 
@@ -374,7 +369,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       });
       setOlderEvents((prev) => [...prev, ...older]);
     } catch (err: unknown) {
-      setMessage(toWordedError(err));
+      setMessage(wordedError(err));
     }
   }
 
