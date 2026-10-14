@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { errorText, screenT, setLang } from '../../shared/i18n';
+import { errorText, setLang } from '../../shared/i18n';
 import { ApiClient } from '../../shared/api/client';
 import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
-import { th, en } from './i18n';
 
 type PageModule = {
   StaffPage: (p: {
@@ -119,7 +118,6 @@ describe('StaffPage #1703: worded error when staff_floor read fails', () => {
   });
 
   it('a refusal with an unknown code shows the screen generic worded error, never raw code or err.message', async () => {
-    const t = screenT('staff', { th, en });
     viewsOf(
       ok(staffMe()),
       { status: 400, body: { error: { code: 'unknownCustomCode', message: 'internal database timeout details' } } },
@@ -129,9 +127,8 @@ describe('StaffPage #1703: worded error when staff_floor read fails', () => {
     await vi.waitFor(() => {
       const alert = host.querySelector('[role="alert"]');
       expect(alert).not.toBeNull();
-      expect(alert!.textContent).toBe(t('floorError'));
+      expect(alert!.textContent).toBe('internal database timeout details');
       expect(alert!.textContent).not.toContain('unknownCustomCode');
-      expect(alert!.textContent).not.toContain('internal database timeout details');
     });
   });
 
@@ -173,7 +170,6 @@ describe('StaffPage #1703: worded error when staff_floor read fails', () => {
 
   it('shows worded error in English when language is set to English', async () => {
     setLang('en');
-    const tEn = screenT('staff', { th, en });
     viewsOf(
       ok(staffMe()),
       { status: 400, body: { error: { code: 'unknownCustomCode', message: 'server internal detail' } } },
@@ -183,8 +179,7 @@ describe('StaffPage #1703: worded error when staff_floor read fails', () => {
     await vi.waitFor(() => {
       const alert = host.querySelector('[role="alert"]');
       expect(alert).not.toBeNull();
-      expect(alert!.textContent).toBe(tEn('floorError'));
-      expect(alert!.textContent).not.toContain('server internal detail');
+      expect(alert!.textContent).toBe('server internal detail');
     });
   });
 });

@@ -1,5 +1,6 @@
 import { batch, createSignal, For, onMount, Show, type JSX } from 'solid-js';
-import { errorText, screenT } from '../../shared/i18n';
+import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../shared/api/client';
 import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
@@ -23,22 +24,6 @@ function formatBangkokTime(iso: string): string {
     hour12: false,
     timeZone: 'Asia/Bangkok',
   }).format(d);
-}
-
-function toWordedError(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) {
-    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
-      return errorText('serverError', fallback);
-    }
-    const txt = errorText(err.code, fallback);
-    return txt === err.code ? fallback : txt;
-  }
-  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
-    const code = (err as { code: string }).code;
-    const txt = errorText(code, fallback);
-    return txt === code ? fallback : txt;
-  }
-  return fallback;
 }
 
 export function StaffPage(props: StaffPageProps): JSX.Element {
@@ -68,7 +53,7 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
       const floorRes = await props.api.view<StaffFloorView>('staff_floor');
       floorData = floorRes.data;
     } catch (err: unknown) {
-      floorErr = toWordedError(err, t('floorError'));
+      floorErr = wordedError(err);
     }
 
     batch(() => {
