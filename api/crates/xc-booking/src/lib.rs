@@ -12,6 +12,8 @@ pub mod domain {
 
 pub mod application {
     pub mod booking_service;
+    pub mod check_in;
+    pub mod lifecycle;
     pub mod slot_service;
     pub mod sweeper;
 }

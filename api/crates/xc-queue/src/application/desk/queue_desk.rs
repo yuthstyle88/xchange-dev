@@ -30,6 +30,7 @@ pub struct QueueDesk {
     branch_tx: BranchTx,
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
+    booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
     notifications: Option<Arc<dyn Notifications>>,
 }
 
@@ -167,8 +168,17 @@ impl QueueDesk {
             branch_tx,
             repo,
             status,
+            booking_events: None,
             notifications: None,
         }
+    }
+
+    pub fn with_booking_events(
+        mut self,
+        booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>,
+    ) -> Self {
+        self.booking_events = Some(booking_events);
+        self
     }
 
     pub fn with_notifications(mut self, notifications: Arc<dyn Notifications>) -> Self {
@@ -237,7 +247,6 @@ impl QueueDesk {
 
         Ok(())
     }
-
     async fn authorize_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -598,6 +607,14 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+
+        if let Some(booking_id) = &ticket.booking_id {
+            if let Some(events) = &self.booking_events {
+                events
+                    .on_ticket_serving_in(tx, branch, booking_id, now)
+                    .await?;
+            }
+        }
 
         Ok(QueueTicket {
             status: TicketStatus::Serving,

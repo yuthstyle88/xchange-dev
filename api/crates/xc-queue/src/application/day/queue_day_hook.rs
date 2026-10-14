@@ -19,11 +19,24 @@ use crate::domain::ticket::service_type::ServiceType;
 pub struct QueueDayHook {
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
+    booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
 }
 
 impl QueueDayHook {
     pub fn new(repo: Arc<dyn QueueRepository>, status: StatusService) -> Self {
-        Self { repo, status }
+        Self {
+            repo,
+            status,
+            booking_events: None,
+        }
+    }
+
+    pub fn with_booking_events(
+        mut self,
+        booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>,
+    ) -> Self {
+        self.booking_events = Some(booking_events);
+        self
     }
 
     /// Cancels the branch's WAITING and CALLED tickets (`dayClosed`), one CANCEL event each, and
@@ -96,6 +109,15 @@ impl QueueDayHook {
 
             self.repo.insert_event_in(tx, &event).await?;
 
+            let booking_id: Option<String> = row.get("booking_id");
+            if let Some(bid) = &booking_id {
+                if let Some(events) = &self.booking_events {
+                    events
+                        .on_ticket_ended_in(tx, branch, bid, "dayClosed", now)
+                        .await?;
+                }
+            }
+
             cancelled_tickets.push(QueueTicket {
                 id,
                 organization_id,
@@ -106,7 +128,7 @@ impl QueueDayHook {
                 display_number: row.get("display_number"),
                 status: TicketStatus::Cancelled,
                 customer_id: row.get("customer_id"),
-                booking_id: row.get("booking_id"),
+                booking_id,
                 kiosk_request_id: row.get("kiosk_request_id"),
                 counter_teller_id: row.get("counter_teller_id"),
                 issued_at: row.get("issued_at"),
