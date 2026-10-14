@@ -11,6 +11,7 @@ import type {
   StaffDailyReportFilter,
 } from '../../shared/api/generated/staff_daily_report';
 import { lang, screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { formatMoney } from '../../shared/ui/MoneyText';
 import * as table from './i18n';
 import './staff-report.css';
@@ -160,9 +161,7 @@ export function StaffReport(): JSX.Element {
       const message =
         e instanceof ApiError && e.code === 'roleNotAllowed'
           ? t('roleNotAllowed')
-          : e instanceof Error
-            ? e.message
-            : String(e);
+          : wordedError(e);
       setState({ kind: 'refused', message });
     }
   }
