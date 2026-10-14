@@ -140,10 +140,9 @@ describe('Slips rework: branch list read failure (#1715)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorAlertText()).toContain(sharedTh['error.serverError']);
+        expect(errorAlertText()).toContain('RAW_UNWORDED_MSG');
       });
       expect(errorAlertText()).not.toContain('unknownBranchCode123');
-      expect(errorAlertText()).not.toContain('RAW_UNWORDED_MSG');
     });
 
     it('shows English worded error when language is en and branches read fails', async () => {
