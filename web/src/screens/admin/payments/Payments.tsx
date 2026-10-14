@@ -12,8 +12,9 @@ import {
   untrack,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
-import { errorText, screenT } from '../../../shared/i18n';
+import { ApiClient } from '../../../shared/api/client';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   AdminPaymentsData,
   PaymentHistoryItem,
@@ -54,7 +55,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   const [data, setData] = createSignal<AdminPaymentsData | null>(null);
   const [version, setVersion] = createSignal<number | null>(null);
   const [loading, setLoading] = createSignal<boolean>(false);
-  const [error, setError] = createSignal<{ code: string; message: string } | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
 
   const [edits, setEdits] = createSignal<PaymentMethodItem[] | null>(null);
   const [saving, setSaving] = createSignal<boolean>(false);
@@ -112,25 +113,6 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     window.removeEventListener('beforeunload', onBeforeUnload);
   });
 
-  const toWordedError = (err: unknown): { code: string; message: string } => {
-    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      const known = errorText(err.code, '');
-      if (known !== '') {
-        return { code: err.code, message: known };
-      }
-      return { code: 'serverError', message: generic };
-    }
-    if (err && typeof err === 'object' && 'code' in err) {
-      const c = String((err as { code: unknown }).code);
-      const known = errorText(c, '');
-      if (known !== '') {
-        return { code: c, message: known };
-      }
-    }
-    return { code: 'serverError', message: generic };
-  };
-
   // Load branches for branch name display in heading
   const loadBranches = async () => {
     try {
@@ -140,7 +122,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       setBranches([]);
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   };
 
@@ -162,7 +144,12 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         setVersion(res.version);
       }
     } catch (err: unknown) {
-      setError(toWordedError(err));
+      if (data() && data()!.branchId !== branch) {
+        setData(null);
+        setVersion(null);
+        setEdits(null);
+      }
+      setError(wordedError(err));
     } finally {
       setLoading(false);
     }
@@ -319,11 +306,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           await loadData(next);
         }
       } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          setFeedback(errorText(err.code, err.message));
-        } else if (err instanceof Error) {
-          setFeedback(err.message);
-        }
+        setFeedback(wordedError(err));
       } finally {
         setSaving(false);
         savePromise = null;
@@ -371,7 +354,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       <Show when={error() && !data()}>
         <Card class="xc-payment-loading">
           <div class="error-banner" role="alert">
-            <p role="status">{errorText(error()!.code, error()!.message)}</p>
+            <p role="status">{error()}</p>
           </div>
           <button
             type="button"
@@ -385,7 +368,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
 
       <Show when={error() && data()}>
         <div class="error-banner" role="alert">
-          {errorText(error()!.code, error()!.message)}
+          {error()}
         </div>
       </Show>
 
