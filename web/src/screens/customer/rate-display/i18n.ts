@@ -18,6 +18,8 @@ export const th = {
   retry: 'ลองใหม่',
   updateFailed: 'อัปเดตข้อมูลไม่สำเร็จ ข้อมูลล่าสุดประกาศเมื่อ {at}',
   fullscreen: 'เต็มจอ',
+  bookingQr: 'สแกนจองคิว',
+  bookingQrLabel: 'คิวอาร์โค้ดสำหรับจองคิวสาขา',
 };
 
 export const en = {
@@ -37,6 +39,8 @@ export const en = {
   retry: 'Retry',
   updateFailed: 'Update failed. Last published at {at}',
   fullscreen: 'Fullscreen',
+  bookingQr: 'Scan to book',
+  bookingQrLabel: 'QR code for branch booking',
 };
 
 export const zh = {
@@ -56,4 +60,6 @@ export const zh = {
   retry: '重试',
   updateFailed: '更新失败，最后发布于 {at}',
   fullscreen: '全屏',
+  bookingQr: '扫码预约',
+  bookingQrLabel: '分行预约二维码',
 };

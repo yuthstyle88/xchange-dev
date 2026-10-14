@@ -19,6 +19,7 @@ import { th, en, zh } from './i18n';
 import { branchFromSearch } from './location';
 import logoUrl from './logo.png';
 import { RateBoard } from './RateBoard';
+import { BookingQr } from './BookingQr';
 import './rate-display.css';
 
 export interface RateDisplayProps {
@@ -199,6 +200,8 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
               <span class="xc-rate-display-hours-times">{branchHours()}</span>
             </div>
           </Show>
+
+          <BookingQr branchCode={branch} bookingEnabled={branchesData()?.branches?.find((b) => b.code === branch)?.bookingEnabled} />
 
           <Show when={ratesData()?.publication}>
             <RateFreshness

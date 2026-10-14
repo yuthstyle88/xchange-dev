@@ -10,6 +10,7 @@
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
+    "qrcode-generator": "2.0.4",
     "solid-js": "1.9.17"
   },
   "devDependencies": {
