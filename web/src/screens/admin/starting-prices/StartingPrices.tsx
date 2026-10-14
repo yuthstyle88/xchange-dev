@@ -7,7 +7,8 @@ import type {
   UnpricedBranch,
 } from '../../../shared/api/generated/org_starting_price_save';
 import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
@@ -15,18 +16,17 @@ import './starting-prices.css';
 
 const t = screenT('admin.starting-prices', table);
 
+/** The refusals this screen words itself; any other shows through wordedError. */
 const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   idempotencyConflict: 'error.idempotencyConflict',
   validationFailed: 'error.validationFailed',
 };
 
-function refusalText(err: unknown): string {
-  if (err instanceof ApiError) {
-    const own = OWN_TEXT[err.code];
-    if (own) return t(own);
-    return errorText(err.code, err.message);
+function startingPricesError(err: unknown): string {
+  if (err instanceof ApiError && err.status < 500 && err.code in OWN_TEXT) {
+    return t(OWN_TEXT[err.code]!);
   }
-  return err instanceof Error ? err.message : String(err);
+  return wordedError(err);
 }
 
 export function isValidPositiveDecimal(val: string): boolean {
@@ -143,7 +143,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
       setTypedBuy(currentBuys);
       setTypedSell(currentSells);
     } catch (err: unknown) {
-      setLoadError(refusalText(err));
+      setLoadError(startingPricesError(err));
     } finally {
       setLoading(false);
     }
@@ -310,10 +310,10 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
         } else if (err.field === 'reason') {
           setReasonError(t('error.reason'));
         } else {
-          setFormError(refusalText(err));
+          setFormError(startingPricesError(err));
         }
       } else {
-        setFormError(refusalText(err));
+        setFormError(startingPricesError(err));
       }
     } finally {
       setBusy(false);
