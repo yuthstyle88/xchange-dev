@@ -864,7 +864,7 @@ describe('P12: a failed read', () => {
     fake.failNextRead = new ApiError({ code: 'queueDown', message: 'boom', status: 502 });
     button(p.host, 'โหลดล่าสุด').click();
     await flush();
-    expect(message(p.host)).toBe('โหลดคิวไม่ได้: boom');
+    expect(message(p.host)).toBe(`โหลดคิวไม่ได้: ${th['error.serverError']}`);
     const inList = articles(p.host);
     expect(inList).toHaveLength(2);
     for (const a of inList) {
@@ -903,7 +903,7 @@ describe('P14: lang en', () => {
     const reload = labels.find((l) => enOf(['โหลดล่าสุด']).includes(l))!;
     button(p.host, reload).click();
     await flush();
-    expect(message(p.host)).toContain('boom');
+    expect(message(p.host)).toContain(en['error.serverError']);
     expect(text(p.host)).not.toMatch(THAI);
   });
 });
