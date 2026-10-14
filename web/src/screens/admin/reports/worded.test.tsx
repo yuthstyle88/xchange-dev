@@ -234,7 +234,7 @@ describe('WE-23: screens/admin/reports/worded.test.tsx', () => {
       branchesHandler = () =>
         Promise.resolve(
           json(500, {
-            error: { code: 'branchDbDead', message: 'Internal branch DB down' },
+            error: { code: 'roleNotAllowedHere', message: 'Internal branch DB down' },
           }),
         );
       mount();
@@ -288,7 +288,7 @@ describe('WE-23: screens/admin/reports/worded.test.tsx', () => {
       reportsHandler = () =>
         Promise.resolve(
           json(500, {
-            error: { code: 'reportsDbCrash', message: 'Internal reports DB error' },
+            error: { code: 'roleNotAllowedHere', message: 'Internal reports DB error' },
           }),
         );
       mount();
@@ -349,7 +349,7 @@ describe('WE-23: screens/admin/reports/worded.test.tsx', () => {
       transactionsHandler = () =>
         Promise.resolve(
           json(500, {
-            error: { code: 'txDbCrash', message: 'Employee tx DB crash' },
+            error: { code: 'roleNotAllowedHere', message: 'Employee tx DB crash' },
           }),
         );
       await selectEmployee('alice');
@@ -413,7 +413,7 @@ describe('WE-23: screens/admin/reports/worded.test.tsx', () => {
       transactionsHandler = () =>
         Promise.resolve(
           json(500, {
-            error: { code: 'exportDbCrash', message: 'Export DB failure' },
+            error: { code: 'roleNotAllowedHere', message: 'Export DB failure' },
           }),
         );
       await clickExportButton();
@@ -459,7 +459,7 @@ describe('WE-23: screens/admin/reports/worded.test.tsx', () => {
       reportsHandler = () =>
         Promise.resolve(
           json(500, {
-            error: { code: 'serverError', message: 'Failed to read B02' },
+            error: { code: 'roleNotAllowedHere', message: 'Failed to read B02' },
           }),
         );
       setBranch('B02');

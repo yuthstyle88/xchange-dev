@@ -137,7 +137,7 @@ describe('AlertSettings worded error handling (#1752)', () => {
     it('(2) 500 server error shows error.serverError in TH', async () => {
       viewHandler = () =>
         jsonResponse(
-          { error: { code: 'serverError', message: 'Internal database connection dead' } },
+          { error: { code: 'roleNotAllowedHere', message: 'Internal database connection dead' } },
           500,
         );
       mount();
@@ -194,7 +194,7 @@ describe('AlertSettings worded error handling (#1752)', () => {
 
       saveHandler = () =>
         jsonResponse(
-          { error: { code: 'serverError', message: 'Postgres transaction aborted' } },
+          { error: { code: 'roleNotAllowedHere', message: 'Postgres transaction aborted' } },
           500,
         );
 
@@ -243,7 +243,7 @@ describe('AlertSettings worded error handling (#1752)', () => {
       // Switch to B02, where read fails
       viewHandler = () =>
         jsonResponse(
-          { error: { code: 'serverError', message: 'Failed to read B02' } },
+          { error: { code: 'roleNotAllowedHere', message: 'Failed to read B02' } },
           500,
         );
       setBranch('B02');

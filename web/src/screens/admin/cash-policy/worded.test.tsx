@@ -133,7 +133,7 @@ describe('WE-9 cash-policy wordedError (#1758)', () => {
       stubServer({
         views: {
           cash_transfer_policy: async () =>
-            json(500, { error: { code: 'serverError', message: 'Internal Server Error' } }),
+            json(500, { error: { code: 'roleNotAllowed', message: 'Internal Server Error' } }),
         },
       });
 
@@ -188,7 +188,7 @@ describe('WE-9 cash-policy wordedError (#1758)', () => {
       stubServer({
         views: {
           admin_cash: async () =>
-            json(500, { error: { code: 'serverError', message: 'Internal Server Error' } }),
+            json(500, { error: { code: 'roleNotAllowed', message: 'Internal Server Error' } }),
         },
       });
 
@@ -256,7 +256,7 @@ describe('WE-9 cash-policy wordedError (#1758)', () => {
     it('(2) 500 refusal shows error.serverError', async () => {
       stubServer({
         save: async () =>
-          json(500, { error: { code: 'serverError', message: 'Internal Server Error' } }),
+          json(500, { error: { code: 'roleNotAllowed', message: 'Internal Server Error' } }),
       });
 
       mount();
@@ -322,4 +322,35 @@ describe('WE-9 cash-policy wordedError (#1758)', () => {
       },
     );
   });
+
+  // ── §4.3: Branch switch stale data handling ────────────────────────────
+
+  describe('§4.3: Branch switch stale data handling', () => {
+    it('after branch switch, a failed read does not leave the previous branch data showing', async () => {
+      const [branch, setBranch] = createSignal('MAIN');
+      stubServer();
+
+      mount(() => branch());
+      await vi.waitFor(() => expect(host.querySelector('input[data-currency="THB"]')).not.toBeNull());
+
+      // MAIN loaded currencies successfully (THB is only in register, not in policy limits)
+      expect(host.querySelector('input[data-currency="THB"]')).not.toBeNull();
+
+      // Switch to B02, where readRegister fails with 500
+      stubServer({
+        views: {
+          admin_cash: async () =>
+            json(500, { error: { code: 'roleNotAllowed', message: 'Failed to read B02' } }),
+        },
+      });
+      setBranch('B02');
+
+      await vi.waitFor(() => expect(getAlertText()).not.toBeNull());
+      expect(getAlertText()).toBe(th['error.serverError']);
+
+      // Previous branch currencies from register must NOT stay on screen (setRegister([]) at CashPolicy.tsx:76)
+      expect(host.querySelector('input[data-currency="THB"]')).toBeNull();
+    });
+  });
 });
+
