@@ -44,7 +44,8 @@ import type {
   CouponIssueOutput,
   IssuedCouponDto,
 } from '../../../shared/api/generated/coupon_issue';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './campaigns.css';
@@ -61,18 +62,15 @@ const ERROR_KEYS: Record<string, string> = {
   couponInvalid: 'error.couponInvalid',
 };
 
-function formatError(err: unknown): string {
-  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+function campaignError(err: unknown): string {
   if (err instanceof ApiError) {
     const mapped = ERROR_KEYS[err.code];
     if (mapped) {
       const text = t(mapped as Parameters<typeof t>[0]);
       if (text && text !== mapped) return text;
     }
-    const text = errorText(err.code, '');
-    return text || generic;
   }
-  return generic;
+  return wordedError(err);
 }
 
 function formatMoney(value: string | null | undefined): string {
@@ -183,7 +181,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (mine !== readingList) return;
       setCampaignsList([]);
-      setListError(formatError(err));
+      setListError(campaignError(err));
     } finally {
       if (mine === readingList) {
         setLoadingList(false);
@@ -228,7 +226,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (mine !== readingDetail) return;
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     } finally {
       if (mine === readingDetail) {
         setLoadingDetail(false);
@@ -236,10 +234,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  let lastBranch: string | undefined = undefined;
   createEffect(() => {
     if (props.shown && !props.shown()) return;
     const branch = props.branch?.();
     const p = props.period();
+    if (lastBranch !== undefined && branch !== lastBranch) {
+      setSelectedCampaignId(null);
+      setCampaignDetail(null);
+      setCampaignsList([]);
+    }
+    lastBranch = branch;
     void loadList(branch, p.from, p.to);
   });
 
@@ -317,7 +322,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         void loadList(props.branch?.(), props.period().from, props.period().to);
       }
     } catch (err: unknown) {
-      setCreateError(formatError(err));
+      setCreateError(campaignError(err));
     }
   }
 
@@ -355,7 +360,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadCampaignDetail(campaignId, true);
       }
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -379,7 +384,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       setIsEditedAfterSimulation(false);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -401,7 +406,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       clearPendingKey();
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -423,7 +428,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       clearPendingKey();
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -445,7 +450,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       clearPendingKey();
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -467,7 +472,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       clearPendingKey();
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
@@ -494,7 +499,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       clearPendingKey();
       setIssuedCoupons(res?.coupons ?? []);
     } catch (err: unknown) {
-      setDetailError(formatError(err));
+      setDetailError(campaignError(err));
     }
   }
 
