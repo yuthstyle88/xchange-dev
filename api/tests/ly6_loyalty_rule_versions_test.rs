@@ -20,8 +20,13 @@
 //! Owner's answers (#1411 issuecomment-6180559023): a draft lives **in Loyalty** (no v3 table, no migration); Loyalty
 //! unavailable when an approval is decided ⇒ the approval stays pending and can be retried, no outbox.
 //!
-//! How the AP-1 subject reaches Loyalty, the service credential and the publisher's types are the implementer's
-//! (**[proposed]**); nothing here names them.
+//! BE controller claude/7ca80c's rulings (2026-10-15, design `membership-points.md` §6.4): Loyalty unreachable, timing
+//! out or answering 5xx ⇒ **503 `loyaltyUnavailable`** (R1); the service credential is `XC_LOYALTY_SERVICE_TOKEN`, sent
+//! as `Authorization: Bearer` on the rule-version calls, and unset ⇒ 503 `loyaltyUnavailable` before any write (R3).
+//! Every caller here sets a dummy token (the fake does not check it) except the unset-token test.
+//!
+//! How the AP-1 subject reaches Loyalty and the publisher's types are fixed by the ticket and design §6, not here;
+//! nothing here names them. The only configuration named is the environment, as above plus the token.
 //!
 //! Red on the test commit: neither command route exists (404), and the LY-6 files the static scan reads do not
 //! exist. Needs `TEST_DATABASE_URL`; nothing skips.
@@ -62,6 +67,9 @@ const SECRET: &str = "whsec-LY6-1411-c0ffee";
 const SUBJECT: &str = "LOYALTY_RULE_VERSION";
 const DRAFT: &str = "/api/v3/commands/loyalty_rule_draft";
 const SUBMIT: &str = "/api/v3/commands/loyalty_rule_submit";
+/// A dummy service credential (R3). The fake records it and checks nothing.
+const SERVICE_TOKEN: &str = "ly6-1411-dummy-service-token";
+const UNAVAILABLE: &str = "loyaltyUnavailable";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -95,6 +103,8 @@ struct Seen {
     method: String,
     path: String,
     body: Value,
+    /// The `Authorization` header as sent, if any.
+    authorization: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -271,11 +281,17 @@ async fn fake_handle(
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let method = req.method().as_str().to_owned();
     let path = req.path().to_owned();
+    let authorization = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let mut inner = state.lock().expect("fake state");
     inner.seen.push(Seen {
         method: method.clone(),
         path: path.clone(),
         body: body.clone(),
+        authorization,
     });
     if inner.mode == Mode::Down {
         return err(503, "UNAVAILABLE", "loyalty is down");
@@ -677,12 +693,28 @@ impl Answer {
 }
 
 async fn post(room: &Room, who: &str, uri: &str, body: Value, key: &str) -> Answer {
-    let settings = common::settings(&[
+    post_with_token(room, who, uri, body, key, Some(SERVICE_TOKEN)).await
+}
+
+/// `post`, with the service credential `XC_LOYALTY_SERVICE_TOKEN` set to `token`, or unset when `None`.
+async fn post_with_token(
+    room: &Room,
+    who: &str,
+    uri: &str,
+    body: Value,
+    key: &str,
+    token: Option<&str>,
+) -> Answer {
+    let mut env = vec![
         ("XC_LOYALTY_BASE_URL", room.loyalty.url.as_str()),
         ("XC_LOYALTY_TENANT_ID", TENANT),
         ("XC_LOYALTY_WEBHOOK_SECRET", SECRET),
         ("XC_LOYALTY_TIMEOUT_MS", "2000"),
-    ]);
+    ];
+    if let Some(token) = token {
+        env.push(("XC_LOYALTY_SERVICE_TOKEN", token));
+    }
+    let settings = common::settings(&env);
     let state = AppState::new(Arc::new(settings), room.pool.clone());
     let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let guard = room.guard.clone();
@@ -1131,11 +1163,10 @@ async fn a_repeat_publish_after_a_lost_answer_is_a_no_op() {
 /// request stays PENDING and the Loyalty version PENDING_APPROVAL; once Loyalty is back the same decision
 /// succeeds and publishes once. No outbox row is written.
 ///
-/// The refusal **code** is not asserted: the owner left it to the existing error-code list and none fits
-/// (blueprint §10 list: `validationFailed`, `outOfScope`, `staleVersion`, `quoteExpired`, `rateUnavailable`,
-/// `stockInsufficient`, `approvalRequired`, `idempotencyConflict`, `benefitLimitReached`) — the controller rules
-/// on it before `ready`, and the assertion is added then.
-/// Red while: the decision commits without the publish; an outbox row is used instead; the retry is refused.
+/// The refusal is **503 `loyaltyUnavailable`** (BE controller's ruling R1, 2026-10-15: none of the blueprint §10
+/// codes fits, so the code is new), mapped from a typed error, not a string match.
+/// Red while: the decision commits without the publish; an outbox row is used instead; the retry is refused; the
+/// refusal is a 500 `serverError` (the subject's failure reaches the core as `Internal`) or another code.
 #[actix_web::test]
 async fn loyalty_down_keeps_the_approval_pending_and_a_retry_publishes_once() {
     let room = Room::start().await;
@@ -1153,6 +1184,13 @@ async fn loyalty_down_keeps_the_approval_pending_and_a_retry_publishes_once() {
         down.status,
         down.text
     );
+    assert_eq!(
+        down.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Loyalty down answers 503: {}",
+        down.text
+    );
+    assert_eq!(down.code(), UNAVAILABLE, "{}", down.text);
     let (_, status, _) = room.request_for(&version_id).await.expect("request");
     assert_eq!(status, "PENDING");
     assert_eq!(
@@ -1175,6 +1213,113 @@ async fn loyalty_down_keeps_the_approval_pending_and_a_retry_publishes_once() {
     retry.ok("retry once Loyalty is back");
     assert_eq!(room.loyalty.status_of(&version_id), "APPROVED");
     assert_eq!(room.loyalty.version(&version_id).approvals_applied, 1);
+    room.finish().await;
+}
+
+// ================================================================ the service credential (ruling R3)
+
+/// Every rule-version call v3 makes to Loyalty carries the service credential as `Authorization: Bearer <token>`
+/// (Loyalty's write routes need `loyalty:write`, its list route `loyalty:read`).
+/// Red while: the token is not read from `XC_LOYALTY_SERVICE_TOKEN`; a call goes out without it or in another form.
+#[actix_web::test]
+async fn rule_version_calls_carry_the_service_token_as_bearer() {
+    let room = Room::start().await;
+    let (_, request_id) = drafted_and_submitted(&room).await;
+    decide(&room, "EXECUTIVE_2", &request_id, "APPROVED", &key())
+        .await
+        .ok("approve");
+    let seen = room.loyalty.seen();
+    assert!(
+        seen.iter().any(|s| s.path.ends_with("/approve")),
+        "the approval reached Loyalty: {seen:?}"
+    );
+    let bearer = format!("Bearer {SERVICE_TOKEN}");
+    for s in &seen {
+        assert_eq!(
+            s.authorization.as_deref(),
+            Some(bearer.as_str()),
+            "{} {} carries the service token as Bearer",
+            s.method,
+            s.path
+        );
+    }
+    room.finish().await;
+}
+
+/// `XC_LOYALTY_SERVICE_TOKEN` unset: `loyaltyRuleDraft` and `loyaltyRuleSubmit` answer **503 `loyaltyUnavailable`**
+/// before any write, and so does deciding a pending request — it stays PENDING with no decision row.
+/// Red while: v3 calls Loyalty without a credential (Loyalty would answer 401 and nothing says why); the missing
+/// token is reported as 500, 400 or another code; the decision commits without the publish.
+#[actix_web::test]
+async fn an_unset_service_token_answers_loyalty_unavailable_and_writes_nothing() {
+    let room = Room::start().await;
+    let seeded = room.loyalty.seed_point_draft();
+
+    let d = post_with_token(
+        &room,
+        "EXECUTIVE",
+        DRAFT,
+        json!({ "kind": "POINT", "fields": point_fields() }),
+        &key(),
+        None,
+    )
+    .await;
+    assert_eq!(
+        d.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "draft: {}",
+        d.text
+    );
+    assert_eq!(d.code(), UNAVAILABLE, "draft: {}", d.text);
+
+    let s = post_with_token(
+        &room,
+        "EXECUTIVE",
+        SUBMIT,
+        json!({ "versionId": seeded }),
+        &key(),
+        None,
+    )
+    .await;
+    assert_eq!(
+        s.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "submit: {}",
+        s.text
+    );
+    assert_eq!(s.code(), UNAVAILABLE, "submit: {}", s.text);
+    assert!(
+        room.loyalty.writes().is_empty(),
+        "no write reaches Loyalty without the token: {:?}",
+        room.loyalty.writes()
+    );
+    assert_eq!(room.loyalty.versions().len(), 1, "only the seeded version");
+    assert_eq!(room.loyalty.status_of(&seeded), "DRAFT");
+    assert!(room.request_for(&seeded).await.is_none(), "no AP-1 request");
+
+    // A request opened while the token was set, decided after it is gone.
+    let (version_id, request_id) = drafted_and_submitted(&room).await;
+    let a = post_with_token(
+        &room,
+        "EXECUTIVE_2",
+        &format!("/api/approvals/{request_id}/decide"),
+        json!({ "outcome": "APPROVED", "reason": "LY-6 test" }),
+        &key(),
+        None,
+    )
+    .await;
+    assert_eq!(
+        a.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "decide: {}",
+        a.text
+    );
+    assert_eq!(a.code(), UNAVAILABLE, "decide: {}", a.text);
+    assert_eq!(room.loyalty.approve_calls(&version_id), 0);
+    assert_eq!(room.loyalty.status_of(&version_id), "PENDING_APPROVAL");
+    let (_, status, _) = room.request_for(&version_id).await.expect("request");
+    assert_eq!(status, "PENDING");
+    assert_eq!(room.decisions_for(&request_id).await, 0);
     room.finish().await;
 }
 
