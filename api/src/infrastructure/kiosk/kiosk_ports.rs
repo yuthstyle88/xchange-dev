@@ -19,9 +19,11 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, MinorUnit, Money, Rate, Side
 use xc_kernel::payment::PaymentRules;
 use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
-use xc_kiosk::domain::kiosk::value_objects::counter_facts::LineId;
+use xc_kiosk::domain::kiosk::value_objects::counter_facts::{CounterLine, LineId};
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
-use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::domain::publication::published_rates::{
+    LineSelector, PublishedRateLineId, PublishedRates,
+};
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
@@ -244,7 +246,7 @@ impl KioskPorts for PgKioskPorts {
                         "SELECT l.id::text, l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, c.minor_unit \
                          FROM published_rate_lines l \
                          JOIN currencies c ON c.code = l.currency_code \
-                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL'",
+                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL' AND l.tier_lower_exclusive_thb IS NULL",
                     )
                     .bind(pub_id)
                     .fetch_all(&self.pool)
@@ -293,7 +295,7 @@ impl KioskPorts for PgKioskPorts {
                         "SELECT l.id::text, l.currency_code, l.buy_rate, l.sell_rate, l.unit_size, c.minor_unit \
                          FROM published_rate_lines l \
                          JOIN currencies c ON c.code = l.currency_code \
-                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL'",
+                         WHERE l.publication_id = $1 AND l.denomination_group = 'ALL' AND l.tier_lower_exclusive_thb IS NULL",
                     )
                     .bind(pub_id)
                     .fetch_all(&mut **tx)
@@ -368,18 +370,17 @@ impl KioskPorts for PgKioskPorts {
         thb: Money,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>> {
-        let _ = now;
+        let _ = (currency, now);
         Box::pin(async move {
             let published_rates = PgPublishedRates::new(self.pool.clone());
-            let published_side = match published_rates.line_in(tx, branch, currency, side).await? {
+            let quoted_uuid = uuid::Uuid::from_u128(line_id.0);
+            let published_side = match published_rates
+                .line_by_id(tx, branch, PublishedRateLineId::new(quoted_uuid), side)
+                .await?
+            {
                 Some(s) => s,
                 None => return Ok(false),
             };
-
-            let quoted_uuid = uuid::Uuid::from_u128(line_id.0);
-            if published_side.line_id.as_uuid() != quoted_uuid {
-                return Ok(false);
-            }
 
             if published_side.stale {
                 let stale_policy = published_rates.stale_policy_in(tx, &published_side).await?;
@@ -389,6 +390,48 @@ impl KioskPorts for PgKioskPorts {
             }
 
             Ok(true)
+        })
+    }
+
+    fn tier_line_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: CurrencyCode,
+        side: Side,
+        foreign: ForeignAmount,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
+        Box::pin(async move {
+            let published_rates = PgPublishedRates::new(self.pool.clone());
+            let sel = LineSelector {
+                code: currency,
+                side,
+                group: GroupCode::all(),
+                quantity: Some(foreign),
+            };
+            let published_side = match published_rates.line_for(tx, branch, sel).await? {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+
+            let minor_unit_raw: Option<i16> =
+                sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
+                    .bind(currency.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+            let Some(raw) = minor_unit_raw else {
+                return Ok(None);
+            };
+            let minor_unit = MinorUnit::new(raw as u8)
+                .map_err(|e| AppError::Internal(format!("invalid minor unit {}: {e}", raw)))?;
+
+            Ok(Some(CounterLine {
+                line_id: LineId(published_side.line_id.as_uuid().as_u128()),
+                rate: published_side.rate,
+                unit_size: published_side.unit_size,
+                minor_unit,
+            }))
         })
     }
 

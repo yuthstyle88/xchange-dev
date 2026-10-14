@@ -663,6 +663,7 @@ impl KioskRepository for PgKioskRepository {
                 WHERE b.id = $1 \
                   AND prl.currency_code = $2 \
                   AND prl.denomination_group = 'ALL' \
+                  AND prl.tier_lower_exclusive_thb IS NULL \
                   AND prl.buy_rate IS NOT NULL \
                   AND prl.sell_rate IS NOT NULL \
             )",

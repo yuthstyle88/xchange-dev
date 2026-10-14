@@ -12,7 +12,7 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_kernel::payment::PaymentRules;
 
 use crate::domain::kiosk::value_objects::audit_line::AuditLine;
-use crate::domain::kiosk::value_objects::counter_facts::LineId;
+use crate::domain::kiosk::value_objects::counter_facts::{CounterLine, LineId};
 use crate::domain::kiosk::value_objects::counter_view::CounterView;
 
 pub trait KioskPorts: Send + Sync {
@@ -69,6 +69,20 @@ pub trait KioskPorts: Send + Sync {
         thb: Money,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>>;
+
+    /// Finds the counter line matching the given tier quantity inside the caller's transaction.
+    /// The default answers `Ok(None)`.
+    fn tier_line_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        currency: CurrencyCode,
+        side: Side,
+        foreign: ForeignAmount,
+    ) -> BoxFuture<'a, AppResult<Option<CounterLine>>> {
+        let _ = (tx, branch, currency, side, foreign);
+        Box::pin(async { Ok(None) })
+    }
 
     /// Quotes one line through the shop's quote service inside the caller's transaction.
     /// The default answers `Ok(None)`.
