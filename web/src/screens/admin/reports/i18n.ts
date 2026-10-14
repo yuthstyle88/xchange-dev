@@ -91,6 +91,9 @@ export const th = {
   // Export
   exportCsv: 'ส่งออกรายการ CSV',
   noTransactionsToExport: 'ไม่มีรายการให้ส่งออก',
+
+  // Errors
+  loadFailed: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
 };
 
 export const en = {
@@ -186,4 +189,7 @@ export const en = {
   // Export
   exportCsv: 'Export CSV',
   noTransactionsToExport: 'No transactions to export',
+
+  // Errors
+  loadFailed: 'Failed to load data',
 };

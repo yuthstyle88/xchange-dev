@@ -73,14 +73,38 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   const branchName = (branchId: string) =>
     branches().find((b) => b.id === branchId)?.name ?? branchId;
 
+  let branchFailed = false;
+
+  function toWordedError(err: unknown): string {
+    const generic = t('loadFailed');
+    if (err instanceof ApiError) {
+      if (err.code && err.code !== 'httpError') {
+        const text = errorText(err.code, '');
+        if (text) return text;
+      }
+      return generic;
+    }
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: unknown }).code) {
+      const c = String((err as { code: unknown }).code);
+      if (c && c !== 'httpError') {
+        const text = errorText(c, '');
+        if (text) return text;
+      }
+      return generic;
+    }
+    return generic;
+  }
+
   async function readBranches() {
     try {
       const res = await api.view<AdminBranchesData>('admin_branches');
       if (res.data) {
         setBranches(res.data.branches);
+        branchFailed = false;
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      branchFailed = true;
+      setError(toWordedError(err));
     }
   }
 
@@ -109,7 +133,9 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       lastVersion = res.version;
       if (res.changed && res.data) {
         setData(res.data);
-        setError(null);
+        if (!branchFailed) {
+          setError(null);
+        }
       }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -133,8 +159,8 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       if (res.data) {
         setEmployeeTxMap((prev) => ({ ...prev, [staff]: res.data! }));
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toWordedError(err));
     }
   }
 
