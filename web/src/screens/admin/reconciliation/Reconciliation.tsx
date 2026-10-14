@@ -4,6 +4,7 @@
 // is refused `staleVersion` by the server.
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   CertificationRow,
   FinanceReconciliationFilter,
@@ -83,7 +84,7 @@ function Certification(props: { row: CertificationRow }): JSX.Element {
 export function Reconciliation(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
   const [sheet, setSheet] = createSignal<FinanceSheet | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<unknown>(null);
   const [note, setNote] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   let reading = 0;
@@ -103,7 +104,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (mine !== reading) return;
       setSheet(null);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     }
   };
 
@@ -131,7 +132,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
       setNote('');
       await read(shown.branch, shown.date);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -141,7 +142,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     <div class="reconciliation">
       <Show when={error()}>
         <div class="reconciliation-error" role="alert">
-          {error()}
+          {typeof error() === 'string' ? (error() as string) : wordedError(error())}
         </div>
       </Show>
       <Show when={sheet()}>
