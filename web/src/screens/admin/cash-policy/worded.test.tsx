@@ -321,6 +321,19 @@ describe('WE-9 cash-policy wordedError (#1758)', () => {
         expect(getAlertText()).toBe(screenEn[`error.${code}`]);
       },
     );
+
+    it('500 with screen-specific code roleNotAllowedHere shows error.serverError (WE2 (a))', async () => {
+      stubServer({
+        views: {
+          cash_transfer_policy: async () =>
+            json(500, { error: { code: 'roleNotAllowedHere', message: 'Internal Server Error' } }),
+        },
+      });
+
+      mount();
+      await vi.waitFor(() => expect(getAlertText()).not.toBeNull());
+      expect(getAlertText()).toBe(th['error.serverError']);
+    });
   });
 
   // ── §4.3: Branch switch stale data handling ────────────────────────────

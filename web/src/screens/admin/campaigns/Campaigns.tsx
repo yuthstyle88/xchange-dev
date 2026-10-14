@@ -64,6 +64,9 @@ const ERROR_KEYS: Record<string, string> = {
 
 function campaignError(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
+      return wordedError(err);
+    }
     const mapped = ERROR_KEYS[err.code];
     if (mapped) {
       const text = t(mapped as Parameters<typeof t>[0]);

@@ -764,5 +764,19 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
       expect(container.querySelector('.xc-campaign-detail')).toBeNull();
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WE2 (a): 5xx precedence over local ERROR_KEYS (#1844)
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('WE2 (a): 5xx precedence over local ERROR_KEYS (#1844)', () => {
+    it('500 with screen-specific code outOfScope shows error.serverError in TH', async () => {
+      listHandler = () =>
+        Promise.resolve(jsonResponse({ error: { code: 'outOfScope', message: 'DB down' } }, 500));
+      mount();
+      await settle();
+
+      expect(getErrorText()).toBe(th['error.serverError']);
+    });
+  });
 });
 
