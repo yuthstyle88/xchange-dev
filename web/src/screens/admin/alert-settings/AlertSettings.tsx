@@ -12,6 +12,7 @@ import type {
   StockFloorDto,
 } from '../../../shared/api/generated/branch_alert_settings';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './alert-settings.css';
@@ -28,12 +29,16 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const [error, setError] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal<boolean>(false);
 
+  let activeBranch = '';
+
   const loadSettings = async (branch: string) => {
     if (!branch) return;
+    activeBranch = branch;
     try {
       const res = await api.view<BranchAlertSettingsData>('branch_alert_settings', {
         branch,
       });
+      if (activeBranch !== branch) return;
       if (res.data) {
         setStaleDataMinutes(res.data.staleDataMinutes);
         setFloors(res.data.floors ? res.data.floors.map((f) => ({ ...f })) : []);
@@ -44,13 +49,21 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
         setVersion(null);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      if (activeBranch !== branch) return;
+      setStaleDataMinutes(null);
+      setFloors([]);
+      setVersion(null);
+      setError(wordedError(err));
     }
   };
 
   createEffect(() => {
     const branch = props.branch();
+    if (branch !== activeBranch) {
+      setStaleDataMinutes(null);
+      setFloors([]);
+      setVersion(null);
+    }
     setError(null);
     loadSettings(branch);
   });
@@ -106,8 +119,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       setStaleDataMinutes(res.staleDataMinutes);
       setFloors(res.floors ? res.floors.map((f) => ({ ...f })) : []);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      setError(wordedError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadSettings(branch);
       }

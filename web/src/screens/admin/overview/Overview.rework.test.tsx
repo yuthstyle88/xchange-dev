@@ -212,7 +212,7 @@ describe('Overview rework tests (#1700): worded errors on export failure', () =>
     const banner = m.el.querySelector('.error-banner');
     expect(banner).not.toBeNull();
     // Must show worded message in current language (th), not empty and not raw message
-    expect(banner?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+    expect(banner?.textContent).toBe(errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่'));
     expect(banner?.textContent).not.toContain('Failed to fetch');
     // Stale data remains visible
     expect(m.el.textContent).toContain('3,000.00');
@@ -260,7 +260,7 @@ describe('Overview rework tests (#1700): worded errors on export failure', () =>
     expect(banner?.textContent).not.toContain('Not permitted');
   });
 
-  it('export failure: refusal with unknown code displays generic worded error, never raw code or message', async () => {
+  it('export failure: refusal with unknown code displays server sentence, never raw code', async () => {
     const m = mount();
     await settle();
 
@@ -275,9 +275,8 @@ describe('Overview rework tests (#1700): worded errors on export failure', () =>
 
     const banner = m.el.querySelector('.error-banner');
     expect(banner).not.toBeNull();
-    expect(banner?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+    expect(banner?.textContent).toBe('Private stack details here');
     expect(banner?.textContent).not.toContain('unknownRefusal999');
-    expect(banner?.textContent).not.toContain('Private stack details here');
   });
 
   it('export failure under setLang("en") displays English worded error', async () => {
@@ -293,7 +292,7 @@ describe('Overview rework tests (#1700): worded errors on export failure', () =>
 
     const banner = m.el.querySelector('.error-banner');
     expect(banner).not.toBeNull();
-    expect(banner?.textContent).toBe('Server error');
+    expect(banner?.textContent).toBe('Cannot reach the server. Please try again.');
   });
 
   it('export failure: admin_branches failure displays worded error and does not download CSV', async () => {

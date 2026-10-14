@@ -4,12 +4,13 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   RateAlertSettingsData,
   SaveRateAlertSettingsInput,
 } from '../../../shared/api/generated/rate_alert_settings';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './rate-alert-settings.css';
@@ -22,13 +23,6 @@ const SUGGESTED = {
   lifetimeDays: '30',
   observePolicy: 'ALL_FRESH',
 };
-
-function formatError(err: unknown): string {
-  if (err instanceof ApiError) {
-    return errorText(err.code, err.message);
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -50,13 +44,31 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
   const [lifetimeError, setLifetimeError] = createSignal<string | null>(null);
   const [policyError, setPolicyError] = createSignal<string | null>(null);
 
-  const loadSettings = async () => {
+  let activeBranch = '';
+
+  const clearForm = () => {
+    setIsEmpty(false);
+    setCooldownHours('');
+    setMaxActive('');
+    setLifetimeDays('');
+    setObservePolicy('');
+    setCooldownError(null);
+    setMaxActiveError(null);
+    setLifetimeError(null);
+    setPolicyError(null);
+    setSaveError(null);
+    setSavedSuccess(null);
+  };
+
+  const loadSettings = async (branch: string = props.branch()) => {
+    activeBranch = branch;
     setLoading(true);
     setLoadError(null);
     try {
       const res = await api.view<RateAlertSettingsData | null>('rate_alert_settings', {
-        branch: props.branch(),
+        branch,
       });
+      if (activeBranch !== branch) return;
       if (res.data) {
         setIsEmpty(false);
         setCooldownHours(String(res.data.defaultCooldownSeconds / 3600));
@@ -75,16 +87,24 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
         setObservePolicy('');
       }
     } catch (err: unknown) {
-      setLoadError(formatError(err));
+      if (activeBranch !== branch) return;
+      clearForm();
+      setLoadError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (activeBranch === branch) {
+        setLoading(false);
+      }
     }
   };
 
   createEffect(() => {
-    if (props.shown()) {
-      void loadSettings();
+    const branch = props.branch();
+    const shown = props.shown();
+    if (!shown) return;
+    if (branch !== activeBranch) {
+      clearForm();
     }
+    void loadSettings(branch);
   });
 
   const handleUseSuggested = () => {
@@ -183,7 +203,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
       setObservePolicy(res.observePolicy);
       setSavedSuccess(t('saved'));
     } catch (err: unknown) {
-      setSaveError(formatError(err));
+      setSaveError(wordedError(err));
     } finally {
       setSaving(false);
     }

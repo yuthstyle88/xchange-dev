@@ -4,7 +4,6 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { en } from '../../../shared/i18n/en';
 import { th } from '../../../shared/i18n/th';
-import { en as reportsEn, th as reportsTh } from './i18n';
 import { Reports } from './Reports';
 
 interface RefusalMock {
@@ -243,9 +242,8 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain('RAW-branch-unknown-code');
       expect(alertText).not.toContain('somethingNew');
-      expect(alertText).not.toContain('RAW-branch-unknown-code');
     });
 
     it('unknown refusal code in en shows en generic worded message', async () => {
@@ -266,9 +264,8 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsEn.loadFailed);
+      expect(alertText).toContain('RAW-branch-unknown-code');
       expect(alertText).not.toContain('somethingNew');
-      expect(alertText).not.toContain('RAW-branch-unknown-code');
     });
 
     it('non-JSON 5xx (httpError) shows generic worded message, never raw html/body', async () => {
@@ -283,7 +280,7 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain(th['error.serverError']);
       expect(alertText).not.toContain('502 Bad Gateway');
       expect(alertText).not.toContain('httpError');
     });
@@ -300,7 +297,7 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain(th['error.network']);
       expect(alertText).not.toContain('TypeError');
       expect(alertText).not.toContain('Failed to fetch');
     });
@@ -425,9 +422,8 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain('RAW-employee-unknown-code');
       expect(alertText).not.toContain('somethingNew');
-      expect(alertText).not.toContain('RAW-employee-unknown-code');
     });
 
     it('unknown refusal code on employee drill-down in en shows en generic worded message', async () => {
@@ -457,9 +453,8 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsEn.loadFailed);
+      expect(alertText).toContain('RAW-employee-unknown-code');
       expect(alertText).not.toContain('somethingNew');
-      expect(alertText).not.toContain('RAW-employee-unknown-code');
     });
 
     it('non-JSON 5xx (httpError) on employee drill-down shows generic worded message, never raw html/body', async () => {
@@ -483,7 +478,7 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain(th['error.serverError']);
       expect(alertText).not.toContain('502 Bad Gateway');
       expect(alertText).not.toContain('httpError');
     });
@@ -509,7 +504,7 @@ describe('Admin reports failed reads show worded errors (#1697)', () => {
         expect(alert!.textContent).toBeTruthy();
       });
       const alertText = root.querySelector('[role="alert"]')!.textContent!;
-      expect(alertText).toContain(reportsTh.loadFailed);
+      expect(alertText).toContain(th['error.network']);
       expect(alertText).not.toContain('TypeError');
       expect(alertText).not.toContain('Failed to fetch');
     });

@@ -1,11 +1,11 @@
 import { createEffect, createSignal, type Accessor } from 'solid-js';
-import { ApiClient, ApiError } from '../api/client';
+import { ApiClient } from '../api/client';
 import type {
   MyNotificationItem,
   MyNotificationsData,
   MyNotificationsFilter,
 } from '../api/generated/my_notifications';
-import { errorText } from '../i18n';
+import { wordedError } from '../i18n/worded-error';
 
 export interface NotificationsOptions {
   /**
@@ -28,13 +28,6 @@ export interface NotificationsModel {
   refetch: (opts?: { silent?: boolean } | unknown) => Promise<void>;
   markOneRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
-}
-
-export function refusalText(err: unknown): string {
-  if (err instanceof ApiError) {
-    return errorText(err.code, err.message);
-  }
-  return err instanceof Error ? err.message : String(err);
 }
 
 export function createNotifications(
@@ -63,7 +56,7 @@ export function createNotifications(
       setItems(sorted);
     } catch (e) {
       if (!loadOpts?.silent) {
-        setLoadError(refusalText(e));
+        setLoadError(wordedError(e));
       }
     } finally {
       if (!loadOpts?.silent) {
@@ -107,7 +100,7 @@ export function createNotifications(
       if (opts.optimistic && prevItems) {
         setItems(prevItems);
       }
-      setActionError(refusalText(e));
+      setActionError(wordedError(e));
     } finally {
       setMarkingIds((prev) => {
         const next = new Set(prev);
@@ -134,7 +127,7 @@ export function createNotifications(
       if (opts.optimistic && prevItems) {
         setItems(prevItems);
       }
-      setActionError(refusalText(e));
+      setActionError(wordedError(e));
     } finally {
       setMarkingAll(false);
     }

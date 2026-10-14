@@ -8,9 +8,10 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { Card } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
@@ -40,26 +41,6 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
   let branchFailed = false;
 
-  function toWordedError(err: unknown): string {
-    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      if (err.code && err.code !== 'httpError') {
-        const text = errorText(err.code, generic);
-        if (text && text !== err.code) return text;
-      }
-      return generic;
-    }
-    if (err && typeof err === 'object' && 'code' in err) {
-      const c = String((err as { code: unknown }).code);
-      if (c && c !== 'httpError') {
-        const text = errorText(c, generic);
-        if (text && text !== c) return text;
-      }
-      return generic;
-    }
-    return generic;
-  }
-
   async function loadBranches() {
     try {
       const res = await api.view<{ branches: Array<{ id: string; name: string }> }>('admin_branches');
@@ -70,7 +51,7 @@ export function Slips(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       branchFailed = true;
       setBranches([]);
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -119,7 +100,7 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
       setRows([]);
       setLoaded(true);
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 

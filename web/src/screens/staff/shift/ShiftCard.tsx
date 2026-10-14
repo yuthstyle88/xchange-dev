@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
-import { errorText, screenT } from '../../../shared/i18n';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
   HandoverStartInput,
@@ -27,26 +28,6 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const t = screenT('staff.shift', { th, en });
   const api = new ApiClient();
   const commandMap = new Map<string, { send(body: unknown): Promise<unknown> }>();
-
-  const toErrorText = (e: unknown): string => {
-    const fallback = t('connectionError');
-    if (e instanceof ApiError) {
-      if (e.code && e.code !== 'httpError') {
-        const text = errorText(e.code, fallback);
-        if (text && text !== e.code) return text;
-      }
-      return fallback;
-    }
-    if (e && typeof e === 'object' && 'code' in e) {
-      const code = String((e as { code: unknown }).code);
-      if (code && code !== 'httpError') {
-        const text = errorText(code, fallback);
-        if (text && text !== code) return text;
-      }
-      return fallback;
-    }
-    return fallback;
-  };
 
   function getCmd<B, R>(key: string, method: string, path: string): { send(body: B): Promise<R> } {
     let c = commandMap.get(key);
@@ -87,7 +68,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         setCashCounts((data as { rows: CashCountRow[] }).rows);
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -102,7 +83,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         setPendingHandovers((data as { rows: HandoverPendingRow[] }).rows);
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -117,7 +98,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         setDenominations((data as { rows: DenominationRow[] }).rows);
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -132,7 +113,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         setHandoverReceivers((data as { rows: HandoverReceiverRow[] }).rows);
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -210,7 +191,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadCashCounts();
     } catch (err: unknown) {
       setNotice(null);
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -261,7 +242,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -279,7 +260,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadCashCounts();
     } catch (err: unknown) {
       setNotice(null);
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -297,7 +278,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -315,7 +296,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 

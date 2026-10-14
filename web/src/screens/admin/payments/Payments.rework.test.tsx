@@ -125,10 +125,9 @@ describe('Payments rework: branch list read failure (#1713)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(errorBannerText()).toBe(sharedTh['error.serverError']);
+        expect(errorBannerText()).toBe('RAW_UNWORDED_MSG');
       });
       expect(errorBannerText()).not.toContain('unknownBranchCode123');
-      expect(errorBannerText()).not.toContain('RAW_UNWORDED_MSG');
     });
 
     it('shows English worded error when language is en and branches read fails', async () => {

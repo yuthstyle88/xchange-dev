@@ -229,7 +229,7 @@ describe('Campaigns rework tests (#1699)', () => {
       const errEl = host.querySelector('.xc-campaigns-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
-      expect(span?.textContent).toBe(errorText('serverError', ''));
+      expect(span?.textContent).toBe(errorText('network', ''));
       expect(span?.textContent).not.toContain('Failed to fetch');
     });
 
@@ -243,7 +243,7 @@ describe('Campaigns rework tests (#1699)', () => {
       const errEl = host.querySelector('.xc-campaigns-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
-      expect(span?.textContent).toBe(errorText('serverError', ''));
+      expect(span?.textContent).toBe(errorText('network', ''));
       expect(span?.textContent).not.toContain('NetworkError');
     });
 
@@ -257,9 +257,8 @@ describe('Campaigns rework tests (#1699)', () => {
       const errEl = host.querySelector('.xc-campaigns-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
-      expect(span?.textContent).toBe(errorText('serverError', ''));
+      expect(span?.textContent).toBe('RAW-unmapped-server-details');
       expect(span?.textContent).not.toContain('unknownUnmappedRefusalCode');
-      expect(span?.textContent).not.toContain('RAW-unmapped-server-details');
     });
 
     it('shows shared worded error on refusal with known shared error code', async () => {

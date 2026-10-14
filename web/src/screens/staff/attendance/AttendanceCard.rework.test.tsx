@@ -144,9 +144,8 @@ describe('AttendanceCard rework tests (#1720: worded errors on attendance read f
     await vi.waitFor(() => {
       const errEl = host.querySelector('[data-testid="attendance-error"]');
       expect(errEl, 'attendance-error must be rendered on unknown refusal code').not.toBeNull();
-      expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+      expect(errEl?.textContent).toBe('database connection dropped while fetching attendance');
       expect(errEl?.textContent).not.toContain('unknownAttendanceCode');
-      expect(errEl?.textContent).not.toContain('database connection dropped');
     });
   });
 

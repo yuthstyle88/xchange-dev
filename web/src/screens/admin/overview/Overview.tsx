@@ -9,7 +9,8 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminOverviewData } from '../../../shared/api/generated/admin_overview';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -39,24 +40,6 @@ export function Overview(props: AdminMenuProps): JSX.Element {
   let activeFrom = '';
   let activeTo = '';
   let currentFetchId = 0;
-
-  function toWordedError(err: unknown): string {
-    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      if (err.code === 'outOfScope') {
-        return t('outOfScope');
-      }
-      return errorText(err.code, generic);
-    }
-    if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
-      const code = (err as { code: string }).code;
-      if (code === 'outOfScope') {
-        return t('outOfScope');
-      }
-      return errorText(code, generic);
-    }
-    return generic;
-  }
 
   async function loadData(opts: { isRefresh?: boolean } = {}) {
     const branch = props.branch();
@@ -89,7 +72,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (fetchId !== currentFetchId) return;
-      setError(toWordedError(err));
+      if (err instanceof ApiError && err.code === 'outOfScope') {
+        setError(t('outOfScope'));
+      } else {
+        setError(wordedError(err));
+      }
     }
   }
 
@@ -104,6 +91,9 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       period.from !== activeFrom || period.to !== activeTo;
 
     if (branchChanged || periodChanged) {
+      if (branchChanged) {
+        setData(null);
+      }
       activeBranch = branch;
       activeFrom = period.from;
       activeTo = period.to;
@@ -184,7 +174,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
-      setError(toWordedError(err));
+      if (err instanceof ApiError && err.code === 'outOfScope') {
+        setError(t('outOfScope'));
+      } else {
+        setError(wordedError(err));
+      }
     }
   }
 

@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { setLang } from "../../../../shared/i18n";
+import { th as sharedTh } from "../../../../shared/i18n/th";
 import { ApiClient } from "../../../../shared/api/client";
 
 type StepModule = { step: { index: number; label: () => string; component: (p: { store: any }) => JSX.Element } };
@@ -356,9 +357,9 @@ for (const [which, path] of Object.entries(PATHS)) {
       expect(store.go).not.toHaveBeenCalledWith(2);
     });
 
-    for (const [what, a] of [
-      ["a network failure", { status: 0, throws: true }],
-      ["a 5xx that is not JSON", { status: 502, raw: "<html>bad gateway</html>" }],
+    for (const [what, a, expectedKey] of [
+      ["a network failure", { status: 0, throws: true }, "error.network"],
+      ["a 5xx that is not JSON", { status: 502, raw: "<html>bad gateway</html>" }, "error.serverError"],
     ] as const) {
       it(`C11 ${what} shows DK-1's sentence`, async () => {
         const s = rpcServer((act) => (act === "reserveCustomer" ? a : OK(act)));
@@ -366,7 +367,7 @@ for (const [which, path] of Object.entries(PATHS)) {
         await mount(store);
         fillAll();
         submit();
-        await vi.waitFor(() => expect(host.textContent).toContain(NO_SERVER));
+        await vi.waitFor(() => expect(host.textContent).toContain(sharedTh[expectedKey]));
         expect(store.go).not.toHaveBeenCalledWith(2);
       });
     }

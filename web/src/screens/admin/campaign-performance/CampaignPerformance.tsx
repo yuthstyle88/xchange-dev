@@ -9,25 +9,12 @@ import type {
   VersionPerformanceRow,
 } from '../../../shared/api/generated/campaign_performance';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './campaign-performance.css';
 
 const t = screenT('admin.campaign-performance', table);
-
-const ERROR_KEYS: Record<string, 'error.outOfScope' | 'error.validationFailed'> = {
-  outOfScope: 'error.outOfScope',
-  validationFailed: 'error.validationFailed',
-};
-
-function formatError(err: unknown): string {
-  if (err instanceof ApiError) {
-    const mapped = ERROR_KEYS[err.code];
-    if (mapped) return t(mapped);
-    return err.message || err.code;
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 function formatMoney(value: string | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—';
@@ -76,7 +63,13 @@ export function CampaignPerformance(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (mine !== reading) return;
       setRows([]);
-      setError(formatError(err));
+      if (err instanceof ApiError && err.code === 'outOfScope') {
+        setError(t('error.outOfScope'));
+      } else if (err instanceof ApiError && err.code === 'validationFailed') {
+        setError(t('error.validationFailed'));
+      } else {
+        setError(wordedError(err));
+      }
     } finally {
       if (mine === reading) {
         setLoading(false);

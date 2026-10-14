@@ -11,6 +11,7 @@ import type {
   VersionPerformanceRow,
 } from '../../../shared/api/generated/campaign_performance';
 import { setLang } from '../../../shared/i18n';
+import { th } from '../../../shared/i18n/th';
 import { meOf } from '../../../test-support/me';
 import { AdminShell } from '../AdminShell';
 import type { AdminMenuProps } from '../menus';
@@ -415,7 +416,7 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
 
-      expect(container.textContent).toContain('Failed to load performance');
+      expect(container.textContent).toContain(th['error.serverError']);
       const retryBtn = [...container.querySelectorAll('button')].find((b) =>
         /retry|ลองใหม่|โหลดใหม่/i.test(b.textContent ?? ''),
       );

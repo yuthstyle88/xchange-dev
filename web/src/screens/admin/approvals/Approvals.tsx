@@ -1,10 +1,11 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -22,28 +23,6 @@ interface RequestCardProps {
   request: ApprovalRequestItemDto;
   branch: string;
   onDecided: () => Promise<void>;
-}
-
-function toWordedError(err: unknown): string {
-  const fallback = t('connectionError');
-  if (err instanceof ApiError) {
-    if (err.code === 'outOfScope') return err.message;
-    if (err.code && err.code !== 'httpError') {
-      const text = errorText(err.code, fallback);
-      if (text && text !== err.code) return text;
-    }
-    return fallback;
-  }
-  if (err && typeof err === 'object' && 'code' in err) {
-    const code = String((err as { code: unknown }).code);
-    if (code === 'outOfScope' && 'message' in err) return String((err as { message: unknown }).message);
-    if (code && code !== 'httpError') {
-      const text = errorText(code, fallback);
-      if (text && text !== code) return text;
-    }
-    return fallback;
-  }
-  return fallback;
 }
 
 function RequestCard(props: RequestCardProps): JSX.Element {
@@ -77,7 +56,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       );
       await props.onDecided();
     } catch (err: unknown) {
-      const message = toWordedError(err);
+      const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
@@ -110,7 +89,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       );
       await props.onDecided();
     } catch (err: unknown) {
-      const message = toWordedError(err);
+      const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
@@ -201,7 +180,7 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
         setRequests([]);
       }
     } catch (err: unknown) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
       setRequests([]);
     }
   };

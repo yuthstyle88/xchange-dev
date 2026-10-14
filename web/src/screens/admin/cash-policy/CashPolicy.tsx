@@ -8,7 +8,8 @@ import type {
   CashTransferPolicyData,
   TransferPolicySaveInput,
 } from '../../../shared/api/generated/cash_transfer_policy';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -17,7 +18,7 @@ import './cash-policy.css';
 
 const t = screenT('admin.cash-policy', table);
 
-/** The refusals this screen words itself; any other shows the server's sentence. */
+/** The refusals this screen words itself; any other shows through wordedError. */
 const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   roleNotAllowedHere: 'error.roleNotAllowedHere',
   idempotencyConflict: 'error.idempotencyConflict',
@@ -27,31 +28,17 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
 }
 
-function refusalText(err: unknown): string {
-  const fallback = t('connectionError');
-  if (err instanceof ApiError) {
-    const own = OWN_TEXT[err.code];
-    if (own) return t(own);
-    // a validation refusal (e.g. too many decimals) carries the server's own sentence
-    if (err.code === 'validationFailed') return err.message;
-    if (err.code && err.code !== 'httpError') {
-      const text = errorText(err.code, fallback);
-      if (text && text !== err.code) return text;
-    }
-    return fallback;
+function policyError(err: unknown): string {
+  if (err instanceof ApiError && err.code in OWN_TEXT) {
+    return t(OWN_TEXT[err.code]!);
   }
-  if (err && typeof err === 'object' && 'code' in err) {
-    const code = String((err as { code: unknown }).code);
-    const own = OWN_TEXT[code];
-    if (own) return t(own);
-    if (code === 'validationFailed' && 'message' in err) return String((err as { message: unknown }).message);
-    if (code && code !== 'httpError') {
-      const text = errorText(code, fallback);
-      if (text && text !== code) return text;
+  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
+    const code = (err as { code: string }).code;
+    if (code in OWN_TEXT) {
+      return t(OWN_TEXT[code]!);
     }
-    return fallback;
   }
-  return fallback;
+  return wordedError(err);
 }
 
 export function CashPolicy(props: AdminMenuProps): JSX.Element {
@@ -77,7 +64,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       setPolicy(data);
       setTyped({ ...(data?.limits ?? {}) });
     } catch (err: unknown) {
-      setRefusal(refusalText(err));
+      setRefusal(policyError(err));
     }
   }
 
@@ -86,18 +73,22 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       const answer = await api.view<AdminCashData>('admin_cash', { branch });
       if (answer.data) setRegister(answer.data.currencies);
     } catch (err: unknown) {
-      setRefusal(refusalText(err));
+      setRegister([]);
+      setRefusal(policyError(err));
     }
   }
 
-  let opened = false;
+  let lastBranch = '';
   createEffect(() => {
     if (!props.shown()) return;
     const branch = props.branch();
     untrack(() => {
-      if (opened) return;
-      opened = true;
-      void readPolicy();
+      if (lastBranch === branch) return;
+      const isSwitch = lastBranch !== '';
+      lastBranch = branch;
+      if (!isSwitch) {
+        void readPolicy();
+      }
       void readRegister(branch);
     });
   });
@@ -128,7 +119,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       // a refusal is the server's answer: the next save is a new request; anything else keeps the key
       if (err instanceof ApiError && err.status < 500) pending = null;
-      setRefusal(refusalText(err));
+      setRefusal(policyError(err));
     } finally {
       setBusy(false);
     }

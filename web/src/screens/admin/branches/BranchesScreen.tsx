@@ -8,7 +8,8 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminBranchProfileData } from '../../../shared/api/generated/admin_branches_profile';
-import { errorText, screenT, t as sharedT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './branches.css';
@@ -32,32 +33,6 @@ interface DayHoursState {
   isOpen: boolean;
   open: string;
   close: string;
-}
-
-function toErrorText(err: unknown): string {
-  const fallback = sharedT('error.serverError');
-  if (err instanceof ApiError) {
-    if (err.code && err.code !== 'httpError') {
-      if (err.code === 'conflict') {
-        return t('codeConflict');
-      }
-      const text = errorText(err.code, fallback);
-      if (text && text !== err.code) return text;
-    }
-    return fallback;
-  }
-  if (err && typeof err === 'object' && 'code' in err) {
-    const c = String((err as { code: unknown }).code);
-    if (c && c !== 'httpError') {
-      if (c === 'conflict') {
-        return t('codeConflict');
-      }
-      const text = errorText(c, fallback);
-      if (text && text !== c) return text;
-    }
-    return fallback;
-  }
-  return fallback;
 }
 
 export function BranchesScreen(props: AdminMenuProps): JSX.Element {
@@ -88,6 +63,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     sun: { isOpen: false, open: '09:00', close: '17:00' },
   });
 
+  let lastLoadedBranch = '';
+
   const loadBranches = async () => {
     try {
       const res = await api.view<AdminBranchesData>('admin_branches', {
@@ -101,7 +78,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      setError(wordedError(err));
     }
   };
 
@@ -110,11 +87,15 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    if (branchId !== lastLoadedBranch) {
+      setProfile(null);
+    }
     try {
       const res = await api.view<AdminBranchProfileData>('admin_branches_profile', {
         branch: branchId,
       });
       if (res.data) {
+        lastLoadedBranch = branchId;
         setProfile(res.data);
         setCode(res.data.code ?? '');
         setAddress(res.data.address ?? '');
@@ -141,7 +122,10 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         setHours(newHours);
       }
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      if (branchId !== lastLoadedBranch) {
+        setProfile(null);
+      }
+      setError(wordedError(err));
     } finally {
       setLoading(false);
     }
@@ -221,7 +205,11 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       setProfile(res);
       setSuccess(t('saved'));
     } catch (err: unknown) {
-      setError(toErrorText(err));
+      if (err instanceof ApiError && err.code === 'conflict') {
+        setError(t('codeConflict'));
+      } else {
+        setError(wordedError(err));
+      }
     } finally {
       setSaving(false);
     }

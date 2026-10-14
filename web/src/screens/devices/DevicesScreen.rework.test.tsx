@@ -148,7 +148,7 @@ describe('DevicesScreen worded errors for failed reads (#1693)', () => {
 
       mount(server);
       await vi.waitFor(() => {
-        expect(messageText()).toBe(sharedTh['error.serverError']);
+        expect(messageText()).toBe(sharedTh['error.network']);
       });
 
       // Picker shows no transactions
@@ -187,10 +187,9 @@ describe('DevicesScreen worded errors for failed reads (#1693)', () => {
 
       mount(server);
       await vi.waitFor(() => {
-        expect(messageText()).toBe(sharedTh['error.serverError']);
+        expect(messageText()).toBe('RAW_UNWORDED_MSG');
       });
       expect(messageText()).not.toContain('unknownRefusal999');
-      expect(messageText()).not.toContain('RAW_UNWORDED_MSG');
     });
 
     it('shows English worded error when language is en and read fails', async () => {

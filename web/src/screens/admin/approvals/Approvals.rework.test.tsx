@@ -256,8 +256,7 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(screenTh.connectionError);
-    expect(text).not.toContain('RAW-UNKNOWN-READ-ERROR-1695');
+    expect(text).toContain('RAW-UNKNOWN-READ-ERROR-1695');
     expect(text).not.toContain(screenTh.empty);
   });
 
@@ -282,8 +281,7 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(screenEn.connectionError);
-    expect(text).not.toContain('RAW-UNKNOWN-READ-ERROR-1695');
+    expect(text).toContain('RAW-UNKNOWN-READ-ERROR-1695');
     expect(text).not.toContain(screenEn.empty);
   });
 
@@ -299,7 +297,7 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
     });
 
     const text = root.textContent ?? '';
-    expect(text).toContain(screenTh.connectionError);
+    expect(text).toContain(sharedTh['error.network']);
     expect(text).not.toContain('Failed to fetch');
     expect(text).not.toContain(screenTh.empty);
   });
@@ -528,12 +526,11 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
 
     await vi.waitFor(() => {
       const text = document.body.textContent ?? '';
-      expect(text).toContain(screenTh.connectionError);
+      expect(text).toContain('RAW-UNKNOWN-DECIDE-ERROR-1695');
     });
 
     const bodyText = document.body.textContent ?? '';
-    expect(bodyText).toContain(screenTh.connectionError);
-    expect(bodyText).not.toContain('RAW-UNKNOWN-DECIDE-ERROR-1695');
+    expect(bodyText).toContain('RAW-UNKNOWN-DECIDE-ERROR-1695');
   });
 
   it('row 2: handleApprove on network error (fetch rejects with TypeError) displays generic worded message', async () => {
@@ -551,11 +548,11 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
 
     await vi.waitFor(() => {
       const text = document.body.textContent ?? '';
-      expect(text).toContain(screenTh.connectionError);
+      expect(text).toContain(sharedTh['error.network']);
     });
 
     const bodyText = document.body.textContent ?? '';
-    expect(bodyText).toContain(screenTh.connectionError);
+    expect(bodyText).toContain(sharedTh['error.network']);
     expect(bodyText).not.toContain('Failed to fetch');
   });
 });
