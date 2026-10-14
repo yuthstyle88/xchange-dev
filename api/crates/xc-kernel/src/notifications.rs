@@ -82,6 +82,52 @@ impl NotificationRequest {
         })
     }
 
+    /// Builds a request checking that any `Text` param contains no PII, while `Display` params skip the check.
+    pub fn with_params(
+        recipient_user_id: impl Into<String>,
+        event_id: impl Into<String>,
+        template_key: impl Into<String>,
+        object: Option<NotificationObject>,
+        params: crate::notification_params::NotificationParams,
+    ) -> Result<Self, NotificationRequestError> {
+        let recipient_user_id = recipient_user_id.into();
+        if recipient_user_id.is_empty() {
+            return Err(NotificationRequestError::Empty("recipient_user_id"));
+        }
+        let event_id = event_id.into();
+        if event_id.is_empty() {
+            return Err(NotificationRequestError::Empty("event_id"));
+        }
+        let template_key = template_key.into();
+        if template_key.is_empty() {
+            return Err(NotificationRequestError::Empty("template_key"));
+        }
+
+        let mut stored_params = BTreeMap::new();
+        for (k, v) in params.values {
+            match v {
+                crate::notification_params::ParamValue::Text(t) => {
+                    let redacted = crate::pii::redact_text(&t);
+                    if redacted != t {
+                        return Err(NotificationRequestError::PersonalData(k));
+                    }
+                    stored_params.insert(k, t);
+                }
+                crate::notification_params::ParamValue::Display(d) => {
+                    stored_params.insert(k, d.as_str().to_string());
+                }
+            }
+        }
+
+        Ok(Self {
+            recipient_user_id,
+            event_id,
+            template_key,
+            object,
+            params: stored_params,
+        })
+    }
+
     pub fn recipient_user_id(&self) -> &str {
         &self.recipient_user_id
     }

@@ -8,6 +8,6 @@ pub struct DisplayNumber;
 impl DisplayNumber {
     /// `W001`, `B012`, `W999`; a sequence above 999 keeps all its digits (`W1000`).
     pub fn format(service_type: ServiceType, sequence: i32) -> String {
-        format!("{}{:03}", service_type.letter(), sequence)
+        xc_kernel::notification_params::queue_number_text(service_type.letter(), sequence)
     }
 }
