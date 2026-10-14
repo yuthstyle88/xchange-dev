@@ -23,25 +23,30 @@ export interface ShiftCardProps {
   ctx: StaffCtx;
 }
 
-function toErrorText(e: unknown): string {
-  if (e instanceof ApiError) {
-    return errorText(e.code, e.message);
-  }
-  if (e && typeof e === 'object' && 'code' in e && 'message' in e) {
-    const code = String((e as { code: unknown }).code);
-    const msg = String((e as { message: unknown }).message);
-    return errorText(code, msg);
-  }
-  if (e instanceof Error) {
-    return e.message;
-  }
-  return String(e);
-}
-
 export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const t = screenT('staff.shift', { th, en });
   const api = new ApiClient();
   const commandMap = new Map<string, { send(body: unknown): Promise<unknown> }>();
+
+  const toErrorText = (e: unknown): string => {
+    const fallback = t('connectionError');
+    if (e instanceof ApiError) {
+      if (e.code && e.code !== 'httpError') {
+        const text = errorText(e.code, fallback);
+        if (text && text !== e.code) return text;
+      }
+      return fallback;
+    }
+    if (e && typeof e === 'object' && 'code' in e) {
+      const code = String((e as { code: unknown }).code);
+      if (code && code !== 'httpError') {
+        const text = errorText(code, fallback);
+        if (text && text !== code) return text;
+      }
+      return fallback;
+    }
+    return fallback;
+  };
 
   function getCmd<B, R>(key: string, method: string, path: string): { send(body: B): Promise<R> } {
     let c = commandMap.get(key);
@@ -81,8 +86,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: CashCountRow[] }).rows)) {
         setCashCounts((data as { rows: CashCountRow[] }).rows);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toErrorText(err));
     }
   };
 
@@ -96,8 +101,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: HandoverPendingRow[] }).rows)) {
         setPendingHandovers((data as { rows: HandoverPendingRow[] }).rows);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toErrorText(err));
     }
   };
 
@@ -111,8 +116,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: DenominationRow[] }).rows)) {
         setDenominations((data as { rows: DenominationRow[] }).rows);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toErrorText(err));
     }
   };
 
@@ -126,8 +131,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: HandoverReceiverRow[] }).rows)) {
         setHandoverReceivers((data as { rows: HandoverReceiverRow[] }).rows);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toErrorText(err));
     }
   };
 

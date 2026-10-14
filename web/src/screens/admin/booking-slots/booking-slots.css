@@ -1,0 +1,54 @@
+/* BK-9 (#1410): booking-slots admin screen styles */
+.booking-slots-screen {
+  padding: 1rem;
+}
+
+.error {
+  color: var(--color-danger, #dc2626);
+}
+
+.field-error {
+  margin-bottom: 1rem;
+}
+
+.booking-slots-section {
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.closures-form {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.closures-list,
+.slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.closure-item,
+.slot-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.closure-date,
+.closure-reason,
+.slot-date,
+.slot-time,
+.slot-status,
+.slot-reserved {
+  display: inline-block;
+}
+
+.slot-capacity-control {
+  display: inline-flex;
+  gap: 0.5rem;
+}

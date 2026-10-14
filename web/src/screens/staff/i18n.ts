@@ -9,6 +9,7 @@ export const th = {
   reasonPlaceholder: 'ระบุเหตุผล',
   loading: 'กำลังโหลด…',
   emptyCards: 'ไม่มีรายการที่ต้องดำเนินการ',
+  floorError: 'ไม่สามารถโหลดข้อมูลรอบบริการได้',
 };
 
 export const en = {
@@ -22,4 +23,5 @@ export const en = {
   reasonPlaceholder: 'Enter reason',
   loading: 'Loading…',
   emptyCards: 'No pending items',
+  floorError: 'Failed to load floor operations',
 };

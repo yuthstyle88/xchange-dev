@@ -24,18 +24,25 @@ export interface FloorCardProps {
 }
 
 function toErrorText(e: unknown): string {
+  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
   if (e instanceof ApiError) {
-    return errorText(e.code, e.message);
+    const text = errorText(e.code, '');
+    return text || generic;
   }
-  if (e && typeof e === 'object' && 'code' in e && 'message' in e) {
+  if (e && typeof e === 'object' && 'code' in e && (e as { code: unknown }).code) {
     const code = String((e as { code: unknown }).code);
-    const msg = String((e as { message: unknown }).message);
-    return errorText(code, msg);
+    const text = errorText(code, '');
+    return text || generic;
   }
-  if (e instanceof Error) {
-    return e.message;
+  if (e instanceof Error && e.message) {
+    const text = errorText(e.message, '');
+    return text || generic;
   }
-  return String(e);
+  if (typeof e === 'string' && e) {
+    const text = errorText(e, '');
+    return text || generic;
+  }
+  return generic;
 }
 
 const THB = 'THB';
@@ -119,8 +126,8 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
         if (res.data) {
           setRatesData(res.data);
         }
-      } catch {
-        // ignore
+      } catch (e: unknown) {
+        setError(toErrorText(e));
       }
     }
   };
@@ -166,15 +173,20 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
             currentRates = res.data;
             setRatesData(res.data);
           }
-        } catch {
-          // ignore
+        } catch (e: unknown) {
+          setError(toErrorText(e));
+          return;
         }
+      }
+      if (!currentRates?.publication?.publishedAt) {
+        setError(toErrorText(new Error('serverError')));
+        return;
       }
       await startCmd.send({
         branch: props.ctx.me.branchId,
         equipmentReady: true,
         ratesVerified: true,
-        rateVersion: currentRates?.publication?.publishedAt ?? '',
+        rateVersion: currentRates.publication.publishedAt,
       });
       setNotice(t('saved'));
       await props.ctx.refresh();

@@ -38,14 +38,39 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
   let currentFetchId = 0;
 
+  let branchFailed = false;
+
+  function toWordedError(err: unknown): string {
+    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      if (err.code && err.code !== 'httpError') {
+        const text = errorText(err.code, generic);
+        if (text && text !== err.code) return text;
+      }
+      return generic;
+    }
+    if (err && typeof err === 'object' && 'code' in err) {
+      const c = String((err as { code: unknown }).code);
+      if (c && c !== 'httpError') {
+        const text = errorText(c, generic);
+        if (text && text !== c) return text;
+      }
+      return generic;
+    }
+    return generic;
+  }
+
   async function loadBranches() {
     try {
       const res = await api.view<{ branches: Array<{ id: string; name: string }> }>('admin_branches');
       if (res.data?.branches) {
         setBranches(res.data.branches);
+        branchFailed = false;
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      branchFailed = true;
+      setBranches([]);
+      setError(toWordedError(err));
     }
   }
 
@@ -85,19 +110,16 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
       setRows(data);
       setPage(targetPage);
-      setError(null);
+      if (!branchFailed) {
+        setError(null);
+      }
       setLoaded(true);
     } catch (err: unknown) {
       if (fetchId !== currentFetchId) return;
 
       setRows([]);
       setLoaded(true);
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
+      setError(toWordedError(err));
     }
   }
 

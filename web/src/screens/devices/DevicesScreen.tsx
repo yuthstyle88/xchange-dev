@@ -135,6 +135,14 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     },
   };
 
+  function toWordedError(err: unknown): string {
+    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      return errorText(err.code, generic);
+    }
+    return generic;
+  }
+
   async function loadTransactions(branch: string): Promise<void> {
     try {
       const txs = await props.api.page<DeviceTransactionRow>('device_transactions', {
@@ -145,8 +153,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       if (selectedTx() && !txs.some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setMessage(toWordedError(err));
     }
   }
 
@@ -348,8 +356,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       if (selectedTx() && !updated.some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setMessage(toWordedError(err));
     }
   }
 
@@ -365,8 +373,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         limit: 100,
       });
       setOlderEvents((prev) => [...prev, ...older]);
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setMessage(toWordedError(err));
     }
   }
 

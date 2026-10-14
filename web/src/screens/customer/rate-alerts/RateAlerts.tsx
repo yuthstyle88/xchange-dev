@@ -17,7 +17,7 @@ import type {
   PublicBranchDto,
   PublicBranchesData,
 } from '../../../shared/api/public/public_branches';
-import { errorText, fill, locale, screenT } from '../../../shared/i18n';
+import { errorText, fill, locale, screenT, t as sharedT } from '../../../shared/i18n';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import * as table from './i18n';
 import './rate-alerts.css';
@@ -54,6 +54,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
 
   // Branches list from public API
   const [branches, setBranches] = createSignal<PublicBranchDto[]>([]);
+  const [branchesError, setBranchesError] = createSignal<string | null>(null);
   const [branch, setBranch] = createSignal(props.defaultBranch ?? '');
 
   // Create form state
@@ -73,15 +74,33 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   let timerId: ReturnType<typeof setInterval> | undefined = undefined;
 
   const formatErrorMsg = (err: unknown): string => {
+    const fallback = sharedT('error.serverError');
     if (err instanceof ApiError) {
       if (err.code === 'alertLimitReached') return t('alertLimitReached');
       if (err.code === 'alertSettingsMissing') return t('alertSettingsMissing');
       if (err.code === 'idempotencyConflict') return t('idempotencyConflict');
       if (err.code === 'staleVersion') return t('staleVersion');
       if (err.code === 'validationFailed') return t('validationFailed');
-      return errorText(err.code, err.message);
+      if (err.code && err.code !== 'httpError') {
+        const text = errorText(err.code, fallback);
+        if (text && text !== err.code) return text;
+      }
+      return fallback;
     }
-    return err instanceof Error ? err.message : String(err);
+    if (err && typeof err === 'object' && 'code' in err) {
+      const c = String((err as { code: unknown }).code);
+      if (c === 'alertLimitReached') return t('alertLimitReached');
+      if (c === 'alertSettingsMissing') return t('alertSettingsMissing');
+      if (c === 'idempotencyConflict') return t('idempotencyConflict');
+      if (c === 'staleVersion') return t('staleVersion');
+      if (c === 'validationFailed') return t('validationFailed');
+      if (c && c !== 'httpError') {
+        const text = errorText(c, fallback);
+        if (text && text !== c) return text;
+      }
+      return fallback;
+    }
+    return fallback;
   };
 
   const loadBranches = async () => {
@@ -89,27 +108,64 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       let org = props.org;
       if (!org) {
         const res = await fetchFn('/api/public/host');
-        if (res.status === 200) {
-          const json = (await res.json()) as { org?: string };
-          if (json && typeof json.org === 'string' && json.org.length > 0) {
-            org = json.org;
+        if (!res.ok) {
+          let errJson: any = null;
+          try {
+            errJson = await res.json();
+          } catch {
+            // ignore
           }
+          if (errJson?.error) {
+            throw new ApiError({
+              code: errJson.error.code ?? 'serverError',
+              message: errJson.error.message ?? '',
+              status: res.status,
+            });
+          }
+          throw new ApiError({
+            code: 'httpError',
+            message: res.statusText,
+            status: res.status,
+          });
+        }
+        const json = (await res.json()) as { org?: string };
+        if (json && typeof json.org === 'string' && json.org.length > 0) {
+          org = json.org;
         }
       }
       if (org) {
         const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
         const bRes = await fetchFn(branchesUrl);
-        if (bRes.status === 200) {
-          const bJson = (await bRes.json()) as PublicBranchesData;
-          const list = bJson.branches ?? [];
-          setBranches(list);
-          if (list.length > 0 && !branch()) {
-            setBranch(list[0].code);
+        if (!bRes.ok) {
+          let errJson: any = null;
+          try {
+            errJson = await bRes.json();
+          } catch {
+            // ignore
           }
+          if (errJson?.error) {
+            throw new ApiError({
+              code: errJson.error.code ?? 'serverError',
+              message: errJson.error.message ?? '',
+              status: bRes.status,
+            });
+          }
+          throw new ApiError({
+            code: 'httpError',
+            message: bRes.statusText,
+            status: bRes.status,
+          });
+        }
+        const bJson = (await bRes.json()) as PublicBranchesData;
+        const list = bJson.branches ?? [];
+        setBranches(list);
+        setBranchesError(null);
+        if (list.length > 0 && !branch()) {
+          setBranch(list[0].code);
         }
       }
-    } catch {
-      // Branches loading failure is handled gracefully by keeping the list empty
+    } catch (err: unknown) {
+      setBranchesError(formatErrorMsg(err));
     }
   };
 
@@ -157,6 +213,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   });
 
   const handleRetry = () => {
+    void loadBranches();
     void loadAlerts(true);
   };
 
@@ -303,6 +360,11 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                 )}
               </For>
             </select>
+            <Show when={branchesError()}>
+              <div class="xc-form-error" role="alert">
+                {branchesError()}
+              </div>
+            </Show>
           </div>
 
           <div class="xc-form-group">

@@ -112,6 +112,25 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     window.removeEventListener('beforeunload', onBeforeUnload);
   });
 
+  const toWordedError = (err: unknown): { code: string; message: string } => {
+    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      const known = errorText(err.code, '');
+      if (known !== '') {
+        return { code: err.code, message: known };
+      }
+      return { code: 'serverError', message: generic };
+    }
+    if (err && typeof err === 'object' && 'code' in err) {
+      const c = String((err as { code: unknown }).code);
+      const known = errorText(c, '');
+      if (known !== '') {
+        return { code: c, message: known };
+      }
+    }
+    return { code: 'serverError', message: generic };
+  };
+
   // Load branches for branch name display in heading
   const loadBranches = async () => {
     try {
@@ -119,8 +138,9 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       if (res.data?.branches) {
         setBranches(res.data.branches);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setBranches([]);
+      setError(toWordedError(err));
     }
   };
 
@@ -142,11 +162,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         setVersion(res.version);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError({ code: err.code, message: err.message });
-      } else if (err instanceof Error) {
-        setError({ code: 'error', message: err.message });
-      }
+      setError(toWordedError(err));
     } finally {
       setLoading(false);
     }
@@ -354,7 +370,9 @@ export function Payments(props: AdminMenuProps): JSX.Element {
 
       <Show when={error() && !data()}>
         <Card class="xc-payment-loading">
-          <p role="status">{errorText(error()!.code, error()!.message)}</p>
+          <div class="error-banner" role="alert">
+            <p role="status">{errorText(error()!.code, error()!.message)}</p>
+          </div>
           <button
             type="button"
             class="secondary"
@@ -363,6 +381,12 @@ export function Payments(props: AdminMenuProps): JSX.Element {
             {t('retry')}
           </button>
         </Card>
+      </Show>
+
+      <Show when={error() && data()}>
+        <div class="error-banner" role="alert">
+          {errorText(error()!.code, error()!.message)}
+        </div>
       </Show>
 
       <Show when={data()}>
