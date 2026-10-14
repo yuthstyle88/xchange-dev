@@ -8,9 +8,10 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import type { ApiClient } from '../../../shared/api/client';
+import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatRate } from '../../../shared/ui/rate';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { en, th } from './i18n';
@@ -65,8 +66,11 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
       })
       .catch((err: unknown) => {
         if (isDisposed) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setReceiptState({ status: 'error', message: msg });
+        if (err instanceof ApiError && err.code === 'signIn') {
+          setReceiptState({ status: 'error', message: t('receiptLoadFailed') });
+        } else {
+          setReceiptState({ status: 'error', message: wordedError(err) });
+        }
       });
   });
 
@@ -243,7 +247,15 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
         >
           <Show
             when={receiptState().status === 'loaded'}
-            fallback={<p>{t('receiptLoadFailed')}</p>}
+            fallback={
+              receiptState().status === 'error' ? (
+                <p role="alert">
+                  {(receiptState() as { status: 'error'; message: string }).message}
+                </p>
+              ) : (
+                <p>{t('receiptLoadFailed')}</p>
+              )
+            }
           >
             {(() => {
               const files = (
