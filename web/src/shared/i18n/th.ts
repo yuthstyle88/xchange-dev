@@ -36,6 +36,7 @@ export const th = {
   'error.paymentOwnerOnly': 'เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้',
   'error.drawerRoleNotAllowed': 'บัญชีนี้ไม่มีสิทธิ์เปิดลิ้นชัก',
   'error.serverError': 'เซิร์ฟเวอร์ขัดข้อง',
+  'error.network': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่',
   'error.employeeAuthRequired': 'กรุณาเข้าสู่ระบบด้วยบัญชีพนักงาน',
   'error.notFound': 'ไม่พบข้อมูล',
   'error.kioskOwnerOrRates': 'ต้องเป็นเจ้าของระบบหรือผู้ดูแลอัตราแลกเปลี่ยน',
