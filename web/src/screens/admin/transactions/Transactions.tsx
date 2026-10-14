@@ -55,6 +55,17 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     onCleanup(() => window.removeEventListener('hashchange', onHashChange));
   });
 
+  function toWordedError(err: unknown): string {
+    const fallback = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+    if (err instanceof ApiError) {
+      if (err.code in th) {
+        return t(err.code as keyof typeof th);
+      }
+      return errorText(err.code, fallback);
+    }
+    return fallback;
+  }
+
   async function loadFirstPage(opts: {
     isRefresh: boolean;
     branch: string;
@@ -92,12 +103,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       if (fetchId !== currentFetchId) return;
       setRows([]);
       setHasMore(false);
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
+      setError(toWordedError(err));
     }
   }
 
@@ -187,12 +193,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       setHasMore(nextRows.length === 100);
     } catch (err: unknown) {
       if (fetchId !== currentFetchId || props.branch() !== branch) return;
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
+      setError(toWordedError(err));
     }
   }
 
@@ -238,16 +239,11 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
         return;
       }
 
-      let branchName = branch;
-      try {
-        const res = await api.view<{
-          branches: { id: string; name: string }[];
-        }>('admin_branches');
-        const b = res.data?.branches?.find((x) => x.id === branch);
-        if (b) branchName = b.name;
-      } catch {
-        // fallback
-      }
+      const res = await api.view<{
+        branches: { id: string; name: string }[];
+      }>('admin_branches');
+      const b = res.data?.branches?.find((x) => x.id === branch);
+      const branchName = b ? b.name : branch;
 
       const todayBangkok = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Bangkok',
@@ -259,9 +255,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
 
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      }
+      setError(toWordedError(err));
     }
   }
 
