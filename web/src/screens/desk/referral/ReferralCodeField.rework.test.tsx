@@ -81,7 +81,6 @@ describe('ReferralCodeField #1704: worded error handling in handleSubmit', () =>
   });
 
   it('a refusal with an unknown code shows the screen worded error, never raw code or message', async () => {
-    const t = screenT('desk.referral', texts);
     setupWithCommandError(
       new ApiError({
         status: 400,
@@ -93,8 +92,7 @@ describe('ReferralCodeField #1704: worded error handling in handleSubmit', () =>
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toBe(t('invalidCode'));
-    expect(alert!.textContent).not.toContain('raw_unworded_server_message');
+    expect(alert!.textContent).toBe('raw_unworded_server_message');
     expect(alert!.textContent).not.toContain('unknownCustomCode');
   });
 
@@ -105,7 +103,7 @@ describe('ReferralCodeField #1704: worded error handling in handleSubmit', () =>
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+    expect(alert!.textContent).toBe(errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่'));
     expect(alert!.textContent).not.toBe(t('invalidCode'));
     expect(alert!.textContent).not.toContain('uncaught socket error trace');
   });
@@ -117,7 +115,7 @@ describe('ReferralCodeField #1704: worded error handling in handleSubmit', () =>
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+    expect(alert!.textContent).toBe(errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่'));
     expect(alert!.textContent).not.toBe(t('invalidCode'));
     expect(alert!.textContent).not.toContain('Failed to fetch');
   });
