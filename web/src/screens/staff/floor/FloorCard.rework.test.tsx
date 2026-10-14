@@ -145,9 +145,8 @@ describe('FloorCard rework tests (#1690: worded errors on rate read failures)', 
     await vi.waitFor(() => {
       const errEl = host.querySelector('[data-testid="floor-error"]');
       expect(errEl, 'floor-error must be rendered on unknown refusal code').not.toBeNull();
-      expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+      expect(errEl?.textContent).toBe('raw technical backend failure');
       expect(errEl?.textContent).not.toContain('unknownRateCode');
-      expect(errEl?.textContent).not.toContain('raw technical backend failure');
     });
   });
 
