@@ -5,7 +5,7 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type {
   AdminReportsData,
@@ -14,7 +14,8 @@ import type {
   ReportEmployeeGroup,
 } from '../../../shared/api/generated/admin_reports';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardGrid, CardHead } from '../../../shared/ui/Card';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { StatCard } from '../../../shared/ui/StatCard';
@@ -75,26 +76,6 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
   let branchFailed = false;
 
-  function toWordedError(err: unknown): string {
-    const generic = t('loadFailed');
-    if (err instanceof ApiError) {
-      if (err.code && err.code !== 'httpError') {
-        const text = errorText(err.code, '');
-        if (text) return text;
-      }
-      return generic;
-    }
-    if (err && typeof err === 'object' && 'code' in err && (err as { code: unknown }).code) {
-      const c = String((err as { code: unknown }).code);
-      if (c && c !== 'httpError') {
-        const text = errorText(c, '');
-        if (text) return text;
-      }
-      return generic;
-    }
-    return generic;
-  }
-
   async function readBranches() {
     try {
       const res = await api.view<AdminBranchesData>('admin_branches');
@@ -104,7 +85,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       branchFailed = true;
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -138,11 +119,10 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        setError(String(err));
+      if (!isRefresh) {
+        setData(null);
       }
+      setError(wordedError(err));
     }
   }
 
@@ -160,7 +140,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         setEmployeeTxMap((prev) => ({ ...prev, [staff]: res.data! }));
       }
     } catch (err: unknown) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -214,11 +194,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     try {
       await run();
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        setError(String(err));
-      }
+      setError(wordedError(err));
     }
   }
 
