@@ -353,7 +353,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         <div class="add-branch-dialog">
           <p class="add-note">{t('addNote')}</p>
           <Show when={dialogError()}>
-            <p class="add-error" role="alert" style={{ color: 'red' }}>
+            <p class="add-error" role="alert">
               {dialogError()}
             </p>
           </Show>
@@ -709,7 +709,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 {t('allDates')}
               </button>
               <Show when={!isPeriodValid()}>
-                <p class="date-error" role="alert" style={{ color: 'red' }}>
+                <p class="date-error" role="alert">
                   {t('dateError')}
                 </p>
               </Show>

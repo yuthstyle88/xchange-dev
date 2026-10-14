@@ -3,16 +3,9 @@
 # classList={{...}} and template-literal classes are out of scope.
 
 # admin
-add-branch-dialog
-add-error
-add-note
-connection-dialog
 
 # desk
-desk-nav
-desk-step-content
 
 # devices
 
 # kiosk-currencies
-cards

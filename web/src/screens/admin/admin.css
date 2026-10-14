@@ -693,6 +693,32 @@
   color:var(--muted);
 }
 
+.xc-admin .add-branch-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.xc-admin .add-note {
+  font-size: 13px;
+  color: var(--muted, #676a73);
+  margin: 0;
+}
+
+.xc-admin .add-error {
+  font-size: 13px;
+  color: var(--color-danger, #dc2626);
+  margin: 0;
+}
+
+.xc-admin .connection-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--ink, #17181b);
+}
+
 .xc-admin .xc-content.xc-content #toast {
   position:fixed;
   bottom:25px;
