@@ -101,7 +101,7 @@ impl BranchView for DeskBookingsView {
                             if phone_str.len() >= 4 {
                                 Some(phone_str[phone_str.len() - 4..].to_string())
                             } else {
-                                Some(phone_str)
+                                None
                             }
                         })(),
                         _ => None,

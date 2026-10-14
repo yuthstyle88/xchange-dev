@@ -73,10 +73,15 @@ impl BranchView for MyBookingsView {
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let branch = branch.clone();
-        let customer_id = who.customer_id.clone().unwrap_or_default();
+        let customer_id = who.customer_id.clone();
         let requested_booking_id = filter.booking_id.clone();
 
         async move {
+            let customer_id = customer_id.ok_or_else(|| AppError::NotFound {
+                entity: "customer",
+                id: String::new(),
+            })?;
+
             // If specific booking requested, ensure it belongs to this customer
             if let Some(ref target_id) = requested_booking_id {
                 let owner_opt: Option<(String,)> = sqlx::query_as(
