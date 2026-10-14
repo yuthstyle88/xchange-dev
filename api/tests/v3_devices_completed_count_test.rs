@@ -12,6 +12,7 @@ mod publication_seed;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,6 +40,7 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize}
 
 const ORIGIN: &str = "http://desk.test";
 const MAIN: &str = "MAIN";
+#[allow(dead_code)]
 const RPC: &str = "/api/rpc";
 const JPEG: &[u8] = &[
     0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 9,
@@ -125,19 +127,13 @@ impl DeviceTestRoom {
         rates_re4e_publish::set_counter_rate(&desk.db.pool, MAIN, "USD", "32.1", "33.0").await;
 
         // Open a shift on MAIN for LIVE transactions (CHECK (mode = 'LIVE') = (shift_id IS NOT NULL))
-        let open_shift_call = Call::action(
-            ORIGIN,
-            RPC,
-            "adminOpenShift",
-            json!({
-                "branchId": MAIN,
-                "requestId": request_id(),
-                "opening": { "THB": 100000 }
-            }),
+        shift_setup_common::open_shift_by_count(
+            &desk.db.pool,
+            MAIN,
+            json!({ "THB": 100000 }),
+            chrono::Utc::now(),
         )
-        .cookie(&cookies["OWNER"]);
-        let answer = app.send(open_shift_call).await;
-        assert_eq!(answer.status, 200, "adminOpenShift: {}", answer.text);
+        .await;
 
         let shift_id: String = sqlx::query_scalar(
             "SELECT id FROM shifts WHERE branch_id = 'MAIN' AND status = 'OPEN'",

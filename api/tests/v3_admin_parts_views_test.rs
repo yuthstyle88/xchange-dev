@@ -42,6 +42,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -301,6 +302,17 @@ impl Room {
         id
     }
 
+    async fn open_shift_by_count(&self, branch: &str) -> String {
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 100000, "USD": 1000 }),
+            t,
+        )
+        .await
+    }
+
     async fn open_shift_id(&self, branch: &str) -> String {
         sqlx::query_scalar("SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN'")
             .bind(branch)
@@ -521,7 +533,7 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
 #[actix_web::test]
 async fn transaction_documents_answers_exactly_whom_the_documents_route_allows() {
     let room = Room::open().await;
-    room.open_shift(MAIN).await;
+    room.open_shift_by_count(MAIN).await;
     let saved = room.save(MAIN, false).await;
     let (allowed, refused) = answers_exactly_whom_the_row_allows(
         &room,
@@ -542,7 +554,7 @@ async fn transaction_documents_answers_exactly_whom_the_documents_route_allows()
 #[actix_web::test]
 async fn transaction_documents_lists_the_exchanges_receipt_and_nothing_else() {
     let room = Room::open().await;
-    room.open_shift(MAIN).await;
+    room.open_shift_by_count(MAIN).await;
     let saved = room.save(MAIN, true).await;
     let data = room
         .data(
@@ -609,8 +621,8 @@ async fn transaction_documents_refuses_a_missing_or_empty_ref_naming_ref() {
 #[actix_web::test]
 async fn transaction_documents_answers_staff_from_their_own_branch() {
     let room = Room::open().await;
-    room.open_shift(MAIN).await;
-    room.open_shift(B9).await;
+    room.open_shift_by_count(MAIN).await;
+    room.open_shift_by_count(B9).await;
     let main = room.save(MAIN, false).await;
     let nine = room.save(B9, false).await;
 
@@ -671,7 +683,7 @@ async fn transaction_documents_answers_staff_from_their_own_branch() {
 #[actix_web::test]
 async fn an_exchange_save_moves_the_version_transaction_documents_answers() {
     let room = Room::open().await;
-    room.open_shift(MAIN).await;
+    room.open_shift_by_count(MAIN).await;
     let first = room.save(MAIN, false).await;
     let v = room.version(MAIN).await;
     let body = room
@@ -954,7 +966,7 @@ async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
 #[actix_web::test]
 async fn admin_shift_state_is_per_branch_and_staff_read_their_own() {
     let room = Room::open().await;
-    room.open_shift(B9).await;
+    room.open_shift_by_count(B9).await;
     assert_eq!(
         room.data("OWNER", SHIFT_STATE, "branch=B9").await,
         json!({ "shiftOpen": true, "deskUrl": "/desk?branch=B9" })

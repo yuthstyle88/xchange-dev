@@ -26,6 +26,7 @@
 mod common;
 mod compat_common;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -96,12 +97,11 @@ impl Room {
 
     /// The owner opens a shift in `MAIN`: the first thing `balance` reads.
     async fn open_a_shift(&self) {
-        self.ok(
-            "OWNER",
-            RPC,
-            "adminOpenShift",
-            json!({ "branchId": MAIN, "requestId": "00000000-0000-4000-8000-0000000d0001",
-                    "opening": { "THB": 5000 } }),
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            MAIN,
+            json!({ "THB": 5000 }),
+            chrono::Utc::now(),
         )
         .await;
     }

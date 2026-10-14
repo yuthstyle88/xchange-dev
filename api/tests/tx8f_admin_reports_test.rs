@@ -16,6 +16,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::str::FromStr;
@@ -43,6 +44,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
 
 const ORIGIN: &str = "http://desk.test";
+#[allow(dead_code)]
 const RPC: &str = "/api/rpc";
 const REPORTS: &str = "admin_reports";
 const MAIN: &str = "MAIN";
@@ -64,6 +66,7 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[allow(dead_code)]
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
 }
@@ -148,20 +151,16 @@ impl Room {
     }
 
     async fn open_shift(&self, branch: &str) {
-        self.tick();
-        let call = Call::action(
-            ORIGIN,
-            RPC,
-            "adminOpenShift",
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
             json!({
-                "branchId": branch,
-                "requestId": request_id(),
-                "opening": { "THB": 1000000, "USD": 100000, "EUR": 100000, "JPY": 10000000 }
+                "THB": 1000000, "USD": 100000, "EUR": 100000, "JPY": 10000000
             }),
+            t,
         )
-        .cookie(&self.cookie("OWNER"));
-        let answer = self.app.send(call).await;
-        assert_eq!(answer.status, 200, "adminOpenShift: {:.400}", answer.text);
+        .await;
     }
 
     /// Saves a compat transaction (writing both wide and child rows with identical figures).

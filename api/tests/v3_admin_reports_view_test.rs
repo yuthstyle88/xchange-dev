@@ -61,6 +61,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,6 +85,7 @@ use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
 
 const ORIGIN: &str = "http://desk.test";
+#[allow(dead_code)]
 const RPC: &str = "/api/rpc";
 const REPORTS: &str = "admin_reports";
 
@@ -158,6 +160,7 @@ fn next() -> u64 {
 }
 
 /// A request id in v2's shape, different on every call.
+#[allow(dead_code)]
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
 }
@@ -355,6 +358,7 @@ impl Room {
             .unwrap_or_else(|| panic!("GET {}: data in {body}", view_path(query)))
     }
 
+    #[allow(dead_code)]
     async fn ok(&self, who: &str, action: &str, payload: Value) -> Value {
         self.tick();
         let call = Call::action(ORIGIN, RPC, action, payload.clone()).cookie(&self.cookie(who));
@@ -380,13 +384,14 @@ impl Room {
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
-    /// The owner opens a shift in `branch` through `/api/rpc`.
+    /// Opens a shift in `branch` via Blueprint cash count.
     async fn open_shift(&self, branch: &str) {
-        self.ok(
-            "OWNER",
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(),
-                    "opening": { "THB": 1000000, "USD": 100000, "EUR": 100000, "JPY": 10000000 } }),
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 1000000, "USD": 100000, "EUR": 100000, "JPY": 10000000 }),
+            t,
         )
         .await;
     }

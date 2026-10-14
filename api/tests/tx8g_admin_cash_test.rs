@@ -12,6 +12,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::str::FromStr;
@@ -55,6 +56,7 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[allow(dead_code)]
 fn request_id() -> String {
     format!("00000000-0000-4000-8000-{:012x}", next())
 }
@@ -192,30 +194,16 @@ impl Room {
     }
 
     async fn open_shift(&self, branch: &str) -> String {
-        let req = request_id();
-        let answer = self
-            .app
-            .send(
-                Call::action(
-                    ORIGIN,
-                    "/api/rpc",
-                    "adminOpenShift",
-                    json!({
-                        "branchId": branch,
-                        "requestId": req,
-                        "opening": { "THB": 100000, "USD": 1000 }
-                    }),
-                )
-                .cookie(&self.cookies["OWNER"]),
-            )
-            .await;
-        assert_eq!(answer.status, 200, "adminOpenShift: {}", answer.text);
-
-        sqlx::query_scalar("SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN'")
-            .bind(branch)
-            .fetch_one(&self.desk.db.pool)
-            .await
-            .expect("open shift id")
+        let t = self.tick();
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({
+                "THB": 100000, "USD": 1000
+            }),
+            t,
+        )
+        .await
     }
 
     async fn insert_draft(&self, t: &ExchangeTransaction) {
