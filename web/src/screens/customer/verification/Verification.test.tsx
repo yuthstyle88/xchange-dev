@@ -11,6 +11,7 @@ import { mount } from './main';
 interface NodeFs {
   readFileSync(file: string, encoding: string): string;
   existsSync(file: string): boolean;
+  readdirSync(dir: string): string[];
 }
 
 interface NodePath {
@@ -50,7 +51,6 @@ interface VerificationCaseView {
   decidedAt: string | null;
   expiresAt: string | null;
   decisionReasonCode: string | null;
-  decisionReasonText?: string | null;
   version: number;
 }
 
@@ -330,23 +330,27 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
   // Group 2: Role literals forbidden & gated by CustomerSelf permission (can / needs)
   // ===============================================================================================
   describe('Group 2: Role literals forbidden & gated by CustomerSelf permission', () => {
-    it('verification screen source code contains NO role literals (gated by CustomerSelf permission only)', () => {
-      const filesToCheck = ['VerificationScreen.tsx', 'main.tsx'];
-      const rolePattern = /\b(CUSTOMER|TELLER|VERIFICATION_REVIEWER|ADMIN|EXECUTIVE|BRANCH_MANAGER|FINANCE|MARKETING)\b/;
+    it('verification screen source code contains NO role literals across any module in the directory (gated by CustomerSelf permission only)', () => {
+      const allFiles = fs.readdirSync(dir);
+      const codeFiles = allFiles.filter(
+        (f) => (f.endsWith('.ts') || f.endsWith('.tsx')) && !f.includes('.test.'),
+      );
+      expect(codeFiles.length, 'must find screen code files').toBeGreaterThan(0);
 
-      for (const file of filesToCheck) {
+      // All 9 roles from xc-auth/src/domain/access/role.rs
+      const rolePattern = /\b(CUSTOMER|TELLER|VERIFICATION_REVIEWER|ADMIN|EXECUTIVE|RATE_MANAGER|BRANCH_MANAGER|FINANCE|MARKETING)\b/;
+
+      for (const file of codeFiles) {
         const filePath = path.resolve(dir, file);
-        if (fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]!.trim();
-            if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) continue;
-            expect(
-              rolePattern.test(line),
-              `File ${file}:${i + 1} must not contain role literal "${line}" (use can(me, 'CustomerSelf') or needs instead)`,
-            ).toBe(false);
-          }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]!.trim();
+          if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) continue;
+          expect(
+            rolePattern.test(line),
+            `File ${file}:${i + 1} must not contain role literal "${line}" (use can(me, 'CustomerSelf') or needs instead)`,
+          ).toBe(false);
         }
       }
     });
@@ -445,11 +449,11 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       dispose = mount(host);
 
       await vi.waitFor(() => {
-        const startBtn = host.querySelector<HTMLButtonElement>('[data-action="start"], [data-action="open-case"], button');
+        const startBtn = host.querySelector<HTMLButtonElement>('[data-action="start"], [data-action="open-case"]');
         expect(startBtn).not.toBeNull();
       }, WAIT_OPTS);
 
-      const startBtn = host.querySelector<HTMLButtonElement>('[data-action="start"], [data-action="open-case"], button')!;
+      const startBtn = host.querySelector<HTMLButtonElement>('[data-action="start"], [data-action="open-case"]')!;
       startBtn.click();
 
       await vi.waitFor(() => {
@@ -487,7 +491,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       Object.defineProperty(fileInput, 'files', { value: [testFile] });
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      const uploadBtn = host.querySelector<HTMLButtonElement>('[data-action="upload"], button[type="submit"]');
+      const uploadBtn = host.querySelector<HTMLButtonElement>('[data-action="upload"]');
       uploadBtn?.click();
 
       await vi.waitFor(() => {
@@ -550,16 +554,17 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       Object.defineProperty(fileInput, 'files', { value: [testFile] });
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      const uploadBtn = host.querySelector<HTMLButtonElement>('[data-action="upload"], button[type="submit"]');
+      const uploadBtn = host.querySelector<HTMLButtonElement>('[data-action="upload"]');
       uploadBtn?.click();
 
       await vi.waitFor(() => {
         expect(recordedKeys.length).toBeGreaterThanOrEqual(1);
       }, WAIT_OPTS);
 
-      // Trigger retry
-      const retryBtn = host.querySelector<HTMLButtonElement>('[data-action="retry"], [data-action="upload"], button');
-      retryBtn?.click();
+      // Trigger retry via pinned [data-action="retry"]
+      const retryBtn = host.querySelector<HTMLButtonElement>('[data-action="retry"]');
+      expect(retryBtn, 'retry button must be rendered on upload error').not.toBeNull();
+      retryBtn!.click();
 
       await vi.waitFor(() => {
         expect(recordedKeys.length).toBeGreaterThanOrEqual(2);
@@ -645,11 +650,11 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       dispose = mount(host);
 
       await vi.waitFor(() => {
-        const submitBtn = host.querySelector<HTMLButtonElement>('[data-action="submit"], button[type="submit"]');
+        const submitBtn = host.querySelector<HTMLButtonElement>('[data-action="submit"]');
         expect(submitBtn).not.toBeNull();
       }, WAIT_OPTS);
 
-      const submitBtn = host.querySelector<HTMLButtonElement>('[data-action="submit"], button[type="submit"]')!;
+      const submitBtn = host.querySelector<HTMLButtonElement>('[data-action="submit"]')!;
       submitBtn.click();
 
       await vi.waitFor(() => {
@@ -719,7 +724,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
         version: 3,
       };
 
-      setupMockFetch({
+      const { calls } = setupMockFetch({
         viewData: { case: reviewCase, documents: [], readiness: 'PENDING' },
       });
 
@@ -743,6 +748,10 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
         expect(text).not.toContain('approve');
         expect(text).not.toContain('reject');
       }
+
+      // Assert that no request was made to reviewer/operations routes (pinning "no route" half of §18)
+      const reviewerCalls = calls.filter((c) => c.url.includes('/api/operations/verification/'));
+      expect(reviewerCalls, 'customer screen must never call /api/operations/verification/ routes').toHaveLength(0);
     });
   });
 
@@ -808,8 +817,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
         submittedAt: '2026-10-12T10:00:00Z',
         decidedAt: '2026-10-12T12:00:00Z',
         expiresAt: null,
-        decisionReasonCode: 'DOCUMENT_UNREADABLE',
-        decisionReasonText: 'Blurry photo taken at night',
+        decisionReasonCode: 'Blurry photo taken at night',
         version: 3,
       };
 
@@ -833,12 +841,12 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       await vi.waitFor(() => {
         const text = host.textContent ?? '';
         // S-5 is open: show server's reason text as given
-        expect(text.includes('Blurry photo taken at night') || text.includes('DOCUMENT_UNREADABLE')).toBe(true);
+        expect(text).toContain('Blurry photo taken at night');
       }, WAIT_OPTS);
 
       // Resubmit on the SAME case id (line 216)
       const resubmitBtn = host.querySelector<HTMLButtonElement>(
-        '[data-action="resubmit"], [data-action="submit"], button[type="submit"]',
+        '[data-action="resubmit"], [data-action="submit"]',
       );
       expect(resubmitBtn).not.toBeNull();
       resubmitBtn!.click();
@@ -859,8 +867,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
         submittedAt: '2026-10-11T10:00:00Z',
         decidedAt: '2026-10-11T14:00:00Z',
         expiresAt: null,
-        decisionReasonCode: 'CUSTOM_REASON_REJECTED',
-        decisionReasonText: 'Passport signature missing on page 2',
+        decisionReasonCode: 'Passport signature missing on page 2',
         version: 3,
       };
 
@@ -873,12 +880,12 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       await vi.waitFor(() => {
         const text = host.textContent ?? '';
         // Show server's reason text as given (S-5 open, do NOT pin reason code list)
-        expect(text.includes('Passport signature missing on page 2') || text.includes('CUSTOM_REASON_REJECTED')).toBe(true);
+        expect(text).toContain('Passport signature missing on page 2');
       }, WAIT_OPTS);
 
-      // Offers update-and-resubmit (§18 / V2)
+      // Offers update-and-resubmit (§18 / V2) via pinned data-action
       const resubmitBtn = host.querySelector<HTMLButtonElement>(
-        '[data-action="update-and-resubmit"], [data-action="start"], button',
+        '[data-action="update-and-resubmit"]',
       );
       expect(resubmitBtn, 'update-and-resubmit button must be rendered in REJECTED state').not.toBeNull();
       resubmitBtn!.click();
@@ -898,8 +905,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
         submittedAt: '2025-10-10T10:00:00Z',
         decidedAt: '2025-10-10T11:00:00Z',
         expiresAt: '2026-10-10T23:59:59Z',
-        decisionReasonCode: 'EXPIRED_ON_DOC_DATE',
-        decisionReasonText: 'Identification document expired on 2026-10-10',
+        decisionReasonCode: 'Identification document expired on 2026-10-10',
         version: 5,
       };
 
@@ -912,12 +918,12 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       await vi.waitFor(() => {
         const text = host.textContent ?? '';
         // Show server's reason text as given (S-5 open)
-        expect(text.includes('Identification document expired on 2026-10-10') || text.includes('EXPIRED_ON_DOC_DATE') || text.includes('2026-10-10')).toBe(true);
+        expect(text.includes('Identification document expired on 2026-10-10') || text.includes('2026-10-10')).toBe(true);
       }, WAIT_OPTS);
 
-      // Offers update-and-resubmit (§18 / V2)
+      // Offers update-and-resubmit (§18 / V2) via pinned data-action
       const resubmitBtn = host.querySelector<HTMLButtonElement>(
-        '[data-action="update-and-resubmit"], [data-action="start"], button',
+        '[data-action="update-and-resubmit"]',
       );
       expect(resubmitBtn, 'update-and-resubmit button must be rendered in EXPIRED state').not.toBeNull();
       resubmitBtn!.click();
@@ -931,13 +937,13 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
   });
 
   // ===============================================================================================
-  // Group 7: Refusal handling: 400 RoleNotAllowed and 403 OutOfScope shown as worded messages, never raw codes
+  // Group 7: Refusal handling: 400 roleNotAllowed and 403 outOfScope shown as worded messages, never raw codes
   // ===============================================================================================
   describe('Group 7: Refusal handling as worded messages, never raw codes', () => {
-    it('handles 400 RoleNotAllowed by displaying a worded message, NEVER the raw code RoleNotAllowed', async () => {
+    it('handles 400 roleNotAllowed by displaying a worded message, NEVER the raw code roleNotAllowed', async () => {
       setupMockFetch({
         viewStatus: 400,
-        viewErrorCode: 'RoleNotAllowed',
+        viewErrorCode: 'roleNotAllowed',
         viewErrorMessage: 'Caller does not possess customer role',
       });
 
@@ -945,21 +951,22 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
 
       await vi.waitFor(() => {
         const text = host.textContent ?? '';
+        const lower = text.toLowerCase();
         const hasWordedMessage =
           text.includes('ไม่มีสิทธิ์') ||
-          text.includes('not permitted') ||
-          text.includes('Caller does not possess customer role') ||
+          lower.includes('not permitted') ||
+          lower.includes('caller does not possess') ||
           text.includes('กรุณาเข้าสู่ระบบ');
         expect(hasWordedMessage, 'must display a worded refusal message').toBe(true);
-        // Raw code must never be shown to the user
-        expect(text).not.toContain('RoleNotAllowed');
+        // Raw code must never be shown to the user (checked case-insensitively)
+        expect(lower, 'raw error code roleNotAllowed must not be displayed').not.toContain('rolenotallowed');
       }, WAIT_OPTS);
     });
 
-    it('handles 403 OutOfScope by displaying a worded message, NEVER the raw code OutOfScope / outOfScope', async () => {
+    it('handles 403 outOfScope by displaying a worded message, NEVER the raw code outOfScope', async () => {
       setupMockFetch({
         viewStatus: 403,
-        viewErrorCode: 'OutOfScope',
+        viewErrorCode: 'outOfScope',
         viewErrorMessage: 'Access out of scope for current user',
       });
 
@@ -967,35 +974,14 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
 
       await vi.waitFor(() => {
         const text = host.textContent ?? '';
+        const lower = text.toLowerCase();
         const hasWordedMessage =
           text.includes('ไม่มีสิทธิ์') ||
-          text.includes('Access') ||
-          text.includes('denied') ||
-          text.includes('out of scope');
+          lower.includes('access denied') ||
+          lower.includes('out of scope');
         expect(hasWordedMessage, 'must display a worded refusal message').toBe(true);
-        // Raw codes must never be shown to the user
-        expect(text).not.toContain('OutOfScope');
-        expect(text).not.toContain('outOfScope');
-      }, WAIT_OPTS);
-    });
-
-    it('handles outOfScope (lowercase) refusal similarly as a worded message', async () => {
-      setupMockFetch({
-        viewStatus: 403,
-        viewErrorCode: 'outOfScope',
-        viewErrorMessage: 'Verification case does not belong to caller',
-      });
-
-      dispose = mount(host);
-
-      await vi.waitFor(() => {
-        const text = host.textContent ?? '';
-        const hasWordedMessage =
-          text.includes('ไม่มีสิทธิ์') ||
-          text.includes('does not belong') ||
-          text.includes('denied');
-        expect(hasWordedMessage, 'must display a worded refusal message').toBe(true);
-        expect(text).not.toContain('outOfScope');
+        // Raw codes must never be shown to the user (checked case-insensitively)
+        expect(lower, 'raw error code outOfScope must not be displayed').not.toContain('outofscope');
       }, WAIT_OPTS);
     });
   });
