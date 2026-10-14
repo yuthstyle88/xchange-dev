@@ -11,12 +11,15 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use xchange::bootstrap::{AppState, BuildInfo, DatabaseProbe};
 use xchange::config::Settings;
+
+static TEST_DOCS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The committed `api/configuration` directory.
 pub fn config_dir() -> PathBuf {
@@ -32,8 +35,26 @@ pub fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 /// Settings from the committed YAML plus exactly the given environment.
+///
+/// Gives every test settings a fresh temporary `verification.store_dir` outside
+/// the repo (issue #1729) unless `APP_VERIFICATION__STORE_DIR` is explicitly
+/// provided in `pairs`.
 pub fn settings(pairs: &[(&str, &str)]) -> Settings {
-    Settings::load_from(&config_dir(), env(pairs))
+    let mut env_pairs = env(pairs);
+    if !env_pairs
+        .iter()
+        .any(|(k, _)| k == "APP_VERIFICATION__STORE_DIR")
+    {
+        let n = TEST_DOCS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let temp_dir =
+            std::env::temp_dir().join(format!("xc-test-docs-{}-{}", std::process::id(), n));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        env_pairs.push((
+            "APP_VERIFICATION__STORE_DIR".to_string(),
+            temp_dir.to_string_lossy().into_owned(),
+        ));
+    }
+    Settings::load_from(&config_dir(), env_pairs)
         .expect("the committed configuration must load with this environment")
 }
 
@@ -105,4 +126,35 @@ pub fn install_test_pii_keys() {
         xc_kernel::pii::PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
             .expect("the test PII key parses");
     xc_customer::install_pii_keys(std::sync::Arc::new(keys)).expect("one test PII key per process");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_verification_store_dir_is_absolute_and_outside_repo() {
+        let s = settings(&[]);
+        assert!(
+            s.verification.store_dir.is_absolute(),
+            "store_dir must be absolute, got {:?}",
+            s.verification.store_dir
+        );
+
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().unwrap_or(&manifest_dir);
+        assert!(
+            !s.verification.store_dir.starts_with(repo_root),
+            "store_dir must be outside repo root {:?}, got {:?}",
+            repo_root,
+            s.verification.store_dir
+        );
+    }
+
+    #[test]
+    fn settings_respects_explicit_verification_store_dir_override() {
+        let custom = std::env::temp_dir().join("custom-verification-store-dir");
+        let s = settings(&[("APP_VERIFICATION__STORE_DIR", &custom.to_string_lossy())]);
+        assert_eq!(s.verification.store_dir, custom);
+    }
 }
