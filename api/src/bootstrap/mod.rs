@@ -68,6 +68,7 @@ impl DatabaseProbe for PgPool {
 }
 
 use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+use xc_loyalty::domain::summary_source::{LoyaltySummarySource, UnavailableLoyaltySummary};
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
@@ -124,6 +125,7 @@ pub struct AppState {
     pub shift_balances: Arc<dyn ShiftBalances>,
     pub document_store: Arc<dyn DocumentStore>,
     pub documents: Arc<dyn DocumentStore>,
+    pub loyalty_summary: Arc<dyn LoyaltySummarySource>,
 }
 
 struct LazyDocumentStore {
@@ -202,6 +204,7 @@ impl AppState {
             shift_balances,
             document_store: documents.clone(),
             documents,
+            loyalty_summary: Arc::new(UnavailableLoyaltySummary),
         }
     }
 
@@ -234,6 +237,11 @@ impl AppState {
     pub fn with_document_store(mut self, document_store: Arc<dyn DocumentStore>) -> Self {
         self.documents = document_store.clone();
         self.document_store = document_store;
+        self
+    }
+
+    pub fn with_loyalty_summary(mut self, source: Arc<dyn LoyaltySummarySource>) -> Self {
+        self.loyalty_summary = source;
         self
     }
 }

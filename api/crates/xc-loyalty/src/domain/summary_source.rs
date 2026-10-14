@@ -1,10 +1,9 @@
-//! `LoyaltySummarySource` (design §6, §4.5): live member summary from Loyalty.
+//! `LoyaltySummarySource` (design §4.5, §6, #1408 ruling Q1).
 
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextExpiry {
@@ -36,6 +35,16 @@ pub struct LoyaltyMemberSummary {
 }
 
 pub trait LoyaltySummarySource: Send + Sync {
-    /// Fetch member summary by customer reference.
-    fn summary(&self, customer_ref: Uuid) -> BoxFuture<'_, AppResult<LoyaltyMemberSummary>>;
+    /// Live member summary for the given E.164 phone.
+    fn summary<'a>(&'a self, phone: &'a str) -> BoxFuture<'a, AppResult<LoyaltyMemberSummary>>;
+}
+
+/// Default implementation answering "unavailable" (design D-9, #1408 ruling Q3).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnavailableLoyaltySummary;
+
+impl LoyaltySummarySource for UnavailableLoyaltySummary {
+    fn summary<'a>(&'a self, _phone: &'a str) -> BoxFuture<'a, AppResult<LoyaltyMemberSummary>> {
+        Box::pin(async move { Err(AppError::Internal("loyalty summary unavailable".to_owned())) })
+    }
 }
