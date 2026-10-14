@@ -20,7 +20,8 @@ import type { CashTransferRow } from '../../../shared/api/generated/cash_transfe
 import type { Me } from '../../../shared/api/generated/common';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
@@ -71,6 +72,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   const [permissions, setPermissions] = createSignal<readonly string[] | null>(null);
   const can = (permission: string) => (permissions() ?? []).includes(permission);
+  const [meError, setMeError] = createSignal<string | null>(null);
 
   const [counts, setCounts] = createSignal<CashCountRow[]>([]);
   const [transfers, setTransfers] = createSignal<CashTransferRow[]>([]);
@@ -85,8 +87,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   async function readMe() {
     try {
       const res = await api.view<Me>('me');
+      setMeError(null);
       setPermissions(res.data?.permissions ?? []);
-    } catch {
+    } catch (err: unknown) {
+      const text = message(err);
+      setRefusal(text);
+      setMeError(text);
       setPermissions([]);
     }
   }
@@ -129,15 +135,16 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     if (!props.shown()) return;
     const branch = props.branch();
     const held = permissions();
+    const err = meError();
     untrack(() => {
-      if (held === null) {
+      if (held === null && err === null) {
         void readMe();
         return;
       }
       if (branch === lastBranch) return;
       lastBranch = branch;
-      if (can(VERIFY)) void readCounts();
-      if (can(MANAGE)) {
+      if (can(VERIFY) || err !== null) void readCounts();
+      if (can(MANAGE) || err !== null) {
         void readTransfers();
         void readForm();
       }
@@ -149,7 +156,10 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const keys = new Map<string, { key: string; body: string }>();
 
   function message(err: unknown): string {
-    return err instanceof ApiError ? errorText(err.code, err.message) : err instanceof Error ? err.message : String(err);
+    if (err instanceof ApiError && err.code in table.th) {
+      return t(err.code as keyof typeof table.th);
+    }
+    return wordedError(err);
   }
 
   async function send<B, R>(action: string, path: string, body: B, done: (answer: R) => void): Promise<void> {
@@ -352,7 +362,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
         </div>
       </Show>
 
-      <Show when={can(VERIFY)}>
+      <Show when={can(VERIFY) || Boolean(meError())}>
         <div data-section="counts-waiting">
           <Card>
             <CardHead title={t('countsWaitingTitle')} />
@@ -400,7 +410,8 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                                     class="primary"
                                     data-action="verify"
                                     data-id={row.id}
-                                    disabled={busy()}
+                                    disabled={busy() || Boolean(meError())}
+                                    title={meError() ?? undefined}
                                     onClick={() => verify(row)}
                                   >
                                     {t('btnVerify')}
@@ -420,7 +431,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
         </div>
       </Show>
 
-      <Show when={can(MANAGE)}>
+      <Show when={can(MANAGE) || Boolean(meError())}>
         <div data-section="transfers">
           <Card>
             <CardHead title={t('transfersTitle')} />
@@ -470,22 +481,22 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           <td>{row.note ?? ''}</td>
                           <td>
                             <Show when={row.status === 'DRAFT'}>
-                              <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy()} onClick={() => step(row, 'submit')}>
+                              <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => step(row, 'submit')}>
                                 {t('btnSubmit')}
                               </button>
                             </Show>
                             <Show when={row.status === 'APPROVED'}>
-                              <button type="button" class="secondary" data-action="dispatch" data-id={row.id} disabled={busy()} onClick={() => step(row, 'dispatch')}>
+                              <button type="button" class="secondary" data-action="dispatch" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => step(row, 'dispatch')}>
                                 {t('btnDispatch')}
                               </button>
                             </Show>
                             <Show when={row.status === 'DISPATCHED'}>
-                              <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy()} onClick={() => receive(row)}>
+                              <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => receive(row)}>
                                 {t('btnReceive')}
                               </button>
                             </Show>
-                            <Show when={row.status === 'RECEIVED' && can(RECONCILE)}>
-                              <button type="button" class="secondary" data-action="reconcile" data-id={row.id} disabled={busy()} onClick={() => reconcile(row)}>
+                            <Show when={row.status === 'RECEIVED' && (can(RECONCILE) || Boolean(meError()))}>
+                              <button type="button" class="secondary" data-action="reconcile" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => reconcile(row)}>
                                 {t('btnReconcile')}
                               </button>
                             </Show>
@@ -594,7 +605,13 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                 </div>
 
                 <div class="cash-actions">
-                  <button type="submit" class="primary" data-action="create" disabled={busy() || kind() === ''}>
+                  <button
+                    type="submit"
+                    class="primary"
+                    data-action="create"
+                    disabled={busy() || kind() === '' || Boolean(meError())}
+                    title={meError() ?? undefined}
+                  >
                     {t('btnCreateTransfer')}
                   </button>
                 </div>
