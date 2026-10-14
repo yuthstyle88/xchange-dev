@@ -8,7 +8,7 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
-import { errorText, screenT } from '../../../shared/i18n';
+import { errorText, screenT, t as sharedT } from '../../../shared/i18n';
 import { PasswordField } from '../../../shared/ui/PasswordField';
 import { useForm } from '../../../shared/ui/form';
 import type { AdminMenuProps } from '../menus';
@@ -26,6 +26,26 @@ export const AVAILABLE_ROLES = [
   'ADMIN',
   'EXECUTIVE',
 ] as const;
+
+function toErrorText(err: unknown): string {
+  const fallback = sharedT('error.serverError');
+  if (err instanceof ApiError) {
+    if (err.code && err.code !== 'httpError') {
+      const text = errorText(err.code, fallback);
+      if (text && text !== err.code) return text;
+    }
+    return fallback;
+  }
+  if (err && typeof err === 'object' && 'code' in err) {
+    const c = String((err as { code: unknown }).code);
+    if (c && c !== 'httpError') {
+      const text = errorText(c, fallback);
+      if (text && text !== c) return text;
+    }
+    return fallback;
+  }
+  return fallback;
+}
 
 export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -74,8 +94,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       if (res.data?.branches) {
         setBranches(res.data.branches);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setPageError(toErrorText(err));
     }
   };
 
@@ -90,11 +110,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         setUsers(res.data);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setPageError(errorText(err.code, err.message));
-      } else {
-        setPageError(String(err));
-      }
+      setPageError(toErrorText(err));
       setUsers([]);
     } finally {
       setLoading(false);
