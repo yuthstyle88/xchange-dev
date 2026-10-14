@@ -28,14 +28,30 @@ function when(iso: string): string {
 }
 
 function refusalText(err: unknown): string {
+  const fallback = t('connectionError');
   if (err instanceof ApiError) {
     const own = OWN_TEXT[err.code];
     if (own) return t(own);
     // a validation refusal (e.g. too many decimals) carries the server's own sentence
     if (err.code === 'validationFailed') return err.message;
-    return errorText(err.code, err.message);
+    if (err.code && err.code !== 'httpError') {
+      const text = errorText(err.code, fallback);
+      if (text && text !== err.code) return text;
+    }
+    return fallback;
   }
-  return err instanceof Error ? err.message : String(err);
+  if (err && typeof err === 'object' && 'code' in err) {
+    const code = String((err as { code: unknown }).code);
+    const own = OWN_TEXT[code];
+    if (own) return t(own);
+    if (code === 'validationFailed' && 'message' in err) return String((err as { message: unknown }).message);
+    if (code && code !== 'httpError') {
+      const text = errorText(code, fallback);
+      if (text && text !== code) return text;
+    }
+    return fallback;
+  }
+  return fallback;
 }
 
 export function CashPolicy(props: AdminMenuProps): JSX.Element {
@@ -69,8 +85,8 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     try {
       const answer = await api.view<AdminCashData>('admin_cash', { branch });
       if (answer.data) setRegister(answer.data.currencies);
-    } catch {
-      setRegister([]);
+    } catch (err: unknown) {
+      setRefusal(refusalText(err));
     }
   }
 
