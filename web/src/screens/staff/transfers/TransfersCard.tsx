@@ -70,18 +70,23 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const hasOpenShift = () => Boolean(props.ctx.floor?.myShift?.id);
 
   const toErrorText = (err: unknown): string => {
+    const fallback = t('connectionError');
     if (err instanceof ApiError) {
-      return errorText(err.code, err.message);
+      if (err.code && err.code !== 'httpError') {
+        const text = errorText(err.code, fallback);
+        if (text && text !== err.code) return text;
+      }
+      return fallback;
     }
-    if (err && typeof err === 'object' && 'code' in err && 'message' in err) {
+    if (err && typeof err === 'object' && 'code' in err) {
       const c = String((err as { code: unknown }).code);
-      const m = String((err as { message: unknown }).message);
-      return errorText(c, m);
+      if (c && c !== 'httpError') {
+        const text = errorText(c, fallback);
+        if (text && text !== c) return text;
+      }
+      return fallback;
     }
-    if (err instanceof TypeError || err instanceof Error) {
-      return t('connectionError');
-    }
-    return t('connectionError');
+    return fallback;
   };
 
   const loadTransfers = async () => {
@@ -94,7 +99,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         setTransfers(res.data);
       }
     } catch (e: unknown) {
-      // Keep existing list on error
+      setError(toErrorText(e));
     }
   };
 
@@ -106,7 +111,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         setDenominations(res.data.rows);
       }
     } catch (e: unknown) {
-      // Ignore error
+      setError(toErrorText(e));
     }
   };
 
@@ -121,7 +126,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         setTransferBranches(filtered);
       }
     } catch (e: unknown) {
-      // Ignore error
+      setError(toErrorText(e));
     }
   };
 
