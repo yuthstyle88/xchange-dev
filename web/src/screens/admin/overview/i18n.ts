@@ -58,6 +58,7 @@ export const th = {
   // CSV export
   exportCsv: 'ส่งออกรายการ CSV',
   noTransactionsToExport: 'ไม่มีรายการให้ส่งออก',
+  outOfScope: 'สาขานี้อยู่นอกขอบเขตของบัญชีนี้',
 
   // Dialog
   dialogTitle: 'รายละเอียดรายการ',
@@ -108,5 +109,6 @@ export const en: Record<keyof typeof th, string> = {
   openedByLabel: 'Opened by {staff}',
   exportCsv: 'Export CSV',
   noTransactionsToExport: 'No transactions to export',
+  outOfScope: "This branch is outside this account's scope",
   dialogTitle: 'Transaction details',
 };
