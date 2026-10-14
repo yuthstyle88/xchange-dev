@@ -12,6 +12,7 @@ export const th = {
   name: 'ชื่อสาขา',
   address: 'ที่อยู่',
   timezone: 'เขตเวลา',
+  timezoneRequired: 'กรุณากรอกเขตเวลา',
   bookingEnabled: 'เปิดรับการจอง',
   openingHours: 'เวลาเปิดทำการรายสัปดาห์',
 
@@ -32,6 +33,7 @@ export const th = {
   saved: 'บันทึกข้อมูลสาขาเรียบร้อยแล้ว',
   refresh: 'รีเฟรช',
   errorTitle: 'เกิดข้อผิดพลาด',
+  codeConflict: 'รหัสสาขาซ้ำกับสาขาอื่น',
 };
 
 export const en = {
@@ -48,6 +50,7 @@ export const en = {
   name: 'Branch Name',
   address: 'Address',
   timezone: 'Timezone',
+  timezoneRequired: 'Timezone is required',
   bookingEnabled: 'Enable booking',
   openingHours: 'Weekly Operating Hours',
 
@@ -68,4 +71,5 @@ export const en = {
   saved: 'Branch profile saved successfully',
   refresh: 'Refresh',
   errorTitle: 'Error',
+  codeConflict: 'Branch code is already used by another branch',
 };

@@ -8,7 +8,7 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminBranchProfileData } from '../../../shared/api/generated/admin_branches_profile';
-import { errorText, screenT } from '../../../shared/i18n';
+import { errorText, screenT, t as sharedT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './branches.css';
@@ -34,6 +34,32 @@ interface DayHoursState {
   close: string;
 }
 
+function toErrorText(err: unknown): string {
+  const fallback = sharedT('error.serverError');
+  if (err instanceof ApiError) {
+    if (err.code && err.code !== 'httpError') {
+      if (err.code === 'conflict') {
+        return t('codeConflict');
+      }
+      const text = errorText(err.code, fallback);
+      if (text && text !== err.code) return text;
+    }
+    return fallback;
+  }
+  if (err && typeof err === 'object' && 'code' in err) {
+    const c = String((err as { code: unknown }).code);
+    if (c && c !== 'httpError') {
+      if (c === 'conflict') {
+        return t('codeConflict');
+      }
+      const text = errorText(c, fallback);
+      if (text && text !== c) return text;
+    }
+    return fallback;
+  }
+  return fallback;
+}
+
 export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
 
@@ -48,7 +74,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   // Form fields
   const [code, setCode] = createSignal<string>('');
   const [address, setAddress] = createSignal<string>('');
-  const [timezone, setTimezone] = createSignal<string>('Asia/Bangkok');
+  const [timezone, setTimezone] = createSignal<string>('');
   const [bookingEnabled, setBookingEnabled] = createSignal<boolean>(false);
 
   // Hours state for each day
@@ -74,8 +100,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
           setSelectedBranch(match ? match.id : res.data.branches[0]!.id);
         }
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setError(toErrorText(err));
     }
   };
 
@@ -92,7 +118,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         setProfile(res.data);
         setCode(res.data.code ?? '');
         setAddress(res.data.address ?? '');
-        setTimezone(res.data.timezone ?? 'Asia/Bangkok');
+        setTimezone(res.data.timezone ?? '');
         setBookingEnabled(res.data.bookingEnabled);
 
         const newHours: Record<DayKey, DayHoursState> = { ...hours() };
@@ -115,11 +141,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         setHours(newHours);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        setError(String(err));
-      }
+      setError(toErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -162,6 +184,12 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     const branchId = selectedBranch();
     if (!branchId) return;
 
+    const tz = timezone().trim();
+    if (!tz) {
+      setError(t('timezoneRequired'));
+      return;
+    }
+
     setError(null);
     setSuccess(null);
     setSaving(true);
@@ -178,7 +206,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       branch: branchId,
       code: code().trim(),
       address: address().trim() || null,
-      timezone: timezone().trim() || 'Asia/Bangkok',
+      timezone: tz,
       openingHours,
       bookingEnabled: bookingEnabled(),
     };
@@ -193,11 +221,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       setProfile(res);
       setSuccess(t('saved'));
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(errorText(err.code, err.message));
-      } else {
-        setError(String(err));
-      }
+      setError(toErrorText(err));
     } finally {
       setSaving(false);
     }
