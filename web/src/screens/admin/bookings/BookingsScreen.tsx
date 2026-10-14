@@ -8,8 +8,9 @@ import {
   type JSX,
 } from 'solid-js';
 import type { AdminMenuProps } from '../menus';
-import { screenT, locale, errorText } from '../../../shared/i18n';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { screenT, locale } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   AdminBookingRow,
   AdminBookingSettingsData,
@@ -74,14 +75,6 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   let currentBranch: string | undefined;
   let currentQ: string = '';
 
-  function toWordedError(err: unknown): string {
-    const fallback = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      return errorText(err.code, fallback);
-    }
-    return fallback;
-  }
-
   async function fetchBookings(b: string, since?: number, q?: string) {
     if (rows().length === 0 && since === undefined) {
       setLoading(true);
@@ -100,7 +93,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         setHasMore(ans.data.length >= 50);
       }
     } catch (err) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
     } finally {
       setLoading(false);
     }
@@ -117,7 +110,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         setSettings(ans.data);
       }
     } catch (err) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
     }
   }
 
@@ -143,9 +136,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       }
       setRows([...currentRows, ...nextRows]);
     } catch (err) {
-      if (err instanceof ApiError) {
-        toast(errorText(err.code, err.message));
-      }
+      toast(wordedError(err));
     }
   }
 
@@ -203,11 +194,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await fetchBookings(props.branch(), bookingsVersion, currentQ || undefined);
       } catch (err) {
-        if (err instanceof ApiError) {
-          setDialogError(errorText(err.code, err.message));
-        } else {
-          setDialogError(String(err));
-        }
+        setDialogError(wordedError(err));
       }
     };
 
@@ -261,11 +248,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         await fetchBookings(props.branch(), bookingsVersion, currentQ || undefined);
       } catch (err) {
         closeDialog();
-        if (err instanceof ApiError) {
-          toast(errorText(err.code, err.message));
-        } else {
-          toast(String(err));
-        }
+        toast(wordedError(err));
       }
     };
 
@@ -297,7 +280,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         if (found) bName = found.name;
       }
     } catch (err) {
-      setError(toWordedError(err));
+      setError(wordedError(err));
       return;
     }
 
@@ -319,11 +302,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await fetchSettings(props.branch(), settingsVersion);
       } catch (err) {
-        if (err instanceof ApiError) {
-          setDialogError(errorText(err.code, err.message));
-        } else {
-          setDialogError(String(err));
-        }
+        setDialogError(wordedError(err));
       }
     };
 
@@ -431,11 +410,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         closeDialog();
         await fetchBookings(props.branch(), bookingsVersion, currentQ || undefined);
       } catch (err) {
-        if (err instanceof ApiError) {
-          setDialogError(errorText(err.code, err.message));
-        } else {
-          setDialogError(String(err));
-        }
+        setDialogError(wordedError(err));
       }
     };
 
