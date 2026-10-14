@@ -76,7 +76,7 @@ jobs:
     name: app
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.skip_build != 'true' }}
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, macOS, ARM64, mac-studio]
     timeout-minutes: 20
     steps:
       - name: Refuse to report green when the run was cancelled
