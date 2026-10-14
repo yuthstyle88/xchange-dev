@@ -32,7 +32,7 @@ fn unique(prefix: &str) -> String {
         .expect("after 1970")
         .as_nanos();
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{nanos}_{n}")
+    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
 }
 
 fn d(s: &str) -> Decimal {
