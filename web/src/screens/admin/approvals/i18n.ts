@@ -13,6 +13,7 @@ export const th = {
   empty: 'ไม่มีคำขอที่รออนุมัติ',
   ratePublication: 'เผยแพร่เรท',
   pending: 'รออนุมัติ',
+  connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
 };
 
 export const en = {
@@ -30,4 +31,5 @@ export const en = {
   empty: 'No pending approval requests',
   ratePublication: 'Rate Publication',
   pending: 'Pending',
+  connectionError: 'Connection error',
 };
