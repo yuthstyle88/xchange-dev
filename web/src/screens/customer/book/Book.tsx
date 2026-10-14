@@ -1,0 +1,646 @@
+// APP-16 customer book screen (design customer-app.md §4.5, §9.1 C02, #985).
+import {
+  createSignal,
+  onMount,
+  For,
+  Show,
+  type JSX,
+} from 'solid-js';
+import { fill, screenT } from '../../../shared/i18n';
+import { MoneyText } from '../../../shared/ui/MoneyText';
+import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
+import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
+import { th, en, zh } from './i18n';
+import './book.css';
+
+export const BOOKING_SLOTS_VIEW_ROUTE = '/api/v3/views/booking_slots';
+export const BOOKING_CREATE_COMMAND_ROUTE = '/api/bookings';
+
+export interface BookScreenProps {
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  [key: string]: unknown;
+}
+
+export interface PublicBranch {
+  code: string;
+  name: string;
+  timezone: string;
+  bookingEnabled?: boolean;
+  [key: string]: unknown;
+}
+
+export type BookingSlot = BookingSlotItemDto;
+
+export interface PlannerPreviewResult {
+  thb: string;
+  rate?: string;
+  unitSize?: string;
+  stale?: boolean;
+  sourceDate?: string;
+  [key: string]: unknown;
+}
+
+export type BookingCreateResult = Partial<BookingCreateOutput> & {
+  id: string;
+  status: string;
+  [key: string]: unknown;
+};
+
+function makeIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `book-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function getTodayInTimezone(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+export function formatSlotTime(start: string, end: string, timeZone: string): string {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const startTime = fmt.format(new Date(start));
+  const endTime = end ? fmt.format(new Date(end)) : '';
+  return endTime ? `${startTime} – ${endTime}` : startTime;
+}
+
+export function BookScreen(props: BookScreenProps): JSX.Element {
+  const t = screenT('customer.book', { th, en, zh });
+  const fetchFn = props.fetch ?? ((url, init) => window.fetch(url, init));
+
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const initialRef = searchParams.get('ref') ?? '';
+  const initialBranch = searchParams.get('branch') ?? (typeof props.branchId === 'string' ? props.branchId : '');
+
+  const [branchId, setBranchId] = createSignal(initialBranch);
+  const [slotId, setSlotId] = createSignal('');
+  const [serviceDate, setServiceDate] = createSignal('');
+  const [minDate, setMinDate] = createSignal('');
+  const [currency, setCurrency] = createSignal('USD');
+  const [shopSide, setShopSide] = createSignal<'BUY' | 'SELL'>('BUY');
+  const [quantity, setQuantity] = createSignal('');
+  const [referralCode, setReferralCode] = createSignal(initialRef);
+
+  const [branches, setBranches] = createSignal<PublicBranch[]>([]);
+  const [branchesLoading, setBranchesLoading] = createSignal(true);
+  const [branchesError, setBranchesError] = createSignal<string | null>(null);
+
+  const [slots, setSlots] = createSignal<BookingSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = createSignal(false);
+  const [slotsError, setSlotsError] = createSignal<string | null>(null);
+
+  const [preview, setPreview] = createSignal<PlannerPreviewResult | null>(null);
+
+  const [submitting, setSubmitting] = createSignal(false);
+  const [referralError, setReferralError] = createSignal<string | null>(null);
+  const [globalError, setGlobalError] = createSignal<string | null>(null);
+  const [successData, setSuccessData] = createSignal<BookingCreateResult | null>(null);
+
+  const [idempotencyKey, setIdempotencyKey] = createSignal(makeIdempotencyKey());
+
+  const loadBranches = async () => {
+    setBranchesLoading(true);
+    setBranchesError(null);
+    try {
+      let list: PublicBranch[] = [];
+      let org: string | undefined = typeof props.org === 'string' ? props.org : undefined;
+      if (!org) {
+        const hostRes = await fetchFn('/api/public/host');
+        if (hostRes.status !== 200) {
+          setBranches([]);
+          setBranchesLoading(false);
+          setBranchesError(t('error.loadFailed'));
+          return;
+        }
+        const hostJson = await hostRes.json().catch(() => null);
+        if (hostJson && typeof hostJson.org === 'string' && hostJson.org.length > 0) {
+          org = hostJson.org;
+        } else {
+          setBranches([]);
+          setBranchesLoading(false);
+          setBranchesError(t('error.loadFailed'));
+          return;
+        }
+      }
+
+      if (org) {
+        const branchRes = await fetchFn(`/api/public/orgs/${encodeURIComponent(org)}/branches`);
+        if (branchRes.status !== 200) {
+          setBranches([]);
+          setBranchesLoading(false);
+          setBranchesError(t('error.loadFailed'));
+          return;
+        }
+        const branchJson = await branchRes.json().catch(() => ({}));
+        list = (branchJson.branches ?? []).filter(
+          (b: PublicBranch) => b.bookingEnabled !== false,
+        );
+        for (const b of list) {
+          if (!b.timezone) {
+            throw new Error('missing branch timezone');
+          }
+          getTodayInTimezone(b.timezone);
+        }
+      }
+      setBranches(list);
+      setBranchesLoading(false);
+
+      const qBranch = new URLSearchParams(window.location.search).get('branch') ?? (typeof props.branchId === 'string' ? props.branchId : '');
+      const activeBranch = qBranch && list.some((b) => b.code === qBranch) ? qBranch : branchId();
+      if (activeBranch && list.some((b) => b.code === activeBranch)) {
+        setBranchId(activeBranch);
+        const br = list.find((b) => b.code === activeBranch);
+        if (!br?.timezone) {
+          throw new Error('missing branch timezone');
+        }
+        const today = getTodayInTimezone(br.timezone);
+        setMinDate(today);
+        const qDate = new URLSearchParams(window.location.search).get('date') ?? (typeof props.date === 'string' ? props.date : '');
+        const dateToUse = qDate && qDate >= today ? qDate : today;
+        setServiceDate(dateToUse);
+        void loadSlots(activeBranch, dateToUse);
+      } else {
+        setBranchId('');
+        setServiceDate('');
+        setMinDate('');
+        setSlots([]);
+        setSlotsLoading(false);
+      }
+    } catch {
+      setBranches([]);
+      setBranchesLoading(false);
+      setBranchesError(t('error.loadFailed'));
+    }
+  };
+
+  const loadSlots = async (overrideBranch?: string, overrideDate?: string) => {
+    const b = overrideBranch !== undefined ? overrideBranch : branchId();
+    const d = overrideDate !== undefined ? overrideDate : serviceDate();
+    if (!b || !d) {
+      setSlots([]);
+      setSlotsLoading(false);
+      return;
+    }
+    setSlotsLoading(true);
+    setSlotsError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set('branch', b);
+      params.set('date', d);
+      const url = `${BOOKING_SLOTS_VIEW_ROUTE}?${params.toString()}`;
+
+      const slotsRes = await fetchFn(url);
+      if (slotsRes.status !== 200) {
+        setSlots([]);
+        setSlotsLoading(false);
+        setSlotsError(t('error.loadFailed'));
+        return;
+      }
+      const slotsJson: { data?: BookingSlotsData } =
+        await slotsRes.json().catch(() => ({}));
+      const list: BookingSlot[] = slotsJson.data?.slots ?? [];
+      setSlots(list);
+      setSlotsLoading(false);
+    } catch {
+      setSlots([]);
+      setSlotsLoading(false);
+      setSlotsError(t('error.loadFailed'));
+    }
+  };
+
+  onMount(() => {
+    void loadBranches();
+  });
+
+  const updatePreview = async () => {
+    const b = branchId();
+    if (!b) {
+      setPreview(null);
+      return;
+    }
+    const c = currency();
+    const q = quantity();
+    const s = shopSide();
+
+    if (!q || isNaN(Number(q)) || Number(q) <= 0) {
+      setPreview(null);
+      return;
+    }
+
+    try {
+      const res = await fetchFn('/api/v3/compute/planner_preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branch: b,
+          currency: c,
+          customerSide: s === 'BUY' ? 'Buy' : 'Sell',
+          amount: { quantity: String(Number(q)) },
+        }),
+      });
+      if (res.status === 200) {
+        const data = await res.json().catch(() => null);
+        setPreview(data);
+      } else {
+        setPreview(null);
+      }
+    } catch {
+      setPreview(null);
+    }
+  };
+
+  const handleSubmit = async (e?: Event) => {
+    if (e) e.preventDefault();
+    setSubmitting(true);
+    setGlobalError(null);
+    setReferralError(null);
+
+    // Read current form values from signals or DOM
+    const currentBranch =
+      branchId() || (document.querySelector('select[name="branchId"]') as HTMLSelectElement)?.value || '';
+    const currentSlot =
+      slotId() || (document.querySelector('select[name="slotId"]') as HTMLSelectElement)?.value || '';
+    const currentSide =
+      shopSide() ||
+      ((document.querySelector('select[name="shopSide"]') as HTMLSelectElement)?.value as 'BUY' | 'SELL') ||
+      'BUY';
+    const currentCurrency =
+      currency() || (document.querySelector('select[name="currency"]') as HTMLSelectElement)?.value || 'USD';
+    const currentQtyStr =
+      quantity() || (document.querySelector('input[name="quantity"]') as HTMLInputElement)?.value || '0';
+    const currentRef =
+      referralCode() !== undefined
+        ? referralCode()
+        : (document.querySelector('input[name="referralCode"]') as HTMLInputElement)?.value ?? '';
+
+    const payload: Partial<BookingCreateInput> & Record<string, unknown> = {
+      branchId: currentBranch,
+      slotId: currentSlot,
+      shopSide: currentSide,
+      currency: currentCurrency,
+      quantity: Number(currentQtyStr),
+    };
+
+    if (currentRef !== '') {
+      payload.referralCode = currentRef;
+    }
+
+    try {
+      const res = await fetchFn(BOOKING_CREATE_COMMAND_ROUTE, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey(),
+          'idempotency-key': idempotencyKey(),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 200) {
+        const data = await res.json();
+        setSuccessData(data);
+        setIdempotencyKey(makeIdempotencyKey());
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        const err = errJson.error ?? errJson;
+
+        if (err.code === 'validationFailed') {
+          const hasRefField =
+            Array.isArray(err.fields) && err.fields.some((f: any) => f.field === 'referralCode');
+          if (hasRefField) {
+            setReferralError(t('error.invalidReferralCode'));
+          } else {
+            setGlobalError(t('error.validationFailed'));
+          }
+        } else if (err.code === 'slotUnavailable') {
+          setGlobalError(t('error.slotUnavailable'));
+          void loadSlots(currentBranch, serviceDate());
+        } else if (err.code === 'capacityFull') {
+          setGlobalError(t('error.capacityFull'));
+          void loadSlots(currentBranch, serviceDate());
+        } else if (err.code === 'bookingsClosed') {
+          setGlobalError(t('error.bookingsClosed'));
+        } else {
+          const errorKey = `error.${err.code}` as keyof typeof th;
+          if (errorKey in th) {
+            setGlobalError(t(errorKey));
+          } else {
+            setGlobalError(err.message ?? t('error.general'));
+          }
+        }
+      }
+    } catch {
+      setGlobalError(t('error.general'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div class="xc-book-screen" data-testid="book-screen">
+      <header class="xc-book-header">
+        <h1 class="xc-book-title">{t('title')}</h1>
+        <p class="xc-book-subtitle">{t('subtitle')}</p>
+      </header>
+
+      <Show when={globalError()}>
+        <div class="alert alert-error" role="alert">
+          {globalError()}
+        </div>
+      </Show>
+
+      <Show when={successData()}>
+        <div class="xc-book-success alert-success" role="status">
+          <p>{t('bookingSuccess')}</p>
+          <p>{fill(t('bookingId'), { id: successData()!.id })}</p>
+        </div>
+      </Show>
+
+      <form class="xc-book-form" onSubmit={handleSubmit}>
+        <div class="xc-book-field field" data-field="branchId">
+          <label class="xc-book-label" for="branchId">
+            {t('branch')}
+          </label>
+
+          <Show when={branchesLoading()}>
+            <div class="xc-book-loading xc-book-branches-loading" role="status">
+              {t('loading')}
+            </div>
+          </Show>
+
+          <Show when={branchesError()}>
+            <div class="xc-book-field-error alert alert-error xc-book-branches-error" role="alert">
+              <span>{branchesError()}</span>
+              <button type="button" class="xc-book-retry-btn" onClick={loadBranches}>
+                {t('retry')}
+              </button>
+            </div>
+          </Show>
+
+          <Show when={!branchesLoading() && !branchesError() && branches().length === 0}>
+            <div class="xc-book-empty xc-book-branches-empty" role="status">
+              {t('noBranches')}
+            </div>
+          </Show>
+
+          <select
+            id="branchId"
+            name="branchId"
+            class="xc-book-select"
+            data-testid="branch-select"
+            value={branchId()}
+            disabled={branchesLoading() || branches().length === 0}
+            onChange={(e) => {
+              const val = e.currentTarget.value;
+              setBranchId(val);
+              setIdempotencyKey(makeIdempotencyKey());
+              void updatePreview();
+              if (val) {
+                const br = branches().find((b) => b.code === val);
+                try {
+                  if (!br?.timezone) {
+                    throw new Error('missing branch timezone');
+                  }
+                  const today = getTodayInTimezone(br.timezone);
+                  setMinDate(today);
+                  const qDate = new URLSearchParams(window.location.search).get('date') ?? (typeof props.date === 'string' ? props.date : '');
+                  const chosenDate = qDate && qDate >= today ? qDate : today;
+                  setServiceDate(chosenDate);
+                  void loadSlots(val, chosenDate);
+                } catch {
+                  setBranchesError(t('error.loadFailed'));
+                }
+              } else {
+                setServiceDate('');
+                setMinDate('');
+                setSlots([]);
+                setSlotsLoading(false);
+              }
+            }}
+          >
+            <option value="">{branches().length === 0 ? t('noBranches') : t('selectBranch')}</option>
+            <For each={branches()}>
+              {(b) => (
+                <option value={b.code}>
+                  {b.name} ({b.code})
+                </option>
+              )}
+            </For>
+          </select>
+        </div>
+
+        <div class="xc-book-field field" data-field="serviceDate">
+          <label class="xc-book-label" for="serviceDate">
+            {t('date')}
+          </label>
+          <input
+            id="serviceDate"
+            name="serviceDate"
+            type="date"
+            class="xc-book-input"
+            data-testid="date-input"
+            value={serviceDate()}
+            min={minDate() || undefined}
+            disabled={!branchId()}
+            onInput={(e) => {
+              const newDate = e.currentTarget.value;
+              setServiceDate(newDate);
+              setIdempotencyKey(makeIdempotencyKey());
+              if (branchId() && newDate) {
+                void loadSlots(branchId(), newDate);
+              }
+            }}
+            onChange={(e) => {
+              const newDate = e.currentTarget.value;
+              setServiceDate(newDate);
+              setIdempotencyKey(makeIdempotencyKey());
+              if (branchId() && newDate) {
+                void loadSlots(branchId(), newDate);
+              }
+            }}
+          />
+        </div>
+
+        <div class="xc-book-field field" data-field="slotId">
+          <label class="xc-book-label" for="slotId">
+            {t('slot')}
+          </label>
+
+          <Show when={slotsLoading()}>
+            <div class="xc-book-loading xc-book-slots-loading" role="status">
+              {t('loading')}
+            </div>
+          </Show>
+
+          <Show when={slotsError()}>
+            <div class="xc-book-field-error alert alert-error xc-book-slots-error" role="alert">
+              <span>{slotsError()}</span>
+              <button type="button" class="xc-book-retry-btn" onClick={() => loadSlots(branchId(), serviceDate())}>
+                {t('retry')}
+              </button>
+            </div>
+          </Show>
+
+          <Show when={!slotsLoading() && !slotsError() && slots().length === 0}>
+            <div class="xc-book-empty xc-book-slots-empty" role="status">
+              {t('noSlots')}
+            </div>
+          </Show>
+
+          <select
+            id="slotId"
+            name="slotId"
+            class="xc-book-select"
+            data-testid="slot-select"
+            value={slotId()}
+            disabled={slotsLoading() || slots().length === 0}
+            onChange={(e) => {
+              setSlotId(e.currentTarget.value);
+              setIdempotencyKey(makeIdempotencyKey());
+            }}
+          >
+            <option value="">{slotsLoading() ? t('loading') : (slots().length === 0 ? t('noSlots') : t('selectSlot'))}</option>
+            <For each={branches().find((b) => b.code === branchId()) ? slots() : []}>
+              {(slot) => {
+                const br = branches().find((b) => b.code === branchId())!;
+                return (
+                  <option
+                    data-testid="slot-option"
+                    value={slot.id}
+                    disabled={slot.available === 0}
+                  >
+                    {formatSlotTime(slot.start, slot.end, br.timezone)} ({fill(t('availableCount'), { count: slot.available })})
+                  </option>
+                );
+              }}
+            </For>
+          </select>
+        </div>
+
+        <div class="xc-book-field field">
+          <label class="xc-book-label" for="side">
+            {t('side')}
+          </label>
+          <select
+            id="side"
+            name="shopSide"
+            class="xc-book-select"
+            value={shopSide()}
+            onChange={(e) => {
+              setShopSide(e.currentTarget.value as 'BUY' | 'SELL');
+              setIdempotencyKey(makeIdempotencyKey());
+              updatePreview();
+            }}
+          >
+            <option value="BUY">{t('buy')}</option>
+            <option value="SELL">{t('sell')}</option>
+          </select>
+        </div>
+
+        <div class="xc-book-field field">
+          <label class="xc-book-label" for="currency">
+            {t('currency')}
+          </label>
+          <select
+            id="currency"
+            name="currency"
+            class="xc-book-select"
+            data-testid="currency-select"
+            value={currency()}
+            onChange={(e) => {
+              setCurrency(e.currentTarget.value);
+              setIdempotencyKey(makeIdempotencyKey());
+              updatePreview();
+            }}
+          >
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="JPY">JPY</option>
+            <option value="GBP">GBP</option>
+            <option value="SGD">SGD</option>
+          </select>
+        </div>
+
+        <div class="xc-book-field field">
+          <label class="xc-book-label" for="quantity">
+            {t('quantity')}
+          </label>
+          <input
+            id="quantity"
+            name="quantity"
+            class="xc-book-input"
+            data-testid="quantity-input"
+            type="number"
+            min="1"
+            step="any"
+            placeholder={t('quantityPlaceholder')}
+            value={quantity()}
+            onInput={(e) => {
+              setQuantity(e.currentTarget.value);
+              setIdempotencyKey(makeIdempotencyKey());
+              updatePreview();
+            }}
+          />
+        </div>
+
+        <div class="xc-book-field field" data-field="referralCode">
+          <label class="xc-book-label" for="referralCode">
+            {t('referralCode')}
+          </label>
+          <input
+            id="referralCode"
+            name="referralCode"
+            class="xc-book-input"
+            data-testid="referral-code"
+            type="text"
+            placeholder={t('referralCodePlaceholder')}
+            value={referralCode()}
+            onInput={(e) => {
+              setReferralCode(e.currentTarget.value);
+              setReferralError(null);
+              setIdempotencyKey(makeIdempotencyKey());
+            }}
+            aria-invalid={referralError() ? 'true' : undefined}
+          />
+          <Show when={referralError()}>
+            <div class="field-error xc-book-error" role="alert">
+              {referralError()}
+            </div>
+          </Show>
+        </div>
+
+        <Show when={preview()}>
+          <div class="planner-preview xc-book-preview" data-testid="planner-preview">
+            <div class="preview-amount xc-book-preview-amount">
+              <span class="preview-label xc-book-preview-label">{t('estimatedThb')}: </span>
+              <MoneyText value={preview()!.thb} currency="THB" />
+            </div>
+            <p class="preview-notice xc-book-preview-notice">{t('estimateNotice')}</p>
+          </div>
+        </Show>
+
+        <button
+          type="submit"
+          class="xc-book-submit"
+          data-action="book"
+          data-testid="book-submit"
+          onClick={handleSubmit}
+        >
+          {submitting() ? t('submitting') : t('submit')}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default BookScreen;
