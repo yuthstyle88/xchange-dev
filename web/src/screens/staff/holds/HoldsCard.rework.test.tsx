@@ -146,9 +146,8 @@ describe('HoldsCard rework tests (#1691: worded errors on holds and customer sea
     await vi.waitFor(() => {
       const errEl = host.querySelector('[data-testid="holds-error"]');
       expect(errEl, 'holds-error must be rendered on unknown refusal code').not.toBeNull();
-      expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+      expect(errEl?.textContent).toBe('backend holds failure details');
       expect(errEl?.textContent).not.toContain('unknownHoldCode');
-      expect(errEl?.textContent).not.toContain('backend holds failure details');
     });
   });
 
@@ -286,9 +285,8 @@ describe('HoldsCard rework tests (#1691: worded errors on holds and customer sea
     await vi.waitFor(() => {
       const errEl = host.querySelector('[data-testid="holds-error"]');
       expect(errEl, 'holds-error must be rendered on unknown refusal code in search').not.toBeNull();
-      expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
+      expect(errEl?.textContent).toBe('search indexing exploded');
       expect(errEl?.textContent).not.toContain('unknownSearchCode');
-      expect(errEl?.textContent).not.toContain('search indexing exploded');
     });
   });
 

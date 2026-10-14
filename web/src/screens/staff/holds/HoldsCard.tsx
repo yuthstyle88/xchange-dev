@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
-import { errorText, screenT } from '../../../shared/i18n';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient } from '../../../shared/api/client';
 import type { CustomerHoldCreateInput, CustomerHoldReleaseInput } from '../../../shared/api/generated/branch_day';
 import type { StaffCustomerRow, StaffCustomersFilter } from '../../../shared/api/generated/staff_customers';
 import type { StaffHoldRow } from '../../../shared/api/generated/staff_holds';
@@ -12,28 +13,6 @@ import { th, en } from './i18n';
 
 export interface HoldsCardProps {
   ctx: StaffCtx;
-}
-
-function toErrorText(e: unknown): string {
-  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-  if (e instanceof ApiError) {
-    const text = errorText(e.code, '');
-    return text || generic;
-  }
-  if (e && typeof e === 'object' && 'code' in e && (e as { code: unknown }).code) {
-    const code = String((e as { code: unknown }).code);
-    const text = errorText(code, '');
-    return text || generic;
-  }
-  if (e instanceof Error && e.message) {
-    const text = errorText(e.message, '');
-    return text || generic;
-  }
-  if (typeof e === 'string' && e) {
-    const text = errorText(e, '');
-    return text || generic;
-  }
-  return generic;
 }
 
 export function HoldsCard(props: HoldsCardProps): JSX.Element {
@@ -79,7 +58,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
         setHolds(res.data);
       }
     } catch (e: unknown) {
-      setError(toErrorText(e));
+      setError(wordedError(e));
     }
   };
 
@@ -103,7 +82,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       }
     } catch (e: unknown) {
       setCustomers([]);
-      setError(toErrorText(e));
+      setError(wordedError(e));
     }
   };
 
@@ -123,7 +102,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       await loadHolds();
     } catch (e) {
       setNotice(null);
-      setError(toErrorText(e));
+      setError(wordedError(e));
     }
   };
 
@@ -143,7 +122,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       await loadHolds();
     } catch (e) {
       setNotice(null);
-      setError(toErrorText(e));
+      setError(wordedError(e));
     }
   };
 
