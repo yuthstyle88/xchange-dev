@@ -6,7 +6,7 @@
 //! delete or weaken; add tests in a file of your own.
 //!
 //! What these tests pin ([required] by the rulings):
-//! - the caller is `Caller { user: Option<access::Actor>, app_session: Option<AppSession> }` (`v3/caller.rs`, ruling 3);
+//! - the caller is `Caller { user: Option<access::Actor>, app_session: Option<AppSession>, session_hash: Option<String> }` (`v3/caller.rs`, ruling 3; #1943 §9.2);
 //! - option B: each seam trait has a default `*_as` method that takes the caller (`load_as`, `page_as`, `run_as`,
 //!   `compute_as`) beside today's `&access::Actor` method. The seam always calls the `*_as` method; by default it calls
 //!   today's method with `caller.user`, and answers `signIn` when there is none;

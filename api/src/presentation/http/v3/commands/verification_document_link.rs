@@ -12,9 +12,9 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::application::session::sha256_hex;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::document_store::DocumentStore;
 use xc_kernel::ids::BranchId;
 use xc_verification::application::access::document_access::{AccessError, DocumentAccess};
@@ -22,12 +22,22 @@ use xc_verification::application::access::download_link::DownloadLink;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, Locks, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
 const COMMAND_NAME: &str = "verificationDocumentLink";
+
+fn link_refused() -> V3Error {
+    V3Error::new(
+        "linkRefused",
+        None,
+        "the link is refused",
+        StatusCode::FORBIDDEN,
+    )
+}
 
 pub struct VerificationDocumentLinkCommand {
     pool: PgPool,
@@ -54,12 +64,27 @@ impl CommandAction for VerificationDocumentLinkCommand {
 
     async fn run<'a>(
         &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &'a BranchId,
-        who: &'a Actor,
+        _who: &'a Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(link_refused())
+    }
+
+    async fn run_as<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a BranchId,
+        caller: &'a Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let doc_id = Uuid::parse_str(&input.id).map_err(|_| {
             V3Error::new(
                 "invalidRequest",
@@ -68,6 +93,7 @@ impl CommandAction for VerificationDocumentLinkCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+        let session = caller.session_hash.as_deref().ok_or_else(link_refused)?;
 
         let keys = xc_customer::get_pii_keys().map_err(|_| server_error())?;
         let audit = Arc::new(PgAuditLog::new(self.pool.clone()));
@@ -79,19 +105,8 @@ impl CommandAction for VerificationDocumentLinkCommand {
             download_link,
         );
 
-        let session: String = sqlx::query_scalar(
-            "SELECT hash FROM user_sessions WHERE user_id::text = $1 AND expires > now() ORDER BY expires DESC LIMIT 1",
-        )
-        .bind(&who.user_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .ok()
-        .flatten()
-        // stopgap: see #1943
-        .unwrap_or_else(|| sha256_hex(&format!("session-{}", who.user_id)));
-
         let now = Utc::now();
-        match access.link_for_reviewer(who, &session, doc_id, now).await {
+        match access.link_for_reviewer(who, session, doc_id, now).await {
             Ok(issued) => Ok(VerificationDocumentLinkOutput {
                 url: issued.url,
                 expires_at: issued.expires_at.to_rfc3339(),

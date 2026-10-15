@@ -38,6 +38,10 @@
 //!     Content token bound to session A is refused when fetched with session B (`linkRefused`).
 //! 16. `expired_content_token_is_refused`:
 //!     Expired content token is refused (`linkExpired`).
+//!
+//! Amended by #1943's ticket author (claude/c4d72c, 2026-10-15; design `customer-app.md` §9.2): the harness seeds a
+//! real `user_sessions` row for every seeded user (`hash` = sha256 hex of the `session-{user_id}` cookie), because the
+//! link command no longer falls back to a made-up session. Tests 14–16 are otherwise unchanged.
 
 mod common;
 
@@ -466,6 +470,31 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("seed users");
+
+        // #1943 (claude/c4d72c, the ticket author): every seeded user is signed in for real. Their cookie is the
+        // `session-{user_id}` each `Who` sends, and `user_sessions.hash` is its sha256 hex, as `SessionService`
+        // stores it, so the link command binds a link to the caller's own live session (no fallback).
+        for (user, org) in [
+            ("11111111-1111-1111-1111-111111111111", ORG_1),
+            ("22222222-2222-2222-2222-222222222222", ORG_1),
+            ("33333333-3333-3333-3333-333333333333", ORG_1),
+            ("44444444-4444-4444-4444-444444444444", ORG_2),
+        ] {
+            let hash: String = Sha256::digest(format!("session-{user}").as_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            sqlx::query(
+                "INSERT INTO user_sessions (hash, user_id, version, expires, organization_id) \
+                 VALUES ($1, $2::uuid, 1, now() + interval '8 hours', $3) ON CONFLICT (hash) DO NOTHING",
+            )
+            .bind(hash)
+            .bind(user)
+            .bind(Uuid::from_str(org).unwrap())
+            .execute(&self.pool)
+            .await
+            .expect("seed a live session");
+        }
 
         // Seed customers
         sqlx::query(
