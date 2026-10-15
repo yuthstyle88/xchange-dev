@@ -11,10 +11,11 @@
 // fresh module graph so the shared session reads this test's `me` (#1030's shape: `permissions` among its keys).
 // The buttons are found by their Thai labels: 'ส่งออกรายการ CSV' (overview, transactions, reports) and
 // 'ดาวน์โหลด CSV' (the reports employee tab).
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { AdminMenu } from "./menus";
+import { warmModules } from "../../shared/testing/warm-modules";
 
 const EXPORT = "ส่งออกรายการ CSV";
 const EMPLOYEE_CSV = "ดาวน์โหลด CSV";
@@ -218,6 +219,18 @@ function exportReads(): URL[] {
       u.searchParams.has("purpose"),
   );
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./overview/menu"),
+      () => import("./transactions/menu"),
+      () => import("./reports/menu"),
+      () => import("./parts/toast"),
+      () => import("../../shared/i18n"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   reads = [];

@@ -4,9 +4,10 @@
 // Written before implementation by test-writer (gemini/studio-11, ordered by
 // claude/5edf7bb5, Owner's Rule A). Do not edit, delete or weaken.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Me, ViewAnswer } from '../../../shared/api/generated/common';
 import type { QueueBoardData } from '../../../shared/api/generated/queue_board';
+import { warmModules } from '../../../shared/testing/warm-modules';
 
 const BOARD_DATA: QueueBoardData = {
   waiting: [
@@ -101,6 +102,15 @@ function setupMockFetch() {
 function findQueueCard(): HTMLElement | null {
   return document.querySelector('aside[aria-label="แจ้งเตือนคิวลูกค้า"]');
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('../../staff/main'),
+      () => import('../main'),
+    ),
+  60_000,
+);
 
 describe('Entries mount and display queue card lines from queue_board (QU-6 item d)', () => {
   let appEl: HTMLDivElement;
