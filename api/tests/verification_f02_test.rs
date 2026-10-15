@@ -2210,3 +2210,140 @@ async fn expired_content_token_is_refused() {
 
     room.finish().await;
 }
+
+// =================================================================================================
+// `verification_queue` reads the customers' identities in one query and takes the last 4 *characters*
+// (BE controller claude/7ca80c; up-front tests by claude/d7aa64). Today
+// `api/src/presentation/http/v3/views/verification_queue.rs:145-190` runs one `customer_identities` query per
+// queue row, and `s[s.len() - 4..]` slices bytes, which panics inside a multi-byte character.
+// =================================================================================================
+
+/// Seeds an identity for `customer_id` (PASSPORT, sealed like `seed_defaults` does), `age_minutes` old.
+async fn seed_identity(
+    room: &Room,
+    customer_id: &str,
+    number: &str,
+    age_minutes: i64,
+    status: &str,
+) {
+    common::install_test_pii_keys();
+    let keys = Arc::new(
+        PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+            .expect("the test PII key parses"),
+    );
+    let cipher = PiiCipher::new(keys.clone());
+    let hasher = LookupHasher::new(&keys);
+    let aad = format!("{customer_id}PASSPORT");
+    let payload = serde_json::json!({ "number": number, "nationality": "THA" });
+    let sealed = cipher.encrypt(aad.as_bytes(), payload.to_string().as_bytes());
+    let lookup_hash = hasher.hash(IdentityType::Passport, number);
+    sqlx::query(
+        "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, key_id, lookup_hash, \
+                                          nationality, verified_at, status, created_at) \
+         VALUES (gen_random_uuid(), $1, $2, 'PASSPORT', $3, $4, $5, 'THA', now(), $6, now() - make_interval(mins => $7::int))",
+    )
+    .bind(Uuid::from_str(ORG_1).unwrap())
+    .bind(customer_id)
+    .bind(&sealed.bytes)
+    .bind(&sealed.key_id)
+    .bind(&lookup_hash[..])
+    .bind(status)
+    .bind(age_minutes as i32)
+    .execute(&room.pool)
+    .await
+    .expect("seed a customer identity");
+}
+
+async fn queue_last4(room: &Room) -> Vec<(String, Value)> {
+    let reviewer = Who::org_reviewer("11111111-1111-1111-1111-111111111111");
+    let ans = call(
+        room,
+        Some(&reviewer),
+        Method::GET,
+        "/api/v3/views/verification_queue",
+        None,
+        None,
+    )
+    .await;
+    let data = ans.ok("verification_queue");
+    data["data"]
+        .as_array()
+        .unwrap_or_else(|| panic!("queue list: {}", ans.text))
+        .iter()
+        .map(|i| {
+            (
+                i["id"].as_str().unwrap_or("").to_owned(),
+                i["identityLast4"].clone(),
+            )
+        })
+        .collect()
+}
+
+async fn submitted(room: &Room, customer_id: &str, minutes_ago: i64) -> Uuid {
+    let id = Uuid::new_v4();
+    room.insert_case(
+        id,
+        ORG_1,
+        customer_id,
+        "SUBMITTED",
+        Some(BRANCH_MAIN),
+        Some(Utc::now() - ChronoDuration::minutes(minutes_ago)),
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await;
+    id
+}
+
+#[actix_web::test]
+async fn queue_rows_each_show_their_own_customers_last4() {
+    let room = Room::start().await;
+    // CX_1's passport ends 1234 (seed_defaults). CX_2 gets one ending 6789. CX_3 has none.
+    seed_identity(&room, "CX_2", "BB5556789", 10, "ACTIVE").await;
+    let c1 = submitted(&room, "CX_1", 30).await;
+    let c2 = submitted(&room, "CX_2", 20).await;
+    let c3 = submitted(&room, "CX_3", 10).await;
+
+    let rows = queue_last4(&room).await;
+    assert_eq!(
+        rows,
+        vec![
+            (c1.to_string(), json!("1234")),
+            (c2.to_string(), json!("6789")),
+            (c3.to_string(), Value::Null),
+        ],
+        "each row carries its own customer's last 4, a customer without an identity carries none"
+    );
+
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn queue_uses_the_newest_active_identity_and_ignores_revoked_ones() {
+    let room = Room::start().await;
+    seed_identity(&room, "CX_2", "XX0001111", 120, "ACTIVE").await;
+    seed_identity(&room, "CX_2", "XX0002222", 60, "ACTIVE").await;
+    seed_identity(&room, "CX_2", "XX0003333", 1, "REVOKED").await;
+    let c2 = submitted(&room, "CX_2", 5).await;
+
+    let rows = queue_last4(&room).await;
+    assert_eq!(rows, vec![(c2.to_string(), json!("2222"))]);
+
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn a_multibyte_identity_number_answers_its_last_four_characters() {
+    let room = Room::start().await;
+    // "1ก34": 4 characters, 6 bytes. Slicing the last 4 *bytes* cuts inside "ก" and panics on main.
+    seed_identity(&room, "CX_3", "1ก34", 10, "ACTIVE").await;
+    let c3 = submitted(&room, "CX_3", 5).await;
+
+    let rows = queue_last4(&room).await;
+    assert_eq!(rows, vec![(c3.to_string(), json!("1ก34"))]);
+
+    room.finish().await;
+}

@@ -1,6 +1,7 @@
 //! The `verification_queue` view (§4.5; ticket #1396).
 //! `GET /api/v3/views/verification_queue`
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -138,8 +139,40 @@ impl BranchView for VerificationQueueView {
             }
         };
 
-        let pii_keys = xc_customer::get_pii_keys().ok();
-        let cipher = pii_keys.map(PiiCipher::new);
+        let mut last4_by_customer: HashMap<String, String> = HashMap::new();
+        if !rows.is_empty()
+            && let Some(cipher) = xc_customer::get_pii_keys().ok().map(PiiCipher::new)
+        {
+            let customer_ids: Vec<String> = rows
+                .iter()
+                .map(|row| row.get::<String, _>("customer_id"))
+                .collect();
+            let id_rows: Vec<(String, Vec<u8>, String, String)> = sqlx::query_as(
+                "SELECT DISTINCT ON (customer_id) customer_id, encrypted_value, key_id, type \
+                 FROM customer_identities \
+                 WHERE customer_id = ANY($1) AND organization_id = $2 AND status = 'ACTIVE' \
+                 ORDER BY customer_id, created_at DESC",
+            )
+            .bind(&customer_ids)
+            .bind(org_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            for (customer_id, enc_val, key_id, id_type) in id_rows {
+                let sealed = Sealed {
+                    key_id,
+                    bytes: enc_val,
+                };
+                let aad = format!("{customer_id}{id_type}");
+                if let Ok(dec) = cipher.decrypt(aad.as_bytes(), &sealed)
+                    && let Ok(val) = serde_json::from_slice::<serde_json::Value>(&dec)
+                    && let Some(num) = val.get("number").and_then(|n| n.as_str())
+                {
+                    last4_by_customer.insert(customer_id, last4(num));
+                }
+            }
+        }
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
@@ -149,49 +182,7 @@ impl BranchView for VerificationQueueView {
             let submitted_at: Option<DateTime<Utc>> = row.get("submitted_at");
             let branch_id: Option<String> = row.get("branch_id");
             let customer_display_name: String = row.get("customer_display_name");
-
-            let identity_last4 = if let Some(ref c) = cipher {
-                let enc_res: Option<(Vec<u8>, String, String)> = sqlx::query_as(
-                    "SELECT encrypted_value, key_id, type \
-                     FROM customer_identities \
-                     WHERE customer_id = $1 AND organization_id = $2 AND status = 'ACTIVE' \
-                     ORDER BY created_at DESC LIMIT 1",
-                )
-                .bind(&customer_id)
-                .bind(org_id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(AppError::Database)?;
-
-                if let Some((enc_val, key_id, id_type)) = enc_res {
-                    let sealed = Sealed {
-                        key_id,
-                        bytes: enc_val,
-                    };
-                    let aad = format!("{customer_id}{id_type}");
-                    if let Ok(dec) = c.decrypt(aad.as_bytes(), &sealed) {
-                        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&dec) {
-                            val.get("number")
-                                .and_then(|n| n.as_str())
-                                .map(|s| {
-                                    if s.len() >= 4 {
-                                        s[s.len() - 4..].to_string()
-                                    } else {
-                                        s.to_string()
-                                    }
-                                })
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let identity_last4 = last4_by_customer.get(&customer_id).cloned();
 
             items.push(VerificationQueueItem {
                 id: case_id.to_string(),
@@ -249,6 +240,13 @@ pub struct VerificationQueueAnswer {
     pub version: i64,
     pub changed: bool,
     pub data: Option<Vec<VerificationQueueItem>>,
+}
+
+fn last4(s: &str) -> String {
+    match s.char_indices().rev().nth(3) {
+        Some((idx, _)) => s[idx..].to_string(),
+        None => s.to_string(),
+    }
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
