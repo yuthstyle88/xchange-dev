@@ -1,5 +1,10 @@
 //! Specification and edge-case tests for MK-6: audience segments (#1404, design `marketing-campaigns.md` §4.1, §6, §7, §8, §9.1).
 //!
+//! Amended by the MK-6 value ticket's author (claude/c4d72c, 2026-10-15; lane controller's ruling: D-14 value =
+//! SUM(transaction_lines.thb_amount)): the seed helpers write a realistic row (wide `amount` = USD units = THB / 35,
+//! `principal` and the new `transaction_lines.thb_amount` = the THB given), so every THB figure below is unchanged,
+//! and a test pins the THB of every line.
+//!
 //! Pin table (§9 of #1404, updated with lane controller rulings Q1-Q5):
 //! - Row 1: A customer whose newest MARKETING consent is withdrawn on every channel -> not in snapshot (D-13).
 //! - Row 2: A customer granted on one channel only -> included in snapshot.
@@ -393,7 +398,7 @@ async fn insert_tx_with_mode(
         "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
          customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, received, paid, \
          method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, completed_at, recorded_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', $9::numeric, 35.0, \
+         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', round($9::numeric / 35, 2), 35.0, \
          $9::numeric, 0.0, 0.0, $9::numeric, $9::numeric, 'CASH', 'ref', 'acc', 'staff', 'bkg', 'note', \
          CURRENT_DATE, $10, $10, $10, 'staff')",
     )
@@ -410,6 +415,7 @@ async fn insert_tx_with_mode(
     .execute(pool)
     .await
     .expect("seed transaction");
+    insert_line(pool, tx_id, 1, "USD", "35.0", amount).await;
 
     tx_id.to_string()
 }
@@ -462,7 +468,7 @@ async fn insert_tx_with_mode_and_status(
          customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, received, paid, \
          method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, completed_at, \
          status, cancelled_at, cancel_reason, recorded_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', $9::numeric, 35.0, \
+         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', round($9::numeric / 35, 2), 35.0, \
          $9::numeric, 0.0, 0.0, $9::numeric, $9::numeric, 'CASH', 'ref', 'acc', 'staff', 'bkg', 'note', \
          CURRENT_DATE, $10, $10, $11, $12, $13, $14, 'staff')",
     )
@@ -483,8 +489,37 @@ async fn insert_tx_with_mode_and_status(
     .execute(pool)
     .await
     .expect("seed transaction with status");
+    insert_line(pool, tx_id, 1, "USD", "35.0", amount).await;
 
     tx_id.to_string()
+}
+
+/// One `transaction_lines` row of `tx_id`: `thb` THB of `currency` at `rate` THB a unit (quantity = thb / rate).
+/// The exchange's value is the line's THB (`thb_amount`); the wide `transactions.amount` holds foreign units
+/// (design `marketing-campaigns.md:84`, D-14: a segment's value is THB). Added by the MK-6 value ticket's author.
+async fn insert_line(
+    pool: &PgPool,
+    tx_id: Uuid,
+    line_no: i32,
+    currency: &str,
+    rate: &str,
+    thb: &str,
+) {
+    sqlx::query(
+        "INSERT INTO transaction_lines (id, organization_id, transaction_id, shop_side, currency, quantity, unit_size, \
+             rate_snapshot, thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at) \
+         SELECT gen_random_uuid(), b.organization_id, t.id, 'BUY', $2, round($4::numeric / $3::numeric, 4), 1, \
+                $3::numeric, $4::numeric, 0, $4::numeric, $5, now(), now() \
+           FROM transactions t JOIN branches b ON b.id = t.branch_id WHERE t.id = $1",
+    )
+    .bind(tx_id)
+    .bind(currency)
+    .bind(rate)
+    .bind(thb)
+    .bind(line_no)
+    .execute(pool)
+    .await
+    .expect("seed a transaction line");
 }
 
 async fn insert_posted_reversal(
@@ -1197,6 +1232,66 @@ async fn metrics_count_completed_live_lookback_only_demo_ignored_reversal_kept()
         "non-completed customer must NEVER be included"
     );
 
+    room.finish().await;
+}
+
+// -----------------------------------------------------------------------------
+// D-14 (marketing-campaigns.md:84, :216): a segment's value is THB, the sum of every line's `thb_amount`
+// -----------------------------------------------------------------------------
+
+/// The value is the THB of everything the customer exchanged in the lookback, over every line of every exchange,
+/// never foreign units: USD 100 (3,500 THB) and JPY 10,000 (2,400 THB) in one exchange, and USD worth 1,000 THB in a
+/// second, is 6,900 THB. Before this fix it summed `transactions.amount`, line 1's foreign units only.
+#[tokio::test]
+async fn value_thb_is_the_thb_of_every_line_not_foreign_units() {
+    let room = Room::open().await;
+    let c = unique("c_value");
+    insert_customer(&room.pool, &room.branch, &c, "Value", "V1").await;
+    let two_lines = insert_tx(
+        &room.pool,
+        &room.branch,
+        &c,
+        "Value",
+        "3500.00",
+        at(2026, 10, 1, 10),
+    )
+    .await;
+    insert_line(
+        &room.pool,
+        Uuid::parse_str(&two_lines).expect("a transaction id"),
+        2,
+        "JPY",
+        "0.24",
+        "2400.00",
+    )
+    .await;
+    insert_tx(
+        &room.pool,
+        &room.branch,
+        &c,
+        "Value",
+        "1000.00",
+        at(2026, 10, 2, 10),
+    )
+    .await;
+
+    let metrics = PgCustomerMetrics::new(room.pool.clone(), None)
+        .load_candidate_metrics(org(), 12, at(2026, 10, 10, 10))
+        .await
+        .expect("load the metrics");
+    let mine = metrics
+        .iter()
+        .find(|m| m.customer_id == c)
+        .expect("the customer is a candidate");
+    assert_eq!(
+        mine.value_thb,
+        Decimal::from_str("6900.00").unwrap(),
+        "D-14: THB over every line (3,500 + 2,400 + 1,000), not foreign units"
+    );
+    assert_eq!(
+        mine.frequency, 2,
+        "two exchanges, whatever their line count"
+    );
     room.finish().await;
 }
 

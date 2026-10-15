@@ -17,6 +17,16 @@ impl crate::presentation::http::v3::view::ViewFilter for ApprovalRequestsFilter 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "approval_requests.ts")]
+pub struct ApprovalDecisionDto {
+    pub approver_id: String,
+    pub outcome: String,
+    pub reason: String,
+    pub at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "approval_requests.ts")]
 pub struct ApprovalRequestItemDto {
     pub id: String,
     pub r#type: String,
@@ -29,6 +39,7 @@ pub struct ApprovalRequestItemDto {
     pub requested_by: String,
     pub requested_at: String,
     pub status: String,
+    pub decision: Option<ApprovalDecisionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

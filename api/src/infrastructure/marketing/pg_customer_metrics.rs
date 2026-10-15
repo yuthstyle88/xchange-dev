@@ -47,7 +47,7 @@ impl PgCustomerMetrics {
                  c.id AS customer_id, \
                  c.display_name AS customer_name, \
                  COUNT(t.id) AS frequency, \
-                 COALESCE(SUM(t.amount), 0::numeric) AS value_thb, \
+                 COALESCE(SUM((SELECT SUM(l.thb_amount) FROM transaction_lines l WHERE l.transaction_id = t.id)), 0::numeric) AS value_thb, \
                  MAX(t.recorded_at) AS last_recorded_at, \
                  (ARRAY_AGG(t.branch_id ORDER BY t.recorded_at DESC) FILTER (WHERE t.branch_id IS NOT NULL))[1] AS home_branch, \
                  ( \
@@ -126,7 +126,7 @@ impl CustomerMetricsSource for PgCustomerMetrics {
                      c.id AS customer_id, \
                      c.display_name AS customer_name, \
                      COUNT(t.id) AS frequency, \
-                     COALESCE(SUM(t.amount), 0::numeric) AS value_thb, \
+                     COALESCE(SUM((SELECT SUM(l.thb_amount) FROM transaction_lines l WHERE l.transaction_id = t.id)), 0::numeric) AS value_thb, \
                      MAX(t.recorded_at) AS last_recorded_at, \
                      (ARRAY_AGG(t.branch_id ORDER BY t.recorded_at DESC) FILTER (WHERE t.branch_id IS NOT NULL))[1] AS home_branch \
                  FROM customers c \
