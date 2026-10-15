@@ -154,13 +154,11 @@ impl CheckInService {
                 .await
                 .map_err(pos_error::AppError::Database)?;
 
-        let tz_str: String = sqlx::query_scalar(
-            "SELECT o.timezone FROM branches b JOIN organizations o ON o.id = b.organization_id WHERE b.id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(pos_error::AppError::Database)?;
+        let tz_str: String = sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
 
         let tz: chrono_tz::Tz = tz_str.parse().map_err(|e| {
             pos_error::AppError::Internal(format!("invalid timezone {tz_str}: {e}"))
