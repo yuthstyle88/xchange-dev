@@ -43,25 +43,6 @@ export const th = {
   resetSubmit: 'ยืนยันรีเซ็ต',
 
   disableConfirm: 'ปิดบัญชีนี้และยกเลิกเซสชันทั้งหมด?',
-
-  workflow: 'ตั้งค่าขั้นตอนรับ–ส่งเงินของสาขา',
-  stateOn: 'สาขานี้เปิดใช้ขั้นตอนรับ–ส่งเงินแล้ว',
-  stateOff: 'สาขานี้ยังใช้ขั้นตอนเดิม สร้างบัญชีครบ 6 บทบาทและปิดกะเดิมก่อนเปิดใช้',
-  entityButton: 'ยืนยันกิจการและจุดบริการ',
-  enableButton: 'เปิดใช้สำหรับสาขานี้',
-  enableTitle: 'เปิดใช้ขั้นตอนรับ–ส่งเงิน · ',
-  enableNote1:
-    'ต้องมีบัญชี Front, Backend, Manager, Rates, Monitor และ Finance ในสาขา และไม่มีกะเดิมเปิดอยู่ หลังเปิดใช้ ปุ่มเปิดกะ รับ–จ่ายเงินสด และปิดกะเดิมจะถูกล็อก ให้พนักงานทำรายการและลงชื่อผ่านหน้าปฏิบัติงาน',
-  enableNote2:
-    'Finance ต้องกำหนดเงินสดเป้าหมายและแจ้งยอดนับเซฟจริงก่อนเริ่มใช้งาน ไม่มียอดเงินตัวอย่างถูกเติมให้อัตโนมัติ',
-  enableSubmit: 'เปิดใช้ขั้นตอนใหม่',
-  enabledToast: 'เปิดใช้ขั้นตอนรับ–ส่งเงินแล้ว',
-  entityTitle: 'ยืนยันกิจการของสาขา',
-  company: 'ชื่อนิติบุคคล',
-  site: 'จุดบริการ',
-  separated: 'ยืนยันว่ารายการและยอดเงินของสาขานี้เป็นของกิจการนี้ และแยกจากกิจการอื่นแล้ว',
-  entityNote: 'การตั้งชื่อนี้ไม่ย้ายหรือแยกธุรกรรมเก่า หากบัญชีเดิมปะปน ให้สร้างสาขาใหม่ก่อน',
-  entitySubmit: 'บันทึก',
 };
 
 export const en = {
@@ -110,26 +91,4 @@ export const en = {
   resetSubmit: 'Confirm Reset',
 
   disableConfirm: 'Disable this account and terminate all sessions?',
-
-  workflow: 'Branch Cash Handling Workflow Settings',
-  stateOn: 'This branch has enabled the cash handling workflow.',
-  stateOff:
-    'This branch is still using the old procedure. Create accounts for all 6 roles and close old shifts before enabling.',
-  entityButton: 'Confirm Entity & Service Site',
-  enableButton: 'Enable for this branch',
-  enableTitle: 'Enable Cash Handling Workflow · ',
-  enableNote1:
-    'Must have Front, Backend, Manager, Rates, Monitor, and Finance accounts in this branch, and no open shifts. After enabling, buttons for opening shifts, cash in/out, and old closing shifts will be locked. Staff will operate and sign via the staff screen.',
-  enableNote2:
-    'Finance must set cash targets and report actual safe counts before starting. No sample funds will be filled automatically.',
-  enableSubmit: 'Enable New Workflow',
-  enabledToast: 'Cash handling workflow enabled',
-  entityTitle: 'Confirm Branch Entity',
-  company: 'Company Legal Name',
-  site: 'Service Site',
-  separated:
-    'Confirm that transactions and funds of this branch belong to this entity and are separated from other entities.',
-  entityNote:
-    'Naming here does not move or separate historical transactions. If past accounts are mixed, please create a new branch first.',
-  entitySubmit: 'Save',
 };

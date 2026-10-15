@@ -560,155 +560,9 @@ describe('Employees worded error handling (#1764)', () => {
     });
   });
 
-  // ── 7. openEnableDialog submit ──────────────────────────────────────────────
-  describe('catch 7: openEnableDialog submit', () => {
-    async function triggerEnableSubmit() {
-      mount();
-      await vi.waitFor(() => {
-        findButton(container, [screenTh.enableButton, screenEn.enableButton]).click();
-      });
-
-      await vi.waitFor(() => {
-        const d = theDialog();
-        (d.querySelector('button[type="submit"]') as HTMLButtonElement).click();
-      });
-    }
-
-    it('(1) network TypeError shows error.network in TH and EN', async () => {
-      postHandler = () => Promise.reject(new TypeError('Failed to fetch'));
-      await triggerEnableSubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(th['error.network']);
-      });
-
-      closeDialog();
-      dispose?.();
-      setLang('en');
-      await triggerEnableSubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(en['error.network']);
-      });
-    });
-
-    it('(2) 500 refusal with keyed code shows error.serverError and not keyed code text', async () => {
-      postHandler = () =>
-        jsonResponse(
-          {
-            error: {
-              code: 'roleNotAllowedHere',
-              message: 'Server internal 500 with keyed code',
-            },
-          },
-          500,
-        );
-      await triggerEnableSubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(th['error.serverError']);
-        expect(alert?.textContent).not.toContain(th['error.roleNotAllowedHere']);
-      });
-    });
-
-    it('(3) refusal with unknown code and server message shows that message', async () => {
-      postHandler = () =>
-        jsonResponse(
-          {
-            error: {
-              code: 'unknownEnableCode1764',
-              message: 'Custom server enable failure message',
-            },
-          },
-          400,
-        );
-      await triggerEnableSubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain('Custom server enable failure message');
-      });
-    });
-  });
-
-  // ── 8. openEntityDialog submit ──────────────────────────────────────────────
-  describe('catch 8: openEntityDialog submit', () => {
-    async function triggerEntitySubmit() {
-      mount();
-      await vi.waitFor(() => {
-        findButton(container, [screenTh.entityButton, screenEn.entityButton]).click();
-      });
-
-      await vi.waitFor(() => {
-        const d = theDialog();
-        const cb = d.querySelector('input[name="confirmSeparated"]') as HTMLInputElement;
-        if (cb && !cb.checked) cb.click();
-        (d.querySelector('button[type="submit"]') as HTMLButtonElement).click();
-      });
-    }
-
-    it('(1) network TypeError shows error.network in TH and EN', async () => {
-      postHandler = () => Promise.reject(new TypeError('Failed to fetch'));
-      await triggerEntitySubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(th['error.network']);
-      });
-
-      closeDialog();
-      dispose?.();
-      setLang('en');
-      await triggerEntitySubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(en['error.network']);
-      });
-    });
-
-    it('(2) 500 refusal with keyed code shows error.serverError and not keyed code text', async () => {
-      postHandler = () =>
-        jsonResponse(
-          {
-            error: {
-              code: 'roleNotAllowedHere',
-              message: 'Server internal 500 with keyed code',
-            },
-          },
-          500,
-        );
-      await triggerEntitySubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain(th['error.serverError']);
-        expect(alert?.textContent).not.toContain(th['error.roleNotAllowedHere']);
-      });
-    });
-
-    it('(3) refusal with unknown code and server message shows that message', async () => {
-      postHandler = () =>
-        jsonResponse(
-          {
-            error: {
-              code: 'unknownEntityCode1764',
-              message: 'Custom server entity failure message',
-            },
-          },
-          400,
-        );
-      await triggerEntitySubmit();
-
-      await vi.waitFor(() => {
-        const alert = theDialog().querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain('Custom server entity failure message');
-      });
-    });
-  });
+  // Catches 7 (openEnableDialog) and 8 (openEntityDialog) were removed, and criterion 3 now observes the
+  // stored entity instead of the state line, by CA-10-FE (cash-shift-transfer.md
+  // §6 Q7, §9 CA-10-FE; ticket author claude/c4d72c): the screen no longer has either dialog.
 
   // ── Criterion 3: Stale data cleared on branch switch before failed read ───
   describe('criterion 3: stale data isolation across branch switch', () => {
@@ -718,7 +572,7 @@ describe('Employees worded error handling (#1764)', () => {
       // Successful read on B01 shows employee and operations state
       await vi.waitFor(() => {
         expect(container.textContent).toContain('Somchai Prasert');
-        expect(container.textContent).toContain(screenTh.stateOff);
+        expect(container.textContent).toContain('108 Exchange Co., Ltd.');
       });
 
       // Switch to B02 where operations read fails with 500
@@ -749,8 +603,9 @@ describe('Employees worded error handling (#1764)', () => {
         expect(container.textContent).toContain(th['error.serverError']);
       });
 
-      // Stale operations state from B01 must not show (pins line 92 setOperations(null))
-      expect(container.textContent).not.toContain(screenTh.stateOff);
+      // Stale operations state from B01 must not show (pins line 92 setOperations(null)); since CA-10-FE the
+      // operations show only as the stored entity, read-only
+      expect(container.textContent).not.toContain('108 Exchange Co., Ltd.');
     });
 
     it('hides employee table and protects against showing B01 employees when B02 employee read fails while operations succeeds', async () => {
@@ -759,15 +614,15 @@ describe('Employees worded error handling (#1764)', () => {
       // Successful initial read on B01
       await vi.waitFor(() => {
         expect(container.textContent).toContain('Somchai Prasert');
-        expect(container.textContent).toContain(screenTh.stateOff);
+        expect(container.textContent).toContain('108 Exchange Co., Ltd.');
       });
 
-      // On branch switch to B02: operations read succeeds (enabled=true), employee read fails with 500
+      // On branch switch to B02: operations read succeeds (B02's own entity), employee read fails with 500
       operationsHandler = () =>
         jsonResponse({
           version: 2,
           changed: true,
-          data: { enabled: true },
+          data: { enabled: true, entity: { company: 'Second Branch Co.', site: 'Kiosk' } },
         });
       employeesHandler = () =>
         jsonResponse(
@@ -788,9 +643,9 @@ describe('Employees worded error handling (#1764)', () => {
         expect(alert?.textContent).toContain(th['error.serverError']);
       });
 
-      // Operations side updated to B02 stateOn
-      expect(container.textContent).toContain(screenTh.stateOn);
-      expect(container.textContent).not.toContain(screenTh.stateOff);
+      // Operations side updated to B02's entity (CA-10-FE: the entity, read-only, is what the operations show)
+      expect(container.textContent).toContain('Second Branch Co.');
+      expect(container.textContent).not.toContain('108 Exchange Co., Ltd.');
 
       // Employee table container is hidden by the !employeesError() guard at line 427
       expect(container.querySelector('.table-scroll')).toBeNull();
