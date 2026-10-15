@@ -2125,3 +2125,32 @@ ticket has a design row. Each cites real code; the evidence is on its issue.
 
 None. Web and test files only.
 
+
+### 12.23 Writes that bypass `ApiClient` (raw-write) — 2026-10-15
+
+**Root cause.** The server refuses every v3 write that lacks `X-Xchange-Request: 1` or a same-origin `Origin`. That covers compute actions (`api/src/presentation/http/v3/action.rs:95-96`), commands (`v3/command.rs:237-238`) and the auth routes (`http/auth.rs:200`, `:242`, `:284`), all through `presentation/extractors/origin.rs`. `ApiClient` sends the header on every write (`web/src/shared/api/client.ts` `act`, `post`, `command`, `postBytes`). A screen that calls `fetch` (or a local alias of it) directly for a write skips it, so it is refused in a real browser (`originRejected` from the v3 compute and command routes; `400 invalidRequest` from `auth.rs` and `customer_register.rs:128`), while its tests (which mock `fetch` and never read headers) stay green. #1891 (B02) was the first case found.
+
+**Measured on main `40303f1`** (`git grep -nE "method: *'(POST|PUT|PATCH|DELETE)'" -- web/src`, excluding `*.test.*` and `shared/api/client.ts`; five files, re-checked by claude/dell-claude-7 on PR 1985):
+- `web/src/screens/customer/book/Book.tsx:241` (`/api/v3/compute/planner_preview`) and `:300` (the booking create command). **C02 cannot preview or book.**
+- `web/src/screens/operations/verification/VerificationScreen.tsx:551`: the at-branch intake, `POST /api/operations/verification/branch-cases` (multipart). Whether its route checks the origin is traced in RW-3.
+- `web/src/screens/customer/sign-in/SignIn.tsx:18-25`: `postJson` for the app sign-in steps. Which route each call hits, and whether it checks the origin, is traced in RW-4.
+- `web/src/screens/customer/home/HomeScreen.tsx:263` (`doFetch('/api/v3/compute/planner_preview')`, refused at `action.rs:96`) and `:318` (`doFetch('/api/app/planner-drafts')`, the `planner_draft_save` command, refused at `command.rs:238`). **C01's preview and draft save are refused.**
+- `web/src/screens/customer/sign-in/SignUp.tsx:40`: `fetchFn('/api/app/register')`, refused at `api/src/presentation/http/customer_register.rs:128` (`same_origin`). **A customer cannot register.**
+
+**Decision.** Writes go through `ApiClient`, and only `client.ts` may call `fetch` with a write method. This is fleet rule ♻️: one client core instead of a copy per screen. A gate keeps it that way, in the same shape as the worded-error gate (`web-worded-error.md` WE5).
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| RW-1 | the raw-write gate: `web/src/shared/api/raw-write.gate.test.ts` fails on any non-test file under `web/src` outside `shared/api/client.ts` whose source contains a write-method literal: `method:` followed by POST, PUT, PATCH or DELETE (alias-agnostic: it catches `fetch`, `fetchFn`, `doFetch`, `postJson`), with `KNOWN` frozen at the five files above and `STALE_KNOWN_FAILS = false` (WE5 shape); its own tests prove a new offender fails | `web/src/shared/api/raw-write.gate.test.ts` | this section merging |
+| RW-2 | C02 previews with `ApiClient.act` (or `post` for the compute path) and creates with `ApiClient.command`; errors through `wordedError` | `web/src/screens/customer/book/Book.tsx`, a new test file beside it | this section merging |
+| RW-3 | F02 at-branch intake through `ApiClient` (`postBytes` or a multipart-capable call, if the trace shows one is needed; a missing client capability is reported on the ticket, not hand-written) | `web/src/screens/operations/verification/VerificationScreen.tsx`, a new test file beside it | this section merging; not concurrent with #1906's PR on the same file |
+| RW-4 | app sign-in steps through `ApiClient.post` | `web/src/screens/customer/sign-in/SignIn.tsx`, a new test file beside it | this section merging |
+| RW-5 | C01 preview with `ApiClient.act`/`post`, draft save with `ApiClient.command` | `web/src/screens/customer/home/HomeScreen.tsx`, a new test file beside it | this section merging |
+| RW-6 | app registration through `ApiClient.post`; its refusal is `400 invalidRequest`, not `originRejected` | `web/src/screens/customer/sign-in/SignUp.tsx`, a new test file beside it | this section merging; not concurrent with RW-4 if the two share a helper |
+| RW-final | remove clean files from `KNOWN` and set `STALE_KNOWN_FAILS = true` | the gate file | RW-1 … RW-6 merged |
+
+Each screen ticket's first test asserts that the write request carries `x-xchange-request: 1`, and it must go red on the pre-fix screen. That is the test #1891 lacked.
+
+#### 12.23.1 Data migration
+
+None. Web and test files only.
