@@ -26,8 +26,10 @@ const FIELD: &str = "countDifferenceLimitThb";
 
 pub struct CashLimitsSaveCommand;
 
-/// A limit in baht: a decimal string, zero or more, with at most two places (the column is
-/// `numeric(20,2)` with `CHECK (>= 0)`).
+const MAX_INTEGER: i64 = 1_000_000_000_000_000_000;
+
+/// A limit in baht: a decimal string, zero or more, with at most 18 integer digits and at most
+/// two decimal places (the column is `numeric(20,2)` with `CHECK (>= 0)`).
 fn parse_limit(text: &str) -> Result<Decimal, V3Error> {
     let refuse = |message: &str| {
         V3Error::new(
@@ -43,6 +45,9 @@ fn parse_limit(text: &str) -> Result<Decimal, V3Error> {
     }
     if limit.scale() > 2 {
         return Err(refuse("at most two decimal places"));
+    }
+    if limit >= Decimal::from(MAX_INTEGER) {
+        return Err(refuse("at most 18 integer digits"));
     }
     Ok(limit)
 }
