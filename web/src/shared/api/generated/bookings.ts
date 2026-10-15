@@ -32,7 +32,7 @@ export type ClosureAddInput = { id: string, closedOn: string, reason: string, };
 
 export type ClosureRemoveInput = { id: string, date: string, };
 
-export type KioskBookingCheckInInput = { branchId: string, qrToken: string, };
+export type KioskBookingCheckInInput = { branch: string, qrToken: string, };
 
 export type KioskBookingCheckInOutput = { id: string, status: string, ticketNumber: string, bookingNo: string, };
 

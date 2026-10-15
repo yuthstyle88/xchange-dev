@@ -124,7 +124,7 @@ async fn confirm_of_another_customer_booking_refuses_out_of_scope() {
         Some("CUSTOMER@customer-bob"),
         Method::POST,
         &uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-conf-bob"),
     )
     .await;
@@ -189,7 +189,7 @@ async fn confirm_after_confirm_expires_at_refuses_booking_expired() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-conf-exp"),
     )
     .await;
@@ -329,7 +329,7 @@ async fn customer_cancel_before_cutoff_releases_place() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        Some(json!({})),
+        Some(json!({ "branch": B01 })),
         Some("k-c-ok"),
     )
     .await;
@@ -397,7 +397,7 @@ async fn customer_cancel_after_cutoff_refuses_cancel_cutoff_passed() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        Some(json!({})),
+        Some(json!({ "branch": B01 })),
         Some("k-c-late"),
     )
     .await;
@@ -496,7 +496,7 @@ async fn reschedule_to_full_slot_refuses_capacity_full() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        Some(json!({ "slotId": slot2_id })),
+        Some(json!({ "branch": B01, "slotId": slot2_id })),
         Some("k-r-full"),
     )
     .await;
@@ -560,7 +560,7 @@ async fn reschedule_to_available_slot_moves_place() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        Some(json!({ "slotId": slot2_id })),
+        Some(json!({ "branch": B01, "slotId": slot2_id })),
         Some("k-r-ok"),
     )
     .await;
@@ -652,7 +652,7 @@ async fn qr_reissue_route_refuses_without_customer_self_or_bookings_desk() {
         Some("CUSTOMER@customer-bob"),
         Method::POST,
         &uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-qr-bob"),
     )
     .await;
@@ -706,7 +706,7 @@ async fn qr_reissue_invalidates_old_token_and_returns_new_token() {
         Some("CUSTOMER@customer-alice"),
         Method::POST,
         &uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-reissue-1"),
     )
     .await;
@@ -867,32 +867,32 @@ async fn lifecycle_commands_idempotency_replay_and_conflict() {
             Method::POST,
             format!("/api/bookings/{b_cancel}/cancel"),
             Some("CUSTOMER@customer-alice"),
-            Some(json!({})),
-            Some(json!({ "reason": "changed" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "reason": "changed" })),
         ),
         (
             "bookingConfirm",
             Method::POST,
             format!("/api/bookings/{b_confirm}/confirm"),
             Some("CUSTOMER@customer-alice"),
-            Some(json!({})),
-            Some(json!({ "note": "different" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "note": "different" })),
         ),
         (
             "bookingReschedule",
             Method::POST,
             format!("/api/bookings/{b_resched}/reschedule"),
             Some("CUSTOMER@customer-alice"),
-            Some(json!({ "slotId": slot2_id })),
-            Some(json!({ "slotId": slot_id })),
+            Some(json!({ "branch": B01, "slotId": slot2_id })),
+            Some(json!({ "branch": B01, "slotId": slot_id })),
         ),
         (
             "bookingQrReissue",
             Method::POST,
             format!("/api/bookings/{b_qr}/qr"),
             Some("CUSTOMER@customer-alice"),
-            Some(json!({})),
-            Some(json!({ "reason": "lost" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "reason": "lost" })),
         ),
     ];
 
