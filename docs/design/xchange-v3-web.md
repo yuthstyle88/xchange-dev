@@ -2188,3 +2188,26 @@ Every screen ticket pins one test: after a network failure, a retry with the sam
 #### 12.24.1 Data migration
 
 None. Web and test files only.
+
+### 12.25 v3 view reads that bypass `ApiClient` (RR) — 2026-10-15
+
+**Root cause.** Two customer screens read v3 views with a raw `fetch` and flatten every failure to a boolean. So a refusal, an expired session and a server failure all look the same to the customer: there is no worded text (WE2), and a 401 does not route to sign-in. `ApiClient.view` (`web/src/shared/api/client.ts:79`) already parses errors into `ApiError` for `wordedError` and takes `branch` and `filter`, so no client change is needed.
+
+**Measured on main `3b5afe9`:**
+- `web/src/screens/customer/history/HistoryScreen.tsx:26`: `fetchFn('/api/v3/views/my_transactions')`. `!res.ok` and the `catch` both only set `error(true)` (`:27-29`, `:36-37`).
+- `web/src/screens/customer/journey/JourneyScreen.tsx:74-75` (`my_queue_ticket`, with `branch` and `ticketId` in a hand-built query) and `:112` (`my_planner_drafts`), with hand-written status branches (`:80-90`).
+
+**Decision (fleet rule ♻️: one client core).** These reads use `ApiClient.view`, and failures go through `wordedError`.
+
+**Not in this section, on purpose:**
+- `/api/public/*` reads (`BranchesScreen.tsx:59`, `RateDisplay.tsx:77`). They already set an error state (`:70-71`, `:107-108`), and a client method for non-view paths is the open question on #1909.
+- `Book.tsx`, `HomeScreen.tsx`, `SignIn.tsx`, `SignUp.tsx` and `RateAlerts.tsx`. These files are owned by open RW/KW tickets.
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| RR-2 | C04 history reads `my_transactions` with `ApiClient.view`; failures worded; a 401 routes to sign-in as the customer shell does | `web/src/screens/customer/history/HistoryScreen.tsx`, a new test file beside it | this section merging |
+| RR-3 | C09 journey reads `my_queue_ticket` (filter `ticketId`) and `my_planner_drafts` with `ApiClient.view`; failures worded | `web/src/screens/customer/journey/JourneyScreen.tsx`, a new test file beside it | this section merging |
+
+#### 12.25.1 Data migration
+
+None. Web and test files only.
