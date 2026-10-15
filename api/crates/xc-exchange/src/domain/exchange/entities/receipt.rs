@@ -3,8 +3,8 @@
 use xc_kernel::money::{Money, Side};
 use xc_kernel::time::bangkok;
 
-use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::value_objects::transaction_form::TransactionForm;
+use xc_kernel::mode::Mode;
 
 const TEMPLATE: &str = include_str!("receipt_template.html");
 

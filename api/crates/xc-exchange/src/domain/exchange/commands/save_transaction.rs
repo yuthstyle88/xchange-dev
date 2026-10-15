@@ -1,6 +1,6 @@
 //! SaveTransaction command.
 
-use crate::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveTransaction {

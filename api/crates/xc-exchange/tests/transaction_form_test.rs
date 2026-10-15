@@ -20,13 +20,13 @@ use pos_error::{AppError, AppResult};
 use serde::Deserialize;
 use xc_kernel::money::{Money, Rate, Side};
 
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::entities::receipt::receipt_html;
 use xc_exchange::domain::exchange::value_objects::document_ref::DocumentRef;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
+use xc_kernel::mode::Mode;
 
 /// Ticket #670 (TX-2, D-4): the counter key names the organisation. Updated by the ticket author
 /// (claude/f03345fe) on the lane controller's ruling of 2026-10-10; OR-1's first organisation.

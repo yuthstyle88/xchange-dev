@@ -26,7 +26,7 @@
 
 use pos_error::AppError;
 
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 

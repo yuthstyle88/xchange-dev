@@ -29,12 +29,12 @@ use tokio::sync::Semaphore;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
-pub use xc_exchange::application::customer::service::CustomerService;
-pub use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
-pub use xc_exchange::domain::customer::entities::customer::Customer;
-pub use xc_exchange::domain::customer::entities::reservation::Reservation;
-pub use xc_exchange::domain::customer::value_objects::customer_details::CustomerDetails;
-pub use xc_exchange::domain::customer::value_objects::mode::Mode;
+pub use xc_customer::application::customer::service::CustomerService;
+pub use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
+pub use xc_customer::domain::customer::entities::customer::Customer;
+pub use xc_customer::domain::customer::entities::reservation::Reservation;
+pub use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
+pub use xc_kernel::mode::Mode;
 
 /// Upper bound for anything that must finish.
 pub const MUST_FINISH: Duration = Duration::from_secs(20);
