@@ -11,8 +11,9 @@
 //!   `tx4_common`/`tx5_common`; the posting port is `tx5_common::Ledger`, whose postings the report never reads);
 //! - counts: `CashCountService::{submit, verify}`; hand-overs: `HandoverService::start`; transfers:
 //!   `TransferFlow::{create, submit, decide, dispatch, receive}`;
-//! - holds and the entity (company, site): the kept custody service (`pg_custody_service`, `opsHold`,
-//!   `opsSetEntity`), until CA-8b #1274 (ruling N3 on #1350);
+//! - holds: CA-8b's `BranchDayService::hold`; the entity (company, site): an SQL row of `ops_state.entity`, which
+//!   has no writer since CA-10 #626 retired `opsSetEntity` (ruling Q5; re-expected by CA-10's ticket author
+//!   claude/c4d72c, who also drops the retired `ops_state.enabled` from this file's seed);
 //! - a POSTED reversal: `RequestReversal::run_in` → AP-1's decide (FINANCE) → `ReversalRepository::post_in` with a
 //!   receipt row this file writes, because RV-3 #684 is not merged (ruling N2 (a) on #1350);
 //! - **the one exception:** a `reconciliation_certifications` row is INSERTed by SQL, because its writer FN-1
@@ -69,11 +70,11 @@ use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
+use xc_shift::application::branch_day::service::BranchDayService;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
 use xc_shift::domain::shift::value_objects::balances::Balances;
+use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
 use xchange::application::workflows::exchange::reversal_request::{
@@ -81,7 +82,7 @@ use xchange::application::workflows::exchange::reversal_request::{
 };
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::bootstrap::{self, AppState};
-use xchange::infrastructure::custody::custody_service::pg_custody_service;
+use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
 const VIEW: &str = "staff_daily_report";
@@ -267,24 +268,19 @@ impl Day {
             Arc::new(PgShiftRepository::new(pool.clone())),
             branch_tx.clone(),
         );
-        // the entity is set while custody is off and no shift is open (custody_machine.rs:112-121)
-        pg_custody_service(&pool, &shifts, &branch_tx)
-            .command(
-                &BranchId::new(MAIN),
-                "opsSetEntity",
-                &json!({ "company": COMPANY, "site": SITE, "confirmSeparated": true }),
-                &CustodyActor {
-                    id: "owner".to_owned(),
-                    employee_id: None,
-                    role: CustodyRole::Owner,
-                },
-                Utc::now(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("set MAIN's entity: {e}"));
+        // the entity has no writer since CA-10 (#626 Q5): a read-only column, seeded here by SQL in the shape the
+        // custody repository reads (`custody_repository.rs` `entity_to_json`)
         desk.db
             .exec(&format!(
-                "UPDATE ops_state SET enabled = true, phase = 'OPEN', \
+                "INSERT INTO ops_state (branch_id, phase, entity) VALUES ('{MAIN}', 'CLOSED', \
+                 jsonb_build_object('company', '{COMPANY}', 'site', '{SITE}', 'confirmedBy', 'owner', \
+                 'at', 1791342000000::bigint)) \
+                 ON CONFLICT (branch_id) DO UPDATE SET entity = EXCLUDED.entity"
+            ))
+            .await;
+        desk.db
+            .exec(&format!(
+                "UPDATE ops_state SET phase = 'OPEN', \
                  safe = jsonb_build_object('USD', 500000::bigint, 'THB', 10000000::bigint) \
                  WHERE branch_id = '{MAIN}'"
             ))
@@ -305,8 +301,8 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ('{BR2}', true, 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ('{BR2}', 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
                  ON CONFLICT (branch_id) DO NOTHING"
             ))
             .await;
@@ -674,46 +670,42 @@ impl Day {
 
     async fn hold(&self, at: DateTime<Utc>) {
         let customer = self.live_customer().await;
-        let branch_tx = BranchTx::new(Transactor::new(self.db().pool.clone()));
-        let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.db().pool.clone())),
-            branch_tx.clone(),
+        let pool = self.db().pool.clone();
+        let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+        let shifts = ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx);
+        // CA-8b's path (`commands/branch_day.rs` builds the same service): a TELLER of MAIN holds the customer
+        let days = BranchDayService::new(
+            Arc::new(PgCustodyRepository::new(pool.clone())),
+            shifts,
+            Arc::new(PgCustodyPorts),
         );
-        let custody = pg_custody_service(&self.db().pool, &shifts, &branch_tx);
-        // v2's MONITOR, an `employees` row (the kept custody path reads it, `custody_ports.rs:151-165`)
-        self.db()
-            .exec(&format!(
-                "INSERT INTO employees (id, username, name, role, branch_id, password_hash, created_at) \
-                 VALUES ('employee-monitor', 'monitor', 'Monitor', 'MONITOR', '{MAIN}', 'x', now()) \
-                 ON CONFLICT (id) DO NOTHING"
-            ))
-            .await;
-        let monitor = CustodyActor {
-            id: "employee-monitor".to_owned(),
-            employee_id: Some("employee-monitor".to_owned()),
-            role: CustodyRole::Monitor,
-        };
-        // a hold is made by someone clocked in (custody_machine.rs, `Clock` before any other command)
-        custody
-            .command(
-                &BranchId::new(MAIN),
-                "opsClock",
-                &json!({ "direction": "IN" }),
-                &monitor,
-                at - Duration::seconds(1),
-            )
+        let teller = self.person(Role::Teller, Some(MAIN)).await;
+        let who = user_of(&teller.spec).expect("a teller of MAIN");
+        let main = BranchId::new(MAIN);
+        let mut tx = pool.begin().await.expect("begin");
+        sqlx::query(
+            "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 0) ON CONFLICT (branch_id) DO NOTHING",
+        )
+        .bind(MAIN)
+        .execute(&mut *tx)
+        .await
+        .expect("the branch's version row");
+        sqlx::query("SELECT version FROM branch_versions WHERE branch_id = $1 FOR UPDATE")
+            .bind(MAIN)
+            .execute(&mut *tx)
             .await
-            .unwrap_or_else(|e| panic!("clock the monitor in: {e}"));
-        custody
-            .command(
-                &BranchId::new(MAIN),
-                "opsHold",
-                &json!({ "customerId": customer, "reason": unique("check the passport") }),
-                &monitor,
-                at,
-            )
-            .await
-            .unwrap_or_else(|e| panic!("hold the customer: {e}"));
+            .expect("lock the branch");
+        days.hold(
+            &mut tx,
+            &who,
+            &main,
+            &customer,
+            &unique("check the passport"),
+            at,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("hold the customer: {e}"));
+        tx.commit().await.expect("commit the hold");
     }
 
     /// FN-1 #1068 is not merged, so nothing writes `reconciliation_certifications` yet: this row is INSERTed
