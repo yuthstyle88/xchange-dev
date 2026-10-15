@@ -652,12 +652,12 @@ impl Day {
 
     /// A LIVE customer of MAIN's organisation, reserved through the customer service (a hold names one).
     async fn live_customer(&self) -> String {
-        xc_exchange::application::customer::service::CustomerService::new(BranchTx::new(
+        xc_customer::application::customer::service::CustomerService::new(BranchTx::new(
             Transactor::new(self.db().pool.clone()),
         ))
         .reserve(
             &BranchId::new(MAIN),
-            xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer {
+            xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer {
                 name: "Held Customer".to_owned(),
                 passport_no: unique("P").replace('_', "").chars().take(9).collect(),
                 nationality: "THA".to_owned(),

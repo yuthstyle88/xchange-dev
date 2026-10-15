@@ -24,9 +24,8 @@ use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use xc_exchange::application::customer::service::CustomerService;
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::application::customer::service::CustomerService;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -37,6 +36,7 @@ use xc_exchange::domain::transaction::transaction::{
 };
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
 
 const ORIGIN: &str = "http://desk.test";

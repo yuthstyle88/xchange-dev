@@ -20,7 +20,6 @@ use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{
     ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingId, PostingRequest, PostingResult,
 };
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::Quote;
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -31,6 +30,7 @@ use xc_exchange::domain::transaction::transaction::{
 };
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Side};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
