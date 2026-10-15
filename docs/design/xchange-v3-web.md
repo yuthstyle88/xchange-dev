@@ -2154,3 +2154,37 @@ Each screen ticket's first test asserts that the write request carries `x-xchang
 #### 12.23.1 Data migration
 
 None. Web and test files only.
+
+### 12.24 One idempotency-key core for web writes (KW) — 2026-10-15
+
+**Root cause.** `ApiClient.command(method, path, body, key)` (`web/src/shared/api/client.ts:203`) leaves the `Idempotency-Key` to the caller. On main `18a4362`, `git grep -n "crypto.randomUUID()" -- web/src ':!*.test.*'` gives **48 lines in 30 files**. Most of them make an idempotency key; the exceptions are listed under KW-final. They follow three different rules:
+- **A new key on every click.** Examples: `admin/approvals/Approvals.tsx:46`, `:79`; `admin/users/UsersScreen.tsx:230`, `:253`, `:271`; `admin/rates/Rates.tsx:324`…`:464`; `admin/denomination-groups/DenominationGroups.tsx:53`, `:80`, `:182`; `admin/consent/Consent.tsx:48`, `:153`. A retry after an unknown outcome (a network error or a 5xx) is a **second** write, which is exactly what the key exists to prevent.
+- **Same body ⇒ same key.** Examples: `admin/cash-policy/CashPolicy.tsx:113`, `admin/cash/CashFlows.tsx:170`. This is the correct rule.
+- **A key held until success, whatever the body.** `staff/parts/command.ts:12`. Re-sending with a changed body under the old key gets `idempotencyConflict`.
+
+**Decision (fleet rule ♻️: the rule lives once, in the core).** Add one helper, `web/src/shared/api/keyed-write.ts`:
+`keyedWrite<B, R>(api: ApiClient, method: string, path: string | ((body: B) => string)): { send(body: B): Promise<R>; reset(): void }`.
+- The same serialized body as the last unfinished send reuses that key; a different body gets a new key.
+- The key is dropped after a 2xx, or after a refusal that is not "unknown" (a 4xx other than a network failure).
+- `reset()` drops it explicitly, for example when a dialog closes.
+
+Screens call `keyedWrite(...).send(body)` instead of building keys. `staff/parts/command.ts` becomes a thin re-export.
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| KW-1 | the core and its tests; `staff/parts/command.ts` re-pointed to it | `web/src/shared/api/keyed-write.ts`, `web/src/shared/api/keyed-write.test.ts`, `web/src/screens/staff/parts/command.ts` | this section merging |
+| KW-2 | admin group A: approvals, consent, denomination-groups, users, branches | those five folders' screen files and one new test file each | KW-1 |
+| KW-3 | admin group B: rates, booking-slots, campaigns, starting-prices, alert-settings, rate-alert-settings, reconciliation, cash-policy (`CashPolicy.tsx:113`), cash (`CashFlows.tsx:170`); the last two already follow the rule and move onto the core unchanged in behaviour | those folders' screen files and one new test file each | KW-1 |
+| KW-4 | customer and desk: customer bookings, rate-alerts, assistant; desk referral, `desk/save.ts`, desk bookings; devices; `shared/notifications/notifications.ts` | those files and one new test file per folder | KW-1; for `desk/bookings` and the customer screens, after RW-2/RW-5 have merged if they touch the same file |
+| KW-final | the rule as a gate: a test fails on any `crypto.randomUUID()` in a non-test file under `web/src` outside `keyed-write.ts`, except the named exclusions below; `KNOWN` holds the RW-2/RW-3/RW-5 files until they merge | `web/src/shared/api/keyed-write.gate.test.ts` | KW-2…KW-4 |
+
+**KW-final's named exclusions, each with its reason:**
+- `admin/parts/pending-write.tsx:127`: `requestId` is a payload field of the admin pending-write protocol (read back through a view filter, `:214`), not an `Idempotency-Key` header.
+- `admin/customers/Customers.tsx:57`: `memberSecret` is a secret value, not a key.
+- `admin/bookings/BookingsScreen.tsx:340`: the v2 bookings screen, deleted by `booking-slots.md` BK-11. It stays in `KNOWN` until then.
+
+Every screen ticket pins one test: after a network failure, a retry with the same input sends a byte-equal body under the **same** key; after an edit, the next send has a **new** key.
+
+#### 12.24.1 Data migration
+
+None. Web and test files only.
