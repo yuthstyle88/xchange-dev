@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { MeView } from '../../../shared/api/generated/me';
 import type {
   VerificationCaseAuditRow,
@@ -306,19 +307,13 @@ export function VerificationScreen(): JSX.Element {
 
     setDocError(null);
     setLinkExpiredDocId(null);
-    const key = makeIdempotencyKey();
     const input: VerificationDocumentLinkInput = {
       id: docId,
       expectedVersion: currentCase.version,
     };
 
     try {
-      const linkOut = await api.command<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
-        'POST',
-        `/api/operations/verification/documents/${encodeURIComponent(docId)}/link`,
-        input,
-        key,
-      );
+      const linkOut = await documentLinkWrite.send(input);
       const contentRes = await fetch(linkOut.url, {
         method: 'GET',
         credentials: 'same-origin',
@@ -343,6 +338,48 @@ export function VerificationScreen(): JSX.Element {
     }
   }
 
+  const documentLinkWrite = keyedWrite<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/documents/${encodeURIComponent(b.id)}/link`,
+  );
+
+  const startReviewWrite = keyedWrite<
+    VerificationCaseStartReviewInput,
+    VerificationCaseStartReviewOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/start-review`,
+  );
+
+  const approveWrite = keyedWrite<VerificationCaseApproveInput, VerificationCaseApproveOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/approve`,
+  );
+
+  const rejectWrite = keyedWrite<VerificationCaseRejectInput, VerificationCaseRejectOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/reject`,
+  );
+
+  const requestUpdateWrite = keyedWrite<
+    VerificationCaseRequestUpdateInput,
+    VerificationCaseRequestUpdateOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/request-update`,
+  );
+
+  const revokeWrite = keyedWrite<VerificationCaseRevokeInput, VerificationCaseRevokeOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/revoke`,
+  );
+
   async function handleCommandFailure(
     err: unknown,
     caseId: string,
@@ -364,8 +401,6 @@ export function VerificationScreen(): JSX.Element {
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:start-review:${expectedVersion}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseStartReviewInput = {
       id: caseId,
       expectedVersion,
@@ -374,16 +409,7 @@ export function VerificationScreen(): JSX.Element {
     const execute = async (): Promise<void> => {
       try {
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseStartReviewInput,
-          VerificationCaseStartReviewOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/start-review`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await startReviewWrite.send(body);
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -407,8 +433,6 @@ export function VerificationScreen(): JSX.Element {
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:approve:${expectedVersion}:${rawDate}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseApproveInput = {
       id: caseId,
       expectedVersion,
@@ -418,16 +442,7 @@ export function VerificationScreen(): JSX.Element {
     const execute = async (): Promise<void> => {
       try {
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseApproveInput,
-          VerificationCaseApproveOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/approve`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await approveWrite.send(body);
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -458,8 +473,6 @@ export function VerificationScreen(): JSX.Element {
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:${action}:${expectedVersion}:${selectedReason}`;
-    const key = getOrCreateIdemKey(sig);
 
     const execute = async (): Promise<void> => {
       try {
@@ -470,15 +483,7 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRejectInput,
-            VerificationCaseRejectOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/reject`,
-            body,
-            key,
-          );
+          const updated = await rejectWrite.send(body);
           setSelectedCase(updated);
         } else if (action === 'request-update') {
           const body: VerificationCaseRequestUpdateInput = {
@@ -486,15 +491,7 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRequestUpdateInput,
-            VerificationCaseRequestUpdateOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/request-update`,
-            body,
-            key,
-          );
+          const updated = await requestUpdateWrite.send(body);
           setSelectedCase(updated);
         } else {
           const body: VerificationCaseRevokeInput = {
@@ -502,18 +499,9 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRevokeInput,
-            VerificationCaseRevokeOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/revoke`,
-            body,
-            key,
-          );
+          const updated = await revokeWrite.send(body);
           setSelectedCase(updated);
         }
-        clearIdemKey(sig);
         setRetryFn(null);
         setPendingReasonAction(null);
       } catch (err: unknown) {
