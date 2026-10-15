@@ -37,14 +37,14 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 
-pub use xc_exchange::application::customer::service::CustomerService;
+pub use xc_customer::application::customer::service::CustomerService;
+pub use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 pub use xc_exchange::application::exchange::service::TransactionService;
-pub use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
-pub use xc_exchange::domain::customer::value_objects::mode::Mode;
 pub use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 #[allow(unused_imports)]
 pub use xc_exchange::domain::exchange::entities::transaction::Transaction;
 pub use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
+pub use xc_kernel::mode::Mode;
 pub use xc_shift::application::shift::service::ShiftService;
 pub use xc_shift::domain::shift::commands::open_shift::OpenShift;
 pub use xc_shift::domain::shift::value_objects::balances::Balances;

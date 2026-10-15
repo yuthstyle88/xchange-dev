@@ -28,7 +28,7 @@ use snapshot_common::{
     MAIN, NO_SUCH_BRANCH, Replay, Shop, WRITE_ACTIONS, assert_same, branch, people_of, refusal,
     time, transaction_of, with_ids, without_dropped_keys,
 };
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
