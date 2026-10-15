@@ -264,6 +264,12 @@ crates only); `xc-exchange` keeps the domain, the window rule and the repository
 
 Module registration lines (`mod.rs`) are not reserved (lane rule, #564 issuecomment-6076309062).
 
+### Tickets as opened
+
+| Code | Issue | State | Listed because |
+|---|---|---|---|
+| RV-2 follow-up (org-wide FINANCE) | #1920 | open (2026-10-15) | §5 `may_decide` ⇔ FINANCE "organisation-wide or that branch": `ReversalPolicy` refused an organisation-wide FINANCE. One `ScopedRole::covers` serves this policy and LG's `CountDifferencePolicy` (`ledger-inventory.md` Tickets as opened) |
+
 ### 8.1 Up-front tests (🧪)
 
 | Ticket | Behaviour locked |

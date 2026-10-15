@@ -1,12 +1,16 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { DeskBookingItemDto, DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
 import type {
   BookingCancelOutput,
   BookingCheckInOutput,
+  BookingCreateOutput,
   BookingRescheduleOutput,
 } from '../../../shared/api/generated/bookings';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import { th } from './i18n';
+import { screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { en, th } from './i18n';
 import './desk-bookings.css';
 
 interface SlotGroup {
@@ -17,22 +21,23 @@ interface SlotGroup {
 }
 
 const DESK_PERMISSION = 'BookingsDesk';
-const ROUTE_DESK_BOOKINGS = '/api/v3/views/desk_bookings';
-const ROUTE_STAFF_ME = '/api/v3/views/staff_me';
+const VIEW_DESK_BOOKINGS = 'desk_bookings';
+const VIEW_STAFF_ME = 'staff_me';
 const ROUTE_BOOKINGS = '/api/bookings';
 const routeCheckIn = (id: string) => `/api/bookings/${encodeURIComponent(id)}/check-in`;
 const routeCancel = (id: string) => `/api/bookings/${encodeURIComponent(id)}/cancel`;
 const routeReschedule = (id: string) => `/api/bookings/${encodeURIComponent(id)}/reschedule`;
 
-function generateIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+const t = screenT('desk.bookings', { th, en });
+
+function deskBookingError(err: unknown): string {
+  if (err instanceof ApiError && !isServerFailure(err)) {
+    const key = `error.${err.code}` as keyof typeof th;
+    if (Object.prototype.hasOwnProperty.call(th, key)) {
+      return t(key);
+    }
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  return wordedError(err);
 }
 
 function formatSlotTime(startAt?: string, endAt?: string, timeZone = 'Asia/Bangkok'): string {
@@ -70,35 +75,8 @@ function groupBookingsBySlot(items: DeskBookingItemDto[]): SlotGroup[] {
   return Array.from(map.values());
 }
 
-async function parseErrorResponse(res: Response): Promise<{ code?: string; message?: string }> {
-  try {
-    const json = await res.json();
-    if (json?.error) {
-      if (typeof json.error === 'string') {
-        return { message: json.error };
-      }
-      return {
-        code: json.error.code,
-        message: json.error.message,
-      };
-    }
-  } catch {
-    // not json
-  }
-  return {};
-}
-
-function resolveErrorMessage(code?: string, defaultMsg?: string): string {
-  if (code) {
-    const key = `error.${code}` as keyof typeof th;
-    if (th[key]) {
-      return th[key];
-    }
-  }
-  return defaultMsg ?? th['error.validationFailed'];
-}
-
 export function DeskBookingsScreen(): JSX.Element {
+  const api = new ApiClient();
   const [authorized, setAuthorized] = createSignal<boolean | null>(null);
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
   const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
@@ -133,63 +111,50 @@ export function DeskBookingsScreen(): JSX.Element {
   const allSlots = () => groupBookingsBySlot(items());
 
   async function fetchBookings(opts?: { since?: number; qr?: string }) {
-    const params = new URLSearchParams();
-    if (opts?.since !== undefined) {
-      params.set('since', String(opts.since));
-    }
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
-    if (qrParam) {
-      params.set('qr', qrParam);
-    }
-    const qs = params.toString();
-    const url = `${ROUTE_DESK_BOOKINGS}${qs ? `?${qs}` : ''}`;
-
-    const res = await fetch(url);
-    if (!res.ok) {
-      const err = await parseErrorResponse(res);
-      if (err.code === 'roleNotAllowed') {
-        setAuthorized(false);
-        setRefusalMessage(th['error.roleNotAllowed']);
+    try {
+      const envelope = await api.view<DeskBookingsData>(VIEW_DESK_BOOKINGS, {
+        since: opts?.since,
+        filter: qrParam ? { qr: qrParam } : undefined,
+      });
+      if (envelope.version !== undefined) {
+        setVersion(envelope.version);
+      }
+      if (envelope.changed === false) {
         return;
       }
-      setErrorMessage(resolveErrorMessage(err.code, err.message));
-      return;
-    }
-
-    const envelope = (await res.json()) as { version?: number; changed?: boolean; data?: DeskBookingsData };
-    if (envelope.version !== undefined) {
-      setVersion(envelope.version);
-    }
-    if (envelope.changed === false) {
-      return;
-    }
-    if (envelope.data && Array.isArray(envelope.data.items)) {
-      setItems(envelope.data.items);
-      const groups = groupBookingsBySlot(envelope.data.items);
-      const firstSlot = groups[0]?.slotId;
-      if (firstSlot && !formSlotId()) {
-        setFormSlotId(firstSlot);
+      if (envelope.data && Array.isArray(envelope.data.items)) {
+        setItems(envelope.data.items);
+        const groups = groupBookingsBySlot(envelope.data.items);
+        const firstSlot = groups[0]?.slotId;
+        if (firstSlot && !formSlotId()) {
+          setFormSlotId(firstSlot);
+        }
+        setAuthorized(true);
+        setRefusalMessage(null);
       }
-      setAuthorized(true);
-      setRefusalMessage(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'roleNotAllowed') {
+        setAuthorized(false);
+        setRefusalMessage(t('error.roleNotAllowed'));
+        return;
+      }
+      setErrorMessage(deskBookingError(err));
     }
   }
 
   onMount(async () => {
     try {
-      const staffRes = await fetch(ROUTE_STAFF_ME);
-      if (staffRes.ok) {
-        const staffEnv = (await staffRes.json()) as { data?: StaffMeView };
-        const perms: string[] = staffEnv?.data?.permissions ?? [];
-        if (!perms.includes(DESK_PERMISSION)) {
-          setAuthorized(false);
-          setRefusalMessage(th['error.roleNotAllowed']);
-          return;
-        }
-        if (staffEnv?.data?.branchId) {
-          setBranchId(staffEnv.data.branchId);
-          setFormBranchId(staffEnv.data.branchId);
-        }
+      const staffEnv = await api.view<StaffMeView>(VIEW_STAFF_ME);
+      const perms: string[] = staffEnv.data?.permissions ?? [];
+      if (!perms.includes(DESK_PERMISSION)) {
+        setAuthorized(false);
+        setRefusalMessage(t('error.roleNotAllowed'));
+        return;
+      }
+      if (staffEnv.data?.branchId) {
+        setBranchId(staffEnv.data.branchId);
+        setFormBranchId(staffEnv.data.branchId);
       }
     } catch {
       // ignore
@@ -222,30 +187,19 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleCheckIn(bookingId: string, existingKey?: string) {
-    const key = existingKey ?? generateIdempotencyKey();
+    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const res = await fetch(routeCheckIn(bookingId), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        body: JSON.stringify({ identityChecked: true }),
-      });
-
-      if (!res.ok) {
-        const err = await parseErrorResponse(res);
-        setErrorMessage(resolveErrorMessage(err.code, err.message));
-        setRetryAction(() => () => handleCheckIn(bookingId, key));
-        return;
-      }
-
-      const resData = (await res.json()) as BookingCheckInOutput;
+      const resData = await api.command<{ identityChecked: boolean }, BookingCheckInOutput>(
+        'POST',
+        routeCheckIn(bookingId),
+        { identityChecked: true },
+        key,
+      );
       if (!resData || typeof resData.status !== 'string') {
-        setErrorMessage(th['error.validationFailed']);
+        setErrorMessage(t('error.validationFailed'));
         return;
       }
 
@@ -253,8 +207,8 @@ export function DeskBookingsScreen(): JSX.Element {
         status: resData.status,
         ticketNumber: resData.ticketNumber,
       });
-    } catch (e) {
-      setErrorMessage(th.retry);
+    } catch (err) {
+      setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCheckIn(bookingId, key));
     }
   }
@@ -274,30 +228,19 @@ export function DeskBookingsScreen(): JSX.Element {
       return;
     }
 
-    const key = existingKey ?? generateIdempotencyKey();
+    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const res = await fetch(routeCancel(bookingId), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        body: JSON.stringify({ reason }),
-      });
-
-      if (!res.ok) {
-        const err = await parseErrorResponse(res);
-        setErrorMessage(resolveErrorMessage(err.code, err.message));
-        setRetryAction(() => () => handleConfirmCancel(key));
-        return;
-      }
-
-      const resData = (await res.json()) as BookingCancelOutput;
+      const resData = await api.command<{ reason: string }, BookingCancelOutput>(
+        'POST',
+        routeCancel(bookingId),
+        { reason },
+        key,
+      );
       if (!resData || typeof resData.status !== 'string') {
-        setErrorMessage(th['error.validationFailed']);
+        setErrorMessage(t('error.validationFailed'));
         return;
       }
 
@@ -306,8 +249,8 @@ export function DeskBookingsScreen(): JSX.Element {
       });
       setCancellingBookingId(null);
       setCancelReason('');
-    } catch (e) {
-      setErrorMessage(th.retry);
+    } catch (err) {
+      setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleConfirmCancel(key));
     }
   }
@@ -328,30 +271,19 @@ export function DeskBookingsScreen(): JSX.Element {
     const target = targetSlotId();
     if (!target) return;
 
-    const key = existingKey ?? generateIdempotencyKey();
+    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const res = await fetch(routeReschedule(bookingId), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        body: JSON.stringify({ slotId: target }),
-      });
-
-      if (!res.ok) {
-        const err = await parseErrorResponse(res);
-        setErrorMessage(resolveErrorMessage(err.code, err.message));
-        setRetryAction(() => () => handleConfirmReschedule(key));
-        return;
-      }
-
-      const resData = (await res.json()) as BookingRescheduleOutput;
+      const resData = await api.command<{ slotId: string }, BookingRescheduleOutput>(
+        'POST',
+        routeReschedule(bookingId),
+        { slotId: target },
+        key,
+      );
       if (!resData || typeof resData.status !== 'string' || typeof resData.slotId !== 'string') {
-        setErrorMessage(th['error.validationFailed']);
+        setErrorMessage(t('error.validationFailed'));
         return;
       }
 
@@ -360,8 +292,8 @@ export function DeskBookingsScreen(): JSX.Element {
         status: resData.status,
       });
       setReschedulingBookingId(null);
-    } catch (e) {
-      setErrorMessage(th.retry);
+    } catch (err) {
+      setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleConfirmReschedule(key));
     }
   }
@@ -398,12 +330,12 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleCreateBooking(existingKey?: string) {
-    const key = existingKey ?? generateIdempotencyKey();
+    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     const qty = Number(formQuantity());
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       branchId: formBranchId() || branchId(),
       slotId: formSlotId(),
       shopSide: formShopSide(),
@@ -418,28 +350,17 @@ export function DeskBookingsScreen(): JSX.Element {
     }
 
     try {
-      const res = await fetch(ROUTE_BOOKINGS, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await parseErrorResponse(res);
-        setErrorMessage(resolveErrorMessage(err.code, err.message));
-        setRetryAction(() => () => handleCreateBooking(key));
-        return;
-      }
-
-      await res.json();
+      await api.command<Record<string, unknown>, BookingCreateOutput>(
+        'POST',
+        ROUTE_BOOKINGS,
+        payload,
+        key,
+      );
       setShowNewBookingModal(false);
       resetNewBookingForm();
       await fetchBookings();
-    } catch (e) {
-      setErrorMessage(th.retry);
+    } catch (err) {
+      setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCreateBooking(key));
     }
   }

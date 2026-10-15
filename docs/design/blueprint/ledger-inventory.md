@@ -606,6 +606,7 @@ database with rows.
 | LG-3b | #926 | open | the `cash_limits` commands half of the LG-3 row, split at cutting (LG-3 #925 closed) |
 | LG-6 (parent) | #930 | open | holder only for LG-6.0 … LG-6.m |
 | LG-7 (parent) | #927 | open | holder only for LG-7.0 … LG-7.5 |
+| COUNT_DIFFERENCE follow-up (org-wide FINANCE) | #1920 | open (2026-10-15) | `may_decide` ⇔ "FINANCE (organisation-wide or of the branch)": `CountDifferencePolicy` refused an organisation-wide FINANCE. Shared with the reversal policy (`reversal.md` §8) |
 
 ## 11. Must ask the owner (not decided here)
 

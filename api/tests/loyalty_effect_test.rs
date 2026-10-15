@@ -48,8 +48,8 @@ use serde_json::Value;
 use tx4_common::*;
 use tx5_common::*;
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::Side;
 use xchange::application::workflows::exchange::effects::{
     EffectPhase, ExchangeCompletedFacts, ExchangeEffects, PostedReversal,
