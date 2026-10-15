@@ -193,7 +193,7 @@ pub(crate) fn derive_version_status(
     if status == "APPROVED" {
         if now < starts_at {
             "SCHEDULED".to_string()
-        } else if now > ends_at {
+        } else if now >= ends_at {
             "EXPIRED".to_string()
         } else {
             "ACTIVE".to_string()

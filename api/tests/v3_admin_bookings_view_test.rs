@@ -81,10 +81,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use actix_web::http::Method;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
-use compat_common::Fixture;
-use rpc_common::{Answer, App, Call, Cookies, Desk, Replay, one_of_each_role, sign_in};
+use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use snapshot_common::time;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -97,7 +95,6 @@ use xchange::presentation::http::v3::VIEWS;
 
 const ORIGIN: &str = "http://desk.test";
 const ROUTE: &str = "/api/v2/bookings";
-const RPC: &str = "/api/rpc";
 /// `BookingError::RateMoved` (T15-a), the refusal of a moved counter.
 const RATE_MOVED: &str = "เรทเปลี่ยน กรุณาโหลดใหม่";
 
@@ -1294,97 +1291,6 @@ async fn every_writer_of_the_views_tables_moves_the_version() {
         json!({ "currency": "GBP", "buy": "45.1000", "sell": "46.2000" })
     );
     room.finish().await;
-}
-
-// ── §4.2: the desk's hand-off (#414) ─────────────────────────────────────────
-
-const FILE: &str = "rpc/engine_actions.json";
-/// `engine_actions.json` #120: a LIVE BUY of USD 100 at 32.2 by cash in `MAIN`.
-const LIVE_BUY: usize = 120;
-
-/// The day replayed through the routes up to and including step `last`.
-async fn day_up_to(fixture: &Fixture, last: usize) -> Replay<'_> {
-    let desk = Desk::open().await;
-    let app = rpc_app!(desk);
-    let mut replay = Replay::start(desk, app, fixture).await;
-    for n in 1..=last {
-        replay.step(fixture.step(n)).await;
-    }
-    replay
-}
-
-/// Design §4.2 and ticket §7 (writer 3, the desk hand-off of #414): a save naming a CONFIRMED
-/// booking marks it USED inside the save's branch transaction, and the `since` held before it
-/// then answers `changed: true` with the row `USED` and its document.
-#[actix_web::test]
-async fn the_desk_hand_off_moves_the_version_and_the_row_reads_used() {
-    let fixture = Fixture::load(FILE);
-    let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    let step = replay.fixture.step(LIVE_BUY);
-    replay.desk.clock.set(time(&step.at));
-    sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-         type, code, amount, rate, status, created_at, created_by, expires_at) \
-         VALUES ('BK-hand', 'MAIN', 'BK-hand', 'BK-hand', 'Booked Customer', '0812345678', NULL, \
-         'BUY', 'USD', 100::numeric, 32.2::numeric, 'CONFIRMED', \
-         '2026-10-06T06:00:00.000Z'::timestamptz, 'owner', '2026-10-06T07:30:00.000Z'::timestamptz)",
-    )
-    .execute(&replay.desk.db.pool)
-    .await
-    .expect("book BK-hand");
-
-    let version = || async {
-        BranchVersions::new(replay.desk.db.pool.clone())
-            .current(&BranchId::new(MAIN))
-            .await
-            .expect("read MAIN's version")
-    };
-    let read = |query: String| {
-        let cookie = replay.cookies["owner"].clone();
-        let app = &replay.app;
-        async move {
-            let answer = app
-                .send(get(&view_path(BOOKINGS, &query)).cookie(&cookie))
-                .await;
-            assert_eq!(answer.status, 200, "{query}: {:.300}", answer.text);
-            answer.json()
-        }
-    };
-
-    let v = version().await;
-    assert_eq!(
-        read(format!("branch=MAIN&since={v}")).await,
-        json!({ "version": v, "changed": false })
-    );
-
-    let mut payload = replay
-        .ids
-        .to_actual(step.payload.as_ref().expect("a recorded payload"));
-    payload["onlineBookingId"] = json!("BK-hand");
-    payload["booking"] = json!("BK-hand");
-    payload["onlineBookingCustomerConfirmed"] = json!(true);
-    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's; the day's FRONT, FR1, saves
-    // with files of their own upload
-    let payload = replay.uploads_as("FR1", &payload).await;
-    let answer = replay
-        .app
-        .send(Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies["FR1"]))
-        .await;
-    assert_eq!(answer.status, 200, "the save: {:.300}", answer.text);
-    let document = answer.json()["documentRef"]
-        .as_str()
-        .expect("a document number")
-        .to_owned();
-
-    let now = version().await;
-    assert!(now > v, "the save moved MAIN's version ({v} → {now})");
-    let body = read(format!("branch=MAIN&since={v}")).await;
-    assert_eq!(body["changed"], json!(true), "{body}");
-    let rows = body["data"].as_array().expect("rows").clone();
-    let hand = row(&rows, "BK-hand");
-    assert_eq!(hand["status"], json!("USED"), "{hand}");
-    assert_eq!(hand["transactionRef"], json!(document), "{hand}");
-    replay.finish().await;
 }
 
 // ── the generated table and types ────────────────────────────────────────────

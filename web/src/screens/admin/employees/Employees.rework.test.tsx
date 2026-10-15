@@ -8,7 +8,6 @@ import type { AdminBranchItem } from '../../../shared/api/generated/admin_branch
 import type { AdminEmployeeRow } from '../../../shared/api/generated/admin_employees';
 import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
 import { Employees } from './Employees';
-import { th as screenTh } from './i18n';
 import { Dialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 
@@ -320,9 +319,9 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     // 1. Initial mount succeeds with SAMPLE_OPERATIONS (enabled: true) for MAIN
     const { setBranch } = mount();
 
+    // CA-10-FE (claude/c4d72c): the operations show only as the stored entity, read-only
     await vi.waitFor(() => {
-      const workflowEl = root.querySelector('.workspace-history');
-      expect(workflowEl?.textContent).toContain(screenTh.stateOn);
+      expect(root.textContent).toContain('108 Exchange Co., Ltd.');
     });
 
     // 2. Next read for B2 fails with 500
@@ -346,10 +345,7 @@ describe('Employees rework (#1696): worded errors on failed operations and branc
     });
 
     // Stale operations state from MAIN is NOT shown under B2, and unknown state is not rendered as off
-    const workflowEl = root.querySelector('.workspace-history');
-    expect(workflowEl?.textContent).not.toContain(screenTh.stateOn);
-    expect(workflowEl?.textContent).not.toContain(screenTh.stateOff);
-    expect(root.querySelector('.workspace-history button.primary')).toBeNull();
+    expect(root.textContent).not.toContain('108 Exchange Co., Ltd.');
   });
 
   // ── Row 2 (§2): Employees.tsx:99 (readBranches failure) ────────────────────

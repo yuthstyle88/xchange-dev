@@ -1502,3 +1502,74 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
     );
     pool.close().await;
 }
+
+/// Admin shifts reads every listed shift's balances in one call (`ShiftBalances::shift_balances_many`,
+/// BE controller claude/7ca80c; up-front test by claude/d7aa64). The batched read answers, for every
+/// requested shift, exactly what `shift_balances` answers for it alone, and every requested id is a key
+/// (an empty list when the shift has no rows).
+#[tokio::test]
+async fn shift_balances_many_answers_each_shifts_own_rows_like_shift_balances() {
+    let (pool, branch) = db().await;
+    let ledger = LedgerCashPostings::new();
+    let sb = PgLedgerShiftBalances::new(pool.clone());
+    fund_safe(
+        &pool,
+        &ledger,
+        &branch,
+        &[(thb(), "100000"), (usd(), "5000"), (eur(), "3000")],
+    )
+    .await;
+
+    let s1 = next_shift(&pool, &branch).await;
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &s1,
+        &[(thb(), "10000"), (usd(), "1000")],
+    )
+    .await;
+    post(
+        &pool,
+        &ledger,
+        &exchange(&s1, "BUY", usd(), "100", "3200", &unique("ex")),
+        None,
+        "BUY",
+    )
+    .await;
+
+    let s2 = next_shift(&pool, &branch).await;
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &s2,
+        &[(thb(), "2000"), (eur(), "500")],
+    )
+    .await;
+
+    let s3 = next_shift(&pool, &branch).await; // no posting, no count
+
+    let ids = vec![s1.clone(), s2.clone(), s3.clone()];
+    let many = sb
+        .shift_balances_many(&ids)
+        .await
+        .expect("the batched read");
+
+    let keys: Vec<&String> = many.keys().collect();
+    let mut want: Vec<&String> = ids.iter().collect();
+    want.sort();
+    assert_eq!(keys, want, "every requested shift is a key");
+    for id in &ids {
+        assert_eq!(
+            many[id],
+            balances_of(&sb, id).await,
+            "{id}: the batched rows equal the shift's own read"
+        );
+    }
+    assert!(
+        many[&s3].is_empty(),
+        "a shift with no rows answers an empty list"
+    );
+    pool.close().await;
+}

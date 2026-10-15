@@ -109,11 +109,11 @@ impl ExecutiveOverviewService {
             money_metric(COMMISSION_THB, commission)?,
         ];
 
+        let cash_by_branch = self.cash.branch_cash(changed, filter).await?;
         let mut branches = Vec::new();
         for head in heads.iter().filter(|h| changed.contains(&h.id)) {
             let side = volumes.by_branch.get(&head.id).cloned().unwrap_or_default();
-            let available = self.cash.available_cash(&head.id).await?;
-            let in_transit = self.cash.in_transit(&head.id).await?;
+            let cash = cash_by_branch.get(&head.id).cloned().unwrap_or_default();
             let mut cash_keys = vec![("branch", head.id.as_str().to_owned())];
             if let Some(c) = &filter.currency {
                 cash_keys.push(("currency", c.to_string()));
@@ -122,11 +122,11 @@ impl ExecutiveOverviewService {
                 volume_thb: side.buy_thb + side.sell_thb,
                 available_cash: Metric::value(
                     AVAILABLE_CASH,
-                    thb(available),
+                    thb(cash.available),
                     Some(Drilldown::to("admin_cash", cash_keys)),
                 ),
-                in_transit: Metric::value(IN_TRANSIT, thb(in_transit), None),
-                shifts: self.cash.shift_status(&head.id, filter).await?,
+                in_transit: Metric::value(IN_TRANSIT, thb(cash.in_transit), None),
+                shifts: cash.shifts,
                 pending_events: self.exchange.unfinished(&head.id).await?,
                 drilldown: overview_drilldown(filter, &head.id),
                 head: head.clone(),

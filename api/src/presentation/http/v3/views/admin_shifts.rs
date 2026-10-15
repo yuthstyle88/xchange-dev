@@ -129,12 +129,15 @@ impl PagedView for AdminShiftsPagedView {
                 .map_err(AppError::Database)?
             };
 
+            let shift_ids: Vec<String> = shifts.iter().map(|s| s.id.clone()).collect();
+            let mut balances_by_shift = shift_balances.shift_balances_many(&shift_ids).await?;
+
             let mut result = Vec::with_capacity(shifts.len());
 
             for s in shifts {
                 let is_closed = s.status == "CLOSED";
 
-                let balance_rows = shift_balances.shift_balances(&s.id).await?;
+                let balance_rows = balances_by_shift.remove(&s.id).unwrap_or_default();
 
                 let mut b_map: BTreeMap<String, ShiftBalance> = BTreeMap::new();
                 for b in balance_rows {

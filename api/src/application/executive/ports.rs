@@ -141,6 +141,14 @@ pub struct ShiftStatus {
     pub closed_unverified: i64,
 }
 
+/// A branch's cash figures for the branch table (`CashFacts::branch_cash`, design §9).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BranchCash {
+    pub available: Decimal,
+    pub in_transit: Decimal,
+    pub shifts: ShiftStatus,
+}
+
 /// The cash facts A01 reads (design §3 `available_cash`).
 pub trait CashFacts: Send + Sync {
     /// Baht on hand less reservations (none exist before #555 phase 6).
@@ -155,6 +163,28 @@ pub trait CashFacts: Send + Sync {
         branch: &'a BranchId,
         filter: &'a ExecutiveFilter,
     ) -> BoxFuture<'a, AppResult<ShiftStatus>>;
+
+    /// `available_cash`, `in_transit` and `shift_status` for every branch in `branches` at once (design §9).
+    fn branch_cash<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+        filter: &'a ExecutiveFilter,
+    ) -> BoxFuture<'a, AppResult<BTreeMap<BranchId, BranchCash>>> {
+        Box::pin(async move {
+            let mut out = BTreeMap::new();
+            for b in branches {
+                out.insert(
+                    b.clone(),
+                    BranchCash {
+                        available: self.available_cash(b).await?,
+                        in_transit: self.in_transit(b).await?,
+                        shifts: self.shift_status(b, filter).await?,
+                    },
+                );
+            }
+            Ok(out)
+        })
+    }
 
     /// Quantity on hand per currency, as `available_cash` reads it (the low-stock alert reads this).
     fn on_hand_by_currency<'a>(

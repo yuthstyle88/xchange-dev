@@ -32,13 +32,8 @@ const LIVE_BUY: usize = 120;
 const DEMO_BUY: usize = 125;
 /// A save at a rate other than the published one (decision A2 (owner, 2026-10-11; design quote-transaction.md §4.6.1, #674): DEMO too).
 const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ";
-/// A booking of #120's day, open until after its save.
-const OPEN_UNTIL: &str = "2026-10-06T07:30:00.000Z";
-/// The phone typed on a booking, and a verified member's phone: never the same, so the test
-/// can tell which one the feed took. BK-10 #1412: the member's phone is the customer's verified
-/// ACTIVE `PHONE` identity, which the feed carries in E.164 (ruling 3, issuecomment-6140233542);
-/// v2's `0899000111` is `+66899000111`.
-const TYPED_PHONE: &str = "0812345678";
+/// BK-10 #1412: the member's phone is the customer's verified ACTIVE `PHONE` identity, which the
+/// feed carries in E.164 (ruling 3, issuecomment-6140233542); v2's `0899000111` is `+66899000111`.
 const MEMBER_PHONE: &str = "+66899000111";
 
 async fn day_up_to(fixture: &Fixture, last: usize) -> Replay<'_> {
@@ -63,32 +58,6 @@ fn payload_of(replay: &Replay<'_>, n: usize) -> Value {
     replay
         .ids
         .to_actual(step.payload.as_ref().expect("a recorded payload"))
-}
-
-fn claiming(payload: &Value, id: &str) -> Value {
-    let mut out = payload.clone();
-    out["onlineBookingId"] = json!(id);
-    out["booking"] = json!(id);
-    out["onlineBookingCustomerConfirmed"] = json!(true);
-    out
-}
-
-/// A CONFIRMED booking matching #120 (BUY USD 100 at 32.2 in `MAIN`), typed phone
-/// [`TYPED_PHONE`], for `member` when given.
-async fn book(replay: &Replay<'_>, id: &str, member: Option<&str>) {
-    sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-         type, code, amount, rate, status, created_at, created_by, expires_at) \
-         VALUES ($1, 'MAIN', $1, $1, 'Booked Customer', $2, $3, 'BUY', 'USD', 100, 32.2, \
-         'CONFIRMED', '2026-10-06T06:00:00.000Z'::timestamptz, 'owner', $4::timestamptz)",
-    )
-    .bind(id)
-    .bind(TYPED_PHONE)
-    .bind(member)
-    .bind(OPEN_UNTIL)
-    .execute(&replay.desk.db.pool)
-    .await
-    .unwrap_or_else(|e| panic!("book {id}: {e}"));
 }
 
 /// BK-10 #1412: `customer` becomes a member — a verified ACTIVE `PHONE` identity with phone
@@ -357,27 +326,6 @@ async fn a_booking_of_a_verified_member_carries_the_members_phone() {
     let document = saved_ref(&save(&replay, &payload).await, "the member's booking");
     let row = feed_of(&replay, &document).await.expect("a feed row");
     assert_completed_row(&row, Some(MEMBER_PHONE), "verified member");
-    replay.finish().await;
-}
-
-/// A save from a booking with no member has no phone in the feed: the phone typed on the booking
-/// is never used (§6.1, only a verified member's phone counts).
-#[actix_web::test]
-async fn a_booking_without_a_member_has_no_phone() {
-    let fixture = Fixture::load(FILE);
-    let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    book(&replay, "BK-anon", None).await;
-    let document = saved_ref(
-        &save(
-            &replay,
-            &claiming(&payload_of(&replay, LIVE_BUY), "BK-anon"),
-        )
-        .await,
-        "a booking without a member",
-    );
-    let row = feed_of(&replay, &document).await.expect("a feed row");
-    assert_completed_row(&row, None, "no member");
-    assert_ne!(row["phone"], json!(TYPED_PHONE), "never the typed phone");
     replay.finish().await;
 }
 

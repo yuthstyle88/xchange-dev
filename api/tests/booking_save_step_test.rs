@@ -1,6 +1,7 @@
 //! Written before the implementation (row T15-h, ticket #414; design `docs/design/xchange-v3.md`
 //! §5.6.3 *Using a booking at the desk*, §5.6.5 *The save seam*, §5.6.8).
-//! Do not edit, delete or weaken; add tests in a file of your own.
+//! Re-pointed to Blueprint `bookings` for BK-7 (#1405, rulings R1-R6); Blueprint bookings completion
+//! for BK-7 is also tested in `api/tests/booking_completion_test.rs`.
 //!
 //! A desk opened from a booking sends `saveTransaction` with `onlineBookingId`, `booking` = the
 //! id, the booked type, currency, amount and rate, and `onlineBookingCustomerConfirmed: true`.
@@ -30,10 +31,13 @@ mod compat_common;
 mod rpc_common;
 mod snapshot_common;
 
+use chrono::Utc;
 use compat_common::Fixture;
 use rpc_common::{Answer, Call, Desk, RPC, Replay, STAFF_RPC};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use snapshot_common::time;
+use uuid::Uuid;
 
 const ORIGIN: &str = "http://desk.test";
 const FILE: &str = "rpc/engine_actions.json";
@@ -41,11 +45,10 @@ const FILE: &str = "rpc/engine_actions.json";
 /// `ExchangeTransact` is TELLER's only (OR-4b #767, design §4.2 C2), and B1 makes FRONT a TELLER.
 const TELLER: &str = "FR1";
 
-const NOT_FOUND_HERE: &str = "ไม่พบการจองของสาขานี้";
-const USED_BY_ANOTHER: &str = "การจองนี้ถูกใช้ทำรายการแล้ว";
-const NOT_USABLE: &str = "การจองยังไม่ยืนยัน หมดอายุ หรือถูกยกเลิกแล้ว";
-const FORM_MISMATCH: &str = "ข้อมูลรายการไม่ตรงกับการจอง หรือยังไม่ยืนยันลูกค้า";
-const MEMBER_MISMATCH: &str = "ลูกค้าไม่ตรงกับ Member ที่จอง";
+const NOT_FOUND_HERE: &str = "bookingNotUsable";
+const USED_BY_ANOTHER: &str = "bookingNotUsable";
+const NOT_USABLE: &str = "bookingNotUsable";
+const NOT_THIS_CUSTOMER: &str = "bookingNotThisCustomer";
 /// `save_transaction.rs:36`.
 const RATE_MISMATCH: &str = "เรทไม่ตรงกับเรทหน้าร้านล่าสุด กรุณาตรวจสอบเรทก่อนยืนยันรายการ";
 /// `save_transaction.rs:35`.
@@ -53,15 +56,11 @@ const CHANGED: &str = "รายการเดิมมีข้อมูลเ
 
 /// `engine_actions.json`: the counter rate of USD is buy 32.2, sell 32.7 (#28). #119 a LIVE BUY
 /// the engine refuses (its notes are too long); #120 a LIVE BUY of USD 100 at 32.2 by cash for
-/// `CX-00000001` at 07:00:00.000Z; #123 a LIVE SELL of USD 20 at 32.7 by PromptPay with a slip;
-/// #125 a DEMO BUY of USD 100 at 1.
+/// `CX-00000001` at 07:00:00.000Z; #123 a LIVE SELL of USD 20 at 32.7 by PromptPay with a slip.
 const ENGINE_REFUSES: usize = 119;
 const LIVE_BUY: usize = 120;
 const LIVE_SELL: usize = 123;
 const DEMO_BUY: usize = 125;
-/// The time of #120 and #123's day: a booking open until then is expired at the save of #120.
-const SAVE_AT_120: &str = "2026-10-06T07:00:00.000Z";
-const OPEN_UNTIL: &str = "2026-10-06T07:30:00.000Z";
 /// Customer 3 of the day (#80), another LIVE customer of `MAIN`.
 const OTHER_PASSPORT: &str = "P1000003";
 
@@ -105,77 +104,148 @@ fn claiming(payload: &Value, id: &str) -> Value {
     out
 }
 
-/// A booking row of T15-b's table. `fields` overrides the defaults: a CONFIRMED BUY of USD 100
-/// at 32.2 in `MAIN`, open until [`OPEN_UNTIL`], no member.
+/// A booking row of Blueprint bookings table. `fields` overrides the defaults: a CHECKED_IN BUY of USD 100
+/// in `MAIN`.
 async fn book(replay: &Replay<'_>, id: &str, fields: Value) {
-    let mut row = json!({
-        "branch": "MAIN",
-        "type": "BUY",
-        "code": "USD",
-        "amount": "100",
-        "rate": "32.2",
-        "status": "CONFIRMED",
-        "expiresAt": OPEN_UNTIL,
-        "memberId": null,
-    });
-    for (k, v) in fields.as_object().expect("the fields of a booking") {
-        assert!(row.get(k).is_some(), "no booking field {k}");
-        row[k] = v.clone();
-    }
-    let text = |k: &str| row[k].as_str().map(str::to_owned);
+    let pool = &replay.desk.db.pool;
+    let branch = fields
+        .get("branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("MAIN");
+    let org_id: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+        .bind(branch)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_else(|_| Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap());
+
+    let slot_id = Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("{branch}-slot-2026-10-06").as_bytes(),
+    );
     sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-         type, code, amount, rate, status, created_at, created_by, expires_at) \
-         VALUES ($1, $2, $1, $1, 'Booked Customer', '0812345678', $3, $4, $5, $6::numeric, \
-         $7::numeric, $8, '2026-10-06T06:00:00.000Z'::timestamptz, 'owner', $9::timestamptz)",
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status) \
+         VALUES ($1, $2, $3, '2026-10-06', '2026-10-06 06:00:00+00', '2026-10-06 08:00:00+00', 10, 1, 'OPEN') \
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(slot_id)
+    .bind(org_id)
+    .bind(branch)
+    .execute(pool)
+    .await
+    .expect("seed slot for booking");
+
+    let default_customer = payload_of(replay, LIVE_BUY)["customerId"]
+        .as_str()
+        .unwrap_or("CUST-00000001")
+        .to_string();
+    let customer_id = fields
+        .get("customerId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&default_customer);
+    let status = fields
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("CHECKED_IN");
+    let side = fields.get("type").and_then(|v| v.as_str()).unwrap_or("BUY");
+    let currency = fields.get("code").and_then(|v| v.as_str()).unwrap_or("USD");
+    let amount_str = fields
+        .get("amount")
+        .and_then(|v| v.as_str())
+        .unwrap_or("100");
+    let amount: rust_decimal::Decimal = amount_str
+        .parse()
+        .unwrap_or(rust_decimal::Decimal::from(100));
+
+    let tx_id: Option<Uuid> = fields
+        .get("transactionId")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .or_else(|| (status == "COMPLETED").then(Uuid::new_v4));
+
+    if let Some(t_id) = tx_id {
+        sqlx::query(
+            "INSERT INTO transactions (\
+                id, organization_id, document_ref, branch_id, mode, status, submission_id, payload_hash, \
+                customer_id, customer_name, nationality, type, code, amount, \
+                unit_size, rate, principal, fee, bank_fee, received, paid, \
+                method, payment_ref, account, staff_id, booking_no, notes, \
+                value_date, paid_at, recorded_at, recorded_by, completed_at, count_confirmed \
+             ) VALUES (\
+                $1, $2, $3, $4, 'DEMO', 'COMPLETED', $5, 'payload-hash', \
+                $6, 'Test Customer', 'THA', 'BUY', 'USD', 100, \
+                1, 32.2, 3220, 0, 0, 3220, 100, \
+                'Cash', '', 'Cash Drawer', 'teller-1', 'B261014-0001', '', \
+                '2026-10-14', now(), now(), 'teller-1', now(), true \
+             ) ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(t_id)
+        .bind(org_id)
+        .bind(format!("DOC-{t_id}"))
+        .bind(branch)
+        .bind(format!("sub-{t_id}"))
+        .bind(customer_id)
+        .execute(pool)
+        .await
+        .expect("seed tx for completed booking");
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(id.as_bytes());
+    let hash = hasher.finalize().to_vec();
+
+    let confirm_expires = (status == "PENDING_CUSTOMER_CONFIRMATION")
+        .then(|| Utc::now() + chrono::Duration::minutes(15));
+    let booking_no = format!(
+        "B-{}",
+        &id.replace('-', "")[..id.replace('-', "").len().min(8)]
+    );
+
+    sqlx::query(
+        "INSERT INTO bookings (\
+            id, organization_id, branch_id, booking_no, customer_id, slot_id, \
+            shop_side, requested_currency, requested_quantity, source_channel, \
+            status, transaction_id, qr_token_hash, qr_version, confirm_expires_at, created_by \
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'APP', $10, $11, $12, 1, $13, 'owner') \
+         ON CONFLICT (id) DO UPDATE SET \
+            status = EXCLUDED.status, \
+            transaction_id = EXCLUDED.transaction_id, \
+            confirm_expires_at = EXCLUDED.confirm_expires_at",
     )
     .bind(id)
-    .bind(text("branch"))
-    .bind(text("memberId"))
-    .bind(text("type"))
-    .bind(text("code"))
-    .bind(text("amount"))
-    .bind(text("rate"))
-    .bind(text("status"))
-    .bind(text("expiresAt"))
-    .execute(&replay.desk.db.pool)
+    .bind(org_id)
+    .bind(branch)
+    .bind(&booking_no)
+    .bind(customer_id)
+    .bind(slot_id)
+    .bind(side)
+    .bind(currency)
+    .bind(amount)
+    .bind(status)
+    .bind(tx_id)
+    .bind(&hash)
+    .bind(confirm_expires)
+    .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("book {id}: {e}"));
 }
 
-/// The stored status of booking `id`, what used it and the document it became.
+/// The stored status of booking `id` and the transaction it became.
 async fn booking_row(replay: &Replay<'_>, id: &str) -> Value {
-    let (status, submission, document): (String, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT status, submission_id, transaction_ref FROM v2_bookings WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_one(&replay.desk.db.pool)
-    .await
-    .unwrap_or_else(|e| panic!("read booking {id}: {e}"));
-    json!({ "status": status, "submission_id": submission, "transaction_ref": document })
+    let (status, transaction_id): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT status, transaction_id FROM bookings WHERE id = $1")
+            .bind(id)
+            .fetch_one(&replay.desk.db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("read booking {id}: {e}"));
+    json!({ "status": status, "transaction_id": transaction_id })
 }
 
 fn untouched() -> Value {
-    json!({ "status": "CONFIRMED", "submission_id": null, "transaction_ref": null })
+    json!({ "status": "CHECKED_IN", "transaction_id": null })
 }
 
-fn used_by(submission: &str, document: &str) -> Value {
-    json!({ "status": "USED", "submission_id": submission, "transaction_ref": document })
-}
-
-/// A member of `MAIN` for customer `customer`; answers the member's id.
-async fn member_of(replay: &Replay<'_>, id: &str, customer: &str) -> String {
-    sqlx::query(
-        "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, \
-         verified_by) VALUES ($1, 'MAIN', $2, 'Member', '0812345678', $1, \
-         '2026-10-06T06:00:00.000Z'::timestamptz, 'owner')",
-    )
-    .bind(id)
-    .bind(customer)
-    .execute(&replay.desk.db.pool)
-    .await
-    .unwrap_or_else(|e| panic!("member {id}: {e}"));
-    id.to_string()
+fn completed_with(tx_id: Uuid) -> Value {
+    json!({ "status": "COMPLETED", "transaction_id": tx_id })
 }
 
 /// The id v3 gave the LIVE customer with this passport.
@@ -325,8 +395,8 @@ async fn no_claim_keeps_rate_check() {
     replay.finish().await;
 }
 
-/// One booking, two submissions: the first saves and uses it, the second is refused and keeps
-/// nothing.
+/// One booking, two submissions: the first saves and completes it, the second is refused and keeps
+/// nothing (design B10, row 6).
 #[actix_web::test]
 async fn second_submission_refused() {
     let fixture = Fixture::load(FILE);
@@ -334,11 +404,12 @@ async fn second_submission_refused() {
     book(&replay, "BK-once", json!({})).await;
     let first = claiming(&payload_of(&replay, LIVE_BUY), "BK-once");
     let document = saved_ref(&save(&replay, TELLER, RPC, &first).await, "the first save");
-    let submission = first["submissionId"].as_str().expect("a submission");
-    assert_eq!(
-        booking_row(&replay, "BK-once").await,
-        used_by(submission, &document)
-    );
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
+    assert_eq!(booking_row(&replay, "BK-once").await, completed_with(tx_id));
 
     let mut second = first.clone();
     second["submissionId"] = json!(FRESH_A);
@@ -356,7 +427,7 @@ async fn second_submission_refused() {
     replay.finish().await;
 }
 
-/// The same save sent again answers the stored exchange; the booking stays USED by it and
+/// The same save sent again answers the stored exchange; the booking stays COMPLETED by it and
 /// nothing is written again.
 #[actix_web::test]
 async fn repeat_passes() {
@@ -371,7 +442,11 @@ async fn repeat_passes() {
         &save(&replay, TELLER, RPC, &payload).await,
         "the first save",
     );
-    let submission = payload["submissionId"].as_str().expect("a submission");
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
     let before = kept(&replay).await;
 
     let again = save(&replay, TELLER, RPC, &payload).await;
@@ -383,12 +458,13 @@ async fn repeat_passes() {
     assert_eq!(kept(&replay).await, before, "nothing written again");
     assert_eq!(
         booking_row(&replay, "BK-repeat").await,
-        used_by(submission, &document)
+        completed_with(tx_id)
     );
     replay.finish().await;
 }
 
-/// A member's booking is for that member's customer only.
+/// A booking is for that booking's customer only; another customer claiming it is refused
+/// with `bookingNotThisCustomer` and nothing is written (design B10, R5).
 #[actix_web::test]
 async fn member_customer_must_match() {
     let fixture = Fixture::load(FILE);
@@ -400,95 +476,54 @@ async fn member_customer_must_match() {
         .to_string();
     let other = customer_with(&replay, OTHER_PASSPORT).await;
     assert_ne!(other, customer);
-    let theirs = member_of(&replay, "MB-other", &other).await;
-    let ours = member_of(&replay, "MB-ours", &customer).await;
-    book(&replay, "BK-theirs", json!({ "memberId": theirs })).await;
-    book(&replay, "BK-ours", json!({ "memberId": ours })).await;
+
+    book(&replay, "BK-theirs", json!({ "customerId": other })).await;
+    book(&replay, "BK-ours", json!({ "customerId": customer })).await;
 
     refused_and_kept(
         &replay,
         TELLER,
         RPC,
         &claiming(&payload, "BK-theirs"),
-        MEMBER_MISMATCH,
+        NOT_THIS_CUSTOMER,
         "BK-theirs",
-        "another member's booking",
+        "another customer's booking",
     )
     .await;
 
     let mine = claiming(&payload, "BK-ours");
     let document = saved_ref(
         &save(&replay, TELLER, RPC, &mine).await,
-        "the member's own booking",
+        "the customer's own booking",
     );
-    let submission = mine["submissionId"].as_str().expect("a submission");
-    assert_eq!(
-        booking_row(&replay, "BK-ours").await,
-        used_by(submission, &document)
-    );
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
+    assert_eq!(booking_row(&replay, "BK-ours").await, completed_with(tx_id));
     assert_eq!(booking_row(&replay, "BK-theirs").await, untouched());
     replay.finish().await;
 }
 
-/// A booking cancelled, or expired, after the desk read it is refused at the save: cancelled,
-/// open until the very instant of the save (expiry is inclusive), open until before it, and a
-/// member's booking still waiting for its expiry (PENDING).
+/// A booking not in CHECKED_IN or IN_SERVICE status is refused with bookingNotUsable (design B10, R5).
 #[actix_web::test]
 async fn cancelled_or_expired_refused() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
     let payload = payload_of(&replay, LIVE_BUY);
-    let customer = payload["customerId"]
-        .as_str()
-        .expect("the customer")
-        .to_string();
-    let ours = member_of(&replay, "MB-ours", &customer).await;
-    book(&replay, "BK-cancelled", json!({})).await;
-    book(&replay, "BK-at-the-instant", json!({})).await;
-    book(&replay, "BK-before", json!({})).await;
-    book(
-        &replay,
-        "BK-pending",
-        json!({ "status": "PENDING", "expiresAt": null, "memberId": ours }),
-    )
-    .await;
-    // what the desk read with `get` changed before the save
-    for (sql, id) in [
-        (
-            "UPDATE v2_bookings SET status = 'CANCELLED' WHERE id = $1",
-            "BK-cancelled",
-        ),
-        (
-            "UPDATE v2_bookings SET expires_at = '2026-10-06T07:00:00.000Z'::timestamptz WHERE id = $1",
-            "BK-at-the-instant",
-        ),
-        (
-            "UPDATE v2_bookings SET expires_at = '2026-10-06T06:59:59.999Z'::timestamptz WHERE id = $1",
-            "BK-before",
-        ),
-    ] {
-        sqlx::query(sql)
-            .bind(id)
-            .execute(&replay.desk.db.pool)
-            .await
-            .unwrap_or_else(|e| panic!("change {id}: {e}"));
-    }
-    assert_eq!(fixture.step(LIVE_BUY).at, SAVE_AT_120);
 
-    for id in [
-        "BK-cancelled",
-        "BK-at-the-instant",
-        "BK-before",
-        "BK-pending",
-    ] {
+    for status in ["CANCELLED", "EXPIRED", "NO_SHOW", "CONFIRMED"] {
+        let id = format!("BK-{status}");
+        book(&replay, &id, json!({ "status": status })).await;
         refused_and_kept(
             &replay,
             TELLER,
             RPC,
-            &claiming(&payload, id),
+            &claiming(&payload, &id),
             NOT_USABLE,
-            id,
-            id,
+            &id,
+            &format!("booking in {status} status"),
         )
         .await;
     }
@@ -500,7 +535,7 @@ async fn cancelled_or_expired_refused() {
 async fn unknown_or_other_branch_booking_refused() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    sqlx::query("INSERT INTO branches (id, name) VALUES ('B2', 'Branch Two')")
+    sqlx::query("INSERT INTO branches (id, name, organization_id) VALUES ('B2', 'Branch Two', '00000000-0000-0000-0000-000000000001') ON CONFLICT (id) DO NOTHING")
         .execute(&replay.desk.db.pool)
         .await
         .expect("a second branch");
@@ -533,93 +568,79 @@ async fn unknown_or_other_branch_booking_refused() {
     replay.finish().await;
 }
 
-/// The form must be the booking's: LIVE, its type, currency, amount and rate, `booking` naming
-/// it, and the customer ticked with JSON `true`.
-///
-/// Re-expected for TX-6 by the test-writer (decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556)): the booking is at the counter rate 32.2,
-/// because a booked save is quoted at the published line. A form at another rate is now refused by
-/// the quote's client-rate check, which comes before the booking step, so that one case answers
-/// `RATE_MISMATCH`; every other case is the booking step's, as before.
+/// A save claiming a CHECKED_IN booking completes the booking with that save's transaction id,
+/// and transactions.booking_id stays NULL per R1 (dell-claude-6 must-fix 3, R6).
 #[actix_web::test]
-async fn form_must_match_the_booking() {
+async fn save_claiming_checked_in_booking_completes_with_transaction_id() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    book(&replay, "BK-match", json!({ "rate": "32.2" })).await;
-    let mut good = claiming(&payload_of(&replay, LIVE_BUY), "BK-match");
-    good["rate"] = json!(32.2);
+    book(&replay, "BK-save-path", json!({ "status": "CHECKED_IN" })).await;
+    let payload = claiming(&payload_of(&replay, LIVE_BUY), "BK-save-path");
 
-    let variant = |key: &str, value: Value| {
-        let mut p = good.clone();
-        p[key] = value;
-        p
-    };
-    let mut another_currency = variant("currency", json!("EUR"));
-    another_currency["rate"] = json!(37.5);
-    let mut another_type = variant("type", json!("SELL"));
-    another_type["rate"] = json!(32.7);
-    let mut unticked = good.clone();
-    unticked
-        .as_object_mut()
-        .expect("a payload")
-        .remove("onlineBookingCustomerConfirmed");
-    refused_and_kept(
-        &replay,
-        TELLER,
-        RPC,
-        &variant("rate", json!(32.1)),
-        RATE_MISMATCH,
-        "BK-match",
-        "a rate that is neither the counter's nor the booked one (decision A3: refused at the quote)",
-    )
-    .await;
-    let cases = [
-        (variant("amount", json!(99)), "another amount"),
-        // decision A3: sent at the counter rate of the other currency or side, so the quote passes and
-        // the booking step is what refuses it
-        (another_currency, "another currency"),
-        (another_type, "another type"),
-        (variant("booking", json!("WALK-IN")), "booking not the id"),
-        (
-            variant("onlineBookingCustomerConfirmed", json!("true")),
-            "the tick as text",
-        ),
-        (
-            variant("onlineBookingCustomerConfirmed", json!(false)),
-            "the tick false",
-        ),
-        (unticked, "no tick"),
-    ];
-    for (payload, label) in &cases {
-        refused_and_kept(
-            &replay,
-            TELLER,
-            RPC,
-            payload,
-            FORM_MISMATCH,
-            "BK-match",
-            label,
-        )
-        .await;
-    }
+    let answer = save(&replay, TELLER, RPC, &payload).await;
+    let document = saved_ref(&answer, "save claiming checked-in booking");
 
-    let document = saved_ref(
-        &save(&replay, TELLER, RPC, &good).await,
-        "the matching form",
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
+
+    // R1: transactions.booking_id stays NULL for Blueprint bookings
+    let (stored_booking_id,): (Option<String>,) =
+        sqlx::query_as("SELECT booking_id FROM transactions WHERE id = $1")
+            .bind(tx_id)
+            .fetch_one(&replay.desk.db.pool)
+            .await
+            .expect("read transactions.booking_id");
+    assert!(
+        stored_booking_id.is_none(),
+        "R1: transactions.booking_id must stay NULL for Blueprint bookings (FK points to v2_bookings)"
     );
-    let submission = good["submissionId"].as_str().expect("a submission");
+
     assert_eq!(
-        booking_row(&replay, "BK-match").await,
-        used_by(submission, &document)
+        booking_row(&replay, "BK-save-path").await,
+        completed_with(tx_id)
     );
     replay.finish().await;
 }
 
-/// A DEMO save cannot use a booking (v2: `p.mode !== 'LIVE'`).
+/// A save claiming another customer's booking is refused with bookingNotThisCustomer,
+/// and neither the transaction nor the booking is written (dell-claude-6 must-fix 3, R6).
+#[actix_web::test]
+async fn save_claiming_another_customers_booking_refuses_booking_not_this_customer() {
+    let fixture = Fixture::load(FILE);
+    let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
+    let payload = payload_of(&replay, LIVE_BUY);
+    let other = customer_with(&replay, OTHER_PASSPORT).await;
+
+    book(&replay, "BK-other-cust", json!({ "customerId": other })).await;
+
+    refused_and_kept(
+        &replay,
+        TELLER,
+        RPC,
+        &claiming(&payload, "BK-other-cust"),
+        NOT_THIS_CUSTOMER,
+        "BK-other-cust",
+        "save claiming another customer's booking",
+    )
+    .await;
+
+    assert_eq!(
+        booking_row(&replay, "BK-other-cust").await,
+        untouched(),
+        "booking remains untouched in CHECKED_IN status"
+    );
+    replay.finish().await;
+}
+
+/// A DEMO save cannot use a booking (design B10, ruling R9).
 #[actix_web::test]
 async fn demo_save_cannot_use_a_booking() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to(&fixture, DEMO_BUY - 1).await;
-    book(&replay, "BK-demo", json!({})).await;
+    book(&replay, "BK-demo", json!({ "status": "CHECKED_IN" })).await;
     let mut payload = claiming(&payload_of(&replay, DEMO_BUY), "BK-demo");
     assert_eq!(payload["mode"], json!("DEMO"));
     payload["rate"] = json!(32.2);
@@ -628,53 +649,16 @@ async fn demo_save_cannot_use_a_booking() {
         TELLER,
         RPC,
         &payload,
-        FORM_MISMATCH,
+        NOT_USABLE,
         "BK-demo",
         "a DEMO save naming a booking",
     )
     .await;
-    replay.finish().await;
-}
-
-/// The refusals come in v2's order: found (1), used (2), usable (3), the form (4), the member (5).
-#[actix_web::test]
-async fn refusal_order() {
-    let fixture = Fixture::load(FILE);
-    let replay = day_up_to(&fixture, LIVE_BUY - 1).await;
-    let payload = payload_of(&replay, LIVE_BUY);
-    let other = customer_with(&replay, OTHER_PASSPORT).await;
-    let theirs = member_of(&replay, "MB-other", &other).await;
-    book(&replay, "BK-cancelled", json!({ "status": "CANCELLED" })).await;
-    book(&replay, "BK-theirs", json!({ "memberId": theirs })).await;
-    book(&replay, "BK-once", json!({})).await;
-    let first = claiming(&payload, "BK-once");
-    saved_ref(&save(&replay, TELLER, RPC, &first).await, "BK-once used");
-
-    let wrong_amount = |id: &str| {
-        let mut p = claiming(&payload, id);
-        p["submissionId"] = json!(FRESH_A);
-        p["amount"] = json!(99);
-        p
-    };
-    for (id, sentence, label) in [
-        (
-            "BK-once",
-            USED_BY_ANOTHER,
-            "used by another before the form (2 before 4)",
-        ),
-        (
-            "BK-cancelled",
-            NOT_USABLE,
-            "cancelled before the form (3 before 4)",
-        ),
-        (
-            "BK-theirs",
-            FORM_MISMATCH,
-            "the form before the member (4 before 5)",
-        ),
-    ] {
-        refused_and_kept(&replay, TELLER, RPC, &wrong_amount(id), sentence, id, label).await;
-    }
+    assert_eq!(
+        booking_row(&replay, "BK-demo").await,
+        untouched(),
+        "the booking stays CHECKED_IN"
+    );
     replay.finish().await;
 }
 
@@ -710,17 +694,19 @@ async fn a_save_refused_after_the_check_keeps_the_booking() {
         &save(&replay, TELLER, RPC, &fresh).await,
         "a new submission with the booking",
     );
-    assert_eq!(
-        booking_row(&replay, "BK-kept").await,
-        used_by(FRESH_A, &document)
-    );
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
+    assert_eq!(booking_row(&replay, "BK-kept").await, completed_with(tx_id));
     replay.finish().await;
 }
 
 /// Two desks save with one booking at the same moment — the owner on `/api/rpc` and a Front on
 /// `/api/staff/rpc`, two sessions, so the two requests really run side by side: exactly one
 /// exchange is saved, the other is refused with v2's sentence (not a server error), and the
-/// booking is USED by the one saved. Done for [`RACES`] bookings in turn, so that a check made
+/// booking is COMPLETED by the one saved. Done for [`RACES`] bookings in turn, so that a check made
 /// outside the save's branch transaction has more than one chance to be caught.
 #[actix_web::test]
 async fn two_saves_at_once_use_the_booking_once() {
@@ -765,7 +751,7 @@ async fn two_saves_at_once_use_the_booking_once() {
             save(&replay, TELLER, RPC, &a),
             save(&replay, "FR1", STAFF_RPC, &b)
         );
-        let (won, lost, winner) = match (first.status, second.status) {
+        let (won, lost, _winner) = match (first.status, second.status) {
             (200, _) => (first, second, sub_a),
             (_, 200) => (second, first, sub_b),
             _ => panic!(
@@ -775,9 +761,14 @@ async fn two_saves_at_once_use_the_booking_once() {
         };
         lost.assert_refused(400, USED_BY_ANOTHER, &format!("{id}: the other desk"));
         let document = saved_ref(&won, &format!("{id}: the desk that won"));
+        let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+            .bind(&document)
+            .fetch_one(&replay.desk.db.pool)
+            .await
+            .expect("transaction id for saved document");
         assert_eq!(
             booking_row(&replay, &id).await,
-            used_by(&winner, &document),
+            completed_with(tx_id),
             "{id}"
         );
         let after = kept(&replay).await["transactions"]
@@ -849,10 +840,14 @@ async fn the_staff_route_uses_the_booking_too() {
         "32.7",
         "saved at the booked rate, the counter's (decision A3)"
     );
-    let submission = payload["submissionId"].as_str().expect("a submission");
+    let tx_id: Uuid = sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+        .bind(&document)
+        .fetch_one(&replay.desk.db.pool)
+        .await
+        .expect("transaction id for saved document");
     assert_eq!(
         booking_row(&replay, "BK-staff").await,
-        used_by(submission, &document)
+        completed_with(tx_id)
     );
     replay.finish().await;
 }

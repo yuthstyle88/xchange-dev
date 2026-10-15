@@ -184,8 +184,70 @@ impl PublishService {
 
         let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
             std::collections::HashMap::new();
+        type CachedPolicyRow = (
+            RatePolicy,
+            Option<i32>,
+            Decimal,
+            Decimal,
+            Option<RatePercent>,
+        );
+        let mut policy_cache: std::collections::HashMap<Uuid, Option<CachedPolicyRow>> =
+            std::collections::HashMap::new();
         let mut line_thresholds: std::collections::HashMap<CurrencyCode, Option<RatePercent>> =
             std::collections::HashMap::new();
+
+        let ref_ids: Vec<Uuid> = db_lines
+            .iter()
+            .filter_map(|r| r.get::<Option<Uuid>, _>("reference_line_id"))
+            .collect();
+        let ref_rows = sqlx::query(
+            "SELECT l.id, l.currency_code, l.unit_size, l.buy, l.sell, b.fetched_at, b.source_date \
+             FROM rate_reference_lines l JOIN rate_reference_batches b ON b.id = l.batch_id \
+             WHERE l.id = ANY($1)",
+        )
+        .bind(&ref_ids)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        type LoadedReference = (
+            ReferenceLine,
+            chrono::DateTime<chrono::Utc>,
+            chrono::NaiveDate,
+        );
+        let mut references_by_id: std::collections::HashMap<Uuid, LoadedReference> =
+            std::collections::HashMap::with_capacity(ref_rows.len());
+        for rr in ref_rows {
+            let rid: Uuid = rr.get(0);
+            let code_s: String = rr.get(1);
+            let curr = CurrencyCode::parse(code_s.trim())
+                .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
+            let u_dec: Decimal = rr.get(2);
+            let u = UnitSize::parse(&u_dec.to_string())
+                .map_err(|e| RateEngineError::Internal(e.to_string()))?;
+            let b_dec: Option<Decimal> = rr.get(3);
+            let s_dec: Option<Decimal> = rr.get(4);
+            let fat: chrono::DateTime<chrono::Utc> = rr.get(5);
+            let sdate: chrono::NaiveDate = rr.get(6);
+            let b_rate = match b_dec {
+                Some(d) => Some(
+                    Rate::parse(&d.to_string())
+                        .map_err(|e| RateEngineError::Internal(e.to_string()))?,
+                ),
+                None => None,
+            };
+            let s_rate = match s_dec {
+                Some(d) => Some(
+                    Rate::parse(&d.to_string())
+                        .map_err(|e| RateEngineError::Internal(e.to_string()))?,
+                ),
+                None => None,
+            };
+            references_by_id.insert(
+                rid,
+                (ReferenceLine::new(curr, u, b_rate, s_rate), fat, sdate),
+            );
+        }
 
         for r in &db_lines {
             let code_str: String = r.get("currency_code");
@@ -237,41 +299,50 @@ impl PublishService {
             };
             let line = DraftLine::new(c, buy, sell, reason);
 
-            // Load policy if any
+            // Load policy if any (cached per policy_version_id)
             let (policy, max_ref_age, pol_buy_pct, pol_sell_pct) = if let Some(pid) = pol_id {
-                let pol_row = sqlx::query(
-                    "SELECT id::text, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours, sharp_move_alert_pct \
-                     FROM rate_policy_versions WHERE id = $1",
-                )
-                .bind(pid)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| RateEngineError::Database(e.to_string()))?;
-
-                if let Some(pr) = pol_row {
-                    let pid_str: String = pr.get(0);
-                    let buy_pct: Decimal = pr.get(1);
-                    let sell_pct: Decimal = pr.get(2);
-                    let guards: serde_json::Value = pr.get(3);
-                    let age: Option<i32> = pr.get(4);
-                    let alert_thresh: Option<Decimal> = pr.get(5);
-                    let thresh = alert_thresh.and_then(|d| RatePercent::parse(&d.to_string()).ok());
-                    line_thresholds.insert(c, thresh);
-                    let buy_pct_rate = RatePercent::parse(&buy_pct.to_string())
-                        .map_err(|e| RateEngineError::Internal(e.to_string()))?;
-                    let sell_pct_rate = RatePercent::parse(&sell_pct.to_string())
-                        .map_err(|e| RateEngineError::Internal(e.to_string()))?;
-                    (
-                        Some(RatePolicy::new(
-                            pid_str,
-                            buy_pct_rate,
-                            sell_pct_rate,
-                            &guards,
-                        )?),
-                        age,
-                        Some(buy_pct),
-                        Some(sell_pct),
+                let cached_pol = if let Some(cached) = policy_cache.get(&pid) {
+                    cached.clone()
+                } else {
+                    let pol_row = sqlx::query(
+                        "SELECT id::text, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours, sharp_move_alert_pct \
+                         FROM rate_policy_versions WHERE id = $1",
                     )
+                    .bind(pid)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+                    let loaded = if let Some(pr) = pol_row {
+                        let pid_str: String = pr.get(0);
+                        let buy_pct: Decimal = pr.get(1);
+                        let sell_pct: Decimal = pr.get(2);
+                        let guards: serde_json::Value = pr.get(3);
+                        let age: Option<i32> = pr.get(4);
+                        let alert_thresh: Option<Decimal> = pr.get(5);
+                        let thresh =
+                            alert_thresh.and_then(|d| RatePercent::parse(&d.to_string()).ok());
+                        let buy_pct_rate = RatePercent::parse(&buy_pct.to_string())
+                            .map_err(|e| RateEngineError::Internal(e.to_string()))?;
+                        let sell_pct_rate = RatePercent::parse(&sell_pct.to_string())
+                            .map_err(|e| RateEngineError::Internal(e.to_string()))?;
+                        Some((
+                            RatePolicy::new(pid_str, buy_pct_rate, sell_pct_rate, &guards)?,
+                            age,
+                            buy_pct,
+                            sell_pct,
+                            thresh,
+                        ))
+                    } else {
+                        None
+                    };
+                    policy_cache.insert(pid, loaded.clone());
+                    loaded
+                };
+
+                if let Some((pol, age, buy_pct, sell_pct, thresh)) = cached_pol {
+                    line_thresholds.insert(c, thresh);
+                    (Some(pol), age, Some(buy_pct), Some(sell_pct))
                 } else {
                     line_thresholds.insert(c, None);
                     (None, None, None, None)
@@ -281,54 +352,12 @@ impl PublishService {
                 (None, None, None, None)
             };
 
-            // Load reference if any
-            let (reference, fetched_at, source_date) = if let Some(rf) = ref_id {
-                let ref_row = sqlx::query(
-                    "SELECT l.currency_code, l.unit_size, l.buy, l.sell, b.fetched_at, b.source_date \
-                     FROM rate_reference_lines l JOIN rate_reference_batches b ON b.id = l.batch_id \
-                     WHERE l.id = $1",
-                )
-                .bind(rf)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| RateEngineError::Database(e.to_string()))?;
-
-                if let Some(rr) = ref_row {
-                    let code_s: String = rr.get(0);
-                    let curr = CurrencyCode::parse(code_s.trim())
-                        .map_err(|e| RateEngineError::Internal(e.to_string()))?;
-                    let u_dec: Decimal = rr.get(1);
-                    let u = UnitSize::parse(&u_dec.to_string())
-                        .map_err(|e| RateEngineError::Internal(e.to_string()))?;
-                    let b_dec: Option<Decimal> = rr.get(2);
-                    let s_dec: Option<Decimal> = rr.get(3);
-                    let fat: chrono::DateTime<chrono::Utc> = rr.get(4);
-                    let sdate: chrono::NaiveDate = rr.get(5);
-                    let b_rate = match b_dec {
-                        Some(d) => Some(
-                            Rate::parse(&d.to_string())
-                                .map_err(|e| RateEngineError::Internal(e.to_string()))?,
-                        ),
-                        None => None,
-                    };
-                    let s_rate = match s_dec {
-                        Some(d) => Some(
-                            Rate::parse(&d.to_string())
-                                .map_err(|e| RateEngineError::Internal(e.to_string()))?,
-                        ),
-                        None => None,
-                    };
-                    (
-                        Some(ReferenceLine::new(curr, u, b_rate, s_rate)),
-                        Some(fat),
-                        Some(sdate),
-                    )
-                } else {
-                    (None, None, None)
-                }
-            } else {
-                (None, None, None)
-            };
+            // Look up preloaded reference if any
+            let (reference, fetched_at, source_date) =
+                match ref_id.and_then(|rf| references_by_id.get(&rf).cloned()) {
+                    Some((ref_line, fat, sdate)) => (Some(ref_line), Some(fat), Some(sdate)),
+                    None => (None, None, None),
+                };
 
             // Currency unit size and minor unit
             let c_row = sqlx::query("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")

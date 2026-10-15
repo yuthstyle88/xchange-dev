@@ -365,7 +365,7 @@ classDiagram
   class Channel { <<api/src/application/executive/channel.rs (EX-3)>> WalkIn; Booking; Kiosk; Referred; sql_condition(alias) }
   class Drilldown { <<api/src/application/executive/drilldown.rs (EX-3, merged)>> +view +filter +dropped; to(view, keys) Drilldown }
   class accepted_keys { <<free fn, drilldown.rs:9>> accepted_keys(view) &[&str] }
-  class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm() }
+  class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm(); unfinished(branch); unfinished_by_branch(branches) BTreeMap~BranchId, i64~ }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
   class CashFacts { <<trait ports.rs>> available_cash(); in_transit(); shift_status(); branch_cash(branches, filter) BTreeMap~BranchId, BranchCash~ }
@@ -421,6 +421,8 @@ classDiagram
 ```
 
 **`CashFacts::branch_cash` (2026-10-15).** `overview.rs:113-130` called `available_cash`, `in_transit` and `shift_status` once per branch. `branch_cash(branches, filter)` answers all three for every requested branch at once (every branch a key; each value equal to the three single reads). The default loops over the single reads, so test doubles need no change; `LedgerCashFacts` overrides it with grouped reads. Ticket: executive overview branch cash (BE controller claude/7ca80c).
+
+**`ExchangeFacts::unfinished_by_branch` (2026-10-15).** `overview.rs` still called `unfinished` once per branch after `branch_cash` landed. `unfinished_by_branch(branches)` answers every requested branch's unfinished LIVE count at once (every branch a key; each value equal to `unfinished` for that branch). The default loops over `unfinished`; `WideTransactionFacts` overrides it with one grouped count and `BookingFacts` delegates to it. Ticket: executive overview unfinished by branch (BE controller claude/7ca80c).
 
 Web: `web/src/screens/admin/executive/**` (A01) and `web/src/screens/admin/reconciliation/**` (F01), each an admin menu
 folder. Admin menus are collected by `import.meta.glob('./*/menu.ts')` (`web/src/screens/admin/menus.ts:79-83`), so no
