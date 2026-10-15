@@ -25,9 +25,10 @@
 //! stored, not only a 500.
 //!
 //! Required: both are refused exactly as any invalid amount is (`KioskError::AmountOrCurrencyInvalid`,
-//! the same 400 and sentence as an amount of 0) and write neither a request nor a quote. Where
-//! the ceiling sits between "fits 64-bit hundredths" and the kiosk's own 10,000,000.00 is not
-//! decided here; both rows exceed every candidate, so no boundary row is pinned.
+//! the same 400 and sentence as an amount of 0) and write neither a request nor a quote. The
+//! ceiling is the storage invariant (lane controller's ruling (b), 2026-10-16): any derived
+//! foreign amount `quote_lines.quantity numeric(20,4)` cannot hold (10^16 or more) is refused,
+//! and so is anything past `Money::try_minor`; the boundary rows are at the end of this file.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips.
 
@@ -210,4 +211,89 @@ fn the_machine_refuses_a_sell_whose_foreign_passes_64_bit_hundredths() {
     // keep: on the same rate a figure that fits is still priced, cut to two places
     let fits = quote("1", "0.01").expect("0.01 THB at 0.00000001 per 1 is priced");
     assert_eq!(fits.quote.foreign, Money::parse("1000000").expect("money"));
+}
+
+// ── the storage ceiling (lane controller's ruling (b), 2026-10-16) ───────────
+//
+// A SELL's derived foreign amount must be stored exactly by both columns it lands in:
+// `kiosk_requests.foreign_amount numeric(20,2)` (below 10^18) and `quote_lines.quantity
+// numeric(20,4)` (below 10^16). `quote_lines.quantity` binds: the largest storable two-place
+// amount is 9999999999999999.99, and 10000000000000000.00 is one cent over. Its hundredths
+// (10^18) still fit an i64, so `try_minor` alone does not refuse it.
+//
+// The exact largest amount is not reachable through the route: the answer needs a power-of-ten
+// unit size (`CompatRate::per_one`, else the response is a 500 after the commit), the rate has 8
+// places and the baht at most 10,000,000.00, and under those the derived amount lands on
+// …99.99 only when the rate is at least the unit size, i.e. when it is at most the baht. So the
+// exact pair is pinned on the machine, and the route pins the cent over plus the largest amount
+// it can reach on the same line.
+
+#[test]
+fn the_machine_prices_up_to_the_largest_storable_foreign_amount_and_refuses_a_cent_over() {
+    let line = |unit: &str| CounterLine {
+        line_id: LineId(1),
+        rate: Rate::parse("1").expect("rate"),
+        unit_size: UnitSize::parse(unit).unwrap_or_else(|e| panic!("unit {unit}: {e}")),
+        minor_unit: MinorUnit::TWO,
+    };
+    let quote = |unit: &str, baht: &str| {
+        let input = QuoteInput {
+            side: Some(Side::Sell),
+            currency: Some(CurrencyCode::parse("USD").expect("USD")),
+            amount: Some(Money::parse(baht).unwrap_or_else(|e| panic!("baht {baht}: {e}"))),
+            payment_method: None,
+        };
+        let facts = CounterFacts {
+            open: true,
+            line: Some(line(unit)),
+        };
+        KioskMachine::quote(&input, &facts, "K-1", KioskTime::from_epoch_millis(0))
+    };
+    // 1 THB at 1 per 9999999999999999.99 is 9999999999999999.99 USD: the largest storable
+    let largest = quote("9999999999999999.99", "1").expect("the largest storable is priced");
+    assert_eq!(largest.quote.foreign.to_string(), "9999999999999999.99");
+    assert_eq!(largest.quote.thb.to_string(), "1.00");
+    // 2 THB at 1 per 5000000000000000 is 10000000000000000.00 USD: one cent over
+    assert_eq!(
+        quote("5000000000000000", "2").map(|r| r.quote.foreign),
+        Err(KioskError::AmountOrCurrencyInvalid),
+        "10000000000000000.00 USD cannot be stored in quote_lines.quantity numeric(20,4)"
+    );
+}
+
+#[actix_web::test]
+async fn a_sell_a_cent_past_the_storage_ceiling_is_refused_and_the_largest_reachable_is_stored() {
+    let counter = Counter::open(&[]).await;
+    widen_the_dollar(&counter, "10", "0.00000001").await;
+    // 9,999,999.99 THB / 0.00000001 × 10 = 9999999990000000.00 USD, the largest this line reaches
+    let answer = sell(&counter, json!(9999999.99)).await;
+    assert_eq!(answer.status, 200, "SELL 9,999,999.99: {}", answer.text);
+    let body = answer.json();
+    assert_eq!(body["foreign"].to_string(), "9999999990000000");
+    assert_eq!(body["thb"].to_string(), "9999999.99");
+    assert_eq!(
+        stored(&counter).await,
+        [(
+            "9999999990000000.00".to_owned(),
+            "9999999.99".to_owned(),
+            "9999999990000000.0000".to_owned()
+        )],
+        "the request and its quote line hold the foreign amount the kiosk answered"
+    );
+    sqlx::query("DELETE FROM kiosk_requests")
+        .execute(&counter.desk.db.pool)
+        .await
+        .expect("clear the stored request");
+    sqlx::query("DELETE FROM quotes")
+        .execute(&counter.desk.db.pool)
+        .await
+        .expect("clear the stored quote");
+    // 10,000,000 THB / 0.00000001 × 10 = 10000000000000000.00 USD, a cent past the ceiling
+    assert_refused_and_nothing_stored(
+        &counter,
+        json!(10000000),
+        "SELL 10,000,000 THB at 1e-8 per 10",
+    )
+    .await;
+    counter.finish().await;
 }
