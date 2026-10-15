@@ -6,6 +6,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   BranchAlertSettingsData,
   BranchAlertSettingsSaveInput,
@@ -21,6 +22,11 @@ const t = screenT('admin.alert-settings', table);
 
 export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveWrite = keyedWrite<BranchAlertSettingsSaveInput, BranchAlertSettingsData>(
+    api,
+    'POST',
+    '/api/v3/commands/branch_alert_settings_save',
+  );
 
   const [staleDataMinutes, setStaleDataMinutes] = createSignal<number | null>(null);
   const [floors, setFloors] = createSignal<StockFloorDto[]>([]);
@@ -63,6 +69,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       setStaleDataMinutes(null);
       setFloors([]);
       setVersion(null);
+      saveWrite.reset();
     }
     setError(null);
     loadSettings(branch);
@@ -92,11 +99,6 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     setError(null);
     setSaving(true);
 
-    const key =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : 'key-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-
     const branch = props.branch();
     const input: BranchAlertSettingsSaveInput = {
       branch,
@@ -109,12 +111,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     };
 
     try {
-      const res = await api.command<BranchAlertSettingsSaveInput, BranchAlertSettingsData>(
-        'POST',
-        '/api/v3/commands/branch_alert_settings_save',
-        input,
-        key,
-      );
+      const res = await saveWrite.send(input);
       setVersion(res.version ?? null);
       setStaleDataMinutes(res.staleDataMinutes);
       setFloors(res.floors ? res.floors.map((f) => ({ ...f })) : []);
