@@ -5,7 +5,7 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   AssistantAskAnswerDto,
   AssistantAskInput,
@@ -15,7 +15,8 @@ import type {
   MyAssistantConversationData,
   MyAssistantConversationFilter,
 } from '../../../shared/api/generated/my_assistant_conversation';
-import { errorText, lang, locale, screenT } from '../../../shared/i18n';
+import { lang, locale, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { th, en, zh } from './i18n';
 import './assistant.css';
@@ -136,13 +137,8 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       }
       setMessages(res.data?.messages ?? []);
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? errorText(err.code, err.message)
-          : err instanceof Error
-            ? err.message
-            : t('loadFailed');
-      setLoadError(msg);
+      setLoadError(wordedError(err));
+      setMessages([]);
     } finally {
       setLoading(false);
     }
@@ -209,13 +205,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       if (isFromInput) {
         setInputText(textToSend);
       }
-      const msg =
-        err instanceof ApiError
-          ? errorText(err.code, err.message)
-          : err instanceof Error
-            ? err.message
-            : t('sendFailed');
-      setSendError(msg);
+      setSendError(wordedError(err));
     } finally {
       setSending(false);
     }
