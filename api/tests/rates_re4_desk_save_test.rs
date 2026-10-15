@@ -150,7 +150,11 @@ async fn row(shop: &Shop, document_ref: &str) -> Row {
         Decimal,
     );
     let (line_id, rate, unit_size, amount, principal, received, paid): Raw = sqlx::query_as(
-        "SELECT published_rate_line_id::text, rate, unit_size, amount, principal, received, paid \
+        // TX-9 #677: the published line is read through the line's quote line, not the wide column.
+        "SELECT (SELECT ql.published_rate_line_id::text FROM transaction_lines l \
+                 JOIN quote_lines ql ON ql.id = l.quote_line_id \
+                 WHERE l.transaction_id = transactions.id AND l.line_no = 1), \
+                rate, unit_size, amount, principal, received, paid \
          FROM transactions WHERE document_ref = $1",
     )
     .bind(document_ref)
