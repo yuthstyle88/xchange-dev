@@ -10,7 +10,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};
 use xc_customer::CustomerService;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::Side;
 use xc_loyalty::application::events::LoyaltyEvents;
 use xc_loyalty::domain::facts::{CompletedFacts, CompletedLine, ReversedFacts};

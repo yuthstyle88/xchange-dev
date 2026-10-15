@@ -59,8 +59,8 @@ use xc_cash::application::count::count_service::{post_difference_in, post_openin
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
-use xc_exchange::application::customer::service::CustomerService;
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::application::customer::service::CustomerService;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 use xc_rate::application::branch::service::BranchService;

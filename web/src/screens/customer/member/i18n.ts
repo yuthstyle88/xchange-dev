@@ -1,0 +1,58 @@
+// APP-19 / C05 customer membership texts (design membership-points.md D-9, §4.5, §9).
+
+export const th = {
+  title: 'สมาชิก',
+  loading: 'กำลังโหลด…',
+  loadFailed: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
+  retry: 'ลองใหม่',
+  pointsUnavailable: 'คะแนนยังไม่พร้อมให้บริการในขณะนี้',
+  notMember: 'ยังไม่ได้เป็นสมาชิก',
+  howToJoin: 'สมัครสมาชิกได้ที่สาขาหรือทำธุรกรรมเพื่อเริ่มต้นสะสมคะแนน',
+  tier: 'ระดับสมาชิก',
+  effectiveUntil: 'ใช้ได้ถึง {date}',
+  pointsAvailable: 'คะแนนสะสม',
+  pointsPending: 'คะแนนรอตรวจสอบ',
+  nextExpiry: 'คะแนนหมดอายุ {points} คะแนน ในวันที่ {date}',
+  progressTitle: 'ความคืบหน้าสู่ระดับถัดไป',
+  progressText: '{current} / {next} {basis}',
+  topTier: 'ระดับสูงสุดแล้ว',
+  outOfScope: 'ไม่มีสิทธิ์เข้าถึงข้อมูลสมาชิกนี้',
+};
+
+export const en = {
+  title: 'Membership',
+  loading: 'Loading…',
+  loadFailed: 'Failed to load membership data',
+  retry: 'Retry',
+  pointsUnavailable: 'Points are currently unavailable',
+  notMember: 'Not a member yet',
+  howToJoin: 'Join membership at any branch or transact to start earning points',
+  tier: 'Membership Tier',
+  effectiveUntil: 'Effective until {date}',
+  pointsAvailable: 'Available Points',
+  pointsPending: 'Pending Points',
+  nextExpiry: '{points} points expiring on {date}',
+  progressTitle: 'Progress to next tier',
+  progressText: '{current} / {next} {basis}',
+  topTier: 'Top tier achieved',
+  outOfScope: 'You do not have access to this membership data',
+};
+
+export const zh = {
+  title: '会员',
+  loading: '正在加载…',
+  loadFailed: '加载会员信息失败',
+  retry: '重试',
+  pointsUnavailable: '积分服务暂不可用',
+  notMember: '尚未成为会员',
+  howToJoin: '请前往各分行加入会员，或通过交易开始累积积分',
+  tier: '会员等级',
+  effectiveUntil: '有效期至 {date}',
+  pointsAvailable: '可用积分',
+  pointsPending: '待确认积分',
+  nextExpiry: '{points} 积分将于 {date} 过期',
+  progressTitle: '升级进度',
+  progressText: '{current} / {next} {basis}',
+  topTier: '已达到最高等级',
+  outOfScope: '无权访问此会员信息',
+};

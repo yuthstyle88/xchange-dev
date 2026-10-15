@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pos_error::AppResult;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_kernel::mode::Mode;
 use xc_marketing::application::redeemer::BenefitRedeemer;
 use xc_marketing::infrastructure::pg_budget_ledger::{BudgetLedger, CompletedExchange};
 

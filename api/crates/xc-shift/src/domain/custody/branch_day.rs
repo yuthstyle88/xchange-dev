@@ -76,6 +76,16 @@ impl BranchDay {
         }
     }
 
+    /// CA-7e (#1911, design §4.2): a verified OPEN count moves the branch day to READY when the day reads CLOSED
+    /// before the count's shift is opened; any other day is left as stored.
+    pub fn ready_on_open_count(stored: Phase, open_shifts_before: usize) -> Option<Phase> {
+        if Self::read_phase(stored, open_shifts_before) == Phase::Closed {
+            Some(Phase::Ready)
+        } else {
+            None
+        }
+    }
+
     /// The save of a Blueprint-session saver (C1, §4.3). A repeat is answered by who saved first. A first save
     /// needs the saver's own OPEN shift, a day that is OPEN or CUT_OFF, and — after cut-off or inside the window's
     /// draft-only part — an OPEN draft of the saver's own on that shift matching the save (the kept rule). There is

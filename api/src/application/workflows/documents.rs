@@ -6,8 +6,8 @@
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_rate::application::branch::service::BranchService;
 
 use crate::infrastructure::files::file_service::FileService;

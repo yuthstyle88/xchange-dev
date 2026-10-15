@@ -630,6 +630,7 @@ the receiver of a hand-over, a teller's own shift).
 | the 13 `ops*` compat RPC actions (`compat/actions/custody.rs:38-52`) and their policy rows (`policy.rs:397-475`) | the commands of §4.4 |
 | the admin direct shift actions (`adminOpenShift`, `adminCloseShift`, `adminMoveStock`, `compat/rpc.rs:361-398`) | counts and moves; the admin cash menu (#467) moves to them (CA-9) |
 | the Enable switch and its six-role check (`employees.rs:174-180`), the `enabled` gate in the save checks (`custody/service.rs:238`, `:282`; `branch_day.rs:303`), and the `ops_state.enabled` column (M3) | none: the Blueprint's model always applies (#626 Q2, 2026-10-15) |
+| v2's custody command engine: `CustodyService::command` (`xc-shift/src/application/custody/service.rs:343`), `CustodyMachine::apply` and every v2 command handler of the machine (clock, target, start service, cut-off, hold, release, begin, and the request half above). Its callers retire with it: the 13 `ops*` actions (`compat/actions/custody.rs`), and `PgEmployeeCustody::set_entity` / `enable` (`src/infrastructure/custody/employee_custody.rs:64-75`, `:143-157`, which send `opsSetEntity` / `opsEnable`) with the `entity` and `enable` actions of `POST /api/employees` (`employees.rs:167-200`) | CA-8b's commands on `BranchDayService` (§4.4, §4.8). `enable`: none (the Enable switch above). `entity`: none yet (Q5: a read-only column until an org-settings design gives it a writer). Both `/api/employees` actions then answer as an action the route does not know (#626 Q7, 2026-10-15) |
 | v2 fixture replays of the request model: `custody_machine_test.rs:1525,1545,1573`, `custody_service_test.rs:160,170`, `rpc_ops_test.rs`, the custody parts of `rpc_test.rs`, `employee_custody_test.rs`, `compat_*` custody steps; fixtures `v2_custody_cases.json`, `v2_custody_service_cases.json`, `rpc/ops_actions.json`, `snapshot/custody.json` | §9's tests (the surviving rules restated) |
 
 `v2_shift_cases.json` and `v2_stock_cases.json` survive: ShiftService and the stock delta of an exchange stay.
@@ -642,6 +643,16 @@ the receiver of a hand-over, a teller's own shift).
   path: a non-teller session cannot save.
 - *Q5.* `ops_state.entity` stays a read-only column (no writer once `opsSetEntity` goes) until an org-settings design
   gives it one. `Phase::Counting` goes (§4.2).
+- *Q7.* What stays of `CustodyService`: the reads its remaining callers use, `state` and `events` (`compat/snapshot.rs`), and
+  the save gate `check_save_in` / `check_teller_save_in` / `complete_draft_in` (`custody_save_step.rs`), with
+  `CustodyMachine::check_save` and `complete_draft` under them. `check_direct_shift_action_in` goes with the direct shift
+  actions. The xc-shift suites whose subject is the retired engine are deleted. Those that also test a kept rule keep
+  that rule's cases, set up by SQL instead of `ops*` commands (part 2b of CA-10's provided commit).
+  **The web consumer goes with the two employee actions.** The admin employees screen posts both:
+  `web/src/screens/admin/employees/Employees.tsx:306` (`action: 'enable'`, the Enable control) and `:349` (`action: 'entity'`,
+  the entity form), pinned by `Employees.test.tsx:734-845`. The Enable control and the entity form leave the screen; if the
+  screen shows the entity, it shows it read-only (Q5). This is an FE twin ticket of CA-10 for the FE lane, which merges with
+  or before CA-10's API change, so the screen never posts an action the route no longer knows.
 - *Q6.* The compat snapshot keeps `operations.custodian` (`null`) and `operations.requests` (`[]`); removing those keys
   is a separate compat decision.
 
@@ -768,6 +779,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-9 | admin cash menu (B05) | `web/src/screens/admin/cash/**`, plus the one allowed edit to `web/src/screens/admin/menus.test.ts` its ticket names | CA-8 |
 | CA-9b | transfer policy screen (split from CA-9 on 2026-10-11, because its save and read did not exist) | `web/src/screens/admin/cash-policy/**`, plus the one allowed edit to `web/src/screens/admin/menus.test.ts` (`'cash-policy'` in `BLUEPRINT_MENUS`, `CashTransferPolicySet` in `BLUEPRINT_NEEDS`) | CA-8c |
 | CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261214100000_retire_custody_requests.sql` (§8 M3: drops the request tables, `ops_state.custodian_id` and `ops_state.enabled`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model; CA-7e; and the test splits CA-10a #1632, CA-10b #1633, CA-10c #1893 |
+| CA-10-FE | the admin employees screen stops sending the two `POST /api/employees` actions CA-10 retires (§6, Q7): no Enable control or dialog, no entity form, no enabled/not-enabled state line; the entity, if shown, read-only (Q5) | `web/src/screens/admin/employees/Employees.tsx`, `web/src/screens/admin/employees/i18n.ts`, `web/src/screens/admin/employees/Employees.test.tsx`, `web/src/screens/admin/employees/worded.test.tsx`, `web/src/screens/admin/employees/Employees.rework.test.tsx` (their `enable`/`entity` cases and the stale-operations checks, which now observe the read-only entity) | CA-10's design (§6 Q7, merged 08345970); **merges with or before CA-10's API change**, so the screen never posts an action the route no longer knows. FE lane (claude/e8020026) |
 
 **The `/staff` tickets** (#571, #572, #573–#580, `docs/design/xchange-v3-wave3-staff.md`) were cut against the request
 model. #572 is superseded (the new count commands take strings from the start). #571 keeps holds, attendance,
@@ -796,6 +808,7 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-9b | vitest: the form shows the current limits from `cash_transfer_policy` (and an empty form on `null`), saves through `transferPolicySave` with an `Idempotency-Key`, keeps amounts as strings, and the menu is hidden without `CashTransferPolicySet` |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, `enabled`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
+| CA-10-FE | vitest: the screen renders no Enable control, no entity form and no enabled/not-enabled line; no user path posts `enable` or `entity`; the stored entity shows as read-only text `company · site` and in no field, and a failed read for another branch does not keep the previous branch's entity; create, reset and disable post as before |
 
 ## 10. Must ask the owner (not decided here; answered questions stay, marked)
 
