@@ -5,6 +5,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   RateAlertSettingsData,
   SaveRateAlertSettingsInput,
@@ -26,6 +27,11 @@ const SUGGESTED = {
 
 export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveWrite = keyedWrite<SaveRateAlertSettingsInput, RateAlertSettingsData>(
+    api,
+    'PUT',
+    '/api/rate-alert-settings',
+  );
 
   const [loading, setLoading] = createSignal(true);
   const [loadError, setLoadError] = createSignal<string | null>(null);
@@ -103,6 +109,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
     if (!shown) return;
     if (branch !== activeBranch) {
       clearForm();
+      saveWrite.reset();
     }
     void loadSettings(branch);
   });
@@ -171,10 +178,6 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
     if (hasError) return;
 
     setSaving(true);
-    const key =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : 'key-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 
     const payload: SaveRateAlertSettingsInput = {
       defaultCooldownSeconds: Math.round(cdNum * 3600),
@@ -186,12 +189,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
     }
 
     try {
-      const res = await api.command<SaveRateAlertSettingsInput, RateAlertSettingsData>(
-        'PUT',
-        '/api/rate-alert-settings',
-        payload,
-        key,
-      );
+      const res = await saveWrite.send(payload);
       setIsEmpty(false);
       setCooldownHours(String(res.defaultCooldownSeconds / 3600));
       setMaxActive(String(res.maxActivePerCustomer));

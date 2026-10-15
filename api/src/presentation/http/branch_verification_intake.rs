@@ -25,6 +25,7 @@ use xc_verification::domain::case::reviewer_actor::{ReviewerActor, ReviewerScope
 use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 
 use crate::bootstrap::AppState;
+use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::pages;
 
 pub const ROUTE: &str = "/api/operations/verification/branch-cases";
@@ -164,6 +165,10 @@ fn parse_multipart(boundary: &str, body: &[u8]) -> Result<ParsedMultipart, &'sta
 }
 
 async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpResponse {
+    if !same_origin(&req) {
+        return refuse(400, "ORIGIN_REJECTED", "ORIGIN_REJECTED");
+    }
+
     let idempotency_key = match req
         .headers()
         .get("idempotency-key")
