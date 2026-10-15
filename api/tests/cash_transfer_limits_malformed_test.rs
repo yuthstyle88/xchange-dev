@@ -1,17 +1,21 @@
-//! A malformed stored cash-transfer policy (`cash_transfer_policy_versions.limits`, jsonb) must never be read as
-//! "no limits", and the save must never write a value its readers cannot read.
+//! A malformed stored cash-transfer policy (`cash_transfer_policy_versions.limits`, jsonb) must never be enforced
+//! entry by entry or read as "no limits", the view must show it to the admin who replaces it, and the save must never
+//! write a value its readers cannot read.
 //!
 //! Written before the fix by the test-writer claude/7c9f3ae3, on the BE lane controller's ruling. Do not edit,
 //! delete or weaken; add tests in a file of your own.
 //!
-//! **The rulings pinned here.**
-//! - (a) Every reader of the stored limits refuses a value it cannot read: `AppError::Internal`, which the seams
-//!   answer `500 serverError`, logged; never an empty map. The readers are the policy view
-//!   (`views/cash_transfer_policy.rs:111-112`, `serde_json::from_value(..).unwrap_or_default()`) and the reader the
-//!   transfer submit enforces with (`xc-cash/src/infrastructure/transfer_repository.rs:379-421`
-//!   `find_latest_policy`, which skips every entry it cannot parse and turns a non-object into an empty map).
-//! - (b) `transferPolicySave` refuses a limit its readers could not read with `400 validationFailed` and a field
-//!   name, and writes nothing.
+//! **The binding text** is design `docs/design/blueprint/cash-shift-transfer.md` §4.7 "One limits parser for the save
+//! and both readers" (design PR 2117) and ticket #2116 §5 (rows L1–L6, K1–K9; each test names its rows).
+//! - Submit (`find_latest_policy`, the only enforcing reader): a policy is enforced whole or not at all; one it cannot
+//!   read is `AppError::Internal`, `500 serverError`, and nothing is written.
+//! - View `cash_transfer_policy`: never 500 for a corrupt policy. `data.valid` is `false`, `data.invalidEntries`
+//!   lists each offending entry `{currency, raw, reason}` (`raw` the stored JSON value as text, compared here by
+//!   parsing it back; a stored value that is not an object is one entry with `currency` `""`; `reason` non-empty,
+//!   not pinned verbatim), and `data.limits` holds only the entries that parsed, in `Money`'s text. A valid policy
+//!   answers `valid: true`, `invalidEntries: []`; so does `transferPolicySave`.
+//! - Save: an amount `Money::parse` refuses is 400 `validationFailed` field `limits`; a key that is not an exact
+//!   code is field `currency`; nothing is written.
 //!
 //! **What "malformed" means here (choice of this file):** any stored `limits` that today's design shape
 //! `{CUR: str}` (design `docs/design/blueprint/cash-shift-transfer.md` §4.4 `:293`, §4.7 `:398`) does not describe,
@@ -23,7 +27,7 @@
 //! **What today's code does with a malformed value** (measured on main, not a bypass of the approval itself):
 //! the submit reader drops what it cannot parse, and a currency with no limit counts as above it, so the transfer
 //! goes to EXECUTIVE. A *partly* malformed value keeps the entries it could parse, so the transfer is decided on a
-//! policy nobody saved; the view answers `{}` for the whole value. The tests below pin the rulings, not that.
+//! policy nobody saved; the view answers `{}` for the whole value. The tests below pin the design, not that.
 //!
 //! The submit answers through `POST /api/cash-transfers/{id}/submit`; the approval decision is made in-process with
 //! `TransferFlow::decide`, as `v3_cash_commands_test.rs` does (PR 570's route is not this file's). Needs
@@ -79,7 +83,7 @@ fn unique(prefix: &str) -> String {
     format!("{prefix}_{}_{nanos}_{n}", std::process::id())
 }
 
-/// Stored `limits` values no reader may read as a policy (ruling (a)), each with why.
+/// Stored `limits` values no reader may read as a policy (L1, L2), each with why.
 fn malformed_stored() -> Vec<(&'static str, Value)> {
     vec![
         ("an array, not an object", json!([])),
@@ -498,7 +502,7 @@ async fn decide(room: &Room, who: &Who, id: &str) -> Result<(), String> {
 
 // ------------------------------------------------------------ ruling (a): the enforcing reader
 
-/// Ruling (a) on the submit path: with a malformed stored policy the submit answers `500 serverError` and writes
+/// L1. Ruling (a) on the submit path: with a malformed stored policy the submit answers `500 serverError` and writes
 /// nothing — the transfer stays DRAFT with no approval request. Today the reader drops what it cannot parse and the
 /// submit answers 200 with an approval request decided on a policy nobody saved.
 #[actix_web::test]
@@ -533,7 +537,7 @@ async fn a_malformed_stored_policy_refuses_transfer_submit_with_server_error_and
     room.finish().await;
 }
 
-/// The partly malformed case on its own, because it is where today's reader decides on a policy nobody saved:
+/// L2. The partly malformed case on its own, because it is where today's reader decides on a policy nobody saved:
 /// `{"USD": "300.00", "EUR": true}` keeps USD 300.00, so a USD 100.00 transfer is recorded within the limit and a
 /// branch manager of the source may approve it. Ruling (a): the submit is refused instead, so nobody approves.
 #[actix_web::test]
@@ -566,7 +570,7 @@ async fn a_partly_malformed_policy_is_not_honoured_entry_by_entry() {
 
 // ------------------------------------------------------------ keep-pins: well-formed policies still enforce
 
-/// Keep-pin: a well-formed policy `{"USD": "300.00"}` records a USD 100.00 transfer within the limit, and a branch
+/// K2. Keep-pin: a well-formed policy `{"USD": "300.00"}` records a USD 100.00 transfer within the limit, and a branch
 /// manager of the source approves it.
 #[actix_web::test]
 async fn a_well_formed_policy_still_lets_a_branch_manager_approve_within_the_limit() {
@@ -587,7 +591,7 @@ async fn a_well_formed_policy_still_lets_a_branch_manager_approve_within_the_lim
     room.finish().await;
 }
 
-/// Keep-pin: a well-formed policy `{"USD": "50.00"}` records a USD 100.00 transfer above the limit; a branch
+/// K3. Keep-pin: a well-formed policy `{"USD": "50.00"}` records a USD 100.00 transfer above the limit; a branch
 /// manager is refused and EXECUTIVE approves.
 #[actix_web::test]
 async fn a_well_formed_policy_still_sends_a_transfer_above_the_limit_to_the_executive() {
@@ -612,8 +616,8 @@ async fn a_well_formed_policy_still_sends_a_transfer_above_the_limit_to_the_exec
     room.finish().await;
 }
 
-/// Keep-pin: `{}` is well formed (no currency has a limit), so the submit answers 200 and records the transfer
-/// above the limit; the view answers it as `{}`. The fix must not refuse an empty policy.
+/// K4. Keep-pin: `{}` is well formed (no currency has a limit), so the submit answers 200 and records the transfer
+/// above the limit; the view answers it as `{}`, `valid: true`. The fix must not refuse an empty policy.
 #[actix_web::test]
 async fn an_empty_policy_object_is_well_formed_and_means_every_transfer_is_above_the_limit() {
     let room = Room::start().await;
@@ -627,37 +631,97 @@ async fn an_empty_policy_object_is_well_formed_and_means_every_transfer_is_above
     let v = read_view(&room, &executive).await;
     assert_eq!(v.status, StatusCode::OK, "the view: {}", v.text);
     assert_eq!(v.body["data"]["limits"], json!({}), "{}", v.text);
+    assert_eq!(v.body["data"]["valid"], json!(true), "{}", v.text);
+    assert_eq!(v.body["data"]["invalidEntries"], json!([]), "{}", v.text);
     room.finish().await;
 }
 
-// ------------------------------------------------------------ ruling (a): the view
+// ------------------------------------------------------------ the view (L4, K5)
 
-/// Ruling (a) on the view (`views/cash_transfer_policy.rs:111-112`): a malformed stored policy answers
-/// `500 serverError`, never `200` with `limits: {}`.
+/// `(currency, raw value)` of every entry the view must list as invalid for a stored `limits`, and the `limits` it
+/// must still answer (the entries that parsed, in `Money`'s text).
+fn expected_invalid(limits: &Value) -> (Vec<(String, Value)>, Value) {
+    let Some(map) = limits.as_object() else {
+        return (vec![(String::new(), limits.clone())], json!({}));
+    };
+    let mut bad = Vec::new();
+    let mut good = serde_json::Map::new();
+    for (cur, v) in map {
+        let parsed = xc_kernel::money::CurrencyCode::parse(cur)
+            .ok()
+            .and(v.as_str())
+            .and_then(|t| xc_kernel::money::Money::parse(t).ok());
+        match parsed {
+            Some(m) => {
+                good.insert(cur.clone(), json!(m.to_string()));
+            }
+            None => bad.push((cur.clone(), v.clone())),
+        }
+    }
+    bad.sort_by(|x, y| x.0.cmp(&y.0));
+    (bad, Value::Object(good))
+}
+
+/// L4: every corrupt stored policy answers **200** with `valid: false`, each offending entry in `invalidEntries`
+/// (`currency`, `raw` = the stored JSON value as text, a non-empty `reason`), and `limits` holding only the entries
+/// that parsed, normalised to `Money`'s text (`"300"` reads back as `"300.00"`).
 #[actix_web::test]
-async fn the_policy_view_answers_server_error_for_a_malformed_stored_policy() {
+async fn the_policy_view_answers_200_invalid_with_each_offending_entry_for_a_malformed_stored_policy()
+ {
     let room = Room::start().await;
     let executive = room.person(Role::Executive, None).await;
+    let mut variants = malformed_stored();
+    variants.push((
+        "an amount Money reads but writes differently, beside a malformed one",
+        json!({ "USD": "300", "EUR": true }),
+    ));
     let mut wrong = Vec::new();
-    for (why, limits) in malformed_stored() {
+    for (why, limits) in variants {
         room.store_policy(&limits, &executive).await;
         let a = read_view(&room, &executive).await;
-        if a.status != StatusCode::INTERNAL_SERVER_ERROR || code(&a) != "serverError" {
+        if a.status != StatusCode::OK {
             wrong.push(format!(
                 "{why} {limits}: the view answered {} {}",
                 a.status, a.text
+            ));
+            continue;
+        }
+        let data = &a.body["data"];
+        let (want_bad, want_limits) = expected_invalid(&limits);
+        let mut got_bad: Vec<(String, Value)> = Vec::new();
+        let mut reasons_ok = true;
+        for e in data["invalidEntries"].as_array().into_iter().flatten() {
+            let raw = e["raw"]
+                .as_str()
+                .and_then(|r| serde_json::from_str::<Value>(r).ok());
+            got_bad.push((
+                e["currency"].as_str().unwrap_or("<missing>").to_owned(),
+                raw.unwrap_or(json!("<raw missing or not JSON text>")),
+            ));
+            reasons_ok &= e["reason"].as_str().is_some_and(|r| !r.is_empty());
+        }
+        got_bad.sort_by(|x, y| x.0.cmp(&y.0));
+        if data["valid"] != json!(false)
+            || got_bad != want_bad
+            || !reasons_ok
+            || data["limits"] != want_limits
+        {
+            wrong.push(format!(
+                "{why} {limits}: want valid=false, invalidEntries {want_bad:?} with reasons, limits {want_limits}; \
+                 got {}",
+                a.text
             ));
         }
     }
     assert!(
         wrong.is_empty(),
-        "a malformed policy must make the view answer 500 serverError:\n{}",
+        "a corrupt policy must be shown to the admin, not hidden or refused:\n{}",
         wrong.join("\n")
     );
     room.finish().await;
 }
 
-/// Keep-pin: a well-formed stored policy is answered as stored.
+/// K5: a well-formed stored policy is answered as stored, `valid: true`, `invalidEntries: []`.
 #[actix_web::test]
 async fn the_policy_view_still_answers_a_well_formed_policy() {
     let room = Room::start().await;
@@ -667,16 +731,20 @@ async fn the_policy_view_still_answers_a_well_formed_policy() {
     let a = read_view(&room, &executive).await;
     assert_eq!(a.status, StatusCode::OK, "the view: {}", a.text);
     assert_eq!(a.body["data"]["limits"], limits, "{}", a.text);
+    assert_eq!(a.body["data"]["valid"], json!(true), "{}", a.text);
+    assert_eq!(a.body["data"]["invalidEntries"], json!([]), "{}", a.text);
     room.finish().await;
 }
 
 // ------------------------------------------------------------ ruling (b): the save
 
-/// Ruling (b): `transferPolicySave` refuses a limit its readers could not read with `400 validationFailed` and a
+/// L5, L6. Ruling (b): `transferPolicySave` refuses a limit its readers could not read with `400 validationFailed` and a
 /// field name, and writes nothing. The field names are the ones the save already uses
 /// (`commands/cash.rs:319-338`): `currency` for a key, `limits` for an amount. Today each of these passes the
 /// save's checks (it trims before checking, then stores the untrimmed text, and checks with `Decimal::from_str`
-/// instead of `Money::parse`) and writes a row the submit reader drops.
+/// instead of `Money::parse`) and writes a row the submit reader drops. `KWD` has minor unit 3 in the seeded
+/// `currencies` (`20261010100000_rate_units.sql:20-22`), so `"300.001"` passes today's `TooManyDecimals` check; a
+/// limit is a threshold and `Money` holds 2 places (design §4.7), so it is refused.
 #[actix_web::test]
 async fn the_save_refuses_a_limit_its_readers_cannot_read_with_validation_failed_and_a_field() {
     let room = Room::start().await;
@@ -695,6 +763,11 @@ async fn the_save_refuses_a_limit_its_readers_cannot_read_with_validation_failed
         (
             "an amount past Money::MAX_INPUT_UNITS",
             json!({ "USD": "1000000000.00" }),
+            "limits",
+        ),
+        (
+            "more than 2 decimal places for a currency whose minor unit is 3",
+            json!({ "KWD": "300.001" }),
             "limits",
         ),
         (
@@ -730,7 +803,7 @@ async fn the_save_refuses_a_limit_its_readers_cannot_read_with_validation_failed
     room.finish().await;
 }
 
-/// Keep-pin: what the save refuses today it still refuses, with the same code and field: a non-numeric amount, a
+/// K6. Keep-pin: what the save refuses today it still refuses, with the same code and field: a non-numeric amount, a
 /// negative amount (`limits`), an unknown currency (`currency`).
 #[actix_web::test]
 async fn the_save_still_refuses_what_it_refuses_today() {
@@ -766,7 +839,7 @@ async fn the_save_still_refuses_what_it_refuses_today() {
     room.finish().await;
 }
 
-/// Keep-pin: a JSON value that is not the Input type (`{CUR: str}`) is refused by the seam before the save runs
+/// K7. Keep-pin: a JSON value that is not the Input type (`{CUR: str}`) is refused by the seam before the save runs
 /// (`http/v3/command.rs`, the G1 ruling on #624: `invalidRequest`), and writes nothing. Only the status and the
 /// row count are pinned here; the code is the seam's.
 #[actix_web::test]
@@ -786,20 +859,29 @@ async fn a_limits_value_that_is_not_the_input_type_is_refused_400_and_writes_not
     room.finish().await;
 }
 
-/// Keep-pin, end to end: a well-formed save answers 200, the view answers what was saved, and the submit enforces
-/// it (USD 100.00 within `"300"`; `"0.00"` for EUR is a limit too). What the save writes, the fixed readers read.
+/// K8, end to end: a well-formed save answers 200 with `valid: true`, `invalidEntries: []`, the view answers what was
+/// saved, and the submit enforces it (USD 100.00 within `"300.00"`; `"0.00"` for EUR is a limit too). The amounts
+/// are already in `Money`'s text, so whether a valid view normalises is not pinned here.
 #[actix_web::test]
 async fn a_well_formed_save_is_answered_200_read_back_and_enforced() {
     let room = Room::start().await;
     let creator = room.person(Role::BranchManager, Some(B01)).await;
     let executive = room.person(Role::Executive, None).await;
-    let limits = json!({ "USD": "300", "EUR": "0.00", "THB": "1000000.00" });
+    let limits = json!({ "USD": "300.00", "EUR": "0.00", "THB": "1000000.00" });
     let a = save(&room, &executive, limits.clone()).await;
     assert_eq!(a.status, StatusCode::OK, "the save: {}", a.text);
     assert_eq!(a.body["limits"], limits, "{}", a.text);
+    assert_eq!(
+        a.body["valid"],
+        json!(true),
+        "the save's answer: {}",
+        a.text
+    );
+    assert_eq!(a.body["invalidEntries"], json!([]), "{}", a.text);
     let v = read_view(&room, &executive).await;
     assert_eq!(v.status, StatusCode::OK, "the view: {}", v.text);
     assert_eq!(v.body["data"]["limits"], limits, "{}", v.text);
+    assert_eq!(v.body["data"]["valid"], json!(true), "{}", v.text);
     let id = draft_transfer(&room, &creator).await;
     let s = submit(&room, &creator, &id).await;
     assert_eq!(s.status, StatusCode::OK, "the submit: {}", s.text);
@@ -807,9 +889,43 @@ async fn a_well_formed_save_is_answered_200_read_back_and_enforced() {
     room.finish().await;
 }
 
+/// K9: a save replaces the whole policy, so re-saving a clean policy through the API over a corrupt one clears it —
+/// the view answers `valid: true` with the new limits, and the submit enforces them (USD 100.00 above `"50.00"`,
+/// then within `"300.00"` after a second save).
+#[actix_web::test]
+async fn re_saving_a_clean_policy_over_a_corrupt_one_is_valid_and_enforced() {
+    let room = Room::start().await;
+    let creator = room.person(Role::BranchManager, Some(B01)).await;
+    let executive = room.person(Role::Executive, None).await;
+    room.store_policy(&json!({ "USD": "abc", "EUR": true }), &executive)
+        .await;
+    for (limits, within) in [
+        (json!({ "USD": "50.00" }), false),
+        (json!({ "USD": "300.00" }), true),
+    ] {
+        let a = save(&room, &executive, limits.clone()).await;
+        assert_eq!(a.status, StatusCode::OK, "the re-save {limits}: {}", a.text);
+        let v = read_view(&room, &executive).await;
+        assert_eq!(v.status, StatusCode::OK, "the view: {}", v.text);
+        assert_eq!(v.body["data"]["valid"], json!(true), "{}", v.text);
+        assert_eq!(v.body["data"]["invalidEntries"], json!([]), "{}", v.text);
+        assert_eq!(v.body["data"]["limits"], limits, "{}", v.text);
+        let id = draft_transfer(&room, &creator).await;
+        let s = submit(&room, &creator, &id).await;
+        assert_eq!(
+            s.status,
+            StatusCode::OK,
+            "the submit under {limits}: {}",
+            s.text
+        );
+        assert_eq!(room.within_limit(&id).await, Some(within), "{limits}");
+    }
+    room.finish().await;
+}
+
 // ------------------------------------------------------------ the dropped-entry reader (find_latest_policy)
 
-/// Ruling (a) on `find_latest_policy`'s per-entry drop (`transfer_repository.rs:400-418` on `81e22fe4`): the
+/// L3. Ruling (a) on `find_latest_policy`'s per-entry drop (`transfer_repository.rs:400-418` on `81e22fe4`): the
 /// limit of the currency the transfer moves is unparseable (`{"USD": "abc", "EUR": "300.00"}`, USD transfer).
 /// The submit answers `500 serverError`, no approval request is written, so nobody approves it and it cannot be
 /// dispatched. Today the reader drops USD and the submit answers 200 (the transfer then needs EXECUTIVE).
@@ -854,7 +970,7 @@ async fn an_unparseable_limit_for_the_moved_currency_refuses_the_submit_and_noth
     room.finish().await;
 }
 
-/// Keep-pin: a well-formed policy over several currencies still enforces each currency's own limit — USD 100.00 is
+/// K1. Keep-pin: a well-formed policy over several currencies still enforces each currency's own limit — USD 100.00 is
 /// above `"USD": "50.00"` even though EUR's limit is large, and within `"USD": "300.00"` even though EUR's is 0.
 #[actix_web::test]
 async fn a_well_formed_policy_over_several_currencies_still_enforces_each_currency() {
@@ -872,4 +988,38 @@ async fn a_well_formed_policy_over_several_currencies_still_enforces_each_curren
         assert_eq!(room.within_limit(&id).await, Some(within), "{limits}");
     }
     room.finish().await;
+}
+
+// ------------------------------------------------------------ the generated TypeScript (design PR 2117)
+
+/// The DTOs' TypeScript, exported into a scratch directory of its own.
+fn exported_ts() -> String {
+    let dir = std::env::temp_dir().join(unique("xc-limits-types"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create a scratch directory");
+    let result = xchange::presentation::dto::v3::cash_transfer_policy::export_types(&dir)
+        .map_err(|e| e.to_string())
+        .and_then(|()| {
+            std::fs::read_to_string(dir.join("cash_transfer_policy.ts")).map_err(|e| e.to_string())
+        });
+    let _ = std::fs::remove_dir_all(&dir);
+    result.unwrap_or_else(|e| panic!("export cash_transfer_policy.ts: {e}"))
+}
+
+/// The committed `web/src/shared/api/generated/cash_transfer_policy.ts` is what the DTOs generate, and the view's
+/// answer type carries `valid: boolean` and `invalidEntries` (design §4.7, as `v3_admin_branches_view_test.rs` pins
+/// its own file).
+#[test]
+fn the_generated_file_is_committed() {
+    let ts = exported_ts();
+    assert!(ts.contains("valid: boolean"), "valid: boolean\n{ts}");
+    assert!(ts.contains("invalidEntries"), "invalidEntries\n{ts}");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../web/src/shared/api/generated/cash_transfer_policy.ts");
+    let committed = std::fs::read_to_string(&file)
+        .unwrap_or_else(|e| panic!("web/src/shared/api/generated/cash_transfer_policy.ts: {e}"));
+    assert_eq!(
+        committed, ts,
+        "cash_transfer_policy.ts is what the DTOs generate"
+    );
 }
