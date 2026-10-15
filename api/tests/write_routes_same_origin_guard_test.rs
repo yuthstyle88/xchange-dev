@@ -41,12 +41,114 @@ impl ScanReport {
     }
 }
 
-fn strip_comment_lines(source: &str) -> String {
-    source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Strips `//` line comments (including trailing comments to end-of-line) and
+/// `/* ... */` block comments (including nested block comments), while preserving
+/// string literals (`"..."` and raw `r#"..."#`) so `//` or `/*` inside a string
+/// literal does not swallow code that follows on the same line.
+fn strip_comments(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len);
+    let mut i = 0;
+
+    while i < len {
+        // 1. Line comment: `//` to end of line
+        if i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+            i += 2;
+            while i < len && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        // 2. Block comment: `/* ... */` (supports nested block comments)
+        if i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            i += 2;
+            let mut depth = 1usize;
+            while i < len && depth > 0 {
+                if i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+                    depth += 1;
+                    i += 2;
+                } else if i + 1 < len && bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    depth -= 1;
+                    i += 2;
+                } else {
+                    if bytes[i] == b'\n' {
+                        out.push('\n');
+                    }
+                    i += 1;
+                }
+            }
+            out.push(' ');
+            continue;
+        }
+
+        // 3. Raw string literal: `r"..."` or `r#"..."#`
+        if bytes[i] == b'r'
+            && (i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_'))
+        {
+            let mut j = i + 1;
+            let mut hashes = 0usize;
+            while j < len && bytes[j] == b'#' {
+                hashes += 1;
+                j += 1;
+            }
+            if j < len && bytes[j] == b'"' {
+                j += 1;
+                while j < len {
+                    if bytes[j] == b'"'
+                        && j + 1 + hashes <= len
+                        && bytes[j + 1..j + 1 + hashes].iter().all(|&b| b == b'#')
+                    {
+                        j += 1 + hashes;
+                        break;
+                    }
+                    j += 1;
+                }
+                out.push_str(&source[i..j]);
+                i = j;
+                continue;
+            }
+        }
+
+        // 4. Standard string literal: `"..."`
+        if bytes[i] == b'"' {
+            let start = i;
+            i += 1;
+            while i < len {
+                if bytes[i] == b'\\' {
+                    i = (i + 2).min(len);
+                } else if bytes[i] == b'"' {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+            out.push_str(&source[start..i]);
+            continue;
+        }
+
+        // 5. Character literal (`'x'` or `'\x'`), distinct from lifetimes (`'a`)
+        if bytes[i] == b'\'' {
+            if i + 3 < len && bytes[i + 1] == b'\\' && bytes[i + 3] == b'\'' {
+                out.push_str(&source[i..i + 4]);
+                i += 4;
+                continue;
+            }
+            if i + 2 < len && bytes[i + 1] != b'\'' && bytes[i + 2] == b'\'' {
+                out.push_str(&source[i..i + 3]);
+                i += 3;
+                continue;
+            }
+        }
+
+        let ch = source[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+
+    out
 }
 
 fn registers_write(code_without_comments: &str) -> bool {
@@ -71,7 +173,7 @@ fn scan_sources(files: &[(&str, &str)], allowlist: &[(&str, &str)]) -> ScanRepor
     }
 
     for (path, source) in files {
-        let code = strip_comment_lines(source);
+        let code = strip_comments(source);
         if !registers_write(&code) {
             continue;
         }
@@ -88,7 +190,7 @@ fn scan_sources(files: &[(&str, &str)], allowlist: &[(&str, &str)]) -> ScanRepor
             .iter()
             .find(|(path, _)| path == allowed_path)
             .is_some_and(|(_, source)| {
-                let code = strip_comment_lines(source);
+                let code = strip_comments(source);
                 registers_write(&code) && !has_same_origin(&code)
             });
         if !still_needed {
@@ -113,7 +215,7 @@ fn check_v3_central(files: &[(&str, &str)]) -> Vec<String> {
         let ok = files
             .iter()
             .find(|(path, _)| path == required)
-            .is_some_and(|(_, source)| has_same_origin(&strip_comment_lines(source)));
+            .is_some_and(|(_, source)| has_same_origin(&strip_comments(source)));
         if !ok {
             missing.push((*required).to_string());
         }
@@ -283,4 +385,87 @@ fn fixture_6_attribute_post_handler_without_check_is_flagged() {
         vec!["src/presentation/http/attr_route.rs".to_string()]
     );
     assert!(report.stale_allowlist.is_empty());
+}
+
+#[test]
+fn fixture_7_write_route_with_only_whole_line_comment_same_origin_is_flagged() {
+    let files = [(
+        "src/presentation/http/whole_line_comment.rs",
+        r#"
+        pub fn configure(cfg: &mut web::ServiceConfig) {
+            cfg.route("/api/example", web::post().to(handler));
+        }
+        async fn handler(req: HttpRequest) -> HttpResponse {
+            // if !same_origin(&req) { return refuse(); }
+            ok()
+        }
+        "#,
+    )];
+    let report = scan_sources(&files, &[]);
+    assert_eq!(
+        report.missing_same_origin,
+        vec!["src/presentation/http/whole_line_comment.rs".to_string()]
+    );
+}
+
+#[test]
+fn fixture_8_write_route_with_only_trailing_comment_same_origin_is_flagged() {
+    let files = [(
+        "src/presentation/http/trailing_comment.rs",
+        r#"
+        pub fn configure(cfg: &mut web::ServiceConfig) {
+            cfg.route("/api/example", web::post().to(handler));
+        }
+        async fn handler(req: HttpRequest) -> HttpResponse {
+            if false { // same_origin(&req)
+                return refuse();
+            }
+            ok()
+        }
+        "#,
+    )];
+    let report = scan_sources(&files, &[]);
+    assert_eq!(
+        report.missing_same_origin,
+        vec!["src/presentation/http/trailing_comment.rs".to_string()]
+    );
+}
+
+#[test]
+fn fixture_9_write_route_with_only_block_comment_same_origin_is_flagged() {
+    let files = [(
+        "src/presentation/http/block_comment.rs",
+        r#"
+        pub fn configure(cfg: &mut web::ServiceConfig) {
+            cfg.route("/api/example", web::post().to(handler));
+        }
+        async fn handler(req: HttpRequest) -> HttpResponse {
+            /* same_origin(&req) */
+            ok()
+        }
+        "#,
+    )];
+    let report = scan_sources(&files, &[]);
+    assert_eq!(
+        report.missing_same_origin,
+        vec!["src/presentation/http/block_comment.rs".to_string()]
+    );
+}
+
+#[test]
+fn fixture_10_double_slash_inside_string_literal_does_not_hide_same_origin() {
+    let files = [(
+        "src/presentation/http/string_literal_url.rs",
+        r#"
+        pub fn configure(cfg: &mut web::ServiceConfig) {
+            cfg.route("/api/example", web::post().to(handler));
+        }
+        async fn handler(req: HttpRequest) -> HttpResponse {
+            let _doc = "https://example.com/spec"; if !same_origin(&req) { return refuse(); }
+            ok()
+        }
+        "#,
+    )];
+    let report = scan_sources(&files, &[]);
+    assert!(report.is_ok(), "expected clean report, got: {report:?}");
 }
