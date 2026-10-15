@@ -444,6 +444,44 @@ not paged) answers the newest row of `cash_transfer_policy_versions` (`202610121
 `(EntryPath::Rpc, "transferPolicySave")`, CA-0p's row (`areas/cash_transfer_policy.rs`), so exactly the role that may
 save a version may read it (EXECUTIVE, `CashTransferPolicySet`), and no new area row is written. Amounts are strings (§4.1).
 
+**One limits parser for the save and both readers (amended 2026-10-16 for #2116).** Before this, the save checked an
+amount with `Decimal::from_str` after trimming but stored the untrimmed text, the enforcing reader
+(`transfer_repository.rs` `find_latest_policy`) silently dropped every entry it could not read, and the view read
+`{}` for any value that was not a string map. A dropped currency counts as **above** the limit (`is_within_limit`),
+so nothing was let through, but an admin saw a limit that was not enforced.
+- [required] `TransferPolicy::parse_limits(&serde_json::Value) -> Result<HashMap<CurrencyCode, Money>, InvalidLimits>`
+  in `xc-cash/src/domain/transfer/transfer_policy.rs`. It accepts only a JSON object whose every key is an exact
+  `CurrencyCode::parse` code (no trimming) and whose every value is a string that `Money::parse` reads (≥ 0, at most
+  2 decimal places, at most `Money`'s 100,000,000). It collects every offending entry, not just the first.
+  `InvalidLimits { entries: Vec<InvalidLimit> }`, `InvalidLimit { currency: String, raw: String, reason: String }`;
+  `raw` is the stored JSON value as text. A stored value that is not an object is one entry with `currency` `""`.
+  `{}` is valid (no limits: every transfer is above the limit, as today).
+- [required] **Submit** (`find_latest_policy`, `api/crates/xc-cash/src/infrastructure/transfer_repository.rs`, the only enforcing reader): `parse_limits(..)` or `AppError::Internal`
+  (500, logged, naming the organisation and the policy version). A policy is enforced whole or not at all, never
+  entry by entry.
+- [required] **View** `cash_transfer_policy` (`api/src/presentation/http/v3/views/cash_transfer_policy.rs`) never
+  answers 500 for a corrupt policy, because the admin must see it to replace it. `CashTransferPolicyData`
+  (`api/src/presentation/dto/v3/cash_transfer_policy.rs:13`, exported by ts-rs `export_all` at `:45`) gains
+  `valid: bool` and `invalidEntries: [{ currency, raw, reason }]` (camelCase; empty when valid; the entry type is a new
+  struct in the same DTO file, exported beside it). When invalid, `limits` holds only the entries that parsed,
+  normalised to `Money`'s text; `invalidEntries` holds the rest.
+- [required] **Both producers of `CashTransferPolicyData` set the new fields:** the view's `load`
+  (`views/cash_transfer_policy.rs:114`) from `parse_limits`, and `transferPolicySave`
+  (`api/src/presentation/http/v3/commands/cash.rs:359`), which answers `valid: true`, `invalidEntries: []`.
+- [required] **The web type is regenerated and committed:** `web/src/shared/api/generated/cash_transfer_policy.ts`.
+  Checked the way the other views are (e.g. `api/tests/v3_admin_branches_view_test.rs:531-537`
+  `the_generated_file_is_committed`): a test compares the committed file with what the DTOs export.
+- **Who shows `invalidEntries` to the admin:** displayed by **CA-9c** (FE, controller claude/e8020026, on
+  `web/src/screens/admin/cash-policy/CashPolicy.tsx`, blocked by #2116). #2116 does not touch `CashPolicy.tsx`.
+- [required] **Save** (`transferPolicySave`, `api/src/presentation/http/v3/commands/cash.rs`) checks each entry with the same per-entry rule as `parse_limits`, before the existing
+  `currencies` lookup and `TooManyDecimals` check (which stay, in that order, with their current answers), and stores
+  exactly what it checked. A key that is not an exact code (padded, unknown, or equal to another key after trimming)
+  is 400 `validationFailed` field `currency`. An amount `Money::parse` refuses (padded, `+`, negative, more than 2
+  decimal places, above 100,000,000) is 400 `validationFailed` field `limits`. A limit is a threshold, so 2 decimal
+  places are enough for every currency, including 3-place ones.
+- **A save replaces the whole policy:** it inserts a new `cash_transfer_policy_versions` row holding the full map,
+  and both readers read only the newest row. Re-saving a clean policy therefore clears a corrupt one. No migration.
+
 ### 4.8 The branch-day service (CA-7b)
 
 **Why it exists:**
@@ -602,7 +640,7 @@ classDiagram
   class ExternalMove { <<xc-cash domain/transfer/kinds/external.rs  EXTERNAL_IN, EXTERNAL_OUT>> }
   class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> +create_in(tx) +submit_in(tx) +dispatch_in(tx) +receive_in(tx, branch) +reconcile_in(tx)  CA-7c }
   class TransferApprovalSubject { <<xc-cash application/approval/transfer.rs>> }
-  class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> +is_within_limit() Result~bool~ }
+  class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> +parse_limits(Value) Result~HashMap~ +is_within_limit() Result~bool~ }
   class CashPostings { <<trait xc-cash domain/posting.rs>> }
   class InterimCashPostings { <<xc-cash infrastructure/interim_postings.rs>> }
   class CashRepository { <<trait xc-cash domain/repository.rs>> }
