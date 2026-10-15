@@ -368,7 +368,8 @@ classDiagram
   class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm() }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
-  class CashFacts { <<trait ports.rs>> available_cash(); in_transit(); shift_status() }
+  class CashFacts { <<trait ports.rs>> available_cash(); in_transit(); shift_status(); branch_cash(branches, filter) BTreeMap~BranchId, BranchCash~ }
+  class BranchCash { <<ports.rs>> available: Decimal; in_transit: Decimal; shifts: ShiftStatus }
   class ShiftBalanceCashFacts { <<api/src/infrastructure/executive/shift_balance_cash_facts.rs>> }
   class LedgerCashFacts { <<api/src/infrastructure/executive/ledger_cash_facts.rs (after LG-4)>> }
   class AlertFacts { <<trait ports.rs>> }
@@ -399,6 +400,7 @@ classDiagram
   LineFacts ..|> ExchangeFacts
   ShiftBalanceCashFacts ..|> CashFacts
   LedgerCashFacts ..|> CashFacts
+  CashFacts --> BranchCash
   PgAlertFacts ..|> AlertFacts
   PgAlertFacts --> AlertSettingsRepository
   BrokerCommissionSource ..|> CommissionSource
@@ -417,6 +419,8 @@ classDiagram
   ExecutiveOverviewService --> Drilldown
   Drilldown --> accepted_keys : to() reads
 ```
+
+**`CashFacts::branch_cash` (2026-10-15).** `overview.rs:113-130` called `available_cash`, `in_transit` and `shift_status` once per branch. `branch_cash(branches, filter)` answers all three for every requested branch at once (every branch a key; each value equal to the three single reads). The default loops over the single reads, so test doubles need no change; `LedgerCashFacts` overrides it with grouped reads. Ticket: executive overview branch cash (BE controller claude/7ca80c).
 
 Web: `web/src/screens/admin/executive/**` (A01) and `web/src/screens/admin/reconciliation/**` (F01), each an admin menu
 folder. Admin menus are collected by `import.meta.glob('./*/menu.ts')` (`web/src/screens/admin/menus.ts:79-83`), so no
