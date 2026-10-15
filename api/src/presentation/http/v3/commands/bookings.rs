@@ -1,7 +1,7 @@
 //! Booking commands runner and registration (§6, §4.4 BK-6 #1388).
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
@@ -166,41 +166,54 @@ fn register_closure_remove(cfg: &mut web::ServiceConfig, services: web::Data<Boo
 }
 
 #[derive(Clone)]
-pub struct BookingServices {
-    pub pool: PgPool,
-    pub branch_tx: BranchTx,
+pub struct BuiltBookingServices {
     pub booking_service: Arc<BookingService>,
     pub check_in_service: Arc<CheckInService>,
     pub slot_service: Arc<SlotService>,
 }
 
+#[derive(Clone)]
+pub struct BookingServices {
+    pub pool: PgPool,
+    pub branch_tx: BranchTx,
+    services: Arc<OnceLock<BuiltBookingServices>>,
+}
+
 impl BookingServices {
     pub fn new(pool: PgPool) -> Self {
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
-        let booking_repo = Arc::new(PgBookingRepository::new(pool.clone()));
-        let slot_repo = Arc::new(PgSlotRepository::new(pool.clone()));
-        let queue_repo = Arc::new(PgQueueRepository::new(pool.clone()));
+        Self {
+            pool,
+            branch_tx,
+            services: Arc::new(OnceLock::new()),
+        }
+    }
+
+    fn services(&self) -> Result<&BuiltBookingServices, V3Error> {
+        if let Some(services) = self.services.get() {
+            return Ok(services);
+        }
+        let installed_keys = xc_customer::get_pii_keys().map_err(|_| server_error())?;
+        let pii_keys1 = installed_keys.as_ref().clone();
+        let pii_keys2 = installed_keys.as_ref().clone();
+
+        let booking_repo = Arc::new(PgBookingRepository::new(self.pool.clone()));
+        let slot_repo = Arc::new(PgSlotRepository::new(self.pool.clone()));
+        let queue_repo = Arc::new(PgQueueRepository::new(self.pool.clone()));
 
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
             Arc::new(BookingLifecycle::new(booking_repo.clone()).with_slots(slot_repo.clone()));
 
         let issuer = Arc::new(
-            TicketIssuer::new(branch_tx.clone(), queue_repo).with_booking_events(booking_events),
+            TicketIssuer::new(self.branch_tx.clone(), queue_repo)
+                .with_booking_events(booking_events),
         );
 
-        let pii_keys1 =
-            xc_kernel::pii::PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
-                .unwrap();
-
-        let pii_keys2 =
-            xc_kernel::pii::PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
-                .unwrap();
-
-        let contact_reserve = Arc::new(ContactReserve::new(branch_tx.clone()));
+        let contact_reserve = Arc::new(ContactReserve::new(self.branch_tx.clone()));
 
         let booking_service = Arc::new(
             BookingService::new(
-                pool.clone(),
+                self.pool.clone(),
                 booking_repo.clone(),
                 slot_repo.clone(),
                 contact_reserve,
@@ -211,23 +224,22 @@ impl BookingServices {
         );
 
         let check_in_service = Arc::new(CheckInService::new(
-            pool.clone(),
-            branch_tx.clone(),
+            self.pool.clone(),
+            self.branch_tx.clone(),
             booking_repo,
             slot_repo.clone(),
             issuer,
             pii_keys2,
         ));
 
-        let slot_service = Arc::new(SlotService::new(pool.clone(), slot_repo));
+        let slot_service = Arc::new(SlotService::new(self.pool.clone(), slot_repo));
 
-        Self {
-            pool,
-            branch_tx,
+        let _ = self.services.set(BuiltBookingServices {
             booking_service,
             check_in_service,
             slot_service,
-        }
+        });
+        Ok(self.services.get().expect("services initialized"))
     }
 }
 
@@ -259,7 +271,7 @@ where
         HttpRequest,
         Value,
         Option<Arc<Actor>>,
-        web::Data<BookingServices>,
+        BuiltBookingServices,
         &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<BookingCommandResult, V3Error>> + Send + 'a>,
@@ -387,6 +399,11 @@ where
         }
     };
 
+    let built = match services.services() {
+        Ok(s) => s.clone(),
+        Err(v3_err) => return v3_err.error_response(),
+    };
+
     let store = Arc::new(PgIdempotencyStore::new(services.pool.clone(), org_id));
     let claim = match store.claim(op_name, &idem_key, &hash).await {
         Ok(c) => c,
@@ -434,7 +451,7 @@ where
         }
     };
 
-    let result = f(req.clone(), value.clone(), user, services.clone(), &mut tx).await;
+    let result = f(req.clone(), value.clone(), user, built, &mut tx).await;
 
     match result {
         Ok(cmd_result) => {
