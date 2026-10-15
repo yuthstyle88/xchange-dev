@@ -43,7 +43,7 @@
 // that shape: the count is `waiting.length`, the "latest" key is the newest waiting ticket's id, and the branch name
 // comes from the session's `me` (its `branches`), as `queue_board` names no branch. Ruling (a): a session without
 // `QueueOperate` gets no card at all, so the C3 "no link" rows and the C6 RATES row now expect no card. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
@@ -423,6 +423,13 @@ function link(root: Element, text: string): HTMLAnchorElement | undefined {
 function folded(root = theCard()): boolean {
   return foldButton(root).getAttribute('aria-expanded') === 'false';
 }
+
+beforeAll(async () => {
+  await import('../i18n');
+  await import('./QueueCard');
+  await import('../i18n/en');
+  await import('./QueueSoundControls');
+}, 60_000);
 
 beforeEach(() => {
   while (disposers.length) disposers.pop()?.();

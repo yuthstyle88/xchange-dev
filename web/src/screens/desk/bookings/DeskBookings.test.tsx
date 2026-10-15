@@ -1,6 +1,6 @@
 // Written before the implementation by the test writer gemini/warut-2 (ticket author claude/e92db6), against BK-6 provided tests 7f8e56d1. Do not edit, delete or weaken.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   BookingCancelOutput,
   BookingCheckInOutput,
@@ -98,6 +98,15 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
   let bookingsChanged: boolean;
   let commandStatus: number;
   let commandResponse: any;
+
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(401, { error: { code: 'unauthenticated' } })));
+    await import('./main');
+    await import('./main.tsx?raw');
+    await import('./DeskBookingsScreen.tsx?raw');
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  }, 60_000);
 
   beforeEach(() => {
     vi.resetModules();
