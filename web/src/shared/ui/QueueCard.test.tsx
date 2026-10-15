@@ -51,6 +51,7 @@ import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
 import { meOf } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 // ── fake queue store (#486's module) ─────────────────────────────────────────
 
@@ -424,12 +425,16 @@ function folded(root = theCard()): boolean {
   return foldButton(root).getAttribute('aria-expanded') === 'false';
 }
 
-beforeAll(async () => {
-  await import('../i18n');
-  await import('./QueueCard');
-  await import('../i18n/en');
-  await import('./QueueSoundControls');
-}, 60_000);
+beforeAll(
+  () =>
+    warmModules(
+      () => import('../i18n'),
+      () => import('./QueueCard'),
+      () => import('../i18n/en'),
+      () => import('./QueueSoundControls'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   while (disposers.length) disposers.pop()?.();

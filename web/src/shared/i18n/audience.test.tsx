@@ -3,8 +3,9 @@
 // calls setAudience('customer'); staff pages keep today's single TH/EN toggle; LN-1 touches no AppShell or screen).
 // Written before the implementation by the ticket author (claude/b060e9). Do not edit, delete or weaken these tests;
 // add your own in another file. The existing i18n tests must stay green unchanged: staff behaviour does not change.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
+import { warmModules } from "../testing/warm-modules";
 
 const STORAGE_KEY = "xc.lang";
 
@@ -58,6 +59,17 @@ const STAFF_OK = {
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./index"),
+      () => import("./LangSwitch"),
+      () => import("./th"),
+      () => import("./en"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   window.localStorage.clear();

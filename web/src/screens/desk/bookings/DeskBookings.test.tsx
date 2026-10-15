@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/api/generated/bookings';
 import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
 
 // ── Mock data matching merged BK-6 generated DTOs ──
@@ -99,14 +100,15 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
   let commandStatus: number;
   let commandResponse: any;
 
-  beforeAll(async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => json(401, { error: { code: 'unauthenticated' } })));
-    await import('./main');
-    await import('./main.tsx?raw');
-    await import('./DeskBookingsScreen.tsx?raw');
-    document.body.innerHTML = '';
-    vi.unstubAllGlobals();
-  }, 60_000);
+  beforeAll(
+    () =>
+      warmModules(
+        () => import('./main'),
+        () => import('./main.tsx?raw'),
+        () => import('./DeskBookingsScreen.tsx?raw'),
+      ),
+    60_000,
+  );
 
   beforeEach(() => {
     vi.resetModules();

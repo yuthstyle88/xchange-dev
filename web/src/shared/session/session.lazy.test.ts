@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { warmModules } from '../testing/warm-modules';
+
+beforeAll(() => warmModules(() => import('./session')), 60_000);
 
 describe('sharedSession lazy creation (#451, W5)', () => {
   beforeEach(() => {

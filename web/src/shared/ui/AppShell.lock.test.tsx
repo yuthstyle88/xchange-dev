@@ -26,10 +26,11 @@
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import type { Me } from '../api/generated/common';
 import { meOf } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 const EXPIRED_TH = 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่';
 const SWITCHED_TH = 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ';
@@ -134,6 +135,20 @@ async function signedIn(host: HTMLElement) {
     expect(host.querySelector('.account-bar')).not.toBeNull();
   });
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('solid-js/web'),
+      () => import('solid-js'),
+      () => import('./AppShell'),
+      () => import('../session/session'),
+      () => import('../i18n'),
+      () => import('../i18n/th'),
+      () => import('../i18n/en'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   try {
