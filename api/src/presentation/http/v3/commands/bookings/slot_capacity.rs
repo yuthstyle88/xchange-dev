@@ -15,7 +15,7 @@ use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::CommandAction;
+use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct SlotCapacitySet {
@@ -59,7 +59,7 @@ impl CommandAction for SlotCapacitySet {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
+        branch: &BranchId,
         _who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
@@ -92,6 +92,11 @@ impl CommandAction for SlotCapacitySet {
             }
         };
 
+        let slot_branch = BranchId::new(branch_id);
+        if slot_branch != *branch {
+            return Err(out_of_scope());
+        }
+
         if input.capacity < reserved {
             return Err(V3Error::new(
                 "capacityBelowReserved",
@@ -101,8 +106,7 @@ impl CommandAction for SlotCapacitySet {
             ));
         }
 
-        let branch = BranchId::new(branch_id);
-        BranchTx::lock_also(tx, &branch).await.map_err(|e| {
+        BranchTx::lock_also(tx, &slot_branch).await.map_err(|e| {
             V3Error::new(
                 "serverError",
                 None,
