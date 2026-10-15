@@ -26,4 +26,11 @@ impl ScopedRole {
             valid_to,
         }
     }
+
+    pub fn covers(&self, branch: Option<&str>) -> bool {
+        match &self.branch {
+            None => true,
+            Some(own) => branch == Some(own.as_str()),
+        }
+    }
 }
