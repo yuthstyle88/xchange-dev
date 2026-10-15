@@ -1502,3 +1502,147 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
     );
     pool.close().await;
 }
+
+/// Admin shifts reads every listed shift's balances in one call (`ShiftBalances::shift_balances_many`,
+/// BE controller claude/7ca80c; up-front test by claude/d7aa64). The batched read answers, for every
+/// requested shift, exactly what `shift_balances` answers for it alone, and every requested id is a key
+/// (an empty list when the shift has no rows).
+#[tokio::test]
+async fn shift_balances_many_answers_each_shifts_own_rows_like_shift_balances() {
+    let (pool, branch) = db().await;
+    let ledger = LedgerCashPostings::new();
+    let sb = PgLedgerShiftBalances::new(pool.clone());
+    fund_safe(
+        &pool,
+        &ledger,
+        &branch,
+        &[(thb(), "100000"), (usd(), "5000"), (eur(), "3000")],
+    )
+    .await;
+
+    let s1 = next_shift(&pool, &branch).await;
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &s1,
+        &[(thb(), "10000"), (usd(), "1000")],
+    )
+    .await;
+    post(
+        &pool,
+        &ledger,
+        &exchange(&s1, "BUY", usd(), "100", "3200", &unique("ex")),
+        None,
+        "BUY",
+    )
+    .await;
+
+    let s2 = next_shift(&pool, &branch).await;
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &s2,
+        &[(thb(), "2000"), (eur(), "500")],
+    )
+    .await;
+
+    let s3 = next_shift(&pool, &branch).await; // no posting, no count
+
+    let ids = vec![s1.clone(), s2.clone(), s3.clone()];
+    let many = sb
+        .shift_balances_many(&ids)
+        .await
+        .expect("the batched read");
+
+    let keys: Vec<&String> = many.keys().collect();
+    let mut want: Vec<&String> = ids.iter().collect();
+    want.sort();
+    assert_eq!(keys, want, "every requested shift is a key");
+    for id in &ids {
+        assert_eq!(
+            many[id],
+            balances_of(&sb, id).await,
+            "{id}: the batched rows equal the shift's own read"
+        );
+    }
+    assert!(
+        many[&s3].is_empty(),
+        "a shift with no rows answers an empty list"
+    );
+    pool.close().await;
+}
+
+/// Two CLOSED shifts that both counted THB, with different verified CLOSE counts: the batched read
+/// must give each shift its own `counted`/`difference`, never the other shift's.
+#[tokio::test]
+async fn shift_balances_many_keeps_each_closed_shifts_own_count() {
+    let (pool, branch) = db().await;
+    let ledger = LedgerCashPostings::new();
+    let sb = PgLedgerShiftBalances::new(pool.clone());
+    fund_safe(&pool, &ledger, &branch, &[(thb(), "100000")]).await;
+
+    let a = next_shift(&pool, &branch).await;
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &a,
+        &[(thb(), "10000")],
+    )
+    .await;
+    seed_count(
+        &pool,
+        &branch,
+        &a,
+        "CLOSE",
+        true,
+        &[(thb(), "9990", "10000", "-10")],
+    )
+    .await;
+
+    let b = next_shift(&pool, &branch).await; // closes a
+    open_from(
+        &pool,
+        &ledger,
+        CashPlace::Safe(branch.clone()),
+        &b,
+        &[(thb(), "20000")],
+    )
+    .await;
+    seed_count(
+        &pool,
+        &branch,
+        &b,
+        "CLOSE",
+        true,
+        &[(thb(), "20050", "20000", "50")],
+    )
+    .await;
+    let _c = next_shift(&pool, &branch).await; // closes b
+
+    let ids = vec![a.clone(), b.clone()];
+    let many = sb
+        .shift_balances_many(&ids)
+        .await
+        .expect("the batched read");
+    for id in &ids {
+        assert_eq!(
+            many[id],
+            balances_of(&sb, id).await,
+            "{id}: batched rows equal the shift's own read"
+        );
+    }
+    assert_eq!(
+        row(&many[&a], thb()).counted,
+        Some(money("9990")),
+        "A's own count"
+    );
+    assert_eq!(
+        row(&many[&b], thb()).counted,
+        Some(money("20050")),
+        "B's own count"
+    );
+    pool.close().await;
+}

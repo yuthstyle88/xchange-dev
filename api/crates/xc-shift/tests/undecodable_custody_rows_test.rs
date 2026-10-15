@@ -58,53 +58,6 @@ async fn spoil(db: &TestDb, sql: &'static str, d: &Desk) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_request_in_a_currency_the_register_does_not_know_is_a_fault() {
-    let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
-    spoil(
-        &db,
-        "UPDATE custody_requests SET data = jsonb_set(data, '{currency}', '\"ZZZ\"') \
-         WHERE branch_id = $1 AND kind = 'SAFE_IN'",
-        &d,
-    )
-    .await;
-    a_fault(d.custody.state(&d.branch).await, "a request in ZZZ");
-    db.drop_schema().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_request_amount_that_is_not_a_number_is_a_fault() {
-    let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
-    spoil(
-        &db,
-        "UPDATE custody_requests SET data = jsonb_set(data, '{amount}', '\"fifty\"') \
-         WHERE branch_id = $1 AND kind = 'SAFE_IN'",
-        &d,
-    )
-    .await;
-    a_fault(
-        d.custody.state(&d.branch).await,
-        "a request amount of \"fifty\"",
-    );
-    db.drop_schema().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_request_of_a_kind_custody_does_not_know_is_a_fault() {
-    let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
-    spoil(
-        &db,
-        "UPDATE custody_requests SET kind = 'NOPE' WHERE branch_id = $1 AND kind = 'SAFE_IN'",
-        &d,
-    )
-    .await;
-    a_fault(d.custody.state(&d.branch).await, "a request of kind NOPE");
-    db.drop_schema().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_attendance_role_custody_does_not_know_is_a_fault() {
     let db = TestDb::start().await;
     let d = a_day_with_a_transfer(&db).await;

@@ -62,6 +62,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,10 +72,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use actix_web::http::Method;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
-use compat_common::Fixture;
-use rpc_common::{
-    Answer, App, Call, Cookies, Desk, INVALID_REQUEST, Replay, Rule, one_of_each_role, sign_in,
-};
+use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use serde_json::{Value, json};
@@ -86,6 +84,9 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
+use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -144,15 +145,6 @@ const SHIFT_ROW_FIELDS: [&str; 7] = [
     "balances",
 ];
 const BALANCE_FIELDS: [&str; 4] = ["code", "expected", "counted", "difference"];
-
-/// The custody day (`rpc_ops_test.rs` replays it against v2's answers; here it only writes).
-const OPS_FILE: &str = "rpc/ops_actions.json";
-const OPS_LAST: usize = 134;
-const OPS_OWNERS_DOOR: std::ops::RangeInclusive<usize> = 9..=17;
-const OPS_SWITCHED_ON_AT: usize = 15;
-const OPS_UNKNOWN_NAME_BY_STATE: [usize; 3] = [2, 23, 40];
-const OPS_HOLD_MADE_AT: usize = 105;
-const OPS_HOLD_NAMED_AT: usize = 106;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -442,15 +434,10 @@ impl Room {
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
-    /// The owner opens a shift in `branch` through `/api/rpc` with the opening given.
+    /// Opens a shift in `branch` by count with the opening given.
     async fn open_shift_with(&self, branch: &str, opening: Value) -> String {
-        self.ok(
-            "OWNER",
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(), "opening": opening }),
-        )
-        .await;
-        self.open_shift_id(branch).await
+        shift_setup_common::open_shift_by_count(&self.desk.db.pool, branch, opening, self.tick())
+            .await
     }
 
     async fn open_shift(&self, branch: &str) -> String {
@@ -490,19 +477,16 @@ impl Room {
             .collect()
     }
 
-    /// The owner closes the open shift of `branch`, counting `counted` (a JSON object), against
-    /// what the server expects.
+    /// Closes the open shift of `branch` by count, counting `counted` (a JSON object).
     async fn close_shift_counting(&self, branch: &str, counted: Value, note: &str) -> String {
-        let shift = self.open_shift_id(branch).await;
-        let expected = self.expected_of_open_shift(branch).await;
-        self.ok(
-            "OWNER",
-            "adminCloseShift",
-            json!({ "branchId": branch, "requestId": request_id(), "shiftId": shift,
-                    "expected": expected, "counted": counted, "note": note }),
+        shift_setup_common::close_shift_by_count_with_note(
+            &self.desk.db.pool,
+            branch,
+            counted,
+            note,
+            self.tick(),
         )
-        .await;
-        shift
+        .await
     }
 
     /// The owner closes the open shift of `branch`, counting exactly what is expected.
@@ -647,41 +631,6 @@ impl Room {
         shift_id
     }
 
-    /// FINANCE of `branch` moves stock in its open shift; the new movement's id. OR-4b (C3): v2's
-    /// owner moved it; CashManage is BRANCH_MANAGER's and FINANCE's.
-    async fn move_stock(
-        &self,
-        branch: &str,
-        currency: &str,
-        direction: &str,
-        amount: &str,
-        reason: &str,
-    ) -> String {
-        let shift = self.open_shift_id(branch).await;
-        let req = request_id();
-        let mover = if branch == MAIN {
-            "FINANCE"
-        } else {
-            "FINANCE_B9"
-        };
-        self.ok(
-            mover,
-            "adminMoveStock",
-            json!({ "branchId": branch, "requestId": req, "shiftId": shift,
-                    "currency": currency, "direction": direction, "amount": amount,
-                    "reason": reason }),
-        )
-        .await;
-        sqlx::query_scalar(
-            "SELECT id FROM stock_movements WHERE branch_id = $1 AND request_id = $2",
-        )
-        .bind(branch)
-        .bind(&req)
-        .fetch_one(&self.desk.db.pool)
-        .await
-        .expect("the movement just written")
-    }
-
     /// The owner gives up a request id nothing applied, which `adminAbandonRequest` writes down.
     async fn abandon(&self, branch: &str) {
         let answer = self
@@ -815,40 +764,87 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
-/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
-fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
-    action: &str,
-    named: Option<&str>,
-) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
-    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
-    Policy::authorize(
-        user.as_ref(),
-        path,
-        &act,
-        named.map(xc_kernel::ids::BranchId::new).as_ref(),
-        chrono::Utc::now(),
+async fn seed_movement(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    shift_id: &str,
+    code: &str,
+    direction: &str,
+    amount: &str,
+    reason: &str,
+) -> String {
+    let id = format!("MV-{:012}", next());
+    let req_id = request_id();
+    let at = Utc::now();
+    let signed = if direction == "IN" {
+        amount.to_string()
+    } else {
+        format!("-{amount}")
+    };
+    let mut tx = pool.begin().await.expect("begin tx");
+    sqlx::query(
+        "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
+         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, 'fn1')",
     )
-    .map(|_| ())
+    .bind(&id)
+    .bind(branch)
+    .bind(shift_id)
+    .bind(code)
+    .bind(direction)
+    .bind(amount)
+    .bind(reason)
+    .bind(&req_id)
+    .bind(at)
+    .execute(&mut *tx)
+    .await
+    .expect("insert stock_movement");
+    sqlx::query(
+        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+         VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
+         ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
+    )
+    .bind(shift_id)
+    .bind(code)
+    .bind(&signed)
+    .execute(&mut *tx)
+    .await
+    .expect("update shift_balances");
+    let (safe, drawer) = (
+        CashPlace::Safe(BranchId::new(branch)),
+        CashPlace::Drawer(shift_id.to_string()),
+    );
+    let (from, to) = if direction == "IN" {
+        (safe, drawer)
+    } else {
+        (drawer, safe)
+    };
+    let source = SourceRef {
+        source_type: SourceType::Transfer,
+        source_id: req_id.clone(),
+        source_key: "move".to_string(),
+    };
+    let moved = [(
+        CurrencyCode::parse(code).expect("valid currency"),
+        Decimal::from_str(amount).expect("valid decimal"),
+    )];
+    LedgerCashPostings::new()
+        .post_in(&mut tx, &moves(&from, &to, &moved, &source), None)
+        .await
+        .expect("post ledger movement");
+    sqlx::query(
+        "INSERT INTO branch_versions (branch_id, version, changed_at) VALUES ($1, 1, $2) \
+         ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1, changed_at = $2",
+    )
+    .bind(branch)
+    .bind(at)
+    .execute(&mut *tx)
+    .await
+    .expect("bump branch_versions");
+    tx.commit().await.expect("commit seed_movement");
+    id
 }
 
-/// Ticket §8: the three views answer whoever `adminSnapshot` admits on `Rpc` (W8, §4.4), and the
-/// writes keep v2's rows — open / close BACKEND and MANAGER, move FINANCE (`policy.rs:83-86`): a
-/// FRONT caller's open and close and a BACKEND caller's move get the policy's refusal, unchanged.
+/// Ticket §8: the three views answer whoever `adminSnapshot` admits on `Rpc` (W8, §4.4).
 #[actix_web::test]
 async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writes_keep_their_rows()
 {
@@ -888,40 +884,6 @@ async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writ
         assert_eq!(refused, 1, "{view}: nobody signed in");
     }
 
-    // the writes: the role rows of v2's actions, unchanged (W8)
-    // OR-4b (#767, C3): BACKEND (BRANCH_MANAGER) moves stock now; FRONT (TELLER) does not
-    for (who, action) in [
-        ("FRONT", "adminOpenShift"),
-        ("FRONT", "adminCloseShift"),
-        ("FRONT", "adminMoveStock"),
-    ] {
-        let actor = Actor::staff(
-            "employee",
-            Role::parse(who).expect("a role"),
-            BranchId::new(MAIN),
-        );
-        let refusal = blueprint_rule(actor.as_ref(), EntryPath::Rpc, action, Some(MAIN))
-            .expect_err("the policy refuses this pair");
-        let answer = room
-            .post(
-                who,
-                action,
-                json!({ "branchId": MAIN, "requestId": request_id(),
-                        "opening": { "THB": 1 } }),
-            )
-            .await;
-        assert_eq!(
-            answer.status,
-            refusal.status(),
-            "{action} as {who}: {:.300}",
-            answer.text
-        );
-        assert!(
-            answer.text.contains(&refusal.to_string()),
-            "{action} as {who}: the policy's sentence: {:.300}",
-            answer.text
-        );
-    }
     let data = room.cash("branch=MAIN").await;
     assert_eq!(data["shift"], Value::Null, "nothing was opened: {data}");
     room.finish().await;
@@ -987,25 +949,47 @@ async fn no_open_shift_answers_no_stock_no_stats_an_empty_reference_and_the_regi
 async fn the_open_shift_its_stock_and_its_cash_flow_are_the_servers_figures() {
     let room = Room::open().await;
     let opened_at = room.tick();
-    let answer = room
-        .post_now(
-            "OWNER",
-            "adminOpenShift",
-            json!({ "branchId": MAIN, "requestId": request_id(),
-                    "opening": { "THB": "100000", "USD": "1000" } }),
-        )
-        .await;
-    assert_eq!(answer.status, 200, "{:.300}", answer.text);
-    let shift = room.open_shift_id(MAIN).await;
+    let shift = shift_setup_common::open_shift_by_count(
+        &room.desk.db.pool,
+        MAIN,
+        json!({ "THB": "100000", "USD": "1000" }),
+        opened_at,
+    )
+    .await;
 
     room.save(MAIN, Ex::buy("100", "50")).await; // USD +100, THB −2950 (paid out)
     room.save(MAIN, Ex::sell("10", "20")).await; // USD −10, THB +420 (received)
     room.save(MAIN, Ex::buy("1", "0").transfer()).await; // USD +1, THB untouched
-    room.move_stock(MAIN, "THB", "IN", "500", "เงินเติมลิ้นชัก")
-        .await; // THB +500
-    room.move_stock(MAIN, "THB", "OUT", "200", "นำเงินฝากธนาคาร")
-        .await; // THB −200
-    room.move_stock(MAIN, "USD", "IN", "9.5", "รับจากเซฟ").await; // USD +9.50
+    seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &shift,
+        "THB",
+        "IN",
+        "500",
+        "เงินเติมลิ้นชัก",
+    )
+    .await; // THB +500
+    seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &shift,
+        "THB",
+        "OUT",
+        "200",
+        "นำเงินฝากธนาคาร",
+    )
+    .await; // THB −200
+    seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &shift,
+        "USD",
+        "IN",
+        "9.5",
+        "รับจากเซฟ",
+    )
+    .await; // USD +9.50
 
     let data = room.cash("branch=MAIN").await;
     assert_eq!(keys(&data["shift"]), set_of(&SHIFT_FIELDS), "{data}");
@@ -1064,15 +1048,34 @@ async fn the_open_shift_its_stock_and_its_cash_flow_are_the_servers_figures() {
 async fn the_stock_shows_thb_the_rated_and_the_non_zero_and_every_currency_on_request() {
     let room = Room::open().await;
     room.set_rate(MAIN, "EUR", "35", "38").await; // rated, nothing in the drawer
-    room.open_shift_with(
+    let shift = room
+        .open_shift_with(
+            MAIN,
+            json!({ "THB": "50000", "USD": "10", "CHF": "10", "JPY": "2500" }),
+        )
+        .await;
+    // CHF goes to zero: opening 10, net −10, expected 0 — still shown
+    seed_movement(
+        &room.desk.db.pool,
         MAIN,
-        json!({ "THB": "50000", "USD": "10", "CHF": "10", "JPY": "2500" }),
+        &shift,
+        "CHF",
+        "OUT",
+        "10",
+        "ส่งคืนเซฟ",
     )
     .await;
-    // CHF goes to zero: opening 10, net −10, expected 0 — still shown
-    room.move_stock(MAIN, "CHF", "OUT", "10", "ส่งคืนเซฟ").await;
     // AUD arrives during the shift: opening 0, net +5
-    room.move_stock(MAIN, "AUD", "IN", "5", "รับจากเซฟ").await;
+    seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &shift,
+        "AUD",
+        "IN",
+        "5",
+        "รับจากเซฟ",
+    )
+    .await;
 
     let data = room.cash("branch=MAIN").await;
     let stock = stock_of(&data);
@@ -1231,44 +1234,6 @@ async fn last_counted_is_the_last_closed_shifts_count_thb_always_then_the_non_ze
     room.finish().await;
 }
 
-// ── two open shifts ──────────────────────────────────────────────────────────
-
-/// Ticket §9 row 1 (v2 `admin-html:31`): v3 cannot hold two OPEN shifts of one branch — the
-/// database refuses the second, and a second `adminOpenShift` gets the server's sentence; the view
-/// keeps answering the one that is open.
-#[actix_web::test]
-async fn a_second_open_shift_is_refused_with_the_servers_sentence() {
-    let room = Room::open().await;
-    let first = room.open_shift(MAIN).await;
-    let answer = room
-        .post(
-            "OWNER",
-            "adminOpenShift",
-            json!({ "branchId": MAIN, "requestId": request_id(), "opening": { "THB": 1 } }),
-        )
-        .await;
-    assert_eq!(answer.status, 400, "{:.300}", answer.text);
-    assert!(
-        answer.text.contains("มีกะเปิดอยู่แล้ว กรุณารีเฟรช"),
-        "the server's sentence: {:.300}",
-        answer.text
-    );
-    let inserted = sqlx::query(
-        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
-         VALUES ('S-TWIN', 'MAIN', 'OPEN', now(), 'test', 'twin-0000000000000001', \
-         (SELECT id FROM users WHERE legacy_employee_id = 'test'))",
-    )
-    .execute(&room.desk.db.pool)
-    .await;
-    assert!(
-        inserted.is_err(),
-        "the database holds one OPEN shift per branch"
-    );
-    let data = room.cash("branch=MAIN").await;
-    assert_eq!(data["shift"]["id"], json!(first), "{data}");
-    room.finish().await;
-}
-
 // ── the movements page ───────────────────────────────────────────────────────
 
 /// `admin-html:106`: the branch's movements, newest recorded first — by the order they were
@@ -1277,37 +1242,68 @@ async fn a_second_open_shift_is_refused_with_the_servers_sentence() {
 async fn the_movements_page_is_newest_recorded_first_across_shifts_with_keyset_paging() {
     let room = Room::open().await;
     let first_shift = room.open_shift(MAIN).await;
-    let m1 = room
-        .move_stock(MAIN, "THB", "IN", "500", "เงินเติมลิ้นชัก")
-        .await;
-    let m2 = room.move_stock(MAIN, "USD", "OUT", "10.25", "ส่งเซฟ").await;
+    let m1 = seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &first_shift,
+        "THB",
+        "IN",
+        "500",
+        "เงินเติมลิ้นชัก",
+    )
+    .await;
+    let m2 = seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &first_shift,
+        "USD",
+        "OUT",
+        "10.25",
+        "ส่งเซฟ",
+    )
+    .await;
     room.close_shift(MAIN).await;
     let second_shift = room.open_shift(MAIN).await;
-    let m3 = room.move_stock(MAIN, "THB", "OUT", "200", "ค่าใช้จ่าย").await;
+    let m3 = seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &second_shift,
+        "THB",
+        "OUT",
+        "200",
+        "ค่าใช้จ่าย",
+    )
+    .await;
     // written last, with a clock set before the others: still the newest row
     room.desk.clock.set(room.t0 - Duration::days(3));
-    let req = request_id();
-    let answer = room
-        // OR-4b (C3): FINANCE moves stock
-        .post_now(
-            "FINANCE",
-            "adminMoveStock",
-            json!({ "branchId": MAIN, "requestId": req, "shiftId": second_shift,
-                    "currency": "USD", "direction": "IN", "amount": "1", "reason": "ย้อนเวลา" }),
-        )
-        .await;
-    assert_eq!(answer.status, 200, "{:.300}", answer.text);
-    let m4: String = sqlx::query_scalar(
-        "SELECT id FROM stock_movements WHERE branch_id = $1 AND request_id = $2",
+    let m4 = seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &second_shift,
+        "USD",
+        "IN",
+        "1",
+        "ย้อนเวลา",
     )
-    .bind(MAIN)
-    .bind(&req)
-    .fetch_one(&room.desk.db.pool)
-    .await
-    .expect("the last movement");
+    .await;
+    sqlx::query("UPDATE stock_movements SET at = $1 WHERE id = $2")
+        .bind(room.t0 - Duration::days(3))
+        .bind(&m4)
+        .execute(&room.desk.db.pool)
+        .await
+        .expect("backdate m4");
     // another branch's movement is never MAIN's
-    room.open_shift(B9).await;
-    let other = room.move_stock(B9, "THB", "IN", "1", "สาขาอื่น").await;
+    let b9_shift = room.open_shift(B9).await;
+    let other = seed_movement(
+        &room.desk.db.pool,
+        B9,
+        &b9_shift,
+        "THB",
+        "IN",
+        "1",
+        "สาขาอื่น",
+    )
+    .await;
 
     let rows = room.data(MOVEMENTS, "OWNER", "branch=MAIN").await;
     assert_eq!(
@@ -1391,7 +1387,16 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
     let s3 = room
         .open_shift_with(MAIN, json!({ "THB": "3000", "USD": "1" }))
         .await;
-    room.move_stock(MAIN, "JPY", "IN", "700", "รับจากเซฟ").await;
+    seed_movement(
+        &room.desk.db.pool,
+        MAIN,
+        &s3,
+        "JPY",
+        "IN",
+        "700",
+        "รับจากเซฟ",
+    )
+    .await;
     room.open_shift(B9).await;
 
     let rows = room.data(SHIFTS, "OWNER", "branch=MAIN").await;
@@ -1491,7 +1496,7 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
 async fn the_owner_reads_the_branch_named_and_staff_their_own() {
     let room = Room::open().await;
     let nine = room.open_shift(B9).await;
-    let moved = room.move_stock(B9, "THB", "IN", "1", "สาขา B9").await;
+    let moved = seed_movement(&room.desk.db.pool, B9, &nine, "THB", "IN", "1", "สาขา B9").await;
 
     let cash = room.data(CASH, "OWNER", "branch=B9").await;
     assert_eq!(cash["shift"]["id"], json!(nine), "{cash}");
@@ -1544,7 +1549,7 @@ async fn the_owner_reads_the_branch_named_and_staff_their_own() {
 
 /// One write per writer of what the three views read, each through `BranchTx`: the same `since`
 /// then answers `changed: true` with the write in it; before it, an equal `since` is exactly
-/// unchanged. The two pages are read again after each write and show it.
+/// unchanged. The shifts page is read again after each write and shows it.
 #[actix_web::test]
 async fn every_writer_of_the_cash_views_moves_the_version_they_answer() {
     let room = Room::open().await;
@@ -1557,26 +1562,17 @@ async fn every_writer_of_the_cash_views_moves_the_version_they_answer() {
     );
 
     let mut since = v;
-    for writer in [
-        "adminOpenShift",
-        "save",
-        "adminMoveStock",
-        "adminAbandonRequest",
-        "adminCloseShift",
-    ] {
+    for writer in ["open_shift", "save", "adminAbandonRequest", "close_shift"] {
         let before = room.cash("branch=MAIN").await;
         match writer {
-            "adminOpenShift" => {
+            "open_shift" => {
                 room.open_shift(MAIN).await;
             }
             "save" => {
                 room.save(MAIN, Ex::buy("10", "0")).await;
             }
-            "adminMoveStock" => {
-                room.move_stock(MAIN, "THB", "IN", "10", "เงินเติม").await;
-            }
             "adminAbandonRequest" => room.abandon(MAIN).await,
-            "adminCloseShift" => {
+            "close_shift" => {
                 room.close_shift(MAIN).await;
             }
             _ => unreachable!(),
@@ -1606,119 +1602,7 @@ async fn every_writer_of_the_cash_views_moves_the_version_they_answer() {
     let shifts = room.data(SHIFTS, "OWNER", "branch=MAIN").await;
     assert_eq!(list(&shifts).len(), 1, "{shifts}");
     assert_eq!(list(&shifts)[0]["status"], json!("CLOSED"), "{shifts}");
-    assert_eq!(
-        list(&room.data(MOVEMENTS, "OWNER", "branch=MAIN").await).len(),
-        1
-    );
     room.finish().await;
-}
-
-/// Ticket §7: custody's shift effects (`custody/service.rs` — open, close and move on the staff
-/// route) are writers too. The recorded custody day is run through HTTP; after each step, when any
-/// of the three views answers different data than before the step, the branch's version has moved
-/// and `admin_cash` with the old version as `since` answers `changed: true`. The day must open a
-/// shift, close one and move stock through custody, or the test proves nothing.
-#[actix_web::test]
-async fn custodys_shift_effects_move_the_version_the_cash_views_answer() {
-    let fixture = Fixture::load(OPS_FILE);
-    let desk = Desk::open().await;
-    let app = rpc_app!(desk);
-    let mut replay = Replay::start(desk, app, &fixture).await;
-    for n in OPS_UNKNOWN_NAME_BY_STATE {
-        replay = replay.rule(
-            n,
-            Rule::Differs {
-                status: 400,
-                sentence: INVALID_REQUEST,
-            },
-        );
-    }
-    for n in OPS_OWNERS_DOOR {
-        replay = replay.rule(
-            n,
-            Rule::Excluded("`/api/employees`: the owner's door to custody is another ticket's"),
-        );
-    }
-
-    async fn read(app: &App, cookie: &str, view: &str) -> (i64, Value) {
-        let answer = app
-            .send(get(&view_path(view, "branch=MAIN")).cookie(cookie))
-            .await;
-        assert_eq!(answer.status, 200, "{view}: {:.300}", answer.text);
-        let body = answer.json();
-        (
-            body["version"].as_i64().expect("a version"),
-            body["data"].clone(),
-        )
-    }
-
-    let owner = replay.cookies["owner"].clone();
-    let mut opened = 0;
-    let mut closed = 0;
-    let mut moved = 0;
-    let mut changes = 0;
-    for n in 1..=OPS_LAST {
-        let step = fixture.step(n);
-        if n == OPS_SWITCHED_ON_AT {
-            replay.desk.custody_on(MAIN).await;
-        }
-        let (v_before, cash_before) = read(&replay.app, &owner, CASH).await;
-        let (_, moves_before) = read(&replay.app, &owner, MOVEMENTS).await;
-        let (_, shifts_before) = read(&replay.app, &owner, SHIFTS).await;
-        replay.step(step).await;
-        if n == OPS_HOLD_MADE_AT {
-            let answer = replay
-                .app
-                .send(
-                    Call::action(ORIGIN, RPC, "adminSnapshot", json!({ "branchId": MAIN }))
-                        .cookie(&owner),
-                )
-                .await;
-            let snapshot = answer.json();
-            let holds = snapshot["operations"]["holds"]
-                .as_array()
-                .expect("the holds of the branch");
-            let recorded = &fixture
-                .step(OPS_HOLD_NAMED_AT)
-                .payload
-                .as_ref()
-                .expect("a payload")["id"];
-            replay.ids.learn(recorded, &holds[0]["id"]);
-        }
-        let (v_after, cash_after) = read(&replay.app, &owner, CASH).await;
-        let (_, moves_after) = read(&replay.app, &owner, MOVEMENTS).await;
-        let (_, shifts_after) = read(&replay.app, &owner, SHIFTS).await;
-        if cash_after != cash_before || moves_after != moves_before || shifts_after != shifts_before
-        {
-            changes += 1;
-            assert!(
-                v_after > v_before,
-                "ops_actions#{n} ({:?}) changed the cash views without moving the version",
-                step.action
-            );
-            let answer = replay
-                .app
-                .send(
-                    get(&view_path(CASH, &format!("branch=MAIN&since={v_before}"))).cookie(&owner),
-                )
-                .await;
-            assert_eq!(answer.json()["changed"], json!(true), "ops_actions#{n}");
-            if cash_before["shift"].is_null() && !cash_after["shift"].is_null() {
-                opened += 1;
-            }
-            if !cash_before["shift"].is_null() && cash_after["shift"] != cash_before["shift"] {
-                closed += 1;
-            }
-            if list(&moves_after).len() > list(&moves_before).len() {
-                moved += 1;
-            }
-        }
-    }
-    assert!(changes > 0, "the custody day changed the cash views");
-    assert!(opened > 0, "custody opened a shift ({changes} changes)");
-    assert!(closed > 0, "custody closed a shift ({changes} changes)");
-    assert!(moved > 0, "custody moved stock ({changes} changes)");
-    replay.finish().await;
 }
 
 // ── the generated types ──────────────────────────────────────────────────────

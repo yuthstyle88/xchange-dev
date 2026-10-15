@@ -114,13 +114,10 @@ pub struct CountDifferencePolicy;
 impl ApprovalPolicy for CountDifferencePolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
         let req_branch = request.branch_id.as_deref();
-        let is_finance_of_branch = who.roles.iter().any(|r| {
-            r.role == Role::Finance
-                && (match (r.branch.as_ref(), req_branch) {
-                    (Some(b), Some(rb)) => b.as_str() == rb,
-                    _ => false,
-                })
-        });
+        let is_finance_of_branch = who
+            .roles
+            .iter()
+            .any(|r| r.role == Role::Finance && r.covers(req_branch));
         if is_finance_of_branch {
             Ok(())
         } else if !who.roles.iter().any(|r| r.role == Role::Finance) {

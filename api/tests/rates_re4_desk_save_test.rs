@@ -82,10 +82,6 @@ use rust_decimal::Decimal;
 use save_common::rates_re4c_common::{d, line, publish};
 use save_common::*;
 use xc_auth::domain::policy::value_objects::role::Role;
-use xc_exchange::application::booking::service::BookingService;
-use xc_exchange::infrastructure::booking::booking_ids::UuidBookingIds;
-use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepository;
-use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, Side};
@@ -97,15 +93,12 @@ use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::application::workflows::booking_save_step::BookingSaveStep;
 use xchange::application::workflows::kiosk_save_step::KioskSaveStep;
 use xchange::application::workflows::save_step::{BookingClaim, SaveActor, SaveExtras, SaveStep};
-use xchange::infrastructure::bookings::booking_ports::PgBookingPorts;
 use xchange::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::v3::commands::make_approval_service;
 
 const FEE_ABOVE_PRINCIPAL: &str = "ค่าบริการสูงกว่ายอดซื้อ";
 const TOO_MANY_DECIMALS: &str = "ทศนิยมเกินกำหนด";
-/// The booking step's refusal of a form that is not the booking's (`booking_save_step.rs`).
-const NOT_THE_BOOKING: &str = "ข้อมูลรายการไม่ตรงกับการจอง หรือยังไม่ยืนยันลูกค้า";
 
 /// A cash exchange of `amount` `currency` at the per-1 `rate` the v2 desk sends, LIVE, fee 0.
 fn exchange(
@@ -157,7 +150,11 @@ async fn row(shop: &Shop, document_ref: &str) -> Row {
         Decimal,
     );
     let (line_id, rate, unit_size, amount, principal, received, paid): Raw = sqlx::query_as(
-        "SELECT published_rate_line_id::text, rate, unit_size, amount, principal, received, paid \
+        // TX-9 #677: the published line is read through the line's quote line, not the wide column.
+        "SELECT (SELECT ql.published_rate_line_id::text FROM transaction_lines l \
+                 JOIN quote_lines ql ON ql.id = l.quote_line_id \
+                 WHERE l.transaction_id = transactions.id AND l.line_no = 1), \
+                rate, unit_size, amount, principal, received, paid \
          FROM transactions WHERE document_ref = $1",
     )
     .bind(document_ref)
@@ -1310,14 +1307,14 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
 /// registers it.
 fn booking_flow(shop: &Shop) -> SaveTransactionWorkflow {
     let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
-    let bookings = BookingService::new(
-        branch_tx.clone(),
-        Arc::new(PgBookingRepository::new(shop.pool.clone())),
-        Arc::new(PgMemberRepository::new(shop.pool.clone())),
-        Arc::new(PgBookingPorts::new(shop.pool.clone())),
-        Arc::new(UuidBookingIds),
-    );
-    let steps: Vec<Arc<dyn SaveStep>> = vec![Arc::new(BookingSaveStep::new(bookings))];
+    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
+        Arc::new(
+            xc_booking::infrastructure::booking_repository::PgBookingRepository::new(
+                shop.pool.clone(),
+            ),
+        ),
+    ));
+    let steps: Vec<Arc<dyn SaveStep>> = vec![Arc::new(BookingSaveStep::new(lifecycle))];
     SaveTransactionWorkflow::new(branch_tx, shop.shifts.clone(), shop.files.clone())
         .with_steps(steps)
 }
@@ -1406,211 +1403,8 @@ async fn a_booked_save_at_the_booked_rate_off_the_current_line_is_refused() {
     assert_eq!(status, "CONFIRMED");
     shop.finish().await;
 }
-
-/// Re-expected for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556), replacing the ruling of 2026-10-10 (R7 for bookings):
-/// a save completing a booking at the current publication's rate (32.2 where the booking holds 32.1)
-/// passes the quote, and the booking step refuses it as not the booking's form. It writes nothing,
-/// and the booking stays confirmed.
-#[tokio::test]
-async fn a_booked_save_at_another_rate_is_refused() {
-    let shop = Shop::start().await;
-    let (customer, passport) = counter(&shop, &[("THB", "100000")]).await;
-    publish(&shop.pool, MAIN, &[("USD", "32.1", "33")]).await;
-    let booked = line(&shop.pool, MAIN, "USD").await;
-    confirmed_booking(&shop, "BK-re4c-0002", &booked.id, "32.1").await;
-    publish(&shop.pool, MAIN, &[("USD", "32.2", "33")]).await;
-
-    let mut cmd = exchange(
-        "re4c-booked-usd-0002",
-        &customer,
-        &passport,
-        "BUY",
-        "USD",
-        "100",
-        "32.2",
-    );
-    cmd.booking = "BK-re4c-0002".to_owned();
-    let owner = SaveActor {
-        id: OWNER.to_owned(),
-        username: OWNER.to_owned(),
-        employee_id: None,
-        role: Role::Owner,
-    };
-    let claim = BookingClaim {
-        booking_id: "BK-re4c-0002".to_owned(),
-        customer_confirmed: true,
-    };
-    let before = shop.everything().await;
-    let refused = tokio::time::timeout(
-        MUST_FINISH,
-        booking_flow(&shop).save_as_booked(
-            &branch(MAIN),
-            cmd,
-            &SaveExtras::default(),
-            Some(claim),
-            &owner,
-            at(60),
-        ),
-    )
-    .await
-    .expect("a save finishes");
-    assert_eq!(
-        refusal(refused),
-        NOT_THE_BOOKING,
-        "decision A3: the booking step refuses it"
-    );
-    assert_eq!(
-        shop.everything().await,
-        before,
-        "the refused save wrote nothing"
-    );
-    let status: String = sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
-        .bind("BK-re4c-0002")
-        .fetch_one(&shop.pool)
-        .await
-        .expect("read the booking");
-    assert_eq!(status, "CONFIRMED");
-    shop.finish().await;
-}
-
-/// A confirmed walk-in booking `id` of 100,000 KRW bought at `rate` per 1000, quoted from
-/// `line_id`, written as RE-4d's create writes it (§4.9 R1).
-async fn confirmed_krw_booking(shop: &Shop, id: &str, line_id: &str, rate: &str) {
-    sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
-         amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by, \
-         unit_size, published_rate_line_id) \
-         VALUES ($1, $2, $3, 'hash', 'Walk In', '0800000000', 'BUY', 'KRW', 100000, \
-         $4::numeric, 'CONFIRMED', '2026-10-06T00:00:00Z', 'owner', '2026-10-07T00:00:00Z', \
-         '2026-10-06T00:00:00Z', 'owner', 1000, $5::uuid)",
-    )
-    .bind(id)
-    .bind(MAIN)
-    .bind(unique("booking-request"))
-    .bind(rate)
-    .bind(line_id)
-    .execute(&shop.pool)
-    .await
-    .expect("insert a confirmed KRW booking");
-}
-
-/// The booked desk save of 100,000 KRW at the per-1 `rate`, completing booking `id`.
-async fn booked_krw_save(
-    shop: &Shop,
-    (customer, passport): (&str, &str),
-    id: &str,
-    submission: &str,
-    rate: &str,
-) -> AppResult<SavedTransaction> {
-    let mut cmd = exchange(submission, customer, passport, "BUY", "KRW", "100000", rate);
-    cmd.booking = id.to_owned();
-    let owner = SaveActor {
-        id: OWNER.to_owned(),
-        username: OWNER.to_owned(),
-        employee_id: None,
-        role: Role::Owner,
-    };
-    let claim = BookingClaim {
-        booking_id: id.to_owned(),
-        customer_confirmed: true,
-    };
-    tokio::time::timeout(
-        MUST_FINISH,
-        booking_flow(shop).save_as_booked(
-            &branch(MAIN),
-            cmd,
-            &SaveExtras::default(),
-            Some(claim),
-            &owner,
-            at(60),
-        ),
-    )
-    .await
-    .expect("a save finishes")
-}
-
-/// The customer of `person()` and a passport file of the owner, in `MAIN`.
-async fn counter_prepared(shop: &Shop) -> (String, String) {
-    let customer = shop.reserve(MAIN, person()).await;
-    let passport = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
-    (customer, passport)
-}
-
-/// The status of booking `id`.
-async fn booking_status(shop: &Shop, id: &str) -> String {
-    sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
-        .bind(id)
-        .fetch_one(&shop.pool)
-        .await
-        .expect("read the booking")
-}
-
-/// Ruling of 2026-10-10 (R3, R7): a booking on a KRW line of 25.12345678 per 1000 has the
-/// per-1 rate 0.02512345678, eleven places. The booked desk save at that rate redeems the
-/// booking (it ends `USED`, the schema's redeemed state) and stores the booking's line,
-/// 25.12345678 and unit 1000; 100,000 KRW is 2512.35 THB.
-#[tokio::test]
-async fn a_booked_save_redeems_a_krw_booking_at_its_11_place_per_1_rate() {
-    let shop = Shop::start().await;
-    shop.open_shift(MAIN, &[("THB", "100000")]).await;
-    publish(&shop.pool, MAIN, &[("KRW", "25.12345678", "26")]).await;
-    let booked = line(&shop.pool, MAIN, "KRW").await;
-    confirmed_krw_booking(&shop, "BK-re4c-krw-01", &booked.id, "25.12345678").await;
-
-    let (customer, passport) = counter_prepared(&shop).await;
-    let saved = booked_krw_save(
-        &shop,
-        (&customer, &passport),
-        "BK-re4c-krw-01",
-        "re4c-booked-krw-0001",
-        "0.02512345678",
-    )
-    .await
-    .expect("the booked save at the booking's per-1 rate is accepted");
-
-    assert_eq!(
-        row(&shop, &saved.document_ref).await,
-        Row {
-            line_id: Some(booked.id.clone()),
-            rate: d("25.12345678"),
-            unit_size: d("1000"),
-            amount: d("100000"),
-            principal: d("2512.35"),
-            received: d("0.00"),
-            paid: d("2512.35"),
-        },
-        "the booking's line, rate and unit"
-    );
-    assert_eq!(booking_status(&shop, "BK-re4c-krw-01").await, "USED");
-    shop.finish().await;
-}
-
-/// R7: the same booked save one place off in the eleventh decimal (0.02512345679) is not the
-/// booking's `per_one`: `RATE_MISMATCH`, nothing written, the booking still `CONFIRMED`.
-#[tokio::test]
-async fn a_booked_krw_save_off_in_the_eleventh_place_is_refused() {
-    let shop = Shop::start().await;
-    shop.open_shift(MAIN, &[("THB", "100000")]).await;
-    publish(&shop.pool, MAIN, &[("KRW", "25.12345678", "26")]).await;
-    let booked = line(&shop.pool, MAIN, "KRW").await;
-    confirmed_krw_booking(&shop, "BK-re4c-krw-02", &booked.id, "25.12345678").await;
-    let (customer, passport) = counter_prepared(&shop).await;
-
-    let before = shop.everything().await;
-    let refused = booked_krw_save(
-        &shop,
-        (&customer, &passport),
-        "BK-re4c-krw-02",
-        "re4c-booked-krw-0002",
-        "0.02512345679",
-    )
-    .await;
-    assert_eq!(refusal(refused), RATE_MISMATCH);
-    assert_eq!(
-        shop.everything().await,
-        before,
-        "the refused save wrote nothing"
-    );
-    assert_eq!(booking_status(&shop, "BK-re4c-krw-02").await, "CONFIRMED");
-    shop.finish().await;
-}
+// The three v2 booked cases (a_booked_save_redeems_a_krw_booking_at_its_11_place_per_1_rate,
+// a_booked_save_at_another_rate_is_refused, a_booked_krw_save_off_in_the_eleventh_place_is_refused)
+// and their exclusive helpers (confirmed_krw_booking, booked_krw_save, counter_prepared, booking_status)
+// are retired per design B1 (booking-slots.md:67) and lane controller ruling R8: a booking holds
+// no rate, and xc_exchange::application::booking is removed from the step (#1405 §4 item 2).

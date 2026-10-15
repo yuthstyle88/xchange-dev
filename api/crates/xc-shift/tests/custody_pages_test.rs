@@ -46,7 +46,6 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
-use xc_shift::domain::custody::entities::custody_request::CustodyRequest;
 use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::repositories::custody_pages::{CustodyPages, FloorFacts};
 use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
@@ -55,9 +54,6 @@ use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::cutoff::Cutoff;
 use xc_shift::domain::custody::value_objects::phase::Phase;
-use xc_shift::domain::custody::value_objects::request_kind::RequestKind;
-use xc_shift::domain::custody::value_objects::request_status::RequestStatus;
-use xc_shift::domain::custody::value_objects::signature::Signature;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 
@@ -79,49 +75,6 @@ fn attendance(id: &str, employee: &str, clock_in: i64, clock_out: Option<i64>) -
         role: CustodyRole::Front,
         clock_in: t(clock_in),
         clock_out: clock_out.map(t),
-    }
-}
-
-fn request(id: &str, at: i64) -> CustodyRequest {
-    CustodyRequest {
-        id: id.to_string(),
-        request_id: format!("rq-{id}"),
-        payload_hash: format!("hash-{id}"),
-        kind: RequestKind::Handover,
-        status: RequestStatus::Completed,
-        at: t(at),
-        sender: "sender".to_string(),
-        receiver: Some("receiver".to_string()),
-        note: format!("note {id}"),
-        evidence_keys: vec![format!("ev-{id}")],
-        signatures: Vec::new(),
-        shift_id: None,
-        counted: None,
-        target: None,
-        target_difference: None,
-        expected: None,
-        variance: None,
-        cutoff: None,
-        safe_count: None,
-        safe_expected: None,
-        safe_variance: None,
-        currency: None,
-        amount: None,
-        stage: None,
-        dispatched_at: None,
-        dispatched_by: None,
-        rejected: None,
-        completed_at: Some(t(at + 1)),
-        reconciliation: None,
-        reconciled: None,
-    }
-}
-
-fn signature(employee: &str, role: CustodyRole, at: i64) -> Signature {
-    Signature {
-        employee_id: employee.to_string(),
-        role,
-        at: t(at),
     }
 }
 
@@ -200,7 +153,7 @@ async fn store(pool: &PgPool, branch: &BranchId, after: &CustodyState) {
     tx.commit().await.expect("commit the seed");
 }
 
-/// A branch with `n` requests, holds, attendance records and exceptions, one
+/// A branch with `n` holds, attendance records and exceptions, one
 /// minute apart, ids prefixed with a tag unique to the branch.
 struct Seeded {
     branch: BranchId,
@@ -211,11 +164,6 @@ async fn seeded(db: &TestDb, label: &str, n: usize) -> Seeded {
     let branch = db.branch(label).await;
     let tag = unique(label);
     let mut s = state();
-    s.requests = names(&tag, "r", n)
-        .iter()
-        .enumerate()
-        .map(|(i, id)| request(id, i as i64 * MINUTE))
-        .collect();
     s.holds = names(&tag, "h", n)
         .iter()
         .enumerate()
@@ -263,7 +211,6 @@ async fn seed_is_what_load_state_answers() {
         let db = TestDb::start().await;
         let s = seeded(&db, "seed", 5).await;
         let loaded = load(&db.pool, &s.branch).await;
-        assert_eq!(loaded.requests.len(), 5);
         assert_eq!(loaded.holds.len(), 5);
         assert_eq!(loaded.attendance.len(), 5);
         assert_eq!(loaded.exceptions.len(), 5);
@@ -281,12 +228,6 @@ async fn t_p1_requests_holds_and_attendance_come_newest_first_by_position() {
         let s = seeded(&db, "tp1", 5).await;
         let p = pages(&db);
 
-        let requests = p.requests(&s.branch, None, 50).await.expect("requests");
-        assert!(
-            requests == newest_first(&s.state.requests),
-            "requests: position DESC, every field as stored; got {:?}",
-            ids(&requests, |r| &r.id)
-        );
         let holds = p.holds(&s.branch, None, 50).await.expect("holds");
         assert!(
             holds == newest_first(&s.state.holds),
@@ -315,19 +256,16 @@ async fn t_p1_position_decides_newest_not_time_or_id() {
         let branch = db.branch("tp1pos").await;
         let tag = unique("tp1pos");
         let mut s = state();
-        s.requests = vec![
-            request(&format!("{tag}-b"), 5 * MINUTE),
-            request(&format!("{tag}-c"), 9 * MINUTE),
-            request(&format!("{tag}-a"), MINUTE),
+        s.holds = vec![
+            hold(&format!("{tag}-b"), 5 * MINUTE, HoldStatus::Open),
+            hold(&format!("{tag}-c"), 9 * MINUTE, HoldStatus::Open),
+            hold(&format!("{tag}-a"), MINUTE, HoldStatus::Open),
         ];
         store(&db.pool, &branch, &s).await;
 
-        let got = pages(&db)
-            .requests(&branch, None, 50)
-            .await
-            .expect("requests");
+        let got = pages(&db).holds(&branch, None, 50).await.expect("holds");
         assert_eq!(
-            ids(&got, |r| &r.id),
+            ids(&got, |h| &h.id),
             vec![format!("{tag}-a"), format!("{tag}-c"), format!("{tag}-b")],
             "newest = highest position"
         );
@@ -344,14 +282,6 @@ async fn t_p2_before_resumes_strictly_after_the_given_id() {
         let s = seeded(&db, "tp2", 5).await;
         let p = pages(&db);
         let b = &s.branch;
-
-        let r = &s.state.requests;
-        let got = p.requests(b, Some(&r[3].id), 50).await.expect("requests");
-        assert!(
-            got == vec![r[2].clone(), r[1].clone(), r[0].clone()],
-            "requests before r3 = r2, r1, r0; got {:?}",
-            ids(&got, |x| &x.id)
-        );
 
         let h = &s.state.holds;
         let got = p.holds(b, Some(&h[3].id), 50).await.expect("holds");
@@ -383,15 +313,8 @@ async fn t_p2_before_the_last_row_answers_an_empty_page() {
         let p = pages(&db);
         let b = &s.branch;
 
-        let oldest_request = &s.state.requests[0].id;
         let oldest_hold = &s.state.holds[0].id;
         let oldest_att = &s.state.attendance[0].id;
-        assert!(
-            p.requests(b, Some(oldest_request), 50)
-                .await
-                .expect("requests")
-                .is_empty()
-        );
         assert!(
             p.holds(b, Some(oldest_hold), 50)
                 .await
@@ -418,13 +341,6 @@ async fn t_p2_an_unknown_before_id_answers_an_empty_page() {
         let unknown = unique("no-such-row");
 
         assert!(
-            p.requests(b, Some(&unknown), 50)
-                .await
-                .expect("requests")
-                .is_empty(),
-            "an unknown id is not the first page"
-        );
-        assert!(
             p.holds(b, Some(&unknown), 50)
                 .await
                 .expect("holds")
@@ -450,26 +366,6 @@ async fn t_p3_limit_is_honoured() {
         let p = pages(&db);
         let b = &s.branch;
 
-        let r = &s.state.requests;
-        let first = p.requests(b, None, 2).await.expect("requests");
-        assert!(
-            first == vec![r[4].clone(), r[3].clone()],
-            "first page of 2 = r4, r3; got {:?}",
-            ids(&first, |x| &x.id)
-        );
-        let second = p.requests(b, Some(&first[1].id), 2).await.expect("page 2");
-        assert!(
-            second == vec![r[2].clone(), r[1].clone()],
-            "second page of 2 = r2, r1; got {:?}",
-            ids(&second, |x| &x.id)
-        );
-        let third = p.requests(b, Some(&second[1].id), 2).await.expect("page 3");
-        assert!(
-            third == vec![r[0].clone()],
-            "last page = r0; got {:?}",
-            ids(&third, |x| &x.id)
-        );
-
         let h = &s.state.holds;
         let holds = p.holds(b, None, 3).await.expect("holds");
         assert!(holds == vec![h[4].clone(), h[3].clone(), h[2].clone()]);
@@ -492,8 +388,6 @@ async fn t_p4_another_branchs_rows_are_never_answered() {
         let p = pages(&db);
         let b = &mine.branch;
 
-        let got = p.requests(b, None, 50).await.expect("requests");
-        assert!(got == newest_first(&mine.state.requests));
         let got = p.holds(b, None, 50).await.expect("holds");
         assert!(got == newest_first(&mine.state.holds));
         let got = p.attendance(b, None, None, 50).await.expect("attendance");
@@ -508,11 +402,6 @@ async fn t_p4_another_branchs_rows_are_never_answered() {
         );
 
         let got = p
-            .requests_between(b, T0 - DAY, T0 + DAY)
-            .await
-            .expect("requests_between");
-        assert!(got == mine.state.requests);
-        let got = p
             .exceptions_between(b, T0 - DAY, T0 + DAY)
             .await
             .expect("exceptions_between");
@@ -520,15 +409,8 @@ async fn t_p4_another_branchs_rows_are_never_answered() {
         assert_eq!(p.open_holds(b).await.expect("open_holds"), 3);
 
         // An id of the other branch is not an id this branch holds.
-        let foreign_request = &other.state.requests[3].id;
         let foreign_hold = &other.state.holds[3].id;
         let foreign_att = &other.state.attendance[3].id;
-        assert!(
-            p.requests(b, Some(foreign_request), 50)
-                .await
-                .expect("requests")
-                .is_empty()
-        );
         assert!(
             p.holds(b, Some(foreign_hold), 50)
                 .await
@@ -641,104 +523,6 @@ async fn t_p5_attendance_only_e_answers_es_records_only() {
     .await;
 }
 
-// ── T-P6 signatures in order ────────────────────────────────────────────────
-
-/// Signatures are inserted out of `position` order, so the order they come back in
-/// is the query's and not the order they were written in.
-#[tokio::test]
-async fn t_p6_a_requests_signatures_come_in_position_order() {
-    within("T-P6", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp6").await;
-        let tag = unique("tp6");
-        let mut s = state();
-        s.requests = vec![
-            request(&format!("{tag}-r0"), 0),
-            request(&format!("{tag}-r1"), MINUTE),
-            request(&format!("{tag}-r2"), 2 * MINUTE),
-        ];
-        store(&db.pool, &branch, &s).await;
-
-        let signed: BTreeMap<usize, Vec<Signature>> = BTreeMap::from([
-            (
-                0,
-                vec![
-                    signature("s-a", CustodyRole::Front, 10),
-                    signature("s-b", CustodyRole::Monitor, 20),
-                    signature("s-c", CustodyRole::Manager, 30),
-                ],
-            ),
-            (
-                2,
-                vec![
-                    signature("s-d", CustodyRole::Finance, 40),
-                    signature("s-e", CustodyRole::Owner, 50),
-                ],
-            ),
-        ]);
-        // written in the order 2, 0, 1 (r0) and 1, 0 (r2), interleaved
-        let writes: [(usize, usize); 5] = [(0, 2), (2, 1), (0, 0), (2, 0), (0, 1)];
-        for (req, pos) in writes {
-            let sig = &signed[&req][pos];
-            let at = chrono::DateTime::from_timestamp_millis(sig.at.epoch_millis())
-                .expect("signature time");
-            sqlx::query(
-                "INSERT INTO custody_signatures (request_id, position, employee_id, role, at) \
-                 VALUES ($1, $2, $3, $4, $5)",
-            )
-            .bind(&s.requests[req].id)
-            .bind(pos as i32)
-            .bind(&sig.employee_id)
-            .bind(match sig.role {
-                CustodyRole::Front => "FRONT",
-                CustodyRole::Monitor => "MONITOR",
-                CustodyRole::Manager => "MANAGER",
-                CustodyRole::Finance => "FINANCE",
-                CustodyRole::Owner => "OWNER",
-                other => panic!("not used here: {other:?}"),
-            })
-            .bind(at)
-            .execute(&db.pool)
-            .await
-            .expect("insert a signature");
-        }
-        for (req, sigs) in &signed {
-            s.requests[*req].signatures = sigs.clone();
-        }
-        assert!(
-            load(&db.pool, &branch).await.requests == s.requests,
-            "load_state reads the signatures in position order"
-        );
-
-        let got = pages(&db)
-            .requests(&branch, None, 50)
-            .await
-            .expect("requests");
-        assert!(
-            got == newest_first(&s.requests),
-            "each request carries its own signatures, in position order"
-        );
-        let got = pages(&db)
-            .requests(&branch, Some(&s.requests[2].id), 1)
-            .await
-            .expect("requests");
-        assert_eq!(got.len(), 1);
-        assert!(
-            got[0].signatures.is_empty(),
-            "r1 has no signature of its own"
-        );
-        let got = pages(&db)
-            .requests_between(&branch, T0, T0 + DAY)
-            .await
-            .expect("requests_between");
-        assert!(
-            got == s.requests,
-            "requests_between carries the signatures too, in position order"
-        );
-    })
-    .await;
-}
-
 // ── T-P7 [from, to) ─────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -759,10 +543,6 @@ async fn t_p7_between_includes_from_and_excludes_to() {
             ("after-to", to + 1),
         ];
         let mut s = state();
-        s.requests = times
-            .iter()
-            .map(|(n, at)| request(&format!("{tag}-r-{n}"), *at))
-            .collect();
         s.exceptions = times
             .iter()
             .map(|(n, at)| exception(&format!("{tag}-x-{n}"), *at))
@@ -770,15 +550,6 @@ async fn t_p7_between_includes_from_and_excludes_to() {
         store(&db.pool, &branch, &s).await;
         let p = pages(&db);
 
-        let got = p
-            .requests_between(&branch, T0 + from, T0 + to)
-            .await
-            .expect("requests_between");
-        assert!(
-            got == s.requests[1..4].to_vec(),
-            "requests at from, inside, to-1 in position ASC; got {:?}",
-            ids(&got, |r| &r.id)
-        );
         let got = p
             .exceptions_between(&branch, T0 + from, T0 + to)
             .await
@@ -790,12 +561,6 @@ async fn t_p7_between_includes_from_and_excludes_to() {
         );
 
         assert!(
-            p.requests_between(&branch, T0 + to + 2, T0 + to + DAY)
-                .await
-                .expect("an empty window")
-                .is_empty()
-        );
-        assert!(
             p.exceptions_between(&branch, T0 + from, T0 + from)
                 .await
                 .expect("from == to")
@@ -806,7 +571,7 @@ async fn t_p7_between_includes_from_and_excludes_to() {
     .await;
 }
 
-/// Ascending means by position: a request stored later with an earlier time still
+/// Ascending means by position: an exception stored later with an earlier time still
 /// comes after.
 #[tokio::test]
 async fn t_p7_between_comes_in_position_order() {
@@ -815,11 +580,6 @@ async fn t_p7_between_comes_in_position_order() {
         let branch = db.branch("tp7order").await;
         let tag = unique("tp7order");
         let mut s = state();
-        s.requests = vec![
-            request(&format!("{tag}-r0"), 30 * MINUTE),
-            request(&format!("{tag}-r1"), 10 * MINUTE),
-            request(&format!("{tag}-r2"), 20 * MINUTE),
-        ];
         s.exceptions = vec![
             exception(&format!("{tag}-x0"), 30 * MINUTE),
             exception(&format!("{tag}-x1"), 10 * MINUTE),
@@ -828,11 +588,6 @@ async fn t_p7_between_comes_in_position_order() {
         store(&db.pool, &branch, &s).await;
         let p = pages(&db);
 
-        let got = p
-            .requests_between(&branch, T0, T0 + DAY)
-            .await
-            .expect("requests_between");
-        assert!(got == s.requests, "position ASC");
         let got = p
             .exceptions_between(&branch, T0, T0 + DAY)
             .await
@@ -1038,18 +793,16 @@ async fn floor_reads_an_absent_clock_out_as_open() {
 // planner sees 10,001 rows and autovacuum has no reason to analyse them again.
 // Wall time is not measured.
 //
-// The seed: 10,000 closed attendance records of `me` and 10,000 completed
-// requests, then me's open record at the newest position. The design's query
+// The seed: 10,000 closed attendance records of `me`, then me's open record at
+// the newest position. The design's query
 // (`… WHERE branch_id = $1 AND employee_id = $2 ORDER BY position DESC LIMIT 1`)
 // fetches that one row through `UNIQUE (branch_id, position)`; `ops_state` is one
-// primary-key row. Reading the history (a scan of `attendance`, any read of
-// `custody_requests`) shows up as thousands.
+// primary-key row. Reading the history (a scan of `attendance`) shows up as
+// thousands.
 
-const TABLES: [&str; 7] = [
+const TABLES: [&str; 5] = [
     "ops_state",
     "attendance",
-    "custody_requests",
-    "custody_signatures",
     "customer_holds",
     "tx_drafts",
     "cash_exceptions",
@@ -1117,20 +870,6 @@ async fn t_p10_floor_reads_one_ops_row_and_at_most_one_attendance_row() {
         .execute(&one)
         .await
         .expect("seed 10,000 closed attendance records");
-        sqlx::query(
-            "INSERT INTO custody_requests (id, branch_id, position, request_id, kind, status, data) \
-             SELECT $1 || '-r' || g, $2, g, $1 || '-rq' || g, 'HANDOVER', 'COMPLETED', \
-                    jsonb_build_object('payloadHash', 'h' || g, 'at', $3::bigint + g * 60000, \
-                                       'sender', 'sender', 'receiver', 'receiver', \
-                                       'note', '', 'evidenceKeys', jsonb_build_array('ev' || g)) \
-             FROM generate_series(0, 9999) AS g",
-        )
-        .bind(&tag)
-        .bind(branch.as_str())
-        .bind(T0)
-        .execute(&one)
-        .await
-        .expect("seed 10,000 completed requests");
         let open = attendance(&format!("{tag}-open"), "me", 10_000 * MINUTE, None);
         sqlx::query(
             "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
@@ -1146,9 +885,12 @@ async fn t_p10_floor_reads_one_ops_row_and_at_most_one_attendance_row() {
         // the seed decodes: what load_state reads is what was written
         let loaded = load(&one, &branch).await;
         assert_eq!(loaded.attendance.len(), 10_001);
-        assert_eq!(loaded.requests.len(), 10_000);
         assert_eq!(loaded.attendance.last(), Some(&open));
-        assert!(loaded.attendance[..10_000].iter().all(|a| a.clock_out.is_some()));
+        assert!(
+            loaded.attendance[..10_000]
+                .iter()
+                .all(|a| a.clock_out.is_some())
+        );
 
         for table in TABLES {
             sqlx::query(sqlx::AssertSqlSafe(format!("ANALYZE {table}")))

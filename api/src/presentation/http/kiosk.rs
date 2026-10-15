@@ -35,9 +35,7 @@ use xc_rate::domain::publication::freshness::Freshness;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
-use xc_booking::application::lifecycle::BookingLifecycle;
-use xc_booking::infrastructure::booking_repository::PgBookingRepository;
-use xc_booking::infrastructure::slot_repository::PgSlotRepository;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_kernel::queue_tickets::QueueTickets;
 use xc_queue::application::issue::ticket_issuer::TicketIssuer;
 use xc_queue::infrastructure::repository::PgQueueRepository;
@@ -469,10 +467,7 @@ async fn handle_kiosk(
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
             // §4.5 (QU-7 #1266): the confirm issues the request's walk-in ticket in its own
             // transaction, through the queue's port.
-            let booking_events = Arc::new(
-                BookingLifecycle::new(Arc::new(PgBookingRepository::new(pool.clone())))
-                    .with_slots(Arc::new(PgSlotRepository::new(pool.clone()))),
-            );
+            let booking_events = pg_booking_lifecycle(pool.clone());
             let queue: Arc<dyn QueueTickets> = Arc::new(
                 TicketIssuer::new(
                     BranchTx::new(Transactor::new(pool.clone())),

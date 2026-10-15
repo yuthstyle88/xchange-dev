@@ -205,8 +205,9 @@ transaction_payments(
 )
 ```
 
-`transaction_files` keeps PASSPORT and RECEIPT. SLIP moves to `transaction_payments.slip_file_key`, and the
-`transaction_files` SLIP row stays until migration 3 (readers move in TX-8).
+`transaction_files` keeps PASSPORT and RECEIPT. SLIP moves to `transaction_payments.slip_file_key`. The writers stop
+inserting `transaction_files` SLIP rows (#1894, merged); migration 3 deletes only the SLIP rows that match their
+exchange's `slip_file_key` and keeps any other (lane controller's ruling 2 on #677, 2026-10-15).
 
 ### 3.5 `receipts` (migration 2)
 
@@ -844,17 +845,33 @@ migrations still run correctly on a database with rows.
   fails, by design, if a non-COMPLETED row exists (such rows must be cancelled and deleted first, which only test data
   can have) or if two organisations share a number.
 
-**3. `api/migrations/20261030130000_drop_wide_transaction_columns.sql`** (TX-9, after TX-8) — cleanup block, slot
-assigned on #564 (issuecomment-6074437590)
+**3. `api/migrations/<above main's newest>_drop_wide_transaction_columns.sql`** (TX-9 #677, after TX-8). Its version must
+sort above main's newest migration when it is written (`20261205202000` on 2026-10-15); `20261030130000` sorts below, and
+`migration-order.sh` refuses it.
 
 - *Changes:* drops `type`, `code`, `amount`, `rate`, `reference_rate`, `unit_size`, `principal`, `fee`, `bank_fee`,
-  `received`, `paid`, `method`, `payment_ref`, `account`, `booking_no`, `published_rate_line_id`, and the
-  `transaction_files` SLIP rows.
+  `received`, `paid`, `method`, `payment_ref`, `account`, `published_rate_line_id` (15 columns).
+  - **`booking_no` is kept** until BK-11 #1413 retires v2 bookings (lane controller's ruling 1 on #677, 2026-10-15):
+    `api/src/application/executive/channel.rs`'s `booked(alias)` reads it, and it has no child row.
+  - **SLIP rows:** it deletes only the `transaction_files` rows with `kind = 'SLIP'` whose `file_key` equals that
+    exchange's `transaction_payments.slip_file_key`. A SLIP row with no such match is kept, so migration 3 destroys no
+    file reference (ruling 2).
 - *Precheck* (must be 0, else `RAISE`): `SELECT count(*) FROM transactions t WHERE NOT EXISTS (SELECT 1 FROM
-  transaction_lines l WHERE l.transaction_id = t.id);`
-- *Before writing it:* `git grep -n -E "\.(amount|principal|paid|received|payment_ref)\b|t\.(rate|code|type)\b"
-  origin/main -- api/src api/crates` must list no reader of the wide row.
-- *Deploy:* with TX-9's binary only. *`down`:* re-adds the columns NULL-able and fills them from the children.
+  transaction_lines l WHERE l.transaction_id = t.id);`. The kept SLIP rows are counted and logged, not raised:
+  `SELECT count(*) FROM transaction_files f WHERE f.kind = 'SLIP' AND NOT EXISTS (SELECT 1 FROM transaction_payments p
+  WHERE p.transaction_id = f.transaction_id AND p.slip_file_key = f.file_key);`
+- *Before writing it:* no reader of a dropped column may remain. List every file that queries the table with
+  `git grep -l -P '(FROM|JOIN|UPDATE|INTO)\s+transactions\b' -- api/src ':(glob)api/crates/*/src/**'`, and check each
+  statement's columns by reading it; a column grep alone misses unqualified selects (#677).
+- *Deploy:* with TX-9's binary only. The owner orders the deploy (destructive).
+- *`down`:* re-adds the 15 columns NULL-able and fills them from the children (ruling 3):
+  - the settling side = the line's `settle_thb`: `received` for SELL, `paid` for BUY. The other side = `0.00`, as the
+    store writes today;
+  - `published_rate_line_id` = `transaction_lines.quote_line_id → quote_lines.published_rate_line_id`, else NULL;
+  - the rest from line 1 and payment 1 (`type` = `shop_side`, `code` = `currency`, `amount` = `quantity`, `rate` =
+    `rate_snapshot`, `reference_rate`, `unit_size`, `principal` = `thb_amount`, `fee` = `fee_thb`, `bank_fee` =
+    `bank_fee_thb`, `method`, `payment_ref` = `reference`, `account`).
+  - Deleted SLIP rows are not restored; their keys stay in `transaction_payments.slip_file_key`.
 
 **TX-11 (§4.7) has no migration.** `audit_events` already exists (`api/migrations/20261010110000_approvals.sql:27-39`).
 TX-11 writes rows into it and changes no table, column or index. No existing row changes, there is nothing to backfill,

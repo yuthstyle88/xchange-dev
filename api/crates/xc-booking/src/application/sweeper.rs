@@ -18,6 +18,7 @@ use crate::domain::slot::repository::SlotRepository;
 use crate::domain::slot::slot_error::SlotError;
 use crate::infrastructure::booking_repository::PgBookingRepository;
 use crate::infrastructure::slot_repository::PgSlotRepository;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
 /// Counts of transitions made by a single sweeper run.
@@ -106,6 +107,7 @@ impl BookingSweeper {
             if BookingMachine::expire(&booking, now).is_err() {
                 continue;
             }
+            BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
             match self
                 .bookings
                 .transition_in(
@@ -212,6 +214,8 @@ impl BookingSweeper {
             if BookingMachine::no_show(&booking, now, &policy, &slot).is_err() {
                 continue;
             }
+
+            BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
             match self
                 .bookings
@@ -346,6 +350,8 @@ impl BookingSweeper {
             {
                 continue;
             }
+
+            BranchTx::lock_also(&mut tx, &booking.branch_id).await?;
 
             match self
                 .bookings

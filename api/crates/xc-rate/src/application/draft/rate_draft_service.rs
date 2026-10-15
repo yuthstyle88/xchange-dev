@@ -378,29 +378,51 @@ impl RateDraftService {
         };
 
         // Load references
-        let mut references = Vec::new();
-        for ref_id in &ref_ids {
-            let ref_row = sqlx::query(
-                "SELECT currency_code, unit_size, buy, sell FROM rate_reference_lines WHERE id = $1",
-            )
-            .bind(ref_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let ref_rows = sqlx::query(
+            "SELECT id, currency_code, unit_size, buy, sell FROM rate_reference_lines WHERE id = ANY($1)",
+        )
+        .bind(&ref_ids)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-            if let Some(rr) = ref_row {
-                let code_str: String = rr.get(0);
-                let c = CurrencyCode::parse(code_str.trim())
-                    .map_err(|e| RateEngineError::Internal(format!("invalid code: {e}")))?;
-                let unit_val: Decimal = rr.get(1);
-                let buy_val: Option<Decimal> = rr.get(2);
-                let sell_val: Option<Decimal> = rr.get(3);
-                let u = UnitSize::parse(&unit_val.to_string())
-                    .map_err(|e| RateEngineError::Internal(format!("invalid unit: {e}")))?;
-                let buy = buy_val.map(|b| Rate::parse(&b.to_string()).unwrap());
-                let sell = sell_val.map(|s| Rate::parse(&s.to_string()).unwrap());
-                references.push(ReferenceLine::new(c, u, buy, sell));
-            }
+        let mut references_by_id: std::collections::HashMap<Uuid, ReferenceLine> =
+            std::collections::HashMap::with_capacity(ref_rows.len());
+        for rr in ref_rows {
+            let rid: Uuid = rr.get(0);
+            let code_str: String = rr.get(1);
+            let c = CurrencyCode::parse(code_str.trim())
+                .map_err(|e| RateEngineError::Internal(format!("invalid code: {e}")))?;
+            let unit_val: Decimal = rr.get(2);
+            let buy_val: Option<Decimal> = rr.get(3);
+            let sell_val: Option<Decimal> = rr.get(4);
+            let u = UnitSize::parse(&unit_val.to_string())
+                .map_err(|e| RateEngineError::Internal(format!("invalid unit: {e}")))?;
+            let buy = buy_val.map(|b| Rate::parse(&b.to_string()).unwrap());
+            let sell = sell_val.map(|s| Rate::parse(&s.to_string()).unwrap());
+            references_by_id.insert(rid, ReferenceLine::new(c, u, buy, sell));
+        }
+        let references: Vec<ReferenceLine> = ref_ids
+            .iter()
+            .filter_map(|ref_id| references_by_id.get(ref_id).cloned())
+            .collect();
+
+        // Load currency units
+        let currency_codes: Vec<&str> = lines.iter().map(|l| l.currency.as_str()).collect();
+        let currency_rows =
+            sqlx::query("SELECT code, unit_size, minor_unit FROM currencies WHERE code = ANY($1)")
+                .bind(&currency_codes)
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        let mut currencies_by_code: std::collections::HashMap<String, (Decimal, u8)> =
+            std::collections::HashMap::with_capacity(currency_rows.len());
+        for r in currency_rows {
+            let code_str: String = r.get(0);
+            let unit_val: Decimal = r.get(1);
+            let minor_val = r.get::<i16, _>(2) as u8;
+            currencies_by_code.insert(code_str.trim().to_owned(), (unit_val, minor_val));
         }
 
         // Calculate proposals and tiers
@@ -412,16 +434,10 @@ impl RateDraftService {
 
         for (i, line) in lines.iter().enumerate() {
             // Read currency units
-            let c_row = sqlx::query("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
-                .bind(line.currency.as_str())
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| RateEngineError::Database(e.to_string()))?;
-
-            let (unit_val, minor_val) = match c_row {
-                Some(r) => (r.get::<Decimal, _>(0), r.get::<i16, _>(1) as u8),
-                None => (Decimal::ONE, 2u8),
-            };
+            let (unit_val, minor_val) = currencies_by_code
+                .get(line.currency.as_str())
+                .copied()
+                .unwrap_or((Decimal::ONE, 2u8));
 
             let units = CurrencyUnits::new(
                 line.currency,

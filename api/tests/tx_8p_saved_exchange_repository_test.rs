@@ -201,9 +201,11 @@ async fn seed_five_exchanges(shop: &Shop) -> SeededExchanges {
     .expect("mutate wide columns");
 
     let mutated_slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
+    // A stale SLIP row (legacy data): inserted if the writer no longer writes one (TX-9 #677), so it exists
+    // before and after the writers stop, and the reader must still answer the payment's slip.
     sqlx::query(
-        "UPDATE transaction_files SET file_key = $2 \
-         WHERE transaction_id = $1 AND kind = 'SLIP'",
+        "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, 'SLIP', $2) \
+         ON CONFLICT (transaction_id, kind) DO UPDATE SET file_key = EXCLUDED.file_key",
     )
     .bind(completed_id.0)
     .bind(&mutated_slip)

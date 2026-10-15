@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::pii::PiiError;
 
+#[derive(Clone)]
 pub struct PiiKeys {
     /// Ordered list of (key_id, 32-byte key)
     keys: Vec<(String, [u8; 32])>,

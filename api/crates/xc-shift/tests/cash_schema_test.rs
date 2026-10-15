@@ -429,26 +429,6 @@ async fn a_fresh_database_applies_every_migration_in_version_order() {
 }
 
 #[tokio::test]
-async fn m1_leaves_the_request_model_untouched() {
-    let db = Db::fresh().await;
-    for (table, column) in [
-        ("custody_requests", "id"),
-        ("custody_signatures", "request_id"),
-        ("ops_state", "custodian_id"),
-    ] {
-        assert_eq!(
-            db.count(&format!(
-                "SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() \
-                 AND table_name = '{table}' AND column_name = '{column}'"
-            ))
-            .await,
-            1,
-            "{table}.{column} stays until CA-10"
-        );
-    }
-}
-
-#[tokio::test]
 async fn m1_keeps_the_per_branch_open_shift_index() {
     // The index swap is CA-3's M2, not M1. CA-3 (#619): read the schema as M1 leaves it, since M2 now follows it.
     let db = Db::before_m1().await;

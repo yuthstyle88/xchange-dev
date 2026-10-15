@@ -1,6 +1,8 @@
 //! `LedgerCashFacts`: cash facts read from the ledger and inventory tables (design `executive-finance.md` §3).
 //! EX-7 (#1076).
 
+use std::collections::BTreeMap;
+
 use pos_error::{AppError, AppResult};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -9,7 +11,9 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 
 use crate::application::executive::metrics::MetricUnavailable;
-use crate::application::executive::ports::{BoxFuture, CashFacts, ExecutiveFilter, ShiftStatus};
+use crate::application::executive::ports::{
+    BoxFuture, BranchCash, CashFacts, ExecutiveFilter, ShiftStatus,
+};
 
 pub struct LedgerCashFacts {
     pool: PgPool,
@@ -86,6 +90,104 @@ impl CashFacts for LedgerCashFacts {
                 closed_verified: verified,
                 closed_unverified: unverified,
             })
+        })
+    }
+
+    fn branch_cash<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+        filter: &'a ExecutiveFilter,
+    ) -> BoxFuture<'a, AppResult<BTreeMap<BranchId, BranchCash>>> {
+        Box::pin(async move {
+            let mut out: BTreeMap<BranchId, BranchCash> = branches
+                .iter()
+                .map(|b| (b.clone(), BranchCash::default()))
+                .collect();
+            if branches.is_empty() {
+                return Ok(out);
+            }
+
+            let ids: Vec<String> = branches.iter().map(|b| b.as_str().to_owned()).collect();
+
+            let available_rows: Vec<(String, Decimal)> = sqlx::query_as(
+                "SELECT a.branch_id, coalesce(sum(e.quantity_signed), 0) \
+                   FROM ledger_entries e \
+                   JOIN cash_accounts a ON a.id = e.account_id \
+                  WHERE a.branch_id = ANY($1) \
+                    AND a.currency = 'THB' \
+                    AND a.kind IN ('DRAWER', 'SAFE') \
+                  GROUP BY a.branch_id",
+            )
+            .bind(&ids)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            for (branch_id, available) in available_rows {
+                if let Some(entry) = out.get_mut(&BranchId::new(branch_id)) {
+                    entry.available = available;
+                }
+            }
+
+            let transit_rows: Vec<(String, Decimal)> = sqlx::query_as(
+                "SELECT a.branch_id, coalesce(sum(e.quantity_signed), 0) \
+                   FROM ledger_entries e \
+                   JOIN cash_accounts a ON a.id = e.account_id \
+                  WHERE a.branch_id = ANY($1) \
+                    AND a.currency = 'THB' \
+                    AND a.kind = 'IN_TRANSIT' \
+                  GROUP BY a.branch_id",
+            )
+            .bind(&ids)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            for (branch_id, in_transit) in transit_rows {
+                if let Some(entry) = out.get_mut(&BranchId::new(branch_id)) {
+                    entry.in_transit = in_transit;
+                }
+            }
+
+            let shift_rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(
+                "SELECT s.branch_id, \
+                        count(*) FILTER (WHERE s.status = 'OPEN'), \
+                        count(*) FILTER (WHERE s.status = 'CLOSED' AND in_period AND verified), \
+                        count(*) FILTER (WHERE s.status = 'CLOSED' AND in_period AND NOT verified) \
+                   FROM ( \
+                     SELECT s.branch_id, \
+                            s.status, \
+                            s.closed_at IS NOT NULL \
+                              AND (s.closed_at AT TIME ZONE b.timezone)::date \
+                                  >= coalesce($2::date, (now() AT TIME ZONE b.timezone)::date) \
+                              AND (s.closed_at AT TIME ZONE b.timezone)::date \
+                                  <= coalesce($3::date, (now() AT TIME ZONE b.timezone)::date) AS in_period, \
+                            EXISTS (SELECT 1 FROM cash_counts c \
+                                     WHERE c.shift_id = s.id AND c.kind = 'CLOSE' AND c.verified_by IS NOT NULL) \
+                              AS verified \
+                       FROM shifts s JOIN branches b ON b.id = s.branch_id \
+                      WHERE s.branch_id = ANY($1) \
+                   ) s \
+                  GROUP BY s.branch_id",
+            )
+            .bind(&ids)
+            .bind(filter.from)
+            .bind(filter.to)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            for (branch_id, open, verified, unverified) in shift_rows {
+                if let Some(entry) = out.get_mut(&BranchId::new(branch_id)) {
+                    entry.shifts = ShiftStatus {
+                        open,
+                        closed_verified: verified,
+                        closed_unverified: unverified,
+                    };
+                }
+            }
+
+            Ok(out)
         })
     }
 

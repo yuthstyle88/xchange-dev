@@ -37,16 +37,35 @@ impl MyTransactionsView {
             t.value_date,
             t.branch_id,
             b.name AS branch_name,
-            t.type,
-            t.code AS currency,
-            t.amount,
-            t.rate,
-            t.principal,
-            t.fee,
+            l1.shop_side AS type,
+            l1.currency,
+            l1.quantity AS amount,
+            l1.rate_snapshot AS rate,
+            totals.total_principal AS principal,
+            totals.total_fee AS fee,
+            totals.total_settlement AS settlement,
             r.number AS receipt_ref,
             rev.id AS reversal_id
         FROM transactions t
         JOIN branches b ON b.id = t.branch_id
+        JOIN LATERAL (
+            SELECT
+                l1.shop_side,
+                l1.currency,
+                l1.quantity,
+                l1.rate_snapshot
+            FROM transaction_lines l1
+            WHERE l1.transaction_id = t.id AND l1.line_no = 1
+            LIMIT 1
+        ) l1 ON true
+        JOIN LATERAL (
+            SELECT
+                COALESCE(SUM(l.thb_amount), 0) AS total_principal,
+                COALESCE(SUM(l.fee_thb), 0) AS total_fee,
+                COALESCE(SUM(l.settle_thb), 0) AS total_settlement
+            FROM transaction_lines l
+            WHERE l.transaction_id = t.id
+        ) totals ON true
         LEFT JOIN LATERAL (
             SELECT number
             FROM receipts
@@ -76,7 +95,7 @@ impl MyTransactionsView {
                 let rate: rust_decimal::Decimal = row.get("rate");
                 let principal: rust_decimal::Decimal = row.get("principal");
                 let fee: rust_decimal::Decimal = row.get("fee");
-                let settlement = principal + fee;
+                let settlement: rust_decimal::Decimal = row.get("settlement");
                 let receipt_ref: Option<String> = row.get("receipt_ref");
                 let rev_id: Option<uuid::Uuid> = row.get("reversal_id");
 

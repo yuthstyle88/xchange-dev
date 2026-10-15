@@ -37,8 +37,11 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money};
 use xchange::application::executive::metrics::MetricUnavailable;
 use xchange::application::executive::overview::{BranchHead, ExecutiveOverviewService};
-use xchange::application::executive::ports::{BrokerNotConnected, CashFacts, ExecutiveFilter};
+use xchange::application::executive::ports::{
+    BrokerNotConnected, CashFacts, ExchangeFacts, ExecutiveFilter,
+};
 use xchange::infrastructure::executive::alert_facts::PgAlertFacts;
+use xchange::infrastructure::executive::booking_facts::BookingFacts;
 use xchange::infrastructure::executive::ledger_cash_facts::LedgerCashFacts;
 use xchange::infrastructure::executive::wide_transaction_facts::WideTransactionFacts;
 
@@ -950,6 +953,144 @@ async fn a01_overview_after_swap_other_figures_unchanged() {
     assert_eq!(overview.branches[0].head.id, scope[0]);
     assert_eq!(overview.branches[0].volume_thb, d("3200.00"));
     assert!(!overview.definitions.is_empty());
+
+    room.finish().await;
+}
+
+/// A01's branch table reads every branch's cash in one call (`CashFacts::branch_cash`, BE controller
+/// claude/7ca80c; up-front test by claude/d7aa64). For each requested branch it answers exactly what
+/// `available_cash`, `in_transit` and `shift_status` answer for that branch alone; every requested branch is
+/// a key.
+#[tokio::test]
+async fn branch_cash_answers_each_branchs_own_figures_like_the_single_reads() {
+    let room = Room::start().await;
+    let b1 = BranchId::new(B1);
+    let b2 = BranchId::new(B2);
+
+    room.post(vec![PostingRequest {
+        from: CashPlace::Bank,
+        to: CashPlace::Safe(b1.clone()),
+        currency: thb(),
+        quantity: ForeignAmount::from_decimal(d("100000.00")),
+        source: SourceRef {
+            source_type: SourceType::Opening,
+            source_id: unique("seed"),
+            source_key: "safe".to_string(),
+        },
+        line: None,
+        reverses: None,
+    }])
+    .await;
+    let _transfer = room.dispatch_transfer(B1, B2, "30000.00").await;
+    let _open = room.open_shift(B2).await;
+
+    let today = Utc::now().date_naive();
+    let filter = ExecutiveFilter {
+        from: Some(today),
+        to: Some(today),
+        currency: None,
+        channel: None,
+    };
+    let facts = LedgerCashFacts::new(room.pool.clone());
+    let branches = vec![b1.clone(), b2.clone()];
+    let all = facts
+        .branch_cash(&branches, &filter)
+        .await
+        .expect("the batched read");
+
+    assert_eq!(all.len(), 2, "every requested branch is a key");
+    for b in &branches {
+        let got = &all[b];
+        assert_eq!(
+            got.available,
+            facts.available_cash(b).await.expect("available_cash"),
+            "{b}: available"
+        );
+        assert_eq!(
+            got.in_transit,
+            facts.in_transit(b).await.expect("in_transit"),
+            "{b}: in transit"
+        );
+        assert_eq!(
+            got.shifts,
+            facts.shift_status(b, &filter).await.expect("shift_status"),
+            "{b}: shifts"
+        );
+    }
+    assert_eq!(
+        all[&b1].in_transit,
+        d("30000.00"),
+        "the sender carries the transfer"
+    );
+    assert_eq!(all[&b2].shifts.open, 1, "B2's open shift is counted");
+
+    room.finish().await;
+}
+
+/// A01's branch table reads every branch's unfinished LIVE transactions in one call
+/// (`ExchangeFacts::unfinished_by_branch`, BE controller claude/7ca80c; up-front test by claude/d7aa64).
+/// For each requested branch it answers exactly what `unfinished` answers for that branch alone, through both
+/// implementations the overview can be wired with (`BookingFacts` delegates to `WideTransactionFacts`).
+#[tokio::test]
+async fn unfinished_by_branch_answers_each_branchs_own_count_like_the_single_read() {
+    let room = Room::start().await;
+    let b1 = BranchId::new(B1);
+    let b2 = BranchId::new(B2);
+    let today = Utc::now().date_naive();
+
+    // B1: two unfinished LIVE (CONFIRMED, DRAFT), one COMPLETED, one unfinished DEMO (not counted).
+    // B2: one unfinished LIVE (PENDING_APPROVAL).
+    let mut set_status = Vec::new();
+    for (branch, mode, status) in [
+        (B1, "LIVE", "CONFIRMED"),
+        (B1, "LIVE", "DRAFT"),
+        (B1, "LIVE", "COMPLETED"),
+        (B1, "DEMO", "CONFIRMED"),
+        (B2, "LIVE", "PENDING_APPROVAL"),
+    ] {
+        let (tx, _) = room
+            .insert_transaction_with_line(branch, today, mode, "BUY", "USD", "3200.00", None, None)
+            .await;
+        set_status.push((tx, status));
+    }
+    for (tx, status) in set_status {
+        if status != "COMPLETED" {
+            sqlx::query(
+                "UPDATE transactions SET status = $2, completed_at = NULL, document_ref = NULL WHERE id = $1",
+            )
+            .bind(tx)
+            .bind(status)
+            .execute(&room.pool)
+            .await
+            .expect("move the exchange to an unfinished status");
+        }
+    }
+
+    let branches = vec![b1.clone(), b2.clone()];
+    let wide = WideTransactionFacts::new(room.pool.clone());
+    let booking = BookingFacts::new(room.pool.clone());
+    for (label, facts) in [
+        ("wide", &wide as &dyn ExchangeFacts),
+        ("booking", &booking as &dyn ExchangeFacts),
+    ] {
+        let all = facts
+            .unfinished_by_branch(&branches)
+            .await
+            .expect("the batched read");
+        assert_eq!(all.len(), 2, "{label}: every requested branch is a key");
+        for b in &branches {
+            assert_eq!(
+                all[b],
+                facts.unfinished(b).await.expect("unfinished"),
+                "{label} {b}: equals the single read"
+            );
+        }
+        assert_eq!(
+            all[&b1], 2,
+            "{label}: B1 counts its two unfinished LIVE exchanges only"
+        );
+        assert_eq!(all[&b2], 1, "{label}: B2 counts its own");
+    }
 
     room.finish().await;
 }

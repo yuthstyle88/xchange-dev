@@ -319,6 +319,32 @@ pub async fn identity_session(
         .flatten()
 }
 
+/// The `sha256_hex` of the Blueprint session (`__Host-xc_session`) a request carries when that
+/// hash is a live `user_sessions` row (`expires > now`), or `None` otherwise (#1943, §9.2).
+pub async fn caller_session_hash(req: &HttpRequest, now: DateTime<Utc>) -> Option<String> {
+    let token = cookie(req, SESSION_COOKIE);
+    if token.is_empty() {
+        return None;
+    }
+    let pool = req
+        .app_data::<web::Data<crate::bootstrap::AppState>>()
+        .map(|s| &s.db)
+        .or_else(|| {
+            req.app_data::<web::Data<SessionService>>()
+                .map(|s| s.pool())
+        })?;
+    let hash = xc_auth::application::session::sha256_hex(&token);
+    sqlx::query_scalar::<_, String>(
+        "SELECT hash FROM user_sessions WHERE hash = $1 AND expires > $2",
+    )
+    .bind(&hash)
+    .bind(now)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
 /// The Blueprint session a request carries as its user and `access::Actor` (`customer_id` from the customer link,
 /// #654), or `None` as [`identity_session`] answers it.
 pub async fn identity_session_actor(

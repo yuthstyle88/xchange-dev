@@ -2,11 +2,11 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::AppError;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
+use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize, fixed6};
 
 /// Select list for transaction list views (§7, §8).
 pub const ROW_COLUMNS: &str = "\
@@ -244,9 +244,7 @@ impl TransactionRow {
                     "0.000000".to_string()
                 } else {
                     let raw_pct = (spread / ref_val) * Decimal::from(100);
-                    let rounded_pct =
-                        raw_pct.round_dp_with_strategy(6, RoundingStrategy::MidpointAwayFromZero);
-                    format!("{:.6}", rounded_pct)
+                    fixed6(raw_pct)
                 };
 
                 let spread_str = if spread.is_zero() {

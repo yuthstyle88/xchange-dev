@@ -18,12 +18,11 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 /// Every step file with the number of steps it was recorded with.
-const STEP_COUNTS: [(&str, usize); 9] = [
+const STEP_COUNTS: [(&str, usize); 8] = [
     ("snapshot/empty.json", 48),
     ("snapshot/rates.json", 21),
     ("snapshot/shift.json", 59),
     ("snapshot/transactions.json", 56),
-    ("snapshot/custody.json", 255),
     ("snapshot/branches.json", 39),
     ("rpc/transport.json", 99),
     ("rpc/engine_actions.json", 184),
@@ -115,15 +114,13 @@ fn references_are_expanded_recursively() {
 fn the_files_really_use_nested_references() {
     // a reader that expanded one level only would leave a reference behind:
     // shared values of the files hold references themselves
-    let path = compat_common::fixtures_dir().join("snapshot/custody.json");
+    let path = compat_common::fixtures_dir().join("snapshot/shift.json");
     let raw: Value =
         serde_json::from_str(&std::fs::read_to_string(path).expect("read")).expect("JSON");
     let shared = raw["shared"].as_object().expect("the shared table");
-    // 417 and 115 in the recording of the 10-05 bundle; the 10-06 one shares the payment
-    // rows of `adminDeskConfig` as two more values, one of them holding the other (row PM-D)
-    assert_eq!(shared.len(), 419);
+    assert_eq!(shared.len(), 188);
     let nested = shared.values().filter(|v| has_shared_reference(v)).count();
-    assert_eq!(nested, 116);
+    assert_eq!(nested, 23);
     let written = raw["steps"].as_array().expect("steps");
     assert!(written.iter().any(|s| has_shared_reference(&s["body"])));
 }
@@ -271,13 +268,6 @@ fn steps_are_found_by_view() {
             .any(|s| s.route.as_deref() == Some("/api/staff/rpc"))
     );
     assert!(empty.steps_with_view("no such view").is_empty());
-
-    let custody = Fixture::load("snapshot/custody.json");
-    assert_eq!(custody.views().len(), 9);
-    assert_eq!(
-        custody.steps().iter().filter(|s| s.view.is_some()).count(),
-        174
-    );
 }
 
 #[test]

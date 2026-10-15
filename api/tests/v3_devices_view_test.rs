@@ -40,6 +40,7 @@ mod publication_seed;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -300,15 +301,10 @@ impl Room {
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
-    /// The owner opens a shift in `branch` through `/api/rpc`.
+    /// Opens a shift in `branch` by count.
     async fn open_shift(&self, branch: &str, opening: Value) {
-        self.ok(
-            "OWNER",
-            RPC,
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(), "opening": opening }),
-        )
-        .await;
+        shift_setup_common::open_shift_by_count(&self.desk.db.pool, branch, opening, self.tick())
+            .await;
     }
 
     async fn open_shift_id(&self, branch: &str) -> String {
@@ -336,16 +332,14 @@ impl Room {
         )
     }
 
-    /// The owner closes the open shift of `branch`, counting `counted`.
+    /// Closes the open shift of `branch`, counting `counted`.
     async fn close_shift(&self, branch: &str, counted: Value) {
-        let shift = self.open_shift_id(branch).await;
-        let expected = self.expected_of_open_shift(branch).await;
-        self.ok(
-            "OWNER",
-            RPC,
-            "adminCloseShift",
-            json!({ "branchId": branch, "requestId": request_id(), "shiftId": shift,
-                    "expected": expected, "counted": counted, "note": "นับเงินปิดกะ" }),
+        shift_setup_common::close_shift_by_count_with_note(
+            &self.desk.db.pool,
+            branch,
+            counted,
+            "นับเงินปิดกะ",
+            self.tick(),
         )
         .await;
     }
@@ -1041,20 +1035,7 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
     let v = room.version(MAIN).await;
     room.open_shift(MAIN, json!({ "THB": 100000, "USD": 1000 }))
         .await;
-    every_view_changed(&room, v, "adminOpenShift").await;
-
-    let v = room.version(MAIN).await;
-    let shift = room.open_shift_id(MAIN).await;
-    // OR-4b (#767, design §4.2 C3): CashManage is BRANCH_MANAGER's and FINANCE's; FINANCE moves it
-    room.ok(
-        "FINANCE",
-        RPC,
-        "adminMoveStock",
-        json!({ "branchId": MAIN, "requestId": request_id(), "shiftId": shift,
-                "currency": "USD", "direction": "IN", "amount": 10, "reason": "from the safe" }),
-    )
-    .await;
-    every_view_changed(&room, v, "adminMoveStock").await;
+    every_view_changed(&room, v, "open_shift").await;
 
     let v = room.version(MAIN).await;
     room.save(MAIN, "BUY", "100", "0", "LIVE").await;
@@ -1063,7 +1044,7 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
     let v = room.version(MAIN).await;
     room.close_shift(MAIN, json!({ "THB": "96790.00", "USD": "1110.00" }))
         .await;
-    every_view_changed(&room, v, "adminCloseShift").await;
+    every_view_changed(&room, v, "close_shift").await;
     room.finish().await;
 }
 
