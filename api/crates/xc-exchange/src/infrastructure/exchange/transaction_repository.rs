@@ -334,13 +334,10 @@ impl TransactionRepository for PgTransactionRepository {
         .await
         .map_err(AppError::Database)?;
 
-        let mut files = vec![
+        let files = vec![
             ("PASSPORT", t.passport_key.as_str()),
             ("RECEIPT", t.receipt_key.as_str()),
         ];
-        if let Some(slip) = &t.slip_key {
-            files.push(("SLIP", slip.as_str()));
-        }
         for (kind, key) in files {
             sqlx::query(
                 "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, $2, $3)",

@@ -389,7 +389,7 @@ impl SaveTransactionWorkflow {
                         .and_then(|e| e.kiosk_request_id.as_deref())
                         .filter(|s| !s.is_empty());
 
-                    let (quote_id, quote_unit_size, quote_published_line_id) = if let Some(req_id) = kiosk_req_id {
+                    let (quote_id, quote_unit_size) = if let Some(req_id) = kiosk_req_id {
                         // A kiosk save first passes KioskSaveStep's currency/amount check.
                         if let Some((extras, booking, actor)) = &stepped {
                             let ctx = SaveContext {
@@ -434,7 +434,7 @@ impl SaveTransactionWorkflow {
                         if form.client_rate != per_one {
                             return refuse(RATE_MISMATCH);
                         }
-                        (qid, line.unit_size, Some(line.published_rate_line_id))
+                        (qid, line.unit_size)
                     } else {
                         // Non-kiosk save (desk / booking): quote first.
                         let Ok(code) = CurrencyCode::parse(&form.currency) else {
@@ -494,7 +494,7 @@ impl SaveTransactionWorkflow {
                             }
                         }
 
-                        (quote.id, line.unit_size, Some(line.published_rate_line_id))
+                        (quote.id, line.unit_size)
                     };
 
                     CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
@@ -615,17 +615,6 @@ impl SaveTransactionWorkflow {
                     .execute(&mut **tx)
                     .await
                     .map_err(AppError::Database)?;
-
-                    if let Some(pub_line_id) = quote_published_line_id {
-                        sqlx::query(
-                            "UPDATE transactions SET published_rate_line_id = $1 WHERE id = $2",
-                        )
-                        .bind(pub_line_id)
-                        .bind(draft.id.0)
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-                    }
 
                     CustomerService::record_exchange_in(
                         tx,

@@ -44,6 +44,7 @@ impl BranchView for MyPlannerDraftsView {
         let caller = Caller {
             user: Some(who.clone()),
             app_session: None,
+            session_hash: None,
         };
         let branch = branch.clone();
         let filter = filter.clone();
