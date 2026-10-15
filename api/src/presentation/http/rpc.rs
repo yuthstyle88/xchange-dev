@@ -26,7 +26,7 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use xc_auth::domain::account::entities::session::SignedIn;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
