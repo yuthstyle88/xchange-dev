@@ -938,11 +938,11 @@ async fn reference_spread_is_signed_from_the_shops_side() {
     room.finish().await;
 }
 
-/// `referencePercent` = spread ÷ reference × 100 to six places, half away from zero: 24.08 ÷
-/// 1024 × 100 = 2.3515625 exactly → `2.351563`; −54.80 ÷ 1024 × 100 = −5.3515625 → `-5.351563`.
-/// (Half to even gives …562, truncation …562.) The web shows it as sent (#476 TransactionDetail).
+/// `referencePercent` = spread ÷ reference × 100 to six places, a negative half toward +∞: 24.08 ÷
+/// 1024 × 100 = 2.3515625 exactly → `2.351563`; −54.80 ÷ 1024 × 100 = −5.3515625 → `-5.351562`.
+/// The web shows it as sent (#476 TransactionDetail).
 #[actix_web::test]
-async fn reference_percent_has_six_places_half_away_from_zero() {
+async fn reference_percent_has_six_places_a_negative_half_toward_plus_infinity() {
     let room = Room::open().await;
     let bought = room.save(Save::buy("31.15").reference("32.8731")).await;
     let sold = room.save(Save::sell("29.73").reference("34.4432")).await;
@@ -952,7 +952,7 @@ async fn reference_percent_has_six_places_half_away_from_zero() {
     );
     assert_eq!(
         room.row(&sold.id).await["referencePercent"],
-        json!("-5.351563")
+        json!("-5.351562")
     );
     room.finish().await;
 }
