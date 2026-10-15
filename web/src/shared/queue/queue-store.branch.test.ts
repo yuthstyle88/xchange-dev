@@ -17,11 +17,12 @@
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)`
 // (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Accessor } from 'solid-js';
 import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import { meOf } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
 vi.mock('../session/session', async (importOriginal) => {
@@ -68,6 +69,8 @@ async function load() {
     useQueueStore: (b: Accessor<string | undefined>) => Accessor<unknown>;
   };
 }
+
+beforeAll(() => warmModules(() => import('./queue-store')), 60_000);
 
 beforeEach(() => {
   vi.useFakeTimers({ now: new Date('2026-10-10T05:00:00Z') });

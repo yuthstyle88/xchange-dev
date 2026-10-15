@@ -313,4 +313,16 @@ describe('Employees branch filter (#863)', () => {
     expect(THAI.test(norm(label!.textContent))).toBe(false);
     expect(THAI.test(norm(rows[0]!.textContent))).toBe(false);
   });
+
+  it('one branch switch makes exactly one new admin_employees read, for the new branch', async () => {
+    const m = await mount();
+    const mark = server.readsOf('admin_employees').length;
+
+    m.setBranch('A1');
+    await settle();
+
+    const next = server.readsOf('admin_employees').slice(mark);
+    expect(next).toHaveLength(1);
+    expect(next[0]?.branch).toBe('A1');
+  });
 });

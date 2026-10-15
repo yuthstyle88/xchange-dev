@@ -219,6 +219,8 @@ Loyalty read routes v3 calls (service bearer, `aud=loyalty`, scope `loyalty:read
 |---|---|---|
 | view `my_membership` (C05: tier, `effective_until`, points available/pending, next expiry, progress; D-9) | `GET /api/v3/views/my_membership` | `CustomerSelf` (the owner check, #550 §3.5 item 4) |
 | view `customer_tier` (one customer's mirrored tier for the desk's customer step and #560) | `GET /api/v3/views/customer_tier?customer=` | `ExchangeTransact` or `MarketingMembers` |
+| command `loyaltyRuleDraft` (LY-6, §6.4): `{kind: POINT\|TIER, fields}` → `{versionId, status: DRAFT}` | `POST /api/v3/commands/loyalty_rule_draft` | `LoyaltyRulesManage` (EXECUTIVE) |
+| command `loyaltyRuleSubmit` (LY-6, §6.4): `{versionId}` → `{versionId, status: PENDING_APPROVAL}`, opens AP-1 `LOYALTY_RULE_VERSION` | `POST /api/v3/commands/loyalty_rule_submit` | `LoyaltyRulesManage` (EXECUTIVE) |
 
 v3 writes nothing about points itself. Rule management (P6) is a later ticket (LY-6, §9.1): an EXECUTIVE screen, `loyaltyRuleDraft`/`loyaltyRuleSubmit` commands and an AP-1 subject whose approval publishes the version to Loyalty.
 
@@ -273,7 +275,7 @@ classDiagram
   class LoyaltyEvents { <<xc-loyalty application/events.rs>> +completed_in(tx, &CompletedFacts) +reversed_in(tx, &ReversedFacts) }
   class LoyaltyExchangeHandler { <<xc-loyalty infrastructure/exchange_handler.rs>> +kind() +deliver() +on_final() }
   class LoyaltyHttp { <<xc-loyalty infrastructure/http_client.rs>> signer; base_url; service token }
-  class LoyaltyConfig { <<xc-loyalty infrastructure/config.rs>> base_url; tenant_id; webhook_secret; timeout }
+  class LoyaltyConfig { <<xc-loyalty infrastructure/config.rs>> base_url; tenant_id; webhook_secret; timeout; service_token (LY-6, R3) }
   class MembershipMirror { <<trait xc-loyalty domain/membership_mirror.rs>> +tier_of(org, customer) +apply_in(tx, page) }
   class PgMembershipMirror { <<xc-loyalty infrastructure/pg_membership_mirror.rs>> }
   class MembershipFeed { <<trait xc-loyalty domain/membership_feed.rs>> +changes_after(seq) }
@@ -291,6 +293,22 @@ classDiagram
   class ExchangeEffect { <<trait api workflows/exchange/effects.rs (XS-0, §6.2)>> +phase() +on_completed_in() +on_reversed_in() }
   class ExchangeEffects { <<api workflows/exchange/effects.rs (XS-0)>> +run_completed_in(tx, phase, facts) +run_reversed_in(tx, phase, facts) }
   class LoyaltyEffect { <<api bootstrap/exchange_effects/loyalty.rs (LY-3)>> }
+  class LoyaltyRuleWriter { <<trait xc-loyalty application/rule_publisher.rs (LY-6, R4)>> +create_draft(kind, fields) RuleVersion +submit(kind, id) RuleVersion +approve(kind, id, approved_ref) RuleVersion +reject(kind, id, reason) RuleVersion +get(kind, id) optional RuleVersion }
+  class RuleVersion { <<xc-loyalty application/rule_publisher.rs (LY-6)>> id; kind RuleKind POINT or TIER; status; approved_ref; content }
+  class LoyaltyRuleError { <<xc-loyalty application/rule_publisher.rs (LY-6)>> Unavailable; Invalid; NotFound; InvalidTransition }
+  class HttpLoyaltyRuleWriter { <<xc-loyalty infrastructure/http_rule_writer.rs (LY-6)>> +from_config(LoyaltyConfig) optional Self; base_url; bearer service_token; timeout }
+  class LoyaltyRuleDraftCommand { <<api presentation/http/v3/commands/loyalty_rule_draft.rs (LY-6)>> NAME loyaltyRuleDraft }
+  class LoyaltyRuleSubmitCommand { <<api presentation/http/v3/commands/loyalty_rule_submit.rs (LY-6)>> NAME loyaltyRuleSubmit }
+  class LoyaltyRuleVersionSubject { <<api application/workflows/loyalty/rule_approval.rs (LY-6)>> TYPE LOYALTY_RULE_VERSION; optional writer +version_hash_or_unavailable() +on_decided_or_unavailable() }
+  class LoyaltyRuleVersionPolicy { <<api application/workflows/loyalty/rule_approval.rs (LY-6)>> +may_decide() EXECUTIVE only }
+  class LoyaltyRuleVersionRegistration { <<api bootstrap/approval_subjects/loyalty_rule_version.rs (LY-6)>> TYPE +register(registry, pool) +register_with_deps(registry, deps) }
+  class ApprovalSubjectDeps { <<api bootstrap/approval_subjects/mod.rs (LY-6, R2)>> pool; optional loyalty LoyaltyRuleWriter +pool_only(pool) +from_settings(pool, settings) +registry_with(deps) }
+  class MakeApprovalService { <<api presentation/http/v3/commands/mod.rs>> +make_approval_service(pool) +make_approval_service_with(deps) (LY-6) }
+  class ApprovalDecideCommand { <<api presentation/http/v3/commands/approval_decide.rs>> maps DependencyUnavailable to 503 (LY-6, R1) }
+  class ApprovalService { <<xc-approval application/approval_service.rs (AP-1)>> +request() +decide() ApprovalError DependencyUnavailable code message (LY-6, R1) }
+  class ApprovalSubject { <<trait xc-approval domain/subject.rs (AP-1)>> +version_hash() +on_decided() +version_hash_or_unavailable() default +on_decided_or_unavailable() default (LY-6) }
+  class SubjectError { <<xc-approval domain/subject.rs (LY-6, R1)>> DependencyUnavailable code message; Failed AppError }
+  class ApprovalPolicy { <<trait xc-approval domain/policy.rs (AP-1)>> +may_decide() }
 
   CompleteExchange --> ExchangeEffects : run_completed_in (TX-5 owns the call)
   PostReversal --> ExchangeEffects : run_reversed_in (RV-3 owns the call)
@@ -324,6 +342,26 @@ classDiagram
   MyMembershipView --> LoyaltySummarySource
   MyMembershipView --> MembershipMirror
   CustomerTierView --> MembershipMirror
+  LoyaltyRuleWriter <|.. HttpLoyaltyRuleWriter
+  HttpLoyaltyRuleWriter --> LoyaltyConfig
+  LoyaltyRuleWriter --> RuleVersion
+  LoyaltyRuleWriter --> LoyaltyRuleError
+  LoyaltyRuleDraftCommand --> LoyaltyRuleWriter : create_draft
+  LoyaltyRuleSubmitCommand --> LoyaltyRuleWriter : submit, get
+  LoyaltyRuleSubmitCommand --> MakeApprovalService : make_approval_service_with
+  LoyaltyRuleSubmitCommand --> ApprovalService : request LOYALTY_RULE_VERSION
+  ApprovalDecideCommand --> MakeApprovalService : make_approval_service_with
+  ApprovalDecideCommand --> ApprovalService : decide
+  MakeApprovalService --> ApprovalSubjectDeps : registry_with
+  ApprovalSubjectDeps --> LoyaltyRuleWriter
+  ApprovalSubjectDeps --> LoyaltyRuleVersionRegistration : register_with_deps
+  LoyaltyRuleVersionRegistration --> LoyaltyRuleVersionSubject
+  LoyaltyRuleVersionRegistration --> LoyaltyRuleVersionPolicy
+  LoyaltyRuleVersionSubject ..|> ApprovalSubject
+  LoyaltyRuleVersionPolicy ..|> ApprovalPolicy
+  LoyaltyRuleVersionSubject --> LoyaltyRuleWriter : get, approve, reject
+  ApprovalService --> ApprovalSubject : version_hash_or_unavailable, on_decided_or_unavailable
+  ApprovalSubject --> SubjectError
 ```
 
 `CompletedFacts` and `ReversedFacts` share `domain/facts.rs` and are written by one ticket (LY-1). `PgLoyaltyFactsSource`
@@ -343,6 +381,8 @@ lives in the `api` crate because it reads #551's and #552's tables, which `xc-lo
 | #554 `customers` (one per organisation) | `LoyaltyCustomerRef`, the mirror's FK | merged (`20261019100000_customers_org.sql`) |
 | this design `MembershipMirror::tier_of` | #560 eligibility (quote time) and M03 segments | #560 treats "no mirror row" as "no tier" |
 | this design `LoyaltyEventKinds` | #560 (none), #553 (none) | — |
+| Loyalty: rule-version routes `/api/v1/loyalty/{point,tier}-rule-versions[/{id}/{submit,approve,reject}]` (LP-1 #409, LP-3 #411, merged at 108-platform-services `989d66d`), bearer with `loyalty:write` (and `loyalty:read` for the list) | LY-6's `HttpLoyaltyRuleWriter` | none: LY-6 starts after LP-1/LP-3 (merged). Token unset or Loyalty down ⇒ `loyaltyUnavailable` (§6.4) |
+| LY-6 `LoyaltyRuleWriter` (trait), `ApprovalSubjectDeps`, `make_approval_service_with`, `SubjectError` / `ApprovalError::DependencyUnavailable` | the two LY-6 commands, `LoyaltyRuleVersionSubject`; any later subject that needs a dependency other than the pool | one ticket writes all of them (LY-6), so there is no fallback to declare |
 | Loyalty: `/webhooks/xchange`, the changes feed, the summary route (LP tickets, §9.2) | LY-2, LY-4, LY-5 | the handler's rows wait `PENDING` (OB-1 keeps them 7 days, then `EXPIRED`, recorded); the worker logs and retries; C05 answers `pointsUnavailable` |
 
 ### 6.2 The exchange-effect seam (shared with #560; one shape for both)
@@ -433,6 +473,53 @@ Classes (in the §6 diagram): `PhoneVerification` (`xc-customer/src/domain/phone
 `NotifySmsSender` (`api/src/infrastructure/notify/notify_sms_sender.rs`), and the two command files
 `api/src/presentation/http/v3/commands/{customer_phone_start,customer_phone_confirm}.rs`.
 
+### 6.4 LY-6 rulings (2026-10-15, BE controller)
+
+The xchange BE lane controller claude/7ca80c ruled these for LY-6 (#1411) on 2026-10-15, after the owner's answers in
+#1411 issuecomment-6180559023 (a draft lives **in Loyalty**, no v3 table and no migration; Loyalty down while an
+approval is decided ⇒ the request stays `PENDING`, retryable, no outbox).
+
+| # | Ruling | What it fixes in the code |
+|---|---|---|
+| R1 | **Loyalty down ⇒ 503 `loyaltyUnavailable`.** Loyalty unreachable, timing out or answering 5xx while an approval is decided: the decide call answers 503 `loyaltyUnavailable`, the AP-1 request stays `PENDING`, no decision row is written (the command's transaction rolls back), and a retry with a new Idempotency-Key publishes once. Mapped through a **typed** error, never a string match. | `xc-approval/src/domain/subject.rs` gains `SubjectError { DependencyUnavailable { code, message }, Failed(AppError) }` and two **defaulted** trait methods, `version_hash_or_unavailable` and `on_decided_or_unavailable`, which call `version_hash` / `on_decided` and wrap any error as `Failed` (so no existing subject changes). `ApprovalService::request` and `::decide` call the new methods; `DependencyUnavailable` becomes `ApprovalError::DependencyUnavailable { code, message }` (`code()` returns `code`), `Failed` stays `Internal` as today. `approval_decide.rs` maps it to 503 with its `code`. **Both** methods matter: with Loyalty down, `version_hash` (which reads Loyalty's copy to detect a stale version) fails before `on_decided` is reached. `decide_by_policy` / `decide_self` keep calling the old methods; no LY-6 path uses them. |
+| R2 | **Subject seam.** A subject can reach Loyalty through `ApprovalSubjectDeps { pool, loyalty: Option<Arc<dyn LoyaltyRuleWriter>> }`, built from `Settings` when the routes are configured, and passed through `make_approval_service_with(&deps)`. | **Shape adjusted to what the tree allows** (see below): `RegisterFn` stays `fn(&mut ApprovalRegistry, PgPool)`; `approval_subjects/mod.rs` adds `ApprovalSubjectDeps` (`pool_only`, `from_settings`) and `registry_with(&deps)`, which runs every generated `register` and then the `register_with_deps` of the subjects that need more than the pool (one line each; today only `loyalty_rule_version`). `commands/mod.rs` adds `make_approval_service_with(&deps)`; `make_approval_service(pool)` keeps its signature and delegates with `pool_only`. Only `approval_decide.rs` and `loyalty_rule_submit.rs` call the `_with` form. |
+| R3 | **Credential.** `XC_LOYALTY_SERVICE_TOKEN` (env) → `LoyaltyConfig.service_token: Option<String>`, sent as `Authorization: Bearer` on every rule-version call. Unset ⇒ `loyaltyRuleDraft` / `loyaltyRuleSubmit` answer 503 `loyaltyUnavailable` before any write, and so does deciding a `LOYALTY_RULE_VERSION` request. | `config.rs` (the field; `from_raw` reads it; the `Debug` impl never prints it), `api/src/config/mod.rs` (one env read). `HttpLoyaltyRuleWriter::from_config` returns `None` without a token, so `ApprovalSubjectDeps.loyalty` is `None` and the subject answers `DependencyUnavailable`. Loyalty takes the tenant from the verified token (`auth_ctx.rs` at `989d66d`), so the token must carry xchange's Loyalty tenant and both `loyalty:write` and `loyalty:read` (the version read is the list route). **Provisioning the real token is the owner's** (deploy / secrets); the code only reads it. |
+| R4 | **Port.** `LoyaltyRuleWriter` (create draft, submit, approve, reject, get) is a trait in `xc-loyalty/src/application/rule_publisher.rs`; its HTTP implementation is `HttpLoyaltyRuleWriter` in `xc-loyalty/src/infrastructure/http_rule_writer.rs`. The v3 commands and the AP-1 subject depend on the trait only. | `RuleKind`, `RuleVersion` and `LoyaltyRuleError` live beside the trait. Errors: connect failure, timeout or 5xx ⇒ `Unavailable`; 400 ⇒ `Invalid`; 404 ⇒ `NotFound`; 422 ⇒ `InvalidTransition`. |
+
+**Why R2's shape differs from "change `RegisterFn`".** Two things measured on `main` `b68eeb19`:
+- Changing `RegisterFn` breaks a locked test: `api/tests/approval_subjects_seam_test.rs` (*"Do not edit, delete or
+  weaken"*) calls every generated `register(&mut registry, common::unreachable_pool())`.
+- Widening `make_approval_service(pool)` itself would touch 18 callers (10 in `api/src`, 8 in `api/tests`).
+- The other option, a process-global writer installed at boot (like `xc_customer::install_pii_keys`), fails LY-6's own
+  tests. Every test there starts its own fake Loyalty on its own port, and all of them run in one process. A
+  global set once would send every test to the first fake. PII keys get away with a global only because every test
+  installs the same keys.
+
+So the seam is additive: three existing files are touched (`approval_subjects/mod.rs`, `commands/mod.rs`,
+`approval_decide.rs`), and no existing subject is touched.
+
+**The subject's contract** `[required]` where the tests lock it, `[proposed]` otherwise:
+- `[proposed]` `object_id` = `<KIND>/<versionId>` (e.g. `POINT/0192…`). The tests only require that it contains the
+  version id.
+- `[required]` `version_hash` covers the rule's **content as Loyalty holds it**: every field except `status`,
+  `approvedRef`, `approvedAt` and `createdAt`. An edit made in Loyalty after submit then reads as `staleVersion`. A
+  retry after a lost approve answer does not.
+- `[required]` `on_decided(APPROVED)` calls `approve` with `approvedRef` = the AP-1 request id. The subject reads that
+  id from `approval_requests` inside the decision's own transaction, by type and `object_id`.
+- `[required]` A 422 `INVALID_TRANSITION` whose `get` shows `APPROVED` with the same `approvedRef` counts as done.
+  This is "a repeat publish is a no-op".
+- `[required]` `on_decided(REJECTED)` calls `reject`.
+- `[required]` `LoyaltyRuleVersionPolicy` lets only EXECUTIVE decide. FINANCE and BRANCH_MANAGER get 403 `outOfScope`,
+  as `CAMPAIGN_VERSION` does.
+
+**The code `loyaltyUnavailable`.** There is no central API list of error codes. Each command builds its own
+`V3Error`; `identityUnavailable` is built the same way, in `auth.rs`, `identity_client.rs` and
+`session_service.rs`. The code is therefore registered here, in the commands and in `approval_decide.rs`. The web's
+shared list is `web/src/shared/i18n/{th,en,zh}.ts` (`error.<code>`, read by `errorText`); it needs
+`error.loyaltyUnavailable`. One more catch for the web: `wordedError` (`web/src/shared/i18n/worded-error.ts`) turns
+every status ≥ 500 into `error.serverError`, so a 503 `loyaltyUnavailable` shows as a server error unless the FE
+screen reads the code first. Both points belong to the FE half of #1411, which stays phase-locked (#1401).
+
 ## 7. Edge cases (§09) and the answer
 
 | Case | Answer |
@@ -493,7 +580,7 @@ a tenant without an APPROVED `PointRuleVersion` keeps today's rule and hard-code
 | LY-3 | `LoyaltyEffect`: registers into the seam; maps `ExchangeCompletedFacts`/`PostedReversal` to `LoyaltyEvents` | `api/src/bootstrap/exchange_effects/loyalty.rs` (no line in `complete.rs` or `reversal_post.rs`) | LY-1, XS-0, CU-L1 |
 | LY-4 | mirror: M1, `PgMembershipMirror`, `HttpMembershipFeed`, `MembershipSyncWorker` (spawned through a `bootstrap` worker seam or one line in `bootstrap/mod.rs`, ordered with LG-4's line) | `api/migrations/<ts>_customer_tier_mirror.sql`, `xc-loyalty/src/infrastructure/{pg_membership_mirror,http_membership_feed}.rs`, `xc-loyalty/src/application/sync_worker.rs` | LY-1, LP-4 deployed (or a fake feed in tests) |
 | LY-5 | views `my_membership` and `customer_tier`, `HttpLoyaltySummary`; the C05 screen part goes to #558 | `api/src/presentation/http/v3/views/{my_membership,customer_tier}.rs`, `xc-loyalty/src/infrastructure/http_summary.rs` | LY-4 |
-| LY-6 | rule management (P6): EXECUTIVE screen, `loyaltyRuleDraft` / `loyaltyRuleSubmit`, AP-1 subject `LOYALTY_RULE_VERSION` whose approval publishes the version to Loyalty (service write), permission row `LoyaltyRulesManage` | `http/v3/commands/{loyalty_rule_draft,loyalty_rule_submit}.rs`, `xc-loyalty/src/application/rule_publisher.rs`, `api/src/application/workflows/loyalty/rule_approval.rs`, `web/src/screens/admin/loyalty/**`, one row in `role_permissions.rs` | LY-1, LP-1/LP-3 rule-version write routes |
+| LY-6 | rule management (P6): EXECUTIVE screen, `loyaltyRuleDraft` / `loyaltyRuleSubmit`, AP-1 subject `LOYALTY_RULE_VERSION` whose approval publishes the version to Loyalty (service write), permission row `LoyaltyRulesManage` | `http/v3/commands/{loyalty_rule_draft,loyalty_rule_submit}.rs`, `xc-loyalty/src/application/rule_publisher.rs`, `api/src/application/workflows/loyalty/rule_approval.rs`, `web/src/screens/admin/loyalty/**`, one row in `role_permissions.rs`; the seam and credential files of §6.4 (R1–R3) | LY-1, LP-1/LP-3 rule-version write routes |
 
 ### 9.2 Loyalty (`108-Plaza/108-platform-services`)
 
@@ -519,7 +606,7 @@ That repo has no lane controller. The owner approved dispatching the Loyalty wor
 | LY-3 | (through XS-0, with a test `CompleteExchange` stand-in) a completed LIVE exchange with a customer leaves one loyalty row; a completion that rolls back (for example `stockInsufficient`) leaves none; a posted reversal leaves one reversal row; the compat save path enqueues the same as the route (one row) |
 | LY-4 | a `phoneKey` of `812345678` and one of `+447700900123` are stored as the `lookup_hash` of `+66812345678` / `+447700900123` and match the customers whose verified PHONE is that number (and no plain phone is stored); applying a page upserts tiers; an older `seq` never overwrites a newer one; `{changed:false}` writes nothing and keeps the cursor; an item whose `phoneKey` does not normalise as a phone is skipped (nothing stored for it), the rest of the page applies and the cursor moves to `next` (lane controller, #1402 Q2, 2026-10-12: the member is keyed by phone, #407 L-9/D-10; `customerRef` is not stored); the cursor advances only after the page commits |
 | LY-5 | a CUSTOMER reads only their own membership (`outOfScope` otherwise); Loyalty timeout ⇒ the mirror's tier and `pointsUnavailable: true` with status 200; a customer with no mirror row ⇒ `tier: null` |
-| LY-6 | EXECUTIVE drafts and submits; the submitter cannot approve; approval publishes exactly once to Loyalty (a repeat publish is a no-op); a version changed after submit is stale; no threshold or ratio is hard-coded in any v3 file |
+| LY-6 | EXECUTIVE drafts and submits; the submitter cannot approve; approval publishes exactly once to Loyalty (a repeat publish is a no-op); a version changed after submit is stale; no threshold or ratio is hard-coded in any v3 file; Loyalty down or `XC_LOYALTY_SERVICE_TOKEN` unset ⇒ 503 `loyaltyUnavailable` with the request left `PENDING`; every rule-version call carries the token as `Authorization: Bearer` (§6.4) |
 
 ## 10. Owner decisions (2026-10-10)
 

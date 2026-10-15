@@ -25,7 +25,7 @@
 //   - RF-18's "step 2": the desk is on the step it opens at (01, the rate step) with its fields typed, because reaching
 //     step 02 needs a live quote. What is pinned is the same: the step and every typed field come back unchanged, and
 //     the step reads or writes nothing of the exchange.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeskRefundRow, DeskRefunds } from '../../../../shared/api/generated/desk_refunds';
 import type { ReceiptDocumentViewData } from '../../../../shared/api/generated/receipt_document';
 import type { ReversalSummaryDto } from '../../../../shared/api/generated/reversal';
@@ -215,6 +215,25 @@ async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTML
   await settle();
   return app;
 }
+
+beforeAll(async () => {
+  vi.useFakeTimers();
+  world = {
+    staffMe: staffMe([]),
+    refunds: { rows: [] },
+    posts: [],
+  };
+  install();
+  app = document.createElement('div');
+  app.id = 'app';
+  document.body.appendChild(app);
+  await import('../../main');
+  await settle();
+  vi.useRealTimers();
+  document.body.innerHTML = '';
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+}, 60_000);
 
 beforeEach(() => {
   setLang('th');

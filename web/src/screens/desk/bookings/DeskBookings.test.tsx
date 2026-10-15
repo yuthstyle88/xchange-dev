@@ -1,6 +1,6 @@
 // Written before the implementation by the test writer gemini/warut-2 (ticket author claude/e92db6), against BK-6 provided tests 7f8e56d1. Do not edit, delete or weaken.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   BookingCancelOutput,
   BookingCheckInOutput,
@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/api/generated/bookings';
 import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
 
 // ── Mock data matching merged BK-6 generated DTOs ──
@@ -98,6 +99,16 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
   let bookingsChanged: boolean;
   let commandStatus: number;
   let commandResponse: any;
+
+  beforeAll(
+    () =>
+      warmModules(
+        () => import('./main'),
+        () => import('./main.tsx?raw'),
+        () => import('./DeskBookingsScreen.tsx?raw'),
+      ),
+    60_000,
+  );
 
   beforeEach(() => {
     vi.resetModules();

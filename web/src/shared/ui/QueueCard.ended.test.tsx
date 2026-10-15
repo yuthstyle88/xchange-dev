@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
@@ -12,6 +12,7 @@ import type { EndReason, SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
 import { meOf } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 interface FakeQueues {
   branch: Accessor<string>;
@@ -225,6 +226,15 @@ async function openPage(initialEnded?: EndReason): Promise<Page> {
   disposers.push(render(() => <card.QueueCard session={session} />, host));
   return { setEnded, sound };
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('./QueueCard'),
+      () => import('../queue/queue-sound'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   while (disposers.length) disposers.pop()?.();

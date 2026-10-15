@@ -19,7 +19,7 @@
 // QU-6 (#1354, rulings issuecomment-6117574257 and issuecomment-6118321787) by the test-writer claude/14cc24bd: the
 // store holds `queue_board`'s `QueueBoardData` (one WAITING ticket `kq-1` is the new request). Ruling (a): a session
 // without QueueOperate (RATES) gets no card at all. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
@@ -27,6 +27,7 @@ import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
 import { meOf, roleLabel } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 interface FakeStore extends Omit<QueueStore, 'state'> {
   state: Accessor<QueueBoardData | undefined>;
@@ -179,6 +180,8 @@ function shown(el: Element | null | undefined): boolean {
   }
   return true;
 }
+
+beforeAll(() => warmModules(() => import('./AccountBar')), 60_000);
 
 beforeEach(() => {
   while (disposers.length) disposers.pop()?.();

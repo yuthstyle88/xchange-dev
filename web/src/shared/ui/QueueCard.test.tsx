@@ -43,7 +43,7 @@
 // that shape: the count is `waiting.length`, the "latest" key is the newest waiting ticket's id, and the branch name
 // comes from the session's `me` (its `branches`), as `queue_board` names no branch. Ruling (a): a session without
 // `QueueOperate` gets no card at all, so the C3 "no link" rows and the C6 RATES row now expect no card. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Me } from '../api/generated/common';
@@ -51,6 +51,7 @@ import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
 import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
 import { meOf } from '../../test-support/me';
+import { warmModules } from '../testing/warm-modules';
 
 // ── fake queue store (#486's module) ─────────────────────────────────────────
 
@@ -423,6 +424,17 @@ function link(root: Element, text: string): HTMLAnchorElement | undefined {
 function folded(root = theCard()): boolean {
   return foldButton(root).getAttribute('aria-expanded') === 'false';
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('../i18n'),
+      () => import('./QueueCard'),
+      () => import('../i18n/en'),
+      () => import('./QueueSoundControls'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   while (disposers.length) disposers.pop()?.();

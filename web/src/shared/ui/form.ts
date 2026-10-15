@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from 'solid-js';
 import { ApiError } from '../api/client';
-import { errorText } from '../i18n';
+import { wordedError } from '../i18n/worded-error';
 
 export interface FieldBinding {
   name: string;
@@ -17,10 +17,7 @@ export interface Form {
   formError(): string | undefined;
 }
 
-interface ErrorState {
-  code?: string;
-  message: string;
-}
+type ErrorState = { err: ApiError } | { message: string };
 
 interface InternalField {
   binding: FieldBinding;
@@ -43,7 +40,7 @@ export function useForm(): Form {
     const error: Accessor<string | undefined> = () => {
       const e = errState();
       if (!e) return undefined;
-      return e.code ? errorText(e.code, e.message) : e.message;
+      return 'err' in e ? wordedError(e.err) : e.message;
     };
     const errorId = `${name}-error`;
 
@@ -126,16 +123,16 @@ export function useForm(): Form {
             if (target) {
               target.isClientError = false;
               target.setInvalid(true);
-              target.setErrState({ code: err.code, message: err.message });
+              target.setErrState({ err });
               if (target.element) {
                 target.element.setAttribute('aria-invalid', 'true');
                 target.element.focus();
               }
             } else {
-              setFormErr({ code: err.code, message: err.message });
+              setFormErr({ err });
             }
           } else {
-            setFormErr({ code: err.code, message: err.message });
+            setFormErr({ err });
           }
         } else {
           throw err;
@@ -151,7 +148,7 @@ export function useForm(): Form {
   function formError(): string | undefined {
     const e = formErr();
     if (!e) return undefined;
-    return e.code ? errorText(e.code, e.message) : e.message;
+    return 'err' in e ? wordedError(e.err) : e.message;
   }
 
   return {

@@ -8,11 +8,12 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { AdminCustomerRow, AdminCustomersFilter } from '../../../shared/api/generated/admin_customers';
 import type { AdminCustomerHistoryFilter } from '../../../shared/api/generated/admin_customer_history';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -94,11 +95,7 @@ function MemberForm(props: MemberFormProps): JSX.Element {
         </Card>
       ));
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setErrorSentence(errorText(err.code, err.message));
-      } else {
-        setErrorSentence(t('memberIssueError'));
-      }
+      setErrorSentence(wordedError(err));
       setSubmitting(false);
     }
   }
@@ -193,11 +190,7 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
         setHistoryRows([]);
       }
       setHasMore(false);
-      if (err instanceof ApiError) {
-        setHistoryError(errorText(err.code, err.message));
-      } else {
-        setHistoryError(t('historyLoadError'));
-      }
+      setHistoryError(wordedError(err));
     }
   }
 
@@ -381,9 +374,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   const [loading, setLoading] = createSignal(false);
   const [hasLoadedOnce, setHasLoadedOnce] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(false);
-  const [refusalError, setRefusalError] = createSignal<{ code: string; message: string } | null>(
-    null,
-  );
+  const [refusalError, setRefusalError] = createSignal<string | null>(null);
   const [totalCount, setTotalCount] = createSignal<number | null>(null);
 
   // Registrations tab state
@@ -437,20 +428,10 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (seq !== lastListSeq) return;
       setRows([]);
+      setTotalCount(null);
       setHasMore(false);
       setHasLoadedOnce(true);
-
-      if (err instanceof ApiError) {
-        setRefusalError({
-          code: err.code || 'error',
-          message: err.message || '',
-        });
-      } else {
-        setRefusalError({
-          code: 'networkError',
-          message: String(err),
-        });
-      }
+      setRefusalError(wordedError(err));
     } finally {
       if (seq === lastListSeq) {
         setLoading(false);
@@ -478,11 +459,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
       setRegHasMore(Boolean(res.hasMore));
     } catch (err: unknown) {
       if (seq !== lastRegSeq) return;
-      if (err instanceof ApiError) {
-        setRegRefusal(errorText(err.code, err.message));
-      } else {
-        setRegRefusal(t('regLoadError'));
-      }
+      setRegRefusal(wordedError(err));
     }
   }
 
@@ -497,6 +474,9 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     setSearch('');
     setPage(1);
     setCursors([]);
+    setRows([]);
+    setTotalCount(null);
+    setRefusalError(null);
     readCustomers(currentBranch, '');
 
     // Reset registrations tab
@@ -674,7 +654,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
               <div class="empty">
                 <strong>{t('notLoaded')}</strong>
                 <p class="waiting-text">{t('waiting')}</p>
-                <p class="refusal-message">{errorText(err().code, err().message)}</p>
+                <p class="refusal-message">{err()}</p>
               </div>
             )}
           </Show>

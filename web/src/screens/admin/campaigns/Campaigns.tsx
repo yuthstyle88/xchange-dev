@@ -45,7 +45,7 @@ import type {
   IssuedCouponDto,
 } from '../../../shared/api/generated/coupon_issue';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './campaigns.css';
@@ -64,7 +64,7 @@ const ERROR_KEYS: Record<string, string> = {
 
 function campaignError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
+    if (isServerFailure(err)) {
       return wordedError(err);
     }
     const mapped = ERROR_KEYS[err.code];

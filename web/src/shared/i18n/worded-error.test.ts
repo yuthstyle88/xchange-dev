@@ -88,3 +88,45 @@ describe('WE2 (c) + WE3: the call never reached the server', () => {
     expect(zh['error.network']).toBe('无法连接服务器，请重试。');
   });
 });
+
+import { isServerFailure } from './worded-error';
+
+describe('isServerFailure (#1862 §9)', () => {
+  it('row 1: ApiError{status:500, code:"dbTimeout"} -> true', () => {
+    expect(isServerFailure(refusal(500, 'dbTimeout', 'db timeout'))).toBe(true);
+  });
+
+  it('row 2: ApiError{status:503, code:"roleNotAllowedHere"} -> true (status wins over a keyed code)', () => {
+    const err = refusal(503, 'roleNotAllowedHere', 'upstream unavailable');
+    expect(isServerFailure(err)).toBe(true);
+    expect(wordedError(err)).toBe(th['error.serverError']);
+  });
+
+  it('row 3: ApiError{status:400, code:"serverError"} -> true', () => {
+    expect(isServerFailure(refusal(400, 'serverError', 'badserver'))).toBe(true);
+  });
+
+  it('row 4: ApiError{status:400, code:"httpError"} -> true', () => {
+    expect(isServerFailure(refusal(400, 'httpError', '<html>error</html>'))).toBe(true);
+  });
+
+  it('row 5: ApiError{status:403, code:"roleNotAllowedHere"} -> false', () => {
+    expect(isServerFailure(refusal(403, 'roleNotAllowedHere', 'forbidden'))).toBe(false);
+  });
+
+  it('row 6: ApiError{status:499, code:"x"} -> false', () => {
+    expect(isServerFailure(refusal(499, 'x', 'client closed'))).toBe(false);
+  });
+
+  it('row 7: new TypeError("Failed to fetch") -> false', () => {
+    expect(isServerFailure(new TypeError('Failed to fetch'))).toBe(false);
+    expect(isServerFailure(Object.assign(new TypeError('Failed to fetch'), { status: 500 }))).toBe(false);
+  });
+
+  it('row 8: undefined / a string -> false', () => {
+    expect(isServerFailure(undefined)).toBe(false);
+    expect(isServerFailure('serverError')).toBe(false);
+    expect(isServerFailure({ status: 500, code: 'serverError' })).toBe(false);
+  });
+});
+

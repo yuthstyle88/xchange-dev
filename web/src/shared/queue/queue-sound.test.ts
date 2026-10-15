@@ -21,9 +21,10 @@
 // pages ("tabs") are two copies alive at once that share this window's `localStorage` and
 // `navigator.locks` — the two things v2 used to keep one chime per new request across tabs.
 // `AudioContext`, `localStorage` and `navigator.locks` are fakes this file installs.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createComponent } from 'solid-js';
 import { render } from 'solid-js/web';
+import { warmModules } from '../testing/warm-modules';
 
 // ── fake AudioContext ────────────────────────────────────────────────────────
 
@@ -260,6 +261,17 @@ const SOUND_ON = 'เปิดเสียงแจ้งเตือน';
 const HINT_FIRST = 'กดเปิดเสียงครั้งแรกเพื่อให้เบราว์เซอร์อนุญาต';
 
 const waiting = (latest: string | null, count = 1) => ({ count, latest });
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('./queue-sound'),
+      () => import('../ui/QueueSoundControls'),
+      () => import('../i18n'),
+      () => import('../i18n/en'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   audio.reset();

@@ -134,7 +134,7 @@ describe('Slips rework: branch list read failure (#1715)', () => {
       expect(errorAlertText()).not.toContain('roleNotAllowedHere');
     });
 
-    it('shows generic worded error when branches read fails with unknown code, never raw code or err.message', async () => {
+    it('shows the server sentence for an unknown code (W10 (4)), never the raw code', async () => {
       branchesResponse = () =>
         json({ error: { code: 'unknownBranchCode123', message: 'RAW_UNWORDED_MSG' } }, 400);
       mount();

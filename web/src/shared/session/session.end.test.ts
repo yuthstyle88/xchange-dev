@@ -22,12 +22,13 @@
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. "another role" → "other roles" (#1030 §3.10, ruling (a): session.ts compares the role grants); the
 // rename keeps the roles and changes only `name`.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me } from '../api/generated/common';
 import { createSessionStore, endingFetch, endsSession } from './session';
 import { meOf } from '../../test-support/me';
 import { QUEUE_CARD_PATH, QUEUE_CARD_VIEW } from '../testing/page-wide';
+import { warmModules } from '../testing/warm-modules';
 
 // ------------------------------------------------------------------ fixtures
 
@@ -102,6 +103,15 @@ async function fresh() {
   const client = await import('../api/client');
   return { ...session, ...client };
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('./session'),
+      () => import('../api/client'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   vi.useFakeTimers({ now: 0 });

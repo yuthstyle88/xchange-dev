@@ -1,7 +1,7 @@
 // #1349 V3-documents (design §A.3): one exchange's documents, for the owner's `/documents` and the staff's
 // `/staff/documents`. The page reads its view once; the audience decides the links and what a refusal does.
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
-import { ApiError, type ApiClient } from '../../shared/api/client';
+import type { ApiClient } from '../../shared/api/client';
 import type { DocumentsData, DocumentsFilter } from '../../shared/api/generated/documents';
 import { screenLookup, screenT, translator } from '../../shared/i18n';
 import type { Audience } from './audiences';
@@ -37,7 +37,7 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
         props.replace(audience.refusalGoesTo);
         return;
       }
-      setRefused(err instanceof ApiError ? refusalText(err, tr) : String(err));
+      setRefused(refusalText(err, tr));
     }
   });
 
