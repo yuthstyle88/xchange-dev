@@ -366,6 +366,7 @@ describe('APP-16 customer C02 book screen (/app/book) up-front tests (#985)', ()
 
     // Contract: BK-6 create body is {branchId, slotId, shopSide, currency, quantity}
     expect(createCall.body.branchId, 'create body must contain branchId').toBe('XC-B01');
+    expect(createCall.body.branch, '#1913: every booking command names its branch').toBe('XC-B01');
     expect(createCall.body.slotId, 'create body must contain slotId').toBe('00000000-0000-4000-8000-000000000001');
     expect(createCall.body.shopSide, 'create body must contain shopSide BUY').toBe('BUY');
     expect(createCall.body.currency, 'create body must contain currency USD').toBe('USD');
@@ -480,6 +481,7 @@ describe('APP-16 customer C02 book screen (/app/book) up-front tests (#985)', ()
       'referral code must be sent exactly as typed (no premature uppercase or trim)',
     ).toBe('ab12cd_xyz');
     expect(createCall.body.branchId).toBe('XC-B01');
+    expect(createCall.body.branch, '#1913: every booking command names its branch').toBe('XC-B01');
     expect(createCall.body.slotId).toBe('00000000-0000-4000-8000-000000000001');
     expect(typeof createCall.body.quantity).toBe('number');
   });

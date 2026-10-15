@@ -146,7 +146,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       slotMinutes: sMin,
       capacity: cap,
       horizonDays: hDays,
-    } satisfies Omit<SlotRuleSetInput, 'id'>;
+      branch: props.branch(),
+    } satisfies Omit<SlotRuleSetInput, 'id'> & { branch: string };
     const bodyString = JSON.stringify(payload);
     const actionId = `slotRuleSet:${props.branch()}`;
     const key = getIdempotencyKey(actionId, bodyString);
@@ -178,7 +179,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     const payload = {
       closedOn,
       reason,
-    } satisfies Omit<ClosureAddInput, 'id'>;
+      branch: props.branch(),
+    } satisfies Omit<ClosureAddInput, 'id'> & { branch: string };
     const bodyString = JSON.stringify(payload);
     const actionId = `closureAdd:${props.branch()}:${closedOn}`;
     const key = getIdempotencyKey(actionId, bodyString);
@@ -201,14 +203,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleRemoveClosure(closedOn: string) {
     setErrorMessage(null);
+    const payload = { branch: props.branch() };
+    const bodyString = JSON.stringify(payload);
     const actionId = `closureRemove:${props.branch()}:${closedOn}`;
-    const key = getIdempotencyKey(actionId, '{}');
+    const key = getIdempotencyKey(actionId, bodyString);
 
     try {
       await api.command(
         'POST',
         `/api/branches/${encodeURIComponent(props.branch())}/closures/${encodeURIComponent(closedOn)}/remove`,
-        {},
+        payload,
         key,
       );
       clearIdempotencyKey(actionId);
@@ -230,7 +234,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
     const payload = {
       capacity: capNum,
-    } satisfies Omit<SlotCapacitySetInput, 'id'>;
+      branch: props.branch(),
+    } satisfies Omit<SlotCapacitySetInput, 'id'> & { branch: string };
     const bodyString = JSON.stringify(payload);
     const actionId = `slotCapacitySet:${slotId}`;
     const key = getIdempotencyKey(actionId, bodyString);
@@ -251,14 +256,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleCloseSlot(slotId: string) {
     setErrorMessage(null);
+    const payload = { branch: props.branch() };
+    const bodyString = JSON.stringify(payload);
     const actionId = `slotClose:${slotId}`;
-    const key = getIdempotencyKey(actionId, '{}');
+    const key = getIdempotencyKey(actionId, bodyString);
 
     try {
       await api.command(
         'POST',
         `/api/booking-slots/${encodeURIComponent(slotId)}/close`,
-        {},
+        payload,
         key,
       );
       clearIdempotencyKey(actionId);
@@ -270,14 +277,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleOpenSlot(slotId: string) {
     setErrorMessage(null);
+    const payload = { branch: props.branch() };
+    const bodyString = JSON.stringify(payload);
     const actionId = `slotOpen:${slotId}`;
-    const key = getIdempotencyKey(actionId, '{}');
+    const key = getIdempotencyKey(actionId, bodyString);
 
     try {
       await api.command(
         'POST',
         `/api/booking-slots/${encodeURIComponent(slotId)}/open`,
-        {},
+        payload,
         key,
       );
       clearIdempotencyKey(actionId);
@@ -310,7 +319,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       cancelCutoffMinutes: cut,
       noShowGraceMinutes: grc,
       confirmExpiryMinutes: exp,
-    } satisfies BookingPolicySetInput;
+      branch: props.branch(),
+    } satisfies BookingPolicySetInput & { branch: string };
     const bodyString = JSON.stringify(payload);
     const actionId = 'bookingPolicySet';
     const key = getIdempotencyKey(actionId, bodyString);

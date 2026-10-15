@@ -192,10 +192,10 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ identityChecked: boolean }, BookingCheckInOutput>(
+      const resData = await api.command<{ identityChecked: boolean; branch: string }, BookingCheckInOutput>(
         'POST',
         routeCheckIn(bookingId),
-        { identityChecked: true },
+        { identityChecked: true, branch: branchId() },
         key,
       );
       if (!resData || typeof resData.status !== 'string') {
@@ -233,10 +233,10 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ reason: string }, BookingCancelOutput>(
+      const resData = await api.command<{ reason: string; branch: string }, BookingCancelOutput>(
         'POST',
         routeCancel(bookingId),
-        { reason },
+        { reason, branch: branchId() },
         key,
       );
       if (!resData || typeof resData.status !== 'string') {
@@ -276,10 +276,10 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ slotId: string }, BookingRescheduleOutput>(
+      const resData = await api.command<{ slotId: string; branch: string }, BookingRescheduleOutput>(
         'POST',
         routeReschedule(bookingId),
-        { slotId: target },
+        { slotId: target, branch: branchId() },
         key,
       );
       if (!resData || typeof resData.status !== 'string' || typeof resData.slotId !== 'string') {
@@ -335,8 +335,10 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
 
     const qty = Number(formQuantity());
+    const targetBranch = formBranchId() || branchId();
     const payload: Record<string, unknown> = {
-      branchId: formBranchId() || branchId(),
+      branch: targetBranch,
+      branchId: targetBranch,
       slotId: formSlotId(),
       shopSide: formShopSide(),
       currency: formCurrency(),
