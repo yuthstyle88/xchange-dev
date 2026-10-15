@@ -1365,6 +1365,8 @@ string, `unit_size`, `publication`), and `Quote::per_unit`. DK-A waits for RE-3,
 | RF-7 (design question) | #1036 | open | per-side freshness: a §4.10 design amendment, no code ticket. Renamed from "RF-6 (design)", which collided with RF-6 #891 |
 | RE-7 follow-up | #770 | open | named as a §4.9 follow-up (R3) |
 | RE-3 follow-up | #1094 | open | §4.7 "Two paths, two views": the staff view reads through the one loader RE-3 owns; §4.10 notes the two views are byte-identical |
+| RE-3 follow-up (A06 decision) | #1925 | open (2026-10-15) | §4.7 `approval_requests` answers "requests with proposer, values before and after, reason": each item gains `decision: {approverId, outcome, reason, at} \| null`, read from `approval_decisions`. Owns the view, its DTO, the generated `approval_requests.ts`, and `decision: null` in the three hand-built fakes under `web/src/screens/admin/approvals/` |
+| RE-5 follow-up (A06 shows the decision) | not yet opened | — | A06 "approves and rejects with a reason" (§9 RE-5): a decided request shows who decided, the outcome, the reason and when, from #1925's `decision`; a PENDING one (`decision: null`) shows nothing new. Owns `web/src/screens/admin/approvals/Approvals.tsx` and a new test file beside it. Starts after #1925 merges. FE controller cuts it |
 
 ## 10. Must ask the owner (not decided here)
 

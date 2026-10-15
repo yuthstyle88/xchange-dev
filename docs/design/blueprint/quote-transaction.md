@@ -936,6 +936,7 @@ Each ticket owns disjoint files. "Starts after" is a start dependency.
 | TX-8n | #1138 | open | `device_service.rs`: a reader the TX-8 row's list missed (`git grep "(FROM|JOIN) transactions"`) |
 | TX-8o | #1139 | open | `compat/snapshot_sources.rs`: a reader the list missed |
 | TX-8p | #1154 | open | `xc-exchange` `transaction_repository.rs` reads: a reader the list missed |
+| TX-4 follow-up (rejected ⇒ quote cancelled) | #1923 | open (2026-10-15) | the quote goes `CANCELLED` when "its transaction cancelled before completion": a REJECTED approval cancelled the exchange through `on_decided` but left its quote `ACCEPTED` |
 
 ## 10. What changes for the desk, the staff report and the documents
 
