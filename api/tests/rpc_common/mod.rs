@@ -917,6 +917,10 @@ impl<'f> Replay<'f> {
     /// A desk with the people of `fixture` employed and signed in.
     pub async fn start(desk: Desk, app: App, fixture: &'f Fixture) -> Replay<'f> {
         desk.employ(&fixture.people).await;
+        // LG-6.r5 (#1044, lane controller's ruling): a v2 recording with custody off never held a safe and
+        // printed `operations.safe` null. `Desk::open` funded MAIN's ledger SAFE; empty it, and fund each
+        // opening or IN move just in time instead (`Replay::step`).
+        sweep_safe(&desk.db.pool, &BranchId::new(MAIN.to_string())).await;
         let cookies = sign_in(&app, &fixture.origin, &fixture.people).await;
         Replay {
             desk,
@@ -1126,16 +1130,43 @@ impl<'f> Replay<'f> {
         if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
             crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
         }
-        let answer = self.app.send(call).await;
-        let label = self.label(step);
-        // LG-4 (#929, 1:1): a branch a recording creates gets a funded ledger SAFE, as `seed_branch` gives one,
-        // because a shift's opening now leaves it (design §4.4).
-        if action_of(step).as_deref() == Some("adminCreateBranch")
-            && answer.status == 200
-            && let Some(made) = answer.json().get("branchId").and_then(Value::as_str)
-        {
-            crate::snapshot_common::lg4_fund_safe(&self.desk.db.pool, made).await;
+        // LG-6.r5 (#1044, lane controller's ruling): v2 with custody off took an opening, and an IN move, from no
+        // safe; v3 takes them from the ledger's SAFE (design §4.4). Before a step v2 accepted, SAFE gets exactly what
+        // the step takes; after it, whatever is left goes back to BANK, so SAFE holds nothing between steps and
+        // `operations.safe` prints v2's null.
+        let jit = if step.status == Some(200) {
+            let actual = step.payload.as_ref().map(|p| self.ids.to_actual(p));
+            match (action_of(step).as_deref(), actual) {
+                (Some("adminOpenShift"), Some(p)) => {
+                    xc_shift::domain::shift::commands::open_shift::OpenShift::from_payload(&p)
+                        .ok()
+                        .map(|c| c.opening.non_zero())
+                }
+                (Some("adminMoveStock"), Some(p)) => {
+                    MoveStock::from_payload(&p).ok().and_then(|c| {
+                        matches!(
+                            c.direction,
+                            xc_shift::domain::shift::value_objects::stock_delta::Direction::In
+                        )
+                        .then(|| vec![(c.currency, c.amount)])
+                    })
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let jit_branch = jit.as_ref().map(|_| self.branch_of(step));
+        if let (Some(amounts), Some(b)) = (&jit, &jit_branch) {
+            fund_exact(&self.desk.db.pool, b, amounts).await;
         }
+        let answer = self.app.send(call).await;
+        if let Some(b) = &jit_branch {
+            sweep_safe(&self.desk.db.pool, b).await;
+        }
+        let label = self.label(step);
+        // LG-6.r5 (#1044, lane controller's ruling): a branch a recording creates gets no standing funds in its
+        // ledger SAFE (LG-4 #929 gave it 10,000,000 of every code); the opening steps above fund it just in time.
 
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
         #[allow(clippy::collapsible_if)]
@@ -1972,4 +2003,85 @@ pub fn text_with_ids(ids: &IdMap, recorded: &Value, text: &str) -> String {
         }
     }
     out
+}
+
+/// LG-6.r5 (#1044): the source ids of the just-in-time postings below.
+static JIT: AtomicU64 = AtomicU64::new(0);
+
+async fn jit_post(
+    pool: &sqlx::PgPool,
+    from: xc_cash::domain::posting::CashPlace,
+    to: xc_cash::domain::posting::CashPlace,
+    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    for (code, amount) in amounts {
+        let n = JIT.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[PostingRequest {
+                    from: from.clone(),
+                    to: to.clone(),
+                    currency: *code,
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                        amount.to_string().parse().unwrap(),
+                    ),
+                    source: SourceRef {
+                        source_type: SourceType::Opening,
+                        source_id: format!("jit:{nanos}:{n}"),
+                        source_key: "jit".into(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("jit post");
+    }
+    tx.commit().await.expect("commit");
+}
+
+/// LG-6.r5 (#1044): moves `amounts` from BANK into `branch`'s ledger SAFE (`OPENING`).
+pub async fn fund_exact(
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+) {
+    use xc_cash::domain::posting::CashPlace;
+    jit_post(
+        pool,
+        CashPlace::Bank,
+        CashPlace::Safe(branch.clone()),
+        amounts,
+    )
+    .await;
+}
+
+/// LG-6.r5 (#1044): moves whatever `branch`'s ledger SAFE holds back to BANK (`OPENING`), so it holds nothing.
+pub async fn sweep_safe(pool: &sqlx::PgPool, branch: &BranchId) {
+    use xc_cash::domain::posting::{CashPlace, CashPostings};
+    let mut tx = pool.begin().await.expect("begin");
+    let held = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .expected_in(&mut tx, &CashPlace::Safe(branch.clone()))
+        .await
+        .expect("SAFE balance");
+    tx.rollback().await.expect("rollback");
+    let left = held.non_zero();
+    if !left.is_empty() {
+        jit_post(
+            pool,
+            CashPlace::Safe(branch.clone()),
+            CashPlace::Bank,
+            &left,
+        )
+        .await;
+    }
 }

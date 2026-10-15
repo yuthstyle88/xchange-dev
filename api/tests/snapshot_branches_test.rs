@@ -138,8 +138,8 @@ fn seen(operations: &Value) -> Value {
 async fn each_branch_shows_its_own_custodian_requests_log_and_people() {
     let shop = Shop::open().await;
     let main = branch(MAIN);
-    shop.db.seed_branch("AIRPORT", "Airport").await;
-    shop.db.seed_branch("NIGHT", "Night").await;
+    shop.db.seed_branch_without_cash("AIRPORT", "Airport").await;
+    shop.db.seed_branch_without_cash("NIGHT", "Night").await;
     let airport = branch("AIRPORT");
     let night = branch("NIGHT");
 
