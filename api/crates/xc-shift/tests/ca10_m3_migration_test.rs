@@ -12,7 +12,8 @@
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; it fails without it, it does not skip.
 //!
 //! What M3 must do (§8):
-//! - drop `custody_requests` and `custody_signatures` unconverted, and `ops_state.custodian_id`;
+//! - drop `custody_requests` and `custody_signatures` unconverted, `ops_state.custodian_id`, and `ops_state.enabled`
+//!   (the lane controller's ruling Q2 on #626, 2026-10-15: CA-10 removes the gate that read it);
 //! - drop `shifts_one_open_per_branch_v2` and `shifts.opened_by_count`;
 //! - recreate `shifts_one_open_per_teller` over every OPEN shift (`WHERE status = 'OPEN'`), after the precheck
 //!   `SELECT teller_id, count(*) FROM shifts WHERE status = 'OPEN' GROUP BY 1 HAVING count(*) > 1;` is empty, else
@@ -241,6 +242,10 @@ async fn m3_drops_the_request_model_the_custodian_and_m2s_marker() {
         "ops_state.custodian_id is dropped with the custodian rule"
     );
     assert!(
+        !db.column_exists("ops_state", "enabled").await,
+        "ops_state.enabled is dropped with the Enable gate (#626 Q2)"
+    );
+    assert!(
         !db.column_exists("shifts", "opened_by_count").await,
         "shifts.opened_by_count is dropped (M2's end state)"
     );
@@ -368,6 +373,10 @@ async fn m3_is_refused_while_a_teller_holds_two_open_shifts_and_changes_nothing(
     assert!(
         db.column_exists("ops_state", "custodian_id").await,
         "a refused M3 keeps custodian_id"
+    );
+    assert!(
+        db.column_exists("ops_state", "enabled").await,
+        "a refused M3 keeps enabled"
     );
     assert!(
         db.column_exists("shifts", "opened_by_count").await,
