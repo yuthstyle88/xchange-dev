@@ -208,9 +208,10 @@ impl DenominationGroupService {
         }
 
         if group.as_str() == "ALL" {
-            return Err(RateEngineError::ValidationFailed(
-                "the ALL group cannot be removed".to_string(),
-            ));
+            return Err(RateEngineError::Refused {
+                code: "groupAllNotRemovable",
+                message: "ไม่สามารถลบกลุ่มนี้ได้".to_string(),
+            });
         }
 
         // Group must exist for this currency
@@ -224,11 +225,9 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         if exists.is_none() {
-            return Err(RateEngineError::ValidationFailed(format!(
-                "group {} does not exist for currency {}",
-                group.as_str(),
-                code.as_str()
-            )));
+            return Err(RateEngineError::NotFound(
+                "ไม่พบกลุ่มสำหรับสกุลเงินที่ระบุ".to_string(),
+            ));
         }
 
         // Refuse if face values belong to this group
@@ -242,9 +241,10 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         if has_face_values.is_some() {
-            return Err(RateEngineError::ValidationFailed(
-                "cannot remove a group that face values belong to".to_string(),
-            ));
+            return Err(RateEngineError::Refused {
+                code: "groupHasFaceValues",
+                message: "ไม่สามารถลบกลุ่มที่มีมูลค่าธนบัตรผูกอยู่ได้".to_string(),
+            });
         }
 
         // Refuse if any current publication prices this group
@@ -261,9 +261,10 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         if is_priced.is_some() {
-            return Err(RateEngineError::ValidationFailed(
-                "cannot remove a group that a current publication prices".to_string(),
-            ));
+            return Err(RateEngineError::Refused {
+                code: "groupPricedByPublication",
+                message: "ไม่สามารถลบกลุ่มที่มีการประกาศราคาในปัจจุบันได้".to_string(),
+            });
         }
 
         // Delete group sources and face_value IS NULL denomination rows
