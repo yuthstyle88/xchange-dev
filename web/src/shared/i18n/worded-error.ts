@@ -1,9 +1,16 @@
 import { ApiError } from '../api/client';
 import { errorText, t } from './index';
 
+export function isServerFailure(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError')
+  );
+}
+
 export function wordedError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
+    if (isServerFailure(err)) {
       return t('error.serverError');
     }
     const text = errorText(err.code, err.message);
@@ -14,3 +21,4 @@ export function wordedError(err: unknown): string {
   }
   return t('error.network');
 }
+

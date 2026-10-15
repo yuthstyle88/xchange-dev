@@ -9,7 +9,7 @@ import type {
   TransferPolicySaveInput,
 } from '../../../shared/api/generated/cash_transfer_policy';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -29,7 +29,7 @@ function when(iso: string): string {
 }
 
 function policyError(err: unknown): string {
-  if (err instanceof ApiError && (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError')) {
+  if (isServerFailure(err)) {
     return wordedError(err);
   }
   if (err instanceof ApiError && err.code in OWN_TEXT) {
