@@ -36,10 +36,6 @@ use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
-use xc_shift::domain::custody::state::CustodyState;
-use xc_shift::domain::custody::value_objects::phase::Phase;
-use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::application::workflows::disable_employee::{DisableEmployee, DisableOutcome};
 use xchange::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use xchange::presentation::http::employees::EmployeeCustody;
@@ -98,25 +94,38 @@ fn accounts(desk: &Desk) -> AccountService<PgAccountRepository> {
 }
 
 /// Makes `holder` the custodian of `branch`, as the custody service would have left it.
+/// The employee `holder` holds cash at `branch`: an OPEN shift of their own (`shifts.teller_id`, their
+/// mirrored `users.id`). Re-expected for CA-10 #626 by its ticket author (claude/c4d72c, ruling Q3,
+/// cash-shift-transfer.md §6): the custodian is gone, and holding an OPEN shift is what `disable` refuses.
 async fn custodian(desk: &Desk, branch: &str, holder: &str) {
-    let repo = PgCustodyRepository::new(desk.pool.clone());
     let id = BranchId::new(branch);
-    let inner = id.clone();
-    let state = CustodyState {
-        enabled: true,
-        phase: Phase::Open,
-        custodian: Some(holder.to_owned()),
-        ..CustodyState::initial()
-    };
+    let branch = branch.to_owned();
+    let holder = holder.to_owned();
     branch_tx(desk)
         .run(&id, move |tx| {
             Box::pin(async move {
-                let before = repo.load_state_in(tx, &inner).await?;
-                repo.store_state_in(tx, &inner, &before, &state).await
+                let user: String =
+                    sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+                        .bind(&holder)
+                        .fetch_one(&mut **tx)
+                        .await
+                        .map_err(pos_error::AppError::Database)?;
+                let shift = format!("SH-{}", uuid::Uuid::new_v4());
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+                     VALUES ($1, $2, 'OPEN', now(), $3, '', $1, $3::uuid)",
+                )
+                .bind(&shift)
+                .bind(&branch)
+                .bind(&user)
+                .execute(&mut **tx)
+                .await
+                .map_err(pos_error::AppError::Database)?;
+                Ok::<(), pos_error::AppError>(())
             })
         })
         .await
-        .expect("store the custody state");
+        .expect("open the holder's shift");
 }
 
 // ── reading the mirror ───────────────────────────────────────────────────────
