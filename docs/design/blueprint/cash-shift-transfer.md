@@ -355,10 +355,55 @@ pub trait TransferEnds: Send + Sync + 'static {
     fn check_create(&self, who: &access::Actor, t: &NewTransfer) -> Result<(), CashError>;
     fn check_receive(&self, who: &access::Actor, t: &CashTransfer) -> Result<(), CashError>;
     /// The postings at DISPATCHED and at RECEIVED (C7).
-    fn on_dispatch(&self, t: &CashTransfer) -> Vec<PostingRequest>;
-    fn on_receive(&self, t: &CashTransfer) -> Vec<PostingRequest>;
+    fn on_dispatch(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError>;   // amended 2026-10-16 (#2063)
+    fn on_receive(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError>;    // amended 2026-10-16 (#2063)
 }
 ```
+
+**Checked transfer totals (amended 2026-10-16; tracking #2063, kernel K-b #2065).**
+- **What overflows:** a line's total is `face_value × qty`, in hundredths. `face_value` is stored, at most 100,000,000 units, read through `Money::parse`. `qty` is typed by staff, at most `i32::MAX` (`cash.rs:116` `whole_number`). So staff input alone can push a line, or a currency's sum of lines, past `i64::MAX` hundredths.
+- **What happens today** (measured on the K-b branch `d905ce39`):
+  - debug and test builds panic;
+  - release builds **wrap silently**: `is_within_limit` answers `true` for an overflowing transfer, and `on_dispatch`/`on_receive` answer `[]`, so dispatch posts nothing and still moves to DISPATCHED.
+- **Rule:** every line total and every per-currency sum is computed with `Money::try_minor` plus `checked_mul`/`checked_add`. An overflow is `TransferError::Validation(…)`, which reaches the client as **400 `validationFailed`** (`AppError::Domain` → `from_cash_error`, `cash.rs:131`): staff caused it, and staff fix it with a smaller quantity.
+- **Stored-data-only sites** map an overflow to `AppError::Internal` (500), not 400, because only corrupt data could reach them:
+  - the ledger-balance comparison at `transfer_flow.rs:522`;
+  - the receipt valuation at `:644`;
+  - `finance/sheet_parts.rs`, which reads only DISPATCHED/RECEIVED transfers that were already checked.
+- **Signatures that change** (public, so recorded here):
+
+| Item | File | Today | After |
+|---|---|---|---|
+| `TransferEnds::on_dispatch` / `on_receive` | `xc-cash/src/domain/transfer/ends.rs:21`, `:24` | `Vec<PostingRequest>` | `Result<Vec<PostingRequest>, TransferError>` |
+| `TransferPolicy::is_within_limit` | `xc-cash/src/domain/transfer/transfer_policy.rs` | `bool` | `Result<bool, TransferError>` |
+| `TransferLine::sent_minor` / `received_minor` | `xc-cash/src/domain/transfer/cash_transfer.rs:136`, `:140` | `i64` | `Result<i64, TransferError>` |
+
+- **Every site of the checked math, with its mapping** (measured on main `8f733a91`; claude/029418's review):
+
+| Site | What it computes | Input | Overflow answers |
+|---|---|---|---|
+| `kinds/branch.rs:82` (dispatch), `:116` (receive) | `face_value × qty` per line, and the per-currency sum, inside `impl TransferEnds` | staff-typed `qty` | 400 `validationFailed` |
+| `kinds/external.rs:72`, `:107` | the same | staff | 400 |
+| `kinds/safe.rs:110`, `:147` | the same | staff | 400 |
+| `transfer_policy.rs:25` `is_within_limit` (line totals `:29`, sum `:41`) | the limit check | staff | 400 |
+| `transfer_flow.rs:322`, `:324` and the `+=` sums after them (`write_exceptions`, at receive) | `face_value × qty_sent` and `× qty_received` per line | **staff** (`qty_received` is what staff just counted) | **400** |
+| `transfer_flow.rs:436` `.map(\|p\| p.is_within_limit(&t.lines))` | the limit check at submit | staff | 400 **before any approval decision**. The `Option<Result<…>>` becomes a `Result<Option<…>>` with `transpose()?` |
+| `transfer_flow.rs:515` (`on_dispatch`), `:593` (`on_receive`) | callers of the trait | staff | 400, propagated with `?` |
+| `transfer_flow.rs:522` | ledger-balance comparison | stored | 500 `AppError::Internal` |
+| `transfer_flow.rs:644` | reconcile on stored quantities | stored | 500 |
+| `api/src/application/finance/sheet_parts.rs:216`, `:221`, `:287`, `:288` (`sent_minor`/`received_minor`) | finance sheet over DISPATCHED/RECEIVED rows | stored, already checked when dispatched/received | 500 |
+
+- **No state is advanced when the arithmetic fails** (required):
+  - **Dispatch** (`dispatch_on`). `on_dispatch` (`:515`) runs **before** `mark_dispatched` and `post_in`, so a `?` there returns before any state change. That order must be kept.
+  - **Receive** (`receive_on`). Today `mark_received` runs **before** `on_receive` (`:593`) and `write_exceptions` (`:595`). An error there is undone only because the caller drops the transaction without `commit()`. **Required:** the receive path computes `on_receive` and the exception totals **before** `mark_received`, the same order as dispatch, so that correctness does not rest on the transaction being dropped. The caller must still never commit on `Err`.
+  - **Tests that must pin it:**
+    - an overflowing dispatch leaves the transfer in its prior state with **no `ledger_postings` row**;
+    - an overflowing receive leaves it **DISPATCHED**, with no posting and **no `cash_exceptions` row**.
+- **Blocker:** `Money::try_minor` is K-b, #2065 (PR 2071). It is **not yet on main** (no `fn try_minor` at `8f733a91`), so the code ticket #2088 is blocked until PR 2071 merges.
+- **Existing tests whose call sites gain `.unwrap()`/`?`** (no assertion changes):
+  - `xc-cash/tests/moves_test.rs:424`, `:429`;
+  - `xc-cash/tests/transfers_test.rs:363`, `:379`, `:398`;
+  - `api/tests/finance_sheet_parts_test.rs:1104-1115`.
 
 `TransferFlow` (`api/crates/xc-cash/src/application/transfer/transfer_flow.rs`) owns the five states, the
 exception at receipt, idempotency and the call to the approval core; it is generic over `Arc<dyn TransferEnds>`
@@ -546,7 +591,7 @@ classDiagram
   class Handover { <<xc-cash domain/handover/handover.rs>> }
   class HandoverService { <<xc-cash application/handover/handover_service.rs>> +start_in(tx) +accept_in(tx) +reject_in(tx)  CA-7c }
   class CashTransfer { <<xc-cash domain/transfer/cash_transfer.rs  state machine>> }
-  class TransferEnds { <<trait xc-cash domain/transfer/ends.rs  dyn-safe>> +kind() TransferKind }
+  class TransferEnds { <<trait xc-cash domain/transfer/ends.rs  dyn-safe>> +kind() TransferKind +on_dispatch() Result~Vec~PostingRequest~~ +on_receive() Result~Vec~PostingRequest~~ }
   class CashAreaRows { <<xc-auth domain/policy/areas/cash.rs  (EntryPath::Rpc, command) → Need  CA-8>> }
   class BranchDayAreaRows { <<xc-auth domain/policy/areas/branch_day.rs  CA-8b>> }
   class CashCommands { <<api presentation/http/v3/commands/cash.rs  every CA-8 command, one flat file>> }
@@ -557,7 +602,7 @@ classDiagram
   class ExternalMove { <<xc-cash domain/transfer/kinds/external.rs  EXTERNAL_IN, EXTERNAL_OUT>> }
   class TransferFlow { <<xc-cash application/transfer/transfer_flow.rs>> +create_in(tx) +submit_in(tx) +dispatch_in(tx) +receive_in(tx, branch) +reconcile_in(tx)  CA-7c }
   class TransferApprovalSubject { <<xc-cash application/approval/transfer.rs>> }
-  class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> }
+  class TransferPolicy { <<xc-cash domain/transfer/transfer_policy.rs  limits per currency>> +is_within_limit() Result~bool~ }
   class CashPostings { <<trait xc-cash domain/posting.rs>> }
   class InterimCashPostings { <<xc-cash infrastructure/interim_postings.rs>> }
   class CashRepository { <<trait xc-cash domain/repository.rs>> }
