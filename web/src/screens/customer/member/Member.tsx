@@ -1,50 +1,13 @@
 import { Show, createSignal, onMount, type JSX } from 'solid-js';
-import { ApiError } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
 import './member.css';
 
+const api = new ApiClient();
 const t = screenT('customer.member', table);
-
-// stopgap (#1860): ApiClient.view reads only the {version, changed, data} envelope while LY-5 my_membership answers a bare MyMembershipData object; keep local error parsing until #1860 adds a bare-view read to ApiClient.
-async function parseErrorResponse(res: Response): Promise<never> {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text) as {
-      error?: string | { code?: string; field?: string; reason?: string; message?: string };
-    };
-    if (json && typeof json === 'object' && json.error) {
-      if (typeof json.error === 'string') {
-        throw new ApiError({
-          code: 'refused',
-          message: json.error,
-          status: res.status,
-        });
-      }
-      throw new ApiError({
-        code: json.error.code ?? 'unknown',
-        field: json.error.field,
-        reason: typeof json.error.reason === 'string' ? json.error.reason : undefined,
-        message: json.error.message ?? text,
-        status: res.status,
-      });
-    }
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-  }
-  throw new ApiError({
-    code: 'httpError',
-    message: text || res.statusText,
-    status: res.status,
-  });
-}
-
-// stopgap (#1860): return the bare MyMembershipData payload directly until #1860 adds a bare-view read to ApiClient.
-function normalizeMembershipData(payload: MyMembershipData): MyMembershipData {
-  return payload;
-}
 
 export function MemberScreen(): JSX.Element {
   const [loading, setLoading] = createSignal(true);
@@ -55,16 +18,7 @@ export function MemberScreen(): JSX.Element {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // stopgap (#1860): raw fetch because ApiClient.view expects {version, changed, data} whereas LY-5 /api/v3/views/my_membership returns a bare MyMembershipData object.
-      const res = await fetch('/api/v3/views/my_membership', {
-        method: 'GET',
-        credentials: 'same-origin',
-      });
-      if (!res.ok) {
-        await parseErrorResponse(res);
-      }
-      const raw = (await res.json()) as MyMembershipData;
-      setData(normalizeMembershipData(raw));
+      setData(await api.viewBare<MyMembershipData>('my_membership'));
     } catch (err) {
       const message =
         err instanceof ApiError && err.code === 'outOfScope' ? t('outOfScope') : wordedError(err);
