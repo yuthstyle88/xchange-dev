@@ -20,14 +20,10 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_exchange::application::booking::service::BookingService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::repository::TransactionStore;
 use xc_exchange::domain::transaction::transaction::TransactionId;
-use xc_exchange::infrastructure::booking::booking_ids::UuidBookingIds;
-use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepository;
-use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::branch_tx::BranchTx;
@@ -54,7 +50,6 @@ use crate::application::workflows::kiosk_save_step::KioskSaveStep;
 use crate::application::workflows::payment_save_step::PaymentSaveStep;
 use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 use crate::bootstrap::AppState;
-use crate::infrastructure::bookings::booking_ports::PgBookingPorts;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
 use crate::infrastructure::devices::device_service::DeviceService;
 use crate::infrastructure::devices::job_ids::UuidJobIds;
@@ -271,23 +266,19 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
     )
     .with_printer_models(printer_models);
     let payments = PaymentSettingsService::new(
-        branch_tx.clone(),
+        branch_tx,
         BranchSettingStore::new(pool.clone()),
         PgBranchRepository::new(pool.clone()),
     );
-    let bookings = BookingService::new(
-        branch_tx,
-        Arc::new(PgBookingRepository::new(pool.clone())),
-        Arc::new(PgMemberRepository::new(pool.clone())),
-        Arc::new(PgBookingPorts::new(pool.clone())),
-        Arc::new(UuidBookingIds),
-    );
+    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
+        Arc::new(xc_booking::infrastructure::booking_repository::PgBookingRepository::new(pool.clone())),
+    ));
     vec![
         Arc::new(DeviceSaveStep::new(devices)),
         Arc::new(KioskSaveStep::new(kiosk)),
         Arc::new(CustodySaveStep::new(custody)),
         Arc::new(PaymentSaveStep::new(payments)),
-        Arc::new(BookingSaveStep::new(bookings)),
+        Arc::new(BookingSaveStep::new(lifecycle)),
         Arc::new(BrokerFeedSaveStep::new()),
     ]
 }

@@ -1,32 +1,32 @@
-//! Booking part in the save of an exchange (T15-h, design §5.6.3, §5.6.5).
+//! Booking part in the save of an exchange (T15-h, design §5.6.3, §5.6.5, BK-7 #1405).
 
-use pos_error::AppError;
+use std::sync::Arc;
+
 use sqlx::{Postgres, Transaction};
-use xc_exchange::application::booking::service::BookingService;
-use xc_exchange::domain::booking::commands::redeem_booking::RedeemBooking;
+use xc_booking::application::lifecycle::BookingLifecycle;
+use xc_booking::domain::booking::booking_error::BookingError;
 use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction as ExchangeTransaction;
-use xc_kernel::money::CurrencyCode;
 
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 
 pub const FORM_MISMATCH: &str = "ข้อมูลรายการไม่ตรงกับการจอง หรือยังไม่ยืนยันลูกค้า";
 
-/// Booking save step: redeems a booking before the save and marks it used after.
+/// Booking save step: completes a booking after the save.
 #[derive(Clone)]
 pub struct BookingSaveStep {
-    bookings: BookingService,
+    lifecycle: Arc<BookingLifecycle>,
 }
 
 impl BookingSaveStep {
-    pub fn new(bookings: BookingService) -> Self {
-        Self { bookings }
+    pub fn new(lifecycle: Arc<BookingLifecycle>) -> Self {
+        Self { lifecycle }
     }
 }
 
 impl SaveStep for BookingSaveStep {
-    fn vouches_for_rate(&self, ctx: &SaveContext<'_>) -> bool {
-        ctx.booking.is_some()
+    fn vouches_for_rate(&self, _ctx: &SaveContext<'_>) -> bool {
+        false
     }
 
     fn before_in<'a>(
@@ -38,24 +38,39 @@ impl SaveStep for BookingSaveStep {
             let Some(claim) = ctx.booking else {
                 return Ok(());
             };
-            let Ok(currency) = CurrencyCode::parse(&ctx.form.currency) else {
-                return Err(AppError::Domain(FORM_MISMATCH.to_owned()));
+
+            // DEMO save cannot use a booking (design B10, ruling R9)
+            if ctx.form.customer.mode != Mode::Live {
+                return Err(pos_error::AppError::from(BookingError::BookingNotUsable));
+            }
+
+            let prior_tx_id = if let Some(prior) = ctx.prior {
+                sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+                    .bind(&prior.document_ref)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(pos_error::AppError::Database)?
+            } else {
+                None
             };
-            let cmd = RedeemBooking {
-                booking_id: claim.booking_id.clone(),
-                submission_id: ctx.form.submission_id.clone(),
-                live: ctx.form.customer.mode == Mode::Live,
-                side: ctx.form.side,
-                currency,
-                amount: ctx.form.amount,
-                rate: ctx.form.client_rate,
-                form_booking: ctx.form.booking.clone(),
-                customer_id: ctx.form.customer_id.clone(),
-                customer_confirmed: claim.customer_confirmed,
-            };
-            self.bookings
-                .redeem_in(tx, ctx.branch, cmd, ctx.now)
+
+            self.lifecycle
+                .check_usable_in(
+                    tx,
+                    ctx.branch,
+                    &claim.booking_id,
+                    &ctx.form.customer_id,
+                    prior_tx_id,
+                )
                 .await?;
+
+            // Stopgap for #1413: transactions.booking_id FK targets v2_bookings so R14 keeps it NULL; pass claim via session setting until BK-11 repoints FK.
+            sqlx::query("SELECT set_config('xchange.booking_claim', $1, true)")
+                .bind(&claim.booking_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(pos_error::AppError::Database)?;
+
             Ok(())
         })
     }
@@ -67,17 +82,41 @@ impl SaveStep for BookingSaveStep {
         saved: &'a ExchangeTransaction,
     ) -> StepFuture<'a> {
         Box::pin(async move {
-            if let (None, Some(claim)) = (ctx.prior, ctx.booking) {
-                self.bookings
-                    .use_in(
-                        tx,
-                        ctx.branch,
-                        &claim.booking_id,
-                        &ctx.form.submission_id,
-                        &saved.document_ref,
-                    )
-                    .await?;
-            }
+            let claim_id = if let Some(claim) = ctx.booking {
+                Some(claim.booking_id.clone())
+            } else {
+                // Stopgap for #1413: read claim passed via transaction-local setting until BK-11 repoints FK.
+                sqlx::query_scalar("SELECT current_setting('xchange.booking_claim', true)")
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .ok()
+                    .flatten()
+                    .filter(|s: &String| !s.is_empty())
+            };
+
+            let Some(claim_id) = claim_id else {
+                return Ok(());
+            };
+
+            let tx_id: uuid::Uuid =
+                sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
+                    .bind(&saved.document_ref)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(pos_error::AppError::Database)?;
+
+            self.lifecycle
+                .complete_in(
+                    tx,
+                    ctx.branch,
+                    &claim_id,
+                    &saved.customer_id,
+                    tx_id,
+                    &ctx.actor.id,
+                    ctx.now,
+                )
+                .await?;
+
             Ok(())
         })
     }
@@ -87,6 +126,7 @@ impl SaveStep for BookingSaveStep {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use pos_error::AppError;
     use pos_infra::transactions::Transactor;
     use sqlx::migrate::Migrator;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -95,11 +135,9 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
     use xc_auth::domain::policy::value_objects::role::Role;
+    use xc_booking::infrastructure::booking_repository::PgBookingRepository;
     use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
     use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
-    use xc_exchange::infrastructure::booking::booking_ids::UuidBookingIds;
-    use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepository;
-    use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
     use xc_kernel::branch_tx::BranchTx;
     use xc_kernel::ids::BranchId;
     use xc_shift::application::shift::service::ShiftService;
@@ -107,7 +145,6 @@ mod tests {
 
     use crate::application::workflows::save_step::{BookingClaim, SaveActor, SaveExtras};
     use crate::application::workflows::save_transaction::{RATE_MISMATCH, SaveTransactionWorkflow};
-    use crate::infrastructure::bookings::booking_ports::PgBookingPorts;
     use crate::infrastructure::files::file_service::FileService;
 
     struct TestDb {
@@ -261,13 +298,10 @@ mod tests {
             SaveTransactionWorkflow::new(branch_tx, shifts, files)
         }
 
-        fn booking_service(&self) -> BookingService {
-            let branch_tx = BranchTx::new(Transactor::new(self.pool.clone()));
-            let ports = Arc::new(PgBookingPorts::new(self.pool.clone()));
-            let bookings = Arc::new(PgBookingRepository::new(self.pool.clone()));
-            let members = Arc::new(PgMemberRepository::new(self.pool.clone()));
-            let ids = Arc::new(UuidBookingIds);
-            BookingService::new(branch_tx, bookings, members, ports, ids)
+        fn lifecycle(&self) -> Arc<BookingLifecycle> {
+            Arc::new(BookingLifecycle::new(Arc::new(PgBookingRepository::new(
+                self.pool.clone(),
+            ))))
         }
 
         async fn teardown(self) {
@@ -366,8 +400,8 @@ mod tests {
         let db = TestDb::new("unpinned").await;
         db.seed_setup().await;
 
-        let booking_service = db.booking_service();
-        let step = Arc::new(BookingSaveStep::new(booking_service));
+        let lifecycle = db.lifecycle();
+        let step = Arc::new(BookingSaveStep::new(lifecycle));
         let workflow = db.workflow().with_steps(vec![step]);
 
         // Form currency passes TransactionForm check (3 uppercase ascii chars "ZZZ")

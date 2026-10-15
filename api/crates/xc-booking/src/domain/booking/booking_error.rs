@@ -26,6 +26,10 @@ pub enum BookingError {
     IdempotencyConflict,
     #[error("notFound")]
     NotFound,
+    #[error("bookingNotUsable")]
+    BookingNotUsable,
+    #[error("bookingNotThisCustomer")]
+    BookingNotThisCustomer,
     #[error(transparent)]
     Store(#[from] AppError),
 }
@@ -43,6 +47,8 @@ impl BookingError {
             Self::TellerCancelReasonRequired => "tellerCancelReasonRequired",
             Self::IdempotencyConflict => "idempotencyConflict",
             Self::NotFound => "notFound",
+            Self::BookingNotUsable => "bookingNotUsable",
+            Self::BookingNotThisCustomer => "bookingNotThisCustomer",
             Self::Store(_) => "STORE_ERROR",
         }
     }
@@ -82,6 +88,10 @@ impl From<SlotError> for BookingError {
 impl From<BookingError> for AppError {
     fn from(err: BookingError) -> Self {
         match err {
+            BookingError::BookingNotUsable => AppError::Domain("bookingNotUsable".to_string()),
+            BookingError::BookingNotThisCustomer => {
+                AppError::Domain("bookingNotThisCustomer".to_string())
+            }
             BookingError::TellerCancelReasonRequired => AppError::Validation("reason".to_string()),
             BookingError::ValidationFailed { field } => AppError::Validation(field.to_string()),
             BookingError::StaleVersion => AppError::Conflict("staleVersion".to_string()),
