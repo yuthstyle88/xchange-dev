@@ -4,8 +4,8 @@
 // Reads (D2): `staff_me`, `transaction?id=` and `transaction_audit?id=` once on open, on the refresh button, and
 // (`transaction` and `transaction_audit`) once after the screen's own request succeeds. No timer.
 // Actions go through `can()` (D8): reprint (D5) and the reversal request (D6). There is no post button.
-import { createSignal, Match, Show, Switch, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../shared/api/client';
+import { createEffect, createSignal, Match, Show, Switch, type JSX } from 'solid-js';
+import { ApiClient } from '../../shared/api/client';
 import type { ReceiptDocumentViewData } from '../../shared/api/generated/receipt_document';
 import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { TransactionDetailDto, TransactionViewData } from '../../shared/api/generated/transaction';
@@ -13,7 +13,7 @@ import type {
   TransactionAuditEventDto,
   TransactionAuditViewData,
 } from '../../shared/api/generated/transaction_audit';
-import { errorText } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { ReceiptFrame } from '../../shared/receipt/ReceiptFrame';
 import { can } from '../staff/parts/can';
 import { command } from '../staff/parts/command';
@@ -37,16 +37,10 @@ export interface TransactionScreenProps {
 
 type State = 'loading' | 'ready' | 'not-found' | 'error';
 
-/** A refusal's text: the shared table's for its code, else the server's message (never the bare key). */
-function refusalText(err: unknown): string {
-  if (err instanceof ApiError) return errorText(err.code, err.message);
-  return t('networkError');
-}
-
 export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const api = new ApiClient();
   const id = idFromPath(props.pathname);
-  const branch = branchFromSearch(props.search);
+  const branch = () => branchFromSearch(props.search);
 
   const [state, setState] = createSignal<State>('loading');
   const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
@@ -55,6 +49,18 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const [message, setMessage] = createSignal<string | null>(null);
   const [asking, setAsking] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+
+  let prevBranch = branchFromSearch(props.search);
+  createEffect(() => {
+    const curBranch = branchFromSearch(props.search);
+    if (curBranch !== prevBranch) {
+      prevBranch = curBranch;
+      setTx(null);
+      setEvents([]);
+      setMessage(null);
+      void load(true);
+    }
+  });
 
   // One request command for the screen's life: it keeps its Idempotency-Key until a send succeeds (S-3 `command.ts`).
   const request =
@@ -78,8 +84,8 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     try {
       const [who, detail, audit] = await Promise.all([
         meRead,
-        api.view<TransactionViewData>('transaction', { branch, filter: { id } }),
-        api.view<TransactionAuditViewData>('transaction_audit', { branch, filter: { id } }),
+        api.view<TransactionViewData>('transaction', { branch: branch(), filter: { id } }),
+        api.view<TransactionAuditViewData>('transaction_audit', { branch: branch(), filter: { id } }),
       ]);
       setMe(who);
       const found = detail.data?.transaction ?? null;
@@ -88,7 +94,9 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       setState(found === null ? 'not-found' : 'ready');
     } catch (err) {
       setMe(await meRead);
-      setMessage(refusalText(err));
+      setMessage(wordedError(err));
+      setTx(null);
+      setEvents([]);
       setState('error');
     }
   }
@@ -104,7 +112,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     setMessage(null);
     setBusy(true);
     try {
-      const answer = await api.view<ReceiptDocumentViewData>('receipt_document', { branch, filter: { number } });
+      const answer = await api.view<ReceiptDocumentViewData>('receipt_document', { branch: branch(), filter: { number } });
       const doc = answer.data?.receipt ?? null;
       if (doc === null) {
         setMessage(t('docNotFound'));
@@ -112,7 +120,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       }
       await ReceiptFrame.print(doc.html);
     } catch (err) {
-      setMessage(refusalText(err));
+      setMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
@@ -128,7 +136,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       setMessage(t('requested'));
       await load(false);
     } catch (err) {
-      setMessage(refusalText(err));
+      setMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
