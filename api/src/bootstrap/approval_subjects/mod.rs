@@ -3,10 +3,7 @@
 use std::sync::Arc;
 
 use sqlx::PgPool;
-use xc_approval::application::approval_service::ApprovalService;
 use xc_approval::application::registry::ApprovalRegistry;
-use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
-use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_loyalty::application::rule_publisher::LoyaltyRuleWriter;
 use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
@@ -56,12 +53,4 @@ pub fn registry_with(deps: &ApprovalSubjectDeps) -> ApprovalRegistry {
 /// Builds an approval registry with all generated subjects registered.
 pub fn registry(pool: PgPool) -> ApprovalRegistry {
     registry_with(&ApprovalSubjectDeps::pool_only(pool))
-}
-
-/// Builds an `ApprovalService` with dependencies (R2).
-pub fn make_approval_service_with(deps: &ApprovalSubjectDeps) -> Arc<ApprovalService> {
-    let registry = registry_with(deps);
-    let repo = Arc::new(PgApprovalRepository::new(deps.pool.clone()));
-    let audit_log = Arc::new(PgAuditLog::new(deps.pool.clone()));
-    Arc::new(ApprovalService::new(registry, repo, audit_log))
 }

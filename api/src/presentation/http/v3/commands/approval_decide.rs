@@ -15,8 +15,9 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
+use super::commands::make_approval_service_with;
 use crate::bootstrap::AppState;
-use crate::bootstrap::approval_subjects::{ApprovalSubjectDeps, make_approval_service_with};
+use crate::bootstrap::approval_subjects::ApprovalSubjectDeps;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;

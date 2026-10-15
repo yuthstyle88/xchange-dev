@@ -15,9 +15,10 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_loyalty::application::rule_publisher::{LoyaltyRuleError, LoyaltyRuleWriter, RuleKind};
 
+use super::commands::make_approval_service_with;
 use crate::application::workflows::loyalty::rule_approval;
 use crate::bootstrap::AppState;
-use crate::bootstrap::approval_subjects::{ApprovalSubjectDeps, make_approval_service_with};
+use crate::bootstrap::approval_subjects::ApprovalSubjectDeps;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
