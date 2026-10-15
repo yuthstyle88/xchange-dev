@@ -23,13 +23,12 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-/// The six snapshot scenarios, relative to [`fixtures_dir`].
-pub const SNAPSHOT_FILES: [&str; 6] = [
+/// The five snapshot scenarios, relative to [`fixtures_dir`].
+pub const SNAPSHOT_FILES: [&str; 5] = [
     "snapshot/empty.json",
     "snapshot/rates.json",
     "snapshot/shift.json",
     "snapshot/transactions.json",
-    "snapshot/custody.json",
     "snapshot/branches.json",
 ];
 

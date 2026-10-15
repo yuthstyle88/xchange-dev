@@ -61,7 +61,6 @@ use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatu
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
-use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::cash_target::CashTarget;
 use xc_shift::domain::custody::value_objects::count_sheet::CountSheet;
@@ -90,7 +89,7 @@ use xchange::application::compat::snapshot::{SnapshotBuilder, write_answer};
 use xchange::application::compat::snapshot_sources::{
     MemberMark, NothingYet, SnapshotSources, SnapshotTransaction, SourceFuture,
 };
-use xchange::application::compat::v2_json::{People, PersonLabel};
+use xchange::application::compat::v2_json::People;
 
 use crate::compat_common::{Fixture, IdMap, Step};
 
@@ -846,23 +845,6 @@ pub fn transaction_of(recorded: &Value, method: &str) -> SnapshotTransaction {
     }
 }
 
-/// The people of a fixture by employee id, as the accounts would name them.
-pub fn people_of(fixture: &Fixture) -> People {
-    fixture
-        .people
-        .iter()
-        .map(|p| {
-            (
-                p.id.clone(),
-                PersonLabel {
-                    name: p.name.clone(),
-                    role: p.role.clone(),
-                },
-            )
-        })
-        .collect()
-}
-
 fn reserve_command(payload: &Value) -> ReserveCustomer {
     ReserveCustomer {
         name: text_of(payload, "name"),
@@ -1054,7 +1036,6 @@ impl<'f> Replay<'f> {
             "reserveCustomer" => self.reserve(step).await,
             "saveTransaction" => self.feed_save(step).await,
             "getConnectionStatus" | "documents" => {}
-            other if other.starts_with("ops") => {}
             other => panic!("{}: no rule for the action {other}", self.label(step)),
         }
     }
@@ -1306,141 +1287,6 @@ impl<'f> Replay<'f> {
         assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.writes += 1;
     }
-
-    // ── feeding what a recorded view shows, where no step can be replayed ────
-
-    /// Makes the shifts and movements a recorded view shows, through the shift
-    /// service, at the recorded times and by the recorded people. What exchanges
-    /// moved is applied as one delta per shift (`expected − opening −
-    /// movements`), as the save workflow will through `apply_delta_in`.
-    /// Answers recorded shift id → the id v3 made.
-    pub async fn feed_stock(&mut self, here: &BranchId, view: &Value) -> BTreeMap<String, String> {
-        let mut made = BTreeMap::new();
-        let movements = array(&view["stock"], "movements");
-        for shift in array(&view["stock"], "shifts") {
-            let recorded_id = text_of(shift, "id");
-            seed_opener(&self.shop.db.pool, &text_of(shift, "staff")).await;
-            let opened = self
-                .shop
-                .shifts
-                .open(
-                    here,
-                    OpenShift::from_payload(&json!({
-                        "requestId": shift["openRequest"],
-                        "opening": shift["opening"],
-                    }))
-                    .expect("a recorded opening"),
-                    &text_of(shift, "staff"),
-                    time(&text_of(shift, "openedAt")),
-                )
-                .await
-                .expect("open the recorded shift");
-            made.insert(recorded_id.clone(), opened.id.clone());
-
-            let mut moved: BTreeMap<String, i128> = BTreeMap::new();
-            for movement in movements
-                .iter()
-                .filter(|m| m["shiftId"] == recorded_id.as_str())
-            {
-                let sign = if movement["direction"] == "IN" { 1 } else { -1 };
-                *moved.entry(text_of(movement, "currency")).or_default() +=
-                    sign * minor_of(&movement["amount"]);
-                self.shop
-                    .shifts
-                    .move_stock(
-                        here,
-                        MoveStock::from_payload(&json!({
-                            "requestId": movement["requestId"],
-                            "shiftId": opened.id,
-                            "currency": movement["currency"],
-                            "direction": movement["direction"],
-                            "amount": movement["amount"],
-                            "reason": movement["reason"],
-                        }))
-                        .expect("a recorded movement"),
-                        &text_of(movement, "staff"),
-                        time(&text_of(movement, "created")),
-                    )
-                    .await
-                    .expect("make the recorded movement");
-            }
-
-            if shift["status"] != "CLOSED" {
-                continue;
-            }
-            let exchanged: Vec<(CurrencyCode, MoneyDelta)> = CurrencyCode::all()
-                .iter()
-                .map(|c| {
-                    let key = c.as_str();
-                    let rest = minor_of(&shift["expected"][key])
-                        - minor_of(&shift["opening"][key])
-                        - moved.get(key).copied().unwrap_or(0);
-                    (*c, MoneyDelta::from_minor(rest))
-                })
-                .filter(|(_, delta)| !delta.is_zero())
-                .collect();
-            if !exchanged.is_empty() {
-                let (shifts, b) = (self.shop.shifts.clone(), here.clone());
-                let delta = StockDelta::of(&exchanged);
-                self.shop
-                    .shifts
-                    .branch_tx()
-                    .run(here, move |tx| {
-                        Box::pin(async move { shifts.apply_delta_in(tx, &b, &delta).await })
-                    })
-                    .await
-                    .expect("apply what the exchanges moved");
-            }
-            self.shop
-                .shifts
-                .close(
-                    here,
-                    CloseShift::from_payload(&json!({
-                        "requestId": shift["closeRequest"],
-                        "shiftId": opened.id,
-                        "expected": shift["expected"],
-                        "counted": shift["counted"],
-                        "note": shift["note"],
-                    }))
-                    .expect("a recorded close"),
-                    &text_of(shift, "closedBy"),
-                    time(&text_of(shift, "closedAt")),
-                )
-                .await
-                .expect("close the recorded shift");
-        }
-        made
-    }
-
-    /// Stores a recorded `operations` as the custody state and log of `here`,
-    /// through the custody repository — what the custody service reads back.
-    pub async fn feed_custody(&mut self, here: &BranchId, operations: &Value) {
-        let state = state_of(operations);
-        let events = events_of(operations);
-        let (repo, b) = (self.shop.custody_repo.clone(), here.clone());
-        self.shop
-            .db
-            .branch_tx()
-            .run(here, move |tx| {
-                Box::pin(async move {
-                    // what the branch holds now is what the store compares with
-                    let before = repo.load_state_in(tx, &b).await?;
-                    repo.store_state_in(tx, &b, &before, &state).await?;
-                    repo.append_events_in(tx, &b, &events).await
-                })
-            })
-            .await
-            .expect("store the recorded custody state");
-    }
-}
-
-/// `value` with every key of `ids` replaced by its value, inside strings too.
-pub fn with_ids(value: &Value, ids: &BTreeMap<String, String>) -> Value {
-    let mut text = value.to_string();
-    for (recorded, actual) in ids {
-        text = text.replace(recorded.as_str(), actual.as_str());
-    }
-    serde_json::from_str(&text).expect("still JSON")
 }
 
 // ── a recorded `operations` as the state the custody service hands over ──────
