@@ -31,7 +31,16 @@
 //! | RATE_IMPROVEMENT `{"percent":"abc"}` | rate_improvement.rs:33 | same |
 //! | RATE_IMPROVEMENT `{"percent":[]}` | rate_improvement.rs:37 | same |
 //! | RATE_IMPROVEMENT `{"type":"FIXED_RATE"}` (no known key) | rate_improvement.rs:40-41 | same |
-//! | each kind/key well formed | — | 200, the benefit applied with the right amount (keep-pin) |
+//! | FEE_WAIVER `{"percent":0.5}` (JSON number) | fee_waiver.rs:29 (`to_string` path) | same |
+//! | FEE_WAIVER `{"amount":30}` (JSON integer) | fee_waiver.rs:42-43 (`as_i64` path) | same |
+//! | FEE_WAIVER `{"fixed":25.5}` (JSON number) | fee_waiver.rs:45 (`to_string` path) | same |
+//! | RATE_IMPROVEMENT `{"delta":1}` (JSON integer) | rate_improvement.rs:26-27 (`as_i64` path) | same |
+//! | RATE_IMPROVEMENT `{"percent":0.01}` (JSON number) | rate_improvement.rs:37 (`to_string` path) | same |
+//! | `benefit_type` the registry does not know (`CASHBACK`) | engine.rs:175 (`if let Some(calc)` skips it) | same |
+//! | each kind/key well formed (decimal strings only) | — | 200, the benefit applied with the right amount (keep-pin) |
+//!
+//! Controller rulings 2026-10-16: R3 a JSON number is malformed (design §4.1 "decimals as strings");
+//! R4 a stored rule whose `benefit_type` is not in the registry is refused, not skipped.
 
 mod common;
 mod quote_common;
@@ -334,6 +343,40 @@ async fn rate_improvement_percent_not_a_string_refuses_the_quote() {
 #[tokio::test]
 async fn rate_improvement_without_a_known_key_refuses_the_quote() {
     refused("RATE_IMPROVEMENT", json!({ "type": "FIXED_RATE" })).await;
+}
+
+// ── JSON numbers are malformed (R3: decimals are stored as strings) ──
+
+#[tokio::test]
+async fn fee_waiver_percent_as_json_number_refuses_the_quote() {
+    refused("FEE_WAIVER", json!({ "percent": 0.5 })).await;
+}
+
+#[tokio::test]
+async fn fee_waiver_amount_as_json_integer_refuses_the_quote() {
+    refused("FEE_WAIVER", json!({ "amount": 30 })).await;
+}
+
+#[tokio::test]
+async fn fee_waiver_fixed_as_json_number_refuses_the_quote() {
+    refused("FEE_WAIVER", json!({ "fixed": 25.5 })).await;
+}
+
+#[tokio::test]
+async fn rate_improvement_delta_as_json_integer_refuses_the_quote() {
+    refused("RATE_IMPROVEMENT", json!({ "delta": 1 })).await;
+}
+
+#[tokio::test]
+async fn rate_improvement_percent_as_json_number_refuses_the_quote() {
+    refused("RATE_IMPROVEMENT", json!({ "percent": 0.01 })).await;
+}
+
+// ── a stored kind the registry does not know (R4) ──
+
+#[tokio::test]
+async fn unknown_stored_benefit_type_refuses_the_quote() {
+    refused("CASHBACK", json!({ "delta": "0.50" })).await;
 }
 
 // ── keep-pins: well-formed params still apply the right amount ──
