@@ -10,10 +10,16 @@
 //! completes no other.
 //!
 //! Every save here is a live BUY of 100 USD (`save_common::form`), made at noon in an open service
-//! by `FRONT`, who holds the drawer. The drafts are put straight into the custody tables.
+//! by a teller on their own shift. The drafts are put straight into the custody tables.
 //!
 //! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in
 //! `_test`). Without it they FAIL; none skips.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; cash-shift-transfer.md §6, rulings Q4, Q7): the
+//! v2-actor save path goes, so every save here is a Blueprint-session teller's (`save_as_teller`) on their own OPEN
+//! shift, opened by a verified count (CA-3), and a draft's `employee_id` is a `users.id`. The custodian, the
+//! attendance and the Enable switch are gone from the custody state. Each test's subject and assertions are as
+//! before: which draft a save completes (#154) does not depend on who may save.
 
 // the shop of the save tests: its helpers prepare a branch and read it back
 #[allow(unused_imports)]
@@ -21,14 +27,17 @@ mod save_common;
 
 use std::sync::Arc;
 
+use chrono::{TimeZone, Utc};
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use save_common::*;
+use xc_auth::domain::access::{Actor, Role as BpRole, ScopedRole};
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::application::count::{CashCountService, SubmitCount};
+use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::money::Side;
 use xc_shift::application::custody::service::CustodyService;
-use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
@@ -41,16 +50,124 @@ use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::application::workflows::custody_save_step::CustodySaveStep;
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 
-const FRONT: &str = "employee-7";
-const OTHER: &str = "employee-8";
+async fn org(shop: &Shop) -> String {
+    sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = 'XC'")
+        .fetch_one(&shop.pool)
+        .await
+        .expect("OR-1's organisation")
+}
 
-fn front() -> SaveActor {
+/// A user of the organisation holding `role` on `MAIN`, and the `access::Actor` for them.
+async fn person(shop: &Shop, name: &str, role: BpRole) -> Actor {
+    let org = org(shop).await;
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+    )
+    .bind(&org)
+    .bind(name)
+    .fetch_one(&shop.pool)
+    .await
+    .expect("insert a user");
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    sqlx::query(
+        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+         VALUES ($1::uuid, $2, $3::uuid, $4, $5)",
+    )
+    .bind(&id)
+    .bind(role.as_str())
+    .bind(&org)
+    .bind(MAIN)
+    .bind(from)
+    .execute(&shop.pool)
+    .await
+    .expect("give the user a role on MAIN");
+    Actor::new(
+        &id,
+        &org,
+        vec![ScopedRole::new(role, Some(branch(MAIN)), from, None)],
+        None,
+    )
+}
+
+/// The v2 actor a Blueprint-session teller's save carries since #767 (`legacy_actor`: id = `users.id`).
+fn save_actor(teller: &Actor) -> SaveActor {
     SaveActor {
-        id: FRONT.to_owned(),
-        username: format!("user-{FRONT}"),
-        employee_id: Some(FRONT.to_owned()),
+        id: teller.user_id.clone(),
+        username: teller.user_id.clone(),
+        employee_id: Some(teller.user_id.clone()),
         role: Role::Front,
     }
+}
+
+/// `teller`'s shift on `MAIN`, opened the way CA-3 opens it: the teller counts THB 1000 × 100, a BRANCH_MANAGER
+/// verifies. Its id.
+async fn opened(shop: &Shop, teller: &Actor, manager: &Actor) -> String {
+    let thousand: i64 = sqlx::query_scalar(
+        "SELECT id FROM denominations WHERE currency_code = 'THB' AND face_value = 1000",
+    )
+    .fetch_one(&shop.pool)
+    .await
+    .expect("the THB 1000 face value");
+    lg4_fund_safe_thb(&shop.pool, "100000.00").await;
+    let counts = CashCountService::pg(shop.pool.clone());
+    let count = counts
+        .submit(
+            teller,
+            SubmitCount {
+                branch: branch(MAIN),
+                shift_id: None,
+                kind: CountKind::Open,
+                lines: vec![CountLine::new("THB", thousand, 100)],
+                note: None,
+                idempotency_key: unique("count"),
+            },
+            at(-7200),
+        )
+        .await
+        .expect("the teller submits the OPEN count");
+    counts
+        .verify(manager, &count.id, at(-7140))
+        .await
+        .expect("the BRANCH_MANAGER verifies the OPEN count")
+        .shift_id
+        .expect("a verified OPEN count names the shift it opened")
+}
+
+static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LG-4 (#929, lane controller's 1:1 ruling): the OPEN count's cash now leaves MAIN's ledger SAFE (design §4.4),
+/// so the safe holds exactly what the count takes (`OPENING` from BANK). Before the cutover nothing had to be there.
+async fn lg4_fund_safe_thb(pool: &sqlx::PgPool, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Bank,
+                to: CashPlace::Safe(branch(MAIN)),
+                currency: xc_kernel::money::CurrencyCode::THB,
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-fund:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "fund".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
 }
 
 fn branch_tx(shop: &Shop) -> BranchTx {
@@ -127,19 +244,10 @@ fn custody(shop: &Shop) -> CustodyService {
     )
 }
 
-/// Custody on, service open, `FRONT` clocked in and holding the drawer.
+/// The branch day OPEN.
 fn open_service() -> CustodyState {
     CustodyState {
-        enabled: true,
         phase: Phase::Open,
-        custodian: Some(FRONT.to_owned()),
-        attendance: vec![Attendance {
-            id: "att-1".to_owned(),
-            employee_id: FRONT.to_owned(),
-            role: CustodyRole::Front,
-            clock_in: CustodyTime::from_epoch_millis(at(-3600).timestamp_millis()),
-            clock_out: None,
-        }],
         ..CustodyState::initial()
     }
 }
@@ -168,17 +276,37 @@ async fn draft_now(shop: &Shop, id: &str) -> TxDraft {
         .expect("the draft")
 }
 
-/// A shop ready for a purchase, `FRONT`'s passport, a workflow with custody's step, and the id of
-/// the open shift.
-async fn guarded(shop: &Shop) -> (SaveTransactionWorkflow, String, String, String) {
-    let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
+/// What every test starts from: the save workflow with custody's step, a customer, the teller's (`me`) passport,
+/// `me`'s OPEN shift, and `other`, a second teller of `MAIN` whose drafts `me` may finish (#154 option B).
+struct G {
+    flow: SaveTransactionWorkflow,
+    customer: String,
+    passport: String,
+    shift: String,
+    me: Actor,
+    other: Actor,
+}
+
+async fn guarded(shop: &Shop) -> G {
+    let manager = person(shop, "Krit", BpRole::BranchManager).await;
+    let me = person(shop, "Nok", BpRole::Teller).await;
+    let other = person(shop, "Ploy", BpRole::Teller).await;
+    let shift = opened(shop, &me, &manager).await;
+    shop.set_rate(MAIN, "USD", "32.1", "33").await;
+    let customer = shop.reserve(MAIN, save_common::person()).await;
+    let passport = shop.upload(MAIN, &me.user_id, "image/jpeg", JPEG).await;
     let step: Arc<dyn SaveStep> = Arc::new(CustodySaveStep::new(custody(shop)));
     let flow =
         SaveTransactionWorkflow::new(branch_tx(shop), shop.shifts.clone(), shop.files.clone())
             .with_steps(vec![step]);
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
-    (flow, customer, passport, shift)
+    G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other,
+    }
 }
 
 /// An open draft of `employee_id` in `shift`.
@@ -223,22 +351,37 @@ fn open_untouched(d: &TxDraft, what: &str) {
 #[tokio::test]
 async fn another_employees_open_draft_with_the_same_figures_is_completed() {
     let shop = Shop::start().await;
-    let (flow, customer, passport, shift) = guarded(&shop).await;
+    let G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other,
+    } = guarded(&shop).await;
     put_state(
         &shop,
         &CustodyState {
-            drafts: vec![draft("left-by-8", &shift, OTHER, Side::Buy, "USD", "100")],
+            drafts: vec![draft(
+                "left-by-8",
+                &shift,
+                &other.user_id,
+                Side::Buy,
+                "USD",
+                "100",
+            )],
             ..open_service()
         },
     )
     .await;
 
     let saved = flow
-        .save_as(
+        .save_as_teller(
             &branch(MAIN),
             form("b154-0001-aaaaaaaaaaa", &customer, &passport),
             &naming("left-by-8"),
-            &front(),
+            &save_actor(&me),
+            &me,
             at(0),
         )
         .await
@@ -256,23 +399,37 @@ async fn another_employees_open_draft_with_the_same_figures_is_completed() {
 #[tokio::test]
 async fn a_draft_for_other_figures_is_left_open_and_the_save_still_succeeds() {
     let shop = Shop::start().await;
-    let (flow, customer, passport, shift) = guarded(&shop).await;
+    let G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other,
+    } = guarded(&shop).await;
     let cases = [
         // (draft, what differs)
         (
-            draft("own-sell", &shift, FRONT, Side::Sell, "USD", "100"),
+            draft("own-sell", &shift, &me.user_id, Side::Sell, "USD", "100"),
             "its side",
         ),
         (
-            draft("own-eur", &shift, FRONT, Side::Buy, "EUR", "100"),
+            draft("own-eur", &shift, &me.user_id, Side::Buy, "EUR", "100"),
             "its currency",
         ),
         (
-            draft("own-7", &shift, FRONT, Side::Buy, "USD", "7"),
+            draft("own-7", &shift, &me.user_id, Side::Buy, "USD", "7"),
             "its amount",
         ),
         (
-            draft("of-8-sell-7-eur", &shift, OTHER, Side::Sell, "EUR", "7"),
+            draft(
+                "of-8-sell-7-eur",
+                &shift,
+                &other.user_id,
+                Side::Sell,
+                "EUR",
+                "7",
+            ),
             "everything, and another employee's",
         ),
     ];
@@ -288,11 +445,12 @@ async fn a_draft_for_other_figures_is_left_open_and_the_save_still_succeeds() {
     for (n, (d, differs)) in cases.iter().enumerate() {
         let submission = format!("b154-01{n:02}-aaaaaaaaaa");
         let saved = flow
-            .save_as(
+            .save_as_teller(
                 &branch(MAIN),
                 form(&submission, &customer, &passport),
                 &naming(&d.id),
-                &front(),
+                &save_actor(&me),
+                &me,
                 at(0),
             )
             .await;
@@ -314,26 +472,41 @@ async fn a_draft_for_other_figures_is_left_open_and_the_save_still_succeeds() {
 #[tokio::test]
 async fn a_repeat_naming_a_second_draft_for_other_figures_leaves_it_open() {
     let shop = Shop::start().await;
-    let (flow, customer, passport, shift) = guarded(&shop).await;
+    let G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other,
+    } = guarded(&shop).await;
     put_state(
         &shop,
         &CustodyState {
             drafts: vec![
-                draft("mine", &shift, FRONT, Side::Buy, "USD", "100"),
-                draft("of-8", &shift, OTHER, Side::Sell, "EUR", "7"),
+                draft("mine", &shift, &me.user_id, Side::Buy, "USD", "100"),
+                draft("of-8", &shift, &other.user_id, Side::Sell, "EUR", "7"),
             ],
             ..open_service()
         },
     )
     .await;
     let send = |draft_id: &'static str, when| {
-        let (flow, cmd) = (
+        let (flow, me, cmd) = (
             flow.clone(),
+            me.clone(),
             form("b154-0200-aaaaaaaaaaa", &customer, &passport),
         );
         async move {
-            flow.save_as(&branch(MAIN), cmd, &naming(draft_id), &front(), when)
-                .await
+            flow.save_as_teller(
+                &branch(MAIN),
+                cmd,
+                &naming(draft_id),
+                &save_actor(&me),
+                &me,
+                when,
+            )
+            .await
         }
     };
 
@@ -360,26 +533,41 @@ async fn a_repeat_naming_a_second_draft_for_other_figures_leaves_it_open() {
 #[tokio::test]
 async fn a_repeat_naming_a_second_draft_with_the_same_figures_leaves_it_open() {
     let shop = Shop::start().await;
-    let (flow, customer, passport, shift) = guarded(&shop).await;
+    let G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other,
+    } = guarded(&shop).await;
     put_state(
         &shop,
         &CustodyState {
             drafts: vec![
-                draft("first", &shift, FRONT, Side::Buy, "USD", "100"),
-                draft("second", &shift, OTHER, Side::Buy, "USD", "100"),
+                draft("first", &shift, &me.user_id, Side::Buy, "USD", "100"),
+                draft("second", &shift, &other.user_id, Side::Buy, "USD", "100"),
             ],
             ..open_service()
         },
     )
     .await;
     let send = |draft_id: &'static str, when| {
-        let (flow, cmd) = (
+        let (flow, me, cmd) = (
             flow.clone(),
+            me.clone(),
             form("b154-0400-aaaaaaaaaaa", &customer, &passport),
         );
         async move {
-            flow.save_as(&branch(MAIN), cmd, &naming(draft_id), &front(), when)
-                .await
+            flow.save_as_teller(
+                &branch(MAIN),
+                cmd,
+                &naming(draft_id),
+                &save_actor(&me),
+                &me,
+                when,
+            )
+            .await
         }
     };
 
@@ -406,8 +594,15 @@ async fn a_repeat_naming_a_second_draft_with_the_same_figures_leaves_it_open() {
 #[tokio::test]
 async fn a_completed_draft_keeps_its_first_document_number() {
     let shop = Shop::start().await;
-    let (flow, customer, passport, shift) = guarded(&shop).await;
-    let mut done = draft("done", &shift, FRONT, Side::Buy, "USD", "100");
+    let G {
+        flow,
+        customer,
+        passport,
+        shift,
+        me,
+        other: _,
+    } = guarded(&shop).await;
+    let mut done = draft("done", &shift, &me.user_id, Side::Buy, "USD", "100");
     done.status = DraftStatus::Completed;
     done.document_ref = Some("XC-20261005-000042".to_owned());
     put_state(
@@ -420,11 +615,12 @@ async fn a_completed_draft_keeps_its_first_document_number() {
     .await;
 
     let saved = flow
-        .save_as(
+        .save_as_teller(
             &branch(MAIN),
             form("b154-0300-aaaaaaaaaaa", &customer, &passport),
             &naming("done"),
-            &front(),
+            &save_actor(&me),
+            &me,
             at(0),
         )
         .await
