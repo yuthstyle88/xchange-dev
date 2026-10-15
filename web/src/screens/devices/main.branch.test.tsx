@@ -18,7 +18,7 @@
 // the `me` answer fixture (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`). It is
 // untyped, so tsc did not list it, but the shell's queue card and account bar read `permissions`/`roles`
 // from it. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { meOf } from '../../test-support/me';
 
 const ME_B2 = meOf({
@@ -53,6 +53,11 @@ async function start(url: string): Promise<void> {
   await import('./main');
   await flush();
 }
+
+beforeAll(async () => {
+  document.body.innerHTML = '';
+  await import('./main');
+}, 60_000);
 
 beforeEach(() => {
   vi.resetModules();
