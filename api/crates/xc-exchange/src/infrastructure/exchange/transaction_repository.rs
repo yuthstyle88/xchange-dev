@@ -6,10 +6,10 @@ use sqlx::{PgPool, Row};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Money, Rate, Side, plain_decimal};
 
-use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::entities::transaction::Transaction;
 use crate::domain::exchange::repositories::transaction_repository::TransactionRepository;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_kernel::mode::Mode;
 
 #[derive(Clone)]
 pub struct PgTransactionRepository {
@@ -334,13 +334,10 @@ impl TransactionRepository for PgTransactionRepository {
         .await
         .map_err(AppError::Database)?;
 
-        let mut files = vec![
+        let files = vec![
             ("PASSPORT", t.passport_key.as_str()),
             ("RECEIPT", t.receipt_key.as_str()),
         ];
-        if let Some(slip) = &t.slip_key {
-            files.push(("SLIP", slip.as_str()));
-        }
         for (kind, key) in files {
             sqlx::query(
                 "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, $2, $3)",

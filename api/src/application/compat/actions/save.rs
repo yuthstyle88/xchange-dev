@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value};
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
-use xc_exchange::application::booking::service::BookingService;
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_booking::application::lifecycle::BookingLifecycle;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_shift::application::custody::service::CustodyService;
@@ -67,8 +67,8 @@ impl SaveAction {
     }
 
     /// Appends the booking save step to redeem and use bookings at the desk (T15-h).
-    pub fn with_booking_check(mut self, bookings: BookingService) -> Self {
-        self.steps.push(Arc::new(BookingSaveStep::new(bookings)));
+    pub fn with_booking_check(mut self, lifecycle: Arc<BookingLifecycle>) -> Self {
+        self.steps.push(Arc::new(BookingSaveStep::new(lifecycle)));
         self.workflow = self.workflow.with_steps(self.steps.clone());
         self
     }

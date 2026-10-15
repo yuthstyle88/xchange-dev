@@ -358,3 +358,64 @@ async fn my_bookings_load_where_customer_id_is_none_refuses_same_as_my_transacti
 
     db.finish().await;
 }
+
+// ---------------------------------------------------------------------------
+// Row added by claude/d7aa64 (BE controller claude/7ca80c), up front: the last 4 are counted in
+// *characters*. `desk_bookings.rs:102` slices the last 4 *bytes*, which panics inside a multi-byte character
+// and turns the whole B02 list into a 500 for every teller.
+// ---------------------------------------------------------------------------
+#[actix_web::test]
+async fn desk_bookings_view_shows_the_last_4_characters_of_a_multibyte_phone() {
+    let db = TestDb::start().await;
+    let slot_id = Uuid::new_v4();
+    let now = Utc::now();
+    seed_slot(
+        &db.pool,
+        slot_id,
+        B01,
+        bangkok_today(),
+        now + Duration::hours(1),
+        now + Duration::hours(2),
+        5,
+        1,
+        "OPEN",
+    )
+    .await;
+
+    let booking_id = "BK-test-multibyte-phone";
+    seed_booking(
+        &db.pool,
+        booking_id,
+        "B261015-1004",
+        CUSTOMER_ALICE_CUST_ID,
+        B01,
+        slot_id,
+        "DESK",
+        "CONFIRMED",
+        &Sha256::digest(b"dummy-multibyte"),
+    )
+    .await;
+
+    // "0ก12": 4 characters, 6 bytes; the last 4 bytes start inside "ก".
+    seed_raw_customer_phone(&db.pool, CUSTOMER_ALICE_CUST_ID, "0ก12").await;
+
+    let uri = format!("/api/v3/views/desk_bookings?branch={B01}");
+    let res = call(&db, Some("TELLER@XC-B01"), Method::GET, &uri, None, None).await;
+
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "desk_bookings answers: {}",
+        res.text
+    );
+    let item = res.body["data"]["items"]
+        .as_array()
+        .expect("items array in desk_bookings data")
+        .iter()
+        .find(|i| i["id"].as_str() == Some(booking_id))
+        .expect("booking item found")
+        .clone();
+    assert_eq!(item["phoneLast4"], "0ก12", "{}", res.text);
+
+    db.finish().await;
+}

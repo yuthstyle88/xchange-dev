@@ -88,6 +88,128 @@ impl BranchView for CampaignView {
             .fetch_all(&pool)
             .await?;
 
+            let version_ids: Vec<uuid::Uuid> =
+                version_rows.iter().map(|v| v.get("id")).collect();
+            let approval_ids: Vec<uuid::Uuid> = version_rows
+                .iter()
+                .filter_map(|v| v.get("approval_id"))
+                .collect();
+
+            let branch_rows = sqlx::query(
+                "SELECT campaign_version_id, branch_id FROM campaign_branches WHERE campaign_version_id = ANY($1) ORDER BY branch_id ASC",
+            )
+            .bind(&version_ids)
+            .fetch_all(&pool)
+            .await?;
+
+            let mut branches_by_version: std::collections::HashMap<uuid::Uuid, Vec<String>> =
+                std::collections::HashMap::with_capacity(version_ids.len());
+            for b in branch_rows {
+                let vid: uuid::Uuid = b.get("campaign_version_id");
+                let bid: String = b.get("branch_id");
+                branches_by_version.entry(vid).or_default().push(bid);
+            }
+
+            let rule_rows = sqlx::query(
+                r#"
+                SELECT campaign_version_id, id, rule_no, benefit_type, benefit_class, requires_coupon, eligibility, calculation, caps
+                FROM benefit_rules
+                WHERE campaign_version_id = ANY($1)
+                ORDER BY rule_no ASC
+                "#,
+            )
+            .bind(&version_ids)
+            .fetch_all(&pool)
+            .await?;
+
+            let mut rules_by_version: std::collections::HashMap<
+                uuid::Uuid,
+                Vec<CampaignRuleDetail>,
+            > = std::collections::HashMap::with_capacity(version_ids.len());
+            for r in rule_rows {
+                let vid: uuid::Uuid = r.get("campaign_version_id");
+                let r_id: uuid::Uuid = r.get("id");
+                let rule_no: i32 = r.get("rule_no");
+                let benefit_type: String = r.get("benefit_type");
+                let benefit_class: String = r.get("benefit_class");
+                let requires_coupon: bool = r.get("requires_coupon");
+                let eligibility: serde_json::Value = r.get("eligibility");
+                let calculation: serde_json::Value = r.get("calculation");
+                let caps: serde_json::Value = r.get("caps");
+
+                rules_by_version
+                    .entry(vid)
+                    .or_default()
+                    .push(CampaignRuleDetail {
+                        id: r_id.to_string(),
+                        rule_no: rule_no as i64,
+                        benefit_type,
+                        benefit_class,
+                        requires_coupon,
+                        eligibility,
+                        calculation,
+                        caps,
+                    });
+            }
+
+            let sim_rows = sqlx::query(
+                r#"
+                SELECT campaign_version_id, id, cost_source, simulated_at, input, result
+                FROM campaign_simulations
+                WHERE campaign_version_id = ANY($1)
+                ORDER BY simulated_at DESC, id DESC
+                "#,
+            )
+            .bind(&version_ids)
+            .fetch_all(&pool)
+            .await?;
+
+            let mut simulations_by_version: std::collections::HashMap<
+                uuid::Uuid,
+                Vec<CampaignSimulationDetail>,
+            > = std::collections::HashMap::with_capacity(version_ids.len());
+            for s in sim_rows {
+                let vid: uuid::Uuid = s.get("campaign_version_id");
+                let s_id: uuid::Uuid = s.get("id");
+                let cost_source: String = s.get("cost_source");
+                let simulated_at: chrono::DateTime<chrono::Utc> = s.get("simulated_at");
+                let input: serde_json::Value = s.get("input");
+                let result: serde_json::Value = s.get("result");
+
+                simulations_by_version
+                    .entry(vid)
+                    .or_default()
+                    .push(CampaignSimulationDetail {
+                        id: s_id.to_string(),
+                        cost_source,
+                        simulated_at: simulated_at.to_rfc3339(),
+                        input,
+                        result,
+                    });
+            }
+
+            let ar_rows =
+                sqlx::query("SELECT id, status FROM approval_requests WHERE id = ANY($1)")
+                    .bind(&approval_ids)
+                    .fetch_all(&pool)
+                    .await?;
+
+            let mut approvals_by_id: std::collections::HashMap<
+                uuid::Uuid,
+                CampaignApprovalDetail,
+            > = std::collections::HashMap::with_capacity(ar_rows.len());
+            for r in ar_rows {
+                let aid: uuid::Uuid = r.get("id");
+                let ar_status: String = r.get("status");
+                approvals_by_id.insert(
+                    aid,
+                    CampaignApprovalDetail {
+                        id: aid.to_string(),
+                        status: ar_status,
+                    },
+                );
+            }
+
             let now = chrono::Utc::now();
             let mut versions = Vec::with_capacity(version_rows.len());
 
@@ -111,98 +233,10 @@ impl BranchView for CampaignView {
                     now,
                 );
 
-                let branch_rows = sqlx::query(
-                    "SELECT branch_id FROM campaign_branches WHERE campaign_version_id = $1 ORDER BY branch_id ASC",
-                )
-                .bind(v_id)
-                .fetch_all(&pool)
-                .await?;
-
-                let branches: Vec<String> = branch_rows.into_iter().map(|b| b.get("branch_id")).collect();
-
-                let rule_rows = sqlx::query(
-                    r#"
-                    SELECT id, rule_no, benefit_type, benefit_class, requires_coupon, eligibility, calculation, caps
-                    FROM benefit_rules
-                    WHERE campaign_version_id = $1
-                    ORDER BY rule_no ASC
-                    "#,
-                )
-                .bind(v_id)
-                .fetch_all(&pool)
-                .await?;
-
-                let rules = rule_rows
-                    .into_iter()
-                    .map(|r| {
-                        let r_id: uuid::Uuid = r.get("id");
-                        let rule_no: i32 = r.get("rule_no");
-                        let benefit_type: String = r.get("benefit_type");
-                        let benefit_class: String = r.get("benefit_class");
-                        let requires_coupon: bool = r.get("requires_coupon");
-                        let eligibility: serde_json::Value = r.get("eligibility");
-                        let calculation: serde_json::Value = r.get("calculation");
-                        let caps: serde_json::Value = r.get("caps");
-
-                        CampaignRuleDetail {
-                            id: r_id.to_string(),
-                            rule_no: rule_no as i64,
-                            benefit_type,
-                            benefit_class,
-                            requires_coupon,
-                            eligibility,
-                            calculation,
-                            caps,
-                        }
-                    })
-                    .collect();
-
-                let sim_rows = sqlx::query(
-                    r#"
-                    SELECT id, cost_source, simulated_at, input, result
-                    FROM campaign_simulations
-                    WHERE campaign_version_id = $1
-                    ORDER BY simulated_at DESC, id DESC
-                    "#,
-                )
-                .bind(v_id)
-                .fetch_all(&pool)
-                .await?;
-
-                let simulations = sim_rows
-                    .into_iter()
-                    .map(|s| {
-                        let s_id: uuid::Uuid = s.get("id");
-                        let cost_source: String = s.get("cost_source");
-                        let simulated_at: chrono::DateTime<chrono::Utc> = s.get("simulated_at");
-                        let input: serde_json::Value = s.get("input");
-                        let result: serde_json::Value = s.get("result");
-
-                        CampaignSimulationDetail {
-                            id: s_id.to_string(),
-                            cost_source,
-                            simulated_at: simulated_at.to_rfc3339(),
-                            input,
-                            result,
-                        }
-                    })
-                    .collect();
-
-                let approval = if let Some(aid) = approval_id {
-                    let ar_row = sqlx::query("SELECT status FROM approval_requests WHERE id = $1")
-                        .bind(aid)
-                        .fetch_optional(&pool)
-                        .await?;
-                    ar_row.map(|r| {
-                        let ar_status: String = r.get("status");
-                        CampaignApprovalDetail {
-                            id: aid.to_string(),
-                            status: ar_status,
-                        }
-                    })
-                } else {
-                    None
-                };
+                let branches = branches_by_version.remove(&v_id).unwrap_or_default();
+                let rules = rules_by_version.remove(&v_id).unwrap_or_default();
+                let simulations = simulations_by_version.remove(&v_id).unwrap_or_default();
+                let approval = approval_id.and_then(|aid| approvals_by_id.remove(&aid));
 
                 versions.push(CampaignVersionDetail {
                     id: v_id.to_string(),

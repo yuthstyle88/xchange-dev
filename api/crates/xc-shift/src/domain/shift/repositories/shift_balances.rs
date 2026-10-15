@@ -2,6 +2,8 @@
 //! `docs/design/blueprint/ledger-inventory.md` §4.2.1 (PR 1037, `expected` signed per PR 1458).
 //! Keep these names and signatures; `xc-cash`'s `PgLedgerShiftBalances` implements the trait.
 
+use std::collections::BTreeMap;
+
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
@@ -36,4 +38,21 @@ pub trait ShiftBalances: Send + Sync {
         &'a self,
         shift: &'a ShiftId,
     ) -> BoxFuture<'a, AppResult<Vec<ShiftBalance>>>;
+
+    /// Many shifts at once (§4.2.1): every requested id is a key, an empty list when the shift has no
+    /// rows; each value equals `shift_balances` for that shift. The default loops over `shift_balances`,
+    /// so test doubles need no change; `PgLedgerShiftBalances` overrides it with one read.
+    fn shift_balances_many<'a>(
+        &'a self,
+        shifts: &'a [ShiftId],
+    ) -> BoxFuture<'a, AppResult<BTreeMap<ShiftId, Vec<ShiftBalance>>>> {
+        Box::pin(async move {
+            let mut out = BTreeMap::new();
+            for shift in shifts {
+                let rows = self.shift_balances(shift).await?;
+                out.insert(shift.clone(), rows);
+            }
+            Ok(out)
+        })
+    }
 }

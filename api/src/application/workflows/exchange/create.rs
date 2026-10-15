@@ -9,7 +9,7 @@ use pos_infra::transactions::Transactor;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::{Quote, QuoteStatus};
 use xc_exchange::domain::quote::repository::QuoteRepository;

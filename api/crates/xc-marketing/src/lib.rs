@@ -7,6 +7,7 @@ pub mod domain {
     pub mod coupon;
     pub mod engine;
     pub mod performance;
+    pub mod segment;
 }
 
 pub mod infrastructure {
@@ -20,5 +21,6 @@ pub mod application {
     pub mod campaign_service;
     pub mod coupon_service;
     pub mod redeemer;
+    pub mod segment_service;
     pub mod simulator;
 }

@@ -1,6 +1,6 @@
-//! The v3 endpoint seam's caller (APP-18 #1373; design `docs/design/blueprint/customer-app.md` §9 APP-18 row; the lane
-//! controller's rulings on #1373: `Caller { user, app_session }`, no legacy actor; option B, the `*_as` methods sit
-//! alongside today's `&access::Actor` methods).
+//! The v3 endpoint seam's caller (APP-18 #1373; design `docs/design/blueprint/customer-app.md` §9 APP-18 row, §9.2
+//! #1943; the lane controller's rulings on #1373 and #1943: `Caller { user, app_session, session_hash }`, no legacy
+//! actor; option B, the `*_as` methods sit alongside today's `&access::Actor` methods).
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSession, AppSessionId};
@@ -13,12 +13,14 @@ use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use super::error::V3Error;
 use crate::presentation::pages;
 
-/// Who called a v3 route: the signed-in user, if any, and the anonymous app session the request carried, if any
-/// (`xc_app_sid`; the seam reads an existing one and never issues one, ruling 4).
+/// Who called a v3 route: the signed-in user, if any, the anonymous app session the request carried, if any
+/// (`xc_app_sid`; the seam reads an existing one and never issues one, ruling 4), and the hash of the caller's live
+/// `__Host-xc_session` row, if any (#1943, §9.2).
 #[derive(Debug, Clone)]
 pub struct Caller {
     pub user: Option<Actor>,
     pub app_session: Option<AppSession>,
+    pub session_hash: Option<String>,
 }
 
 /// Resolves the caller for a v3 route, checking policy admission.
@@ -71,5 +73,11 @@ pub(crate) async fn authenticate_caller(
             AppSession { id, hash }
         });
 
-    Ok(Caller { user, app_session })
+    let session_hash = crate::presentation::extractors::actor::caller_session_hash(req, now).await;
+
+    Ok(Caller {
+        user,
+        app_session,
+        session_hash,
+    })
 }

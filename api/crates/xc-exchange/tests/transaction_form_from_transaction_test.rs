@@ -32,7 +32,6 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -41,6 +40,7 @@ use xc_exchange::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Quote, Rate, Side, UnitSize};
 
 fn money(text: &str) -> Money {

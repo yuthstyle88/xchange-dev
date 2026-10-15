@@ -25,10 +25,10 @@ use chrono::{TimeZone, Utc};
 use compat_common::{Fixture, Step};
 use serde_json::{Value, json};
 use snapshot_common::{
-    MAIN, NO_SUCH_BRANCH, Replay, Shop, WRITE_ACTIONS, assert_same, branch, people_of, refusal,
-    time, transaction_of, with_ids, without_dropped_keys,
+    MAIN, NO_SUCH_BRANCH, Replay, Shop, WRITE_ACTIONS, assert_same, branch, refusal, time,
+    transaction_of,
 };
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
@@ -866,77 +866,5 @@ async fn transactions_json_is_reproduced_from_exchanges_the_test_feeds() {
         member(&snapshot, "transactions").to_text()
     );
     assert!(v2_text.contains(&printed), "not v2's text: {printed}");
-    replay.shop.finish().await;
-}
-
-#[tokio::test]
-async fn custody_json_closed_for_the_night_is_reproduced_from_what_the_test_feeds() {
-    let fixture = Fixture::load("snapshot/custody.json");
-    let views = fixture.steps_with_view("closed for the night");
-    let last = *views
-        .iter()
-        .find(|s| s.sent_as == "owner" && s.action.as_deref() == Some("adminSnapshot"))
-        .expect("the owner's last view");
-    let main = branch(MAIN);
-    let mut replay = Replay::start(&fixture).await;
-
-    // rates and customers: their recorded steps, through their services
-    for step in &fixture.steps()[..last.n - 1] {
-        let replayed = matches!(
-            step.action.as_deref(),
-            Some("adminSaveRate" | "reserveCustomer")
-        );
-        if replayed && step.status == Some(200) {
-            replay.step(step).await;
-        }
-    }
-    // re-expected for RE-7 #604: both writes are direct saves
-    assert_eq!(replay.compared.writes, 0);
-    assert_eq!(replay.compared.retired, 2);
-    assert_eq!(replay.compared.reservations, 3);
-
-    // shifts and movements were made by custody commits, exchanges by saves:
-    // neither can be replayed here, so the test makes what the view shows
-    let made = replay.feed_stock(&main, last.json()).await;
-    assert_eq!(made.len(), 2);
-    let view = with_ids(last.json(), &made);
-    for recorded in view["transactions"].as_array().expect("transactions") {
-        let method = recorded["method"].as_str().expect("method");
-        replay
-            .shop
-            .hand
-            .add_transaction(&main, transaction_of(recorded, method));
-    }
-    replay.feed_custody(&main, &view["operations"]).await;
-    replay.shop.hand.set_people(&main, people_of(&fixture));
-
-    // the state, as the owner and every role reads it on /api/rpc
-    for step in &views {
-        replay.step(step).await;
-    }
-    // the owner and twelve employees
-    assert_eq!(replay.compared.snapshots, 13);
-    assert_eq!(replay.compared.desks, 13);
-
-    // what the day left: both shifts closed, three exchanges, fifty-five events
-    let snapshot = replay
-        .shop
-        .builder()
-        .admin_snapshot(&main, "owner", time(&last.at))
-        .await
-        .expect("snapshot")
-        .to_value();
-    assert_same(
-        &with_ids(&without_dropped_keys(last.json()), &made)["stock"]["shifts"],
-        &snapshot["stock"]["shifts"],
-        "the shifts",
-    );
-    assert_eq!(snapshot["transactions"].as_array().map(Vec::len), Some(3));
-    assert_eq!(
-        snapshot["operations"]["events"].as_array().map(Vec::len),
-        Some(55)
-    );
-    assert_eq!(snapshot["operations"]["attendance"][0]["name"], "FR1 Front");
-    assert_eq!(snapshot["operations"]["enabled"], true);
     replay.shop.finish().await;
 }

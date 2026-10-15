@@ -503,43 +503,51 @@ impl ReviewService {
         org_id: Uuid,
         ended_at: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
-        let docs: Vec<(Uuid, String)> = sqlx::query_as(
-            "SELECT id, document_type FROM verification_documents WHERE case_id = $1",
+        let rows: Vec<(String, Option<i32>)> = sqlx::query_as(
+            "SELECT data_type, period_days FROM retention_policies \
+             WHERE organization_id = $1 AND data_type IN ($2, $3)",
         )
-        .bind(case_id)
+        .bind(org_id)
+        .bind(DataType::VerificationPassport.as_str())
+        .bind(DataType::VerificationNationalId.as_str())
         .fetch_all(&mut **tx)
         .await?;
 
-        for (doc_id, doc_type) in docs {
-            let identity_type = match doc_type.as_str() {
-                "PASSPORT" => IdentityType::Passport,
-                "NATIONAL_ID" => IdentityType::NationalId,
-                _ => continue,
-            };
-            let data_type = match identity_type {
-                IdentityType::Passport => DataType::VerificationPassport,
-                IdentityType::NationalId => DataType::VerificationNationalId,
-                _ => continue,
-            };
-
-            let period_days: Option<i32> = sqlx::query_scalar(
-                "SELECT period_days FROM retention_policies WHERE organization_id = $1 AND data_type = $2",
-            )
-            .bind(org_id)
-            .bind(data_type.as_str())
-            .fetch_optional(&mut **tx)
-            .await?
-            .flatten();
-
-            let period = period_days.map(|d| chrono::Duration::days(d as i64));
-            let retention_until = RetentionClock::retention_until(ended_at, period);
-
-            sqlx::query("UPDATE verification_documents SET retention_until = $2 WHERE id = $1")
-                .bind(doc_id)
-                .bind(retention_until)
-                .execute(&mut **tx)
-                .await?;
+        let mut passport_days: Option<i32> = None;
+        let mut national_id_days: Option<i32> = None;
+        for (data_type, period_days) in rows {
+            if data_type == DataType::VerificationPassport.as_str() {
+                passport_days = period_days;
+            } else if data_type == DataType::VerificationNationalId.as_str() {
+                national_id_days = period_days;
+            }
         }
+
+        let passport_until = RetentionClock::retention_until(
+            ended_at,
+            passport_days.map(|d| chrono::Duration::days(i64::from(d))),
+        );
+        let national_id_until = RetentionClock::retention_until(
+            ended_at,
+            national_id_days.map(|d| chrono::Duration::days(i64::from(d))),
+        );
+
+        sqlx::query(
+            "UPDATE verification_documents \
+             SET retention_until = CASE document_type \
+                 WHEN $2 THEN $3 \
+                 WHEN $4 THEN $5 \
+                 ELSE retention_until \
+             END \
+             WHERE case_id = $1 AND document_type IN ($2, $4)",
+        )
+        .bind(case_id)
+        .bind(IdentityType::Passport.as_str())
+        .bind(passport_until)
+        .bind(IdentityType::NationalId.as_str())
+        .bind(national_id_until)
+        .execute(&mut **tx)
+        .await?;
 
         Ok(())
     }

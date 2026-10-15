@@ -126,6 +126,45 @@ pub(crate) async fn load_reversal_summary(
         return Ok(None);
     };
 
+    map_reversal_summary_row(row, Utc::now()).map(Some)
+}
+
+pub(crate) async fn load_reversal_summaries(
+    pool: &PgPool,
+    ids: &[Uuid],
+    branch_id: &str,
+) -> AppResult<Vec<ReversalSummaryDto>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query(
+        "SELECT r.id, r.original_transaction_id, r.status, r.reason, r.amount_thb, \
+         r.requested_by, r.requested_at, r.business_date, b.timezone, \
+         ad.at AS approved_at, r.posted_at, rc.number AS document_number \
+         FROM reversals r \
+         JOIN branches b ON b.id = r.branch_id \
+         LEFT JOIN approval_decisions ad ON ad.request_id = r.approval_request_id AND ad.outcome = 'APPROVED' \
+         LEFT JOIN receipts rc ON rc.id = r.receipt_id \
+         WHERE r.id = ANY($1) \
+           AND r.branch_id = $2 \
+         ORDER BY r.requested_at ASC, r.created_at ASC",
+    )
+    .bind(ids)
+    .bind(branch_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let now = Utc::now();
+    rows.into_iter()
+        .map(|row| map_reversal_summary_row(row, now))
+        .collect()
+}
+
+fn map_reversal_summary_row(
+    row: sqlx::postgres::PgRow,
+    now: DateTime<Utc>,
+) -> AppResult<ReversalSummaryDto> {
     let id: Uuid = row.get("id");
     let original_id: Uuid = row.get("original_transaction_id");
     let stored_status: String = row.get("status");
@@ -145,15 +184,14 @@ pub(crate) async fn load_reversal_summary(
 
     let tz = Tz::from_str(&timezone)
         .map_err(|e| AppError::Internal(format!("invalid timezone {timezone}: {e}")))?;
-    let status = if stored_status == "APPROVED"
-        && !ReversalWindow::is_open(business_date, Utc::now(), tz)
+    let status = if stored_status == "APPROVED" && !ReversalWindow::is_open(business_date, now, tz)
     {
         "EXPIRED".to_string()
     } else {
         stored_status
     };
 
-    Ok(Some(ReversalSummaryDto {
+    Ok(ReversalSummaryDto {
         id: id.to_string(),
         original_transaction_id: original_id.to_string(),
         status,
@@ -164,5 +202,5 @@ pub(crate) async fn load_reversal_summary(
         approved_at: approved_at.map(|t| t.to_rfc3339()),
         posted_at: posted_at.map(|t| t.to_rfc3339()),
         document_number,
-    }))
+    })
 }

@@ -356,14 +356,13 @@ async fn a_draft_is_stored_with_its_line_and_payment_and_read_back_whole() {
     );
     assert_eq!(
         shop.db
-            .text(&format!(
-                "SELECT file_key FROM transaction_files WHERE transaction_id = '{}' AND kind = 'SLIP'",
+            .count(&format!(
+                "SELECT count(*) FROM transaction_files WHERE transaction_id = '{}' AND kind = 'SLIP'",
                 t.id.0
             ))
-            .await
-            .as_deref(),
-        Some("SLIP-1"),
-        "the SLIP row stays until migration 3 (§3.4)"
+            .await,
+        0,
+        "TX-9 #677 ruling: the slip lives on the payment only"
     );
     assert_eq!(
         shop.db

@@ -1100,3 +1100,99 @@ async fn campaign_is_gated_by_marketing_campaigns() {
     assert_refused(&get(&room, "TELLER", &uri).await, "TELLER");
     room.finish().await;
 }
+
+#[actix_web::test]
+async fn campaign_versions_each_keep_their_own_children() {
+    let room = Room::start().await;
+    let other_branch = room.other_branch().await;
+    let (campaign, v1) = room.campaign("APPROVED", "-2 days", "30 days").await;
+    let v2 = room
+        .version_of(campaign, ORG, 2, "PENDING_APPROVAL", "1 day", "40 days")
+        .await;
+
+    room.exec(&format!(
+        "INSERT INTO campaign_branches (campaign_version_id, branch_id) VALUES \
+         ('{v1}', '{}'), ('{v2}', '{other_branch}')",
+        room.branch
+    ))
+    .await;
+
+    let r_v1 = room.rule(v1, "PRICE", 1).await;
+    let r_v2 = room.rule(v2, "REWARD", 1).await;
+
+    let sim_v1 = Uuid::new_v4();
+    let sim_v2 = Uuid::new_v4();
+    room.exec(&format!(
+        "INSERT INTO campaign_simulations (id, campaign_version_id, input, result, cost_source, simulated_by, \
+         simulated_at) VALUES \
+         ('{sim_v1}', '{v1}', '{{\"scenarios\":[]}}'::jsonb, '{{\"lines\":[]}}'::jsonb, 'UNAVAILABLE', '{USER}', date_trunc('minute', now())), \
+         ('{sim_v2}', '{v2}', '{{\"scenarios\":[]}}'::jsonb, '{{\"lines\":[]}}'::jsonb, 'UNAVAILABLE', '{USER}', date_trunc('minute', now()))"
+    ))
+    .await;
+
+    let app_v1 = Uuid::new_v4();
+    let app_v2 = Uuid::new_v4();
+    room.exec(&format!(
+        "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, object_version_hash, \
+         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) VALUES \
+         ('{app_v1}', '{ORG}', 'CAMPAIGN_VERSION', NULL, '{v1}', 'hash', '1', '{{}}'::jsonb, 'test', now(), 'APPROVED', '{}'), \
+         ('{app_v2}', '{ORG}', 'CAMPAIGN_VERSION', NULL, '{v2}', 'hash', '1', '{{}}'::jsonb, 'test', now(), 'PENDING', '{}')",
+        unique("campaign-approval-v1"),
+        unique("campaign-approval-v2")
+    ))
+    .await;
+    room.exec(&format!(
+        "UPDATE campaign_versions SET approval_id = '{app_v1}' WHERE id = '{v1}'"
+    ))
+    .await;
+    room.exec(&format!(
+        "UPDATE campaign_versions SET approval_id = '{app_v2}' WHERE id = '{v2}'"
+    ))
+    .await;
+
+    let a = get(
+        &room,
+        "MARKETING",
+        &room.uri("campaign", &format!("&id={campaign}")),
+    )
+    .await;
+    let versions = a.ok_data()["campaign"]["versions"]
+        .as_array()
+        .expect("versions")
+        .clone();
+    assert_eq!(versions.len(), 2);
+
+    let two = &versions[0];
+    assert_eq!(two["id"], v2.to_string());
+    assert_eq!(two["branches"], serde_json::json!([other_branch]));
+    let two_rules = two["rules"].as_array().expect("v2 rules");
+    assert_eq!(two_rules.len(), 1, "v2 must have only its own rule: {two}");
+    assert_eq!(two_rules[0]["id"], r_v2.to_string());
+    let two_sims = two["simulations"].as_array().expect("v2 simulations");
+    assert_eq!(
+        two_sims.len(),
+        1,
+        "v2 must have only its own simulation: {two}"
+    );
+    assert_eq!(two_sims[0]["id"], sim_v2.to_string());
+    assert_eq!(two["approval"]["id"], app_v2.to_string());
+    assert_eq!(two["approval"]["status"], "PENDING");
+
+    let one = &versions[1];
+    assert_eq!(one["id"], v1.to_string());
+    assert_eq!(one["branches"], serde_json::json!([room.branch]));
+    let one_rules = one["rules"].as_array().expect("v1 rules");
+    assert_eq!(one_rules.len(), 1, "v1 must have only its own rule: {one}");
+    assert_eq!(one_rules[0]["id"], r_v1.to_string());
+    let one_sims = one["simulations"].as_array().expect("v1 simulations");
+    assert_eq!(
+        one_sims.len(),
+        1,
+        "v1 must have only its own simulation: {one}"
+    );
+    assert_eq!(one_sims[0]["id"], sim_v1.to_string());
+    assert_eq!(one["approval"]["id"], app_v1.to_string());
+    assert_eq!(one["approval"]["status"], "APPROVED");
+
+    room.finish().await;
+}

@@ -45,6 +45,9 @@ pub fn map_rate_engine_error(err: RateEngineError) -> V3Error {
         RateEngineError::IdempotencyConflict(m) => {
             V3Error::new("idempotencyConflict", None, m, StatusCode::CONFLICT)
         }
+        RateEngineError::Refused { code, message } => {
+            V3Error::new(code, None, message, StatusCode::CONFLICT)
+        }
         _ => V3Error::new(
             "serverError",
             None,

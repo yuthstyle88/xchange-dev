@@ -1,8 +1,8 @@
 //! The devices' part in the save of an exchange (T8c-2b, `docs/design/xchange-v3.md` §5.4).
 
 use rust_decimal::Decimal;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
+use xc_kernel::mode::Mode;
 
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 use crate::infrastructure::devices::device_commands::SavedExchange;

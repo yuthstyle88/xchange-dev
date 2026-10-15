@@ -26,12 +26,8 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use xc_auth::domain::account::entities::session::SignedIn;
-use xc_exchange::application::booking::service::BookingService;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::infrastructure::booking::booking_ids::UuidBookingIds;
-use xc_exchange::infrastructure::booking::booking_repository::PgBookingRepository;
-use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kiosk::application::kiosk::service::KioskService;
@@ -60,7 +56,6 @@ use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::documents::DocumentsLookup;
 use crate::application::workflows::save_transaction::SaveTransactionWorkflow;
 use crate::bootstrap::AppState;
-use crate::infrastructure::bookings::booking_ports::PgBookingPorts;
 use crate::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
 use crate::infrastructure::devices::device_service::DeviceService;
@@ -400,28 +395,22 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
     )
     .with_printer_models(printer_models);
     let payments = PaymentSettingsService::new(
-        branch_tx.clone(),
+        branch_tx,
         BranchSettingStore::new(pool.clone()),
         PgBranchRepository::new(pool.clone()),
     );
-    let booking_ports = Arc::new(PgBookingPorts::new(pool.clone()));
-    let booking_repo = Arc::new(PgBookingRepository::new(pool.clone()));
-    let member_repo = Arc::new(PgMemberRepository::new(pool.clone()));
-    let booking_ids = Arc::new(UuidBookingIds);
-    let bookings = BookingService::new(
-        branch_tx,
-        booking_repo,
-        member_repo,
-        booking_ports,
-        booking_ids,
-    );
+    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
+        Arc::new(
+            xc_booking::infrastructure::booking_repository::PgBookingRepository::new(pool.clone()),
+        ),
+    ));
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(CustodyAction::new(custody.clone())),
         Arc::new(
             SaveAction::new(save, devices, kiosk, custody)
                 .with_payment_check(payments)
-                .with_booking_check(bookings)
+                .with_booking_check(lifecycle)
                 .with_broker_feed(),
         ),
     ]

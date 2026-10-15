@@ -20,6 +20,11 @@ pub const ROWS: &[AreaRow] = &[
     },
     AreaRow {
         path: EntryPath::Rpc,
+        action: "verification_policy",
+        need: Need::Permission(Permission::VerificationReview),
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
         action: "verificationCaseStartReview",
         need: Need::Permission(Permission::VerificationReview),
     },

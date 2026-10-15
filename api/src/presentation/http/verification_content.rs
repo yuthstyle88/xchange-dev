@@ -12,6 +12,7 @@ use xc_verification::application::access::document_access::{AccessError, Documen
 use xc_verification::application::access::download_link::DownloadLink;
 
 use crate::bootstrap::AppState;
+use crate::presentation::extractors::actor::caller_session_hash;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
@@ -35,24 +36,12 @@ async fn handle_content(
     pool: &sqlx::PgPool,
     doc_store: Arc<dyn xc_kernel::document_store::DocumentStore>,
 ) -> HttpResponse {
-    let session = req
-        .cookie("__Host-xc_session")
-        .map(|c| c.value().to_string())
-        .or_else(|| {
-            req.headers()
-                .get(header::COOKIE)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|cookies| {
-                    for c in cookies.split(';') {
-                        let (k, v) = c.trim().split_once('=')?;
-                        if k == "__Host-xc_session" {
-                            return Some(v.to_string());
-                        }
-                    }
-                    None
-                })
-        })
-        .unwrap_or_default();
+    let now = Utc::now();
+    let Some(session) = caller_session_hash(req, now).await else {
+        return HttpResponse::Forbidden().json(json!({
+            "error": { "code": "linkRefused", "message": "the link is refused" }
+        }));
+    };
 
     let keys = match xc_customer::get_pii_keys() {
         Ok(k) => k,
@@ -67,7 +56,6 @@ async fn handle_content(
     let download_link = DownloadLink::new(keys);
     let access = DocumentAccess::new(pool.clone(), doc_store, audit, download_link);
 
-    let now = Utc::now();
     match access.open(token, &session, now).await {
         Ok(content) => HttpResponse::Ok()
             .content_type(content.mime)

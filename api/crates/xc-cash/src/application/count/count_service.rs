@@ -21,7 +21,9 @@ use xc_shift::domain::custody::entities::cash_exception::{CashException, Excepti
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
-use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
+use xc_shift::infrastructure::custody::custody_repository::{
+    append_cash_exception_in, day_ready_on_open_count_in,
+};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::ledger_approval::count_difference::{
@@ -1001,6 +1003,7 @@ impl CashCountService {
                     opening.push((code, t.counted));
                 }
             }
+            day_ready_on_open_count_in(&mut *tx, &count.branch_id).await?;
             let shift = self
                 .shifts
                 .open_on_verified(

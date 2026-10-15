@@ -24,7 +24,6 @@ use xc_approval::application::approval_service::{ApprovalError, ApprovalService}
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -35,6 +34,7 @@ use xc_exchange::domain::transaction::transaction::{
 };
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xchange::application::workflows::exchange::cancel::CancelTransaction;
 use xchange::application::workflows::exchange::confirm::{ConfirmOutcome, ConfirmTransaction};

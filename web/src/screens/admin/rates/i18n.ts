@@ -80,6 +80,21 @@ export const th = {
   noOpenDraft: 'ไม่มีฉบับร่างที่เปิดอยู่',
   currentPublicationTitle: 'เรทที่เผยแพร่อยู่ปัจจุบัน',
   noPublication: 'ยังไม่มีการเผยแพร่เรท',
+
+  // VT-5 Value Tiers & Sharp-Move Policy
+  policyEyebrow: 'RATE POLICY',
+  policyTitle: 'นโยบายเรทและระดับมูลค่า',
+  valueTiersSwitchLabel: 'เปิดใช้เรทตามระดับมูลค่า',
+  sharpMoveThresholdLabel: 'เกณฑ์แจ้งเตือนเรทผันผวน (%)',
+  headerTierNo: 'ระดับ',
+  headerTierUpperThb: 'เพดานมูลค่า (THB)',
+  headerTierBuyMargin: 'ส่วนต่างรับซื้อ (%)',
+  headerTierSellMargin: 'ส่วนต่างขาย (%)',
+  tierLabelPrefix: 'ระดับ ',
+  tierAndAbove: 'ขึ้นไป',
+  savePolicy: 'บันทึกนโยบาย',
+  tierNonRisingPrefix: 'เพดานมูลค่าระดับ ',
+  tierNonRisingSuffix: ' ต้องมากกว่าระดับก่อนหน้า',
 };
 
 export const en = {
@@ -164,4 +179,19 @@ export const en = {
   noOpenDraft: 'No open draft',
   currentPublicationTitle: 'Current Published Rates',
   noPublication: 'No published rates yet',
+
+  // VT-5 Value Tiers & Sharp-Move Policy
+  policyEyebrow: 'RATE POLICY',
+  policyTitle: 'Rate Policy & Value Tiers',
+  valueTiersSwitchLabel: 'Enable value tiers',
+  sharpMoveThresholdLabel: 'Sharp-move alert threshold (%)',
+  headerTierNo: 'Tier',
+  headerTierUpperThb: 'Upper Limit (THB)',
+  headerTierBuyMargin: 'Buy Margin (%)',
+  headerTierSellMargin: 'Sell Margin (%)',
+  tierLabelPrefix: 'Tier ',
+  tierAndAbove: 'And above',
+  savePolicy: 'Save Policy',
+  tierNonRisingPrefix: 'Tier ',
+  tierNonRisingSuffix: ' upper limit must be greater than the previous tier',
 };

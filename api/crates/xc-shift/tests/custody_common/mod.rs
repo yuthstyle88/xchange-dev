@@ -43,107 +43,6 @@ pub use xc_shift::domain::custody::value_objects::shift_effect::ShiftEffect;
 pub use xc_shift::domain::custody::value_objects::signature::Signature;
 pub use xc_shift::domain::custody::value_objects::transition::Transition;
 
-// ── the fixture ──────────────────────────────────────────────────────────────
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ShiftFact {
-    pub id: String,
-    pub expected: BTreeMap<String, String>,
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Facts {
-    pub open_shift: Option<ShiftFact>,
-    pub has_live_rate: bool,
-    pub rates_updated: String,
-    pub pending_transactions: Vec<String>,
-    pub last_transaction: Option<String>,
-    pub customer_known: bool,
-    /// Absent on the facts a matrix state shares; each probe carries its own.
-    #[serde(default)]
-    pub new_id: String,
-}
-
-/// What v2 answered: a refusal, or the events, shift operations, returned id and the
-/// parts of the state that changed.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Answer {
-    pub error: Option<String>,
-    #[serde(default)]
-    pub v2_differs_on_purpose: bool,
-    #[serde(default)]
-    pub events: Vec<Value>,
-    #[serde(default)]
-    pub effects: Vec<Value>,
-    pub id: Option<String>,
-    #[serde(default)]
-    pub changed: Map<String, Value>,
-}
-
-#[derive(Deserialize)]
-pub struct Step {
-    pub actor: String,
-    pub command: Value,
-    pub now: i64,
-    pub facts: Facts,
-    #[serde(flatten)]
-    pub answer: Answer,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Probe {
-    pub actor: String,
-    pub command: usize,
-    pub new_id: String,
-    #[serde(flatten)]
-    pub answer: Answer,
-}
-
-#[derive(Deserialize)]
-pub struct MatrixState {
-    pub state: String,
-    pub phase: String,
-    pub now: i64,
-    pub facts: Facts,
-    pub commands: Vec<Value>,
-    pub steps: Vec<Step>,
-    pub probes: Vec<Probe>,
-}
-
-#[derive(Deserialize)]
-pub struct Story {
-    pub name: String,
-    pub steps: Vec<Step>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Counts {
-    pub matrix_states: usize,
-    pub probes: usize,
-    pub probes_accepted: usize,
-    pub stories: usize,
-    pub story_steps: usize,
-    pub story_steps_refused: usize,
-    pub distinct_errors: usize,
-    pub v2_differs_on_purpose: usize,
-}
-
-#[derive(Deserialize)]
-pub struct Fixture {
-    pub counts: Counts,
-    pub matrix: Vec<MatrixState>,
-    pub stories: Vec<Story>,
-}
-
-pub fn fixture() -> Fixture {
-    serde_json::from_str(include_str!("../fixtures/v2_custody_cases.json")).expect("fixture parses")
-}
-
 // ── figures ──────────────────────────────────────────────────────────────────
 
 pub fn code(text: &str) -> CurrencyCode {
@@ -238,25 +137,6 @@ fn role_name(role: CustodyRole) -> &'static str {
         CustodyRole::Manager => "MANAGER",
         CustodyRole::Backend => "BACKEND",
         CustodyRole::Other => "RATES",
-    }
-}
-
-// ── fixture → machine input ──────────────────────────────────────────────────
-
-pub fn facts(f: &Facts, new_id: &str) -> CustodyFacts {
-    CustodyFacts {
-        service_window: v2_hours(),
-        utc_offset_minutes: 420,
-        open_shift: f.open_shift.as_ref().map(|s| OpenShift {
-            id: s.id.clone(),
-            expected: balances(&s.expected),
-        }),
-        has_live_rate: f.has_live_rate,
-        rates_updated: f.rates_updated.clone(),
-        pending_transactions: f.pending_transactions.clone(),
-        last_transaction: f.last_transaction.clone(),
-        customer_known: f.customer_known,
-        new_id: new_id.to_string(),
     }
 }
 
@@ -500,56 +380,6 @@ pub fn shown_state(st: &CustodyState) -> Map<String, Value> {
     match v {
         Value::Object(m) => m,
         _ => unreachable!(),
-    }
-}
-
-/// Applies one fixture command and holds the machine to v2's answer.
-/// `Some(state)` when v2 accepted, `None` when it refused.
-pub fn check(
-    label: &str,
-    state: &CustodyState,
-    who: &str,
-    cmd: &Value,
-    facts: &CustodyFacts,
-    now: i64,
-    answer: &Answer,
-) -> Option<CustodyState> {
-    let got = CustodyMachine::apply(
-        state,
-        &command(cmd),
-        &actor(who),
-        facts,
-        CustodyTime::from_epoch_millis(now),
-    );
-    match (&answer.error, got) {
-        (Some(sentence), Err(e)) => {
-            assert_eq!(&e.to_string(), sentence, "{label}: {who} {cmd}");
-            None
-        }
-        (Some(sentence), Ok(_)) => panic!("{label}: {who} {cmd} must be refused: {sentence}"),
-        (None, Err(e)) => panic!("{label}: {who} {cmd} must be accepted, got {e:?} ({e})"),
-        (None, Ok(t)) => {
-            assert_eq!(
-                shown_events(&t.events),
-                answer.events,
-                "{label}: events of {who} {cmd}"
-            );
-            assert_eq!(
-                shown_effects(&t.effects),
-                answer.effects,
-                "{label}: shift operations of {who} {cmd}"
-            );
-            assert_eq!(t.id, answer.id, "{label}: id returned to {who} {cmd}");
-            let mut expected = shown_state(state);
-            for (k, v) in &answer.changed {
-                expected.insert(k.clone(), v.clone());
-            }
-            let after = shown_state(&t.state);
-            for (k, v) in &expected {
-                assert_eq!(&after[k], v, "{label}: `{k}` after {who} {cmd}");
-            }
-            Some(t.state)
-        }
     }
 }
 

@@ -254,6 +254,13 @@ branch day:      CLOSED --first OPEN count verified--> READY --start service--> 
 The branch day keeps v3's phase names (C9). `COUNTING` goes: with shifts per teller, "counting" is a property of
 each shift's CLOSE count, not of the branch.
 
+CLOSED is read, not stored, at the end of a day: a stored CUT_OFF with no OPEN shift left reads as CLOSED
+(`BranchDay::read_phase`). So "CLOSED --first OPEN count verified--> READY" (CA-7e, added 2026-10-15 on #626 Q1) applies
+to the phase **as read before the count's shift is inserted**: stored CLOSED, no `ops_state` row, or stored CUT_OFF
+with no OPEN shift become READY on the verify's transaction; READY, OPEN, and CUT_OFF with another shift still open are
+left as stored. Only `phase` is written (v2's OPEN commit wrote no other field). Until CA-7e, the only writer of READY
+was the commit of a v2 OPEN request (`custody_machine.rs:533`), which CA-10 deletes.
+
 ### 4.3 Rules the machine enforces (domain, not screens)
 
 | Rule | Where |
@@ -622,10 +629,32 @@ the receiver of a hand-over, a teller's own shift).
 | `ops_state.custodian_id` and `check_save`'s custodian rule | the saver's own open shift (C1) |
 | the 13 `ops*` compat RPC actions (`compat/actions/custody.rs:38-52`) and their policy rows (`policy.rs:397-475`) | the commands of §4.4 |
 | the admin direct shift actions (`adminOpenShift`, `adminCloseShift`, `adminMoveStock`, `compat/rpc.rs:361-398`) | counts and moves; the admin cash menu (#467) moves to them (CA-9) |
-| the Enable switch and its six-role check (`employees.rs:174-180`) | none: the Blueprint's model always applies |
+| the Enable switch and its six-role check (`employees.rs:174-180`), the `enabled` gate in the save checks (`custody/service.rs:238`, `:282`; `branch_day.rs:303`), and the `ops_state.enabled` column (M3) | none: the Blueprint's model always applies (#626 Q2, 2026-10-15) |
+| v2's custody command engine: `CustodyService::command` (`xc-shift/src/application/custody/service.rs:343`), `CustodyMachine::apply` and every v2 command handler of the machine (clock, target, start service, cut-off, hold, release, begin, and the request half above). Its callers retire with it: the 13 `ops*` actions (`compat/actions/custody.rs`), and `PgEmployeeCustody::set_entity` / `enable` (`src/infrastructure/custody/employee_custody.rs:64-75`, `:143-157`, which send `opsSetEntity` / `opsEnable`) with the `entity` and `enable` actions of `POST /api/employees` (`employees.rs:167-200`) | CA-8b's commands on `BranchDayService` (§4.4, §4.8). `enable`: none (the Enable switch above). `entity`: none yet (Q5: a read-only column until an org-settings design gives it a writer). Both `/api/employees` actions then answer as an action the route does not know (#626 Q7, 2026-10-15) |
 | v2 fixture replays of the request model: `custody_machine_test.rs:1525,1545,1573`, `custody_service_test.rs:160,170`, `rpc_ops_test.rs`, the custody parts of `rpc_test.rs`, `employee_custody_test.rs`, `compat_*` custody steps; fixtures `v2_custody_cases.json`, `v2_custody_service_cases.json`, `rpc/ops_actions.json`, `snapshot/custody.json` | §9's tests (the surviving rules restated) |
 
 `v2_shift_cases.json` and `v2_stock_cases.json` survive: ShiftService and the stock delta of an exchange stay.
+
+**What CA-10 keeps, and how** (the BE lane controller's rulings Q2–Q6 on #626, 2026-10-15):
+- *Q3, the custodian's rules.* Wherever a rule asked for "the custodian", it asks whether the actor holds an OPEN shift
+  of their own (C1, `teller_id` = their `users.id`): beginning a transaction, the save's custodian rule, and the
+  clock-out duty check. Disabling an employee is refused while they hold an OPEN shift or a PENDING hand-over (CA-4).
+- *Q4.* The v2-actor save path and the per-branch reads `ShiftRepository::active` / `active_in(branch)` go with v2's
+  path: a non-teller session cannot save.
+- *Q5.* `ops_state.entity` stays a read-only column (no writer once `opsSetEntity` goes) until an org-settings design
+  gives it one. `Phase::Counting` goes (§4.2).
+- *Q7.* What stays of `CustodyService`: the reads its remaining callers use, `state` and `events` (`compat/snapshot.rs`), and
+  the save gate `check_save_in` / `check_teller_save_in` / `complete_draft_in` (`custody_save_step.rs`), with
+  `CustodyMachine::check_save` and `complete_draft` under them. `check_direct_shift_action_in` goes with the direct shift
+  actions. The xc-shift suites whose subject is the retired engine are deleted. Those that also test a kept rule keep
+  that rule's cases, set up by SQL instead of `ops*` commands (part 2b of CA-10's provided commit).
+  **The web consumer goes with the two employee actions.** The admin employees screen posts both:
+  `web/src/screens/admin/employees/Employees.tsx:306` (`action: 'enable'`, the Enable control) and `:349` (`action: 'entity'`,
+  the entity form), pinned by `Employees.test.tsx:734-845`. The Enable control and the entity form leave the screen; if the
+  screen shows the entity, it shows it read-only (Q5). This is an FE twin ticket of CA-10 for the FE lane, which merges with
+  or before CA-10's API change, so the screen never posts an action the route no longer knows.
+- *Q6.* The compat snapshot keeps `operations.custodian` (`null`) and `operations.requests` (`[]`); removing those keys
+  is a separate compat decision.
 
 ## 7. Known differences from v2 (all decided by A1–A9 or by the Blueprint)
 
@@ -650,7 +679,7 @@ Three migrations, in this order. Their timestamps sit in the chain of the design
 Versions follow the controller's allocation (#564 issuecomment-6074369626 and -6074383060): cash's feature
 migrations are in the block `20261012*`, and **transitional drops are in the cleanup block `20261030*`**, ordered
 after every feature block. OR-7's migration, which drops `legacy_employee_id`, is `20261030100000` and waits for
-CA-1 to merge; this design's M3 is `20261030110000`.
+CA-1 to merge. This design's M3 is `20261214100000` (the lane controller's ruling of 2026-10-13 on #626: the earlier `20261030110000` sorted before M2 `20261109100000`).
 
 **M1. `api/migrations/20261012100000_cash.sql` (CA-1): create only.**
 1. *Existing rows.* Nothing existing changes meaning. `shifts` gains `teller_id`, filled for every existing row from
@@ -709,17 +738,19 @@ opened_by_count`, and `shifts_one_open_per_teller` recreated over every shift (`
 precheck `SELECT teller_id, count(*) FROM shifts WHERE status = 'OPEN' GROUP BY 1 HAVING count(*) > 1;` is empty
 (else `RAISE`: close the extra shifts first).
 
-**M3. `api/migrations/20261030110000_retire_custody_requests.sql` (CA-10): drop the request model.**
+**M3. `api/migrations/20261214100000_retire_custody_requests.sql` (CA-10): drop the request model.**
 1. *Existing rows.* `custody_requests` and `custody_signatures` are dropped **unconverted** (A9): v3 holds test data
    only, and their history is not carried into counts or transfers. `ops_state.custodian_id` is dropped here, in the
-   same release that removes `check_save`'s custodian rule and the `ops*` actions, never earlier.
+   same release that removes `check_save`'s custodian rule and the `ops*` actions, never earlier. `ops_state.enabled`
+   is dropped too (#626 Q2, 2026-10-15): CA-10 removes the gate that read it, so every branch behaves as enabled.
 2. *Backfill.* None (A9). Count before deploy, and take a backup:
    `SELECT kind, status, count(*) FROM custody_requests GROUP BY 1,2;`
    `SELECT count(*) FROM custody_signatures;`
 3. *Order.* With CA-10's binary, which no longer reads those tables or the column. The old binary fails against M3.
    M3 also finishes M2's end state (above): it drops `shifts_one_open_per_branch_v2` and `shifts.opened_by_count`
    and widens `shifts_one_open_per_teller` to every OPEN shift.
-4. *`down`* recreates the tables and the column empty: **the dropped rows are lost**; only the backup brings them back.
+4. *`down`* recreates the tables and the columns empty (`enabled` as `false`): **the dropped rows are lost**; only the
+   backup brings them back.
 
 M3 is a destructive operation: the deploy that runs it is ordered by the owner.
 
@@ -741,12 +772,14 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-7b | the branch-day service (§4.8): the kept features of C9 on `access::Actor`, persisted | `api/crates/xc-shift/src/application/branch_day/**` (new), `xc-shift/src/application/mod.rs` (one line), `api/crates/xc-shift/tests/branch_day_service_test.rs` (new) | CA-7 (#623: `BranchDay::start_service` / `cut_off`), PR 589 OR-2 and OR-6 |
 | CA-7c | the xc-cash services on the caller's transaction (§4.9): `CashCountService::{submit_in, verify_in}`, `HandoverService::{start_in, accept_in, reject_in}`, `TransferFlow::{create_in, submit_in, dispatch_in, receive_in, reconcile_in}`; today's methods become wrappers over them, so their tests stay unedited | `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/application/handover/handover_service.rs`, `api/crates/xc-cash/src/application/transfer/transfer_flow.rs`, `api/crates/xc-cash/tests/services_on_caller_tx_test.rs` (new) | CA-4, CA-5, CA-6, CA-7 (all merged) |
 | CA-7d | the exception row shape (§4.1 "Exceptions", added 2026-10-12): `append_cash_exception_in` and the three writers moved onto it | `api/crates/xc-shift/src/infrastructure/custody/custody_repository.rs` (the one function), `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/application/handover/handover_service.rs`, `api/crates/xc-cash/src/application/transfer/transfer_flow.rs` (each: its exception write only), `api/crates/xc-cash/tests/cash_exception_shape_test.rs` (new) | CA-7c (merged); LG-4 #929, which holds the three xc-cash files |
+| CA-7e | the branch day opens on the first verified OPEN count (§4.2, #626 Q1): `BranchDay::ready_on_open_count(stored, open_shifts_before) -> Option<Phase>` (pure; `Some(Ready)` when `read_phase` gives CLOSED, a missing row counting as CLOSED) and `day_ready_on_open_count_in(tx, branch)` beside `append_cash_exception_in` (reads `ops_state.phase` and the branch's OPEN shifts on the caller's transaction, writes only `phase`), called by `CashCountService::verify_in` for an OPEN count **before** `ShiftService::open_on_verified`. Hand-over accepts do not call it | `api/crates/xc-shift/src/domain/custody/branch_day.rs` (the one function), `api/crates/xc-shift/src/infrastructure/custody/custody_repository.rs` (the one function), `api/crates/xc-cash/src/application/count/count_service.rs` (the one call in `verify_in`), `api/crates/xc-cash/tests/ca7e_day_ready_on_open_count_test.rs` (new), `api/crates/xc-shift/tests/ca7e_ready_on_open_count_rule_test.rs` (new, the pure table) | CA-7, CA-7c, CA-7d (merged). **CA-10 starts after it** |
 | CA-8 | the count, hand-over and transfer commands of §4.4 (with `handoverAccept`, `handoverReject`, `transferPolicySave`) and the six views of §4.7 (with `denominations` and `handover_receivers`) | `api/src/presentation/http/v3/commands/cash.rs` (every CA-8 command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (the area rows except `transferPolicySave`'s, §4.4), `views/{cash_counts,cash_transfers,handovers_pending,my_shift,denominations,handover_receivers}.rs`, their DTOs and generated TS. **Not** `policy.rs` (PR 589 OR-4's) | CA-4…CA-7, **CA-7c** (§4.9), PR 570 CM-1, PR 589 OR-4, and PR 589 **OR-3** (the extractor that supplies `access::Actor` to the routes). **`transferPolicySave` alone** also starts after CA-0p |
 | CA-8b | the seven branch-day commands of §4.4 (`dayStartService`, `dayCutoff`, `dayTarget`, `clock`, `holdCreate`, `holdRelease`, `draftBegin`) on CA-7b's service | `api/src/presentation/http/v3/commands/branch_day.rs` (every CA-8b command in this one flat file, §4.4 G6), `api/crates/xc-auth/src/domain/policy/areas/branch_day.rs`, `api/src/presentation/dto/v3/branch_day.rs`, `web/src/shared/api/generated/branch_day.ts`, `api/tests/v3_branch_day_commands_test.rs` | CA-7b, PR 570 CM-1, PR 589 OR-3 and OR-4. `draftBegin` starts with the rest of CA-8b; its area row (`ShiftOperate`) is in `areas/branch_day.rs`. **`dayStartService`'s body** is `{equipmentReady, ratesVerified, rateVersion}` (SD C2). `rateVersion` is v2's `rate_updated` (`custody_command.rs:30-34`): the `published_at` time, as ISO-8601 text, of the branch's current rate publication that the client showed (`api/src/infrastructure/custody/custody_ports.rs:40`, `:79`). A value other than the current one is refused, as v2 does (`ServiceChecksIncomplete`, `custody_machine.rs:812`) |
 | CA-8c | the CA-8 leftover: `transferPolicySave` (§4.4 table, written by this design to CA-8, but #624 closed with PR 1325 without it: `git grep transferPolicySave origin/main -- api/src web/src` finds 0 on 2026-10-11) and the read view `cash_transfer_policy` (§4.7, added 2026-10-11) | `api/src/presentation/http/v3/commands/cash.rs` (the one command, appended), `api/src/presentation/http/v3/views/cash_transfer_policy.rs` (new), `api/src/presentation/dto/v3/cash_transfer_policy.rs` (new), `web/src/shared/api/generated/cash_transfer_policy.ts` (generated), `api/tests/v3_cash_transfer_policy_test.rs` (new). Not the area file: CA-0p's row covers both | CA-0p, CA-8 (merged) |
 | CA-9 | admin cash menu (B05) | `web/src/screens/admin/cash/**`, plus the one allowed edit to `web/src/screens/admin/menus.test.ts` its ticket names | CA-8 |
 | CA-9b | transfer policy screen (split from CA-9 on 2026-10-11, because its save and read did not exist) | `web/src/screens/admin/cash-policy/**`, plus the one allowed edit to `web/src/screens/admin/menus.test.ts` (`'cash-policy'` in `BLUEPRINT_MENUS`, `CashTransferPolicySet` in `BLUEPRINT_NEEDS`) | CA-8c |
-| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261030110000_retire_custody_requests.sql` (§8 M3: drops the request tables and `ops_state.custodian_id`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model |
+| CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261214100000_retire_custody_requests.sql` (§8 M3: drops the request tables, `ops_state.custodian_id` and `ops_state.enabled`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model; CA-7e; and the test splits CA-10a #1632, CA-10b #1633, CA-10c #1893 |
+| CA-10-FE | the admin employees screen stops sending the two `POST /api/employees` actions CA-10 retires (§6, Q7): no Enable control or dialog, no entity form, no enabled/not-enabled state line; the entity, if shown, read-only (Q5) | `web/src/screens/admin/employees/Employees.tsx`, `web/src/screens/admin/employees/i18n.ts`, `web/src/screens/admin/employees/Employees.test.tsx`, `web/src/screens/admin/employees/worded.test.tsx`, `web/src/screens/admin/employees/Employees.rework.test.tsx` (their `enable`/`entity` cases and the stale-operations checks, which now observe the read-only entity) | CA-10's design (§6 Q7, merged 08345970); **merges with or before CA-10's API change**, so the screen never posts an action the route no longer knows. FE lane (claude/e8020026) |
 
 **The `/staff` tickets** (#571, #572, #573–#580, `docs/design/xchange-v3-wave3-staff.md`) were cut against the request
 model. #572 is superseded (the new count commands take strings from the start). #571 keeps holds, attendance,
@@ -768,12 +801,14 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-7b | the tests open the transaction and lock the branch (`branch_versions … FOR UPDATE`) themselves, as the seam does, and pass it to each method; each method refuses an actor without its §3.2 permission (no role literal); start-service only from READY and cut-off only from OPEN, through `BranchDay`; target, attendance, hold and draft rows written on that transaction, and a rollback leaves none; a release needs an open hold and a note; clock-out needs a clock-in; a draft only on the teller's own OPEN shift |
 | CA-7c | each `_in` form, called on a transaction that already holds the branch's `branch_versions … FOR UPDATE` (the destination's, for `receive_in`), finishes under `SET LOCAL statement_timeout` (no self-wait) and its rows read back on that transaction; rolling that transaction back leaves no rows (counts, hand-overs, transfers, postings, exceptions, approval requests); `verify_in` returns `AwaitingFinance` as a value and the approval request survives the caller's commit; `receive_in` refuses `outOfScope` when the transfer's destination is not the branch it is given; the wrappers behave as before (their existing tests pass unedited) |
 | CA-7d | a verified count with a THB and a USD difference writes **one** row; `exception_from_row` decodes it with `status` OPEN, `request_id` = the count id, `cash_variance` holding both currencies and `at` = the command's time. After it, the branch's custody state still loads and `exceptions_between` around that time returns it. A SAFE count fills `safe_variance`. On a branch whose list already holds n rows (positions 0…n−1), the new row takes position n; on an empty branch, 0; after it, a v2 custody completion with a difference still saves (no `UNIQUE (branch_id, position)` violation). A hand-over with a difference writes the same shape with its count id. A receipt with fewer notes writes `safe_variance` or `cash_variance` by its destination, and `request_id` = the transfer id. No other crate writes `cash_exceptions` (`git grep -n "INTO cash_exceptions" -- 'api/crates/*/src' api/src` lists only `custody_repository.rs`). The existing in-source test at `count_service.rs:698`, which reads `data->>'countId'`, changes with this ticket: it is listed as changed by decision |
+| CA-7e | on a transaction holding the branch's `branch_versions … FOR UPDATE`, verifying an OPEN count moves the branch day to READY when it reads CLOSED before the shift is inserted: no `ops_state` row (a row is created with phase READY), stored CLOSED, and stored CUT_OFF with no OPEN shift (yesterday's closed day). It is left as stored when READY, OPEN, or CUT_OFF with another teller's shift still open. Only `phase` changes (target, safe, cutoff, entity, service_opened_at unchanged). A refused verify (same person, older recount) and a rolled-back transaction leave the phase unchanged. A CLOSE count and a hand-over accept leave the phase unchanged (READY is what `BranchDay::start_service` needs, `branch_day.rs:46`). `ready_on_open_count` is pinned as a pure table of (stored, open shifts) pairs |
 | CA-8 | every command's route, role refusals, `Idempotency-Key` replay and conflict; views page per the parent contract; `handoverAccept` / `handoverReject` by the receiver only, refused to anyone else and on a non-PENDING hand-over; `transferPolicySave` writes one version row, refuses a non-EXECUTIVE and `TooManyDecimals`; `countVerify` with a difference over the limit answers 200 `AWAITING_FINANCE` and leaves exactly one PENDING approval request |
 | CA-8b | every command's route, role refusals, `Idempotency-Key` replay and conflict; each command's effect read back through CA-7b's tables |
 | CA-8c | `transferPolicySave` writes one version row, refuses a non-EXECUTIVE (`roleNotAllowed`) and `TooManyDecimals`, and replays on the same `Idempotency-Key`; `cash_transfer_policy` answers `null` before the first save and the newest version after two saves, and refuses a non-EXECUTIVE |
 | CA-9 | vitest per screen: what each role sees and the payload sent |
 | CA-9b | vitest: the form shows the current limits from `cash_transfer_policy` (and an empty form on `null`), saves through `transferPolicySave` with an `Idempotency-Key`, keeps amounts as strings, and the menu is hidden without `CashTransferPolicySet` |
-| CA-10 | the workspace builds and passes with the old tables, `custodian_id`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
+| CA-10 | the workspace builds and passes with the old tables, `custodian_id`, `enabled`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
+| CA-10-FE | vitest: the screen renders no Enable control, no entity form and no enabled/not-enabled line; no user path posts `enable` or `entity`; the stored entity shows as read-only text `company · site` and in no field, and a failed read for another branch does not keep the previous branch's entity; create, reset and disable post as before |
 
 ## 10. Must ask the owner (not decided here; answered questions stay, marked)
 

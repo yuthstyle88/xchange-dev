@@ -1,6 +1,8 @@
 //! `PgLedgerShiftBalances`, the PostgreSQL `ShiftBalances` over the ledger (design
 //! `docs/design/blueprint/ledger-inventory.md` §4.2, §4.2.1).
 
+use std::collections::BTreeMap;
+
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use rust_decimal::prelude::ToPrimitive;
@@ -50,6 +52,47 @@ struct ShiftBalanceRow {
     difference: Option<Decimal>,
 }
 
+#[derive(FromRow)]
+struct ShiftBalanceManyRow {
+    shift_id: String,
+    currency: String,
+    opening: Decimal,
+    expected: Decimal,
+    moved_in: Decimal,
+    moved_out: Decimal,
+    counted: Option<Decimal>,
+    difference: Option<Decimal>,
+}
+
+fn into_shift_balance(
+    currency: &str,
+    opening: Decimal,
+    expected: Decimal,
+    moved_in: Decimal,
+    moved_out: Decimal,
+    counted: Option<Decimal>,
+    difference: Option<Decimal>,
+) -> AppResult<ShiftBalance> {
+    let currency = CurrencyCode::parse(currency)
+        .map_err(|_| AppError::Internal(format!("invalid currency code: {currency}")))?;
+    let opening = to_money(opening)?;
+    let expected = to_delta(expected)?;
+    let moved_in = to_money(moved_in)?;
+    let moved_out = to_money(moved_out)?;
+    let counted = counted.map(to_money).transpose()?;
+    let difference = difference.map(to_delta).transpose()?;
+
+    Ok(ShiftBalance {
+        currency,
+        opening,
+        expected,
+        moved_in,
+        moved_out,
+        counted,
+        difference,
+    })
+}
+
 const SHIFT_BALANCES_SQL: &str = r#"
 WITH drawer_balances AS (
     SELECT
@@ -96,6 +139,58 @@ ORDER BY
     coalesce(d.currency, c.currency) ASC
 "#;
 
+const SHIFT_BALANCES_MANY_SQL: &str = r#"
+WITH drawer_balances AS (
+    SELECT
+        a.shift_id,
+        a.currency,
+        coalesce(sum(CASE WHEN p.source_type = 'OPENING' AND e.quantity_signed > 0 THEN e.quantity_signed ELSE 0 END), 0) AS opening,
+        coalesce(sum(e.quantity_signed), 0) AS expected,
+        coalesce(sum(CASE WHEN p.source_type NOT IN ('EXCHANGE', 'OPENING') AND e.quantity_signed > 0 THEN e.quantity_signed ELSE 0 END), 0) AS moved_in,
+        coalesce(sum(CASE WHEN p.source_type NOT IN ('EXCHANGE', 'OPENING') AND e.quantity_signed < 0 THEN abs(e.quantity_signed) ELSE 0 END), 0) AS moved_out
+    FROM cash_accounts a
+    LEFT JOIN ledger_entries e ON e.account_id = a.id
+    LEFT JOIN ledger_postings p ON p.id = e.posting_id
+    WHERE a.kind = 'DRAWER' AND a.shift_id = ANY($1)
+    GROUP BY a.shift_id, a.currency
+),
+latest_count AS (
+    SELECT DISTINCT ON (shift_id)
+        shift_id,
+        id
+    FROM cash_counts
+    WHERE shift_id = ANY($1)
+      AND verified_at IS NOT NULL
+      AND kind IN ('CLOSE', 'HANDOVER_OUT')
+    ORDER BY shift_id, verified_at DESC, id DESC
+),
+count_balances AS (
+    SELECT
+        lc.shift_id,
+        cct.currency,
+        cct.counted,
+        cct.difference
+    FROM latest_count lc
+    JOIN cash_count_totals cct ON cct.count_id = lc.id
+)
+SELECT
+    coalesce(d.shift_id, c.shift_id) AS shift_id,
+    trim(coalesce(d.currency, c.currency))::text AS currency,
+    coalesce(d.opening, 0) AS opening,
+    coalesce(d.expected, 0) AS expected,
+    coalesce(d.moved_in, 0) AS moved_in,
+    coalesce(d.moved_out, 0) AS moved_out,
+    c.counted,
+    c.difference
+FROM drawer_balances d
+FULL OUTER JOIN count_balances c
+    ON c.shift_id = d.shift_id AND c.currency = d.currency
+ORDER BY
+    coalesce(d.shift_id, c.shift_id) ASC,
+    CASE WHEN coalesce(d.currency, c.currency) = 'THB' THEN 0 ELSE 1 END,
+    coalesce(d.currency, c.currency) ASC
+"#;
+
 impl ShiftBalances for PgLedgerShiftBalances {
     fn shift_balances<'a>(
         &'a self,
@@ -110,28 +205,54 @@ impl ShiftBalances for PgLedgerShiftBalances {
 
             let mut balances = Vec::with_capacity(rows.len());
             for r in rows {
-                let currency = CurrencyCode::parse(&r.currency).map_err(|_| {
-                    AppError::Internal(format!("invalid currency code: {}", r.currency))
-                })?;
-                let opening = to_money(r.opening)?;
-                let expected = to_delta(r.expected)?;
-                let moved_in = to_money(r.moved_in)?;
-                let moved_out = to_money(r.moved_out)?;
-                let counted = r.counted.map(to_money).transpose()?;
-                let difference = r.difference.map(to_delta).transpose()?;
-
-                balances.push(ShiftBalance {
-                    currency,
-                    opening,
-                    expected,
-                    moved_in,
-                    moved_out,
-                    counted,
-                    difference,
-                });
+                balances.push(into_shift_balance(
+                    &r.currency,
+                    r.opening,
+                    r.expected,
+                    r.moved_in,
+                    r.moved_out,
+                    r.counted,
+                    r.difference,
+                )?);
             }
 
             Ok(balances)
+        })
+    }
+
+    fn shift_balances_many<'a>(
+        &'a self,
+        shifts: &'a [ShiftId],
+    ) -> BoxFuture<'a, AppResult<BTreeMap<ShiftId, Vec<ShiftBalance>>>> {
+        Box::pin(async move {
+            let mut out: BTreeMap<ShiftId, Vec<ShiftBalance>> =
+                shifts.iter().map(|s| (s.clone(), Vec::new())).collect();
+            if out.is_empty() {
+                return Ok(out);
+            }
+
+            let rows: Vec<ShiftBalanceManyRow> = sqlx::query_as(SHIFT_BALANCES_MANY_SQL)
+                .bind(shifts)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+
+            for r in rows {
+                let balance = into_shift_balance(
+                    &r.currency,
+                    r.opening,
+                    r.expected,
+                    r.moved_in,
+                    r.moved_out,
+                    r.counted,
+                    r.difference,
+                )?;
+                if let Some(entry) = out.get_mut(&r.shift_id) {
+                    entry.push(balance);
+                }
+            }
+
+            Ok(out)
         })
     }
 }

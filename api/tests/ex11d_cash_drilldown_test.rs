@@ -25,6 +25,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::path::Path;
@@ -45,10 +46,6 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 
 fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
-}
-
-fn request_id() -> String {
-    format!("00000000-0000-4000-8000-{:012x}", next())
 }
 
 fn get(path: &str) -> Call {
@@ -137,21 +134,8 @@ impl Room {
     }
 
     async fn open_shift_with(&self, branch: &str, opening: Value) -> String {
-        self.tick();
-        let call = Call::action(
-            ORIGIN,
-            "/api/rpc",
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(), "opening": opening }),
-        )
-        .cookie(&self.cookies["OWNER"]);
-        let answer = self.app.send(call).await;
-        assert_eq!(answer.status, 200, "adminOpenShift: {}", answer.text);
-        sqlx::query_scalar("SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN'")
-            .bind(branch)
-            .fetch_one(&self.desk.db.pool)
+        shift_setup_common::open_shift_by_count(&self.desk.db.pool, branch, opening, self.tick())
             .await
-            .expect("open shift id")
     }
 
     async fn get_view(&self, query: &str) -> Answer {
@@ -235,7 +219,15 @@ async fn currency_eur_with_no_eur_row_returns_no_stock_row_and_banner_unchanged(
         "shift banner must be present: {data}"
     );
     assert_eq!(data["shift"]["id"], shift_id);
-    assert_eq!(data["shift"]["staff"], "owner");
+    let teller_id: String = sqlx::query_scalar(
+        "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
+    )
+    .bind(&shift_id)
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("open count teller");
+    assert_ne!(teller_id, "owner");
+    assert_eq!(data["shift"]["staff"], teller_id);
 
     assert!(data["stats"].is_object(), "stats must be present: {data}");
     assert_eq!(data["stats"]["opening"], "100000.00");

@@ -27,6 +27,7 @@ function fakeRequest(id: string, branch = 'MAIN'): ApprovalRequestItemDto {
     requestedBy: 'operator-1',
     requestedAt: '2026-10-14T10:00:00+00:00',
     status: 'PENDING',
+    decision: null,
   };
 }
 

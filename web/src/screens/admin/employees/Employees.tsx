@@ -136,8 +136,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const branchName = (branchId: string) =>
     branches().find((b) => b.id === branchId)?.name ?? branchId;
 
-  const currentBranchName = () => branchName(props.branch());
-
   function openCreateDialog() {
     const form = useForm();
     const passwordField = form.field('password');
@@ -293,100 +291,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
     }
   }
 
-  function openEnableDialog() {
-    const [error, setError] = createSignal<string | null>(null);
-    const [submitting, setSubmitting] = createSignal(false);
-
-    const onSubmit = async (e: Event) => {
-      e.preventDefault();
-      setError(null);
-      setSubmitting(true);
-      try {
-        await api.post('/api/employees', {
-          action: 'enable',
-          payload: { branchId: props.branch() },
-        });
-        closeDialog();
-        toast(t('enabledToast'));
-        await reReadBoth();
-      } catch (err: unknown) {
-        setError(wordedError(err));
-      } finally {
-        setSubmitting(false);
-      }
-    };
-
-    openDialog(`${t('enableTitle')}${currentBranchName()}`, () => (
-      <form onSubmit={onSubmit}>
-        <p>{t('enableNote1')}</p>
-        <p>{t('enableNote2')}</p>
-        <Show when={error()}>
-          <p role="alert" class="error">{error()}</p>
-        </Show>
-        <button type="submit" class="primary" disabled={submitting()}>
-          {t('enableSubmit')}
-        </button>
-      </form>
-    ));
-  }
-
-  function openEntityDialog() {
-    let formEl: HTMLFormElement | undefined;
-    const [error, setError] = createSignal<string | null>(null);
-    const [submitting, setSubmitting] = createSignal(false);
-
-    const initialCompany = operations()?.entity?.company ?? '';
-    const initialSite = operations()?.entity?.site ?? '';
-
-    const onSubmit = async (e: Event) => {
-      e.preventDefault();
-      if (!formEl) return;
-      setError(null);
-      setSubmitting(true);
-      try {
-        const data = new FormData(formEl);
-        await api.post('/api/employees', {
-          action: 'entity',
-          payload: {
-            branchId: props.branch(),
-            company: String(data.get('company') ?? ''),
-            site: String(data.get('site') ?? ''),
-            confirmSeparated: true,
-          },
-        });
-        closeDialog();
-        await reReadBoth();
-      } catch (err: unknown) {
-        setError(wordedError(err));
-      } finally {
-        setSubmitting(false);
-      }
-    };
-
-    openDialog(t('entityTitle'), () => (
-      <form ref={(el) => (formEl = el)} onSubmit={onSubmit}>
-        <label for="entity-company">
-          {t('company')}
-          <input id="entity-company" name="company" value={initialCompany} required />
-        </label>
-        <label for="entity-site">
-          {t('site')}
-          <input id="entity-site" name="site" value={initialSite} required />
-        </label>
-        <label for="entity-separated">
-          <input id="entity-separated" name="confirmSeparated" type="checkbox" required /> {t('separated')}
-        </label>
-        <p>{t('entityNote')}</p>
-        <Show when={error()}>
-          <p role="alert" class="error">{error()}</p>
-        </Show>
-        <button type="submit" class="primary" disabled={submitting()}>
-          {t('entitySubmit')}
-        </button>
-      </form>
-    ));
-  }
-
   return (
     <>
       <Card class="employees-card">
@@ -492,27 +396,11 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         </Show>
       </Card>
 
-      <details class="workspace-history">
-        <summary>{t('workflow')}</summary>
-        <Show when={operations()}>
-          <div>
-            <p>{operations()?.enabled ? t('stateOn') : t('stateOff')}</p>
-            <div>
-              <button type="button" class="secondary" onClick={openEntityDialog}>
-                {t('entityButton')}
-              </button>{' '}
-              <button
-                type="button"
-                class="primary"
-                disabled={operations()?.enabled === true}
-                onClick={openEnableDialog}
-              >
-                {t('enableButton')}
-              </button>
-            </div>
-          </div>
-        </Show>
-      </details>
+      <Show when={operations()?.entity}>
+        {(entity) => (
+          <p>{`${entity().company} · ${entity().site}`}</p>
+        )}
+      </Show>
     </>
   );
 }

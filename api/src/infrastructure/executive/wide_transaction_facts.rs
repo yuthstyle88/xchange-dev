@@ -225,4 +225,33 @@ impl ExchangeFacts for WideTransactionFacts {
             .map_err(AppError::Database)
         })
     }
+
+    fn unfinished_by_branch<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+    ) -> BoxFuture<'a, AppResult<BTreeMap<BranchId, i64>>> {
+        Box::pin(async move {
+            let mut out: BTreeMap<BranchId, i64> =
+                branches.iter().map(|b| (b.clone(), 0)).collect();
+            if branches.is_empty() {
+                return Ok(out);
+            }
+            let rows: Vec<(String, i64)> = sqlx::query_as(
+                "SELECT branch_id, count(*) FROM transactions \
+                  WHERE branch_id = ANY($1) AND mode = 'LIVE' \
+                    AND status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED') \
+                  GROUP BY branch_id",
+            )
+            .bind(ids(branches))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+            for (branch_id, count) in rows {
+                if let Some(entry) = out.get_mut(&BranchId::new(branch_id)) {
+                    *entry = count;
+                }
+            }
+            Ok(out)
+        })
+    }
 }

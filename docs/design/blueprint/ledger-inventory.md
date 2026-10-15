@@ -248,9 +248,16 @@ pub struct ShiftBalance {
 pub trait ShiftBalances: Send + Sync {
     /// One row per currency with a DRAWER(shift) account or a count line; ordered THB first, then A–Z.
     fn shift_balances<'a>(&'a self, shift: &'a ShiftId) -> BoxFuture<'a, AppResult<Vec<ShiftBalance>>>;
+    /// Many shifts at once (added 2026-10-15 for the admin shifts list's N+1): every requested id is a key, an
+    /// empty list when the shift has no rows; each value equals `shift_balances` for that shift. The default loops
+    /// over `shift_balances`, so test doubles need no change; `PgLedgerShiftBalances` overrides it with one read.
+    fn shift_balances_many<'a>(&'a self, shifts: &'a [ShiftId])
+        -> BoxFuture<'a, AppResult<BTreeMap<ShiftId, Vec<ShiftBalance>>>>;
 }
 // api/crates/xc-cash/src/infrastructure/ledger/shift_balances.rs   (new, LG-6.0): PgLedgerShiftBalances implements it
 ```
+
+**`shift_balances_many` (2026-10-15).** `views/admin_shifts.rs:134` called `shift_balances` once per listed shift. It reads the page's shifts in one call. Ticket: admin shifts batched balances (BE controller claude/7ca80c).
 
 - **Why the trait is in `xc-shift`.** `xc-cash` depends on `xc-shift` (`xc-cash/Cargo.toml` on PR 871), so `xc-shift`'s `PgShiftRepository` cannot name an `xc-cash` type. The port sits beside `ShiftRepository` and `xc-cash` implements it. `PgShiftRepository` takes an `Arc<dyn ShiftBalances>`, and `api`'s views take the same `Arc` from `AppState` (one bootstrap line each, not reserved).
 - **The one source.** `expected` is the same sum as `LedgerCashPostings::expected_in(Drawer(shift))`; the two must not drift. LG-6.0's up-front tests compare them on the `v2_shift_cases.json` cases, where every drawer is ≥ 0.
@@ -258,7 +265,19 @@ pub trait ShiftBalances: Send + Sync {
 - **A shift with no posting yet** answers its count rows only. A shift with neither answers `[]`, which today's readers already treat as "no balances".
 - **No new table.** It reads `cash_accounts`, `ledger_postings`, `ledger_entries` (§3.1), `cash_counts` and `cash_count_totals` (`20261012100000_cash.sql:120-161`).
 - **Fallback if LG-6.0 lands late (📐).** A consumer (r1–r4) may start before #1039 merges by declaring, in its own file, the exact `ShiftBalance` struct and `ShiftBalances` trait of the block above, with the comment `// stub: moves to xc-shift/src/domain/shift/repositories/shift_balances.rs (LG-6.0 #1039)`. Its tests use a test double of the trait. It never declares `PgLedgerShiftBalances` or any SQL on the ledger tables, and never touches LG-6.0's files. When #1039 merges, the consumer's PR (or its rebase) deletes the stub and imports the real path. The tickets keep `Blocked by #1039` until the lane controller chooses to lift it on this fallback.
-- **The safe** needs no new reader: `CashPostings::expected_in(Safe(branch))` already answers it.
+- **The safe** is read through `CashPostings`, not `ShiftBalances`. Two cases must print differently (lane controller claude/7ca80c's ruling of 2026-10-15 on #1044): a safe that was **never** posted to prints `null` (v2's "never counted in", `snapshot/custody.json:175`), and a safe that was posted to and now nets to zero prints zeros. `expected_in` cannot tell these apart, because it drops sums ≤ 0 (`ledger_postings.rs:1178-1180`), so a third port method answers it:
+
+  ```rust
+  // api/crates/xc-cash/src/domain/posting.rs, on `CashPostings` (added 2026-10-15 for LG-6.r5 #1044)
+  fn activity_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, place: &'a CashPlace)
+      -> BoxFuture<'a, AppResult<Option<Vec<(CurrencyCode, MoneyDelta)>>>>;
+  ```
+
+  - **Read-only.** It never creates an account. `LedgerRepository::account_in` finds **or creates** an account, so it must not be used here: an account it created would turn "never posted" into "has an account". A missing account is `None`, and that is the whole point of the method.
+  - **`None`** means the place has no account entry at all, in any currency. **`Some(vec)`** holds one entry per currency that has ever had an entry on that place, each the signed net (`Σ quantity_signed`, the same sum as `expected_in` before its clamp), **zeros included**, sorted by currency code so the output is stable.
+  - **Not clamped.** A negative net is returned as it is. The caller decides what a negative means. This is consistent with LG-6.r4's rule that a negative drawer is an error at the shift reader (§4.2.1, "How production builds a `PgShiftRepository`").
+  - **One caller:** the snapshot's SAFE output (`compat/v2_json.rs` / `snapshot.rs`, LG-6.r5). It prints `null` for `None` and the per-currency map otherwise, and never reads the ledger tables itself.
+  - **Default body for test doubles.** The trait gives `activity_in` a default that answers `AppError::Internal("activity_in is not implemented by this CashPostings")`, so the existing test double (`api/tests/tx5_common/mod.rs:94`) compiles unchanged. `LedgerCashPostings` (`ledger_postings.rs`) overrides it with one read of `cash_accounts` ⨝ `ledger_entries` for the place's account kind and owner.
 
 **Not covered by `ShiftBalances`: the `stock_movements` readers.** `views/admin_cash_movements.rs` (`:64-92`) lists `stock_movements` rows with a free-text `reason`. So do `ShiftRepository::movements`/`shift_movements`/`find_movement_by_request_id` (`shift_repository.rs:397`, `:444`, `:631`), called by `compat/snapshot.rs:101`, `v3/actions/shift_valuation.rs:85`, `compat/abandon_request.rs:198` and `service.rs:253`, `:434`. `ledger_postings` has no reason (§3.1), and after CA-10 the manual moves it lists are `cash_transfers` (#582).
 - **Ruled A by the lane controller (2026-10-10, #553 issuecomment after 6095872028):** after CA-10 #626, these readers list `cash_transfers` with their dispatch/receive state. `adminMoveStock` (`ShiftService::insert_movement`) retires with CA-10. The reason stays on the row where it is written, and `ledger_postings` gets no copied column.
@@ -267,6 +286,56 @@ pub trait ShiftBalances: Send + Sync {
 **The shift writers.** `xc-shift`'s `ShiftService` still writes `shift_balances` through `ShiftRepository` (`insert_shift` `service.rs:229`, `update_expected` `:307`, `:411`, `close_shift` `:360`), separately from the posting port. Its `stock_movements` write (`insert_movement` `:305`) retires with CA-10 (the ruling above). The cash design keeps `ShiftService` (`cash-shift-transfer.md:364`).
 - After LG-4 those writes feed tables nothing reads. LG-6.r4 removes the `shift_balances` writes and points `ShiftRepository`'s balance read (`load_shift_balances`) at `ShiftBalances`.
 - Each removed write must already be posted through `CashPostings` (LG-2/LG-4). A write with no ledger counterpart stops the child; it does not get a new posting there.
+
+**How production builds a `PgShiftRepository` (LG-6.r4, lane controller claude/7ca80c's ruling of 2026-10-15 on #1043).**
+- `PgShiftRepository::new(pool)` stays unchanged. A second constructor, `PgShiftRepository::with_balances(pool: PgPool, balances: Arc<dyn ShiftBalances>) -> Self`, takes the port. A repository built by `new` has no port, so its balance reads answer an error and never a stale copy. Tests and harnesses keep `new`.
+- **One factory builds the ledger-backed repository:**
+  ```rust
+  // api/crates/xc-cash/src/infrastructure/ledger/ledger_shift_repository.rs   (new, LG-6.r4)
+  pub fn ledger_shift_repository(pool: PgPool) -> PgShiftRepository  // = with_balances(pool.clone(), Arc::new(PgLedgerShiftBalances::new(pool)))
+  ```
+  - It lives in `xc-cash`, not in `api`. `xc-cash` is the only crate that can name both `PgShiftRepository` (`xc-shift`) and `PgLedgerShiftBalances`, and one of the 13 production callers is in `xc-cash` itself (`application/count/count_service.rs`), which cannot call into `api`.
+  - It is registered by one `pub mod ledger_shift_repository;` line in `xc-cash/src/infrastructure/ledger/mod.rs`.
+- **Every production site that builds a `PgShiftRepository` calls the factory**, a one-line change each. There are 13, measured on main `2282023c` (claude/32ef39's review of PR 1998):
+  - `api/src/application/compat/abandon_request.rs:96`
+  - `api/src/application/workflows/exchange/create.rs:114`
+  - `api/src/application/workflows/exchange/reversal_post.rs:238`
+  - `api/src/infrastructure/custody/employee_custody.rs:56`
+  - `api/src/presentation/http/rpc.rs:350`
+  - `api/src/presentation/http/v3/actions/shift_valuation.rs:225`
+  - `api/src/presentation/http/v3/commands/branch_day.rs:487`
+  - `api/src/presentation/http/v3/commands/transactions.rs:242`
+  - `api/src/presentation/http/v3/desk/config.rs:54`
+  - `api/src/presentation/http/v3/views/admin_operations.rs:69`
+  - `api/src/presentation/http/v3/views/admin_overview.rs:328`
+  - `api/src/presentation/http/v3/views/admin_shift_state.rs:64`
+  - `api/crates/xc-cash/src/application/count/count_service.rs:84` (`CashCountService::pg`)
+
+  Two more calls are test code and keep `new`:
+  - `api/src/application/workflows/booking_save_step.rs:295`, inside the inline `#[cfg(test)] mod tests` that runs from `:125` to the end of the file;
+  - `api/crates/xc-shift/src/application/branch_day/tests.rs:198`, a file module declared `#[cfg(test)] mod tests;` at `branch_day/mod.rs:6-7`.
+
+  CA-10 (#626) may delete some of the 13 sites. LG-6.r4's ticket re-measures them at release.
+- **Guard:** `api/tests/lg6_r4_no_portless_shift_repository_test.rs` fails on any production `PgShiftRepository::new(` outside `ledger_shift_repository.rs`, so a new caller cannot silently get a repository with no port.
+  - **The mechanism is a Rust file scan with a small tokenizer, not grep and not a `mod`-declaration walker.** A walker misses 6 of the 13 sites: v3 views, actions and commands are compiled through `build.rs`-generated `#[path] pub mod` lines plus `include!` (`api/src/presentation/http/v3/mod.rs:24-26`), and so are `bootstrap`, `dto/v3`, `screens`, `xc-auth`, `xc-cash` and `xc-notify` (claude/32ef39's review of PR 1998). It needs no new dependency (`api/Cargo.toml` has no `syn`, and adding one would touch a shared manifest).
+    - **Roots, found by globbing, not from a list:** `api/src` and every `api/crates/*/src` (listed with `std::fs::read_dir`), bin crates included (e.g. `xc-device-agent/src/main.rs`). Every `.rs` file under every root is scanned.
+  - **Exclusion rule. A file is production by default.**
+    - **(a)** A file is skipped only when a source `mod name;` declaration of it in its parent (`name.rs` or `name/mod.rs` beside the parent) carries `#[cfg(test)]` among the attribute lines directly above it.
+    - **(b)** Within any scanned file, the brace span of an inline `#[cfg(test)]` item (`mod name { … }`, `fn`, `impl`) is skipped, from its `{` to the matching `}`.
+    - A file that no source `mod` declares (generated `#[path]` lists, `include!`d files) counts as production.
+    - Code after an inline test item is scanned. Nothing is skipped by "everything after a `#[cfg(test)]` line".
+  - **The tokenizer** that finds braces and the call skips:
+    - `//` comments, and nested `/* /* */ */` comments;
+    - string literals with escapes, byte strings `b"…"`, and raw strings with any number of hashes (`r"…"`, `r#"{"#`, `br##"…"##`);
+    - char and byte literals (`'{'`, `'}'`, `b'{'`), told apart from lifetimes (`'a`).
+  - **The guard proves itself on fixtures**, each with its own case that turns red if the rule is wrong:
+    - a file reached only by a generated `#[path]` list or `include!`, which calls `PgShiftRepository::new(`, **is caught**;
+    - a call preceded in the same file by `'{'` and by `r#"{"#` **is still caught**;
+    - a call after an inline `#[cfg(test)] mod t { … }` **is caught**;
+    - a call inside that inline module is not caught;
+    - a call inside a file declared `#[cfg(test)] mod t;` by its parent is not caught, and the same file declared without the attribute is caught;
+    - a call under an `api/crates/<crate>/src` root is caught, which proves the roots are globbed. A `git grep -- 'api/crates/*/src'` pathspec matches nothing.
+- **Negative drawer:** `PgShiftRepository`'s balance read maps `ShiftBalance.expected` into `Shift.expected` (`Balances`, non-negative). A negative `expected` answers `AppError::Internal` naming the shift and the currency. It is never clamped to 0 (the lane controller's ruling, 2026-10-15). Every expected value in the v2 recordings is ≥ 0 (1,510 values in `v2_shift_cases.json`), so a negative figure here is an inconsistency, not a v2 behaviour.
 
 ### 4.3 An exchange (§09, called by #551's `CompleteExchange`)
 
@@ -458,7 +527,7 @@ Until the owner approves, **no** AccountZing ticket is cut; the v3 side (LG-1…
 
 ```mermaid
 classDiagram
-  class CashPostings { <<trait xc-cash domain/posting.rs (CA-3; shape LG-2)>> +post_in() +expected_in() }
+  class CashPostings { <<trait xc-cash domain/posting.rs (CA-3; shape LG-2)>> +post_in() +expected_in() +activity_in(place) Option~Vec~(CurrencyCode, MoneyDelta)~~ }
   class LedgerCashPostings { <<xc-cash infrastructure/ledger_postings.rs>> }
   class InterimCashPostings { <<xc-cash infrastructure/interim_postings.rs (CA-3; removed LG-4)>> }
   class LedgerRepository { <<trait xc-cash domain/ledger/repository.rs>> +account_in() +insert_posting_in() +balance_in() }
@@ -481,6 +550,7 @@ classDiagram
   class ApprovalService { <<xc-approval AP-1>> }
   class ShiftBalances { <<trait xc-shift domain/shift/repositories/shift_balances.rs (LG-6.0)>> +shift_balances(shift) ShiftBalance[] }
   class PgLedgerShiftBalances { <<xc-cash infrastructure/ledger/shift_balances.rs (LG-6.0)>> }
+  class LedgerShiftRepositoryFactory { <<xc-cash infrastructure/ledger/ledger_shift_repository.rs (LG-6.r4)>> +ledger_shift_repository(pool) PgShiftRepository }
   class ShiftBalancesReaders { <<views admin_cash, admin_shifts, devices; xc-shift ShiftRepository (LG-6.r1-r4)>> }
 
   LedgerCashPostings ..|> CashPostings
@@ -502,6 +572,7 @@ classDiagram
   Report --> CheckResult
   ReconcileChecks ..|> ReconcileCheck
   PgLedgerShiftBalances ..|> ShiftBalances
+  LedgerShiftRepositoryFactory --> PgLedgerShiftBalances : with_balances
   ShiftBalancesReaders --> ShiftBalances : shift_balances
 ```
 
@@ -511,6 +582,7 @@ classDiagram
 |---|---|---|
 | #582 CA-2/CA-3: the `xc-cash` crate, `CashPostings`, `InterimCashPostings`, counts | §4.1, §4.4, §5.2 | LG-1 starts after CA-3 |
 | LG-1: `cash_accounts`, `ledger_postings`, `ledger_entries`; #582 CA-1: `cash_counts`, `cash_count_totals` | `PgLedgerShiftBalances` (§4.2.1) | LG-6.0 starts after LG-4 |
+| LG-6.r4: `ledger_shift_repository` (§4.2.1) | every production builder of `PgShiftRepository` (12 in `api/src`, `xc-cash` `count_service.rs`; listed in §4.2.1) | none — the sites switch in LG-6.r4's own PR |
 | #582 CA-5 (#621): `TransferFlow::receive` | calls `post_in` for a receipt, which touches two branches | CA-5 stays as written (lane controller's ruling, 2026-10-09): until LG-4, `InterimCashPostings` writes only the receiver's tables, so its single-branch `BranchTx` is correct. **LG-4 switches `receive` to `BranchTx::run_pair(from, to, …)`** (LG-0, L-5) in the same PR that switches the postings |
 | `rates.md` RU-1: `ForeignAmount`, `MinorUnit` | `PostingRequest.quantity` | merged before CA-3 |
 | AP-1 (#596) | §5 | LG-3 starts after AP-1 |
@@ -572,8 +644,8 @@ database with rows.
 | LG-5 | the count-difference hook in `CashCountService::verify` | `xc-cash/src/application/count/count_service.rs` (cash design §5, `CashCountService`; the one call only) | LG-3, CA-3 |
 | LG-6.0 | `ShiftBalances` (§4.2.1) | `xc-shift/src/domain/shift/repositories/shift_balances.rs`, `xc-cash/src/infrastructure/ledger/shift_balances.rs` (both new) | LG-4 |
 | LG-6.r1–r3 | `admin_cash`, `admin_shifts`, `devices` read `ShiftBalances` | one view file each | LG-6.0 |
-| LG-6.r4 | `ShiftRepository`'s balances read `ShiftBalances`; `ShiftService`'s `shift_balances` writes removed (§4.2.1) | `xc-shift/src/infrastructure/shift/shift_repository.rs`, `xc-shift/src/application/shift/service.rs`, `xc-shift/src/domain/shift/repositories/shift_repository.rs` | LG-6.0, CA-1's opener lookup (#1025) |
-| LG-6.r5 | `ops_state.safe` neither read nor written; whoever still shows the safe after CA-10 (today `compat/v2_json.rs:493` and `CustodyPages`' floor facts) reads `CashPostings::expected_in(Safe(branch))` from `api`, because `xc-shift` cannot call `xc-cash` | `xc-shift/src/infrastructure/custody/{custody_pages.rs, custody_repository.rs}`, `xc-shift/src/domain/custody/{state.rs, repositories/custody_pages.rs}`, `api/src/application/compat/v2_json.rs` | LG-4, CA-10 (re-measured after it) |
+| LG-6.r4 | `ShiftRepository`'s balances read `ShiftBalances`; `ShiftService`'s `shift_balances` writes removed; production builds the repository through `ledger_shift_repository` (§4.2.1) | `xc-shift/src/infrastructure/shift/shift_repository.rs`, `xc-shift/src/application/shift/service.rs`, `xc-shift/src/domain/shift/repositories/shift_repository.rs`, `xc-cash/src/infrastructure/ledger/{ledger_shift_repository,mod}.rs`, the 13 production call sites of §4.2.1 (one line each), `api/tests/lg6_r4_no_portless_shift_repository_test.rs` | LG-6.0, CA-1's opener lookup (#1025) |
+| LG-6.r5 | `ops_state.safe` neither read nor written; whoever still shows the safe after CA-10 (today `compat/v2_json.rs:493` and `CustodyPages`' floor facts) reads `CashPostings::activity_in(Safe(branch))` from `api` (`null` when `None`, the map otherwise; §4.2.1), because `xc-shift` cannot call `xc-cash` | `xc-shift/src/infrastructure/custody/{custody_pages.rs, custody_repository.rs}`, `xc-shift/src/domain/custody/{state.rs, repositories/custody_pages.rs}`, `api/src/application/compat/v2_json.rs`, `xc-cash/src/domain/posting.rs` (`activity_in` with its default), `xc-cash/src/infrastructure/ledger_postings.rs` (its override) | LG-4, CA-10 (re-measured after it) |
 | LG-6.r6 | the `stock_movements` readers (`admin_cash_movements`, `ShiftRepository`'s movement methods and their callers) list `cash_transfers` (ruling A, §4.2.1) | `views/admin_cash_movements.rs`, `xc-shift` shift repository's movement methods, `compat/snapshot.rs`, `v3/actions/shift_valuation.rs`, `compat/abandon_request.rs` | LG-4, CA-10, CA-5 |
 | LG-6.m | migration 3 (§9); its precheck is tied to LG-7's `QUERY` constants (§6.1) | the migration only | every LG-6.r child; LG-7.1–7.5; `git grep` finds no reader |
 | LG-7.0 | the reconcile core (§6.1): `ReconcileCheck`, `Reconcile`, `Report` | `xc-cash/src/application/reconcile/mod.rs` | CA-3 (the crate) |
@@ -606,6 +678,7 @@ database with rows.
 | LG-3b | #926 | open | the `cash_limits` commands half of the LG-3 row, split at cutting (LG-3 #925 closed) |
 | LG-6 (parent) | #930 | open | holder only for LG-6.0 … LG-6.m |
 | LG-7 (parent) | #927 | open | holder only for LG-7.0 … LG-7.5 |
+| COUNT_DIFFERENCE follow-up (org-wide FINANCE) | #1920 | open (2026-10-15) | `may_decide` ⇔ "FINANCE (organisation-wide or of the branch)": `CountDifferencePolicy` refused an organisation-wide FINANCE. Shared with the reversal policy (`reversal.md` §8) |
 
 ## 11. Must ask the owner (not decided here)
 

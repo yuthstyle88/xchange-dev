@@ -141,6 +141,7 @@ consents:             append only; current = newest row per (customer, purpose, 
 | consent is recorded only against text the customer was shown (lane controller's ruling, PR 639): registering or recording a consent needs a published text of that purpose **in the request's language**; none → `consentTextMissing`, nothing recorded, **no fallback to another language**. A customer screen offers a language only when every required consent text exists in it (`consent_texts` view answers which) | `ConsentService::register`, `ConsentService::record` |
 | a customer reads and changes only their own data | `CustomerSelf` + #550's owner check |
 | marketing eligibility = the newest `MARKETING` row for that channel is `granted` | `ConsentService::marketing_allowed` |
+| a customer is **marketing-eligible** when the newest `MARKETING` row is `granted` on **at least one** of SMS, EMAIL, PUSH (marketing-campaigns D-13). The rule lives in one place, a batched read: for a list of customers, one query (`DISTINCT ON (customer_id, channel)`, newest by `effective_at DESC, created_at DESC`) answers the set of eligible customer ids. A customer with no `MARKETING` row, or whose newest row on every channel is withdrawn, is not in the set. Signature: `pub async fn marketing_eligible_in(tx: &mut Transaction<'_, Postgres>, customer_ids: &[String]) -> AppResult<HashSet<String>>`, an associated function (no `&self`), so a caller builds no `ConsentService` and no pool; an empty list answers an empty set without a query. Callers never loop per customer or per channel (2026-10-15, BE controller's request; replaces the three copies of the SMS‖EMAIL‖PUSH loop) | `ConsentService::marketing_eligible_in` |
 | the purge job deletes nothing for a data type with `period_days IS NULL` | `RetentionJob` |
 | an `AppError` never prints a database error's detail | `xc-kernel` error |
 
@@ -197,7 +198,7 @@ classDiagram
   class CustomerService { <<xc-customer application/customer_service.rs>> +reserve() +confirm_in() +reveal() +find() }
   class Consent { <<xc-customer domain/consent.rs>> }
   class ConsentText { <<xc-customer domain/consent_text.rs>> }
-  class ConsentService { <<xc-customer application/consent_service.rs>> +register() +record() +publish() +marketing_allowed() }
+  class ConsentService { <<xc-customer application/consent_service.rs>> +register() +record() +publish() +marketing_allowed() +marketing_eligible_in(tx, customer_ids) HashSet~String~ }
   class RetentionPolicy { <<xc-customer domain/retention.rs>> }
   class RetentionJob { <<xc-customer application/retention_job.rs>> }
   class TokenVerifier { <<trait xc-auth domain/token/token_verifier.rs  I-2>> +verify(jwt) VerifiedToken }
@@ -244,6 +245,7 @@ over `xc-customer` (§9.2).
 | PR 570 CM-1 `CommandAction`, AP-1 audit (`audit_events`) | commands; `reveal`'s audit row | none — CI-6/CI-7 start after CM-1; CI-4 (its `reveal` audit row) after AP-1 |
 | this design CI-2 `TokenVerifier` | #550 OR-3, #558 | — |
 | this design `xc-customer` | #555 bookings, #557 verification, #558 app, the desk (#536) | — |
+| this design `ConsentService::marketing_eligible_in` (§4.3) | `segmentSnapshot` (`http/v3/commands/segment_snapshot.rs`), `MarketingConsentGate::prefetch_in` (`api/src/infrastructure/marketing/consent_gate.rs`) | none needed — the per-channel `marketing_allowed_in` stays until both callers move |
 
 ## 6. What is retired
 

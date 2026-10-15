@@ -6,6 +6,10 @@
 // Amended by #1157 (claude/08f7f46f; owner: the shop owner creates staff accounts, no invite): the create
 // dialog posts `userCreate` (`POST /api/users`) with a required phone and the org's roles, instead of v2's
 // `{action: "create"}`; the other writes still go to `/api/employees`, unchanged.
+// Amended by CA-10-FE (claude/c4d72c, the ticket author; design `cash-shift-transfer.md` §6 Q7, §9 CA-10-FE):
+// CA-10 retires `/api/employees`' `enable` and `entity` actions, so the custody workflow (its state line, the
+// Enable control and dialog, the entity form) leaves the screen; a stored entity may still be shown, read-only
+// (Q5). E2 is restated below; the refusal loop keeps create and reset; the state-line checks are gone.
 //
 // Source of truth (W9): xchange-v2-source@4d0bdbb `src/online/public/employees.js:2-12`, the
 // section `admin-html:19` (decoded admin page, ticket §2) and the served regrouping
@@ -109,24 +113,6 @@ const T = {
   resetSubmit: 'ยืนยันรีเซ็ต',
   // disable (employees.js:10)
   disableConfirm: 'ปิดบัญชีนี้และยกเลิกเซสชันทั้งหมด?',
-  // workflow (admin-html:19 folded by admin-workspace.js:140-142; employees.js:6, :9, :12)
-  workflow: 'ตั้งค่าขั้นตอนรับ–ส่งเงินของสาขา',
-  stateOn: 'สาขานี้เปิดใช้ขั้นตอนรับ–ส่งเงินแล้ว',
-  stateOff: 'สาขานี้ยังใช้ขั้นตอนเดิม สร้างบัญชีครบ 6 บทบาทและปิดกะเดิมก่อนเปิดใช้',
-  entityButton: 'ยืนยันกิจการและจุดบริการ',
-  enableButton: 'เปิดใช้สำหรับสาขานี้',
-  enableTitle: 'เปิดใช้ขั้นตอนรับ–ส่งเงิน · ',
-  enableNote1:
-    'ต้องมีบัญชี Front, Backend, Manager, Rates, Monitor และ Finance ในสาขา และไม่มีกะเดิมเปิดอยู่ หลังเปิดใช้ ปุ่มเปิดกะ รับ–จ่ายเงินสด และปิดกะเดิมจะถูกล็อก ให้พนักงานทำรายการและลงชื่อผ่านหน้าปฏิบัติงาน',
-  enableNote2: 'Finance ต้องกำหนดเงินสดเป้าหมายและแจ้งยอดนับเซฟจริงก่อนเริ่มใช้งาน ไม่มียอดเงินตัวอย่างถูกเติมให้อัตโนมัติ',
-  enableSubmit: 'เปิดใช้ขั้นตอนใหม่',
-  enabledToast: 'เปิดใช้ขั้นตอนรับ–ส่งเงินแล้ว',
-  entityTitle: 'ยืนยันกิจการของสาขา',
-  company: 'ชื่อนิติบุคคล',
-  site: 'จุดบริการ',
-  separated: 'ยืนยันว่ารายการและยอดเงินของสาขานี้เป็นของกิจการนี้ และแยกจากกิจการอื่นแล้ว',
-  entityNote: 'การตั้งชื่อนี้ไม่ย้ายหรือแยกธุรกรรมเก่า หากบัญชีเดิมปะปน ให้สร้างสาขาใหม่ก่อน',
-  entitySubmit: 'บันทึก',
 } as const;
 
 /** The create dialog's role choices, in v2's order (employees.js:7). */
@@ -405,9 +391,6 @@ function choose(select: HTMLSelectElement, value: string): void {
   select.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-function tick(box: HTMLInputElement): void {
-  if (!box.checked) box.click();
-}
 
 /** The account table: the `<table>` whose header row is v2's. */
 function accountTable(): HTMLTableElement {
@@ -426,13 +409,6 @@ function rowOf(username: string): HTMLTableRowElement {
   return rows[0]!;
 }
 
-function workflow(): HTMLDetailsElement {
-  const all = Array.from(page().querySelectorAll<HTMLDetailsElement>('details')).filter(
-    (d) => norm(d.querySelector('summary')?.textContent) === T.workflow,
-  );
-  expect(all.length, `one <details> whose summary is "${T.workflow}"`).toBe(1);
-  return all[0]!;
-}
 
 function toastText(): string {
   return norm(document.querySelector('.toast')?.textContent);
@@ -507,7 +483,6 @@ describe('V2-employees: when the menu reads (#462 §7, §9; design §12.6, §12.
     expect(ops[0]).toEqual({ view: 'admin_operations', branch: 'MAIN', since: null });
     expect(server.others, 'no request but the views and /api/employees').toEqual([]);
     expect(norm(rowOf('front01').textContent)).toContain('Somchai Front');
-    expect(norm(workflow().textContent)).toContain(T.stateOff);
   });
 
   it('re-reads both on the page’s refresh: the whole list again, the operations with the version it holds', async () => {
@@ -519,7 +494,6 @@ describe('V2-employees: when the menu reads (#462 §7, §9; design §12.6, §12.
     expect(readsSince(mark, 'admin_employees')).toHaveLength(1);
     expect(readsSince(mark, 'admin_operations')).toEqual([{ view: 'admin_operations', branch: 'MAIN', since: '7' }]);
     expect(norm(rowOf('other01').textContent), 'a write by another tab shows (VERSIONED = false)').toContain('Made In Another Tab');
-    expect(norm(workflow().textContent), 'changed: false keeps what is shown').toContain(T.stateOff);
   });
 
   it("re-reads the list on v2's own `รีเฟรช` button (employees.js:8)", async () => {
@@ -534,7 +508,6 @@ describe('V2-employees: when the menu reads (#462 §7, §9; design §12.6, §12.
 
   it('on a branch switch reads the new branch’s operations without the old branch’s cursor', async () => {
     const m = await mount();
-    expect(norm(workflow().textContent)).toContain(T.stateOff);
     // both branches are at version 7: a cursor carried over would answer `changed: false`
     const mark = server.reads.length;
     m.setBranch('A1');
@@ -542,8 +515,6 @@ describe('V2-employees: when the menu reads (#462 §7, §9; design §12.6, §12.
     const ops = readsSince(mark, 'admin_operations');
     expect(ops.length).toBeGreaterThanOrEqual(1);
     expect(ops[0]).toEqual({ view: 'admin_operations', branch: 'A1', since: null });
-    expect(norm(workflow().textContent)).toContain(T.stateOn);
-    expect(button(workflow(), T.enableButton).disabled).toBe(true);
   });
 
   it('never re-reads on a timer (design §12.6: no admin menu polls)', async () => {
@@ -599,7 +570,6 @@ describe("V2-employees E1: v2's account card and table", () => {
     await mount();
     expect(norm(page().textContent)).toContain(errorText('ownerOnly', 'refused by the server'));
     expect(page().querySelectorAll('tbody tr'), 'no account row').toHaveLength(0);
-    expect(norm(workflow().textContent), 'the operations still show (staff may read them)').toContain(T.stateOff);
   });
 });
 
@@ -729,9 +699,9 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
     expect(norm(rowOf('front01').cells[3]?.textContent), 'still open').toBe(T.active);
   });
 
-  it("keeps a dialog open and shows the server's sentence inside it when create, reset, entity or enable is refused", async () => {
+  it("keeps a dialog open and shows the server's sentence inside it when create or reset is refused", async () => {
     const sentence = 'สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน';
-    for (const action of ['create', 'reset', 'entity', 'enable'] as const) {
+    for (const action of ['create', 'reset'] as const) {
       server = new Server();
       vi.stubGlobal('fetch', vi.fn(server.fetch));
       server.refuse[action] = sentence;
@@ -744,28 +714,17 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
         type(field(theDialog(), T.username), 'some01');
         type(field(theDialog(), T.password), 'temporary-pass-01');
         button(theDialog(), T.createSubmit).click();
-      } else if (action === 'reset') {
+      } else {
         button(rowOf('front01'), T.reset).click();
         await settle();
         type(field(theDialog(), T.newPassword), 'temporary-pass-01');
         button(theDialog(), T.resetSubmit).click();
-      } else if (action === 'entity') {
-        button(workflow(), T.entityButton).click();
-        await settle();
-        type(field(theDialog(), T.company), 'Main Co.');
-        type(field(theDialog(), T.site), 'Main Site');
-        tick(field(theDialog(), T.separated));
-        button(theDialog(), T.entitySubmit).click();
-      } else {
-        button(workflow(), T.enableButton).click();
-        await settle();
-        button(theDialog(), T.enableSubmit).click();
       }
       await settle();
       expect(server.posts.map((p) => p.action), action).toEqual([action]);
       expect(openDialogEl(), `${action}: the dialog stays open`).not.toBeNull();
       expect(norm(theDialog().textContent), `${action}: the sentence is shown in the dialog`).toContain(sentence);
-      const submitWords: string[] = [T.createSubmit, T.resetSubmit, T.entitySubmit, T.enableSubmit];
+      const submitWords: string[] = [T.createSubmit, T.resetSubmit];
       const submits = Array.from(theDialog().querySelectorAll<HTMLButtonElement>('button')).filter((b) =>
         submitWords.includes(norm(b.textContent)),
       );
@@ -780,78 +739,80 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
   });
 });
 
-// ── E2: the workflow (employees.js:6, :9, :12; admin-workspace.js:140-142) ────
+// ── E2: CA-10-FE — the retired custody workflow is gone (cash-shift-transfer.md §6 Q7) ─────
 
-describe("V2-employees E2: the branch's custody workflow, folded as the served page folds it", () => {
-  it('shows the state and the two buttons inside a <details> titled by v2, enable locked once on', async () => {
+/** v2's workflow words the screen no longer shows (CA-10-FE). */
+const RETIRED = {
+  stateOn: 'สาขานี้เปิดใช้ขั้นตอนรับ–ส่งเงินแล้ว',
+  stateOff: 'สาขานี้ยังใช้ขั้นตอนเดิม สร้างบัญชีครบ 6 บทบาทและปิดกะเดิมก่อนเปิดใช้',
+  entityButton: 'ยืนยันกิจการและจุดบริการ',
+  enableButton: 'เปิดใช้สำหรับสาขานี้',
+} as const;
+
+describe('CA-10-FE: the employees screen drops the retired enable / entity actions', () => {
+  it('shows no Enable control, no entity control and no enabled/not-enabled line, on a branch with or without the flow on', async () => {
     const m = await mount();
-    const off = workflow();
-    expect(norm(off.textContent)).toContain(T.stateOff);
-    expect(norm(off.textContent)).not.toContain(T.stateOn);
-    expect(button(off, T.entityButton).disabled).toBe(false);
-    expect(button(off, T.enableButton).disabled).toBe(false);
+    for (const branch of ['MAIN', 'A1']) {
+      if (branch !== 'MAIN') {
+        m.setBranch(branch);
+        await settle();
+      }
+      const words = Array.from(page().querySelectorAll('button')).map((b) => norm(b.textContent));
+      expect(words, `${branch}: no Enable button`).not.toContain(RETIRED.enableButton);
+      expect(words, `${branch}: no entity button`).not.toContain(RETIRED.entityButton);
+      const text = norm(page().textContent);
+      expect(text, `${branch}: no state line`).not.toContain(RETIRED.stateOn);
+      expect(text, `${branch}: no state line`).not.toContain(RETIRED.stateOff);
+    }
+  });
+
+  /** Presses every enabled button of the menu once, ticking every checkbox and submitting each dialog it opens;
+   *  gives back the values of every input and textarea the page or a dialog showed on the way. */
+  async function pressEverything(): Promise<string[]> {
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    const seen: string[] = [];
+    const look = () => {
+      for (const e of Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea'))) seen.push(e.value);
+    };
+    look();
+    const count = menuButtons().length;
+    for (let i = 0; i < count; i++) {
+      const b = menuButtons()[i];
+      if (!b || b.disabled) continue;
+      b.click();
+      await settle();
+      const d = openDialogEl();
+      if (d) {
+        look();
+        for (const box of Array.from(d.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))) if (!box.checked) box.click();
+        d.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+        await settle();
+        if (openDialogEl()) closeDialog();
+        await settle();
+      }
+    }
+    return seen;
+  }
+
+  it('shows the stored entity as read-only text, `company · site`, and nothing on a branch with none', async () => {
+    const m = await mount({ branch: 'A1' });
+    expect(norm(menuArea().textContent)).toContain('Alpha Co. · Alpha Site');
+    m.setBranch('MAIN');
+    await settle();
+    expect(norm(menuArea().textContent)).not.toContain('Alpha Co.');
     m.setBranch('A1');
     await settle();
-    const on = workflow();
-    expect(norm(on.textContent)).toContain(T.stateOn);
-    expect(norm(on.textContent)).not.toContain(T.stateOff);
-    expect(button(on, T.enableButton).disabled).toBe(true);
+    const values = await pressEverything();
+    expect(values, 'no field is prefilled with the stored company').not.toContain('Alpha Co.');
+    expect(values, 'no field is prefilled with the stored site').not.toContain('Alpha Site');
   });
 
-  it("enables the workflow for the branch on screen through v2's dialog, toasts, and re-reads", async () => {
-    await mount({ branch: 'B2' });
-    button(workflow(), T.enableButton).click();
-    await settle();
-    const d = theDialog();
-    expect(dialogTitle()).toBe(`${T.enableTitle}Bravo Desk`);
-    expect(norm(d.textContent)).toContain(T.enableNote1);
-    expect(norm(d.textContent)).toContain(T.enableNote2);
-    const mark = server.reads.length;
-    button(d, T.enableSubmit).click();
-    await settle();
-    expect(server.posts.map((p) => [p.method, p.marker, p.action, p.payload])).toEqual([['POST', '1', 'enable', { branchId: 'B2' }]]);
-    expect(openDialogEl()).toBeNull();
-    expect(toastText()).toBe(T.enabledToast);
-    expectBothReRead(mark, 'enable');
-    expect(readsSince(mark, 'admin_operations')[0]).toEqual({ view: 'admin_operations', branch: 'B2', since: '4' });
-    expect(norm(workflow().textContent)).toContain(T.stateOn);
-    expect(button(workflow(), T.enableButton).disabled).toBe(true);
-  });
-
-  it("confirms the branch's entity through v2's dialog, prefilled with what is stored, and posts v2's payload", async () => {
-    await mount({ branch: 'A1' });
-    button(workflow(), T.entityButton).click();
-    await settle();
-    const d = theDialog();
-    expect(dialogTitle()).toBe(T.entityTitle);
-    expect(norm(d.textContent)).toContain(T.entityNote);
-    const company = field(d, T.company);
-    const site = field(d, T.site);
-    const separated = field(d, T.separated);
-    expect(company.value).toBe('Alpha Co.');
-    expect(site.value).toBe('Alpha Site');
-    expect(separated.type).toBe('checkbox');
-    expect(separated.required, 'v2 requires the confirmation').toBe(true);
-    type(company, 'Alpha Holdings');
-    type(site, 'Alpha Counter 2');
-    tick(separated);
-    const mark = server.reads.length;
-    button(d, T.entitySubmit).click();
-    await settle();
-    expect(server.posts.map((p) => [p.method, p.marker, p.action, p.payload])).toEqual([
-      ['POST', '1', 'entity', { branchId: 'A1', company: 'Alpha Holdings', site: 'Alpha Counter 2', confirmSeparated: true }],
-    ]);
-    expect(openDialogEl()).toBeNull();
-    expectBothReRead(mark, 'entity');
-    expect(readsSince(mark, 'admin_operations')[0]).toEqual({ view: 'admin_operations', branch: 'A1', since: '7' });
-  });
-
-  it('prefills an empty entity form when the branch has none', async () => {
-    await mount();
-    button(workflow(), T.entityButton).click();
-    await settle();
-    expect(field(theDialog(), T.company).value).toBe('');
-    expect(field(theDialog(), T.site).value).toBe('');
+  it('posts neither enable nor entity, whatever is pressed, on a branch with the flow off', async () => {
+    await mount({ branch: 'MAIN' });
+    await pressEverything();
+    const actions = server.posts.map((p) => p.action);
+    expect(actions).not.toContain('enable');
+    expect(actions).not.toContain('entity');
   });
 });
 
@@ -876,8 +837,7 @@ describe("V2-employees W10: the menu's texts come from employees/i18n.ts", () =>
     const values = new Set(Object.values(th));
     const expected = [...Object.values(T).flat().filter((s) => s !== ''), 'พนักงานและสิทธิ์', 'บัญชีพนักงานและการตั้งค่าขั้นตอนรับ–ส่งเงิน'];
     for (const s of expected) {
-      const wanted = s === T.enableTitle ? T.enableTitle.replace(/ · $/, '') : s;
-      const found = [...values].some((v) => v === s || v === wanted || (s === T.enableTitle && v.startsWith(wanted)));
+      const found = values.has(s);
       expect(found, `th holds "${s}"`).toBe(true);
     }
     expect(Object.keys(en).sort()).toEqual(Object.keys(th).sort());

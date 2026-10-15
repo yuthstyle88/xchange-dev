@@ -3,8 +3,8 @@
 
 use rust_decimal::Decimal;
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction as ExchangeTransaction;
+use xc_kernel::mode::Mode;
 use xc_referral::application::feed_writer::{CompletedExchange, ExchangeFeedWriter};
 use xc_referral::domain::customer_keys::FeedCustomerKeys;
 use xc_referral::domain::feed_value::FeedValue;

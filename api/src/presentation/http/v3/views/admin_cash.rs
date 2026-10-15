@@ -8,15 +8,15 @@ use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    fixed2, round_cents, CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, MoneyDelta, Rate,
-    UnitSize,
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, MoneyDelta, Rate, UnitSize, fixed2,
+    round_cents,
 };
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 
@@ -57,14 +57,13 @@ pub fn compute_reference_exchange(
     Ok((ref_principal, spread))
 }
 
-/// Computes the reference spread percentage with 2 decimal places using `MidpointAwayFromZero`.
+/// Computes the reference spread percentage with 2 decimal places using kernel rounding (`round_cents` -> `fixed2`).
 pub fn compute_reference_percent(spread: Decimal, total_ref_value: Decimal) -> String {
     if total_ref_value.is_zero() {
         return "0.00".to_string();
     }
-    let pct = (spread * Decimal::from(100) / total_ref_value)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    format!("{:.2}", pct)
+    let pct_cents = round_cents(spread * Decimal::from(100) / total_ref_value).unwrap_or(0);
+    fixed2(pct_cents)
 }
 
 /// The 153 register currencies in register order: THB first, then A–Z.
@@ -455,8 +454,8 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn test_midpoint_away_from_zero_rounding() {
-        // 2.525 rounds to 2.53 under MidpointAwayFromZero (differs from half-even 2.52)
+    fn test_positive_half_rounding() {
+        // 2.525 rounds to 2.53 under kernel round_cents -> fixed2 (differs from half-even 2.52)
         let spread = Decimal::from_str("2.525").unwrap();
         let total_ref_value = Decimal::from(100);
         let result = compute_reference_percent(spread, total_ref_value);

@@ -15,7 +15,6 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::receipt::receipt_html;
 use xc_exchange::domain::exchange::repositories::transaction_repository::TransactionRepository;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -29,6 +28,7 @@ use xc_exchange::infrastructure::exchange::transaction_repository::PgTransaction
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 

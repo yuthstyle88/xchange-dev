@@ -10,9 +10,8 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::transaction_form::{
@@ -24,6 +23,7 @@ use xc_exchange::infrastructure::exchange::transaction_repository::PgTransaction
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::currency::denomination_groups::GroupCode;
@@ -389,7 +389,7 @@ impl SaveTransactionWorkflow {
                         .and_then(|e| e.kiosk_request_id.as_deref())
                         .filter(|s| !s.is_empty());
 
-                    let (quote_id, quote_unit_size, quote_published_line_id) = if let Some(req_id) = kiosk_req_id {
+                    let (quote_id, quote_unit_size) = if let Some(req_id) = kiosk_req_id {
                         // A kiosk save first passes KioskSaveStep's currency/amount check.
                         if let Some((extras, booking, actor)) = &stepped {
                             let ctx = SaveContext {
@@ -434,7 +434,7 @@ impl SaveTransactionWorkflow {
                         if form.client_rate != per_one {
                             return refuse(RATE_MISMATCH);
                         }
-                        (qid, line.unit_size, Some(line.published_rate_line_id))
+                        (qid, line.unit_size)
                     } else {
                         // Non-kiosk save (desk / booking): quote first.
                         let Ok(code) = CurrencyCode::parse(&form.currency) else {
@@ -494,7 +494,7 @@ impl SaveTransactionWorkflow {
                             }
                         }
 
-                        (quote.id, line.unit_size, Some(line.published_rate_line_id))
+                        (quote.id, line.unit_size)
                     };
 
                     CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
@@ -529,7 +529,8 @@ impl SaveTransactionWorkflow {
                         branch_id: branch.clone(),
                         quote_id,
                         customer_id: form.customer_id.clone(),
-                        booking_id: stepped.as_ref().and_then(|(_, b, _)| b.as_ref().map(|c| c.booking_id.clone())),
+                        // Stopgap for #1413: transactions.booking_id FK targets v2_bookings. Keep NULL until BK-11 repoints FK to bookings(id).
+                        booking_id: None,
                         kiosk_request_id: extras.and_then(|e| e.kiosk_request_id.clone()),
                         staff_draft_id: extras.and_then(|e| e.staff_draft_id.clone()),
                         passport_key: passport.key.clone(),
@@ -614,17 +615,6 @@ impl SaveTransactionWorkflow {
                     .execute(&mut **tx)
                     .await
                     .map_err(AppError::Database)?;
-
-                    if let Some(pub_line_id) = quote_published_line_id {
-                        sqlx::query(
-                            "UPDATE transactions SET published_rate_line_id = $1 WHERE id = $2",
-                        )
-                        .bind(pub_line_id)
-                        .bind(draft.id.0)
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-                    }
 
                     CustomerService::record_exchange_in(
                         tx,

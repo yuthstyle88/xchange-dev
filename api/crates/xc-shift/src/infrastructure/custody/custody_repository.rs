@@ -15,6 +15,7 @@ use super::decode::{
     entity_from_json, exception_from_row, hold_from_row, money_from_json, request_from_row,
     str_to_phase, str_to_role, target_from_json, time_from_json, undecodable,
 };
+use crate::domain::custody::branch_day::BranchDay;
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use crate::domain::custody::entities::custody_request::{CustodyRequest, Decision};
@@ -30,6 +31,7 @@ use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
+use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::request_status::{
     Reconciliation, RequestStatus, TransferStage,
 };
@@ -284,6 +286,42 @@ pub async fn append_cash_exception_in(
     .bind(exception_data(exception))
     .execute(&mut **tx)
     .await?;
+
+    Ok(())
+}
+
+/// Moves the branch day to READY inside the OPEN-count verify transaction when the day reads CLOSED before the new
+/// shift is inserted (CA-7e #1911, design §4.2). Writes only `ops_state.phase`; leaves every other column untouched.
+pub async fn day_ready_on_open_count_in(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+) -> AppResult<()> {
+    let stored_raw: Option<String> =
+        sqlx::query_scalar("SELECT phase FROM ops_state WHERE branch_id = $1")
+            .bind(branch.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+    let stored = match stored_raw.as_deref() {
+        Some(s) => str_to_phase("ops_state", "phase", s)?,
+        None => Phase::Closed,
+    };
+
+    let open_shifts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM shifts WHERE branch_id = $1 AND status = 'OPEN'")
+            .bind(branch.as_str())
+            .fetch_one(&mut **tx)
+            .await?;
+    let open_shifts_before = usize::try_from(open_shifts).unwrap_or(0);
+
+    if let Some(Phase::Ready) = BranchDay::ready_on_open_count(stored, open_shifts_before) {
+        sqlx::query(
+            "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'READY') \
+             ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase",
+        )
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await?;
+    }
 
     Ok(())
 }

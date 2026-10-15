@@ -158,6 +158,27 @@ impl HandoverService {
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
 
+        let denom_ids: Vec<i64> = cmd
+            .lines
+            .iter()
+            .take_while(|l| l.qty >= 0)
+            .map(|l| l.denomination_id)
+            .collect();
+        let denom_rows: Vec<(i64, Decimal, String)> = if denom_ids.is_empty() {
+            Vec::new()
+        } else {
+            sqlx::query_as(
+                "SELECT id, face_value, currency_code FROM denominations WHERE id = ANY($1)",
+            )
+            .bind(&denom_ids)
+            .fetch_all(&mut **tx)
+            .await?
+        };
+        let denoms: std::collections::HashMap<i64, (Decimal, String)> = denom_rows
+            .into_iter()
+            .map(|(id, face_value, currency_code)| (id, (face_value, currency_code)))
+            .collect();
+
         for line in &cmd.lines {
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
@@ -166,13 +187,7 @@ impl HandoverService {
                 )));
             }
 
-            let row: Option<(Decimal, String)> =
-                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
-                    .bind(line.denomination_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-
-            let (face_value, denom_currency) = match row {
+            let &(face_value, ref denom_currency) = match denoms.get(&line.denomination_id) {
                 Some(r) => r,
                 None => {
                     return Err(AppError::NotFound {
@@ -202,14 +217,20 @@ impl HandoverService {
             });
         }
 
-        for (curr, counted) in &totals_map {
-            let minor_unit: Option<i16> =
-                sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
-                    .bind(curr)
-                    .fetch_optional(&mut **tx)
-                    .await?;
+        let currency_codes: Vec<String> = totals_map.keys().cloned().collect();
+        let currency_rows: Vec<(String, i16)> = if currency_codes.is_empty() {
+            Vec::new()
+        } else {
+            sqlx::query_as("SELECT trim(code), minor_unit FROM currencies WHERE code = ANY($1)")
+                .bind(&currency_codes)
+                .fetch_all(&mut **tx)
+                .await?
+        };
+        let minor_units: std::collections::HashMap<String, i16> =
+            currency_rows.into_iter().collect();
 
-            let minor = minor_unit.ok_or_else(|| {
+        for (curr, counted) in &totals_map {
+            let minor = minor_units.get(curr).copied().ok_or_else(|| {
                 AppError::Internal(format!("currency not found in register: {curr}"))
             })?;
 
