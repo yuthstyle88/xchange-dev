@@ -45,6 +45,8 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
         props.navigate('/login?next=%2Fstaff');
         return;
       }
+      setFloorError(wordedError(err));
+      return;
     }
 
     let floorData: StaffFloorView | undefined;
@@ -85,7 +87,30 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
     [...props.cards].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
   return (
-    <Show when={me()}>
+    <Show
+      when={me()}
+      fallback={
+        <Show when={floorError()}>
+          {(err) => (
+            <div class="xc-staff-container">
+              <div role="alert" data-testid="staff-error">
+                {err()}
+              </div>
+              <button
+                type="button"
+                data-testid="staff-refresh"
+                class="xc-staff-refresh-btn"
+                onClick={() => {
+                  void refresh();
+                }}
+              >
+                {t('refresh')}
+              </button>
+            </div>
+          )}
+        </Show>
+      }
+    >
       {(currentMe) => {
         const ctx = (): StaffCtx => ({
           me: currentMe(),
