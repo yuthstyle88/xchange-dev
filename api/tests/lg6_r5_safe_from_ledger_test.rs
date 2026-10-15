@@ -12,6 +12,10 @@
 //!   `adminSnapshot` and `adminDeskConfig`; also for a branch that has a `SAFE` account and no `ops_state` row.
 //! - Row 2 (a drawer→safe move after cutover): `"safe"` includes it.
 //! - Row 3 (a branch with no `SAFE` account): `"safe"` is `null`, the value a NULL `ops_state.safe` gives today.
+//! - Emptied safe (lane controller's ruling on #1044, 2026-10-15): a `SAFE` account that has never had a posting
+//!   prints `null` (v2's "never counted in": `custody.json` steps 3 and 24 on `origin/main` `2282023c`); one that
+//!   has had postings and nets to zero in every currency prints zeros, not `null` (v2's `{CUR: number}` over every
+//!   register code, so the zeros of the currencies that had activity are among them).
 //!
 //! Ticket §8: `"safe"` keeps its JSON shape (v2's `{CUR: number}` over every register code, `balances_json`).
 //!
@@ -266,6 +270,49 @@ async fn row3_a_branch_with_no_safe_account_prints_null() {
         "adminSnapshot: no SAFE account → null"
     );
     assert_eq!(desk, Value::Null, "adminDeskConfig: no SAFE account → null");
+
+    shop.finish().await;
+}
+
+// ── emptied safe (lane controller's ruling on #1044) ────────────────────────
+
+#[tokio::test]
+async fn emptied_a_safe_that_had_postings_and_nets_to_zero_prints_zeros_not_null() {
+    let shop = Shop::open().await;
+    let main = branch(MAIN);
+    ops_state_with_safe(&shop, &main, json!({ "THB": 70_000 })).await;
+    // SAFE(MAIN) is counted in, then everything leaves it again: it has postings, and nets to zero.
+    backfill_safe(&shop, &main, "THB", "1000").await;
+    backfill_safe(&shop, &main, "USD", "50").await;
+    for (currency, amount) in [("THB", "1000"), ("USD", "50")] {
+        post(
+            &shop,
+            CashPlace::Safe(main.clone()),
+            CashPlace::Bank,
+            currency,
+            amount,
+            SourceType::Transfer,
+            &format!("lg6r5-empty:{currency}"),
+        )
+        .await;
+    }
+
+    let expected = printed(&[]);
+    assert!(
+        expected
+            .as_object()
+            .is_some_and(|codes| !codes.is_empty() && codes.values().all(|v| v == &json!(0))),
+        "zeros over every register code: {expected}"
+    );
+    let (snapshot, desk) = safes(&shop, &main).await;
+    assert_eq!(
+        snapshot, expected,
+        "adminSnapshot: an emptied SAFE prints zeros"
+    );
+    assert_eq!(
+        desk, expected,
+        "adminDeskConfig: an emptied SAFE prints zeros"
+    );
 
     shop.finish().await;
 }
