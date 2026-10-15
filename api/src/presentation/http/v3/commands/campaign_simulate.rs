@@ -14,6 +14,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
 use xc_marketing::application::simulator::{CampaignSimulator, SimulationScenario};
 
 use crate::bootstrap::AppState;
@@ -122,8 +123,25 @@ impl CommandAction for CampaignSimulateCommand {
             )
         })?;
 
+        if input.scenarios.is_empty() {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("scenarios"),
+                "at least one scenario is required",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let mut scenarios = Vec::new();
         for s in input.scenarios {
+            CurrencyCode::parse(&s.currency).map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("currency"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
             let amount = Decimal::from_str(&s.amount).map_err(|e| {
                 V3Error::new(
                     "validationFailed",
