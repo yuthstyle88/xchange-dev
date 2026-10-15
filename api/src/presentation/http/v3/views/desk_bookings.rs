@@ -98,8 +98,9 @@ impl BranchView for DeskBookingsView {
                             let aad = format!("{customer_id}PHONE");
                             let decrypted = c.decrypt(aad.as_bytes(), &sealed).ok()?;
                             let phone_str = String::from_utf8(decrypted).ok()?;
-                            if phone_str.len() >= 4 {
-                                Some(phone_str[phone_str.len() - 4..].to_string())
+                            let char_count = phone_str.chars().count();
+                            if char_count >= 4 {
+                                Some(phone_str.chars().skip(char_count - 4).collect())
                             } else {
                                 None
                             }
