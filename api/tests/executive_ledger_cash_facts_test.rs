@@ -953,3 +953,73 @@ async fn a01_overview_after_swap_other_figures_unchanged() {
 
     room.finish().await;
 }
+
+/// A01's branch table reads every branch's cash in one call (`CashFacts::branch_cash`, BE controller
+/// claude/7ca80c; up-front test by claude/d7aa64). For each requested branch it answers exactly what
+/// `available_cash`, `in_transit` and `shift_status` answer for that branch alone; every requested branch is
+/// a key.
+#[tokio::test]
+async fn branch_cash_answers_each_branchs_own_figures_like_the_single_reads() {
+    let room = Room::start().await;
+    let b1 = BranchId::new(B1);
+    let b2 = BranchId::new(B2);
+
+    room.post(vec![PostingRequest {
+        from: CashPlace::Bank,
+        to: CashPlace::Safe(b1.clone()),
+        currency: thb(),
+        quantity: ForeignAmount::from_decimal(d("100000.00")),
+        source: SourceRef {
+            source_type: SourceType::Opening,
+            source_id: unique("seed"),
+            source_key: "safe".to_string(),
+        },
+        line: None,
+        reverses: None,
+    }])
+    .await;
+    let _transfer = room.dispatch_transfer(B1, B2, "30000.00").await;
+    let _open = room.open_shift(B2).await;
+
+    let today = Utc::now().date_naive();
+    let filter = ExecutiveFilter {
+        from: Some(today),
+        to: Some(today),
+        currency: None,
+        channel: None,
+    };
+    let facts = LedgerCashFacts::new(room.pool.clone());
+    let branches = vec![b1.clone(), b2.clone()];
+    let all = facts
+        .branch_cash(&branches, &filter)
+        .await
+        .expect("the batched read");
+
+    assert_eq!(all.len(), 2, "every requested branch is a key");
+    for b in &branches {
+        let got = &all[b];
+        assert_eq!(
+            got.available,
+            facts.available_cash(b).await.expect("available_cash"),
+            "{b}: available"
+        );
+        assert_eq!(
+            got.in_transit,
+            facts.in_transit(b).await.expect("in_transit"),
+            "{b}: in transit"
+        );
+        assert_eq!(
+            got.shifts,
+            facts.shift_status(b, &filter).await.expect("shift_status"),
+            "{b}: shifts"
+        );
+    }
+    assert_eq!(
+        all[&b1].in_transit,
+        d("30000.00"),
+        "the sender carries the transfer"
+    );
+    assert_eq!(all[&b2].shifts.open, 1, "B2's open shift is counted");
+
+    room.finish().await;
+}
