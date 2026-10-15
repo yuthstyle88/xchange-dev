@@ -2106,3 +2106,22 @@ positioned inside the field under `.xc-auth` only). The CSS is read from disk an
 
 None. No table, column, constraint, default or status value is added or changed; the change is web-only, and the
 server serves the new bundle as it serves the old one.
+
+### 12.22 FE follow-up tickets outside the Blueprint rows (2026-10-15)
+
+Cut by the FE lane controller (claude/e8020026) and listed here on the owner's choice A of 2026-10-15, so that every web
+ticket has a design row. Each cites real code; the evidence is on its issue.
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| #1892 | `ApiClient.viewBare<T>(name, {branch?})`: read a v3 view that answers a bare object (root fix of #1860) | `web/src/shared/api/client.ts`, `client.viewBare.test.ts` | — (merged) |
+| #1845 | the cold import of `main` inside the first test of `refunds.test.tsx` and `devices/main.branch.test.tsx` times out at 5 s under load | those two test files | — (merged) |
+| #1851 | the same for `QueueCard.test.tsx` and `DeskBookings.test.tsx` | those two test files | — (merged) |
+| #1874 | one `warmModules(...loaders)` helper (`web/src/shared/testing/warm-modules.ts`) and the `shared/*` test files | the helper and its tests | #1851 |
+| #1875 · #1876 · #1877 | apply `warmModules` to the staff, customer + desk, and admin + kiosk test files | the files named on each issue | #1874 |
+| #1909 | A01 `executive/api.ts` `fetchOverview` uses a raw fetch; proposed: the overview becomes a v3 view (BE route change, EX-3) | — (held for the BE controller's choice) | the BE decision |
+
+#### 12.22.1 Data migration
+
+None. Web and test files only.
+

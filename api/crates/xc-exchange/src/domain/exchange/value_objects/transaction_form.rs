@@ -8,9 +8,9 @@ use xc_kernel::money::{CompatRate, Money, NumberError, Quote, Rate, Side};
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
 
-use crate::domain::customer::value_objects::customer_details::CustomerDetails;
 use crate::domain::exchange::commands::save_transaction::SaveTransaction;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
 
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 pub const BAD_DATE_FORMAT: &str = "รูปแบบวันที่ไม่ถูกต้อง";

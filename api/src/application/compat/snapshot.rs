@@ -27,7 +27,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CompatRate, Side};
 use xc_rate::application::branch::service::BranchService;

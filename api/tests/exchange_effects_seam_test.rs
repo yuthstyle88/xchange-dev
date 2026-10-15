@@ -29,8 +29,8 @@ use rust_decimal::Decimal;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction};
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xchange::application::workflows::exchange::effects::{
     BoxFuture, EffectPhase, ExchangeCompletedFacts, ExchangeEffect, ExchangeEffects, PostedReversal,
 };

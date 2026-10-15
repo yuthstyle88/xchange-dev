@@ -1,8 +1,8 @@
 //! The kiosk's part in the save of an exchange.
 
 use xc_auth::domain::policy::value_objects::role::Role;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::CurrencyCode;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;

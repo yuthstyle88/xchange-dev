@@ -1,6 +1,7 @@
 //! The `desk_refunds` view (ticket #1265, DK-K).
 //! Lists approved refunds inside their reversal window waiting to be posted.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::str::FromStr;
@@ -19,7 +20,7 @@ use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::desk_refunds::{
     DeskRefundLine, DeskRefundPayment, DeskRefundRow, DeskRefunds,
 };
-use crate::presentation::dto::v3::reversal::{ReversalBy, load_reversal_summary};
+use crate::presentation::dto::v3::reversal::load_reversal_summaries;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct DeskRefundsView {
@@ -51,70 +52,82 @@ impl BranchView for DeskRefundsView {
             .await
             .map_err(AppError::Database)?;
 
-            let mut rows = Vec::new();
-            for id in reversal_ids {
-                let Some(summary) =
-                    load_reversal_summary(&pool, ReversalBy::Id(id), &branch_id).await?
-                else {
-                    continue;
-                };
+            let all_summaries = load_reversal_summaries(&pool, &reversal_ids, &branch_id).await?;
+            let mut summaries = Vec::new();
+            let mut original_ids = Vec::new();
+            for summary in all_summaries {
                 if summary.status != "APPROVED" {
                     continue;
                 }
+                let original_id = Uuid::from_str(&summary.original_transaction_id).map_err(|e| {
+                    AppError::Internal(format!("invalid original_transaction_id: {e}"))
+                })?;
+                original_ids.push(original_id);
+                summaries.push((original_id, summary));
+            }
 
-                let original_id = Uuid::from_str(&summary.original_transaction_id)
-                    .map_err(|e| AppError::Internal(format!("invalid original_transaction_id: {e}")))?;
+            let receipt_rows = sqlx::query(
+                "SELECT transaction_id, number FROM receipts \
+                 WHERE transaction_id = ANY($1) AND revision = 1",
+            )
+            .bind(&original_ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
+            let mut receipts_by_tx: HashMap<Uuid, String> = HashMap::new();
+            for r in receipt_rows {
+                let tx_id: Uuid = r.get("transaction_id");
+                receipts_by_tx
+                    .entry(tx_id)
+                    .or_insert_with(|| r.get::<String, _>("number"));
+            }
 
-                let receipt_row = sqlx::query(
-                    "SELECT number FROM receipts WHERE transaction_id = $1 AND revision = 1 LIMIT 1",
-                )
-                .bind(original_id)
-                .fetch_optional(&pool)
-                .await
-                .map_err(AppError::Database)?;
-                let receipt_number = receipt_row
-                    .map(|r| r.get::<String, _>("number"))
-                    .unwrap_or_default();
+            let line_rows = sqlx::query(
+                "SELECT transaction_id, shop_side, currency, quantity::text AS quantity, settle_thb::text AS settle_thb \
+                 FROM transaction_lines WHERE transaction_id = ANY($1) ORDER BY transaction_id, line_no ASC",
+            )
+            .bind(&original_ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
+            let mut lines_by_tx: HashMap<Uuid, Vec<DeskRefundLine>> = HashMap::new();
+            for r in line_rows {
+                let tx_id: Uuid = r.get("transaction_id");
+                lines_by_tx.entry(tx_id).or_default().push(DeskRefundLine {
+                    shop_side: r.get("shop_side"),
+                    currency: r.get("currency"),
+                    quantity: r.get("quantity"),
+                    settle_thb: r.get("settle_thb"),
+                });
+            }
 
-                let line_rows = sqlx::query(
-                    "SELECT shop_side, currency, quantity::text AS quantity, settle_thb::text AS settle_thb \
-                     FROM transaction_lines WHERE transaction_id = $1 ORDER BY line_no ASC",
-                )
-                .bind(original_id)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
-                let lines = line_rows
-                    .into_iter()
-                    .map(|r| DeskRefundLine {
-                        shop_side: r.get("shop_side"),
-                        currency: r.get("currency"),
-                        quantity: r.get("quantity"),
-                        settle_thb: r.get("settle_thb"),
-                    })
-                    .collect();
-
-                let payment_rows = sqlx::query(
-                    "SELECT method, amount_thb::text AS amount_thb \
-                     FROM transaction_payments WHERE transaction_id = $1 ORDER BY payment_no ASC",
-                )
-                .bind(original_id)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
-                let payments = payment_rows
-                    .into_iter()
-                    .map(|r| DeskRefundPayment {
+            let payment_rows = sqlx::query(
+                "SELECT transaction_id, method, amount_thb::text AS amount_thb \
+                 FROM transaction_payments WHERE transaction_id = ANY($1) ORDER BY transaction_id, payment_no ASC",
+            )
+            .bind(&original_ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
+            let mut payments_by_tx: HashMap<Uuid, Vec<DeskRefundPayment>> = HashMap::new();
+            for r in payment_rows {
+                let tx_id: Uuid = r.get("transaction_id");
+                payments_by_tx
+                    .entry(tx_id)
+                    .or_default()
+                    .push(DeskRefundPayment {
                         method: r.get("method"),
                         amount_thb: r.get("amount_thb"),
-                    })
-                    .collect();
+                    });
+            }
 
+            let mut rows = Vec::with_capacity(summaries.len());
+            for (original_id, summary) in summaries {
                 rows.push(DeskRefundRow {
                     reversal: summary,
-                    receipt_number,
-                    lines,
-                    payments,
+                    receipt_number: receipts_by_tx.get(&original_id).cloned().unwrap_or_default(),
+                    lines: lines_by_tx.get(&original_id).cloned().unwrap_or_default(),
+                    payments: payments_by_tx.get(&original_id).cloned().unwrap_or_default(),
                 });
             }
 

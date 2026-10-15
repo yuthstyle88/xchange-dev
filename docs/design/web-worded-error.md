@@ -101,6 +101,11 @@ classDiagram
 | **WE-1** | `wordedError`, `error.network`, the unit tests, and the gate with `KNOWN` frozen and `STALE_KNOWN_FAILS = false`. The gate's own tests cover each half: a new offender fails; a clean `KNOWN` file is listed but passes while the flag is off, and fails once it is on. Rewrites no screen. | this doc merging |
 | **WE-2 … WE-46** (one per row of §4.1: 45 folders) | In one folder: replace every offender (WE5's three signals) with `wordedError(err)`, keeping any WE4 screen-specific code first. For **each** changed catch, three tests, each going red on revert:<br>(1) a network `TypeError` shows `error.network`'s text in TH and EN;<br>(2) a 500 shows `error.serverError`'s text;<br>(3) a refusal with a code that has **no** shared key, plus a server `message`, shows that message. It must go red with a generic fallback; this pins W10 (4).<br>`class:mechanical`, one folder. The ticket does **not** edit the gate's `KNOWN`. | WE-1 |
 | **WE-final** | Remove clean files from `KNOWN` and set `STALE_KNOWN_FAILS = true`, in one commit. | all WE-n merged |
+| **WE-form** (#1848) | `useForm` (`web/src/shared/ui/form.ts`) shows `wordedError(err)` for a 5xx/`httpError`, the case WE-1 §6 set aside. FE follow-up (owner's choice A, 2026-10-15). | WE-1 |
+| **WE-f1** (#1844) | CashPolicy `policyError` and Campaigns `campaignError` check the 5xx case before their local code tables (WE2 (a)). FE follow-up (owner's choice A, 2026-10-15). | WE-8, WE-9 |
+| **WE-f2** (#1862) | One exported `isServerFailure(err)` in `worded-error.ts`, used by `wordedError` and the two screens of WE-f1 instead of three copies (♻️). FE follow-up (owner's choice A, 2026-10-15). | WE-f1 |
+| **WE-f3** (#1873) | Test-only: pin one `admin_employees` read per branch switch; fix the `Slips.rework.test.tsx:137` title. FE follow-up (owner's choice A, 2026-10-15). | WE-10 … WE-46 |
+| **WE-f4** (#1740) | `/staff`: a non-401 `staff_me` failure shows `wordedError(err)` instead of a blank page. FE follow-up (owner's choice A, 2026-10-15). | WE-38 |
 
 ### 4.1 Folders and their files
 

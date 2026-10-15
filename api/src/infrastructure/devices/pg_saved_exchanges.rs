@@ -11,8 +11,8 @@ use std::pin::Pin;
 
 use pos_error::AppResult;
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 
 use crate::infrastructure::devices::saved_exchanges::{ExchangeState, SavedExchanges};
 

@@ -12,6 +12,7 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::application::session::sha256_hex;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::document_store::DocumentStore;
@@ -86,7 +87,8 @@ impl CommandAction for VerificationDocumentLinkCommand {
         .await
         .ok()
         .flatten()
-        .unwrap_or_else(|| format!("session-{}", who.user_id));
+        // stopgap: see #1943
+        .unwrap_or_else(|| sha256_hex(&format!("session-{}", who.user_id)));
 
         let now = Utc::now();
         match access.link_for_reviewer(who, &session, doc_id, now).await {

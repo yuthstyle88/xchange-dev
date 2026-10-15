@@ -73,47 +73,6 @@ use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
-#[derive(Debug, Clone, Copy)]
-pub struct UnconfiguredDocumentStore;
-
-impl DocumentStore for UnconfiguredDocumentStore {
-    fn put<'a>(
-        &'a self,
-        _doc_ref: &'a str,
-        _bytes: &'a [u8],
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, DocumentStoreError>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            Err(DocumentStoreError::Io(
-                "Document store not configured".to_string(),
-            ))
-        })
-    }
-
-    fn get<'a>(
-        &'a self,
-        _doc_ref: &'a str,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<u8>, DocumentStoreError>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            Err(DocumentStoreError::NotFound(
-                "Document store not configured".to_string(),
-            ))
-        })
-    }
-
-    fn delete<'a>(
-        &'a self,
-        _doc_ref: &'a str,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), DocumentStoreError>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(DocumentStoreError::Io(
-                "Document store not configured".to_string(),
-            ))
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct AppState {
     pub settings: Arc<Settings>,
@@ -124,7 +83,6 @@ pub struct AppState {
     pub old_cookie_org_id: String,
     pub shift_balances: Arc<dyn ShiftBalances>,
     pub document_store: Arc<dyn DocumentStore>,
-    pub documents: Arc<dyn DocumentStore>,
     pub loyalty_summary: Arc<dyn LoyaltySummarySource>,
 }
 
@@ -191,7 +149,7 @@ impl AppState {
         let probe = Arc::new(db.clone());
         let rate_source = choose_rate_source(&settings.bot, Arc::new(BotRateSource::bot()));
         let shift_balances = Arc::new(PgLedgerShiftBalances::new(db.clone()));
-        let documents = Arc::new(LazyDocumentStore::new(
+        let document_store = Arc::new(LazyDocumentStore::new(
             settings.verification.store_dir.clone(),
         ));
         Self {
@@ -202,8 +160,7 @@ impl AppState {
             rate_source,
             old_cookie_org_id: crate::presentation::pages::SEEDED_XC_ORG_ID.to_string(),
             shift_balances,
-            document_store: documents.clone(),
-            documents,
+            document_store,
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
         }
     }
@@ -229,13 +186,11 @@ impl AppState {
     }
 
     pub fn with_documents(mut self, documents: Arc<dyn DocumentStore>) -> Self {
-        self.document_store = documents.clone();
-        self.documents = documents;
+        self.document_store = documents;
         self
     }
 
     pub fn with_document_store(mut self, document_store: Arc<dyn DocumentStore>) -> Self {
-        self.documents = document_store.clone();
         self.document_store = document_store;
         self
     }
@@ -443,7 +398,8 @@ impl Application {
             }
         });
 
-        let verification_sweeper = VerificationSweeper::new(pool.clone(), state.documents.clone());
+        let verification_sweeper =
+            VerificationSweeper::new(pool.clone(), state.document_store.clone());
         let purge_interval = Duration::from_secs(state.settings.auth.purge_interval_secs);
         let verification_sweep = tokio::spawn(async move {
             let mut rounds = tokio::time::interval(purge_interval);

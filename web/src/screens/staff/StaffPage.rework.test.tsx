@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
+import { th } from '../../shared/i18n/th';
+import { en } from '../../shared/i18n/en';
 import { ApiClient } from '../../shared/api/client';
 import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
@@ -183,3 +185,98 @@ describe('StaffPage #1703: worded error when staff_floor read fails', () => {
     });
   });
 });
+
+describe('StaffPage #1740: worded error when staff_me read fails', () => {
+  it('a 500 with a keyed non-server code on staff_me shows error.serverError in the alert, not a blank page', async () => {
+    viewsOf(
+      { status: 500, body: { error: { code: 'roleNotAllowedHere', message: 'internal db crash' } } },
+      ok(FLOOR_WITH_HOURS),
+    );
+    await mount();
+
+    await vi.waitFor(() => {
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert, 'an element with role="alert" must be displayed').not.toBeNull();
+      expect(alert!.textContent).toBe(th['error.serverError']);
+      expect(alert!.textContent).not.toContain('internal db crash');
+      expect(alert!.textContent).not.toContain('roleNotAllowedHere');
+    });
+  });
+
+  it('a network TypeError on staff_me shows error.network in TH and EN', async () => {
+    fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input).split('?')[0];
+      if (path === '/api/v3/views/staff_me') {
+        throw new TypeError('Failed to fetch');
+      }
+      return new Response(JSON.stringify({ version: 1, changed: true, data: FLOOR_WITH_HOURS }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    await mount();
+
+    await vi.waitFor(() => {
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert, 'error alert displayed in TH').not.toBeNull();
+      expect(alert!.textContent).toBe(th['error.network']);
+      expect(alert!.textContent).not.toContain('Failed to fetch');
+    });
+
+    dispose?.();
+    host.innerHTML = '';
+    setLang('en');
+    await mount();
+
+    await vi.waitFor(() => {
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert, 'error alert displayed in EN').not.toBeNull();
+      expect(alert!.textContent).toBe(en['error.network']);
+    });
+  });
+
+  it('a 4xx keyed refusal on staff_me shows the worded refusal message, never the raw code or message', async () => {
+    viewsOf(
+      { status: 403, body: { error: { code: 'roleNotAllowedHere', message: 'raw.refused.string' } } },
+      ok(FLOOR_WITH_HOURS),
+    );
+    await mount();
+
+    await vi.waitFor(() => {
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toBe(th['error.roleNotAllowedHere']);
+      expect(alert!.textContent).not.toContain('raw.refused.string');
+      expect(alert!.textContent).not.toContain('roleNotAllowedHere');
+    });
+  });
+
+  it('a 4xx unknown refusal code on staff_me shows the server sentence, never the raw code', async () => {
+    viewsOf(
+      { status: 400, body: { error: { code: 'unknownCustomCode', message: 'สาขาปิดทำการชั่วคราว' } } },
+      ok(FLOOR_WITH_HOURS),
+    );
+    await mount();
+
+    await vi.waitFor(() => {
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toBe('สาขาปิดทำการชั่วคราว');
+      expect(alert!.textContent).not.toContain('unknownCustomCode');
+    });
+  });
+
+  it('a 401 on staff_me still navigates to /login?next=%2Fstaff and renders no alert', async () => {
+    viewsOf(
+      { status: 401, body: { error: { code: 'signIn', message: 'กรุณาเข้าสู่ระบบ' } } },
+      ok(FLOOR_WITH_HOURS),
+    );
+    const navigate = await mount();
+
+    await vi.waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith('/login?next=%2Fstaff');
+    });
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+

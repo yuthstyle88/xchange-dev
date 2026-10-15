@@ -248,9 +248,16 @@ pub struct ShiftBalance {
 pub trait ShiftBalances: Send + Sync {
     /// One row per currency with a DRAWER(shift) account or a count line; ordered THB first, then A–Z.
     fn shift_balances<'a>(&'a self, shift: &'a ShiftId) -> BoxFuture<'a, AppResult<Vec<ShiftBalance>>>;
+    /// Many shifts at once (added 2026-10-15 for the admin shifts list's N+1): every requested id is a key, an
+    /// empty list when the shift has no rows; each value equals `shift_balances` for that shift. The default loops
+    /// over `shift_balances`, so test doubles need no change; `PgLedgerShiftBalances` overrides it with one read.
+    fn shift_balances_many<'a>(&'a self, shifts: &'a [ShiftId])
+        -> BoxFuture<'a, AppResult<BTreeMap<ShiftId, Vec<ShiftBalance>>>>;
 }
 // api/crates/xc-cash/src/infrastructure/ledger/shift_balances.rs   (new, LG-6.0): PgLedgerShiftBalances implements it
 ```
+
+**`shift_balances_many` (2026-10-15).** `views/admin_shifts.rs:134` called `shift_balances` once per listed shift. It reads the page's shifts in one call. Ticket: admin shifts batched balances (BE controller claude/7ca80c).
 
 - **Why the trait is in `xc-shift`.** `xc-cash` depends on `xc-shift` (`xc-cash/Cargo.toml` on PR 871), so `xc-shift`'s `PgShiftRepository` cannot name an `xc-cash` type. The port sits beside `ShiftRepository` and `xc-cash` implements it. `PgShiftRepository` takes an `Arc<dyn ShiftBalances>`, and `api`'s views take the same `Arc` from `AppState` (one bootstrap line each, not reserved).
 - **The one source.** `expected` is the same sum as `LedgerCashPostings::expected_in(Drawer(shift))`; the two must not drift. LG-6.0's up-front tests compare them on the `v2_shift_cases.json` cases, where every drawer is ≥ 0.
@@ -606,6 +613,7 @@ database with rows.
 | LG-3b | #926 | open | the `cash_limits` commands half of the LG-3 row, split at cutting (LG-3 #925 closed) |
 | LG-6 (parent) | #930 | open | holder only for LG-6.0 … LG-6.m |
 | LG-7 (parent) | #927 | open | holder only for LG-7.0 … LG-7.5 |
+| COUNT_DIFFERENCE follow-up (org-wide FINANCE) | #1920 | open (2026-10-15) | `may_decide` ⇔ "FINANCE (organisation-wide or of the branch)": `CountDifferencePolicy` refused an organisation-wide FINANCE. Shared with the reversal policy (`reversal.md` §8) |
 
 ## 11. Must ask the owner (not decided here)
 

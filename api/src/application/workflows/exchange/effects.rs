@@ -14,8 +14,8 @@ use pos_error::AppResult;
 use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 
 /// §6.2's `BoxFuture<'a, AppResult<()>>`, spelled without the `futures` crate.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

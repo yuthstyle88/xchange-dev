@@ -8,6 +8,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use serde_json::json;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_auth::application::session::sha256_hex;
 use xc_verification::application::access::document_access::{AccessError, DocumentAccess};
 use xc_verification::application::access::download_link::DownloadLink;
 
@@ -35,7 +36,7 @@ async fn handle_content(
     pool: &sqlx::PgPool,
     doc_store: Arc<dyn xc_kernel::document_store::DocumentStore>,
 ) -> HttpResponse {
-    let session = req
+    let raw_session = req
         .cookie("__Host-xc_session")
         .map(|c| c.value().to_string())
         .or_else(|| {
@@ -53,6 +54,7 @@ async fn handle_content(
                 })
         })
         .unwrap_or_default();
+    let session = sha256_hex(&raw_session);
 
     let keys = match xc_customer::get_pii_keys() {
         Ok(k) => k,

@@ -7,7 +7,7 @@ use xc_kernel::ids::BranchId;
 use super::line::TransactionLine;
 use super::payment::TransactionPayment;
 use super::receipt_record::Receipt;
-use crate::domain::customer::value_objects::mode::Mode;
+use xc_kernel::mode::Mode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TransactionId(pub Uuid);

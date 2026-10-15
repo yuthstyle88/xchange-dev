@@ -451,6 +451,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
         req!.body?.identityChecked === true || typeof req!.body?.qrToken === 'string',
         'body carries identityChecked: true or qrToken',
       ).toBe(true);
+      expect(req!.body?.branch, '#1913: every booking command names its branch').toBe(BRANCH_ID);
 
       // DOM updates with CHECKED_IN status and issued ticket number
       expect(
@@ -525,7 +526,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       const req = sentRequests.find((r) => r.path === `/api/bookings/${BOOKING_1_ID}/cancel`);
       expect(req, 'sends POST /api/bookings/{id}/cancel').toBeDefined();
       expect(req!.headers.get('idempotency-key'), 'cancel carries Idempotency-Key').toBeTruthy();
-      expect(req!.body).toEqual({ reason: 'Customer called to cancel due to emergency' });
+      expect(req!.body).toEqual({ reason: 'Customer called to cancel due to emergency', branch: BRANCH_ID });
 
       // Booking status updates to CANCELLED
       expect(
@@ -567,7 +568,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       const req = sentRequests.find((r) => r.path === `/api/bookings/${BOOKING_1_ID}/reschedule`);
       expect(req, 'sends POST /api/bookings/{id}/reschedule').toBeDefined();
       expect(req!.headers.get('idempotency-key'), 'reschedule carries Idempotency-Key').toBeTruthy();
-      expect(req!.body).toEqual({ slotId: SLOT_2_ID });
+      expect(req!.body).toEqual({ slotId: SLOT_2_ID, branch: BRANCH_ID });
     });
 
     it('capacityFull refusal shows worded error and absent raw code', async () => {
@@ -702,6 +703,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       expect(req, 'sends POST /api/bookings').toBeDefined();
       expect(req!.headers.get('idempotency-key'), 'bookingCreate carries Idempotency-Key').toBeTruthy();
       expect(req!.body).toEqual({
+        branch: BRANCH_ID,
         branchId: BRANCH_ID,
         slotId: SLOT_1_ID,
         shopSide: 'SELL',
@@ -743,6 +745,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       expect(req!.headers.get('idempotency-key'), 'bookingCreate carries Idempotency-Key').toBeTruthy();
 
       expect(req!.body).toEqual({
+        branch: BRANCH_ID,
         branchId: BRANCH_ID,
         slotId: SLOT_1_ID,
         shopSide: 'SELL',

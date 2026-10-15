@@ -1,8 +1,8 @@
 //! Payment settings part in the save of an exchange (PM-S, design §5.5.2).
 
 use pos_error::AppError;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
+use xc_kernel::mode::Mode;
 
 use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};

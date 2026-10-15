@@ -4,12 +4,12 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
 
-use crate::application::customer::service::NO_SUCH_BRANCH;
 use crate::domain::booking::commands::issue_member::IssueMember;
 use crate::domain::booking::entities::member::Member;
 use crate::domain::booking::repositories::member_repository::TokenTaken;
 use crate::domain::booking::value_objects::booking_error::BookingError;
 use crate::domain::booking::value_objects::booking_input::token_hash;
+use xc_customer::application::customer::service::NO_SUCH_BRANCH;
 
 use super::service::BookingService;
 

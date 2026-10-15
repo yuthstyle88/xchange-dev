@@ -141,6 +141,32 @@ impl CommandAction for CampaignVersionSaveCommand {
         })?;
 
         let Some(r) = row else {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS( \
+                     SELECT 1 FROM campaign_versions \
+                     WHERE organization_id = $1 AND campaign_id = $2 \
+                 )",
+            )
+            .bind(org_id)
+            .bind(campaign_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+            if exists {
+                return Err(V3Error::new(
+                    "staleVersion",
+                    None,
+                    "campaign version is not editable; create a new draft version instead",
+                    StatusCode::CONFLICT,
+                ));
+            }
             return Err(V3Error::new(
                 "versionNotFound",
                 None,
