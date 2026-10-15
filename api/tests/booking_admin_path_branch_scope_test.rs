@@ -385,3 +385,127 @@ async fn the_branch_admin_still_manages_its_own_branch() {
     );
     db.finish().await;
 }
+
+// ── cross-organisation: the strongest org-A grant still cannot reach org B ──
+
+/// A second organisation, with a branch that has its own slot rule and an open slot.
+const ORG_B: &str = "00000000-0000-0000-0000-0000000000b2";
+const ORG_B_BRANCH: &str = "XC-OB1";
+/// Organisation-wide ADMIN of `ORG` (`ScopedRole(Admin, None)`): the widest grant org A can hold,
+/// so the only thing that can refuse it is the organisation boundary.
+const ORG_A_WIDE_ADMIN: &str = "ADMIN@*";
+
+async fn seed_org_b(pool: &PgPool) -> Uuid {
+    sqlx::query(
+        "INSERT INTO organizations (id, code, timezone, created_at) \
+         VALUES ($1::uuid, 'ORGB', 'Asia/Bangkok', now()) ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(ORG_B)
+    .execute(pool)
+    .await
+    .expect("insert organisation B");
+    sqlx::query(
+        "INSERT INTO branches (id, name, organization_id, booking_enabled) VALUES ($1, 'Org B branch', $2::uuid, true)",
+    )
+    .bind(ORG_B_BRANCH)
+    .bind(ORG_B)
+    .execute(pool)
+    .await
+    .expect("insert org B branch");
+    sqlx::query(
+        "INSERT INTO booking_slot_rules (organization_id, branch_id, slot_minutes, capacity, horizon_days, updated_by) \
+         VALUES ($1::uuid, $2, 30, 10, 14, $3::uuid)",
+    )
+    .bind(ORG_B)
+    .bind(ORG_B_BRANCH)
+    .bind(ADMIN_ID)
+    .execute(pool)
+    .await
+    .expect("seed org B slot rule");
+    let slot = Uuid::new_v4();
+    let now = Utc::now();
+    sqlx::query(
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status) \
+         VALUES ($1, $2::uuid, $3, $4, $5, $6, 5, 0, 'OPEN')",
+    )
+    .bind(slot)
+    .bind(ORG_B)
+    .bind(ORG_B_BRANCH)
+    .bind(bangkok_today())
+    .bind(now + Duration::hours(1))
+    .bind(now + Duration::hours(2))
+    .execute(pool)
+    .await
+    .expect("seed org B slot");
+    slot
+}
+
+#[actix_web::test]
+async fn an_org_wide_admin_of_another_organisation_cannot_write_org_b_by_path_or_slot_id() {
+    let db = TestDb::start().await;
+    let org_b_slot = seed_org_b(&db.pool).await;
+    let slots_before = slot_count(&db.pool, ORG_B_BRANCH).await;
+
+    let rule = call(
+        &db,
+        Some(ORG_A_WIDE_ADMIN),
+        Method::PUT,
+        &format!("/api/branches/{ORG_B_BRANCH}/booking-slot-rule"),
+        Some(json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 })),
+        Some("k-xorg-rule"),
+    )
+    .await;
+    out_of_scope(
+        &rule,
+        "slotRuleSet on an org-B branch by an org-A org-wide ADMIN",
+    );
+
+    let add = call(
+        &db,
+        Some(ORG_A_WIDE_ADMIN),
+        Method::POST,
+        &format!("/api/branches/{ORG_B_BRANCH}/closures"),
+        Some(json!({ "branch": B01, "closedOn": "2026-12-25", "reason": "cross-org" })),
+        Some("k-xorg-cadd"),
+    )
+    .await;
+    out_of_scope(
+        &add,
+        "closureAdd on an org-B branch by an org-A org-wide ADMIN",
+    );
+
+    let cap = call(
+        &db,
+        Some(ORG_A_WIDE_ADMIN),
+        Method::PUT,
+        &format!("/api/booking-slots/{org_b_slot}/capacity"),
+        Some(json!({ "branch": B01, "capacity": 9 })),
+        Some("k-xorg-cap"),
+    )
+    .await;
+    out_of_scope(
+        &cap,
+        "slotCapacitySet on an org-B slot by an org-A org-wide ADMIN",
+    );
+
+    assert_eq!(
+        rule_of(&db.pool, ORG_B_BRANCH).await,
+        (30, 10, 14),
+        "org B's slot rule must be unchanged"
+    );
+    assert_eq!(
+        slot_count(&db.pool, ORG_B_BRANCH).await,
+        slots_before,
+        "no org-B slots may be generated"
+    );
+    assert!(
+        closure_reasons(&db.pool, ORG_B_BRANCH).await.is_empty(),
+        "no org-B closure may be written"
+    );
+    assert_eq!(
+        slot_state(&db.pool, org_b_slot).await,
+        (5, "OPEN".to_string()),
+        "org B's slot must be unchanged"
+    );
+    db.finish().await;
+}
