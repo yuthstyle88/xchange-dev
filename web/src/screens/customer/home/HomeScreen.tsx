@@ -11,6 +11,8 @@ import {
   type JSX,
 } from 'solid-js';
 import { fill, lang, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -46,6 +48,7 @@ export function branchFromSearch(search?: string): string | null {
 export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const t = screenT('customer.home', { th, en, zh });
   const doFetch = props.fetch ?? ((url, init) => fetch(url, init));
+  const api = new ApiClient(doFetch);
 
   const [org, setOrg] = createSignal<string | null>(props.org ?? null);
   const [orgState, setOrgState] = createSignal<'loading' | 'ready' | 'error'>(
@@ -231,6 +234,8 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
   };
 
+  let pendingSave: { key: string; bodyJson: string } | null = null;
+
   const handleCalculate = async () => {
     const amtStr = amount().trim();
     const isNum = /^\d+(\.\d+)?$/.test(amtStr) && parseFloat(amtStr) > 0;
@@ -259,30 +264,24 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     };
 
     try {
-      const res = await doFetch('/api/v3/compute/planner_preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 200) {
-        const json = (await res.json()) as PlannerPreviewAnswer;
-        setPreviewResult(json);
+      const json = await api.act<Record<string, unknown>, PlannerPreviewAnswer>(
+        'compute',
+        'planner_preview',
+        body,
+      );
+      setPreviewResult(json);
+    } catch (err) {
+      if (err instanceof ApiError && !isServerFailure(err) && err.code === 'rateUnavailable') {
+        setPreviewError(t('rateUnavailable'));
+      } else if (
+        err instanceof ApiError &&
+        !isServerFailure(err) &&
+        err.code === 'validationFailed'
+      ) {
+        setPreviewError(t('validationError'));
       } else {
-        const errJson = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
-        };
-        const code = errJson?.error?.code;
-        if (code === 'rateUnavailable') {
-          setPreviewError(t('rateUnavailable'));
-        } else if (code === 'validationFailed') {
-          setPreviewError(t('validationError'));
-        } else {
-          setPreviewError(t('rateUnavailable'));
-        }
+        setPreviewError(wordedError(err));
       }
-    } catch {
-      setPreviewError(t('networkError'));
     } finally {
       setPreviewLoading(false);
     }
@@ -301,36 +300,33 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     setSavedPlanId(null);
     setSavePlanError(null);
 
-    const idempotencyKey =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
     const body: Record<string, unknown> = {
       branch: branch || undefined,
       currency: calcCurrency(),
       customerSide: customerSide(),
       amount: amountType() === 'quantity' ? { quantity: amtStr } : { budgetThb: amtStr },
     };
+    const bodyJson = JSON.stringify(body);
+    if (!pendingSave || pendingSave.bodyJson !== bodyJson) {
+      const nextKey =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pendingSave = { key: nextKey, bodyJson };
+    }
+    const idempotencyKey = pendingSave.key;
 
     try {
-      const res = await doFetch('/api/app/planner-drafts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 200 || res.status === 201) {
-        const draft = (await res.json()) as PlannerDraftDto;
-        setSavedPlanId(draft.id);
-      } else {
-        setSavePlanError(t('planSaveFailed'));
-      }
-    } catch {
-      setSavePlanError(t('planSaveFailed'));
+      const draft = await api.command<Record<string, unknown>, PlannerDraftDto>(
+        'POST',
+        '/api/app/planner-drafts',
+        body,
+        idempotencyKey,
+      );
+      pendingSave = null;
+      setSavedPlanId(draft.id);
+    } catch (err) {
+      setSavePlanError(wordedError(err));
     } finally {
       setSavingPlan(false);
     }
