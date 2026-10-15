@@ -152,7 +152,7 @@ jobs:
     name: test
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: [self-hosted, macOS, ARM64, mac-studio]
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: 12
@@ -384,77 +384,9 @@ jobs:
             docker stop "$XC_CONTAINER" || true
           fi
 
-  device-agent-linux:
-    name: device-agent-linux
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 20
-    env:
-      CARGO_BUILD_JOBS: 12
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
-      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
-      GIT_CONFIG_VALUE_0: https://github.com/
-    steps:
-      - name: Refuse to report green when changes did not succeed
-        if: ${{ needs.changes.result != 'success' }}
-        run: |
-          echo "changes did not succeed: ${{ needs.changes.result }}"
-          exit 1
-
-      - name: Refuse to report green when the run was cancelled
-        if: cancelled()
-        run: exit 1
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify rustc 1.98.1
-        working-directory: api
-        run: |
-          if [ -d "$HOME/.cargo/bin" ]; then
-            export PATH="$HOME/.cargo/bin:$PATH"
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
-          rustup show active-toolchain || true
-          rustc --version
-          VERSION=$(rustc --version | head -n 1)
-          if ! echo "$VERSION" | grep -qE '^rustc 1\.98\.1(\s|$)'; then
-            echo "::error::rustc version must be 1.98.1, but found: $VERSION"
-            exit 1
-          fi
-
-      - name: Clippy
-        working-directory: api
-        run: cargo clippy -p xc-device-agent --all-targets -- -D warnings
-
-      - name: Install cargo-nextest
-        working-directory: api
-        run: |
-          VERSION="0.9.137"
-          TOOL_CACHE="${RUNNER_TOOL_CACHE:-$HOME/.cache}"
-          ROOT="$TOOL_CACHE/xchange-cargo-nextest-$VERSION"
-          BIN="$ROOT/bin/cargo-nextest"
-          if [ ! -x "$BIN" ]; then
-            CARGO_TARGET_DIR="$ROOT/target" cargo install cargo-nextest --version "$VERSION" --locked --root "$ROOT"
-            rm -rf "$ROOT/target"
-          fi
-          echo "$ROOT/bin" >> "$GITHUB_PATH"
-
-      - name: Test
-        working-directory: api
-        run: cargo nextest run -p xc-device-agent
-
   api:
     name: api
-    needs: [changes, test, device-agent-linux]
+    needs: [changes, test]
     if: ${{ always() }}
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 5
@@ -470,9 +402,8 @@ jobs:
           echo "changes result: ${{ needs.changes.result }}"
           echo "changes skip_build: ${{ needs.changes.outputs.skip_build }}"
           echo "test result: ${{ needs.test.result }}"
-          echo "device-agent-linux result: ${{ needs['device-agent-linux'].result }}"
 
-          if [ "${{ needs.changes.result }}" = "cancelled" ] || [ "${{ needs.test.result }}" = "cancelled" ] || [ "${{ needs['device-agent-linux'].result }}" = "cancelled" ]; then
+          if [ "${{ needs.changes.result }}" = "cancelled" ] || [ "${{ needs.test.result }}" = "cancelled" ]; then
             echo "::error::Dependency was cancelled"
             exit 1
           fi
@@ -489,11 +420,6 @@ jobs:
 
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "::error::One or more test partitions failed: ${{ needs.test.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs['device-agent-linux'].result }}" != "success" ]; then
-            echo "::error::device-agent-linux failed: ${{ needs['device-agent-linux'].result }}"
             exit 1
           fi
 
