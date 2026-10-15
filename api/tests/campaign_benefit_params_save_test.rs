@@ -28,6 +28,7 @@
 //! | RATE_IMPROVEMENT `delta` "abc" / `true` | same, `rules.calculation.delta` |
 //! | RATE_IMPROVEMENT `percent` "abc" / `true` | same, `rules.calculation.percent` |
 //! | RATE_IMPROVEMENT with neither `delta` nor `percent` | same, `rules.calculation` |
+//! | a param given as a JSON number, not a decimal string (ruling R3) | same, `rules.calculation.<key>` |
 //! | `benefitType` the registry does not know | same, `rules.benefitType` |
 //! | the 2nd rule malformed | the message names `rules[1]`; the 1st rule is not written either |
 //! | each well-formed kind/key | 200, rule stored with that calculation and the kind's class |
@@ -523,6 +524,58 @@ async fn rate_improvement_without_delta_or_percent_is_refused() {
         "RATE_IMPROVEMENT",
         json!({ "type": "FIXED_RATE" }),
         "rules.calculation",
+    )
+    .await;
+}
+
+// ── JSON numbers are malformed (ruling R3: design §4.1 "decimals as strings") ──
+
+#[actix_web::test]
+async fn fee_waiver_percent_as_json_number_is_refused() {
+    refused(
+        "FEE_WAIVER",
+        json!({ "percent": 0.5 }),
+        "rules.calculation.percent",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn fee_waiver_amount_as_json_integer_is_refused() {
+    refused(
+        "FEE_WAIVER",
+        json!({ "amount": 30 }),
+        "rules.calculation.amount",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn fee_waiver_fixed_as_json_number_is_refused() {
+    refused(
+        "FEE_WAIVER",
+        json!({ "fixed": 25.5 }),
+        "rules.calculation.fixed",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn rate_improvement_delta_as_json_integer_is_refused() {
+    refused(
+        "RATE_IMPROVEMENT",
+        json!({ "delta": 1 }),
+        "rules.calculation.delta",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn rate_improvement_percent_as_json_number_is_refused() {
+    refused(
+        "RATE_IMPROVEMENT",
+        json!({ "percent": 0.01 }),
+        "rules.calculation.percent",
     )
     .await;
 }
