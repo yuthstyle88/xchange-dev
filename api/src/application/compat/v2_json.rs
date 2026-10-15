@@ -29,8 +29,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
-use xc_exchange::domain::customer::entities::customer::Customer;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::domain::customer::entities::customer::Customer;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
 use xc_rate::domain::branch::entities::branch::Branch;
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;

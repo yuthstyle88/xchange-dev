@@ -1,7 +1,7 @@
 //! Custody's part in the save of an exchange.
 
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::CurrencyCode;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
