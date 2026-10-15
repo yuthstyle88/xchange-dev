@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
@@ -115,22 +116,10 @@ fn parse_shift_status(s: &str) -> Result<ShiftStatus, AppError> {
     }
 }
 
-async fn load_shift_balances<'e, E>(
-    executor: E,
-    shift_id: &str,
+fn fold_balances(
+    rows: Vec<BalanceRow>,
     status: ShiftStatus,
-) -> AppResult<(Balances, Balances, Option<Balances>, Option<StockDelta>)>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-{
-    let rows: Vec<BalanceRow> = sqlx::query_as(
-        "SELECT code, opening::text, expected::text, counted::text, difference::text \
-         FROM shift_balances WHERE shift_id = $1",
-    )
-    .bind(shift_id)
-    .fetch_all(executor)
-    .await?;
-
+) -> AppResult<(Balances, Balances, Option<Balances>, Option<StockDelta>)> {
     let mut opening_pairs = Vec::new();
     let mut expected_pairs = Vec::new();
     let mut counted_pairs = Vec::new();
@@ -179,6 +168,25 @@ where
     Ok((opening, expected, counted, difference))
 }
 
+async fn load_shift_balances<'e, E>(
+    executor: E,
+    shift_id: &str,
+    status: ShiftStatus,
+) -> AppResult<(Balances, Balances, Option<Balances>, Option<StockDelta>)>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let rows: Vec<BalanceRow> = sqlx::query_as(
+        "SELECT code, opening::text, expected::text, counted::text, difference::text \
+         FROM shift_balances WHERE shift_id = $1",
+    )
+    .bind(shift_id)
+    .fetch_all(executor)
+    .await?;
+
+    fold_balances(rows, status)
+}
+
 macro_rules! select_shifts {
     ($tail:literal) => {
         concat!(
@@ -189,14 +197,17 @@ macro_rules! select_shifts {
     };
 }
 
-async fn shift_from_row<'e, E>(executor: E, r: ShiftRow) -> AppResult<Shift>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-{
-    let status = parse_shift_status(&r.2)?;
-    let (opening, expected, counted, difference) =
-        load_shift_balances(executor, &r.0, status).await?;
-    Ok(Shift {
+fn build_shift(
+    r: ShiftRow,
+    status: ShiftStatus,
+    (opening, expected, counted, difference): (
+        Balances,
+        Balances,
+        Option<Balances>,
+        Option<StockDelta>,
+    ),
+) -> Shift {
+    Shift {
         id: r.0,
         branch_id: BranchId::new(r.1),
         status,
@@ -211,7 +222,16 @@ where
         note: r.7,
         open_request_id: r.8,
         close_request_id: r.9,
-    })
+    }
+}
+
+async fn shift_from_row<'e, E>(executor: E, r: ShiftRow) -> AppResult<Shift>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let status = parse_shift_status(&r.2)?;
+    let balances = load_shift_balances(executor, &r.0, status).await?;
+    Ok(build_shift(r, status, balances))
 }
 
 fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
@@ -382,9 +402,41 @@ impl ShiftRepository for PgShiftRepository {
                 .fetch_all(&self.pool)
                 .await?;
 
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let shift_ids: Vec<String> = rows.iter().map(|r| r.0.clone()).collect();
+        type ShiftBalanceRow = (
+            String,         // shift_id
+            String,         // code
+            String,         // opening
+            String,         // expected
+            Option<String>, // counted
+            Option<String>, // difference
+        );
+        let balance_rows: Vec<ShiftBalanceRow> = sqlx::query_as(
+            "SELECT shift_id, code, opening::text, expected::text, counted::text, difference::text \
+             FROM shift_balances WHERE shift_id = ANY($1)",
+        )
+        .bind(&shift_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut by_shift: HashMap<String, Vec<BalanceRow>> = HashMap::with_capacity(rows.len());
+        for (shift_id, code, opening, expected, counted, difference) in balance_rows {
+            by_shift
+                .entry(shift_id)
+                .or_default()
+                .push((code, opening, expected, counted, difference));
+        }
+
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
-            out.push(shift_from_row(&self.pool, r).await?);
+            let status = parse_shift_status(&r.2)?;
+            let shift_balances = by_shift.remove(&r.0).unwrap_or_default();
+            let balances = fold_balances(shift_balances, status)?;
+            out.push(build_shift(r, status, balances));
         }
         Ok(out)
     }

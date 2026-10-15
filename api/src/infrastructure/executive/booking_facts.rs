@@ -57,6 +57,13 @@ impl ExchangeFacts for BookingFacts {
         self.wide.unfinished(branch)
     }
 
+    fn unfinished_by_branch<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+    ) -> BoxFuture<'a, AppResult<BTreeMap<BranchId, i64>>> {
+        self.wide.unfinished_by_branch(branches)
+    }
+
     /// The booking conversion over `branches` and the filter (design §3).
     ///
     /// Cohort: bookings whose slot `service_date` falls in the period and is not after the branch's today.
