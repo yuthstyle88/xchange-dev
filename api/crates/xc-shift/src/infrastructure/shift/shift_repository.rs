@@ -179,6 +179,41 @@ where
     Ok((opening, expected, counted, difference))
 }
 
+macro_rules! select_shifts {
+    ($tail:literal) => {
+        concat!(
+            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, \
+             open_request_id, close_request_id FROM shifts ",
+            $tail
+        )
+    };
+}
+
+async fn shift_from_row<'e, E>(executor: E, r: ShiftRow) -> AppResult<Shift>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let status = parse_shift_status(&r.2)?;
+    let (opening, expected, counted, difference) =
+        load_shift_balances(executor, &r.0, status).await?;
+    Ok(Shift {
+        id: r.0,
+        branch_id: BranchId::new(r.1),
+        status,
+        opened_at: r.3,
+        opened_by: r.4,
+        opening,
+        expected,
+        closed_at: r.5,
+        closed_by: r.6,
+        counted,
+        difference,
+        note: r.7,
+        open_request_id: r.8,
+        close_request_id: r.9,
+    })
+}
+
 fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
     let (id, shift_id, at, by, code_str, dir_str, amount_str, reason, request_id) = row;
     let currency = CurrencyCode::parse(code_str.trim())
@@ -327,69 +362,29 @@ impl ShiftRepository for PgShiftRepository {
     }
 
     async fn active(&self, branch: &BranchId) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL",
-        )
+        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL"
+        ))
         .bind(branch.as_str())
         .fetch_optional(&self.pool)
         .await?;
 
-        if let Some(r) = row {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&self.pool, &r.0, status).await?;
-            Ok(Some(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
+            None => Ok(None),
         }
     }
 
     async fn shifts(&self, branch: &BranchId) -> AppResult<Vec<Shift>> {
-        let rows: Vec<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 ORDER BY seq ASC",
-        )
-        .bind(branch.as_str())
-        .fetch_all(&self.pool)
-        .await?;
+        let rows: Vec<ShiftRow> =
+            sqlx::query_as(select_shifts!("WHERE branch_id = $1 ORDER BY seq ASC"))
+                .bind(branch.as_str())
+                .fetch_all(&self.pool)
+                .await?;
 
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&self.pool, &r.0, status).await?;
-            out.push(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            });
+            out.push(shift_from_row(&self.pool, r).await?);
         }
         Ok(out)
     }
@@ -407,37 +402,16 @@ impl ShiftRepository for PgShiftRepository {
     }
 
     async fn shift(&self, branch: &BranchId, id: &str) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND id = $2",
-        )
-        .bind(branch.as_str())
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<ShiftRow> =
+            sqlx::query_as(select_shifts!("WHERE branch_id = $1 AND id = $2"))
+                .bind(branch.as_str())
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
 
-        if let Some(r) = row {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&self.pool, &r.0, status).await?;
-            Ok(Some(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
+            None => Ok(None),
         }
     }
 
@@ -480,37 +454,17 @@ impl ShiftRepository for PgShiftRepository {
         branch: &BranchId,
         request_id: &str,
     ) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND open_request_id = $2",
-        )
+        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE branch_id = $1 AND open_request_id = $2"
+        ))
         .bind(branch.as_str())
         .bind(request_id)
         .fetch_optional(&mut **tx)
         .await?;
 
-        if let Some(r) = row {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&mut **tx, &r.0, status).await?;
-            Ok(Some(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(r) => Ok(Some(shift_from_row(&mut **tx, r).await?)),
+            None => Ok(None),
         }
     }
 
@@ -520,37 +474,17 @@ impl ShiftRepository for PgShiftRepository {
         branch: &BranchId,
         request_id: &str,
     ) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND close_request_id = $2",
-        )
+        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE branch_id = $1 AND close_request_id = $2"
+        ))
         .bind(branch.as_str())
         .bind(request_id)
         .fetch_optional(&mut **tx)
         .await?;
 
-        if let Some(r) = row {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&mut **tx, &r.0, status).await?;
-            Ok(Some(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(r) => Ok(Some(shift_from_row(&mut **tx, r).await?)),
+            None => Ok(None),
         }
     }
 
@@ -559,36 +493,16 @@ impl ShiftRepository for PgShiftRepository {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
     ) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(
-            "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, open_request_id, close_request_id \
-             FROM shifts WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL",
-        )
+        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL"
+        ))
         .bind(branch.as_str())
         .fetch_optional(&mut **tx)
         .await?;
 
-        if let Some(r) = row {
-            let status = parse_shift_status(&r.2)?;
-            let (opening, expected, counted, difference) =
-                load_shift_balances(&mut **tx, &r.0, status).await?;
-            Ok(Some(Shift {
-                id: r.0,
-                branch_id: BranchId::new(r.1),
-                status,
-                opened_at: r.3,
-                opened_by: r.4,
-                opening,
-                expected,
-                closed_at: r.5,
-                closed_by: r.6,
-                counted,
-                difference,
-                note: r.7,
-                open_request_id: r.8,
-                close_request_id: r.9,
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(r) => Ok(Some(shift_from_row(&mut **tx, r).await?)),
+            None => Ok(None),
         }
     }
 
