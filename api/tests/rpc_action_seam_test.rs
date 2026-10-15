@@ -250,7 +250,7 @@ async fn a_family_that_handles_a_name_answers_it_in_its_own_words() {
 #[actix_web::test]
 async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
     let desk = Desk::open().await;
-    let family = Family::new("one", &["saveTransaction", "opsClock"], BOTH);
+    let family = Family::new("one", &["saveTransaction", "documents"], BOTH);
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
@@ -276,10 +276,10 @@ async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
     );
     assert_eq!(answer.header("cache-control"), Some("no-store"));
 
-    // a name of another family of v2, another role
-    let answer = ask(&app, &cookies, STAFF_RPC, "opsClock", "MANAGER", json!({})).await;
+    // a name of another family of v2, another role (CA-10 #626 retires `ops*`: `documents` here)
+    let answer = ask(&app, &cookies, STAFF_RPC, "documents", "MANAGER", json!({})).await;
     assert_eq!(answer.status, 200, "{:.300}", answer.text);
-    assert_eq!(answer.json()["action"], "opsClock");
+    assert_eq!(answer.json()["action"], "documents");
     assert_eq!(answer.json()["passportUrl"], "/api/staff/file/abc");
     assert_eq!(family.ran(), 2);
     desk.finish().await;
@@ -446,9 +446,11 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
         .assert_refused(400, ROLE_NOT_ALLOWED_STAFF, "opsNope");
     assert_eq!(none.ran() + other.ran(), 0);
     // every registered family was asked, each time
-    // (the owner's rateDraft is answered before any family is asked)
-    assert_eq!(none.asked(), 4);
-    assert_eq!(other.asked(), 4);
+    // (the owner's rateDraft is answered before any family is asked; re-expected for CA-10 #626:
+    // so is `opsNope`, which `Policy` refuses at the gate like any name the staff route does not
+    // know, design §6)
+    assert_eq!(none.asked(), 3);
+    assert_eq!(other.asked(), 3);
 
     // the one that does handle a name still answers it, behind one that does not
     let answer = ask(&app, &cookies, STAFF_RPC, "documents", "FRONT", json!({})).await;

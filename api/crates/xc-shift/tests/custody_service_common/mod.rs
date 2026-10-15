@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, SecondsFormat, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_shift::application::custody::service::CustodyService;
@@ -20,13 +20,11 @@ use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
-use xc_shift::domain::shift::entities::shift::ShiftStatus;
-use xc_shift::domain::shift::value_objects::stock_delta::Direction;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
-use crate::custody_common::{actor, shown_state};
-use crate::shift_service_common::{TestDb, shown_balances, shown_delta};
+use crate::custody_common::actor;
+use crate::shift_service_common::{TestDb, shown_balances};
 
 pub type Custody = CustodyService<PgCustodyRepository, PgShiftRepository>;
 
@@ -369,56 +367,6 @@ fn flatten(doc: &Value) -> BTreeMap<String, Value> {
     out
 }
 
-/// Everything a branch holds — custody state, its events, the shifts and the
-/// stock movements — in the fixture's written form: ids replaced, one entry per
-/// scalar part and per list element.
-pub async fn written(
-    db: &TestDb,
-    custody: &Custody,
-    branch: &BranchId,
-    result: &Value,
-    ids: &mut Ids,
-) -> BTreeMap<String, Value> {
-    let state = custody.state(branch).await.expect("read the custody state");
-    let events = custody.events(branch).await.expect("read the events");
-    let shifts = db.service().shifts(branch).await.expect("list shifts");
-    let movements = db
-        .service()
-        .movements(branch)
-        .await
-        .expect("list movements");
-    let shift_ids: Vec<&str> = shifts.iter().map(|s| s.id.as_str()).collect();
-
-    let mut ops: Map<String, Value> = shown_state(&state);
-    if let Some(Value::Array(requests)) = ops.get_mut("requests") {
-        for r in requests {
-            // the hash is this server's own; v2's is not compared
-            r.as_object_mut().unwrap().remove("payloadHash");
-        }
-    }
-    let doc = json!({
-        "events": events.iter().map(event_json).collect::<Vec<_>>(),
-        "movements": movements.iter().map(|m| json!({
-            "shift": shift_ids.iter().position(|id| *id == m.shift_id).map(|i| i as i64).unwrap_or(-1),
-            "currency": m.currency.as_str(),
-            "direction": if m.direction == Direction::In { "IN" } else { "OUT" },
-            "amount": m.amount.to_string(), "reason": m.reason, "requestId": m.request_id,
-        })).collect::<Vec<_>>(),
-        "ops": Value::Object(ops),
-        "result": result,
-        "shifts": shifts.iter().map(|s| json!({
-            "id": s.id,
-            "status": if s.status == ShiftStatus::Open { "OPEN" } else { "CLOSED" },
-            "opening": shown_balances(&s.opening), "expected": shown_balances(&s.expected),
-            "counted": s.counted.as_ref().map(shown_balances),
-            "difference": s.difference.as_ref().map(shown_delta),
-            "note": s.note, "openRequest": s.open_request_id, "closeRequest": s.close_request_id,
-        })).collect::<Vec<_>>(),
-        "times": times_json(&state),
-    });
-    flatten(&ids.normalise(&doc))
-}
-
 // ── a desk for the hand-written tests ───────────────────────────────────────
 
 pub fn evidence(n: u32) -> String {
@@ -482,99 +430,5 @@ impl Desk {
     /// The time of the latest command sent through this desk.
     pub fn now(&self) -> DateTime<Utc> {
         bangkok("12:00") + chrono::Duration::minutes(self.minute)
-    }
-
-    pub async fn act(&mut self, who: &str, action: &str, payload: Value) -> AppResult<Value> {
-        let now = self.tick();
-        self.custody
-            .command(&self.branch, action, &payload, &actor(who), now)
-            .await
-    }
-
-    pub async fn ok(&mut self, who: &str, action: &str, payload: Value) -> Value {
-        match self.act(who, action, payload.clone()).await {
-            Ok(v) => v,
-            Err(e) => panic!("{who} {action} {payload} must be accepted: {e:?}"),
-        }
-    }
-
-    /// A proposal payload with a fresh request id and one evidence file.
-    pub fn proposal(&mut self, kind: &str, more: Value) -> Value {
-        self.request += 1;
-        let mut p = json!({
-            "requestId": request_id(self.request), "kind": kind,
-            "evidenceKeys": [evidence(self.request)], "note": "",
-        });
-        for (k, v) in more.as_object().expect("an object") {
-            p[k] = v.clone();
-        }
-        p
-    }
-
-    pub async fn propose(&mut self, who: &str, kind: &str, more: Value) -> String {
-        let p = self.proposal(kind, more);
-        let r = self.ok(who, "opsPropose", p).await;
-        r["id"].as_str().expect("an id").to_owned()
-    }
-
-    /// Custody enabled, everyone clocked in, a target set, the safe counted in
-    /// (THB 500,000 · USD 10,000).
-    pub async fn with_safe(db: &TestDb) -> Desk {
-        let mut d = Desk::new(db).await;
-        d.ok(
-            "owner",
-            "opsSetEntity",
-            json!({ "company": "XC", "site": "B", "confirmSeparated": true }),
-        )
-        .await;
-        d.ok("owner", "opsEnable", json!({})).await;
-        for who in ["F1", "F2", "FIN1", "FIN2", "MON1", "MGR1", "BE1", "BE2"] {
-            d.ok(who, "opsClock", json!({ "direction": "IN" })).await;
-        }
-        d.ok(
-            "FIN1",
-            "opsTarget",
-            json!({ "amounts": { "THB": 100000, "USD": 2000 } }),
-        )
-        .await;
-        let safe = [("THB", 500_000), ("USD", 10_000)];
-        let id = d
-            .propose(
-                "FIN1",
-                "SAFE_OPEN",
-                json!({ "counted": totals(&safe), "denominations": rows(&safe) }),
-            )
-            .await;
-        d.ok("MON1", "opsSign", json!({ "id": id })).await;
-        d.ok("BE1", "opsCommit", json!({ "id": id })).await;
-        d
-    }
-
-    /// `with_safe`, then F1 has proposed opening the drawer with THB 100,000 · USD 2,000.
-    /// Returns the request's id; Backend has not committed it yet.
-    pub async fn opening_proposed(db: &TestDb) -> (Desk, String) {
-        let mut d = Desk::with_safe(db).await;
-        let drawer = [("THB", 100_000), ("USD", 2_000)];
-        let id = d
-            .propose(
-                "F1",
-                "OPEN",
-                json!({ "counted": totals(&drawer), "denominations": rows(&drawer) }),
-            )
-            .await;
-        (d, id)
-    }
-
-    /// The drawer is open and serving: F1 holds THB 100,000 · USD 2,000.
-    pub async fn serving(db: &TestDb) -> Desk {
-        let (mut d, id) = Desk::opening_proposed(db).await;
-        d.ok("BE1", "opsCommit", json!({ "id": id })).await;
-        d.ok(
-            "BE1",
-            "opsStartService",
-            json!({ "equipmentReady": true, "ratesVerified": true, "rateUpdated": "2026-10-06T03:00:00.000Z" }),
-        )
-        .await;
-        d
     }
 }
