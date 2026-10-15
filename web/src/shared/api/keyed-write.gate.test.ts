@@ -1,38 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-export const STALE_KNOWN_FAILS = false;
+export const STALE_KNOWN_FAILS = true;
 
 // KW-gate (#2044, docs/design/xchange-v3-web.md §12.24): frozen at the 27 offending files on origin/main
-// outside keyed-write.ts and the 3 named exclusions. Sorted alphabetically, one path per line.
-export const KNOWN: readonly string[] = [
-  'web/src/screens/admin/alert-settings/AlertSettings.tsx',
-  'web/src/screens/admin/approvals/Approvals.tsx',
-  'web/src/screens/admin/booking-slots/BookingSlots.tsx',
-  'web/src/screens/admin/branches/BranchesScreen.tsx',
-  'web/src/screens/admin/campaigns/Campaigns.tsx',
-  'web/src/screens/admin/cash-policy/CashPolicy.tsx',
-  'web/src/screens/admin/cash/CashFlows.tsx',
-  'web/src/screens/admin/consent/Consent.tsx',
-  'web/src/screens/admin/denomination-groups/DenominationGroups.tsx',
-  'web/src/screens/admin/members/Members.tsx',
-  'web/src/screens/admin/rate-alert-settings/RateAlertSettings.tsx',
-  'web/src/screens/admin/rates/Rates.tsx',
-  'web/src/screens/admin/reconciliation/Reconciliation.tsx',
-  'web/src/screens/admin/starting-prices/StartingPrices.tsx',
-  'web/src/screens/admin/users/UsersScreen.tsx',
-  'web/src/screens/customer/assistant/AssistantScreen.tsx',
-  'web/src/screens/customer/book/Book.tsx',
-  'web/src/screens/customer/bookings/Bookings.tsx',
-  'web/src/screens/customer/home/HomeScreen.tsx',
-  'web/src/screens/customer/rate-alerts/RateAlerts.tsx',
-  'web/src/screens/desk/bookings/DeskBookingsScreen.tsx',
-  'web/src/screens/desk/referral/ReferralCodeField.tsx',
-  'web/src/screens/desk/save.ts',
-  'web/src/screens/devices/DevicesScreen.tsx',
-  'web/src/screens/devices/main.tsx',
-  'web/src/screens/operations/verification/VerificationScreen.tsx',
-  'web/src/shared/notifications/notifications.ts',
-];
+// outside keyed-write.ts and the 4 named exclusions. Sorted alphabetically, one path per line.
+export const KNOWN: readonly string[] = [];
 
 export function normalizePath(p: string): string {
   const norm = p.replace(/\\/g, '/').replace(/^\//, '');
@@ -65,6 +37,8 @@ const EXCLUDED_FILES: ReadonlySet<string> = new Set([
   'web/src/screens/admin/customers/Customers.tsx',
   // §12.24 named exclusion 3: the v2 bookings screen, deleted by booking-slots.md BK-11.
   'web/src/screens/admin/bookings/BookingsScreen.tsx',
+  // §12.24 named exclusion 4: the branch-intake upload goes through postForm with a FormData body, which keyedWrite cannot carry; only the upload keeps getOrCreateIdemKey (KW-6b).
+  'web/src/screens/operations/verification/VerificationScreen.tsx',
 ]);
 
 export function shouldScanFile(filePath: string): boolean {
