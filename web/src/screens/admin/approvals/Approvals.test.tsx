@@ -113,6 +113,7 @@ function request(id: string, by: string, outOfBound: OutOfBoundSide[], branch = 
     requestedBy: by,
     requestedAt: '2026-10-09T03:00:00+00:00',
     status: 'PENDING',
+    decision: null,
   };
 }
 

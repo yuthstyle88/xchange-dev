@@ -19,7 +19,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::approval_requests::{
-    ApprovalRequestItemDto, ApprovalRequestsData, ApprovalRequestsFilter,
+    ApprovalDecisionDto, ApprovalRequestItemDto, ApprovalRequestsData, ApprovalRequestsFilter,
 };
 use crate::presentation::http::v3::commands::make_approval_registry;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
@@ -57,23 +57,25 @@ impl BranchView for ApprovalRequestsBranchView {
         let type_filter = filter.r#type.clone();
 
         async move {
-            let mut sql = "SELECT id, type, branch_id, object_id, object_version_hash, \
-                           policy_version, proposed_payload, requested_by, requested_at, status, \
-                           idempotency_key \
-                           FROM approval_requests WHERE (branch_id = $1 OR branch_id IS NULL)"
+            let mut sql = "SELECT r.id, r.type, r.branch_id, r.object_id, r.object_version_hash, \
+                           r.policy_version, r.proposed_payload, r.requested_by, r.requested_at, r.status, \
+                           r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at \
+                           FROM approval_requests r \
+                           LEFT JOIN approval_decisions d ON d.request_id = r.id \
+                           WHERE (r.branch_id = $1 OR r.branch_id IS NULL)"
                 .to_string();
 
             if status_filter.is_some() {
-                sql.push_str(" AND status = $2");
+                sql.push_str(" AND r.status = $2");
             }
             if type_filter.is_some() {
                 if status_filter.is_some() {
-                    sql.push_str(" AND type = $3");
+                    sql.push_str(" AND r.type = $3");
                 } else {
-                    sql.push_str(" AND type = $2");
+                    sql.push_str(" AND r.type = $2");
                 }
             }
-            sql.push_str(" ORDER BY requested_at DESC");
+            sql.push_str(" ORDER BY r.requested_at DESC");
 
             let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(&branch_id);
             if let Some(ref st) = status_filter {
@@ -101,6 +103,10 @@ impl BranchView for ApprovalRequestsBranchView {
                 let req_at: DateTime<Utc> = r.get(8);
                 let status: String = r.get(9);
                 let idempotency_key: String = r.get(10);
+                let decision_approver_id: Option<String> = r.get(11);
+                let decision_outcome: Option<String> = r.get(12);
+                let decision_reason: Option<String> = r.get(13);
+                let decision_at: Option<DateTime<Utc>> = r.get(14);
 
                 let request = ApprovalRequest {
                     id: RequestId::new(id.to_string()),
@@ -121,6 +127,23 @@ impl BranchView for ApprovalRequestsBranchView {
                     .is_some_and(|(_subject, policy)| policy.may_decide(&who, &request).is_ok());
 
                 if allowed {
+                    let decision = match (
+                        decision_approver_id,
+                        decision_outcome,
+                        decision_reason,
+                        decision_at,
+                    ) {
+                        (Some(approver_id), Some(outcome), Some(reason), Some(at)) => {
+                            Some(ApprovalDecisionDto {
+                                approver_id,
+                                outcome,
+                                reason,
+                                at: at.to_rfc3339(),
+                            })
+                        }
+                        _ => None,
+                    };
+
                     requests.push(ApprovalRequestItemDto {
                         id: id.to_string(),
                         r#type: type_name,
@@ -132,6 +155,7 @@ impl BranchView for ApprovalRequestsBranchView {
                         requested_by: req_by,
                         requested_at: req_at.to_rfc3339(),
                         status,
+                        decision,
                     });
                 }
             }
@@ -148,7 +172,9 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     ApprovalRequestsFilter::export_all(&cfg)?;
+    ApprovalDecisionDto::export_all(&cfg)?;
     ApprovalRequestItemDto::export_all(&cfg)?;
     ApprovalRequestsData::export_all(&cfg)?;
     Ok(())
 }
+
