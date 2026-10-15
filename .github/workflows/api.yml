@@ -30,7 +30,30 @@ jobs:
     outputs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
       test_args: ${{ steps.filter.outputs.test_args }}
+      runs_on: ${{ steps.pool.outputs.runs_on }}
     steps:
+      # Spread the heavy `test` job over every pool that can run it, weighted by runner count:
+      # Mac Studio 6 (mac-studio), Dell 4 (dell-org-ci), Warut's MacBook 2 (warut-mbp).
+      # Owner's order 2026-10-15: pinning to mac-studio left Dell and Warut idle while PRs queued.
+      # No API call: the slot is (run_id + run_attempt) mod 12, so a rerun can land elsewhere.
+      # If this step does not run, `test` falls back to the Mac Studio pool.
+      - name: Select runner pool
+        id: pool
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          slot=$(( (RUN_ID + RUN_ATTEMPT) % 12 ))
+          if [ "$slot" -lt 6 ]; then
+            pool='["self-hosted","macOS","ARM64","mac-studio"]'
+          elif [ "$slot" -lt 10 ]; then
+            pool='["self-hosted","Linux","X64","dell-org-ci"]'
+          else
+            pool='["self-hosted","macOS","ARM64","warut-mbp"]'
+          fi
+          echo "slot $slot -> $pool"
+          echo "runs_on=$pool" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -152,7 +175,7 @@ jobs:
     name: test
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: [self-hosted, macOS, ARM64, mac-studio]
+    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","macOS","ARM64","mac-studio"]') }}
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: 12
