@@ -36,9 +36,7 @@ use xc_queue::domain::ticket::issue_source::IssueSource;
 use xc_queue::domain::ticket::queue_ticket::QueueTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
-use xc_booking::application::lifecycle::BookingLifecycle;
-use xc_booking::infrastructure::booking_repository::PgBookingRepository;
-use xc_booking::infrastructure::slot_repository::PgSlotRepository;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -64,10 +62,7 @@ impl QueueServices {
         let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
         let status = StatusService::new(branch_tx.clone(), repo.clone());
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
-            Arc::new(
-                BookingLifecycle::new(Arc::new(PgBookingRepository::new(pool.clone())))
-                    .with_slots(Arc::new(PgSlotRepository::new(pool))),
-            );
+            pg_booking_lifecycle(pool);
         Self {
             desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone())
                 .with_booking_events(booking_events.clone()),

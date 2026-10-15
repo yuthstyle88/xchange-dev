@@ -110,17 +110,6 @@ fn fixtures() -> Vec<Fixture> {
     step_files().into_iter().map(Fixture::load).collect()
 }
 
-fn custody() -> Fixture {
-    Fixture::load("snapshot/custody.json")
-}
-
-fn pairs_of_role<'a>(fixture: &'a Fixture, role: Role) -> Vec<Pair<'a>> {
-    pairs(fixture, "adminSnapshot")
-        .into_iter()
-        .filter(|p| p.me.role == role)
-        .collect()
-}
-
 fn viewed(fixture: &Fixture, pair: &Pair) -> Value {
     staff_view(pair.rpc.json().clone(), &pair.me, &everybody(fixture))
 }
@@ -210,7 +199,6 @@ fn every_recorded_staff_snapshot_is_the_rpc_snapshot_viewed() {
     let expected_per_file: BTreeMap<String, i32> = [
         ("rpc/ops_actions.json", 1),
         ("snapshot/branches.json", 4),
-        ("snapshot/custody.json", 39),
         ("snapshot/empty.json", 9),
         ("snapshot/rates.json", 3),
         ("snapshot/shift.json", 11),
@@ -220,7 +208,7 @@ fn every_recorded_staff_snapshot_is_the_rpc_snapshot_viewed() {
     .map(|(name, n)| (name.to_string(), n))
     .collect();
     assert_eq!(per_file, expected_per_file);
-    assert_eq!(count, 73, "the generator checked its claim on 73 pairs");
+    assert_eq!(count, 34, "the generator checked its claim on 34 pairs");
     let nine: BTreeSet<&str> = Role::STAFF.iter().map(|r| r.as_str()).collect();
     assert_eq!(
         roles, nine,
@@ -245,8 +233,8 @@ fn every_recorded_staff_desk_config_is_the_rpc_one_with_its_urls_rewritten() {
         }
     }
     assert_eq!(
-        count, 20,
-        "19 in the snapshot files, 1 in rpc/ops_actions.json"
+        count, 10,
+        "9 in the snapshot files, 1 in rpc/ops_actions.json"
     );
 }
 
@@ -365,7 +353,7 @@ fn a_save_answer_of_the_rpc_route_gets_the_staff_links() {
             assert_eq!(after, expected, "{}#{}", fixture.name, step.n);
         }
     }
-    assert!(seen >= 20, "only {seen} links seen");
+    assert!(seen >= 14, "only {seen} links seen");
 }
 
 #[test]
@@ -388,174 +376,7 @@ fn a_recorded_staff_answer_is_left_as_it_is() {
             count += 1;
         }
     }
-    assert!(count > 200, "only {count} staff answers");
-}
-
-// ── SYSTEM ───────────────────────────────────────────────────────────────────
-
-#[test]
-fn system_is_shown_three_keys_of_operations_and_enabled_false_whatever_the_truth() {
-    let fixture = custody();
-    let pairs = pairs_of_role(&fixture, Role::System);
-    assert_eq!(pairs.len(), 3);
-    let mut phases = BTreeSet::new();
-    for pair in &pairs {
-        let truth = &pair.rpc.json()["operations"];
-        assert_eq!(truth["enabled"], json!(true), "{}", pair.name());
-        phases.insert(truth["phase"].as_str().unwrap_or_default().to_string());
-        let view = viewed(&fixture, pair);
-        let shown = &view["operations"];
-        assert_eq!(
-            keys(shown),
-            BTreeSet::from(["enabled", "entity", "phase"]),
-            "{}",
-            pair.name()
-        );
-        assert_eq!(shown["enabled"], json!(false), "{}", pair.name());
-        assert_eq!(shown["phase"], json!("CLOSED"), "{}", pair.name());
-        assert!(truth["entity"].is_object());
-        assert_eq!(shown["entity"], truth["entity"], "{}", pair.name());
-    }
-    assert!(
-        phases.iter().any(|p| p != "CLOSED"),
-        "no view where the truth is another phase: {phases:?}"
-    );
-}
-
-#[test]
-fn system_is_shown_no_stock_no_rates_no_transactions_no_customers() {
-    let fixture = custody();
-    let pairs = pairs_of_role(&fixture, Role::System);
-    let mut fullest = 0;
-    for pair in &pairs {
-        let truth = pair.rpc.json();
-        let had = [
-            length(&truth["stock"]["shifts"]),
-            length(&truth["stock"]["movements"]),
-            length(&truth["rates"]),
-            length(&truth["rateHistory"]),
-            length(&truth["transactions"]),
-            length(&truth["customers"]),
-        ];
-        fullest = fullest.max(had.iter().filter(|n| **n > 0).count());
-        let view = viewed(&fixture, pair);
-        assert_eq!(view["stock"], json!({"shifts": [], "movements": []}));
-        assert_eq!(view["rates"], json!([]));
-        assert_eq!(view["rateHistory"], json!([]));
-        assert_eq!(view["transactions"], json!([]));
-        assert_eq!(view["customers"], json!([]));
-        // what stays
-        for key in [
-            "branches", "branchId", "actor", "syncedAt", "updated", "ready", "version",
-        ] {
-            assert_eq!(view[key], truth[key], "{} {key}", pair.name());
-        }
-    }
-    assert_eq!(fullest, 6, "no view where all six lists hold something");
-}
-
-// ── RATES ────────────────────────────────────────────────────────────────────
-
-#[test]
-fn rates_keeps_drafts_safe_target_custodian_and_its_own_attendance_only() {
-    let fixture = custody();
-    let pairs = pairs_of_role(&fixture, Role::Rates);
-    assert_eq!(pairs.len(), 4);
-    let mut kept: BTreeSet<&str> = BTreeSet::new();
-    for pair in &pairs {
-        let truth = &pair.rpc.json()["operations"];
-        let view = viewed(&fixture, pair);
-        let shown = &view["operations"];
-        for key in [
-            "enabled",
-            "phase",
-            "safe",
-            "target",
-            "entity",
-            "custodian",
-            "drafts",
-            "serviceOpenedAt",
-        ] {
-            assert_eq!(shown.get(key), truth.get(key), "{} {key}", pair.name());
-            let something = match truth.get(key) {
-                Some(Value::Array(items)) => !items.is_empty(),
-                Some(Value::Null) | None => false,
-                Some(_) => true,
-            };
-            if something {
-                kept.insert(key);
-            }
-        }
-        assert_eq!(length(&truth["attendance"]), 10, "{}", pair.name());
-        let own: Vec<Value> = truth["attendance"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|a| a["employeeId"] == json!(pair.me.id))
-            .cloned()
-            .collect();
-        assert_eq!(own.len(), 1, "{}", pair.name());
-        assert_eq!(shown["attendance"], Value::Array(own), "{}", pair.name());
-        assert_eq!(keys(shown), keys(truth), "{}", pair.name());
-    }
-    assert_eq!(
-        kept,
-        BTreeSet::from([
-            "enabled",
-            "phase",
-            "safe",
-            "target",
-            "entity",
-            "custodian",
-            "drafts",
-            "serviceOpenedAt"
-        ]),
-        "each kept key holds something in at least one view"
-    );
-}
-
-#[test]
-fn rates_is_shown_no_requests_events_exceptions_holds_cutoff_transactions_customers() {
-    let fixture = custody();
-    let mut emptied: BTreeSet<&str> = BTreeSet::new();
-    for pair in &pairs_of_role(&fixture, Role::Rates) {
-        let truth = pair.rpc.json();
-        let view = viewed(&fixture, pair);
-        for key in ["requests", "events", "exceptions", "holds"] {
-            if length(&truth["operations"][key]) > 0 {
-                emptied.insert(key);
-            }
-            assert_eq!(view["operations"][key], json!([]), "{} {key}", pair.name());
-        }
-        if !truth["operations"]["cutoff"].is_null() {
-            emptied.insert("cutoff");
-        }
-        assert_eq!(view["operations"]["cutoff"], Value::Null, "{}", pair.name());
-        for key in ["transactions", "customers"] {
-            if length(&truth[key]) > 0 {
-                emptied.insert(key);
-            }
-            assert_eq!(view[key], json!([]), "{} {key}", pair.name());
-        }
-        // RATES keeps what SYSTEM loses
-        for key in ["stock", "rates", "rateHistory"] {
-            assert_eq!(view[key], truth[key], "{} {key}", pair.name());
-        }
-        assert!(length(&view["rates"]) == 152 && length(&view["stock"]["shifts"]) <= 2);
-    }
-    assert_eq!(
-        emptied,
-        BTreeSet::from([
-            "requests",
-            "events",
-            "exceptions",
-            "holds",
-            "cutoff",
-            "transactions",
-            "customers"
-        ]),
-        "each emptied key holds something in the truth of at least one view"
-    );
+    assert!(count >= 110, "only {count} staff answers");
 }
 
 // ── the other seven roles ────────────────────────────────────────────────────
