@@ -165,10 +165,10 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     setLastAction(() => executeCancel);
 
     try {
-      const out = await api.command<BookingCancelInput, BookingCancelOutput>(
+      const out = await api.command<BookingCancelInput & { branch: string }, BookingCancelOutput>(
         'POST',
         `/api/bookings/${booking.id}/cancel`,
-        { id: booking.id, reason: null },
+        { id: booking.id, reason: null, branch: booking.branchId },
         key,
       );
       // Update status to CANCELLED in local list
@@ -224,10 +224,10 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     setLastAction(() => executeReschedule);
 
     try {
-      await api.command<BookingRescheduleInput, BookingRescheduleOutput>(
+      await api.command<BookingRescheduleInput & { branch: string }, BookingRescheduleOutput>(
         'POST',
         `/api/bookings/${booking.id}/reschedule`,
-        { id: booking.id, slotId },
+        { id: booking.id, slotId, branch: booking.branchId },
         key,
       );
       // Success: re-read bookings

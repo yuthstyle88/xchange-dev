@@ -426,7 +426,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
 
       const req = ruleRequests[0]!;
       expect(req.headers['idempotency-key'], 'carries Idempotency-Key header').toBeTruthy();
-      expect(req.body).toEqual({ slotMinutes: 60, capacity: 10, horizonDays: 30 });
+      expect(req.body).toEqual({ slotMinutes: 60, capacity: 10, horizonDays: 30, branch: B01 });
     });
 
     it('enforces rule field boundaries: slot_minutes 5–240, capacity > 0, horizon_days 1–90 (§7 [required])', async () => {
@@ -505,6 +505,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       expect(req.headers['idempotency-key'], 'carries Idempotency-Key').toBeTruthy();
       expect((req.body as any)?.closedOn).toBe('2026-11-01');
       expect((req.body as any)?.reason).toBe('Renovation');
+      expect((req.body as any)?.branch, '#1913: every booking command names its branch').toBe(B01);
     });
 
     it('removing a closure sends POST /api/branches/{id}/closures/{date}/remove with Idempotency-Key', async () => {
@@ -523,6 +524,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       );
       expect(removeCalls.length, 'closureRemove request sent to correct path').toBe(1);
       expect(removeCalls[0]!.headers['idempotency-key'], 'closureRemove carries Idempotency-Key').toBeTruthy();
+      expect((removeCalls[0]!.body as any)?.branch, '#1913: every booking command names its branch').toBe(B01);
     });
   });
 
@@ -550,7 +552,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       );
       expect(capCalls.length, 'slotCapacitySet request sent').toBe(1);
       expect(capCalls[0]!.headers['idempotency-key'], 'carries Idempotency-Key').toBeTruthy();
-      expect(capCalls[0]!.body).toEqual({ capacity: 10 });
+      expect(capCalls[0]!.body).toEqual({ capacity: 10, branch: B01 });
     });
 
     it('slotClose and slotOpen send POST to /api/booking-slots/{id}/close and /open with Idempotency-Key', async () => {
@@ -569,6 +571,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       );
       expect(closeCalls.length, 'slotClose sent to /api/booking-slots/{id}/close').toBe(1);
       expect(closeCalls[0]!.headers['idempotency-key'], 'slotClose carries Idempotency-Key').toBeTruthy();
+      expect((closeCalls[0]!.body as any)?.branch, '#1913: every booking command names its branch').toBe(B01);
 
       const openBtn = [...container.querySelectorAll('button')].find((b) =>
         /open|เปิดรับจอง/i.test(b.textContent ?? ''),
@@ -582,6 +585,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       );
       expect(openCalls.length, 'slotOpen sent to /api/booking-slots/{id}/open').toBe(1);
       expect(openCalls[0]!.headers['idempotency-key'], 'slotOpen carries Idempotency-Key').toBeTruthy();
+      expect((openCalls[0]!.body as any)?.branch, '#1913: every booking command names its branch').toBe(B01);
     });
   });
 
@@ -624,7 +628,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
 
       const req = polCalls[0]!;
       expect(req.headers['idempotency-key'], 'carries Idempotency-Key').toBeTruthy();
-      expect(req.body).toEqual({ cancelCutoffMinutes: 50, noShowGraceMinutes: 15, confirmExpiryMinutes: 40 });
+      expect(req.body).toEqual({ cancelCutoffMinutes: 50, noShowGraceMinutes: 15, confirmExpiryMinutes: 40, branch: B01 });
     });
 
     it('enforces policy boundary checks: cutoff >= 0, grace >= 0, expiry > 0 (§7 [required])', async () => {

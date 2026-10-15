@@ -146,7 +146,7 @@ async fn app_state_new_constructs_documents_store_writing_under_store_dir_sealed
     let plaintext = b"CUSTOMER-PASSPORT-CONFIDENTIAL-IMAGE-BYTES";
 
     state
-        .documents
+        .document_store
         .put(doc_ref, plaintext)
         .await
         .expect("documents.put must succeed");
@@ -168,7 +168,7 @@ async fn app_state_new_constructs_documents_store_writing_under_store_dir_sealed
     );
 
     let retrieved = state
-        .documents
+        .document_store
         .get(doc_ref)
         .await
         .expect("documents.get must decrypt and return the object");

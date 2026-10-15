@@ -406,10 +406,8 @@ async fn handle(req: HttpRequest, view: web::Data<Arc<VerificationCaseView>>) ->
         return e.error_response();
     }
 
-    let branch = who
-        .branch
-        .clone()
-        .unwrap_or_else(|| BranchId::new("XC-B01"));
+    // `load` ignores `_branch`; scope comes from the case's own `branch_id`.
+    let branch = who.branch.clone().unwrap_or_else(|| BranchId::new(""));
 
     match view.load(&branch, &who, &filter).await {
         Ok(data) => HttpResponse::Ok()

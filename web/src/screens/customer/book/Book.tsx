@@ -284,6 +284,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         : (document.querySelector('input[name="referralCode"]') as HTMLInputElement)?.value ?? '';
 
     const payload: Partial<BookingCreateInput> & Record<string, unknown> = {
+      branch: currentBranch,
       branchId: currentBranch,
       slotId: currentSlot,
       shopSide: currentSide,

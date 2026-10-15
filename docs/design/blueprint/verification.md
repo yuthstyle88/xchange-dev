@@ -518,6 +518,8 @@ line and keeps both sides on a rebase). Measured on `748e4314`:
 | Code | Issue | State 2026-10-11 | Listed because |
 |---|---|---|---|
 | — | — | no VF ticket exists | this design is not merged; none may be opened before it is |
+| VF-7 follow-up (link session hash) | #1942 | open (2026-10-15) | V10 / §4.5: the content route compared the raw cookie with the stored session hash, so every real reviewer got `linkRefused` and the stored hash itself opened the link. Stopgap: a hashed `session-{uid}` fallback |
+| VF-7 follow-up (caller's own session) | #1943 | open, not ready (2026-10-15) | V10: bind a link to the session that minted it, through `Caller.session_hash` (`customer-app.md` §9.2); drops #1942's fallback; moves VF-8's owner link onto the same helper |
 
 ## 10. Blueprint conformance (owner's rule: logic is fixed, only the look may change)
 

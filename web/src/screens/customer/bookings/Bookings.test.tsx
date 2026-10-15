@@ -415,6 +415,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
 
       const req = sentRequests.find((r) => r.path === `/api/bookings/${BOOKING_ACTIVE_ID}/cancel`);
       expect(req, 'sends POST /api/bookings/{id}/cancel').toBeDefined();
+      expect(req!.body?.branch, '#1913: every booking command names its branch').toBe(BRANCH_ID);
       expect(req!.headers.get('idempotency-key'), 'carries Idempotency-Key').toBeTruthy();
 
       // Status updates to CANCELLED
@@ -507,6 +508,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
       expect(req, 'sends POST /api/bookings/{id}/reschedule').toBeDefined();
       expect(req!.headers.get('idempotency-key'), 'reschedule carries Idempotency-Key').toBeTruthy();
       expect(req!.body?.slotId).toBe(SLOT_RESCHEDULE_ID);
+      expect(req!.body?.branch, '#1913: every booking command names its branch').toBe(BRANCH_ID);
     });
 
     it('hides reschedule button when current time is after rescheduleDeadline (:475)', async () => {
