@@ -219,7 +219,7 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
 
     // Read back Org 1's transaction
     let row_1 = sqlx::query(
-        "SELECT (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id, unit_size, rate FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT ql.published_rate_line_id, l.unit_size, l.rate_snapshot AS rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&save_1.document_ref)
     .bind(MAIN)
@@ -233,7 +233,7 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
 
     // Read back Org 2's transaction
     let row_2 = sqlx::query(
-        "SELECT (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id, unit_size, rate FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT ql.published_rate_line_id, l.unit_size, l.rate_snapshot AS rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&save_2.document_ref)
     .bind("B2")
@@ -334,7 +334,7 @@ async fn a_demo_jpy_save_with_nothing_published_is_refused_while_vouched_records
         .expect("live vouched JPY save");
 
     let live_row = sqlx::query(
-        "SELECT rate, unit_size, (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT l.rate_snapshot AS rate, l.unit_size, ql.published_rate_line_id FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&live_saved.document_ref)
     .bind(MAIN)

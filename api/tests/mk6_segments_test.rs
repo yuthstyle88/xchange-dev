@@ -395,12 +395,11 @@ async fn insert_tx_with_mode(
 
     let tx_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-         customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, received, paid, \
-         method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, completed_at, recorded_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', round($9::numeric / 35, 2), 35.0, \
-         $9::numeric, 0.0, 0.0, $9::numeric, $9::numeric, 'CASH', 'ref', 'acc', 'staff', 'bkg', 'note', \
-         CURRENT_DATE, $10, $10, $10, 'staff')",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+         customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+         completed_at, recorded_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'staff', 'bkg', 'note', CURRENT_DATE, $9, \
+         $9, $9, 'staff')",
     )
     .bind(tx_id)
     .bind(&doc)
@@ -410,7 +409,6 @@ async fn insert_tx_with_mode(
     .bind(sub)
     .bind(customer_id)
     .bind(customer_name)
-    .bind(amount)
     .bind(recorded_at)
     .execute(pool)
     .await
@@ -464,13 +462,11 @@ async fn insert_tx_with_mode_and_status(
     };
 
     sqlx::query(
-        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-         customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, received, paid, \
-         method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, completed_at, \
-         status, cancelled_at, cancel_reason, recorded_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'BUY', 'USD', round($9::numeric / 35, 2), 35.0, \
-         $9::numeric, 0.0, 0.0, $9::numeric, $9::numeric, 'CASH', 'ref', 'acc', 'staff', 'bkg', 'note', \
-         CURRENT_DATE, $10, $10, $11, $12, $13, $14, 'staff')",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+         customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+         completed_at, status, cancelled_at, cancel_reason, recorded_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, $8, 'TH', 'staff', 'bkg', 'note', CURRENT_DATE, $9, \
+         $9, $10, $11, $12, $13, 'staff')",
     )
     .bind(tx_id)
     .bind(doc_ref)
@@ -480,7 +476,6 @@ async fn insert_tx_with_mode_and_status(
     .bind(&sub)
     .bind(customer_id)
     .bind(customer_name)
-    .bind(amount)
     .bind(recorded_at)
     .bind(completed_at)
     .bind(status)

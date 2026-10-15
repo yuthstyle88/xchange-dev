@@ -81,6 +81,8 @@
 //! - [required] `transactions.unit_size` (RU-1) and `transactions.published_rate_line_id`
 //!   (migration 5, merged `d6ce058`): the unit the row's `rate` and `reference_rate` are per, and
 //!   its line (NULL before RE-4);
+//!   TX-9 (#677) drops both from `transactions`: the figures are seeded on `transaction_lines`
+//!   and `transaction_payments`, and migration 5's before/after test retired with the columns;
 //! - the view keys as merged: `TransactionRow` (`id`, `rate`, `principal`, `settlement`,
 //!   `referenceValue`, `referenceSpread`, `referencePercent`); the reports' `reference`
 //!   (`referenced`, `unreferenced`, `value`, `spread`, `percent`); the cash `reference`
@@ -113,7 +115,7 @@ use rates_re4_common::{d, line, publish};
 use rpc_common::{Answer, Call};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use sqlx::{AssertSqlSafe, PgPool};
+use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 use xchange::infrastructure::devices::device_commands::SavedExchange;
 use xchange::infrastructure::devices::device_service::DeviceService;
@@ -126,9 +128,6 @@ const DAY: &str = "2026-10-06";
 const JPEG: &[u8] = &[
     0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 9,
 ];
-
-/// Migration 5 as merged. Its conversion is the text between the `-- 2.` heading and `-- down:`.
-const MIGRATION_5: &str = include_str!("../migrations/20261010125000_published_rate_line_ids.sql");
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -171,8 +170,6 @@ struct Ex {
     reference: Option<&'static str>,
     unit_size: &'static str,
     principal: &'static str,
-    /// The line it was priced on; `None` for a row recorded before publications.
-    line: Option<String>,
 }
 
 async fn put(pool: &PgPool, ex: &Ex) {
@@ -191,40 +188,21 @@ async fn put(pool: &PgPool, ex: &Ex) {
     .execute(pool)
     .await
     .expect("insert a customer");
-    let (received, paid) = if ex.side == "SELL" {
-        (ex.principal, "0")
-    } else {
-        ("0", ex.principal)
-    };
     sqlx::query(
-        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
-            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
-            reference_rate, unit_size, published_rate_line_id, principal, fee, bank_fee, \
-            received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-            value_date, paid_at, recorded_at, recorded_by, completed_at) \
-         VALUES ($1, 'MAIN', 'LIVE', $2, $1, 'hash', $3, 'Somchai', 'THA', $4, $5, $6::numeric, \
-            $7::numeric, $8::numeric, $9::numeric, $10::uuid, $11::numeric, 0, 0, \
-            $12::numeric, $13::numeric, 'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', \
-            $14::date, now(), now(), 'owner', now())",
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+            customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, completed_at) \
+         VALUES ($1, 'MAIN', 'LIVE', $2, $1, 'hash', $3, 'Somchai', 'THA', 'owner', 'WALK-IN', '', \
+            $4::date, now(), now(), 'owner', now())",
     )
     .bind(ex.id)
     .bind(shift)
     .bind(format!("CU-{}", ex.id))
-    .bind(ex.side)
-    .bind(ex.code)
-    .bind(ex.amount)
-    .bind(ex.rate)
-    .bind(ex.reference)
-    .bind(ex.unit_size)
-    .bind(ex.line.as_deref())
-    .bind(ex.principal)
-    .bind(received)
-    .bind(paid)
     .bind(DAY)
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("put exchange {}: {e}", ex.id));
-    seed_lines(pool, &[ex.id.to_owned()]).await;
+    seed_lines(pool, ex).await;
 }
 
 /// A payment slip for `id`, so that `admin_slips` lists it.
@@ -298,7 +276,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("23.01"),
             unit_size: "100",
             principal: "235.00",
-            line: Some(jpy.id),
         },
         Ex {
             id: "RE4-KRW",
@@ -309,7 +286,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("25"),
             unit_size: "1000",
             principal: "2512.35",
-            line: Some(krw.id),
         },
         Ex {
             id: "RE4-USD",
@@ -320,7 +296,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("32.5"),
             unit_size: "1",
             principal: "3210.00",
-            line: Some(usd.id),
         },
         mid(),
     ] {
@@ -339,80 +314,7 @@ fn mid() -> Ex {
         reference: None,
         unit_size: "1000",
         principal: "25.13",
-        line: None,
     }
-}
-
-/// The same day as the pre-RE-4 binary stored it: per 1, `unit_size` 1, no line.
-async fn the_day_before_migration_5(pool: &PgPool) {
-    for ex in [
-        Ex {
-            id: "RE4-JPY",
-            side: "SELL",
-            code: "JPY",
-            amount: "1000",
-            rate: "0.235",
-            reference: Some("0.2301"),
-            unit_size: "1",
-            principal: "235.00",
-            line: None,
-        },
-        Ex {
-            id: "RE4-KRW",
-            side: "BUY",
-            code: "KRW",
-            amount: "100000",
-            rate: "0.02512346",
-            reference: Some("0.025"),
-            unit_size: "1",
-            principal: "2512.35",
-            line: None,
-        },
-        Ex {
-            id: "RE4-USD",
-            side: "BUY",
-            code: "USD",
-            amount: "100",
-            rate: "32.1",
-            reference: Some("32.5"),
-            unit_size: "1",
-            principal: "3210.00",
-            line: None,
-        },
-        Ex {
-            id: "RE4-MID",
-            side: "BUY",
-            code: "KRW",
-            amount: "1000",
-            rate: "0.025125",
-            reference: None,
-            unit_size: "1",
-            principal: "25.13",
-            line: None,
-        },
-    ] {
-        put(pool, &ex).await;
-    }
-}
-
-/// Applies migration 5's conversion, as merged, to the rows already stored.
-async fn convert_as_migration_5(pool: &PgPool) {
-    let start = MIGRATION_5
-        .find("-- 2.")
-        .expect("migration 5 has its conversion step");
-    let end = MIGRATION_5
-        .find("-- down:")
-        .expect("migration 5 has a down note");
-    // BK-1's M1 renames v2's `bookings` to `v2_bookings`; the conversion's booking step targets it there.
-    let conversion = MIGRATION_5[start..end].replace("UPDATE bookings", "UPDATE v2_bookings");
-    assert!(
-        conversion.contains("UPDATE transactions"),
-        "the conversion converts transactions: {conversion}"
-    );
-    sqlx::raw_sql(AssertSqlSafe(conversion))
-        .execute(pool)
-        .await
-        .expect("apply migration 5's conversion");
 }
 
 fn rows(data: &Value) -> &Vec<Value> {
@@ -639,8 +541,10 @@ async fn a_row_with_no_line_shows_its_own_stored_rate() {
     assert!(page.contains("เรท 25.125"), "its own stored rate: {page}");
     assert!(page.contains("จ่าย 25.13 THB"), "{page}");
 
+    // TX-9 (#677): the line id moved off `transactions`; the row's line links no quote line.
     let still: Option<String> = sqlx::query_scalar(
-        "SELECT published_rate_line_id::text FROM transactions WHERE document_ref = 'RE4-MID'",
+        "SELECT l.quote_line_id::text FROM transaction_lines l \
+         JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = 'RE4-MID'",
     )
     .fetch_one(&pool)
     .await
@@ -694,61 +598,6 @@ async fn the_receipt_preview_divides_by_the_rows_unit_size() {
     assert!(jpy.contains("รับ 235 THB"), "{jpy}");
     let krw = receipt(&counter, "RE4-KRW").await;
     assert!(krw.contains("จ่าย 2,512.35 THB"), "{krw}");
-    counter.finish().await;
-}
-
-// ── migration 5 leaves the day's baht where it was ───────────────────────────
-
-/// §8 migration 5: "stored principals do not change, because amount × (rate × u) ÷ u is the same
-/// THB". The day stored per 1 reads the same figures before migration 5's conversion and after
-/// it, in every reader; and the conversion did convert (so the comparison is not vacuous).
-#[actix_web::test]
-async fn migration_5_leaves_the_thb_figures_of_a_mixed_day_unchanged() {
-    let counter = Counter::open(&[]).await;
-    let pool = counter.desk.db.pool.clone();
-    the_day_before_migration_5(&pool).await;
-
-    let mut before = Vec::new();
-    for _ in 0..2 {
-        let data = transactions(&counter).await;
-        let mut seen = serde_json::Map::new();
-        for id in IDS {
-            assert_eq!(figures(row(&data, id)), expected_row(id), "{id}: {data}");
-            seen.insert(id.to_owned(), figures(row(&data, id)));
-        }
-        let reference = reports_reference(&counter).await;
-        assert_eq!(reference, expected_reports_reference());
-        let cash = cash_reference(&counter).await;
-        assert_eq!(cash, expected_cash_reference());
-        let totals = totals_figures(&overview_totals(&counter).await);
-        assert_eq!(totals, expected_totals());
-        let page = receipt(&counter, "RE4-JPY").await;
-        assert!(page.contains("รับ 235 THB"), "{page}");
-        before.push(json!({ "rows": seen, "reports": reference, "cash": cash,
-                            "totals": totals }));
-
-        if before.len() == 1 {
-            convert_as_migration_5(&pool).await;
-            let converted: Vec<(String, Decimal, Option<Decimal>, Decimal)> = sqlx::query_as(
-                "SELECT document_ref, rate, reference_rate, unit_size FROM transactions \
-                 ORDER BY document_ref",
-            )
-            .fetch_all(&pool)
-            .await
-            .expect("read the converted rows");
-            assert_eq!(
-                converted,
-                vec![
-                    ("RE4-JPY".into(), d("23.5"), Some(d("23.01")), d("100")),
-                    ("RE4-KRW".into(), d("25.12346"), Some(d("25")), d("1000")),
-                    ("RE4-MID".into(), d("25.125"), None, d("1000")),
-                    ("RE4-USD".into(), d("32.1"), Some(d("32.5")), d("1")),
-                ],
-                "migration 5 converted the JPY and KRW rows"
-            );
-        }
-    }
-    assert_eq!(before[0], before[1], "the same day, before and after");
     counter.finish().await;
 }
 
@@ -822,7 +671,8 @@ async fn the_count_line_divides_by_the_rows_unit_size() {
         Arc::new(UuidJobIds),
     );
     for (id, side, code, amount, rate, unit, principal, thb) in cases {
-        let side_line = line(&pool, MAIN, code).await;
+        // the code has a published line (TX-9 #677: no row carries its id any more)
+        line(&pool, MAIN, code).await;
         put(
             &pool,
             &Ex {
@@ -834,7 +684,6 @@ async fn the_count_line_divides_by_the_rows_unit_size() {
                 reference: None,
                 unit_size: unit,
                 principal,
-                line: Some(side_line.id),
             },
         )
         .await;
@@ -920,7 +769,8 @@ async fn the_count_line_is_baht_to_two_places_half_up() {
         ),
     ];
     for (id, side, code, amount, rate, unit, thb) in cases {
-        let side_line = line(&pool, MAIN, code).await;
+        // the code has a published line (TX-9 #677: no row carries its id any more)
+        line(&pool, MAIN, code).await;
         put(
             &pool,
             &Ex {
@@ -932,7 +782,6 @@ async fn the_count_line_is_baht_to_two_places_half_up() {
                 reference: None,
                 unit_size: unit,
                 principal: thb,
-                line: Some(side_line.id),
             },
         )
         .await;
@@ -962,8 +811,9 @@ async fn the_count_line_is_baht_to_two_places_half_up() {
             .await
             .unwrap_or_else(|e| panic!("the lines of the save {id}: {e:?}"));
         let (line_thb, principal): (String, String) = sqlx::query_as(
-            "SELECT e.detail->>'thb', t.principal::text FROM device_events e \
+            "SELECT e.detail->>'thb', l.thb_amount::text FROM device_events e \
              JOIN transactions t ON t.document_ref = $2 \
+             JOIN transaction_lines l ON l.transaction_id = t.id AND l.line_no = 1 \
              WHERE e.kind = 'COUNT_CONFIRMED' AND e.ref = $1",
         )
         .bind(format!("sub-{id}"))
@@ -1057,8 +907,9 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
     let answer = answer.json();
     assert_eq!(answer["saved"], json!(true), "{answer}");
     let (line_thb, principal): (String, String) = sqlx::query_as(
-        "SELECT e.detail->>'thb', t.principal::text FROM device_events e \
+        "SELECT e.detail->>'thb', l.thb_amount::text FROM device_events e \
          JOIN transactions t ON t.submission_id = e.ref \
+         JOIN transaction_lines l ON l.transaction_id = t.id AND l.line_no = 1 \
          WHERE e.kind = 'COUNT_CONFIRMED' AND e.ref = $1",
     )
     .bind(submission)
@@ -1125,23 +976,28 @@ async fn a_save_with_no_stored_row_is_refused_and_leaves_no_line() {
     counter.finish().await;
 }
 
-/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
-/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
-/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
-/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
-async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+/// The `transaction_lines` + `transaction_payments` rows of `ex` (TX-9 #677: the figures live on
+/// the line and the payment only; `transactions` keeps the header). Cash, no fee: the settled THB
+/// is the principal.
+async fn seed_lines(pool: &sqlx::PgPool, ex: &Ex) {
     sqlx::query(
         "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
             shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
             reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
             realized_margin_thb, line_no, created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
-            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, $2, $3, NULL, $4::numeric, \
+            $5::numeric, $6::numeric, $7::numeric, $8::numeric, 0, $8::numeric, NULL, NULL, 1, \
             t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(ex.id)
+    .bind(ex.side)
+    .bind(ex.code)
+    .bind(ex.amount)
+    .bind(ex.unit_size)
+    .bind(ex.rate)
+    .bind(ex.reference)
+    .bind(ex.principal)
     .execute(pool)
     .await
     .expect("seed transaction_lines");
@@ -1149,15 +1005,12 @@ async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
         "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
             method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
             created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
-            t.account, \
-            (SELECT file_key FROM transaction_files f \
-             WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
-            t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, 'Cash', '', 'Cash drawer', NULL, \
+            $2::numeric, 0, t.paid_at, t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(ex.id)
+    .bind(ex.principal)
     .execute(pool)
     .await
     .expect("seed transaction_payments");

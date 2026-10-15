@@ -367,14 +367,12 @@ impl World {
         let number = quote_common::unique("XC-MAIN");
         self.db
             .exec(&format!(
-                "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-                    customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-                    bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                    value_date, paid_at, recorded_at, recorded_by, status, completed_at, organization_id) \
+                "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+                    customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                    recorded_by, status, completed_at, organization_id) \
                  VALUES ('{id}', '{number}', 'MAIN', 'LIVE', 'ly2-shift', 'sub-{id}', 'hash', '{customer}', \
-                    'Somchai', 'THA', 'BUY', 'USD', 100, 32.105, 3210.50, 10.00, 0, 0, 3200.50, 'Cash', '', \
-                    'drawer', 'EMP-001', 'WALK-IN', '', '2026-10-07', '{COMPLETED_AT}', '{COMPLETED_AT}', \
-                    'owner', 'COMPLETED', '{COMPLETED_AT}', '{ORG_1}')"
+                    'Somchai', 'THA', 'EMP-001', 'WALK-IN', '', '2026-10-07', '{COMPLETED_AT}', \
+                    '{COMPLETED_AT}', 'owner', 'COMPLETED', '{COMPLETED_AT}', '{ORG_1}')"
             ))
             .await;
         self.db
