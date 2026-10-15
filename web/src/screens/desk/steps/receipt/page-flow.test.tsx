@@ -9,11 +9,12 @@
 // `ใบเสร็จรายการแลกเงิน`; their controls are the names pinned in `steps/{booking,payment}/step.test.tsx`.
 // The answers are the generated types (`QuoteDto`, `TransactionDto`, `DeskConfig`). `…/complete` is TX-5's (#873, not
 // merged): its fake answers a `TransactionDto` with `status: "COMPLETED"`, and only `id` and `status` are read.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../../../shared/i18n";
 import type { DeskConfig } from "../../../../shared/api/generated/desk_config";
 import type { QuoteDto } from "../../../../shared/api/generated/quote";
 import type { TransactionDto } from "../../../../shared/api/generated/transactions";
+import { warmModules } from "../../../../shared/testing/warm-modules";
 
 const HEAD = {
   rate: "เลือกเรทและจำนวนเงิน",
@@ -113,6 +114,8 @@ function fakeServer() {
 }
 
 let app: HTMLDivElement;
+
+beforeAll(() => warmModules(() => import("../../main")), 60_000);
 
 beforeEach(() => {
   setLang("th");

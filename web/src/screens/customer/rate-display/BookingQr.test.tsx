@@ -9,10 +9,11 @@
 //   `QrCode` component wrapping `qrcode-generator`.
 // - Text caption: visible caption displaying the path `/app/book?branch=${branchCode}`.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { setAudience, setLang } from '../../../shared/i18n';
+import { warmModules } from '../../../shared/testing/warm-modules';
 
 // ── qrcode-generator mock ───────────────────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,8 @@ async function mountThroughMain(search = '?branch=XC-B01', server: ReturnType<ty
   await settle();
   return root;
 }
+
+beforeAll(() => warmModules(() => import('./main')), 60_000);
 
 beforeEach(() => {
   mockAddData.mockClear();
