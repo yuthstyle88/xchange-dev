@@ -45,7 +45,7 @@
 //                     never fails to compile, until #1274 merges.
 //   rateVersion       the publication.publishedAt of GET /api/v3/views/staff_published_rates, the branch's current
 //                     rate publication (SD C2; #1274 §7-8: any other value is refused with ServiceChecksIncomplete).
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
@@ -54,6 +54,7 @@ import type { StaffMeView } from "../../../shared/api/generated/staff_me";
 import type { PublishedRatesData } from "../../../shared/api/generated/published_rates";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
+import { warmModules } from "../../../shared/testing/warm-modules";
 
 type Texts = {
   th: Record<string, string>;
@@ -325,6 +326,15 @@ async function submit(form: HTMLFormElement) {
   save!.click();
   await settle();
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./card"),
+      () => import("../main"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   sent = [];

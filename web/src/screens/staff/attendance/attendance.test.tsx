@@ -16,7 +16,7 @@
 //   DOM hooks           [data-attendance-id="<id>"] one element per row, in the view's order, showing the row's name;
 //                       a row whose out is null shows t(stillIn).
 //   Reads               staff_attendance through ApiClient.view; the card sends no command.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { setLang } from "../../../shared/i18n";
@@ -24,6 +24,7 @@ import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
 import type { StaffMeView } from "../../../shared/api/generated/staff_me";
 import type { StaffAttendanceRow } from "../../../shared/api/generated/staff_attendance";
 import type { StaffCard, StaffCtx } from "../cards";
+import { warmModules } from "../../../shared/testing/warm-modules";
 
 type Texts = {
   th: Record<string, string>;
@@ -165,6 +166,15 @@ async function mount(m: StaffMeView) {
   dispose = render(() => <C ctx={ctx} />, host);
   await settle();
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./card"),
+      () => import("../main"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   methods = [];
