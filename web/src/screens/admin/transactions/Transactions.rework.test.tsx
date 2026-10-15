@@ -207,7 +207,7 @@ describe('Transactions rework tests (#1701): worded error on export failure', ()
     });
 
     const alertText = root.querySelector('[role="alert"]')!.textContent!;
-    expect(alertText).toContain(sharedTh['error.serverError']);
+    expect(alertText).toContain(sharedTh['error.network']);
     expect(alertText).not.toContain('Failed to fetch');
     expect(downloadedFiles).toHaveLength(0);
   });
@@ -229,7 +229,7 @@ describe('Transactions rework tests (#1701): worded error on export failure', ()
     });
 
     const alertText = root.querySelector('[role="alert"]')!.textContent!;
-    expect(alertText).toContain(sharedEn['error.serverError']);
+    expect(alertText).toContain(sharedEn['error.network']);
     expect(alertText).not.toContain('Failed to fetch');
     expect(downloadedFiles).toHaveLength(0);
   });

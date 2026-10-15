@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
   RateDraftDetailData,
@@ -14,7 +14,8 @@ import type {
   RatesReferenceFilter,
   RatesReferenceRow,
 } from '../../../shared/api/generated/rates_reference';
-import { errorText, locale, screenT, t as sharedT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { formatRate } from '../../../shared/ui/rate';
 import type { AdminMenuProps } from '../menus';
@@ -28,33 +29,6 @@ const t = screenT('admin.rates', table);
 function formatTime(iso: string): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
-
-function toErrorText(err: unknown): string {
-  const fallback = sharedT('error.serverError');
-  if (err instanceof ApiError) {
-    if (err.code && err.code !== 'httpError') {
-      if (err.code === 'staleVersion' || err.code === 'approvalRequired') {
-        return err.message || fallback;
-      }
-      const text = errorText(err.code, fallback);
-      if (text && text !== err.code) return text;
-    }
-    return fallback;
-  }
-  if (err && typeof err === 'object' && 'code' in err) {
-    const c = String((err as { code: unknown }).code);
-    if (c && c !== 'httpError') {
-      if (c === 'staleVersion' || c === 'approvalRequired') {
-        const m = 'message' in err ? String((err as { message: unknown }).message) : '';
-        return m || fallback;
-      }
-      const text = errorText(c, fallback);
-      if (text && text !== c) return text;
-    }
-    return fallback;
-  }
-  return fallback;
 }
 
 interface OutOfBoundItem {
@@ -100,7 +74,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         setRefError(res.data.error ?? null);
       }
     } catch (err: unknown) {
-      setRefError(toErrorText(err));
+      setRefError(wordedError(err));
     } finally {
       setRefLoading(false);
     }
@@ -114,7 +88,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setPubError(null);
     } catch (err: unknown) {
-      setPubError(toErrorText(err));
+      setPubData(null);
+      setPubError(wordedError(err));
     }
   };
 
@@ -141,7 +116,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setDraftsError(null);
     } catch (err: unknown) {
-      setDraftsError(toErrorText(err));
+      setDraftsData(null);
+      setDraftDetail(null);
+      setDraftsError(wordedError(err));
     }
   };
 
@@ -157,7 +134,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setPolicyError(null);
     } catch (err: unknown) {
-      setPolicyError(toErrorText(err));
+      setPolicyData(null);
+      setPolicyError(wordedError(err));
     }
   };
 
@@ -189,6 +167,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
     if (branch !== lastBranch) {
       lastBranch = branch;
+      setPubData(null);
+      setDraftsData(null);
+      setDraftDetail(null);
+      setPolicyData(null);
       void readAll(branch);
       return;
     }
@@ -281,7 +263,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       await readDrafts(branch);
       setSimulateResult(null);
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 
@@ -305,7 +287,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       );
       setSimulateResult(res);
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 
@@ -326,7 +308,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         );
       }
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 
@@ -345,7 +327,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       await readPublished(branch);
       await readDrafts(branch);
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 
@@ -401,7 +383,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         setDraftDetail(updated.data);
       }
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 
@@ -440,7 +422,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         ),
       );
     } catch (err: unknown) {
-      toast(toErrorText(err));
+      toast(wordedError(err));
     }
   };
 

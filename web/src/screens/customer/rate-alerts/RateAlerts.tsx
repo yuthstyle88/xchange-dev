@@ -17,7 +17,8 @@ import type {
   PublicBranchDto,
   PublicBranchesData,
 } from '../../../shared/api/public/public_branches';
-import { errorText, fill, locale, screenT, t as sharedT } from '../../../shared/i18n';
+import { fill, locale, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import * as table from './i18n';
 import './rate-alerts.css';
@@ -73,34 +74,34 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   let sinceVersion: number | undefined = undefined;
   let timerId: ReturnType<typeof setInterval> | undefined = undefined;
 
-  const formatErrorMsg = (err: unknown): string => {
-    const fallback = sharedT('error.serverError');
+  const ALERT_ERROR_KEYS: Record<string, keyof typeof table.th> = {
+    alertLimitReached: 'alertLimitReached',
+    alertSettingsMissing: 'alertSettingsMissing',
+    idempotencyConflict: 'idempotencyConflict',
+    staleVersion: 'staleVersion',
+    validationFailed: 'validationFailed',
+  };
+
+  const rateAlertsError = (err: unknown): string => {
     if (err instanceof ApiError) {
-      if (err.code === 'alertLimitReached') return t('alertLimitReached');
-      if (err.code === 'alertSettingsMissing') return t('alertSettingsMissing');
-      if (err.code === 'idempotencyConflict') return t('idempotencyConflict');
-      if (err.code === 'staleVersion') return t('staleVersion');
-      if (err.code === 'validationFailed') return t('validationFailed');
-      if (err.code && err.code !== 'httpError') {
-        const text = errorText(err.code, fallback);
-        if (text && text !== err.code) return text;
+      const mapped = ALERT_ERROR_KEYS[err.code];
+      if (mapped) {
+        const text = t(mapped);
+        if (text && text !== mapped) return text;
       }
-      return fallback;
-    }
-    if (err && typeof err === 'object' && 'code' in err) {
-      const c = String((err as { code: unknown }).code);
-      if (c === 'alertLimitReached') return t('alertLimitReached');
-      if (c === 'alertSettingsMissing') return t('alertSettingsMissing');
-      if (c === 'idempotencyConflict') return t('idempotencyConflict');
-      if (c === 'staleVersion') return t('staleVersion');
-      if (c === 'validationFailed') return t('validationFailed');
-      if (c && c !== 'httpError') {
-        const text = errorText(c, fallback);
-        if (text && text !== c) return text;
+    } else if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      typeof (err as { code: unknown }).code === 'string'
+    ) {
+      const mapped = ALERT_ERROR_KEYS[(err as { code: string }).code];
+      if (mapped) {
+        const text = t(mapped);
+        if (text && text !== mapped) return text;
       }
-      return fallback;
     }
-    return fallback;
+    return wordedError(err);
   };
 
   const loadBranches = async () => {
@@ -165,7 +166,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
-      setBranchesError(formatErrorMsg(err));
+      setBranchesError(wordedError(err));
     }
   };
 
@@ -189,7 +190,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
       if (alerts().length === 0) {
-        setLoadError(formatErrorMsg(err));
+        setLoadError(rateAlertsError(err));
       }
     } finally {
       setLoading(false);
@@ -252,7 +253,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       await loadAlerts(true);
     } catch (err: unknown) {
       // On error (including alertLimitReached): keep form inputs, keep key for retry
-      setCreateError(formatErrorMsg(err));
+      setCreateError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
       }
@@ -273,7 +274,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       );
       await loadAlerts(true);
     } catch (err: unknown) {
-      setActionError(formatErrorMsg(err));
+      setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
       }
@@ -292,7 +293,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       );
       await loadAlerts(true);
     } catch (err: unknown) {
-      setActionError(formatErrorMsg(err));
+      setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
       }
@@ -311,7 +312,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       );
       await loadAlerts(true);
     } catch (err: unknown) {
-      setActionError(formatErrorMsg(err));
+      setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
       }

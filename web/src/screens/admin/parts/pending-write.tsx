@@ -3,6 +3,7 @@
 import { createSignal } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { closeDialog, openDialog, setDialogLocked } from './Dialog';
 import { en, th } from './i18n';
 import { requestRefresh } from './refresh';
@@ -159,8 +160,7 @@ export const pendingWrite = {
       setBusy(false);
       enableBeforeUnload();
       setDialogLocked(true);
-      const msg = err instanceof Error ? err.message : String(err);
-      showNotConfirmedDialog(msg);
+      showNotConfirmedDialog(wordedError(err));
     }
   },
 
@@ -193,8 +193,7 @@ export const pendingWrite = {
       setBusy(false);
       enableBeforeUnload();
       setDialogLocked(true);
-      const msg = err instanceof Error ? err.message : String(err);
-      showNotConfirmedDialog(msg);
+      showNotConfirmedDialog(wordedError(err));
     }
   },
 
@@ -229,8 +228,7 @@ export const pendingWrite = {
       }
     } catch (err: unknown) {
       setBusy(false);
-      const msg = err instanceof Error ? err.message : String(err);
-      toast(msg);
+      toast(wordedError(err));
     }
   },
 
@@ -265,8 +263,7 @@ export const pendingWrite = {
         toast(t('cancelledToast'));
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast(msg);
+      toast(wordedError(err));
     }
   },
 };

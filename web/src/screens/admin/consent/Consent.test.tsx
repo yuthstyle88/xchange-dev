@@ -476,7 +476,7 @@ describe('CI-8: publishing a text (consentTextPublish, §4.4)', () => {
   });
 
   it('a refused publish shows the server message', async () => {
-    publishRefusal = { status: 403, code: 'roleNotAllowedHere', message: 'refused: not the owner' };
+    publishRefusal = { status: 403, code: 'consentPublishRefused', message: 'refused: not the owner' };
     const el = mount();
     await settle();
     await publish(el, 'TERMS', 'en', 'terms en v2');

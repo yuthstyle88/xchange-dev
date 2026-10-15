@@ -9,11 +9,11 @@ import {
 } from 'solid-js';
 import {
   ApiClient,
-  ApiError,
   type PageParams,
   type ViewParams,
 } from '../api/client';
 import { fill, locale, t } from '../i18n';
+import { wordedError } from '../i18n/worded-error';
 import { useQueueStore } from '../queue/queue-store';
 import type { KioskQueueRow } from '../queue/wire';
 import { MoneyText } from './MoneyText';
@@ -36,8 +36,8 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   const [rows, setRows] = createSignal<KioskQueueRow[]>([]);
   const [page, setPage] = createSignal(1);
   const [loading, setLoading] = createSignal(false);
-  const [readError, setReadError] = createSignal<string | null>(null);
-  const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
+  const [readError, setReadError] = createSignal<(() => string) | string | null>(null);
+  const [refusalMessage, setRefusalMessage] = createSignal<(() => string) | string | null>(null);
   const [claiming, setClaiming] = createSignal(false);
   const [nowTick, setNowTick] = createSignal(0);
 
@@ -60,9 +60,12 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   };
 
   const statusMessage = () => {
-    if (refusalMessage()) return refusalMessage()!;
-    if (readError()) {
-      return fill(t('queue.status.loadFailed'), { message: readError()! });
+    const refusal = refusalMessage();
+    if (refusal) return typeof refusal === 'function' ? refusal() : refusal;
+    const err = readError();
+    if (err) {
+      const message = typeof err === 'function' ? err() : err;
+      return fill(t('queue.status.loadFailed'), { message });
     }
     if (loading()) return t('queue.status.loading');
 
@@ -118,11 +121,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
     } catch (err: unknown) {
       if (seq !== currentSeq || props.branch !== branchAtStart) return;
 
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : (err as Error)?.message ?? String(err);
-      setReadError(msg);
+      setReadError(() => () => wordedError(err));
     } finally {
       if (seq === currentSeq) {
         setLoading(false);
@@ -239,11 +238,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         await store().refresh();
       }
     } catch (err: unknown) {
-      const sentence =
-        err instanceof ApiError
-          ? err.message
-          : (err as Error)?.message ?? String(err);
-      setRefusalMessage(sentence);
+      setRefusalMessage(() => () => wordedError(err));
       await readQueue({ forced: false });
     } finally {
       setClaiming(false);

@@ -173,7 +173,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error shows error.serverError in TH', async () => {
       listHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'DB down' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'DB down' } }, 500));
       mount();
       await settle();
 
@@ -222,7 +222,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on detail read shows error.serverError in TH', async () => {
       detailHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'detail crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'detail crash' } }, 500));
       mount();
       await settle();
 
@@ -293,7 +293,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on create shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'create 500' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'create 500' } }, 500));
       await openCreateForm();
 
       const submitBtn = container.querySelector<HTMLButtonElement>('.xc-campaign-create .xc-btn-primary');
@@ -352,7 +352,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on save shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'save failed' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'save failed' } }, 500));
       const saveBtn = await openDetailAndGetAction('บันทึก');
       saveBtn?.click();
       await settle();
@@ -409,7 +409,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on simulate shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'simulate crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'simulate crash' } }, 500));
       const btn = await openDetailForSimulate();
       btn?.click();
       await settle();
@@ -466,7 +466,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on submit shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'submit 500' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'submit 500' } }, 500));
       const btn = await openDetailForSubmit();
       btn?.click();
       await settle();
@@ -523,7 +523,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on pause shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'pause crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'pause crash' } }, 500));
       const btn = await openDetailForPause();
       btn?.click();
       await settle();
@@ -580,7 +580,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on resume shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'resume crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'resume crash' } }, 500));
       const btn = await openDetailForResume();
       btn?.click();
       await settle();
@@ -637,7 +637,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on newVersion shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'version crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'version crash' } }, 500));
       const btn = await openDetailForNewVersion();
       btn?.click();
       await settle();
@@ -694,7 +694,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
 
     it('(2) 500 server error on issue coupons shows error.serverError in TH', async () => {
       commandHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'coupon crash' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'coupon crash' } }, 500));
       const btn = await openDetailForIssueCoupons();
       btn?.click();
       await settle();
@@ -726,12 +726,57 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
       expect(container.textContent).toContain('Golden October');
 
       listHandler = () =>
-        Promise.resolve(jsonResponse({ error: { code: 'serverError', message: 'Branch 2 failed' } }, 500));
+        Promise.resolve(jsonResponse({ error: { code: 'roleNotAllowedHere', message: 'Branch 2 failed' } }, 500));
       setBranch('B02');
       await settle();
 
       expect(getErrorText()).toBe(th['error.serverError']);
       expect(container.textContent).not.toContain('Golden October');
     });
+
+    it('after branch switch, previous branch campaigns list is cleared while new branch read is pending', async () => {
+      const { setBranch } = mount('MAIN');
+      await settle();
+
+      expect(container.textContent).toContain('Golden October');
+
+      listHandler = () => new Promise(() => {});
+      setBranch('B02');
+      await settle();
+
+      expect(container.textContent).not.toContain('Golden October');
+    });
+
+    it('after branch switch, open campaign detail is cleared', async () => {
+      const { setBranch } = mount('MAIN');
+      await settle();
+
+      const row = container.querySelector<HTMLTableRowElement>('tr[data-campaign-id="cmp-1"]');
+      row?.click();
+      await settle();
+
+      expect(container.querySelector('.xc-campaign-detail')).not.toBeNull();
+
+      listHandler = () => new Promise(() => {});
+      setBranch('B02');
+      await settle();
+
+      expect(container.querySelector('.xc-campaign-detail')).toBeNull();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WE2 (a): 5xx precedence over local ERROR_KEYS (#1844)
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('WE2 (a): 5xx precedence over local ERROR_KEYS (#1844)', () => {
+    it('500 with screen-specific code outOfScope shows error.serverError in TH', async () => {
+      listHandler = () =>
+        Promise.resolve(jsonResponse({ error: { code: 'outOfScope', message: 'DB down' } }, 500));
+      mount();
+      await settle();
+
+      expect(getErrorText()).toBe(th['error.serverError']);
+    });
   });
 });
+

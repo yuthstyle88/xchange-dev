@@ -29,6 +29,9 @@ function when(iso: string): string {
 }
 
 function policyError(err: unknown): string {
+  if (err instanceof ApiError && (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError')) {
+    return wordedError(err);
+  }
   if (err instanceof ApiError && err.code in OWN_TEXT) {
     return t(OWN_TEXT[err.code]!);
   }

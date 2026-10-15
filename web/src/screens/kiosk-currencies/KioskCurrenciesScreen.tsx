@@ -6,14 +6,15 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiError, type ApiClient } from '../../shared/api/client';
+import type { ApiClient } from '../../shared/api/client';
 import type { RateFreshnessDto } from '../../shared/api/generated/common';
 import type {
   KbankReference,
   KioskCurrencies,
   KioskCurrency,
 } from '../../shared/api/generated/kiosk_currencies';
-import { errorText, locale, screenT } from '../../shared/i18n';
+import { locale, screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
 import { matches } from './filter';
@@ -153,32 +154,32 @@ export function KioskCurrenciesScreen(props: {
   const [kbankRef, setKbankRef] = createSignal<KbankReference | null>(null);
   const [freshness, setFreshness] = createSignal<RateFreshnessDto | null>(null);
   const [searchQuery, setSearchQuery] = createSignal('');
-  const [loadError, setLoadError] = createSignal<
-    { code: string; message: string } | undefined
-  >(undefined);
+  const [loadError, setLoadError] = createSignal<string | undefined>(undefined);
   const [cardStatuses, setCardStatuses] = createSignal<
     Record<string, CardStatusState | undefined>
   >({});
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
 
+  let readingBranch = '';
   const fetchCurrencies = async (branchId: string) => {
+    readingBranch = branchId;
+    setCurrencies([]);
+    setKbankRef(null);
+    setFreshness(null);
+    setLoadError(undefined);
     try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
         branch: branchId,
       });
+      if (readingBranch !== branchId) return;
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
         setFreshness(res.data.freshness);
       }
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setLoadError({ code: err.code, message: err.message });
-      } else if (err instanceof Error) {
-        setLoadError({ code: 'error', message: err.message });
-      } else {
-        setLoadError({ code: 'error', message: String(err) });
-      }
+      if (readingBranch !== branchId) return;
+      setLoadError(wordedError(err));
       setCurrencies([]);
       setKbankRef(null);
       setFreshness(null);
@@ -191,6 +192,7 @@ export function KioskCurrenciesScreen(props: {
       setCurrencies([]);
       setKbankRef(null);
       setFreshness(null);
+      setLoadError(undefined);
       return;
     }
     void fetchCurrencies(b);
@@ -204,7 +206,7 @@ export function KioskCurrenciesScreen(props: {
   const pageMessage = createMemo(() => {
     const err = loadError();
     if (err) {
-      return errorText(err.code, err.message);
+      return err;
     }
     return t('found', { n: filteredCurrencies().length });
   });
@@ -237,10 +239,7 @@ export function KioskCurrenciesScreen(props: {
         }));
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof ApiError || err instanceof Error
-          ? err.message
-          : String(err);
+      const msg = wordedError(err);
       setCardStatuses((prev) => ({
         ...prev,
         [code]: { kind: 'message', text: msg },

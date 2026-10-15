@@ -7,6 +7,8 @@ import type { DenominationRow } from '../../../shared/api/generated/denomination
 import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
 import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
 import { setLang } from '../../../shared/i18n';
+import { th as sharedTh } from '../../../shared/i18n/th';
+import { en as sharedEn } from '../../../shared/i18n/en';
 import { th, en } from './i18n';
 import { th as staffTh } from '../i18n';
 import type { StaffCard, StaffCtx } from '../cards';
@@ -493,14 +495,14 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
     await click(must(tid('transfer-save')));
 
     const errEl = must(tid('transfer-error'));
-    expect(errEl.textContent?.trim()).toBe(th.connectionError);
+    expect(errEl.textContent?.trim()).toBe(sharedTh['error.network']);
     expect(errEl.textContent).not.toContain('Failed to fetch');
 
     // Also test network with empty message
     answers['/api/cash-transfers'] = ['network-empty'];
     await click(must(tid('transfer-save')));
     const errEl2 = must(tid('transfer-error'));
-    expect(errEl2.textContent?.trim()).toBe(th.connectionError);
+    expect(errEl2.textContent?.trim()).toBe(sharedTh['error.network']);
 
     // English check
     dispose?.();
@@ -520,7 +522,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
     await click(must(tid('transfer-save')));
 
     const errElEn = must(tid('transfer-error'));
-    expect(errElEn.textContent?.trim()).toBe(en.connectionError);
+    expect(errElEn.textContent?.trim()).toBe(sharedEn['error.network']);
     expect(errElEn.textContent).not.toContain('Failed to fetch');
   });
 });

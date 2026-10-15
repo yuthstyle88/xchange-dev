@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   ConsentTextsData,
   ConsentTextViewItem,
@@ -23,7 +24,7 @@ interface RetentionRowProps {
 
 function RetentionRow(props: RetentionRowProps): JSX.Element {
   const [days, setDays] = createSignal('');
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<unknown>(null);
   const [busy, setBusy] = createSignal(false);
 
   const handleSave = async () => {
@@ -56,9 +57,8 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
       );
       toast(t('save'));
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      setError(message);
-      toast(message);
+      setError(err);
+      toast(wordedError(err));
     } finally {
       setBusy(false);
     }
@@ -80,7 +80,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
         />
       </label>
       <Show when={error()}>
-        <div class="error">{error()}</div>
+        <div class="error">{typeof error() === 'string' ? (error() as string) : wordedError(error())}</div>
       </Show>
       <button
         type="button"
@@ -100,7 +100,7 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   const [purpose, setPurpose] = createSignal('MARKETING');
   const [lang, setLang] = createSignal('th');
   const [body, setBody] = createSignal('');
-  const [publishError, setPublishError] = createSignal<string | null>(null);
+  const [publishError, setPublishError] = createSignal<unknown>(null);
   const [publishing, setPublishing] = createSignal(false);
 
   const loadTexts = async (branchName: string) => {
@@ -110,8 +110,8 @@ export function Consent(props: AdminMenuProps): JSX.Element {
         setTexts(res.data.texts);
       }
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      toast(message);
+      setTexts([]);
+      toast(wordedError(err));
     }
   };
 
@@ -165,9 +165,8 @@ export function Consent(props: AdminMenuProps): JSX.Element {
       setBody('');
       await loadTexts(props.branch());
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      setPublishError(message);
-      toast(message);
+      setPublishError(err);
+      toast(wordedError(err));
     } finally {
       setPublishing(false);
     }
@@ -230,7 +229,11 @@ export function Consent(props: AdminMenuProps): JSX.Element {
           </label>
 
           <Show when={publishError()}>
-            <div class="error">{publishError()}</div>
+            <div class="error">
+              {typeof publishError() === 'string'
+                ? (publishError() as string)
+                : wordedError(publishError())}
+            </div>
           </Show>
 
           <button

@@ -1,10 +1,11 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type {
   AdminDenominationGroupsData,
   GroupDto,
 } from '../../../shared/api/generated/admin_denomination_groups';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
@@ -39,6 +40,14 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       return;
     }
 
+    const provider = props.provider();
+    if (!provider || provider.trim() === '') {
+      const msg = t('providerRequired');
+      setError(msg);
+      toast(msg);
+      return;
+    }
+
     setBusy(true);
     try {
       const idempKey = crypto.randomUUID();
@@ -48,7 +57,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
         {
           currency: props.currency,
           group: props.group.group,
-          provider: props.provider() || 'RATE_BOARD',
+          provider,
           instrumentKey: key,
           branch: props.branch(),
         },
@@ -57,7 +66,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       setError(null);
       await props.onRefresh();
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
@@ -82,7 +91,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       setError(null);
       await props.onRefresh();
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
@@ -143,7 +152,8 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
         setData(res.data);
       }
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      setData(null);
+      const message = wordedError(err);
       toast(message);
     }
   };
@@ -184,7 +194,7 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
       setAddError(null);
       await loadView();
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      const message = wordedError(err);
       setAddError(message);
       toast(message);
     } finally {
@@ -217,7 +227,7 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
               <GroupRow
                 group={g}
                 currency={selectedCurrency()}
-                provider={() => data()?.provider ?? 'RATE_BOARD'}
+                provider={() => data()?.provider ?? ''}
                 branch={props.branch}
                 client={client}
                 onRefresh={loadView}

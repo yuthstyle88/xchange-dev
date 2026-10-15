@@ -7,7 +7,6 @@
 // one that names moved branches replaces only their rows and alerts, and the KPIs.
 
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from 'solid-js';
-import { ApiError } from '../../../shared/api/client';
 import type {
   AlertDto,
   BranchRowDto,
@@ -16,7 +15,8 @@ import type {
   ExecutiveOverviewData,
   MetricDto,
 } from '../../../shared/api/generated/executive_overview';
-import { errorText, lang, screenT } from '../../../shared/i18n';
+import { lang, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import { fetchOverview, type OverviewQuery } from './api';
@@ -69,11 +69,6 @@ interface Filters {
   branches: string[];
   channel: Channel;
   currency: string;
-}
-
-interface Refusal {
-  code: string;
-  message: string;
 }
 
 /** A KPI that is money (`*_thb`, E-1); the others (a count, a rate) are shown as sent. */
@@ -139,7 +134,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
   const [definitions, setDefinitions] = createSignal<DefinitionDto[]>([]);
   const [known, setKnown] = createSignal<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = createSignal<Filters>({ branches: [], channel: '', currency: '' });
-  const [refusal, setRefusal] = createSignal<Refusal | null>(null);
+  const [refusal, setRefusal] = createSignal<string | null>(null);
   const [loaded, setLoaded] = createSignal(false);
   const [buyReversed, setBuyReversed] = createSignal<string | null>(null);
   const [sellReversed, setSellReversed] = createSignal<string | null>(null);
@@ -167,12 +162,6 @@ export function Executive(props: AdminMenuProps): JSX.Element {
     setBuyReversed(null);
     setSellReversed(null);
     versions = null;
-  };
-
-  const refuse = (e: unknown) => {
-    clear();
-    if (e instanceof ApiError) setRefusal({ code: e.code, message: e.message });
-    else setRefusal({ code: 'network', message: e instanceof Error ? e.message : String(e) });
   };
 
   /** Everything the answer says, replacing what is on screen. */
@@ -216,7 +205,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
       setLoaded(true);
     } catch (e) {
       if (mine !== latest) return;
-      refuse(e);
+      clear();
+      setRefusal(wordedError(e));
     }
   };
 
@@ -235,7 +225,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
       merge(answer.data, new Set(Object.keys(answer.versions)));
     } catch (e) {
       if (mine !== latest) return;
-      refuse(e);
+      clear();
+      setRefusal(wordedError(e));
     }
   };
 
@@ -332,7 +323,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
       <Show when={refusal()}>
         {(r) => (
           <div class="error-banner" role="alert">
-            {errorText(r().code, r().message)}
+            {r()}
           </div>
         )}
       </Show>

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
+import { th } from '../../../shared/i18n/th';
 import { Dialog, closeDialog } from './Dialog';
 import { NewTransactionButton } from './NewTransactionButton';
 import { pendingWrite } from './pending-write';
@@ -68,7 +69,7 @@ describe('extra unit tests for unspecified behaviors (#476)', () => {
     await settle();
 
     expect(button.disabled).toBe(true);
-    expect(el.textContent).toContain('Network error reading shift state');
+    expect(el.textContent).toContain(th['error.network']);
   });
 
   it('(b) pendingWrite.inspect() calls requestRefresh() when it finds applied: true', async () => {

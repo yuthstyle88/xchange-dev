@@ -11,11 +11,12 @@ import {
   type JSX,
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { ApiError, type ApiClient } from '../../shared/api/client';
+import type { ApiClient } from '../../shared/api/client';
 import type { AdminBranchesData, AdminBranchItem } from '../../shared/api/generated/admin_branches';
 import type { Me } from '../../shared/api/generated/common';
 import { sharedSession } from '../../shared/session/session';
-import { errorText, screenT } from '../../shared/i18n';
+import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import { AppShell } from '../../shared/ui/AppShell';
 import { Dialog, openDialog } from './parts/Dialog';
 import { Toast } from './parts/toast';
@@ -57,10 +58,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   const [currentBranch, setSessionBranch] = createSignal('');
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
-  const [branchError, setBranchError] = createSignal<{
-    code: string;
-    message: string;
-  } | null>(null);
+  const [branchError, setBranchError] = createSignal<unknown>(null);
   const [isOnline, setIsOnline] = createSignal(true);
   const [lastSync, setLastSync] = createSignal(new Date());
   const [permissions, setPermissions] = createSignal<readonly string[]>([]);
@@ -235,13 +233,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       }
     } catch (err: unknown) {
       setIsOnline(false);
-      if (err instanceof ApiError) {
-        setBranchError({ code: err.code, message: err.message });
-      } else if (err instanceof Error) {
-        setBranchError({ code: '', message: err.message });
-      } else {
-        setBranchError({ code: '', message: String(err) });
-      }
+      setBranchError(err);
     }
     return [];
   };
@@ -638,10 +630,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
               when={isOnline()}
               fallback={
                 <span>
-                  {t('liveOffline')} ·{' '}
-                  {branchError()
-                    ? errorText(branchError()!.code, branchError()!.message)
-                    : ''}
+                  {t('liveOffline')} · {branchError() != null ? wordedError(branchError()) : ''}
                 </span>
               }
             >

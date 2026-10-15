@@ -6,11 +6,12 @@ import {
   untrack,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import type { AdminCashData, AdminCashFilter } from '../../../shared/api/generated/admin_cash';
 import type { AdminCashMovementRow } from '../../../shared/api/generated/admin_cash_movements';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -46,14 +47,6 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   let lastTick: number | undefined = undefined;
   let currentCashVersion: number | undefined = undefined;
 
-  function toWordedError(err: unknown): string {
-    const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-    if (err instanceof ApiError) {
-      return errorText(err.code, generic);
-    }
-    return generic;
-  }
-
   async function readCash(resetVersion = false, all = showAll(), isReadAll = false) {
     const curBranch = props.branch();
     if (resetVersion || curBranch !== lastBranch) {
@@ -74,7 +67,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
-      setCashError(toWordedError(err));
+      setCashError(wordedError(err));
       setCash(null);
     }
   }
@@ -88,7 +81,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       setMovements(rows);
     } catch (err: unknown) {
       setMovements([]);
-      setCashError(toWordedError(err));
+      setCashError(wordedError(err));
     }
   }
 
@@ -102,7 +95,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       setShifts([]);
       setHasMoreShifts(false);
-      setCashError(toWordedError(err));
+      setCashError(wordedError(err));
     }
   }
 
@@ -153,7 +146,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         setShifts((prev) => [...prev, ...older]);
       }
     } catch (err: unknown) {
-      const msg = err instanceof ApiError ? errorText(err.code, err.message) : String(err);
+      const msg = wordedError(err);
       setOlderError(msg);
       toast(msg);
     } finally {

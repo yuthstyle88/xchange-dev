@@ -319,7 +319,7 @@ describe('108-Plaza/xchange#1687: Rates screen worded errors and policy guard', 
       expect(alerts.some((a) => a.textContent?.includes('สาขานี้อยู่นอกสิทธิ์ของคุณ'))).toBe(false);
     });
 
-    it('retains stale published rates while showing the error if subsequent read fails', async () => {
+    it("clears the previous branch's published rates when the read on the new branch fails", async () => {
       let callCount = 0;
       publishedReply = () => {
         callCount++;
@@ -343,8 +343,8 @@ describe('108-Plaza/xchange#1687: Rates screen worded errors and policy guard', 
       const alerts = Array.from(m.el.querySelectorAll('[role="alert"]'));
       const found = alerts.some((a) => a.textContent?.includes(expected));
       expect(found, `Expected error alert containing "${expected}"`).toBe(true);
-      // Stale data remains visible
-      expect(m.el.querySelector('[data-published-line="EUR"]')).not.toBeNull();
+      // Previous branch rates must not remain visible after branch switch (Done criterion 3)
+      expect(m.el.querySelector('[data-published-line="EUR"]')).toBeNull();
     });
   });
 
@@ -486,7 +486,7 @@ describe('108-Plaza/xchange#1687: Rates screen worded errors and policy guard', 
       expect(toastText()).not.toBe('raw draft error');
     });
 
-    it('shows generic worded error for unknown refusal code without leaking raw wire message', async () => {
+    it('shows the server sentence for an unknown refusal code', async () => {
       commandReplies['POST /api/rate-drafts'] = () => refusal(400, 'somethingNew', 'raw wire message');
       const m = mount();
       await settle();
@@ -496,10 +496,9 @@ describe('108-Plaza/xchange#1687: Rates screen worded errors and policy guard', 
       newDraftBtn!.click();
       await settle();
 
-      const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+      const expected = 'raw wire message';
       expect(toastText()).toBe(expected);
       expect(toastText()).not.toContain('somethingNew');
-      expect(toastText()).not.toContain('raw wire message');
     });
 
     it('shows generic worded error when fetch rejects with TypeError', async () => {
@@ -514,7 +513,7 @@ describe('108-Plaza/xchange#1687: Rates screen worded errors and policy guard', 
       newDraftBtn!.click();
       await settle();
 
-      const expected = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
+      const expected = errorText('network', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
       expect(toastText()).toBe(expected);
       expect(toastText()).not.toContain('Failed to fetch');
     });

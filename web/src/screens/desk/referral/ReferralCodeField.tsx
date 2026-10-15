@@ -1,5 +1,6 @@
 import { createSignal, onMount, Show, type JSX } from 'solid-js';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AttachReferralInput, AttachReferralOutput } from '../../../shared/api/generated/attach_referral';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
@@ -12,23 +13,6 @@ export interface ReferralCodeFieldProps {
   api?: ApiClient;
 }
 
-function toWordedError(err: unknown, fallback: string): string {
-  const generic = errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง');
-  if (err instanceof ApiError) {
-    if (err.status >= 500 || err.code === 'serverError' || err.code === 'httpError') {
-      return generic;
-    }
-    const txt = errorText(err.code, fallback);
-    return txt === err.code ? fallback : txt;
-  }
-  if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string') {
-    const code = (err as { code: string }).code;
-    const txt = errorText(code, fallback);
-    return txt === code ? fallback : txt;
-  }
-  return generic;
-}
-
 export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const t = screenT('desk.referral', texts);
   const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
@@ -36,7 +20,7 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const [submitting, setSubmitting] = createSignal(false);
   const [locked, setLocked] = createSignal(false);
   const [savedCode, setSavedCode] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<unknown>(null);
 
   onMount(async () => {
     const api = props.api ?? new ApiClient();
@@ -74,10 +58,10 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
       setLocked(true);
     } catch (err: unknown) {
       if (err instanceof ApiError && (err.status === 409 || err.code === 'referralAlreadyCaptured')) {
-        setError(t('alreadyCaptured'));
+        setError('alreadyCaptured');
         setLocked(true);
       } else {
-        setError(toWordedError(err, t('invalidCode')));
+        setError(err);
       }
     } finally {
       setSubmitting(false);
@@ -111,7 +95,11 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
 
         <Show when={error()}>
           <p class="desk-referral-error" role="alert">
-            {error()}
+            {error() === 'alreadyCaptured'
+              ? t('alreadyCaptured')
+              : typeof error() === 'string'
+                ? (error() as string)
+                : wordedError(error())}
           </p>
         </Show>
 

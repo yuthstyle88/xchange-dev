@@ -572,12 +572,12 @@ describe("V2-cash-calculators: the folder's source", () => {
     }
   });
 
-  it("calls the two actions through act('compute', …) and shows refusals through errorText", () => {
+  it("calls the two actions through act('compute', …) and shows refusals through wordedError", () => {
     const all = own().map(([, src]) => src).join('\n');
     // `.act`, its type arguments if any, then ('compute', '<action>'
     expect(all).toMatch(/\.act\b[^(]{0,160}\(\s*['"]compute['"]\s*,\s*['"]shift_valuation['"]/);
     expect(all).toMatch(/\.act\b[^(]{0,160}\(\s*['"]compute['"]\s*,\s*['"]profit_summary['"]/);
-    expect(all).toMatch(/\berrorText\s*\(/);
+    expect(all).toMatch(/\bwordedError\s*\(/);
   });
 
   it("reads its texts through screenT('admin.cash.calculators', …) only — never the cash menu's or the shell's table", () => {

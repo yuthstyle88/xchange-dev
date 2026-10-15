@@ -1,8 +1,9 @@
 // V2-parts (#476): new transaction button (ticket §7, design §12.2, P5)
 
-import { createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { closeDialog, openDialog } from './Dialog';
 import { en, th } from './i18n';
 import { pendingWrite } from './pending-write';
@@ -19,6 +20,11 @@ export function NewTransactionButton(
 ): JSX.Element {
   const t = screenT('admin.parts', { th, en });
   const [readError, setReadError] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    props.branch;
+    setReadError(null);
+  });
 
   async function handleClick(): Promise<void> {
     if (pendingWrite.busy()) {
@@ -53,8 +59,7 @@ export function NewTransactionButton(
         ));
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setReadError(msg);
+      setReadError(wordedError(err));
     }
   }
 

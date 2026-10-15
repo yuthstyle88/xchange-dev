@@ -159,7 +159,7 @@ describe('BookingsScreen rework tests (#1702)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(root.textContent).toContain(sharedTh['error.serverError']);
+        expect(root.textContent).toContain(sharedTh['error.network']);
       });
 
       expect(root.textContent).not.toContain('Failed to fetch');
@@ -171,7 +171,7 @@ describe('BookingsScreen rework tests (#1702)', () => {
       mount();
 
       await vi.waitFor(() => {
-        expect(root.textContent).toContain(sharedEn['error.serverError']);
+        expect(root.textContent).toContain(sharedEn['error.network']);
       });
 
       expect(root.textContent).not.toContain('Failed to fetch');
@@ -234,7 +234,7 @@ describe('BookingsScreen rework tests (#1702)', () => {
       refreshBtn!.click();
 
       await vi.waitFor(() => {
-        expect(root.textContent).toContain(sharedTh['error.serverError']);
+        expect(root.textContent).toContain(sharedTh['error.network']);
       });
 
       // Stale data remains visible
