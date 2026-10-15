@@ -32,6 +32,7 @@ import type {
   VerificationDocumentLinkInput,
   VerificationDocumentLinkOutput,
 } from '../../../shared/api/generated/verification_document_link';
+import type { VerificationPolicyData } from '../../../shared/api/generated/verification_policy';
 import type {
   VerificationQueueFilter,
   VerificationQueueItem,
@@ -225,7 +226,17 @@ export function VerificationScreen(): JSX.Element {
     }
   }
 
+  async function loadPolicy(): Promise<void> {
+    try {
+      const policyAns = await api.view<VerificationPolicyData>('verification_policy');
+      setBranchReviewAllowed(policyAns.data?.branchReviewAllowed === true);
+    } catch {
+      setBranchReviewAllowed(false);
+    }
+  }
+
   async function initScreen(): Promise<void> {
+    void loadPolicy();
     try {
       const meAns = await api.view<MeView>('me');
       const meData = meAns.data;
