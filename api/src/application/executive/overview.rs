@@ -110,6 +110,7 @@ impl ExecutiveOverviewService {
         ];
 
         let cash_by_branch = self.cash.branch_cash(changed, filter).await?;
+        let unfinished_by_branch = self.exchange.unfinished_by_branch(changed).await?;
         let mut branches = Vec::new();
         for head in heads.iter().filter(|h| changed.contains(&h.id)) {
             let side = volumes.by_branch.get(&head.id).cloned().unwrap_or_default();
@@ -127,7 +128,10 @@ impl ExecutiveOverviewService {
                 ),
                 in_transit: Metric::value(IN_TRANSIT, thb(cash.in_transit), None),
                 shifts: cash.shifts,
-                pending_events: self.exchange.unfinished(&head.id).await?,
+                pending_events: unfinished_by_branch
+                    .get(&head.id)
+                    .copied()
+                    .unwrap_or_default(),
                 drilldown: overview_drilldown(filter, &head.id),
                 head: head.clone(),
             });

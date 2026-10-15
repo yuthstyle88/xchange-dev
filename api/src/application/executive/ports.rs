@@ -121,6 +121,20 @@ pub trait ExchangeFacts: Send + Sync {
     /// The branch's unfinished LIVE transactions (DRAFT, PENDING_APPROVAL, CONFIRMED): design §3 `data_freshness`.
     fn unfinished<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<i64>>;
 
+    /// `unfinished` for every branch in `branches` at once (design §9).
+    fn unfinished_by_branch<'a>(
+        &'a self,
+        branches: &'a [BranchId],
+    ) -> BoxFuture<'a, AppResult<BTreeMap<BranchId, i64>>> {
+        Box::pin(async move {
+            let mut out = BTreeMap::new();
+            for b in branches {
+                out.insert(b.clone(), self.unfinished(b).await?);
+            }
+            Ok(out)
+        })
+    }
+
     /// Completed / confirmed bookings of the same appointment day (design §3).
     /// Default body answers today's `Unavailable(AwaitsBookingDesign)`.
     fn booking_conversion<'a>(
