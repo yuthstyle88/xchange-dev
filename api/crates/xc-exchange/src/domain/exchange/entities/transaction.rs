@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Money, Rate, Side};
 
-use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_kernel::mode::Mode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transaction {

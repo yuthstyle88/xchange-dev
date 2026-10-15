@@ -110,6 +110,24 @@ export class ApiClient {
     return answer;
   }
 
+  async viewBare<T>(name: string, q: { branch?: string } = {}): Promise<T> {
+    const params = new URLSearchParams();
+    if (q.branch !== undefined) params.set('branch', q.branch);
+
+    const qs = params.toString();
+    const url = `/api/v3/views/${name}${qs ? `?${qs}` : ''}`;
+    const res = await this.fetchFn(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+
+    if (!res.ok) {
+      await this.parseError(res);
+    }
+
+    return (await res.json()) as T;
+  }
+
   async page<R, F = unknown>(name: string, q: PageParams<F> = {}): Promise<R[]> {
     const params = new URLSearchParams();
     if (q.branch !== undefined) params.set('branch', q.branch);

@@ -17,9 +17,10 @@
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)`
 // (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { employeeOf, meOf } from '../../test-support/me';
 import { QUEUE_CARD_PATH, QUEUE_PANEL_PATH } from '../../shared/testing/page-wide';
+import { warmModules } from '../../shared/testing/warm-modules';
 
 const disposers: Array<() => void> = [];
 
@@ -105,6 +106,15 @@ async function start(url: string): Promise<{ queueBranch: () => string | undefin
   const store = await import('../../shared/queue/queue-store');
   return { queueBranch: store.queueBranch as () => string | undefined };
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('./main'),
+      () => import('../../shared/queue/queue-store'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   vi.resetModules();

@@ -66,7 +66,7 @@
 //                      button); cancel sends nothing.
 //                      [data-testid=transfer-notice] / [data-testid=transfer-error]
 //   Bodies             a `branch` member, if sent, must be the actor's own branch; nothing else beyond the design's.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
@@ -77,6 +77,7 @@ import type { DenominationRow } from "../../../shared/api/generated/denomination
 import type { TransferBranchRow } from "../../../shared/api/generated/transfer_branches";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
+import { warmModules } from "../../../shared/testing/warm-modules";
 
 type Texts = {
   th: Record<string, string>;
@@ -390,6 +391,15 @@ async function save(sel: string) {
   must<HTMLButtonElement>(tid(sel)).click();
   await settle();
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./card"),
+      () => import("../main"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   sent = [];

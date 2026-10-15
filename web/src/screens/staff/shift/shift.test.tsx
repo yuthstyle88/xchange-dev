@@ -55,7 +55,7 @@
 //                     can(ShiftOperate) through ApiClient.view (GET /api/v3/views/<name>). The stub below answers
 //                     every query of a view with the same rows, so the card decides what to show from the rows.
 //   Bodies            a `branch` member, if sent, must be the actor's own branch; nothing else beyond the design's.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
@@ -67,6 +67,7 @@ import type { DenominationRow } from "../../../shared/api/generated/denomination
 import type { HandoverReceiverRow } from "../../../shared/api/generated/handover_receivers";
 import type { MyShift } from "../../../shared/api/generated/my_shift";
 import type { StaffCard, StaffCtx } from "../cards";
+import { warmModules } from "../../../shared/testing/warm-modules";
 
 type Texts = {
   th: Record<string, string>;
@@ -359,6 +360,15 @@ function bodyOf(s: Sent): Record<string, unknown> {
 function verifyOf(id: string): HTMLElement | null {
   return q(`[data-count-id="${id}"] ${tid("shift-verify")}`);
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./card"),
+      () => import("../main"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   sent = [];

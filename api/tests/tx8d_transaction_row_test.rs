@@ -29,9 +29,8 @@ use rpc_common::{Answer, Call};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use uuid::Uuid;
-use xc_exchange::application::customer::service::CustomerService;
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::application::customer::service::CustomerService;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -42,6 +41,7 @@ use xc_exchange::domain::transaction::transaction::{
 };
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
 
 const JPEG: &[u8] = &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F'];

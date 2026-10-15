@@ -3,8 +3,8 @@
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
 
-use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::entities::transaction::Transaction;
+use xc_kernel::mode::Mode;
 
 pub trait TransactionRepository: Send + Sync + 'static {
     fn find(

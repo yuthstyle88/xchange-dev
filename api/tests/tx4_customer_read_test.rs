@@ -22,7 +22,7 @@
 //! - `CustomerService::exchange_customer_in(tx: &mut sqlx::Transaction<'_, Postgres>, branch:
 //!   &BranchId, customer_id: &str) -> AppResult<ExchangeCustomer>` (async, associated like
 //!   `confirm_in`), in `api/crates/xc-customer/src/application/customer/service.rs`, reached
-//!   through `xc_exchange::application::customer::service` as every `CustomerService` item is.
+//!   through `xc_customer::application::customer::service` as every `CustomerService` item is.
 //! - choice: `ExchangeCustomer { id: String, mode: Mode, display_name: String, nationality:
 //!   String }` in the same file, fields public, `Debug` + `PartialEq`.
 //! - Refusals as `Err(AppError::Domain(m))`:
@@ -35,9 +35,9 @@ mod quote_common;
 
 use pos_error::{AppError, AppResult};
 use quote_common::*;
-use xc_exchange::application::customer::service::{CustomerService, ExchangeCustomer};
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::application::customer::service::{CustomerService, ExchangeCustomer};
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 
 const ORG_2: &str = "00000000-0000-0000-0000-0000000000d2";
 /// Today's sentence (`xc-customer` `NOT_THIS_PASSPORT`).

@@ -15,9 +15,10 @@
 // - `i18n.ts` exports `th` and `en` tables with the same keys (D-B6, W10).
 // The not-yet-written modules are reached through import.meta.glob, so their absence fails an assertion, not the
 // type check.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Me } from '../../shared/api/generated/common';
 import { formatMoney } from '../../shared/ui/MoneyText';
+import { warmModules } from '../../shared/testing/warm-modules';
 
 // ── the modules under test ──────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,15 @@ let reportAnswer: (url: URL) => Answer | Promise<Answer>;
 let reportCalls: URL[];
 let fetchSpy: ReturnType<typeof vi.fn>;
 let host: HTMLElement | undefined;
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import('../../shared/i18n'),
+      () => import('./main'),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   vi.useFakeTimers();

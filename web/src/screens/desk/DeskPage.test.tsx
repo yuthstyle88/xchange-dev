@@ -3,8 +3,9 @@
 // page's entry runs it, so its store, steps, summary and entry are the ones under test. With the #613 stub store
 // (`createFrameStore`) in `main.tsx` the rate step (index 0, the step the page opens on) throws
 // `store.config is not a function` and these tests go red.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLang } from '../../shared/i18n';
+import { warmModules } from '../../shared/testing/warm-modules';
 
 const HEADING_STEP_0 = 'เลือกเรทและจำนวนเงิน';
 const SUMMARY = 'สรุปรายการ';
@@ -51,6 +52,8 @@ function fakeServer() {
 }
 
 let app: HTMLDivElement;
+
+beforeAll(() => warmModules(() => import('./main')), 60_000);
 
 beforeEach(() => {
   setLang('th');

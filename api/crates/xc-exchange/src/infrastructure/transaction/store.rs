@@ -9,7 +9,6 @@ use xc_kernel::money::{
     CurrencyCode, ForeignAmount, MoneyDelta, Rate, Side, UnitSize, plain_decimal,
 };
 
-use crate::domain::customer::value_objects::mode::Mode;
 use crate::domain::exchange::value_objects::document_ref::DocumentRef;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
 use crate::domain::transaction::line::TransactionLine;
@@ -20,6 +19,7 @@ use crate::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
 use crate::infrastructure::parse_stored_money;
+use xc_kernel::mode::Mode;
 
 #[derive(Clone)]
 pub struct PgTransactionStore {

@@ -1,8 +1,8 @@
 //! Tests for the Bangkok day boundary in document references (ticket #191, IN-3 of #88).
 
 use chrono::{TimeZone, Utc};
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::document_ref::DocumentRef;
+use xc_kernel::mode::Mode;
 
 /// Ticket #670 (TX-2, D-4): the counter key names the organisation. Updated by the ticket author
 /// (claude/f03345fe) on the lane controller's ruling of 2026-10-10; OR-1's first organisation.

@@ -36,7 +36,7 @@
 //   Reads              staff_holds through ApiClient.view; staff_customers with the typed key as `q`, only after a
 //                      non-blank key is typed and holds-find pressed.
 //   Bodies             a `branch` member, if sent, must be the actor's own branch; nothing else beyond the design's.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
@@ -45,6 +45,7 @@ import type { StaffMeView } from "../../../shared/api/generated/staff_me";
 import type { StaffHoldRow } from "../../../shared/api/generated/staff_holds";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
+import { warmModules } from "../../../shared/testing/warm-modules";
 
 type Texts = {
   th: Record<string, string>;
@@ -292,6 +293,15 @@ async function fillHold(key: string, customerId: string, reason: string) {
   typeInto(must<HTMLInputElement>(tid("holds-reason")), reason);
   await settle();
 }
+
+beforeAll(
+  () =>
+    warmModules(
+      () => import("./card"),
+      () => import("../main"),
+    ),
+  60_000,
+);
 
 beforeEach(() => {
   sent = [];

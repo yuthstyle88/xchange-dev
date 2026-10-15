@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
 import * as table from './i18n';
+import { warmModules } from '../../../shared/testing/warm-modules';
 
 const BRANCH_ID = 'XC-B01';
 const BOOKING_ACTIVE_ID = 'BK-alice-001';
@@ -45,6 +46,8 @@ function json(status: number, body: unknown): Response {
 function viewEnvelope(data: unknown, version = 1, changed = true): Response {
   return json(200, { version, changed, data });
 }
+
+beforeAll(() => warmModules(() => import('./main')), 60_000);
 
 describe('APP-17: booking_slots error handling in reschedule dialog', () => {
   let root: HTMLDivElement;

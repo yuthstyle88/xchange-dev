@@ -15,7 +15,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use save_common::*;
 use uuid::Uuid;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -24,6 +23,7 @@ use xc_exchange::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Rate, Side, UnitSize};
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;

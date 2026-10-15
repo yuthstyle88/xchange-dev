@@ -7,7 +7,8 @@ import type {
   RateDraftLineDto,
 } from '../../../shared/api/generated/rate_draft';
 import type { RateDraftsData } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
+import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
+import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
 import type { RatePublicationsData } from '../../../shared/api/generated/rate_publications';
 import type {
   RatesReferenceData,
@@ -36,6 +37,48 @@ interface OutOfBoundItem {
   side: 'BUY' | 'SELL';
 }
 
+interface TierFormRow {
+  tierNo: 1 | 2 | 3 | 4;
+  upperInclusiveThb: string;
+  buyMarginPct: string;
+  sellMarginPct: string;
+}
+
+function emptyValueTiers(): TierFormRow[] {
+  return ([1, 2, 3, 4] as const).map((tierNo) => ({
+    tierNo,
+    upperInclusiveThb: '',
+    buyMarginPct: '',
+    sellMarginPct: '',
+  }));
+}
+
+function parsePositiveDecimalParts(raw: string): { intPart: string; fracPart: string } | null {
+  const trimmed = raw.trim();
+  const m = /^\+?(\d+)(?:\.(\d+))?$/.exec(trimmed);
+  if (!m) return null;
+  const intPart = m[1]!.replace(/^0+/, '') || '0';
+  const fracPart = (m[2] ?? '').replace(/0+$/, '');
+  if (intPart === '0' && fracPart === '') return null;
+  return { intPart, fracPart };
+}
+
+function isDecimalLessThan(
+  a: { intPart: string; fracPart: string },
+  b: { intPart: string; fracPart: string },
+): boolean {
+  if (a.intPart.length !== b.intPart.length) {
+    return a.intPart.length < b.intPart.length;
+  }
+  if (a.intPart !== b.intPart) {
+    return a.intPart < b.intPart;
+  }
+  const maxFrac = Math.max(a.fracPart.length, b.fracPart.length);
+  const aFrac = a.fracPart.padEnd(maxFrac, '0');
+  const bFrac = b.fracPart.padEnd(maxFrac, '0');
+  return aFrac < bFrac;
+}
+
 export function Rates(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
 
@@ -46,6 +89,14 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [draftDetail, setDraftDetail] = createSignal<RateDraftDetailData | null>(null);
   const [policyData, setPolicyData] = createSignal<RatePolicyData | null>(null);
   const [policyError, setPolicyError] = createSignal<string | null>(null);
+
+  const [permissions, setPermissions] = createSignal<readonly string[]>([]);
+  const canSavePolicy = () => permissions().includes('RatePolicySave');
+
+  const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
+  const [valueTiers, setValueTiers] = createSignal<TierFormRow[]>(emptyValueTiers());
+  const [sharpMoveAlertPct, setSharpMoveAlertPct] = createSignal<string>('');
+  let savePolicyKey: string | null = null;
 
   const [refData, setRefData] = createSignal<RatesReferenceData | null>(null);
   const [refVersion, setRefVersion] = createSignal<number | undefined>(undefined);
@@ -122,6 +173,20 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const readMe = async () => {
+    try {
+      const res = await client.view<{ permissions?: readonly string[] }>('me');
+      if (res.data && Array.isArray(res.data.permissions)) {
+        setPermissions(res.data.permissions);
+      } else {
+        setPermissions([]);
+      }
+    } catch (err: unknown) {
+      setPermissions([]);
+      setPolicyError(wordedError(err));
+    }
+  };
+
   const readPolicy = async (branch: string) => {
     try {
       const res = await client.view<RatePolicyData>('rate_policy', { branch });
@@ -130,6 +195,26 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         if (res.data.policy) {
           setAdjustBuyPct(res.data.policy.buyAdjustPct);
           setAdjustSellPct(res.data.policy.sellAdjustPct);
+          setValueTiersOn(Boolean(res.data.policy.valueTiersOn));
+          setSharpMoveAlertPct(res.data.policy.sharpMoveAlertPct ?? '');
+          const incoming = res.data.policy.valueTiers ?? [];
+          setValueTiers(
+            ([1, 2, 3, 4] as const).map((tierNo) => {
+              const found = incoming.find((item) => item.tierNo === tierNo);
+              return {
+                tierNo,
+                upperInclusiveThb: tierNo === 4 ? '' : (found?.upperInclusiveThb ?? ''),
+                buyMarginPct: found?.buyMarginPct ?? '',
+                sellMarginPct: found?.sellMarginPct ?? '',
+              };
+            }),
+          );
+          savePolicyKey = null;
+        } else {
+          setValueTiersOn(false);
+          setValueTiers(emptyValueTiers());
+          setSharpMoveAlertPct('');
+          savePolicyKey = null;
         }
       }
       setPolicyError(null);
@@ -143,7 +228,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!props.shown()) return;
     setSimulateResult(null);
     void fetchReference({ since: undefined });
-    await Promise.all([readPublished(branch), readDrafts(branch), readPolicy(branch)]);
+    await Promise.all([readMe(), readPublished(branch), readDrafts(branch), readPolicy(branch)]);
   };
 
   let lastShown = false;
@@ -171,6 +256,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       setDraftsData(null);
       setDraftDetail(null);
       setPolicyData(null);
+      setValueTiersOn(false);
+      setValueTiers(emptyValueTiers());
+      setSharpMoveAlertPct('');
+      savePolicyKey = null;
       void readAll(branch);
       return;
     }
@@ -387,6 +476,101 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const nonRisingTierNo = (): 1 | 2 | 3 | null => {
+    if (!valueTiersOn()) return null;
+    const rows = valueTiers();
+    const u1Raw = rows[0]?.upperInclusiveThb ?? '';
+    const u2Raw = rows[1]?.upperInclusiveThb ?? '';
+    const u3Raw = rows[2]?.upperInclusiveThb ?? '';
+    const u1 = parsePositiveDecimalParts(u1Raw);
+    const u2 = parsePositiveDecimalParts(u2Raw);
+    const u3 = parsePositiveDecimalParts(u3Raw);
+
+    if (u1Raw.trim() !== '' && u1 === null) return 1;
+    if (u2Raw.trim() !== '' && u2 === null) return 2;
+    if (u1 !== null && u2 !== null && !isDecimalLessThan(u1, u2)) return 2;
+    if (u3Raw.trim() !== '' && u3 === null) return 3;
+    if (u2 !== null && u3 !== null && !isDecimalLessThan(u2, u3)) return 3;
+    if (u1 !== null && u3 !== null && !isDecimalLessThan(u1, u3)) return 3;
+    return null;
+  };
+
+  const areValueTiersValid = (): boolean => {
+    if (!valueTiersOn()) return true;
+    const rows = valueTiers();
+    if (rows.length !== 4) return false;
+    const u1 = parsePositiveDecimalParts(rows[0]!.upperInclusiveThb);
+    const u2 = parsePositiveDecimalParts(rows[1]!.upperInclusiveThb);
+    const u3 = parsePositiveDecimalParts(rows[2]!.upperInclusiveThb);
+    if (!u1 || !u2 || !u3) return false;
+    if (!isDecimalLessThan(u1, u2) || !isDecimalLessThan(u2, u3)) return false;
+    if (rows[3]!.upperInclusiveThb !== '') return false;
+    return rows.every((r) => r.buyMarginPct.trim() !== '' && r.sellMarginPct.trim() !== '');
+  };
+
+  const updateTierField = (
+    tierNo: 1 | 2 | 3 | 4,
+    field: 'upperInclusiveThb' | 'buyMarginPct' | 'sellMarginPct',
+    value: string,
+  ) => {
+    savePolicyKey = null;
+    setValueTiers((prev) =>
+      prev.map((row) => (row.tierNo === tierNo ? { ...row, [field]: value } : row)),
+    );
+  };
+
+  const handleSavePolicy = async () => {
+    if (!canSavePolicy()) return;
+    const policy = policyData()?.policy;
+    if (!policy || Boolean(policyError())) return;
+    if (!areValueTiersValid()) return;
+
+    const branch = props.branch();
+    if (!savePolicyKey) {
+      savePolicyKey = crypto.randomUUID();
+    }
+    const rows = valueTiers();
+    const hasAnyTierInput = rows.some(
+      (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
+    );
+    const tiersPayload: ValueTierDto[] =
+      !valueTiersOn() && !hasAnyTierInput
+        ? []
+        : rows.map((r) => ({
+            tierNo: r.tierNo,
+            upperInclusiveThb:
+              r.tierNo === 4 ? null : r.upperInclusiveThb === '' ? null : r.upperInclusiveThb,
+            buyMarginPct: r.buyMarginPct,
+            sellMarginPct: r.sellMarginPct,
+          }));
+
+    const payload: RatePolicySaveInput & { branch: string } = {
+      branch,
+      buyAdjustPct: adjustBuyPct(),
+      sellAdjustPct: adjustSellPct(),
+      guards: policy.guards,
+      maxReferenceAgeHours: policy.maxReferenceAgeHours,
+      onStale: policy.onStale,
+      staleLimitThb: policy.staleLimitThb,
+      reason: policy.reason || t('savePolicy'),
+      valueTiersOn: valueTiersOn(),
+      valueTiers: tiersPayload,
+      sharpMoveAlertPct: sharpMoveAlertPct() === '' ? null : sharpMoveAlertPct(),
+    };
+
+    try {
+      await client.command<RatePolicySaveInput & { branch: string }, RatePolicySaveOutput>(
+        'POST',
+        '/api/rate-policies',
+        payload,
+        savePolicyKey,
+      );
+      savePolicyKey = null;
+    } catch (err: unknown) {
+      toast(wordedError(err));
+    }
+  };
+
   const openHistory = async () => {
     const branch = props.branch();
     try {
@@ -434,6 +618,152 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         <a href={`/kiosk-currencies.html?branch=${props.branch()}`}>
           <span aria-hidden="true">◎</span> {t('kioskCurrencyLink')}
         </a>
+      </div>
+
+      {/* Rate Policy: Value Tiers & Sharp-Move Threshold (VT-5) */}
+      <div class="rates-section">
+        <div class="section-header">
+          <div class="title-row">
+            <div>
+              <div class="eyebrow">{t('policyEyebrow')}</div>
+              <h2>{t('policyTitle')}</h2>
+            </div>
+            <div class="dialog-actions">
+              <button
+                type="button"
+                data-action="save-policy"
+                data-testid="save-policy"
+                disabled={
+                  !canSavePolicy() ||
+                  Boolean(policyError()) ||
+                  !policyData()?.policy ||
+                  !areValueTiersValid()
+                }
+                onClick={handleSavePolicy}
+              >
+                {t('savePolicy')}
+              </button>
+            </div>
+          </div>
+          <Show when={nonRisingTierNo() !== null}>
+            <div
+              class="form-error"
+              role="alert"
+              data-field-error={`tier-${nonRisingTierNo()}`}
+            >
+              {`${t('tierNonRisingPrefix')}${nonRisingTierNo()}${t('tierNonRisingSuffix')}`}
+            </div>
+          </Show>
+        </div>
+
+        <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '24px', "align-items": 'center', "flex-wrap": 'wrap' }}>
+          <label class="adjust-field-label" style={{ display: 'flex', gap: '8px', "align-items": 'center' }}>
+            <input
+              type="checkbox"
+              name="valueTiersOn"
+              data-field="valueTiersOn"
+              data-testid="value-tiers-switch"
+              checked={valueTiersOn()}
+              disabled={!canSavePolicy()}
+              onChange={(e) => {
+                savePolicyKey = null;
+                setValueTiersOn(e.currentTarget.checked);
+              }}
+            />
+            <span>{t('valueTiersSwitchLabel')}</span>
+          </label>
+
+          <label class="adjust-field-label">
+            {t('sharpMoveThresholdLabel')}
+            <input
+              type="text"
+              name="sharpMoveAlertPct"
+              data-field="sharpMoveAlertPct"
+              data-testid="sharp-move-threshold"
+              value={sharpMoveAlertPct()}
+              disabled={!canSavePolicy()}
+              onInput={(e) => {
+                savePolicyKey = null;
+                setSharpMoveAlertPct(e.currentTarget.value);
+              }}
+            />
+          </label>
+        </div>
+
+        <div class="table-scroll">
+          <table class="rates-table">
+            <thead>
+              <tr>
+                <th>{t('headerTierNo')}</th>
+                <th class="num">{t('headerTierUpperThb')}</th>
+                <th class="num">{t('headerTierBuyMargin')}</th>
+                <th class="num">{t('headerTierSellMargin')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={[1, 2, 3, 4] as const}>
+                {(tierNo) => {
+                  const row = () => valueTiers()[tierNo - 1]!;
+                  return (
+                    <tr data-tier-no={tierNo}>
+                      <td>{`${t('tierLabelPrefix')}${tierNo}`}</td>
+                      <td class="num">
+                        <Show
+                          when={tierNo < 4}
+                          fallback={<span>{t('tierAndAbove')}</span>}
+                        >
+                          <input
+                            type="text"
+                            name={`tier-${tierNo}-upperInclusiveThb`}
+                            data-field="upperInclusiveThb"
+                            data-tier-field="upper"
+                            value={row().upperInclusiveThb}
+                            disabled={!canSavePolicy()}
+                            aria-invalid={nonRisingTierNo() === tierNo ? 'true' : undefined}
+                            onInput={(e) =>
+                              updateTierField(tierNo, 'upperInclusiveThb', e.currentTarget.value)
+                            }
+                          />
+                          <Show when={nonRisingTierNo() === tierNo}>
+                            <div class="field-error" data-error>
+                              {`${t('tierNonRisingPrefix')}${tierNo}${t('tierNonRisingSuffix')}`}
+                            </div>
+                          </Show>
+                        </Show>
+                      </td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name={`tier-${tierNo}-buyMarginPct`}
+                          data-field="buyMarginPct"
+                          data-tier-field="buy-margin"
+                          value={row().buyMarginPct}
+                          disabled={!canSavePolicy()}
+                          onInput={(e) =>
+                            updateTierField(tierNo, 'buyMarginPct', e.currentTarget.value)
+                          }
+                        />
+                      </td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name={`tier-${tierNo}-sellMarginPct`}
+                          data-field="sellMarginPct"
+                          data-tier-field="sell-margin"
+                          value={row().sellMarginPct}
+                          disabled={!canSavePolicy()}
+                          onInput={(e) =>
+                            updateTierField(tierNo, 'sellMarginPct', e.currentTarget.value)
+                          }
+                        />
+                      </td>
+                    </tr>
+                  );
+                }}
+              </For>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Draft Section */}

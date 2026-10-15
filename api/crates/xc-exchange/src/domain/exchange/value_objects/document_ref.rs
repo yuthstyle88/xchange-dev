@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use xc_kernel::time::bangkok;
 
-use crate::domain::customer::value_objects::mode::Mode;
+use xc_kernel::mode::Mode;
 
 pub struct DocumentRef;
 
