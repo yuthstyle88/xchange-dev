@@ -4,6 +4,7 @@ import type {
   AdminDenominationGroupsData,
   GroupDto,
 } from '../../../shared/api/generated/admin_denomination_groups';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
@@ -23,6 +24,8 @@ interface GroupRowProps {
 }
 
 function GroupRow(props: GroupRowProps): JSX.Element {
+  const mapWrite = keyedWrite(props.client, 'POST', '/api/denomination-groups/map');
+  const removeWrite = keyedWrite(props.client, 'POST', '/api/denomination-groups/remove');
   const [boardKey, setBoardKey] = createSignal(props.group.instrumentKey ?? '');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -50,19 +53,13 @@ function GroupRow(props: GroupRowProps): JSX.Element {
 
     setBusy(true);
     try {
-      const idempKey = crypto.randomUUID();
-      await props.client.command(
-        'POST',
-        '/api/denomination-groups/map',
-        {
-          currency: props.currency,
-          group: props.group.group,
-          provider,
-          instrumentKey: key,
-          branch: props.branch(),
-        },
-        idempKey,
-      );
+      await mapWrite.send({
+        currency: props.currency,
+        group: props.group.group,
+        provider,
+        instrumentKey: key,
+        branch: props.branch(),
+      });
       setError(null);
       await props.onRefresh();
     } catch (err: unknown) {
@@ -77,17 +74,11 @@ function GroupRow(props: GroupRowProps): JSX.Element {
   const handleRemove = async () => {
     setBusy(true);
     try {
-      const idempKey = crypto.randomUUID();
-      await props.client.command(
-        'POST',
-        '/api/denomination-groups/remove',
-        {
-          currency: props.currency,
-          group: props.group.group,
-          branch: props.branch(),
-        },
-        idempKey,
-      );
+      await removeWrite.send({
+        currency: props.currency,
+        group: props.group.group,
+        branch: props.branch(),
+      });
       setError(null);
       await props.onRefresh();
     } catch (err: unknown) {
@@ -133,6 +124,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
 
 export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const addGroupWrite = keyedWrite(client, 'POST', '/api/denomination-groups');
 
   const [data, setData] = createSignal<AdminDenominationGroupsData | null>(null);
   const [selectedCurrency, setSelectedCurrency] = createSignal('');
@@ -179,17 +171,11 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
 
     setBusy(true);
     try {
-      const idempKey = crypto.randomUUID();
-      await client.command(
-        'POST',
-        '/api/denomination-groups',
-        {
-          currency: curr,
-          group: code,
-          branch: props.branch(),
-        },
-        idempKey,
-      );
+      await addGroupWrite.send({
+        currency: curr,
+        group: code,
+        branch: props.branch(),
+      });
       setNewGroup('');
       setAddError(null);
       await loadView();

@@ -6,6 +6,7 @@ import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
+import { sharedSession } from '../../../shared/session/session';
 import { meOf } from '../../../test-support/me';
 import { AdminShell } from '../AdminShell';
 import type { AdminMenuProps } from '../menus';
@@ -102,6 +103,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
 
   beforeEach(() => {
     setLang('th');
+    sharedSession().updateMe(meOf({ id: 'admin-1', role: 'ADMIN', branch: B01, name: 'Admin', orgWide: true }));
     container = document.createElement('div');
     document.body.appendChild(container);
     sentRequests = [];

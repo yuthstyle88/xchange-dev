@@ -249,4 +249,29 @@ export class ApiClient {
       return (await res.json()) as R;
     })();
   }
+
+  /** A multipart/form-data upload (#2038): `form` is the body and fetch sets the boundary; sent and refused like `command`. */
+  postForm<R>(path: string, form: FormData, idempotencyKey: string): Promise<R> {
+    if (!idempotencyKey || idempotencyKey.trim() === '') {
+      throw new Error('Idempotency key must not be empty');
+    }
+    return (async () => {
+      const res = await this.fetchFn(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'x-xchange-request': '1',
+          'idempotency-key': idempotencyKey,
+        },
+        body: form,
+      });
+
+      if (!res.ok) {
+        await this.parseError(res);
+      }
+
+      return (await res.json()) as R;
+    })();
+  }
 }
+
