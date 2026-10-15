@@ -548,17 +548,7 @@ export function VerificationScreen(): JSX.Element {
     formData.append('file', file);
 
     try {
-      const res = await fetch(ROUTE_BRANCH_CASES, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Idempotency-Key': key,
-        },
-        body: formData,
-      });
-      if (!res.ok) {
-        await parseRawResponseError(res);
-      }
+      await api.postForm(ROUTE_BRANCH_CASES, formData, key);
       clearIdemKey(sig);
       setBranchSuccessMsg(st('branchSubmittedNotice'));
       setBranchCustomerId('');

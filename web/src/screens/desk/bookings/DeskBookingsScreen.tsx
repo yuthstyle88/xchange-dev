@@ -1,5 +1,6 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { DeskBookingItemDto, DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
 import type {
   BookingCancelOutput,
@@ -186,18 +187,43 @@ export function DeskBookingsScreen(): JSX.Element {
     }
   }
 
-  async function handleCheckIn(bookingId: string, existingKey?: string) {
-    const key = existingKey ?? crypto.randomUUID();
+  let activeCheckInId = '';
+  const checkInWrite = keyedWrite<{ identityChecked: boolean; branch: string }, BookingCheckInOutput>(
+    api,
+    'POST',
+    () => routeCheckIn(activeCheckInId),
+  );
+  let activeCancelId = '';
+  const cancelWrite = keyedWrite<{ reason: string; branch: string }, BookingCancelOutput>(
+    api,
+    'POST',
+    () => routeCancel(cancellingBookingId() ?? ''),
+  );
+  let activeRescheduleId = '';
+  const rescheduleWrite = keyedWrite<{ slotId: string; branch: string }, BookingRescheduleOutput>(
+    api,
+    'POST',
+    () => routeReschedule(reschedulingBookingId() ?? ''),
+  );
+  const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
+    api,
+    'POST',
+    ROUTE_BOOKINGS,
+  );
+
+  async function handleCheckIn(bookingId: string) {
+    if (activeCheckInId !== bookingId) {
+      checkInWrite.reset();
+      activeCheckInId = bookingId;
+    }
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ identityChecked: boolean; branch: string }, BookingCheckInOutput>(
-        'POST',
-        routeCheckIn(bookingId),
-        { identityChecked: true, branch: branchId() },
-        key,
-      );
+      const resData = await checkInWrite.send({
+        identityChecked: true,
+        branch: branchId(),
+      });
       if (!resData || typeof resData.status !== 'string') {
         setErrorMessage(t('error.validationFailed'));
         return;
@@ -209,18 +235,22 @@ export function DeskBookingsScreen(): JSX.Element {
       });
     } catch (err) {
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleCheckIn(bookingId, key));
+      setRetryAction(() => () => handleCheckIn(bookingId));
     }
   }
 
   function openCancel(bookingId: string) {
+    if (activeCancelId !== bookingId) {
+      cancelWrite.reset();
+      activeCancelId = bookingId;
+    }
     setCancellingBookingId(bookingId);
     setCancelReason('');
     setErrorMessage(null);
     setRetryAction(null);
   }
 
-  async function handleConfirmCancel(existingKey?: string) {
+  async function handleConfirmCancel() {
     const bookingId = cancellingBookingId();
     if (!bookingId) return;
     const reason = cancelReason().trim();
@@ -228,17 +258,14 @@ export function DeskBookingsScreen(): JSX.Element {
       return;
     }
 
-    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ reason: string; branch: string }, BookingCancelOutput>(
-        'POST',
-        routeCancel(bookingId),
-        { reason, branch: branchId() },
-        key,
-      );
+      const resData = await cancelWrite.send({
+        reason,
+        branch: branchId(),
+      });
       if (!resData || typeof resData.status !== 'string') {
         setErrorMessage(t('error.validationFailed'));
         return;
@@ -251,11 +278,15 @@ export function DeskBookingsScreen(): JSX.Element {
       setCancelReason('');
     } catch (err) {
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmCancel(key));
+      setRetryAction(() => () => handleConfirmCancel());
     }
   }
 
   function openReschedule(bookingId: string) {
+    if (activeRescheduleId !== bookingId) {
+      rescheduleWrite.reset();
+      activeRescheduleId = bookingId;
+    }
     setReschedulingBookingId(bookingId);
     setErrorMessage(null);
     setRetryAction(null);
@@ -265,23 +296,20 @@ export function DeskBookingsScreen(): JSX.Element {
     setTargetSlotId(otherSlot?.slotId ?? '');
   }
 
-  async function handleConfirmReschedule(existingKey?: string) {
+  async function handleConfirmReschedule() {
     const bookingId = reschedulingBookingId();
     if (!bookingId) return;
     const target = targetSlotId();
     if (!target) return;
 
-    const key = existingKey ?? crypto.randomUUID();
     setErrorMessage(null);
     setRetryAction(null);
 
     try {
-      const resData = await api.command<{ slotId: string; branch: string }, BookingRescheduleOutput>(
-        'POST',
-        routeReschedule(bookingId),
-        { slotId: target, branch: branchId() },
-        key,
-      );
+      const resData = await rescheduleWrite.send({
+        slotId: target,
+        branch: branchId(),
+      });
       if (!resData || typeof resData.status !== 'string' || typeof resData.slotId !== 'string') {
         setErrorMessage(t('error.validationFailed'));
         return;
@@ -294,7 +322,7 @@ export function DeskBookingsScreen(): JSX.Element {
       setReschedulingBookingId(null);
     } catch (err) {
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmReschedule(key));
+      setRetryAction(() => () => handleConfirmReschedule());
     }
   }
 
@@ -329,8 +357,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
   }
 
-  async function handleCreateBooking(existingKey?: string) {
-    const key = existingKey ?? crypto.randomUUID();
+  async function handleCreateBooking() {
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -352,18 +379,13 @@ export function DeskBookingsScreen(): JSX.Element {
     }
 
     try {
-      await api.command<Record<string, unknown>, BookingCreateOutput>(
-        'POST',
-        ROUTE_BOOKINGS,
-        payload,
-        key,
-      );
+      await createWrite.send(payload);
       setShowNewBookingModal(false);
       resetNewBookingForm();
       await fetchBookings();
     } catch (err) {
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleCreateBooking(key));
+      setRetryAction(() => () => handleCreateBooking());
     }
   }
 

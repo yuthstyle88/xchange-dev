@@ -7,6 +7,8 @@ import {
   type JSX,
 } from 'solid-js';
 import { fill, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
@@ -77,6 +79,17 @@ export function formatSlotTime(start: string, end: string, timeZone: string): st
 export function BookScreen(props: BookScreenProps): JSX.Element {
   const t = screenT('customer.book', { th, en, zh });
   const fetchFn = props.fetch ?? ((url, init) => window.fetch(url, init));
+  const api = new ApiClient(props.fetch);
+
+  const bookError = (err: unknown): string => {
+    if (err instanceof ApiError && !isServerFailure(err)) {
+      const key = `error.${err.code}` as keyof typeof th;
+      if (Object.prototype.hasOwnProperty.call(th, key)) {
+        return t(key);
+      }
+    }
+    return wordedError(err);
+  };
 
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const initialRef = searchParams.get('ref') ?? '';
@@ -238,24 +251,26 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
 
     try {
-      const res = await fetchFn('/api/v3/compute/planner_preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          branch: b,
-          currency: c,
-          customerSide: s === 'BUY' ? 'Buy' : 'Sell',
-          amount: { quantity: String(Number(q)) },
-        }),
+      const data = await api.act<
+        {
+          branch: string;
+          currency: string;
+          customerSide: 'Buy' | 'Sell';
+          amount: { quantity: string };
+        },
+        PlannerPreviewResult
+      >('compute', 'planner_preview', {
+        branch: b,
+        currency: c,
+        customerSide: s === 'BUY' ? 'Buy' : 'Sell',
+        amount: { quantity: String(Number(q)) },
       });
-      if (res.status === 200) {
-        const data = await res.json().catch(() => null);
-        setPreview(data);
-      } else {
-        setPreview(null);
-      }
-    } catch {
+      setPreview(data);
+    } catch (err) {
       setPreview(null);
+      if (!submitting()) {
+        setGlobalError(bookError(err));
+      }
     }
   };
 
@@ -297,51 +312,26 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
 
     try {
-      const res = await fetchFn(BOOKING_CREATE_COMMAND_ROUTE, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey(),
-          'idempotency-key': idempotencyKey(),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.status === 200) {
-        const data = await res.json();
-        setSuccessData(data);
-        setIdempotencyKey(makeIdempotencyKey());
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        const err = errJson.error ?? errJson;
-
-        if (err.code === 'validationFailed') {
-          const hasRefField =
-            Array.isArray(err.fields) && err.fields.some((f: any) => f.field === 'referralCode');
-          if (hasRefField) {
-            setReferralError(t('error.invalidReferralCode'));
-          } else {
-            setGlobalError(t('error.validationFailed'));
-          }
-        } else if (err.code === 'slotUnavailable') {
-          setGlobalError(t('error.slotUnavailable'));
+      const data = await api.command<
+        Partial<BookingCreateInput> & Record<string, unknown>,
+        BookingCreateResult
+      >('POST', BOOKING_CREATE_COMMAND_ROUTE, payload, idempotencyKey());
+      setSuccessData(data);
+      setIdempotencyKey(makeIdempotencyKey());
+    } catch (err) {
+      if (err instanceof ApiError && !isServerFailure(err)) {
+        if (
+          err.code === 'invalidReferralCode' ||
+          (err.code === 'validationFailed' && err.field === 'referralCode')
+        ) {
+          setReferralError(t('error.invalidReferralCode'));
+          return;
+        }
+        if (err.code === 'slotUnavailable' || err.code === 'capacityFull') {
           void loadSlots(currentBranch, serviceDate());
-        } else if (err.code === 'capacityFull') {
-          setGlobalError(t('error.capacityFull'));
-          void loadSlots(currentBranch, serviceDate());
-        } else if (err.code === 'bookingsClosed') {
-          setGlobalError(t('error.bookingsClosed'));
-        } else {
-          const errorKey = `error.${err.code}` as keyof typeof th;
-          if (errorKey in th) {
-            setGlobalError(t(errorKey));
-          } else {
-            setGlobalError(err.message ?? t('error.general'));
-          }
         }
       }
-    } catch {
-      setGlobalError(t('error.general'));
+      setGlobalError(bookError(err));
     } finally {
       setSubmitting(false);
     }

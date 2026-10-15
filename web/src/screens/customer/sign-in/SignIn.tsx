@@ -3,7 +3,9 @@
 // `POST /api/auth/otp/verify` (after the code request has answered), and only a `200` from verify navigates to `/app`.
 // The server claims this browser's anonymous drafts at verify (P6). No demo login and no fixed code.
 import { createSignal, Show, type JSX } from 'solid-js';
+import { ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
 import './sign-in.css';
 
@@ -15,17 +17,8 @@ export function e164(phone: string): string {
   return /^0\d{8,9}$/.test(digits) ? `+66${digits.slice(1)}` : digits;
 }
 
-async function postJson(fetchFn: typeof fetch, url: string, body: unknown): Promise<Response> {
-  return fetchFn(url, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
 export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof fetch }): JSX.Element {
-  const fetchFn: typeof fetch = (input, init) => (props.fetch ?? fetch)(input, init);
+  const api = new ApiClient(props.fetch);
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
@@ -37,18 +30,20 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
     setError('');
     requesting = (async () => {
       try {
-        const res = await postJson(fetchFn, '/api/auth/otp/request', {
+        const json = await api.post<
+          { destination: string; channel: string },
+          { challengeId?: string }
+        >('/api/auth/otp/request', {
           destination: e164(phoneInput?.value ?? ''),
           channel: 'sms',
         });
-        const json = (await res.json().catch(() => ({}))) as { challengeId?: string };
-        if (res.status === 200 && json.challengeId) {
+        if (json?.challengeId) {
           setChallenge(json.challengeId);
         } else {
           setError(tr('requestFailed'));
         }
-      } catch {
-        setError(tr('requestFailed'));
+      } catch (err: unknown) {
+        setError(wordedError(err));
       }
     })();
     return requesting;
@@ -62,14 +57,10 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
       const challengeId = challenge();
       if (!challengeId) return;
       setError('');
-      const res = await postJson(fetchFn, '/api/auth/otp/verify', { challengeId, code });
-      if (res.status === 200) {
-        props.navigate('/app');
-        return;
-      }
-      setError(tr('signInFailed'));
-    } catch {
-      setError(tr('signInFailed'));
+      await api.post('/api/auth/otp/verify', { challengeId, code });
+      props.navigate('/app');
+    } catch (err: unknown) {
+      setError(wordedError(err));
     } finally {
       setPending(false);
     }
