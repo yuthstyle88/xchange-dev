@@ -241,6 +241,71 @@ moves the envelope to `POST /api/v2/bookings` in the same commit, with the admin
 | `my_bookings`, `my_booking` (C03) | `CustomerSelf` | status, branch, slot, the QR token (recomputed, B7), the indicative quote's summary (*"เรทสุดท้ายยืนยันเมื่อทำรายการ"*), cancel/reschedule deadline, ticket number and estimate (queue's `my_queue_ticket`), readiness |
 | `admin_booking_slots` (A04) | `BranchesManage` | the rule, closures, slots with capacity and reserved per day, the policy |
 
+### 4.5 One command runner: booking commands move onto `CommandEndpoint` (#1679, BK-6 follow-up)
+
+Measured on main `1eba5943`. Rule ♻️: one shared core, never a copy per variant.
+
+**Today.** Each booking command implements `CommandAction`, but its `run` is a stub that answers `serverError`
+(e.g. `commands/bookings/create.rs:76-86`). The route is served instead by a copy of the runner,
+`handle_booking_command` (`api/src/presentation/http/v3/commands/bookings.rs:248-460`). `kioskBookingCheckIn`
+(`commands/bookings/kiosk_check_in.rs:20`) has no `CommandAction` at all.
+
+**Q1. Can `CommandEndpoint` run a command with no signed-in user? Yes, already.**
+- `authenticate_caller` (`api/src/presentation/http/v3/caller.rs:52-57`) lets an `EntryPath::Rpc` action whose area row
+  is `Need::Public` through with `user = None`.
+- `Policy::authorize_with` grants a public action the **named** branch (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:674-681`).
+  It falls back to `MAIN` when none is named, so a public command must name its branch.
+- The command then gets the whole `Caller` through `CommandAction::run_as` (`command.rs:89-106`).
+  APP-18 (#1373) added `run_as` for exactly this.
+- The row already exists: `kioskBookingCheckIn` is `Need::Public` (`api/crates/xc-auth/src/domain/policy/areas/bookings.rs:24-27`).
+- The organisation comes from the granted branch for every caller (`command.rs`, "Resolve organisation from caller's
+  branch"), which replaces the copy's `SELECT organization_id FROM branches` for a user-less call (`bookings.rs:368-380`).
+
+⇒ **The kiosk check-in becomes an ordinary `CommandAction`** with `ROUTE = "/api/kiosk/bookings/check-in"`.
+- It overrides `run_as`, because there is no user.
+- Its input names the branch as `branch`, the field `CommandEndpoint` reads (`command.rs`, Step 5), instead of `branchId`.
+- No web screen calls this route yet (`git grep -n "kiosk/bookings/check-in" -- web` prints nothing), so the field
+  rename has no other caller to move.
+- No exception and no second runner.
+
+**Q2. What does the copy do differently?** This was measured by reading both paths, not run. Each row is a behaviour
+the move changes, and the code ticket must pin it with a test.
+
+| # | Shared `CommandEndpoint` (`command.rs`) | Booking copy (`bookings.rs`) | After the move |
+|---|---|---|---|
+| 1 | refuses without `x-xchange-request: 1` and a same-origin `Origin` (`:238`, `presentation/extractors/origin.rs:33`) | **no origin check**; the bk6 suites send neither header | booking commands get the same CSRF guard; the bk6 suites add the two headers |
+| 2 | a refused command **releases** its claim (`:554`, `store.release`) | the claim stays `PENDING`; a retry with the same key within 60 s answers `idempotencyConflict` (`infrastructure/idempotency/pg_store.rs:104-105`) instead of the real refusal | same key after a refusal → the refusal again, not `409` |
+| 3 | runs inside `BranchTx` with the command's `Locks` (`:490-531`) | `services.pool.begin()`, no branch lock | booking commands take the branch lock like every other command |
+| 4 | authorizes with the named branch, then `require_branch` | authorizes with no branch, then reads `branchId` or `branch` from the body after the gate | the branch is checked at the gate |
+| 5 | parses the typed `Input` **before** claiming the key (Step 6, `:363`) | hashes the raw body, path params merged, and parses inside the closure | a malformed body never takes a key |
+| 6 | replay answers `CommandAction::stored_output`. Its default stores the whole output (`command.rs:75`); only `coupon_issue.rs:61` overrides it | answers the closure's `replay_val`. `create.rs:266-267` and `qr.rs:184-185` set `replay["qrToken"] = Null` inside the closure. No booking command overrides `stored_output` (`git grep -n "fn stored_output" -- api/src` finds only those two) | **must be carried over by hand.** Once the body moves into `run`/`run_as`, the trait default would store and replay the live QR token. So `BookingCreate` and `BookingQrReissue` each override `stored_output` to set `qrToken` to `null` |
+
+Rows 1 to 5 are behaviour the copy lacks, not features to keep. Row 6 is the one thing the copy does that the shared path does not do by default, and it is kept through the existing `stored_output` hook. Nothing needs a new hook in the shared core.
+
+**What the code ticket keeps (tests that must stay green unchanged, apart from adding the two headers of row 1).**
+These are the BK-6 suites:
+- `api/tests/bk6_booking_create_test.rs` (8), including `booking_create_idempotency_replay_returns_stored_answer_without_qr_token` and `…_conflict_refuses_same_key_different_body`;
+- `api/tests/bk6_booking_lifecycle_test.rs` (13), including `lifecycle_commands_idempotency_replay_and_conflict`;
+- `api/tests/bk6_check_in_test.rs` (10), including `kiosk_check_in_by_valid_qr_token_issues_ticket` and `kiosk_check_in_idempotency_replay_and_conflict`;
+- `api/tests/bk6_slot_admin_test.rs` (8).
+
+The code ticket adds up-front tests for rows 1, 2 and 5. For row 6 it adds a QR-reissue replay test: a replayed `bookingQrReissue` answers without `qrToken`, the same guard `bk6_booking_create_test.rs:313` gives `bookingCreate`. No test covers QR reissue today.
+
+**Files the code ticket touches.**
+- Remove: `bookings.rs` `handle_booking_command`, and `BookingCommandResult` once unused.
+- `create.rs` and `qr.rs` each override `stored_output` to drop `qrToken` (row 6).
+- Each `commands/bookings/*.rs`: its `register` goes, and its `run` / `run_as` holds the closure's body.
+- `kiosk_check_in.rs` gains `impl CommandAction`.
+- `command.rs` is **not** edited.
+- `closureRemove` (`bookings.rs:84-160`) moves with the others.
+
+**Decided (BE controller claude/7ca80c, 2026-10-15, on #1679): commands addressed by booking id name the branch.**
+- The client sends `branch` in the body of `/api/bookings/{id}/confirm`, `cancel`, `reschedule` and `qr`, as every other v3 command does.
+- The command checks that the booking belongs to that branch. A mismatch answers `outOfScope`.
+- `locks()` stays synchronous and the shared core is not changed. Resolving the branch from the booking inside `locks()` would make the shared gate async for one family of commands.
+- This is a wire change on the customer and desk screens that call these routes, so it ships in the same code ticket.
+- The code ticket's up-front tests include the mismatch: a booking of branch A, sent with `branch` = B, gets `outOfScope` and changes nothing.
+
 ## 5. Class diagram
 
 ```mermaid
@@ -277,7 +342,7 @@ classDiagram
   class BookingSaveStep { <<api application/workflows/booking_save_step.rs  kept seam>> }
   class QueueDesk { <<xc-queue  PR 609>> }
   class QueueDayHook { <<xc-queue  PR 609>> }
-  class BookingCommands { <<api presentation/http/v3/commands/bookings/*.rs  one file per command>> }
+  class BookingCommands { <<api presentation/http/v3/commands/bookings/*.rs  one file per command; each a CommandAction served by CommandEndpoint, kiosk check-in via run_as (§4.5)>> }
   class BookingViews { <<api presentation/http/v3/views/{booking_slots,desk_bookings,my_bookings,admin_booking_slots}.rs>> }
 
   Booking --> BookingStatus
@@ -317,6 +382,7 @@ classDiagram
   BookingCommands --> BookingService
   BookingCommands --> CheckInService
   BookingCommands --> SlotService
+  CommandEndpoint ..> BookingCommands : registers and runs (§4.5)
   BookingViews --> BookingRepository
 ```
 
