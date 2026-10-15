@@ -32,20 +32,21 @@ jobs:
       test_args: ${{ steps.filter.outputs.test_args }}
       runs_on: ${{ steps.pool.outputs.runs_on }}
     steps:
-      # Spread the heavy `test` job over the pools that finish it, weighted by runner count:
-      # Dell 4 (dell-org-ci), Warut's MacBook 2 (warut-mbp). Owner's order 2026-10-15 to spread load.
-      # Mac Studio is out of the test pool: measured 2026-10-15, its test job ran past the 90-min
-      # timeout (PR 1797, studio-org-1, 02:30-04:01Z) while Dell finished in ~26-31 min.
-      # No API call: the slot is (run_id + run_attempt) mod 6, so a rerun can land elsewhere.
-      # If this step does not run, `test` falls back to the Dell pool.
+      # Spread the heavy `test` job over every pool that can run it, weighted by runner count:
+      # Mac Studio 6 (mac-studio), Dell 4 (dell-org-ci), Warut's MacBook 2 (warut-mbp).
+      # Owner's order 2026-10-15: pinning to mac-studio left Dell and Warut idle while PRs queued.
+      # No API call: the slot is (run_id + run_attempt) mod 12, so a rerun can land elsewhere.
+      # If this step does not run, `test` falls back to the Mac Studio pool.
       - name: Select runner pool
         id: pool
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          slot=$(( (RUN_ID + RUN_ATTEMPT) % 6 ))
-          if [ "$slot" -lt 4 ]; then
+          slot=$(( (RUN_ID + RUN_ATTEMPT) % 12 ))
+          if [ "$slot" -lt 6 ]; then
+            pool='["self-hosted","macOS","ARM64","mac-studio"]'
+          elif [ "$slot" -lt 10 ]; then
             pool='["self-hosted","Linux","X64","dell-org-ci"]'
           else
             pool='["self-hosted","macOS","ARM64","warut-mbp"]'
@@ -174,7 +175,7 @@ jobs:
     name: test
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64","dell-org-ci"]') }}
+    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","macOS","ARM64","mac-studio"]') }}
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: 12
