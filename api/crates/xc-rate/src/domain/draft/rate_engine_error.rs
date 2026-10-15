@@ -25,6 +25,9 @@ pub enum RateEngineError {
     #[error("idempotency conflict: {0}")]
     IdempotencyConflict(String),
 
+    #[error("{message}")]
+    Refused { code: &'static str, message: String },
+
     #[error("database error: {0}")]
     Database(String),
 
@@ -42,6 +45,7 @@ impl RateEngineError {
             Self::RateUnavailable(_) => "rateUnavailable",
             Self::OutOfScope(_) => "outOfScope",
             Self::IdempotencyConflict(_) => "idempotencyConflict",
+            Self::Refused { code, .. } => code,
             Self::Database(_) => "databaseError",
             Self::Internal(_) => "internalError",
         }

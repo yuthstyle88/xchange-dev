@@ -407,11 +407,11 @@ async fn the_all_group_and_unknown_groups_cannot_be_removed() {
     let db = TestDb::start().await;
     assert_eq!(
         remove(&db, &owner(), "USD", "ALL").await,
-        Err("validationFailed")
+        Err("groupAllNotRemovable")
     );
     assert_eq!(
         remove(&db, &owner(), "USD", "NO_SUCH").await,
-        Err("validationFailed")
+        Err("notFound")
     );
     assert_eq!(groups_of(&db, "USD").await, vec!["ALL"]);
     assert!(audits(&db).await.is_empty());
@@ -436,7 +436,7 @@ async fn a_group_the_current_publication_prices_cannot_be_removed() {
 
     assert_eq!(
         remove(&db, &owner(), "USD", "LARGE").await,
-        Err("validationFailed"),
+        Err("groupPricedByPublication"),
         "a current publication still prices it"
     );
     assert_eq!(
@@ -460,7 +460,7 @@ async fn a_group_that_face_values_belong_to_cannot_be_removed() {
 
     assert_eq!(
         remove(&db, &owner(), "USD", "LARGE").await,
-        Err("validationFailed"),
+        Err("groupHasFaceValues"),
         "cash counts reference denominations rows"
     );
     assert_eq!(group_rows(&db, "USD", "LARGE").await, 1, "it stays");

@@ -2125,3 +2125,91 @@ ticket has a design row. Each cites real code; the evidence is on its issue.
 
 None. Web and test files only.
 
+
+### 12.23 Writes that bypass `ApiClient` (raw-write) — 2026-10-15
+
+**Root cause.** The server refuses every v3 write that lacks `X-Xchange-Request: 1` or a same-origin `Origin`. That covers compute actions (`api/src/presentation/http/v3/action.rs:95-96`), commands (`v3/command.rs:237-238`) and the auth routes (`http/auth.rs:200`, `:242`, `:284`), all through `presentation/extractors/origin.rs`. `ApiClient` sends the header on every write (`web/src/shared/api/client.ts` `act`, `post`, `command`, `postBytes`). A screen that calls `fetch` (or a local alias of it) directly for a write skips it, so it is refused in a real browser (`originRejected` from the v3 compute and command routes; `400 invalidRequest` from `auth.rs` and `customer_register.rs:128`), while its tests (which mock `fetch` and never read headers) stay green. #1891 (B02) was the first case found.
+
+**Measured on main `40303f1`** (`git grep -nE "method: *'(POST|PUT|PATCH|DELETE)'" -- web/src`, excluding `*.test.*` and `shared/api/client.ts`; five files, re-checked by claude/dell-claude-7 on PR 1985):
+- `web/src/screens/customer/book/Book.tsx:241` (`/api/v3/compute/planner_preview`) and `:300` (the booking create command). **C02 cannot preview or book.**
+- `web/src/screens/operations/verification/VerificationScreen.tsx:551`: the at-branch intake, `POST /api/operations/verification/branch-cases` (multipart). Whether its route checks the origin is traced in RW-3.
+- `web/src/screens/customer/sign-in/SignIn.tsx:18-25`: `postJson` for the app sign-in steps. Which route each call hits, and whether it checks the origin, is traced in RW-4.
+- `web/src/screens/customer/home/HomeScreen.tsx:263` (`doFetch('/api/v3/compute/planner_preview')`, refused at `action.rs:96`) and `:318` (`doFetch('/api/app/planner-drafts')`, the `planner_draft_save` command, refused at `command.rs:238`). **C01's preview and draft save are refused.**
+- `web/src/screens/customer/sign-in/SignUp.tsx:40`: `fetchFn('/api/app/register')`, refused at `api/src/presentation/http/customer_register.rs:128` (`same_origin`). **A customer cannot register.**
+
+**Decision.** Writes go through `ApiClient`, and only `client.ts` may call `fetch` with a write method. This is fleet rule ♻️: one client core instead of a copy per screen. A gate keeps it that way, in the same shape as the worded-error gate (`web-worded-error.md` WE5).
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| RW-1 | the raw-write gate: `web/src/shared/api/raw-write.gate.test.ts` fails on any non-test file under `web/src` outside `shared/api/client.ts` whose source contains a write-method literal: `method:` followed by POST, PUT, PATCH or DELETE (alias-agnostic: it catches `fetch`, `fetchFn`, `doFetch`, `postJson`), with `KNOWN` frozen at the five files above and `STALE_KNOWN_FAILS = false` (WE5 shape); its own tests prove a new offender fails | `web/src/shared/api/raw-write.gate.test.ts` | this section merging |
+| RW-2 | C02 previews with `ApiClient.act` (or `post` for the compute path) and creates with `ApiClient.command`; errors through `wordedError` | `web/src/screens/customer/book/Book.tsx`, a new test file beside it | this section merging |
+| RW-3a | `ApiClient.postForm<R>(path: string, form: FormData, idempotencyKey: string): Promise<R>`: sends `x-xchange-request: 1` and the key, lets `fetch` set the multipart boundary (no explicit content-type), and parses errors like `post` (added 2026-10-15: RW-3's trace, #2011, found the intake needs three multipart parts that `postBytes` cannot send) | `web/src/shared/api/client.ts`, `web/src/shared/api/client.postForm.test.ts` | this row merging |
+| RW-3 | F02 at-branch intake through `ApiClient` (`postBytes` or a multipart-capable call, if the trace shows one is needed; a missing client capability is reported on the ticket, not hand-written) | `web/src/screens/operations/verification/VerificationScreen.tsx`, a new test file beside it | RW-3a |
+| RW-4 | app sign-in steps through `ApiClient.post` | `web/src/screens/customer/sign-in/SignIn.tsx`, a new test file beside it | this section merging |
+| RW-5 | C01 preview with `ApiClient.act`/`post`, draft save with `ApiClient.command` | `web/src/screens/customer/home/HomeScreen.tsx`, a new test file beside it | this section merging |
+| RW-6 | app registration through `ApiClient.post`; its refusal is `400 invalidRequest`, not `originRejected` | `web/src/screens/customer/sign-in/SignUp.tsx`, a new test file beside it | this section merging; not concurrent with RW-4 if the two share a helper |
+| RW-final | remove clean files from `KNOWN` and set `STALE_KNOWN_FAILS = true` | the gate file | RW-1 … RW-6 merged |
+
+Each screen ticket's first test asserts that the write request carries `x-xchange-request: 1`, and it must go red on the pre-fix screen. That is the test #1891 lacked.
+
+#### 12.23.1 Data migration
+
+None. Web and test files only.
+
+### 12.24 One idempotency-key core for web writes (KW) — 2026-10-15
+
+**Root cause.** `ApiClient.command(method, path, body, key)` (`web/src/shared/api/client.ts:203`) leaves the `Idempotency-Key` to the caller. On main `18a4362`, `git grep -n "crypto.randomUUID()" -- web/src ':!*.test.*'` gives **48 lines in 30 files**. Most of them make an idempotency key; the exceptions are listed under KW-final. They follow three different rules:
+- **A new key on every click.** Examples: `admin/approvals/Approvals.tsx:46`, `:79`; `admin/users/UsersScreen.tsx:230`, `:253`, `:271`; `admin/rates/Rates.tsx:324`…`:464`; `admin/denomination-groups/DenominationGroups.tsx:53`, `:80`, `:182`; `admin/consent/Consent.tsx:48`, `:153`. A retry after an unknown outcome (a network error or a 5xx) is a **second** write, which is exactly what the key exists to prevent.
+- **Same body ⇒ same key.** Examples: `admin/cash-policy/CashPolicy.tsx:113`, `admin/cash/CashFlows.tsx:170`. This is the correct rule.
+- **A key held until success, whatever the body.** `staff/parts/command.ts:12`. Re-sending with a changed body under the old key gets `idempotencyConflict`.
+
+**Decision (fleet rule ♻️: the rule lives once, in the core).** Add one helper, `web/src/shared/api/keyed-write.ts`:
+`keyedWrite<B, R>(api: ApiClient, method: string, path: string | ((body: B) => string)): { send(body: B): Promise<R>; reset(): void }`.
+- The same serialized body as the last unfinished send reuses that key; a different body gets a new key.
+- The key is dropped after a 2xx, or after a refusal that is not "unknown" (a 4xx other than a network failure).
+- `reset()` drops it explicitly, for example when a dialog closes.
+
+Screens call `keyedWrite(...).send(body)` instead of building keys. `staff/parts/command.ts` becomes a thin re-export.
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| KW-1 | the core and its tests; `staff/parts/command.ts` re-pointed to it | `web/src/shared/api/keyed-write.ts`, `web/src/shared/api/keyed-write.test.ts`, `web/src/screens/staff/parts/command.ts` | this section merging |
+| KW-2 | admin group A: approvals, consent, denomination-groups, users, branches | those five folders' screen files and one new test file each | KW-1 |
+| KW-3 | admin group B: rates, booking-slots, campaigns, starting-prices, alert-settings, rate-alert-settings, reconciliation, cash-policy (`CashPolicy.tsx:113`), cash (`CashFlows.tsx:170`); the last two already follow the rule and move onto the core unchanged in behaviour | those folders' screen files and one new test file each | KW-1 |
+| KW-4 | customer and desk: customer bookings, rate-alerts, assistant; desk referral, `desk/save.ts`, desk bookings; devices; `shared/notifications/notifications.ts` | those files and one new test file per folder | KW-1; for `desk/bookings` and the customer screens, after RW-2/RW-5 have merged if they touch the same file |
+| KW-gate | the gate lands early, as WE-1 and RW-1 did: `web/src/shared/api/keyed-write.gate.test.ts` fails on any new `crypto.randomUUID()` in a non-test file under `web/src` outside `keyed-write.ts` and the named exclusions below, with `KNOWN` frozen at today's files and `STALE_KNOWN_FAILS = false`. No new hand-made key can appear while KW-2…KW-4 migrate | `web/src/shared/api/keyed-write.gate.test.ts` | this row merging |
+| KW-final | remove the migrated files from KW-gate's `KNOWN` and set `STALE_KNOWN_FAILS = true`; `KNOWN` keeps only files still owned by an open RW ticket and the BK-11 v2 screen | the gate file | KW-gate, KW-2…KW-4 |
+
+**KW-final's named exclusions, each with its reason:**
+- `admin/parts/pending-write.tsx:127`: `requestId` is a payload field of the admin pending-write protocol (read back through a view filter, `:214`), not an `Idempotency-Key` header.
+- `admin/customers/Customers.tsx:57`: `memberSecret` is a secret value, not a key.
+- `admin/bookings/BookingsScreen.tsx:340`: the v2 bookings screen, deleted by `booking-slots.md` BK-11. It stays in `KNOWN` until then.
+
+Every screen ticket pins one test: after a network failure, a retry with the same input sends a byte-equal body under the **same** key; after an edit, the next send has a **new** key.
+
+#### 12.24.1 Data migration
+
+None. Web and test files only.
+
+### 12.25 v3 view reads that bypass `ApiClient` (RR) — 2026-10-15
+
+**Root cause.** Two customer screens read v3 views with a raw `fetch` and flatten every failure to a boolean. So a refusal, an expired session and a server failure all look the same to the customer: there is no worded text (WE2), and a 401 does not route to sign-in. `ApiClient.view` (`web/src/shared/api/client.ts:79`) already parses errors into `ApiError` for `wordedError` and takes `branch` and `filter`, so no client change is needed.
+
+**Measured on main `3b5afe9`:**
+- `web/src/screens/customer/history/HistoryScreen.tsx:26`: `fetchFn('/api/v3/views/my_transactions')`. `!res.ok` and the `catch` both only set `error(true)` (`:27-29`, `:36-37`).
+- `web/src/screens/customer/journey/JourneyScreen.tsx:74-75` (`my_queue_ticket`, with `branch` and `ticketId` in a hand-built query) and `:112` (`my_planner_drafts`), with hand-written status branches (`:80-90`).
+
+**Decision (fleet rule ♻️: one client core).** These reads use `ApiClient.view`, and failures go through `wordedError`.
+
+**Not in this section, on purpose:**
+- `/api/public/*` reads (`BranchesScreen.tsx:59`, `RateDisplay.tsx:77`). They already set an error state (`:70-71`, `:107-108`), and a client method for non-view paths is the open question on #1909.
+- `Book.tsx`, `HomeScreen.tsx`, `SignIn.tsx`, `SignUp.tsx` and `RateAlerts.tsx`. These files are owned by open RW/KW tickets.
+
+| # | Ticket | Owns | Starts after |
+|---|---|---|---|
+| RR-2 | C04 history reads `my_transactions` with `ApiClient.view`; failures worded; a 401 routes to sign-in as the customer shell does | `web/src/screens/customer/history/HistoryScreen.tsx`, a new test file beside it | this section merging |
+| RR-3 | C09 journey reads `my_queue_ticket` (filter `ticketId`) and `my_planner_drafts` with `ApiClient.view`; failures worded | `web/src/screens/customer/journey/JourneyScreen.tsx`, a new test file beside it | this section merging |
+
+#### 12.25.1 Data migration
+
+None. Web and test files only.

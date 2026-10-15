@@ -425,7 +425,7 @@ async fn kiosk_check_in_by_valid_qr_token_issues_ticket() {
 
     let uri = "/api/kiosk/bookings/check-in";
     let payload = json!({
-        "branchId": B01,
+        "branch": B01,
         "qrToken": qr_token
     });
 
@@ -570,7 +570,7 @@ async fn kiosk_check_in_idempotency_replay_and_conflict() {
     let uri = "/api/kiosk/bookings/check-in";
     let key = "key-kiosk-ci-1";
     let payload = json!({
-        "branchId": B01,
+        "branch": B01,
         "qrToken": qr_token
     });
 
@@ -595,7 +595,7 @@ async fn kiosk_check_in_idempotency_replay_and_conflict() {
         None,
         Method::POST,
         uri,
-        Some(json!({ "branchId": B01, "qrToken": "different-token" })),
+        Some(json!({ "branch": B01, "qrToken": "different-token" })),
         Some(key),
     )
     .await;
