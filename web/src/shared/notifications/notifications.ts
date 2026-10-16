@@ -54,8 +54,12 @@ export function createNotifications(
     '/api/app/notifications/read-all',
   );
 
+  let loadSeq = 0;
+
   const load = async (filter?: MyNotificationsFilter, loadOpts?: { silent?: boolean }) => {
-    if (!loadOpts?.silent) {
+    const mine = ++loadSeq;
+    const silent = Boolean(loadOpts?.silent) && !loading();
+    if (!silent) {
       setLoading(true);
     }
     setLoadError(null);
@@ -63,15 +67,17 @@ export function createNotifications(
       const res = await api.view<MyNotificationsData, MyNotificationsFilter>('my_notifications', {
         filter,
       });
+      if (mine !== loadSeq) return;
       const raw = res.data?.items ?? [];
       const sorted = [...raw].sort((a, b) => b.seq - a.seq);
       setItems(sorted);
     } catch (e) {
-      if (!loadOpts?.silent) {
+      if (mine !== loadSeq) return;
+      if (!silent) {
         setLoadError(wordedError(e));
       }
     } finally {
-      if (!loadOpts?.silent) {
+      if (mine === loadSeq && !silent) {
         setLoading(false);
       }
     }

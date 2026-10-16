@@ -48,6 +48,8 @@ export const th = {
   'error.profitIncomplete': 'กรอกข้อมูลกำไรและเงินสำรองให้ครบก่อนคำนวณ',
   'error.profitNegative': 'ต้นทุน ทุน และเงินสำรองต้องไม่ติดลบ',
   'error.originRejected': 'คำขอถูกปฏิเสธ เพราะไม่ได้ส่งมาจากหน้าของระบบ',
+  'error.staleVersion': 'ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
+  'error.idempotencyConflict': 'คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลอื่น กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
   'queue.state.waiting': 'รอรับเรื่อง',
   'queue.state.working': 'กำลังทำรายการ',
   'queue.state.completed': 'เสร็จสิ้น',

@@ -7,7 +7,7 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   BookingCancelInput,
@@ -24,6 +24,7 @@ import type {
   MyBookingsData,
 } from '../../../shared/api/generated/my_bookings';
 import { locale, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
 import * as table from './i18n';
 import './bookings.css';
@@ -38,15 +39,14 @@ function getStatusLabel(status: string): string {
   return status;
 }
 
-function getWordedError(err: any): string {
-  const code = err?.code ?? err?.error?.code;
-  if (code) {
-    const key = `error.${code}` as keyof typeof table.th;
-    if (key in table.th) {
+function getWordedError(err: unknown): string {
+  if (err instanceof ApiError && !isServerFailure(err)) {
+    const key = `error.${err.code}` as keyof typeof table.th;
+    if (Object.prototype.hasOwnProperty.call(table.th, key)) {
       return t(key);
     }
   }
-  return err?.message ?? err?.error?.message ?? t('error.loadFailed');
+  return wordedError(err);
 }
 
 function isFinished(status: string): boolean {

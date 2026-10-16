@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
-import * as table from './i18n';
+import { th } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
 const BRANCH_ID = 'XC-B01';
@@ -120,7 +120,7 @@ describe('APP-17: booking_slots error handling in reschedule dialog', () => {
     // Dialog renders error message
     const errorEl = root.querySelector('.xc-dialog-error, [role="alert"]');
     expect(errorEl, 'dialog error is displayed').not.toBeNull();
-    expect(errorEl?.textContent).toContain(table.th['error.loadFailed']);
+    expect(errorEl?.textContent).toContain(th['error.serverError']);
 
     // Now make slots request succeed on retry
     slotsStatus = 200;

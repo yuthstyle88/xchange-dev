@@ -232,7 +232,10 @@ export function Executive(props: AdminMenuProps): JSX.Element {
 
   createEffect(
     on([props.shown, props.period, filters], ([shown]) => {
-      if (shown) void load();
+      if (shown) {
+        versions = null;
+        void load();
+      }
     }),
   );
 

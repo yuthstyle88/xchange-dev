@@ -31,32 +31,26 @@ jobs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
       test_args: ${{ steps.filter.outputs.test_args }}
       runs_on: ${{ steps.pool.outputs.runs_on }}
+      cargo_jobs: ${{ steps.pool.outputs.cargo_jobs }}
     steps:
-      # Spread the heavy `test` job over the pools that finish it, weighted by runner count:
-      # Dell 4 (dell-org-ci), Warut's MacBook 2 (warut-mbp). Owner's order 2026-10-15 to spread load.
-      # Mac Studio is out of the test pool: measured 2026-10-15, its test job ran past the 90-min
-      # timeout (PR 1797, studio-org-1, 02:30-04:01Z) while Dell finished in ~26-31 min.
-      # No API call: the slot is (run_id + run_attempt) mod 6, so a rerun can land elsewhere.
-      # If this step does not run, `test` falls back to the Dell pool.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Spread the heavy `test` job over the pools that finish it (#2261), weighted over a 12-slot
+      # cycle: Dell 6 (dell-org-ci, cargo_jobs=12), Mac Studio 6 (mac-studio, cargo_jobs=4 so 6
+      # concurrent builds fit one 20-core Studio without timing out). No API call: the slot is
+      # (run_id + run_attempt) mod 12, so a rerun can land elsewhere. If this step does not run,
+      # `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
         id: pool
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          slot=$(( (RUN_ID + RUN_ATTEMPT) % 6 ))
-          if [ "$slot" -lt 4 ]; then
-            pool='["self-hosted","Linux","X64","dell-org-ci"]'
-          else
-            pool='["self-hosted","macOS","ARM64","warut-mbp"]'
-          fi
-          echo "slot $slot -> $pool"
-          echo "runs_on=$pool" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+          bash .github/scripts/select-pool.test.sh
+          bash .github/scripts/select-pool.sh >> "$GITHUB_OUTPUT"
 
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh
@@ -177,7 +171,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64","dell-org-ci"]') }}
     timeout-minutes: 90
     env:
-      CARGO_BUILD_JOBS: 12
+      CARGO_BUILD_JOBS: ${{ needs.changes.outputs.cargo_jobs || 12 }}
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "line-tables-only"

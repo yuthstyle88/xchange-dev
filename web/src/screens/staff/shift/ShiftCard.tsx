@@ -149,7 +149,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const kind = countKind();
-    if (!kind) return;
+    if (!kind || denominations().length === 0) return;
 
     const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
     const lines: CashLineInput[] = [];
@@ -409,6 +409,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               type="submit"
               data-testid="shift-count-save"
               class="xc-shift-save-btn"
+              disabled={denominations().length === 0}
             >
               {t('save')}
             </button>

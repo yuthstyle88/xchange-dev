@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use xc_exchange::domain::booking::entities::booking_steps::LiveCustomer;
 use xc_exchange::domain::booking::repositories::booking_ports::{BookingPorts, CounterLine};
+use xc_exchange::domain::booking::value_objects::booking_error::BookingError;
 use xc_exchange::domain::booking::value_objects::booking_rules::BookingRules;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -134,8 +135,12 @@ impl BookingPorts for PgBookingPorts {
             if let Some(amount) = amount {
                 let foreign =
                     ForeignAmount::from_decimal(Decimal::new(amount.minor_i128() as i64, 2));
-                let thb_amount =
-                    ExchangeArithmetic::thb(foreign, published_side.rate, published_side.unit_size);
+                let thb_amount = ExchangeArithmetic::try_thb(
+                    foreign,
+                    published_side.rate,
+                    published_side.unit_size,
+                )
+                .map_err(|_| AppError::Domain(BookingError::AmountOutOfRange.to_string()))?;
 
                 if published_side.stale {
                     let stale_policy = published_rates.stale_policy_in(tx, &published_side).await?;

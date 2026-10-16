@@ -15,6 +15,7 @@ import type {
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
+import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
 import './alert-settings.css';
 
@@ -36,15 +37,18 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const [saving, setSaving] = createSignal<boolean>(false);
 
   let activeBranch = '';
+  let lastTick: number | undefined;
+  let readSeq = 0;
 
   const loadSettings = async (branch: string) => {
     if (!branch) return;
     activeBranch = branch;
+    const seq = ++readSeq;
     try {
       const res = await api.view<BranchAlertSettingsData>('branch_alert_settings', {
         branch,
       });
-      if (activeBranch !== branch) return;
+      if (activeBranch !== branch || seq !== readSeq) return;
       if (res.data) {
         setStaleDataMinutes(res.data.staleDataMinutes);
         setFloors(res.data.floors ? res.data.floors.map((f) => ({ ...f })) : []);
@@ -55,7 +59,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
         setVersion(null);
       }
     } catch (err: unknown) {
-      if (activeBranch !== branch) return;
+      if (activeBranch !== branch || seq !== readSeq) return;
       setStaleDataMinutes(null);
       setFloors([]);
       setVersion(null);
@@ -64,15 +68,23 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   };
 
   createEffect(() => {
+    const shown = props.shown();
     const branch = props.branch();
+    const tick = refreshTick();
+    if (!shown) return;
     if (branch !== activeBranch) {
       setStaleDataMinutes(null);
       setFloors([]);
       setVersion(null);
       saveWrite.reset();
+      lastTick = tick;
+      setError(null);
+      loadSettings(branch);
+    } else if (tick !== lastTick) {
+      lastTick = tick;
+      setError(null);
+      loadSettings(branch);
     }
-    setError(null);
-    loadSettings(branch);
   });
 
   const updateFloor = (currency: string, minQuantity: string) => {
@@ -98,6 +110,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
+    ++readSeq;
 
     const branch = props.branch();
     const input: BranchAlertSettingsSaveInput = {

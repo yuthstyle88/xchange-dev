@@ -130,3 +130,99 @@ describe('isServerFailure (#1862 §9)', () => {
   });
 });
 
+import { setAudience } from './index';
+
+const STALE_TH = 'ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง';
+const STALE_EN = 'This data has changed; reload and try again';
+const STALE_ZH = '数据已更改，请刷新后重试';
+
+const CONFLICT_TH = 'คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลอื่น กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง';
+const CONFLICT_EN = 'This request was already sent with other data; reload and try again';
+const CONFLICT_ZH = '该请求已使用其他数据发送，请刷新后重试';
+
+describe('shared staleVersion and idempotencyConflict keys (#2353)', () => {
+  afterEach(() => {
+    setAudience('staff');
+    setLang('th');
+  });
+
+  it('row 1: ApiError 409 staleVersion with message "stale version", lang th / en -> table text, never raw message', () => {
+    const err = refusal(409, 'staleVersion', 'stale version');
+    expect((th as Record<string, string>)['error.staleVersion']).toBe(STALE_TH);
+    expect((en as Record<string, string>)['error.staleVersion']).toBe(STALE_EN);
+
+    expect(wordedError(err)).toBe(STALE_TH);
+    expect(wordedError(err)).not.toContain('stale version');
+
+    setLang('en');
+    expect(wordedError(err)).toBe(STALE_EN);
+    expect(wordedError(err)).not.toContain('stale version');
+  });
+
+  it('row 2: staleVersion with "staleVersion: transaction X does not exist" and with "STALE_VERSION" -> table text', () => {
+    const errTx = refusal(409, 'staleVersion', 'staleVersion: transaction X does not exist');
+    const errToken = refusal(409, 'staleVersion', 'STALE_VERSION');
+
+    expect(wordedError(errTx)).toBe(STALE_TH);
+    expect(wordedError(errToken)).toBe(STALE_TH);
+
+    setLang('en');
+    expect(wordedError(errTx)).toBe(STALE_EN);
+    expect(wordedError(errToken)).toBe(STALE_EN);
+
+    setAudience('customer');
+    setLang('zh');
+    expect(wordedError(errTx)).toBe(STALE_ZH);
+    expect(wordedError(errToken)).toBe(STALE_ZH);
+  });
+
+  it('row 3: idempotencyConflict with "IDEMPOTENCY_CONFLICT" and "idempotency conflict", th / en / zh (customer page) -> table text in that language', () => {
+    const errUpper = refusal(409, 'idempotencyConflict', 'IDEMPOTENCY_CONFLICT');
+    const errLower = refusal(409, 'idempotencyConflict', 'idempotency conflict');
+
+    expect((th as Record<string, string>)['error.idempotencyConflict']).toBe(CONFLICT_TH);
+    expect((en as Record<string, string>)['error.idempotencyConflict']).toBe(CONFLICT_EN);
+    expect((zh as Record<string, string>)['error.idempotencyConflict']).toBe(CONFLICT_ZH);
+
+    expect(wordedError(errUpper)).toBe(CONFLICT_TH);
+    expect(wordedError(errLower)).toBe(CONFLICT_TH);
+
+    setLang('en');
+    expect(wordedError(errUpper)).toBe(CONFLICT_EN);
+    expect(wordedError(errLower)).toBe(CONFLICT_EN);
+
+    setAudience('customer');
+    setLang('zh');
+    expect(wordedError(errUpper)).toBe(CONFLICT_ZH);
+    expect(wordedError(errLower)).toBe(CONFLICT_ZH);
+  });
+
+  it('row 4: 5xx carrying either code -> error.serverError (kept)', () => {
+    expect(wordedError(refusal(503, 'staleVersion', 'stale version'))).toBe(th['error.serverError']);
+    expect(wordedError(refusal(500, 'idempotencyConflict', 'IDEMPOTENCY_CONFLICT'))).toBe(
+      th['error.serverError'],
+    );
+    expect(wordedError(refusal(409, 'staleVersion', 'stale version'))).toBe(STALE_TH);
+    expect(wordedError(refusal(409, 'idempotencyConflict', 'IDEMPOTENCY_CONFLICT'))).toBe(
+      CONFLICT_TH,
+    );
+  });
+
+  it('row 5: A message equal to the code (staleVersion/staleVersion) -> the table text, no longer serverError', () => {
+    const errStale = refusal(409, 'staleVersion', 'staleVersion');
+    const errConflict = refusal(409, 'idempotencyConflict', 'idempotencyConflict');
+
+    expect(wordedError(errStale)).toBe(STALE_TH);
+    expect(wordedError(errStale)).not.toBe(th['error.serverError']);
+    expect(wordedError(errConflict)).toBe(CONFLICT_TH);
+    expect(wordedError(errConflict)).not.toBe(th['error.serverError']);
+  });
+
+  it("row 6: A code with no shared key -> the server's sentence (kept, worded-error.test.ts:50)", () => {
+    const sentence = 'ลบกลุ่มนี้ไม่ได้ เพราะประกาศเรทปัจจุบันยังใช้อยู่';
+    expect(wordedError(refusal(409, 'groupPricedByPublication', sentence))).toBe(sentence);
+    expect(wordedError(refusal(409, 'staleVersion', sentence))).toBe(STALE_TH);
+    expect(wordedError(refusal(409, 'idempotencyConflict', sentence))).toBe(CONFLICT_TH);
+  });
+});
+

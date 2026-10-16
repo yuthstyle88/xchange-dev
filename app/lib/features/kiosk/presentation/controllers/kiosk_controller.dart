@@ -247,6 +247,8 @@ class KioskController extends Notifier<KioskState> {
   bool _ratesError = false;
   int _ratesSeq = 0;
   int _ratesMinSeq = 0;
+  String? _errorKey;
+  String? _errorServerMessage;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -268,12 +270,40 @@ class KioskController extends Notifier<KioskState> {
     if (!_disposed) state = next;
   }
 
-  String _failure(Object e) =>
-      e is KioskFailure ? _t.errorText(e.serverMessage) : _t.text('errGeneric');
+  String _noError() {
+    _errorKey = null;
+    _errorServerMessage = null;
+    return '';
+  }
+
+  String _keyError(String key, [KioskTexts? t]) {
+    _errorKey = key;
+    _errorServerMessage = null;
+    return (t ?? _t).text(key);
+  }
+
+  String _failure(Object e) {
+    if (e is KioskFailure) {
+      _errorKey = null;
+      _errorServerMessage = e.serverMessage;
+      return _t.errorText(e.serverMessage);
+    }
+    return _keyError('errGeneric');
+  }
+
+  String _currentError(KioskTexts t) {
+    if (_errorServerMessage != null) {
+      return t.errorText(_errorServerMessage!);
+    }
+    if (_errorKey != null) {
+      return t.text(_errorKey!);
+    }
+    return '';
+  }
 
   void reportError(String textKey) {
     _ratesError = false;
-    _set(state.copyWith(error: _t.text(textKey)));
+    _set(state.copyWith(error: _keyError(textKey)));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -290,6 +320,7 @@ class KioskController extends Notifier<KioskState> {
     _receiptPoller.stop();
     _idle.touch();
     _ratesError = false;
+    _noError();
     final seq = ++_ratesSeq;
     _ratesMinSeq = seq;
     _set(
@@ -304,24 +335,31 @@ class KioskController extends Notifier<KioskState> {
       if (_disposed || seq < _ratesMinSeq) return;
       _ratesMinSeq = seq;
       _ratesError = false;
-      final keep = m.rates.any((r) => r.code == state.currency);
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(
-            model: m,
-            currency: keep
-                ? state.currency
-                : (m.rates.isEmpty ? null : m.rates.first.code),
-            error: m.open ? '' : _t.text('closed'),
-          ),
-        ),
-      );
+      _applyRates(m, error: m.open ? _noError() : _keyError('closed'));
     } catch (e) {
       if (_disposed || seq < _ratesMinSeq) return;
       _ratesMinSeq = seq;
       _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
+  }
+
+  void _applyRates(RatesModel m, {required String error}) {
+    final keep = m.rates.any((r) => r.code == state.currency);
+    final currency = keep
+        ? state.currency
+        : (m.rates.isEmpty ? null : m.rates.first.code);
+    final amountText = keep ? state.amountText : '';
+    _set(
+      _keepOfferedMethod(
+        state.copyWith(
+          model: m,
+          currency: currency,
+          amountText: amountText,
+          error: error,
+        ),
+      ),
+    );
   }
 
   /// Any tap or key press on the kiosk.
@@ -353,47 +391,19 @@ class KioskController extends Notifier<KioskState> {
         return;
       }
       _ratesMinSeq = seq;
-      final keep = m.rates.any((r) => r.code == state.currency);
-      final currency = keep
-          ? state.currency
-          : (m.rates.isEmpty ? null : m.rates.first.code);
-      final amountText = keep ? state.amountText : '';
       final openChanged =
           state.model == null || m.open != state.model!.open || _ratesError;
       _ratesError = false;
       final error = openChanged
-          ? (m.open ? '' : _t.text('closed'))
+          ? (m.open ? _noError() : _keyError('closed'))
           : state.error;
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(
-            model: m,
-            currency: currency,
-            amountText: amountText,
-            error: error,
-          ),
-        ),
-      );
+      _applyRates(m, error: error);
     } catch (_) {}
   }
 
   void setLanguage(String code) {
-    _ratesError = false;
     final t = _l10n.of(code);
-    final closed =
-        state.model != null &&
-        !state.model!.open &&
-        state.screen == KioskScreen.select;
-    _set(
-      state.copyWith(
-        languageCode: t.code,
-        error: closed
-            ? t.text('closed')
-            : state.quoteExpired
-            ? t.text('quoteExpired')
-            : '',
-      ),
-    );
+    _set(state.copyWith(languageCode: t.code, error: _currentError(t)));
   }
 
   void setType(ExchangeType value) {
@@ -425,7 +435,7 @@ class KioskController extends Notifier<KioskState> {
   Future<void> submitQuote() async {
     if (!state.canReview) return;
     _ratesError = false;
-    _set(state.copyWith(busy: true, error: ''));
+    _set(state.copyWith(busy: true, error: _noError()));
     try {
       final quote = await _repo.quote(
         type: state.type,
@@ -469,7 +479,7 @@ class KioskController extends Notifier<KioskState> {
         status: null,
         quoteExpired: false,
         secondsLeft: 0,
-        error: '',
+        error: _noError(),
         screen: KioskScreen.select,
       ),
     );
@@ -479,7 +489,7 @@ class KioskController extends Notifier<KioskState> {
     final q = state.quote;
     if (!state.canConfirm || q == null) return;
     _ratesError = false;
-    _set(state.copyWith(busy: true, error: ''));
+    _set(state.copyWith(busy: true, error: _noError()));
     try {
       final status = await _repo.confirm(q.id);
       if (_disposed) return;
@@ -523,7 +533,7 @@ class KioskController extends Notifier<KioskState> {
             status: s,
             screen: KioskScreen.waiting,
             busy: false,
-            error: '',
+            error: _noError(),
           ),
         );
         _receiptPoller.start();
@@ -538,16 +548,16 @@ class KioskController extends Notifier<KioskState> {
           status: s,
           quoteExpired: state.quoteExpired || expired,
           error: expired
-              ? _t.text('quoteExpired')
-              : state.error == _t.text('statusError')
-              ? ''
+              ? _keyError('quoteExpired')
+              : _errorKey == 'statusError'
+              ? _noError()
               : state.error,
         ),
       );
       _afterStatus();
     } catch (_) {
       if (state.quote?.id == q.id) {
-        _set(state.copyWith(error: _t.text('statusError')));
+        _set(state.copyWith(error: _keyError('statusError')));
       }
     }
   }

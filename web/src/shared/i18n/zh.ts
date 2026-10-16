@@ -50,6 +50,8 @@ export const zh: Record<Key, string> = {
   'error.profitIncomplete': '计算前请先填写完整的利润和备用金数据',
   'error.profitNegative': '成本、资本与备用金不得为负数',
   'error.originRejected': '请求被拒绝，因为并非来自系统页面',
+  'error.staleVersion': '数据已更改，请刷新后重试',
+  'error.idempotencyConflict': '该请求已使用其他数据发送，请刷新后重试',
   'queue.state.waiting': '等待处理',
   'queue.state.working': '正在处理',
   'queue.state.completed': '已完成',

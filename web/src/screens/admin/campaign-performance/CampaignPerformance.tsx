@@ -77,10 +77,17 @@ export function CampaignPerformance(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  let lastContext = '';
+
   createEffect(() => {
     if (props.shown && !props.shown()) return;
     const branch = props.branch?.();
     const p = props.period();
+    const context = `${branch}\0${p.from}\0${p.to}`;
+    if (context !== lastContext) {
+      lastContext = context;
+      setRows([]);
+    }
     void loadData(branch, p.from, p.to);
   });
 

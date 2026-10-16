@@ -137,6 +137,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         const fromSearch = branchFromSearch(props.search);
         const searchMatch = fromSearch ? branches.find((b) => b.code === fromSearch) : undefined;
         setSelectedBranchCode(searchMatch ? searchMatch.code : branches[0]!.code);
+        clearPreview();
       }
     }
   });
@@ -241,6 +242,16 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     '/api/app/planner-drafts',
   );
 
+  let calcSeq = 0;
+
+  const clearPreview = () => {
+    calcSeq += 1;
+    setPreviewLoading(false);
+    setPreviewResult(null);
+    setSavedPlanId(null);
+    setSavePlanError(null);
+  };
+
   const handleCalculate = async () => {
     const amtStr = amount().trim();
     const isNum = /^\d+(\.\d+)?$/.test(amtStr) && parseFloat(amtStr) > 0;
@@ -257,6 +268,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       return;
     }
 
+    const seq = ++calcSeq;
     setPreviewLoading(true);
     setPreviewError(null);
     setPreviewResult(null);
@@ -274,8 +286,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         'planner_preview',
         body,
       );
+      if (seq !== calcSeq) return;
       setPreviewResult(json);
     } catch (err) {
+      if (seq !== calcSeq) return;
       if (err instanceof ApiError && !isServerFailure(err) && err.code === 'rateUnavailable') {
         setPreviewError(t('rateUnavailable'));
       } else if (
@@ -288,7 +302,9 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         setPreviewError(wordedError(err));
       }
     } finally {
-      setPreviewLoading(false);
+      if (seq === calcSeq) {
+        setPreviewLoading(false);
+      }
     }
   };
 
@@ -301,6 +317,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
 
     const branch = selectedBranchCode();
+    const seq = calcSeq;
     setSavingPlan(true);
     setSavedPlanId(null);
     setSavePlanError(null);
@@ -314,8 +331,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
 
     try {
       const draft = await savePlan.send(body);
+      if (seq !== calcSeq) return;
       setSavedPlanId(draft.id);
     } catch (err) {
+      if (seq !== calcSeq) return;
       setSavePlanError(wordedError(err));
     } finally {
       setSavingPlan(false);
@@ -370,7 +389,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="branch-select"
                 class="xc-home-select"
                 value={selectedBranchCode()}
-                onChange={(e) => setSelectedBranchCode(e.currentTarget.value)}
+                onChange={(e) => {
+                  setSelectedBranchCode(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={branches()}>
                   {(b) => <option value={b.code}>{b.name} ({b.code})</option>}
@@ -420,7 +442,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_BUY' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_BUY')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_BUY');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_BUY'}
               >
                 {t('customerBuy')}
@@ -428,7 +453,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_SELL' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_SELL')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_SELL');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_SELL'}
               >
                 {t('customerSell')}
@@ -443,7 +471,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="currency-select"
                 class="xc-home-select"
                 value={calcCurrency()}
-                onChange={(e) => setCalcCurrency(e.currentTarget.value)}
+                onChange={(e) => {
+                  setCalcCurrency(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={availableCurrencies()}>
                   {(c) => <option value={c}>{c}</option>}
@@ -457,7 +488,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="amount-type-select"
                 class="xc-home-select"
                 value={amountType()}
-                onChange={(e) => setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb')}
+                onChange={(e) => {
+                  setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb');
+                  clearPreview();
+                }}
               >
                 <option value="quantity">{t('quantity')}</option>
                 <option value="budgetThb">{t('budgetThb')}</option>
@@ -474,7 +508,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 inputmode="decimal"
                 class="xc-home-input"
                 value={amount()}
-                onInput={(e) => setAmount(e.currentTarget.value)}
+                onInput={(e) => {
+                  setAmount(e.currentTarget.value);
+                  clearPreview();
+                }}
               />
               <span class="xc-home-input-suffix">
                 {amountType() === 'quantity' ? calcCurrency() : 'THB'}
