@@ -335,24 +335,31 @@ class KioskController extends Notifier<KioskState> {
       if (_disposed || seq < _ratesMinSeq) return;
       _ratesMinSeq = seq;
       _ratesError = false;
-      final keep = m.rates.any((r) => r.code == state.currency);
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(
-            model: m,
-            currency: keep
-                ? state.currency
-                : (m.rates.isEmpty ? null : m.rates.first.code),
-            error: m.open ? _noError() : _keyError('closed'),
-          ),
-        ),
-      );
+      _applyRates(m, error: m.open ? _noError() : _keyError('closed'));
     } catch (e) {
       if (_disposed || seq < _ratesMinSeq) return;
       _ratesMinSeq = seq;
       _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
+  }
+
+  void _applyRates(RatesModel m, {required String error}) {
+    final keep = m.rates.any((r) => r.code == state.currency);
+    final currency = keep
+        ? state.currency
+        : (m.rates.isEmpty ? null : m.rates.first.code);
+    final amountText = keep ? state.amountText : '';
+    _set(
+      _keepOfferedMethod(
+        state.copyWith(
+          model: m,
+          currency: currency,
+          amountText: amountText,
+          error: error,
+        ),
+      ),
+    );
   }
 
   /// Any tap or key press on the kiosk.
@@ -384,27 +391,13 @@ class KioskController extends Notifier<KioskState> {
         return;
       }
       _ratesMinSeq = seq;
-      final keep = m.rates.any((r) => r.code == state.currency);
-      final currency = keep
-          ? state.currency
-          : (m.rates.isEmpty ? null : m.rates.first.code);
-      final amountText = keep ? state.amountText : '';
       final openChanged =
           state.model == null || m.open != state.model!.open || _ratesError;
       _ratesError = false;
       final error = openChanged
           ? (m.open ? _noError() : _keyError('closed'))
           : state.error;
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(
-            model: m,
-            currency: currency,
-            amountText: amountText,
-            error: error,
-          ),
-        ),
-      );
+      _applyRates(m, error: error);
     } catch (_) {}
   }
 
