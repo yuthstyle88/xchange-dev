@@ -40,6 +40,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
   const [notice, setNotice] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  // #2409: one write at a time; a second click or Enter while one is in flight does nothing.
+  const [busy, setBusy] = createSignal<boolean>(false);
 
   const [cashCounts, setCashCounts] = createSignal<CashCountRow[]>([]);
   const [pendingHandovers, setPendingHandovers] = createSignal<HandoverPendingRow[]>([]);
@@ -149,7 +151,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const kind = countKind();
-    if (!kind || denominations().length === 0) return;
+    if (busy() || !kind || denominations().length === 0) return;
 
     const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
     const lines: CashLineInput[] = [];
@@ -181,6 +183,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     };
 
     const cmd = getCmd<CountSubmitInput, { id: string }>('count-submit', 'POST', '/api/cash-counts');
+    setBusy(true);
     try {
       await cmd.send(body);
       setNotice(t('saved'));
@@ -192,6 +195,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       setNotice(null);
       setError(wordedError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -199,7 +204,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const receiver = selectedReceiver();
-    if (!receiver || availableReceivers().length === 0) return;
+    if (busy() || !receiver || availableReceivers().length === 0) return;
 
     const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
     const lines: CashLineInput[] = [];
@@ -231,6 +236,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     };
 
     const cmd = getCmd<HandoverStartInput, { id: string }>('handover-start', 'POST', '/api/handovers');
+    setBusy(true);
     try {
       await cmd.send(body);
       setNotice(t('saved'));
@@ -243,10 +249,14 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       setNotice(null);
       setError(wordedError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleVerifyCount = async (id: string) => {
+    if (busy()) return;
+    setBusy(true);
     const cmd = getCmd<CashRecordInput, CountVerifyOutput>(
       'count-verify-' + id,
       'POST',
@@ -261,10 +271,14 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       setNotice(null);
       setError(wordedError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleAcceptHandover = async (id: string) => {
+    if (busy()) return;
+    setBusy(true);
     const cmd = getCmd<CashRecordInput, CashRecordOutput>(
       'handover-accept-' + id,
       'POST',
@@ -279,10 +293,14 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       setNotice(null);
       setError(wordedError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleRejectHandover = async (id: string) => {
+    if (busy()) return;
+    setBusy(true);
     const cmd = getCmd<CashRecordInput, CashRecordOutput>(
       'handover-reject-' + id,
       'POST',
@@ -297,6 +315,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       setNotice(null);
       setError(wordedError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -409,7 +429,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               type="submit"
               data-testid="shift-count-save"
               class="xc-shift-save-btn"
-              disabled={denominations().length === 0}
+              disabled={busy() || denominations().length === 0}
             >
               {t('save')}
             </button>
@@ -476,7 +496,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               type="submit"
               data-testid="shift-handover-save"
               class="xc-shift-save-btn"
-              disabled={availableReceivers().length === 0 || !selectedReceiver()}
+              disabled={busy() || availableReceivers().length === 0 || !selectedReceiver()}
             >
               {t('save')}
             </button>
@@ -507,6 +527,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       type="button"
                       data-testid="shift-verify"
                       class="xc-shift-btn"
+                      disabled={busy()}
                       onClick={() => handleVerifyCount(c.id)}
                     >
                       {t('verify')}
@@ -534,6 +555,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       type="button"
                       data-testid="shift-accept"
                       class="xc-shift-btn"
+                      disabled={busy()}
                       onClick={() => handleAcceptHandover(h.id)}
                     >
                       {t('accept')}
@@ -542,6 +564,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       type="button"
                       data-testid="shift-reject"
                       class="xc-shift-btn xc-shift-btn-danger"
+                      disabled={busy()}
                       onClick={() => handleRejectHandover(h.id)}
                     >
                       {t('reject')}
