@@ -164,6 +164,10 @@ fn parse_multipart(boundary: &str, body: &[u8]) -> Result<ParsedMultipart, &'sta
     })
 }
 
+fn key_shape_ok(key: &str) -> bool {
+    xc_kernel::document_store::document_ref("x", key).is_ok()
+}
+
 async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpResponse {
     if !same_origin(&req) {
         return refuse(400, "ORIGIN_REJECTED", "ORIGIN_REJECTED");
@@ -173,8 +177,9 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
         .headers()
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
+        .map(|k| k.trim())
     {
-        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        Some(k) if !k.is_empty() && key_shape_ok(k) => k.to_string(),
         _ => return refuse(400, "badRequest", "Missing Idempotency-Key header"),
     };
 

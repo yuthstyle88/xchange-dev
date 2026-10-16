@@ -4,9 +4,11 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use serde_json::json;
+use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::device_agents::agent_admin::AgentAdmin;
@@ -92,11 +94,37 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
     let action = body["action"].as_str().unwrap_or("");
     let payload = payload_of(&body);
 
-    let (_grant, callers) =
-        match authorize(&req, EntryPath::DeviceSetup, &Action::new(action), None).await {
-            Ok(ok) => ok,
-            Err(resp) => return resp,
-        };
+    let named = match action {
+        "add" => Some(BranchId::new(
+            payload
+                .get("branchId")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        )),
+        "newCode" | "revoke" => {
+            let agent_id = payload
+                .get("agentId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match admin.branch_of(agent_id).await {
+                Ok(branch) => branch,
+                Err(e) => return failure(e),
+            }
+        }
+        _ => None,
+    };
+
+    let (_grant, callers) = match authorize(
+        &req,
+        EntryPath::DeviceSetup,
+        &Action::new(action),
+        named.as_ref(),
+    )
+    .await
+    {
+        Ok(ok) => ok,
+        Err(resp) => return resp,
+    };
 
     if !same_origin(&req) {
         return refuse(400, ORIGIN_REJECTED);
@@ -110,7 +138,24 @@ async fn device_setup_handler(req: HttpRequest, bytes: web::Bytes) -> HttpRespon
 
     match action {
         "list" => match admin.list(now).await {
-            Ok(agents) => answer(200, list_response_json(&agents), true),
+            Ok(agents) => {
+                let act = Action::new(action);
+                let visible: Vec<_> = agents
+                    .into_iter()
+                    .filter(|a| {
+                        let branch = BranchId::new(&a.branch_id);
+                        Policy::authorize(
+                            callers.user.as_ref(),
+                            EntryPath::DeviceSetup,
+                            &act,
+                            Some(&branch),
+                            Utc::now(),
+                        )
+                        .is_ok()
+                    })
+                    .collect();
+                answer(200, list_response_json(&visible), true)
+            }
             Err(e) => failure(e),
         },
         "add" => {
