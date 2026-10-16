@@ -247,7 +247,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
               type="button"
               data-action="snapshot"
               class="xc-btn-secondary"
-              disabled={snapshotting()}
+              disabled={snapshotting() || !definition()}
               onClick={() => void handleSnapshot()}
             >
               {snapshotting() ? t('snapshotting') : t('snapshotBtn')}
