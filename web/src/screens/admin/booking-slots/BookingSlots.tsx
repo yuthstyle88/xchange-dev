@@ -56,11 +56,24 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   const [grace, setGrace] = createSignal('');
   const [expiry, setExpiry] = createSignal('');
 
+  let latestReadId = 0;
+
+  function clearBranchState() {
+    setSlotMinutes('');
+    setCapacity('');
+    setHorizonDays('');
+    setClosures([]);
+    setSlots([]);
+    setSlotCapacities({});
+  }
+
   async function loadView(branchId: string) {
+    const readId = ++latestReadId;
     setLoading(true);
     setErrorMessage(null);
     try {
       const res = await api.view<AdminBookingSlotsData>('admin_booking_slots', { branch: branchId });
+      if (readId !== latestReadId) return;
       const data = res.data;
       if (data) {
         if (data.rule) {
@@ -79,24 +92,27 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
           setGrace(String(data.policy.noShowGraceMinutes));
           setExpiry(String(data.policy.confirmExpiryMinutes));
         }
-        if (data.slots) {
-          const caps: Record<string, string> = {};
-          for (const s of data.slots) {
-            caps[s.id] = String(s.capacity);
-          }
-          setSlotCapacities(caps);
+        const caps: Record<string, string> = {};
+        for (const s of data.slots ?? []) {
+          caps[s.id] = String(s.capacity);
         }
+        setSlotCapacities(caps);
       }
     } catch (err: unknown) {
+      if (readId !== latestReadId) return;
+      clearBranchState();
       handleApiError(err);
     } finally {
-      setLoading(false);
+      if (readId === latestReadId) {
+        setLoading(false);
+      }
     }
   }
 
   createEffect(() => {
     const branch = props.branch();
     if (branch) {
+      clearBranchState();
       void loadView(branch);
     }
   });

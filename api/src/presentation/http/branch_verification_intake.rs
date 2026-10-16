@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Permission;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -220,23 +220,29 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
         Err(_) => return refuse(403, "outOfScope", "invalid organization_id"),
     };
 
-    let reviewer_role = user.roles.iter().find(|r| {
-        r.valid_from <= now
-            && r.valid_to.is_none_or(|to| now < to)
-            && RolePermissions::of(r.role).contains(&Permission::VerificationReview)
-    });
-
-    let reviewer_scope = match reviewer_role {
-        Some(r) => match &r.branch {
-            Some(b) => ReviewerScope::Branch {
-                organization_id: org_id,
-                branch_id: b.clone(),
-            },
-            None => ReviewerScope::Organization {
-                organization_id: org_id,
-            },
+    let reviewer_scope = match BranchScope::of(user, Permission::VerificationReview, now) {
+        BranchScope::All => ReviewerScope::Organization {
+            organization_id: org_id,
         },
-        None => return refuse(403, "roleNotAllowed", "Role has no VerificationReview"),
+        BranchScope::Branches(branches) if branches.is_empty() => {
+            return refuse(403, "roleNotAllowed", "Role has no VerificationReview");
+        }
+        BranchScope::Branches(branches) => {
+            let branch = match &user.branch {
+                Some(b) => {
+                    if !branches.contains(b) {
+                        return refuse(403, "outOfScope", "outOfScope");
+                    }
+                    b.clone()
+                }
+                None if branches.len() == 1 => branches[0].clone(),
+                None => return refuse(403, "outOfScope", "outOfScope"),
+            };
+            ReviewerScope::Branch {
+                organization_id: org_id,
+                branch_id: branch,
+            }
+        }
     };
 
     let reviewer = ReviewerActor {

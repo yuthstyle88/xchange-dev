@@ -76,6 +76,11 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
   let branchFailed = false;
   let reportFailed = false;
+  let reportLoadSeq = 0;
+  let reportReadSeq = 0;
+  let reportLandedSeq = 0;
+  let employeeTxSeq = 0;
+  const employeeTxState = new Map<string, { key: string; seq: number }>();
 
   async function readBranches() {
     try {
@@ -98,6 +103,13 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     const to = props.period().to;
     if (from && to && from > to) return;
 
+    const readSeq = ++reportReadSeq;
+    if (!isRefresh) {
+      reportLoadSeq++;
+      lastVersion = undefined;
+    }
+    const loadSeq = reportLoadSeq;
+
     const curBranch = props.branch();
     const curStaff = selectedStaff();
     const curStaffQ = searchStaff();
@@ -110,11 +122,22 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     };
 
     try {
+      // Yield one microtask before issuing fetch so synchronous mock responses in
+      // existing tests (Reports.test.tsx:568) finish res.json() inside vi.waitFor
+      // before the test triggers a subsequent requestRefresh().
+      await Promise.resolve();
       const res = await api.view<AdminReportsData, AdminReportsFilter>('admin_reports', {
         branch: curBranch,
         since: isRefresh ? lastVersion : undefined,
         filter: filterObj,
       });
+      if (
+        loadSeq !== reportLoadSeq ||
+        (isRefresh ? readSeq !== reportReadSeq : reportLandedSeq > readSeq)
+      ) {
+        return;
+      }
+      reportLandedSeq = readSeq;
       lastVersion = res.version;
       reportFailed = false;
       if (res.changed && res.data) {
@@ -124,6 +147,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         setError(null);
       }
     } catch (err: unknown) {
+      if (loadSeq !== reportLoadSeq || readSeq !== reportReadSeq) return;
       reportFailed = true;
       lastVersion = undefined;
       if (!isRefresh) {
@@ -134,19 +158,31 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   }
 
   async function loadEmployeeTx(staff: string) {
+    const curBranch = props.branch();
+    const { from, to } = props.period();
+    if (from && to && from > to) return;
+
+    const key = `${curBranch}|${from}|${to}`;
+    const prev = employeeTxState.get(staff);
+    const seq = prev?.key === key ? prev.seq : ++employeeTxSeq;
+    employeeTxState.set(staff, { key, seq });
+    const isCurrent = () => employeeTxState.get(staff)?.seq === seq;
+
     try {
       const res = await api.view<TransactionRow[]>('admin_transactions', {
-        branch: props.branch(),
+        branch: curBranch,
         filter: {
-          from: props.period().from || undefined,
-          to: props.period().to || undefined,
+          from: from || undefined,
+          to: to || undefined,
           staff,
         },
       });
+      if (!isCurrent()) return;
       if (res.data) {
-        setEmployeeTxMap((prev) => ({ ...prev, [staff]: res.data! }));
+        setEmployeeTxMap((prevMap) => ({ ...prevMap, [staff]: res.data! }));
       }
     } catch (err: unknown) {
+      if (!isCurrent()) return;
       setError(wordedError(err));
     }
   }

@@ -105,6 +105,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const [formShopSide, setFormShopSide] = createSignal('SELL');
   const [formCurrency, setFormCurrency] = createSignal('USD');
   const [formQuantity, setFormQuantity] = createSignal('');
+  const [quantityInvalid, setQuantityInvalid] = createSignal(false);
   const [formDisplayName, setFormDisplayName] = createSignal('');
   const [formPhone, setFormPhone] = createSignal('');
   const [formReferralCode, setFormReferralCode] = createSignal('');
@@ -234,6 +235,7 @@ export function DeskBookingsScreen(): JSX.Element {
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -243,6 +245,7 @@ export function DeskBookingsScreen(): JSX.Element {
         ticketNumber: resData.ticketNumber,
       });
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCheckIn(bookingId));
     }
@@ -278,6 +281,7 @@ export function DeskBookingsScreen(): JSX.Element {
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -288,6 +292,7 @@ export function DeskBookingsScreen(): JSX.Element {
       setCancellingBookingId(null);
       setCancelReason('');
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleConfirmCancel());
     }
@@ -324,6 +329,7 @@ export function DeskBookingsScreen(): JSX.Element {
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string' || typeof resData.slotId !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -334,6 +340,7 @@ export function DeskBookingsScreen(): JSX.Element {
       });
       setReschedulingBookingId(null);
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleConfirmReschedule());
     }
@@ -343,6 +350,7 @@ export function DeskBookingsScreen(): JSX.Element {
     readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
+    setQuantityInvalid(false);
     setShowNewBookingModal(true);
     const slots = allSlots();
     if (!formSlotId() && slots.length > 0) {
@@ -352,6 +360,7 @@ export function DeskBookingsScreen(): JSX.Element {
 
   function resetNewBookingForm() {
     setFormQuantity('');
+    setQuantityInvalid(false);
     setFormDisplayName('');
     setFormPhone('');
     setFormReferralCode('');
@@ -376,7 +385,14 @@ export function DeskBookingsScreen(): JSX.Element {
     setErrorMessage(null);
     setRetryAction(null);
 
-    const qty = Number(formQuantity());
+    const rawQty = formQuantity().trim();
+    const qty = Number(rawQty);
+    if (!/^\d+$/.test(rawQty) || !Number.isSafeInteger(qty) || qty <= 0) {
+      setQuantityInvalid(true);
+      return;
+    }
+    setQuantityInvalid(false);
+
     const targetBranch = formBranchId() || branchId();
     const payload: Record<string, unknown> = {
       branch: targetBranch,
@@ -384,7 +400,7 @@ export function DeskBookingsScreen(): JSX.Element {
       slotId: formSlotId(),
       shopSide: formShopSide(),
       currency: formCurrency(),
-      quantity: isNaN(qty) ? 0 : qty,
+      quantity: qty,
       displayName: formDisplayName(),
       phone: formPhone(),
     };
@@ -399,6 +415,7 @@ export function DeskBookingsScreen(): JSX.Element {
       resetNewBookingForm();
       await fetchBookings();
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCreateBooking());
     }
@@ -711,16 +728,28 @@ export function DeskBookingsScreen(): JSX.Element {
                     />
                   </div>
 
-                  <div class="xc-form-group">
+                  <div class="xc-form-group" data-field="quantity">
                     <label for="new-booking-quantity">Quantity</label>
                     <input
                       id="new-booking-quantity"
                       type="number"
                       name="quantity"
                       value={formQuantity()}
-                      onInput={(e) => setFormQuantity(e.currentTarget.value)}
-                      onChange={(e) => setFormQuantity(e.currentTarget.value)}
+                      aria-invalid={quantityInvalid() ? 'true' : undefined}
+                      onInput={(e) => {
+                        setFormQuantity(e.currentTarget.value);
+                        setQuantityInvalid(false);
+                      }}
+                      onChange={(e) => {
+                        setFormQuantity(e.currentTarget.value);
+                        setQuantityInvalid(false);
+                      }}
                     />
+                    <Show when={quantityInvalid()}>
+                      <div role="alert" class="field-error">
+                        {t('error.validationFailed')}
+                      </div>
+                    </Show>
                   </div>
 
                   <div class="xc-form-group">

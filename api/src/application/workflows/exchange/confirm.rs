@@ -131,7 +131,7 @@ impl ConfirmTransaction {
         check_valid_in(tx, &q, now).await?;
 
         // 3. Every registered step's before_in, unchanged (D-7), on the form of the stored exchange
-        let form = TransactionForm::from_transaction(&t);
+        let form = TransactionForm::from_transaction(&t)?;
         let booking = t.booking_id.clone().map(|booking_id| BookingClaim {
             booking_id,
             customer_confirmed: true,

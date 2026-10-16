@@ -8,7 +8,7 @@ use xc_kernel::money::ForeignAmount;
 use crate::domain::ledger::posting::SourceType;
 use crate::domain::posting::{CashPlace, PostingRequest, SourceRef};
 use crate::domain::transfer::cash_transfer::{
-    CashTransfer, NewTransfer, TransferError, TransferKind,
+    CashTransfer, NewTransfer, TransferError, TransferKind, add_line_minor,
 };
 use crate::domain::transfer::ends::TransferEnds;
 use crate::domain::transfer::kinds::require;
@@ -95,7 +95,7 @@ impl TransferEnds for SafeMove {
         }
     }
 
-    fn on_dispatch(&self, t: &CashTransfer) -> Vec<PostingRequest> {
+    fn on_dispatch(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError> {
         let from_place = match self.kind {
             TransferKind::DrawerToSafe => {
                 CashPlace::Drawer(t.from_shift.clone().expect("from_shift required"))
@@ -107,12 +107,11 @@ impl TransferEnds for SafeMove {
         let mut totals: HashMap<_, i64> = HashMap::new();
         for line in &t.lines {
             if line.qty_sent > 0 {
-                let line_minor = line.face_value.minor() * (line.qty_sent as i64);
-                *totals.entry(line.currency).or_insert(0) += line_minor;
+                add_line_minor(&mut totals, line.currency, line.face_value, line.qty_sent)?;
             }
         }
 
-        totals
+        Ok(totals
             .into_iter()
             .filter(|(_, minor)| *minor > 0)
             .map(|(currency, minor)| PostingRequest {
@@ -128,10 +127,10 @@ impl TransferEnds for SafeMove {
                 line: None,
                 reverses: None,
             })
-            .collect()
+            .collect())
     }
 
-    fn on_receive(&self, t: &CashTransfer) -> Vec<PostingRequest> {
+    fn on_receive(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError> {
         let to_place = match self.kind {
             TransferKind::DrawerToSafe => CashPlace::Safe(t.from_branch.clone()),
             TransferKind::SafeToDrawer => {
@@ -144,12 +143,11 @@ impl TransferEnds for SafeMove {
         for line in &t.lines {
             let qty = line.qty_received.unwrap_or(0);
             if qty > 0 {
-                let line_minor = line.face_value.minor() * (qty as i64);
-                *totals.entry(line.currency).or_insert(0) += line_minor;
+                add_line_minor(&mut totals, line.currency, line.face_value, qty)?;
             }
         }
 
-        totals
+        Ok(totals
             .into_iter()
             .filter(|(_, minor)| *minor > 0)
             .map(|(currency, minor)| PostingRequest {
@@ -165,6 +163,6 @@ impl TransferEnds for SafeMove {
                 line: None,
                 reverses: None,
             })
-            .collect()
+            .collect())
     }
 }

@@ -105,9 +105,27 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
 
   // Action status/error
   const [actionError, setActionError] = createSignal<string | null>(null);
+  const [inFlightAlertIds, setInFlightAlertIds] = createSignal<Set<string>>(new Set());
+
+  const isAlertInFlight = (id: string) => inFlightAlertIds().has(id);
+  const addInFlightAlert = (id: string) => {
+    setInFlightAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+  const removeInFlightAlert = (id: string) => {
+    setInFlightAlertIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
 
   let sinceVersion: number | undefined = undefined;
   let timerId: ReturnType<typeof setInterval> | undefined = undefined;
+  let loadSeq = 0;
 
   const ALERT_ERROR_KEYS: Record<string, keyof typeof table.th> = {
     alertLimitReached: 'alertLimitReached',
@@ -206,6 +224,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   };
 
   const loadAlerts = async (forceFull = false) => {
+    const seq = ++loadSeq;
     if (forceFull) {
       sinceVersion = undefined;
     }
@@ -215,6 +234,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     setLoadError(null);
     try {
       const answer = await api.view<MyRateAlertsData>('my_rate_alerts', { since: sinceVersion });
+      if (seq !== loadSeq) return;
       if (answer.changed && answer.data) {
         setAlerts(answer.data.alerts ?? []);
         sinceVersion = answer.version;
@@ -224,11 +244,14 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       }
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       if (alerts().length === 0) {
         setLoadError(rateAlertsError(err));
       }
     } finally {
-      setLoading(false);
+      if (seq === loadSeq) {
+        setLoading(false);
+      }
     }
   };
 
@@ -297,6 +320,8 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   };
 
   const handlePause = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
     try {
       await pauseWrite.send({ id: alert.id, expectedVersion: alert.version });
@@ -304,12 +329,16 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
   const handleResume = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
     try {
       await resumeWrite.send({ id: alert.id, expectedVersion: alert.version });
@@ -317,12 +346,16 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
   const handleDelete = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
     try {
       await deleteWrite.send({ id: alert.id, expectedVersion: alert.version });
@@ -330,8 +363,10 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
@@ -551,6 +586,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                         <button
                           type="button"
                           class="xc-btn xc-btn-resume"
+                          disabled={isAlertInFlight(alert.id)}
                           onClick={() => handleResume(alert)}
                         >
                           {t('resume')}
@@ -560,6 +596,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                       <button
                         type="button"
                         class="xc-btn xc-btn-pause"
+                        disabled={isAlertInFlight(alert.id)}
                         onClick={() => handlePause(alert)}
                       >
                         {t('pause')}
@@ -569,6 +606,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                     <button
                       type="button"
                       class="xc-btn xc-btn-delete"
+                      disabled={isAlertInFlight(alert.id)}
                       onClick={() => handleDelete(alert)}
                     >
                       {t('delete')}

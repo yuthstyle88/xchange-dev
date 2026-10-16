@@ -1,4 +1,4 @@
-import { createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, on, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { th, en } from '../i18n';
 
@@ -15,6 +15,17 @@ export interface ReasonDialogProps {
 export function ReasonDialog(props: ReasonDialogProps): JSX.Element {
   const t = screenT('staff', { th, en });
   const [reason, setReason] = createSignal('');
+
+  // Each open starts with an empty reason so a note typed for one item is
+  // never pre-filled into the next one (#2248).
+  createEffect(
+    on(
+      () => props.open,
+      (open) => {
+        if (open) setReason('');
+      },
+    ),
+  );
 
   return (
     <Show when={props.open}>

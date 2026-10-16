@@ -51,6 +51,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     setBusy(true);
     try {
       await mapWrite.send({
@@ -58,35 +59,46 @@ function GroupRow(props: GroupRowProps): JSX.Element {
         group: props.group.group,
         provider,
         instrumentKey: key,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
   const handleRemove = async () => {
+    const branch = props.branch();
     setBusy(true);
     try {
       await removeWrite.send({
         currency: props.currency,
         group: props.group.group,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
@@ -131,8 +143,10 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   const [newGroup, setNewGroup] = createSignal('');
   const [addError, setAddError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  let loadSeq = 0;
 
   const loadView = async () => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<AdminDenominationGroupsData>(
         'admin_denomination_groups',
@@ -140,10 +154,10 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
           branch: props.branch(),
         },
       );
-      if (res.data) {
-        setData(res.data);
-      }
+      if (seq !== loadSeq) return;
+      setData(res.data ?? null);
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setData(null);
       const message = wordedError(err);
       toast(message);
@@ -152,6 +166,9 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
 
   createEffect(() => {
     props.branch();
+    setData(null);
+    setAddError(null);
+    setBusy(false);
     loadView();
   });
 
@@ -169,22 +186,28 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
     const curr = selectedCurrency();
     if (!curr) return;
 
+    const branch = props.branch();
     setBusy(true);
     try {
       await addGroupWrite.send({
         currency: curr,
         group: code,
-        branch: props.branch(),
+        branch,
       });
-      setNewGroup('');
-      setAddError(null);
+      if (props.branch() === branch) {
+        setNewGroup('');
+        setAddError(null);
+      }
       await loadView();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setAddError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 

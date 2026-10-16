@@ -8,6 +8,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
+use actix_web::http::StatusCode;
 use actix_web::web;
 use pos_error::{AppError, AppResult};
 use ts_rs::TS;
@@ -16,6 +17,7 @@ use xc_app::application::assistant::assistant_service::AssistantService;
 use xc_app::domain::app_error::CustomerAppError;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -24,6 +26,7 @@ use crate::presentation::dto::v3::assistant::{
     MyAssistantConversationFilter,
 };
 use crate::presentation::http::v3::caller::Caller;
+use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::planner_draft_save::draft_owner;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -98,6 +101,19 @@ impl BranchView for MyAssistantConversationView {
                     messages: Vec::new(),
                 })
             }
+        }
+    }
+
+    fn refusal(&self, err: &AppError) -> Option<V3Error> {
+        match err {
+            AppError::Validation(m) if m == "invalid conversation_id" => Some(V3Error::new(
+                "invalidRequest",
+                Some("conversationId"),
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            )),
+            AppError::Forbidden => Some(V3Error::from(PolicyError::OutOfScope)),
+            _ => None,
         }
     }
 }

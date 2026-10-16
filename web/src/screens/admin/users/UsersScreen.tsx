@@ -71,34 +71,45 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const activateForm = useForm();
   const activatePasswordField = activateForm.field('activatePassword');
 
+  let branchesSeq = 0;
+  let usersSeq = 0;
+
   const loadBranches = async () => {
+    const seq = ++branchesSeq;
     try {
       const res = await api.view<AdminBranchesData>('admin_branches', {
         branch: props.branch(),
       });
+      if (seq !== branchesSeq) return;
       if (res.data?.branches) {
         setBranches(res.data.branches);
       }
     } catch (err: unknown) {
+      if (seq !== branchesSeq) return;
       setPageError(wordedError(err));
     }
   };
 
   const loadUsers = async () => {
+    const seq = ++usersSeq;
     setLoading(true);
     setPageError(null);
     try {
       const res = await api.view<AdminUserRow[]>('admin_users', {
         branch: props.branch(),
       });
+      if (seq !== usersSeq) return;
       if (res.data) {
         setUsers(res.data);
       }
     } catch (err: unknown) {
+      if (seq !== usersSeq) return;
       setPageError(wordedError(err));
       setUsers([]);
     } finally {
-      setLoading(false);
+      if (seq === usersSeq) {
+        setLoading(false);
+      }
     }
   };
 

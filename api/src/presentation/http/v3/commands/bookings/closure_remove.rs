@@ -14,7 +14,7 @@ use xc_kernel::ids::BranchId;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::CommandAction;
+use crate::presentation::http::v3::command::{CommandAction, Locks};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct ClosureRemove {
@@ -43,6 +43,10 @@ impl CommandAction for ClosureRemove {
     type Output = BookingOkOutput;
     const ROUTE: &'static str = "/api/branches/{id}/closures/{date}/remove";
     const METHOD: Method = Method::POST;
+
+    fn locks(&self, _branch: &BranchId, input: &Self::Input) -> Locks {
+        Locks::One(BranchId::new(&input.id))
+    }
 
     async fn run(
         &self,

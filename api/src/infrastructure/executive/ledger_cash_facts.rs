@@ -271,7 +271,7 @@ impl CashFacts for LedgerCashFacts {
                 return Ok(Err(MetricUnavailable::AwaitsLedger));
             }
 
-            // 2. Sum reversed realized margin from POSTED reversals in the period.
+            // 2. Sum reversed realized margin (stored negative) from POSTED reversals in the period.
             let rev_sql = format!(
                 "SELECT coalesce(sum(r.realized_margin_reversed_thb), 0) \
                    FROM reversals r \
@@ -293,7 +293,7 @@ impl CashFacts for LedgerCashFacts {
                 .await
                 .map_err(AppError::Database)?;
 
-            let net_margin = line_margin - reversed_margin;
+            let net_margin = line_margin + reversed_margin;
             let minor = (net_margin * Decimal::from(100))
                 .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
                 .to_i128()

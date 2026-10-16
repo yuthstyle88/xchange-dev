@@ -746,3 +746,180 @@ async fn signin_without_cookie_claims_nothing_and_does_not_fail() {
 
     shop.finish().await;
 }
+
+/// Ticket #2201 (§9 row 2): `GET /api/v3/views/my_assistant_conversation?conversationId=not-a-uuid`
+/// returns 400 `invalidRequest` with field `conversationId` instead of 500.
+#[actix_web::test]
+async fn my_assistant_conversation_rejects_malformed_conversation_id_with_400() {
+    let shop = Shop::start().await;
+    let sid = AppSessionId::generate().as_str().to_owned();
+
+    let user_id = bound_user(
+        &shop.desk.pool,
+        SUB_A,
+        "ACTIVE",
+        "Customer Bad Uuid",
+        &[("CUSTOMER", None)],
+    )
+    .await;
+    let customer_id = format!("CUST-{user_id}");
+    sqlx::query(
+        "INSERT INTO customers (id, organization_id, user_id, customer_no, display_name, mode, created_at) \
+         VALUES ($1, $2::uuid, $3::uuid, $1, 'Customer Bad Uuid', 'LIVE', now()) ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(&customer_id)
+    .bind(&shop.org)
+    .bind(Uuid::parse_str(&user_id).unwrap())
+    .execute(&shop.desk.pool)
+    .await
+    .expect("insert customer");
+
+    shop.identity.answer(
+        "/auth/otp/verify",
+        200,
+        &json!({ "verified": true, "login": login_body(VALID_A, REFRESH_1) }).to_string(),
+    );
+
+    let otp_res = shop
+        .send(
+            Call::new(Method::POST, "/api/auth/otp/verify")
+                .body(json!({
+                    "challengeId": "challenge-bad-uuid",
+                    "code": "123456",
+                }))
+                .app_sid(&sid),
+        )
+        .await;
+    assert_eq!(otp_res.status, StatusCode::OK);
+    let cust_session = otp_res.session_token();
+
+    let bad_res = shop
+        .send(
+            Call::new(
+                Method::GET,
+                "/api/v3/views/my_assistant_conversation?conversationId=not-a-uuid",
+            )
+            .session(&cust_session),
+        )
+        .await;
+    assert_eq!(
+        bad_res.status,
+        StatusCode::BAD_REQUEST,
+        "malformed conversationId must be 400, got {}: {}",
+        bad_res.status,
+        bad_res.text
+    );
+    assert_eq!(
+        bad_res.body["error"]["code"].as_str(),
+        Some("invalidRequest")
+    );
+    assert_eq!(
+        bad_res.body["error"]["field"].as_str(),
+        Some("conversationId")
+    );
+
+    shop.finish().await;
+}
+
+/// Ticket #2201 (§9 row 3): `GET /api/v3/views/my_assistant_conversation?conversationId=<other_owner_id>`
+/// returns 403 `outOfScope` instead of 500 when another customer owns the conversation.
+#[actix_web::test]
+async fn my_assistant_conversation_rejects_other_owners_conversation_with_403() {
+    let shop = Shop::start().await;
+    let sid_a = AppSessionId::generate().as_str().to_owned();
+
+    // 1. Customer A creates a conversation via anonymous ask and claims it on OTP sign-in
+    let ask_res = shop
+        .send(
+            Call::new(Method::POST, "/api/app/assistant/messages")
+                .body(json!({
+                    "branch": "MAIN",
+                    "text": "อัตราแลกเปลี่ยน USD วันนี้เท่าไหร่",
+                    "locale": "th",
+                }))
+                .app_sid(&sid_a)
+                .key(unique("ask-owner-a")),
+        )
+        .await;
+    assert_eq!(ask_res.status, StatusCode::OK);
+    let conversation_id = ask_res.body["conversationId"]
+        .as_str()
+        .expect("conversationId")
+        .to_owned();
+
+    let user_a = bound_user(
+        &shop.desk.pool,
+        SUB_A,
+        "ACTIVE",
+        "Customer A",
+        &[("CUSTOMER", None)],
+    )
+    .await;
+    let customer_a = format!("CUST-{user_a}");
+    sqlx::query(
+        "INSERT INTO customers (id, organization_id, user_id, customer_no, display_name, mode, created_at) \
+         VALUES ($1, $2::uuid, $3::uuid, $1, 'Customer A', 'LIVE', now()) ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(&customer_a)
+    .bind(&shop.org)
+    .bind(Uuid::parse_str(&user_a).unwrap())
+    .execute(&shop.desk.pool)
+    .await
+    .expect("insert customer A");
+
+    shop.identity.answer(
+        "/auth/otp/verify",
+        200,
+        &json!({ "verified": true, "login": login_body(VALID_A, REFRESH_1) }).to_string(),
+    );
+
+    let otp_a = shop
+        .send(
+            Call::new(Method::POST, "/api/auth/otp/verify")
+                .body(json!({
+                    "challengeId": "challenge-owner-a",
+                    "code": "123456",
+                }))
+                .app_sid(&sid_a),
+        )
+        .await;
+    assert_eq!(otp_a.status, StatusCode::OK);
+
+    // 2. Customer B registers and requests Customer A's conversationId
+    shop.identity
+        .login_answers("/auth/login", VALID_B, REFRESH_1);
+    let reg_b = shop
+        .send(Call::new(Method::POST, "/api/app/register").body(json!({
+            "identifier": "customerb@example.com",
+            "password": "Password123!",
+            "displayName": "Customer B",
+            "lang": "th",
+            "marketing": [],
+        })))
+        .await;
+    assert_eq!(reg_b.status, StatusCode::OK);
+    let session_b = reg_b.session_token();
+
+    let forbidden_res = shop
+        .send(
+            Call::new(
+                Method::GET,
+                format!("/api/v3/views/my_assistant_conversation?conversationId={conversation_id}"),
+            )
+            .session(&session_b),
+        )
+        .await;
+    assert_eq!(
+        forbidden_res.status,
+        StatusCode::FORBIDDEN,
+        "another owner's conversationId must be 403, got {}: {}",
+        forbidden_res.status,
+        forbidden_res.text
+    );
+    assert_eq!(
+        forbidden_res.body["error"]["code"].as_str(),
+        Some("outOfScope")
+    );
+
+    shop.finish().await;
+}

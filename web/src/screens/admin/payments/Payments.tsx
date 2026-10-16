@@ -113,28 +113,38 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     window.removeEventListener('beforeunload', onBeforeUnload);
   });
 
-  // Load branches for branch name display in heading
-  const loadBranches = async () => {
+  // Load branches for branch name display in heading. `stale` (#2246) tells a superseded read to
+  // drop its answer or error.
+  const loadBranches = async (stale: () => boolean = () => false) => {
     try {
       const res = await api.view<{ branches: BranchInfo[] }>('admin_branches');
+      if (stale()) return;
       if (res.data?.branches) {
         setBranches(res.data.branches);
       }
     } catch (err: unknown) {
+      if (stale()) return;
       setBranches([]);
       setError(wordedError(err));
     }
   };
 
+  // #2246: every read takes a number; only the latest read for the displayed branch may land.
+  let loadSeq = 0;
+
   const loadData = async (branch: string, since?: number) => {
+    const seq = ++loadSeq;
+    const stale = () => seq !== loadSeq || branch !== displayedBranch();
     setLoading(true);
     setError(null);
     try {
-      await loadBranches();
+      await loadBranches(stale);
+      if (stale()) return;
       const res = await api.view<AdminPaymentsData>('admin_payments', {
         branch,
         since,
       });
+      if (stale()) return;
       if (res.changed && res.data) {
         setData(res.data);
         setVersion(res.version);
@@ -144,6 +154,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         setVersion(res.version);
       }
     } catch (err: unknown) {
+      if (stale()) return;
       if (data() && data()!.branchId !== branch) {
         setData(null);
         setVersion(null);
@@ -151,7 +162,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       }
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq) setLoading(false);
     }
   };
 

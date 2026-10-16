@@ -225,13 +225,16 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
   const [statusFilter, setStatusFilter] = createSignal<ApprovalStatusFilter>('PENDING');
   const [requests, setRequests] = createSignal<ApprovalRequestItemDto[]>([]);
   const [error, setError] = createSignal<string | null>(null);
+  let reading = 0;
 
   const loadQueue = async (branch: string, status: ApprovalStatusFilter = statusFilter()) => {
+    const mine = ++reading;
     try {
       const res = await client.view<ApprovalRequestsData>('approval_requests', {
         branch,
         filter: { status },
       });
+      if (mine !== reading) return;
       setError(null);
       if (res.data?.requests) {
         setRequests(res.data.requests);
@@ -239,6 +242,7 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
         setRequests([]);
       }
     } catch (err: unknown) {
+      if (mine !== reading) return;
       setError(wordedError(err));
       setRequests([]);
     }

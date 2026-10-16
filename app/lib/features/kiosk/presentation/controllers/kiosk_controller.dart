@@ -244,6 +244,9 @@ class KioskController extends Notifier<KioskState> {
   Timer? _countdown;
   Timer? _restart;
   bool _disposed = false;
+  bool _ratesError = false;
+  int _ratesSeq = 0;
+  int _ratesMinSeq = 0;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -269,6 +272,7 @@ class KioskController extends Notifier<KioskState> {
       e is KioskFailure ? _t.errorText(e.serverMessage) : _t.text('errGeneric');
 
   void reportError(String textKey) {
+    _ratesError = false;
     _set(state.copyWith(error: _t.text(textKey)));
   }
 
@@ -285,6 +289,9 @@ class KioskController extends Notifier<KioskState> {
     _statusPoller.stop();
     _receiptPoller.stop();
     _idle.touch();
+    _ratesError = false;
+    final seq = ++_ratesSeq;
+    _ratesMinSeq = seq;
     _set(
       KioskState(
         languageCode: defaultLanguage,
@@ -294,7 +301,9 @@ class KioskController extends Notifier<KioskState> {
     );
     try {
       final m = await _repo.rates();
-      if (_disposed) return;
+      if (_disposed || seq < _ratesMinSeq) return;
+      _ratesMinSeq = seq;
+      _ratesError = false;
       final keep = m.rates.any((r) => r.code == state.currency);
       _set(
         _keepOfferedMethod(
@@ -308,6 +317,9 @@ class KioskController extends Notifier<KioskState> {
         ),
       );
     } catch (e) {
+      if (_disposed || seq < _ratesMinSeq) return;
+      _ratesMinSeq = seq;
+      _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
   }
@@ -330,31 +342,43 @@ class KioskController extends Notifier<KioskState> {
         state.quote != null) {
       return;
     }
+    final seq = ++_ratesSeq;
     try {
       final m = await _repo.rates();
       if (_disposed ||
+          seq < _ratesMinSeq ||
           state.screen != KioskScreen.select ||
           state.busy ||
           state.quote != null) {
         return;
       }
+      _ratesMinSeq = seq;
       final keep = m.rates.any((r) => r.code == state.currency);
       final currency = keep
           ? state.currency
           : (m.rates.isEmpty ? null : m.rates.first.code);
-      final openChanged = state.model == null || m.open != state.model!.open;
+      final amountText = keep ? state.amountText : '';
+      final openChanged =
+          state.model == null || m.open != state.model!.open || _ratesError;
+      _ratesError = false;
       final error = openChanged
           ? (m.open ? '' : _t.text('closed'))
           : state.error;
       _set(
         _keepOfferedMethod(
-          state.copyWith(model: m, currency: currency, error: error),
+          state.copyWith(
+            model: m,
+            currency: currency,
+            amountText: amountText,
+            error: error,
+          ),
         ),
       );
     } catch (_) {}
   }
 
   void setLanguage(String code) {
+    _ratesError = false;
     final t = _l10n.of(code);
     final closed =
         state.model != null &&
@@ -400,6 +424,7 @@ class KioskController extends Notifier<KioskState> {
 
   Future<void> submitQuote() async {
     if (!state.canReview) return;
+    _ratesError = false;
     _set(state.copyWith(busy: true, error: ''));
     try {
       final quote = await _repo.quote(
@@ -427,6 +452,7 @@ class KioskController extends Notifier<KioskState> {
       });
       _statusPoller.start();
     } catch (e) {
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
@@ -436,6 +462,7 @@ class KioskController extends Notifier<KioskState> {
   void backToSelect() {
     _countdown?.cancel();
     _statusPoller.stop();
+    _ratesError = false;
     _set(
       state.copyWith(
         quote: null,
@@ -451,6 +478,7 @@ class KioskController extends Notifier<KioskState> {
   Future<void> confirm() async {
     final q = state.quote;
     if (!state.canConfirm || q == null) return;
+    _ratesError = false;
     _set(state.copyWith(busy: true, error: ''));
     try {
       final status = await _repo.confirm(q.id);
@@ -465,6 +493,11 @@ class KioskController extends Notifier<KioskState> {
       _receiptPoller.start();
       _afterStatus();
     } catch (e) {
+      if (state.screen != KioskScreen.quote || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
@@ -477,6 +510,26 @@ class KioskController extends Notifier<KioskState> {
     try {
       final s = await _repo.status(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final confirmed =
+          state.screen == KioskScreen.quote &&
+          (s.status == KioskStatus.waiting ||
+              s.status == KioskStatus.accepted ||
+              s.status == KioskStatus.idChecked ||
+              s.status == KioskStatus.completed);
+      if (confirmed) {
+        _countdown?.cancel();
+        _set(
+          state.copyWith(
+            status: s,
+            screen: KioskScreen.waiting,
+            busy: false,
+            error: '',
+          ),
+        );
+        _receiptPoller.start();
+        _afterStatus();
+        return;
+      }
       final expired =
           s.status == KioskStatus.expired && state.screen == KioskScreen.quote;
       if (expired) _countdown?.cancel();

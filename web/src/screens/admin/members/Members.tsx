@@ -76,6 +76,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
   async function handleDefine(e?: Event) {
     e?.preventDefault();
+    if (defining()) return;
     setDefining(true);
     setErrorMsg(null);
 
@@ -120,6 +121,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
   }
 
   async function handleSnapshot() {
+    if (snapshotting()) return;
     const def = definition();
     if (!def) return;
     setSnapshotting(true);
@@ -222,13 +224,19 @@ export function Members(_props: AdminMenuProps): JSX.Element {
           </div>
 
           <div class="xc-detail-actions">
-            <button type="submit" data-action="define" class="xc-btn-primary">
+            <button
+              type="submit"
+              data-action="define"
+              class="xc-btn-primary"
+              disabled={defining()}
+            >
               {defining() ? t('defining') : t('defineBtn')}
             </button>
             <button
               type="button"
               data-action="snapshot"
               class="xc-btn-secondary"
+              disabled={snapshotting()}
               onClick={() => void handleSnapshot()}
             >
               {snapshotting() ? t('snapshotting') : t('snapshotBtn')}

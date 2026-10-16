@@ -155,6 +155,7 @@ export function KioskCurrenciesScreen(props: {
   const [freshness, setFreshness] = createSignal<RateFreshnessDto | null>(null);
   const [searchQuery, setSearchQuery] = createSignal('');
   const [loadError, setLoadError] = createSignal<string | undefined>(undefined);
+  const [loaded, setLoaded] = createSignal(false);
   const [cardStatuses, setCardStatuses] = createSignal<
     Record<string, CardStatusState | undefined>
   >({});
@@ -163,6 +164,7 @@ export function KioskCurrenciesScreen(props: {
   let readingBranch = '';
   const fetchCurrencies = async (branchId: string) => {
     readingBranch = branchId;
+    setLoaded(false);
     setCurrencies([]);
     setKbankRef(null);
     setFreshness(null);
@@ -177,6 +179,7 @@ export function KioskCurrenciesScreen(props: {
         setKbankRef(res.data.kbank);
         setFreshness(res.data.freshness);
       }
+      setLoaded(true);
     } catch (err: unknown) {
       if (readingBranch !== branchId) return;
       setLoadError(wordedError(err));
@@ -189,6 +192,7 @@ export function KioskCurrenciesScreen(props: {
   createEffect(() => {
     const b = props.branch;
     if (!b) {
+      setLoaded(false);
       setCurrencies([]);
       setKbankRef(null);
       setFreshness(null);
@@ -207,6 +211,9 @@ export function KioskCurrenciesScreen(props: {
     const err = loadError();
     if (err) {
       return err;
+    }
+    if (!loaded()) {
+      return '';
     }
     return t('found', { n: filteredCurrencies().length });
   });
@@ -286,7 +293,7 @@ export function KioskCurrenciesScreen(props: {
       <section aria-label={t('bankReference')} id="bank-reference">
         <Show
           when={kbankRef()}
-          fallback={t('kbankFailed')}
+          fallback={loaded() || loadError() ? t('kbankFailed') : ''}
         >
           {(ref) => (
             <>
