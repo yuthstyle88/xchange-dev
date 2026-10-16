@@ -70,6 +70,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   const [settingsError, setSettingsError] = createSignal<string | null>(null);
   const [searchTerm, setSearchTerm] = createSignal('');
   const [hasMore, setHasMore] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
 
   let bookingsVersion: number | undefined;
   let settingsVersion: number | undefined;
@@ -132,6 +133,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleLoadMore() {
+    if (loadingMore()) return;
     const currentRows = rows();
     const lastRow = currentRows[currentRows.length - 1];
     if (!lastRow) return;
@@ -141,6 +143,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     // the page belongs to the list it was asked for: a branch / term change or a newer list read
     // during the await makes it stale
     const stale = () => seq !== listSeq || b !== props.branch() || q !== searchTerm().trim();
+    setLoadingMore(true);
     try {
       const nextRows = await api.page<AdminBookingRow>('admin_bookings', {
         branch: b,
@@ -156,6 +159,8 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     } catch (err) {
       if (stale()) return;
       toast(wordedError(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -667,6 +672,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="secondary"
+              disabled={loadingMore()}
               onClick={handleLoadMore}
             >
               {t('loadMore')}
