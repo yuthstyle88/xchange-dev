@@ -69,6 +69,21 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [reconcileTarget, setReconcileTarget] = createSignal<CashTransferRow | null>(null);
   const reconcileCmds = new Map<string, ReturnType<typeof command<TransferReconcileInput, CashRecordOutput>>>();
 
+  // Per-row in-flight guard
+  const [busyIds, setBusyIds] = createSignal<Set<string>>(new Set());
+  const isBusy = (id: string) => busyIds().has(id);
+  const setRowBusy = (id: string, busy: boolean) => {
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      if (busy) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
   const hasOpenShift = () => Boolean(props.ctx.floor?.myShift?.id);
 
   const loadTransfers = async () => {
@@ -220,6 +235,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   };
 
   const handleDispatch = async (row: CashTransferRow) => {
+    if (isBusy(row.id)) return;
+    setRowBusy(row.id, true);
+
     const api = new ApiClient();
     let cmd = dispatchCmds.get(row.id);
     if (!cmd) {
@@ -240,6 +258,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await loadTransfers();
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setRowBusy(row.id, false);
     }
   };
 
@@ -252,7 +272,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const handleReceiveSubmit = async (e: Event) => {
     e.preventDefault();
     const row = activeReceive();
-    if (!row) return;
+    if (!row || isBusy(row.id)) return;
+    setRowBusy(row.id, true);
 
     const lines: CashReceivedLineInput[] = [];
     for (const d of denominations()) {
@@ -292,12 +313,15 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await loadTransfers();
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setRowBusy(row.id, false);
     }
   };
 
   const handleReconcileConfirm = async (reconcileNote: string) => {
     const row = reconcileTarget();
-    if (!row) return;
+    if (!row || isBusy(row.id)) return;
+    setRowBusy(row.id, true);
 
     let cmd = reconcileCmds.get(row.id);
     if (!cmd) {
@@ -324,6 +348,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await loadTransfers();
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setRowBusy(row.id, false);
     }
   };
 
@@ -489,7 +515,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               </For>
             </div>
             <div class="xc-transfers-actions">
-              <button type="submit" data-testid="transfer-receive-save">
+              <button
+                type="submit"
+                data-testid="transfer-receive-save"
+                disabled={isBusy(row().id)}
+              >
                 {t('save')}
               </button>
               <button
@@ -542,6 +572,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                           <button
                             type="button"
                             data-testid="transfer-dispatch"
+                            disabled={isBusy(row.id)}
                             onClick={() => handleDispatch(row)}
                           >
                             {t('dispatch')}
@@ -551,6 +582,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                           <button
                             type="button"
                             data-testid="transfer-receive"
+                            disabled={isBusy(row.id)}
                             onClick={() => handleOpenReceive(row)}
                           >
                             {t('receive')}
@@ -560,6 +592,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                           <button
                             type="button"
                             data-testid="transfer-reconcile"
+                            disabled={isBusy(row.id)}
                             onClick={() => setReconcileTarget(row)}
                           >
                             {t('reconcile')}
