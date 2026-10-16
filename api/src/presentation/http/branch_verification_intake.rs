@@ -12,10 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Permission;
-use xc_auth::domain::access::role_permissions::RolePermissions;
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_kernel::pii::identity_type::IdentityType;
 use xc_verification::application::branch_intake::{
     BranchDocument, BranchIntake, BranchIntakeError,
@@ -184,33 +181,6 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
     };
 
     let now = Utc::now();
-    let action = Action::new(COMMAND_NAME);
-    let _grant = match Policy::authorize(Some(user), EntryPath::Rpc, &action, None, now) {
-        Ok(g) => g,
-        Err(e) => {
-            let code = match e {
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere => {
-                    "roleNotAllowedHere"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed => {
-                    "roleNotAllowed"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::OutOfScope => {
-                    "outOfScope"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => {
-                    "signIn"
-                }
-                _ => "roleNotAllowed",
-            };
-            let status = match e {
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => 401,
-                _ => 403,
-            };
-            return refuse(status, code, &e.to_string());
-        }
-    };
-
     let user_id = match Uuid::parse_str(&user.user_id) {
         Ok(u) => u,
         Err(_) => return refuse(403, "outOfScope", "invalid user_id"),
@@ -220,23 +190,29 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
         Err(_) => return refuse(403, "outOfScope", "invalid organization_id"),
     };
 
-    let reviewer_role = user.roles.iter().find(|r| {
-        r.valid_from <= now
-            && r.valid_to.is_none_or(|to| now < to)
-            && RolePermissions::of(r.role).contains(&Permission::VerificationReview)
-    });
-
-    let reviewer_scope = match reviewer_role {
-        Some(r) => match &r.branch {
-            Some(b) => ReviewerScope::Branch {
-                organization_id: org_id,
-                branch_id: b.clone(),
-            },
-            None => ReviewerScope::Organization {
-                organization_id: org_id,
-            },
+    let reviewer_scope = match BranchScope::of(user, Permission::VerificationReview, now) {
+        BranchScope::All => ReviewerScope::Organization {
+            organization_id: org_id,
         },
-        None => return refuse(403, "roleNotAllowed", "Role has no VerificationReview"),
+        BranchScope::Branches(branches) if branches.is_empty() => {
+            return refuse(403, "roleNotAllowed", "Role has no VerificationReview");
+        }
+        BranchScope::Branches(branches) => {
+            let branch = match &user.branch {
+                Some(b) => {
+                    if !branches.contains(b) {
+                        return refuse(403, "outOfScope", "outOfScope");
+                    }
+                    b.clone()
+                }
+                None if branches.len() == 1 => branches[0].clone(),
+                None => return refuse(403, "outOfScope", "outOfScope"),
+            };
+            ReviewerScope::Branch {
+                organization_id: org_id,
+                branch_id: branch,
+            }
+        }
     };
 
     let reviewer = ReviewerActor {
