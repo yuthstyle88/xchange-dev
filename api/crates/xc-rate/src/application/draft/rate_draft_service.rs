@@ -170,7 +170,7 @@ impl RateDraftService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         let (current_version, status) =
-            row.ok_or_else(|| RateEngineError::ValidationFailed(format!("draft not found: {id}")))?;
+            row.ok_or_else(|| RateEngineError::NotFound(format!("draft not found: {id}")))?;
 
         if status != "DRAFT" {
             return Err(RateEngineError::StaleVersion(
