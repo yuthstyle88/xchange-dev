@@ -132,16 +132,26 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
     await execute(currentPoster, currentPostingId);
   }
 
+  let printError: string | null = null;
+
   async function printReceipt(): Promise<void> {
     const doc = lastPostedDoc();
     if (!doc) return;
-    const res = await api.view<ReceiptDocumentViewData>('receipt_document', {
-      filter: { number: doc },
-    });
-    const html = res.data?.receipt?.html;
-    if (html) {
-      const doPrint = ReceiptFrame.print;
-      await doPrint(html);
+    try {
+      const res = await api.view<ReceiptDocumentViewData>('receipt_document', {
+        filter: { number: doc },
+      });
+      const html = res.data?.receipt?.html;
+      if (html) {
+        const doPrint = ReceiptFrame.print;
+        await doPrint(html);
+      }
+      if (printError !== null && postError() === printError) setPostError(null);
+      printError = null;
+    } catch (err) {
+      printError = wordedError(err);
+      setPostError(printError);
+      setCanRetry(false);
     }
   }
 
