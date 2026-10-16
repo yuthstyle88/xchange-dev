@@ -266,7 +266,7 @@ async fn row_1_500_error_response_returns_generic_message_without_table_or_const
     );
 }
 
-// Row 2: A real constraint violation through a route (`couponIssue` with an unknown customerId)
+// Row 2: A real constraint violation through a route (`campaignSubmit` hitting `approval_requests_type_idempotency_key_key`)
 #[actix_web::test]
 async fn row_2_real_constraint_violation_through_route_hides_table_and_constraint_names() {
     let room = Room::start().await;
@@ -275,11 +275,10 @@ async fn row_2_real_constraint_violation_through_route_hides_table_and_constrain
     let user_id = Uuid::parse_str(TEST_USER).unwrap();
     let campaign_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
-    let rule_id = Uuid::new_v4();
 
     sqlx::query(
         "INSERT INTO campaigns (id, organization_id, name, current_version_id, created_by, created_at) \
-         VALUES ($1, $2, 'Coupon FK Campaign', NULL, $3, now())",
+         VALUES ($1, $2, 'Submit Constraint Campaign', NULL, $3, now())",
     )
     .bind(campaign_id)
     .bind(org_id)
@@ -292,7 +291,7 @@ async fn row_2_real_constraint_violation_through_route_hides_table_and_constrain
         "INSERT INTO campaign_versions ( \
              id, organization_id, campaign_id, version, status, starts_at, ends_at, budget_thb, \
              stack_group, priority, created_by, created_at, edited_at \
-         ) VALUES ($1, $2, $3, 1, 'DRAFT', now(), now() + interval '10 days', 1000.00, 'RATE', 1, $4, now(), now())",
+         ) VALUES ($1, $2, $3, 1, 'SIMULATED', now(), now() + interval '10 days', 1000.00, 'RATE', 1, $4, now() - interval '1 hour', now() - interval '1 hour')",
     )
     .bind(version_id)
     .bind(org_id)
@@ -303,48 +302,52 @@ async fn row_2_real_constraint_violation_through_route_hides_table_and_constrain
     .expect("seed campaign_version");
 
     sqlx::query(
-        "INSERT INTO benefit_rules ( \
-             id, campaign_version_id, benefit_type, benefit_class, eligibility, calculation, caps, requires_coupon, rule_no \
-         ) VALUES ($1, $2, 'RATE_IMPROVEMENT', 'PRICE', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, true, 1)",
+        "INSERT INTO campaign_simulations ( \
+             id, campaign_version_id, input, result, cost_source, simulated_by, simulated_at \
+         ) VALUES ($1, $2, '{}'::jsonb, '{}'::jsonb, 'LEDGER', $3, now())",
     )
-    .bind(rule_id)
+    .bind(Uuid::new_v4())
     .bind(version_id)
+    .bind(user_id)
     .execute(&room.pool)
     .await
-    .expect("seed benefit_rule");
+    .expect("seed campaign_simulation");
 
-    let payload = json!({
-        "ruleId": rule_id.to_string(),
-        "count": 1,
-        "customerId": "no-such-customer",
-        "expiresAt": "2026-12-31T23:59:59Z"
-    });
+    sqlx::query(
+        "INSERT INTO approval_requests ( \
+             id, organization_id, type, branch_id, object_id, object_version_hash, \
+             policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key \
+         ) VALUES ($1, $2, 'CAMPAIGN_VERSION', NULL, $3, 'prior-hash', '1', '{}'::jsonb, $4, now(), 'REJECTED', $5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(org_id)
+    .bind(version_id.to_string())
+    .bind(user_id.to_string())
+    .bind(format!("campaign_version_submit_{version_id}"))
+    .execute(&room.pool)
+    .await
+    .expect("seed prior approval_request");
 
     let ans = call(
         &room,
         Some("MARKETING"),
         Method::POST,
-        &format!("/api/campaigns/{campaign_id}/coupons"),
-        Some((payload, &unique("issue_coupon_unknown_customer"))),
+        &format!("/api/campaigns/{campaign_id}/submit"),
+        Some((json!({}), &unique("submit_campaign_constraint"))),
     )
     .await;
 
     assert_eq!(
         ans.status,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "expected 500 from DB FK constraint violation: {}",
+        "expected 500 from DB constraint violation: {}",
         ans.text
     );
     assert_eq!(ans.body["error"]["code"], "database");
     assert_eq!(ans.body["error"]["message"], "เซิร์ฟเวอร์ขัดข้อง");
     assert!(
-        !ans.text.contains("coupons"),
-        "500 route response must not contain table name `coupons`: {}",
-        ans.text
-    );
-    assert!(
-        !ans.text.contains("customers"),
-        "500 route response must not contain table name `customers`: {}",
+        !ans.text.contains("approval_requests"),
+        "500 route response must not contain table name `approval_requests`: {}",
         ans.text
     );
     assert!(
