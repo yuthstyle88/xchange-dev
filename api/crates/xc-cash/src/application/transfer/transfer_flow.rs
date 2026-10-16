@@ -688,18 +688,24 @@ impl TransferFlow {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        let (org_uuid, creator_uuid, receiver_uuid): (Uuid, Uuid, Option<Uuid>) = sqlx::query_as(
-            "SELECT organization_id, created_by, received_by FROM cash_transfers WHERE id = $1::uuid",
-        )
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or_else(|| not_found(id))?;
+        let org_uuid: Uuid =
+            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1::uuid")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or_else(|| not_found(id))?;
         let organization_id = org_uuid.to_string();
         if organization_id != who.organization_id {
             return Err(not_found(id));
         }
         locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
+
+        let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
+            "SELECT created_by, received_by FROM cash_transfers WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await?;
         if creator_uuid.to_string() == who.user_id {
             return Err(AppError::Domain("creator cannot reconcile transfer".into()));
         }
