@@ -38,9 +38,16 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
 
   function choose(method: string): void {
     store.setMethod(method);
-    const row = ruleFor(rules(), method);
-    if (row && row.account !== '' && store.account().trim() === '') {
-      store.setAccount(row.account);
+    if (method !== 'Cash' && store.ref() === CASH_REF) {
+      store.setRef('');
+    }
+    const cur = store.account().trim();
+    const autoFilled = cur === '' || (rules() ?? []).some((r) => r.account.trim() !== '' && r.account.trim() === cur);
+    if (autoFilled) {
+      const next = ruleFor(rules(), method)?.account ?? '';
+      if (next !== '' || store.account() !== '') {
+        store.setAccount(next);
+      }
     }
   }
 
