@@ -32,7 +32,8 @@ export interface AssistantScreenProps {
   search?: string;
 }
 
-const AMOUNT_REGEX = /(?:([A-Z]{3})\s+(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s+([A-Z]{3}))/g;
+const AMOUNT_REGEX =
+  /(?:([A-Z]{3})\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)|(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z]{3}))/g;
 
 export function renderTextWithMoney(text: string): JSX.Element[] {
   const elements: JSX.Element[] = [];
