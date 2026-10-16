@@ -70,6 +70,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   });
 
   let lastLoadedBranch = '';
+  // #2247: only the latest profile read for the selected branch may fill the form.
+  let profileSeq = 0;
 
   const loadBranches = async () => {
     try {
@@ -90,6 +92,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
 
   const loadProfile = async (branchId: string) => {
     if (!branchId) return;
+    const seq = ++profileSeq;
+    const isStale = () => seq !== profileSeq || branchId !== selectedBranch();
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -100,6 +104,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       const res = await api.view<AdminBranchProfileData>('admin_branches_profile', {
         branch: branchId,
       });
+      if (isStale()) return;
       if (res.data) {
         lastLoadedBranch = branchId;
         setProfile(res.data);
@@ -128,12 +133,13 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         setHours(newHours);
       }
     } catch (err: unknown) {
+      if (isStale()) return;
       if (branchId !== lastLoadedBranch) {
         setProfile(null);
       }
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === profileSeq) setLoading(false);
     }
   };
 
