@@ -7,7 +7,6 @@ use std::sync::Arc;
 use actix_web::web;
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
-use xc_auth::domain::access::RolePermissions;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -71,14 +70,8 @@ impl BranchView for StaffMeBranchView {
                 })
                 .collect();
 
-            let mut permissions: Vec<String> = user
-                .roles
-                .iter()
-                .flat_map(|r| RolePermissions::of(r.role).iter().copied())
-                .map(|p| serde_json::to_string(&p).unwrap().trim_matches('"').to_string())
-                .collect();
-            permissions.sort();
-            permissions.dedup();
+            let now = chrono::Utc::now();
+            let permissions = super::me::me_permissions(&who, &branch, now);
 
             Ok(StaffMeView {
                 user_id: user_id.to_string(),
