@@ -90,22 +90,11 @@ fn not_refused_with(a: &Answer, not: &str, label: &str) {
 
 #[actix_web::test]
 async fn the_owners_user_no_longer_sells_or_moves_stock_on_the_owner_rpc() {
-    // C2 (§03 B03: ExchangeTransact is TELLER's), C3 (§03 B05: CashManage is BRANCH_MANAGER and FINANCE)
+    // C2 (§03 B03: ExchangeTransact is TELLER's)
     let room = Room::open().await;
-    for action in ["reserveCustomer", "saveTransaction", "adminMoveStock"] {
+    for action in ["reserveCustomer", "saveTransaction"] {
         let a = room.ask("OWNER", "/api/rpc", action, json!({})).await;
         refused(&a, 400, ROLE_NOT_ALLOWED_HERE, &format!("OWNER {action}"));
-    }
-    room.finish().await;
-}
-
-#[actix_web::test]
-async fn branch_managers_move_stock_on_the_owner_rpc() {
-    // C3: ex-BACKEND and ex-MANAGER are BRANCH_MANAGER
-    let room = Room::open().await;
-    for who in ["BACKEND", "MANAGER"] {
-        let a = room.ask(who, "/api/rpc", "adminMoveStock", json!({})).await;
-        not_refused_with(&a, ROLE_NOT_ALLOWED_HERE, &format!("{who} adminMoveStock"));
     }
     room.finish().await;
 }

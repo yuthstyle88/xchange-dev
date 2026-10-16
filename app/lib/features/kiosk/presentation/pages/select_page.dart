@@ -28,6 +28,12 @@ class _SelectPageState extends ConsumerState<SelectPage> {
   DisplayNames get names => ref.watch(displayNamesProvider);
 
   @override
+  void initState() {
+    super.initState();
+    _amount.text = ref.read(kioskControllerProvider).amountText;
+  }
+
+  @override
   void dispose() {
     _amount.dispose();
     _search.dispose();
@@ -65,6 +71,14 @@ class _SelectPageState extends ConsumerState<SelectPage> {
         _amount.clear();
         _search.clear();
       }
+    });
+    // Every reset starts a new customer: neither box keeps the last one's text.
+    ref.listen(kioskControllerProvider.select((x) => x.resetGeneration), (
+      _,
+      _,
+    ) {
+      _amount.clear();
+      _search.clear();
     });
     final buy = s.type == ExchangeType.buy;
     final wide = MediaQuery.sizeOf(context).width >= 900;
@@ -195,7 +209,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
                 rate > 0
                     ? Ltr(
                         '1 ${currencyLabel(names, code)} = '
-                        '${rate.toStringAsFixed(4)} ฿ THB',
+                        '${_formatRate(rate)} ฿ THB',
                         style: const TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w800,
@@ -499,4 +513,12 @@ class _CurrencyChip extends StatelessWidget {
       ),
     ),
   );
+}
+
+String _formatRate(double rate) {
+  final s = rate.toString();
+  final dot = s.indexOf('.');
+  if (dot < 0) return '$s.0000';
+  final decimals = s.length - dot - 1;
+  return decimals < 4 ? s.padRight(dot + 5, '0') : s;
 }

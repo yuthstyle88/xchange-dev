@@ -11,6 +11,7 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
+import { keyedWrite } from '../../shared/api/keyed-write';
 import type { DeviceEventRow } from '../../shared/api/generated/device_events';
 import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
 import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
@@ -38,7 +39,7 @@ if (
 }
 
 export interface DevicesScreenProps {
-  api: Pick<ApiClient, 'view' | 'post' | 'page'>;
+  api: Pick<ApiClient, 'view' | 'post' | 'page'> & Partial<Pick<ApiClient, 'command'>>;
   branch: string;
   newId?: () => string;
   navigate?: (url: string) => void;
@@ -110,9 +111,45 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     });
   }
 
+  const failedViews = new Map<string, string>();
+  let messageOwner: string | null = null;
+  let nonViewError = '';
+
+  function setNonViewMessage(text: string): void {
+    messageOwner = null;
+    nonViewError = text;
+    setMessage(text);
+  }
+
+  function markFirstReadDone(name: string): void {
+    if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
+      firstReadsDeferred.remaining.delete(name);
+      if (firstReadsDeferred.remaining.size === 0) {
+        firstReadsDeferred.resolve();
+        firstReadsDeferred = undefined;
+      }
+    }
+  }
+
+  let pollGen = 0;
+
   const wrappedClient: Pick<ApiClient, 'view'> = {
     view: async <T,>(name: string, params?: ViewParams): Promise<ViewAnswer<T>> => {
-      const res = await props.api.view<T>(name, params);
+      const myGen = pollGen;
+      let res: ViewAnswer<T>;
+      try {
+        res = await props.api.view<T>(name, params);
+      } catch (err: unknown) {
+        if (myGen !== pollGen) throw err;
+        const msg = wordedError(err);
+        failedViews.delete(name);
+        failedViews.set(name, msg);
+        messageOwner = name;
+        setMessage(msg);
+        markFirstReadDone(name);
+        throw err;
+      }
+      if (myGen !== pollGen) return res;
       if (res.changed && res.data !== undefined) {
         if (name === 'devices') {
           const ov = res.data as DevicesOverview;
@@ -120,16 +157,32 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         } else if (name === 'device_jobs') {
           setJobs(res.data as DeviceJobRow[]);
         } else if (name === 'device_events') {
-          setEvents(res.data as DeviceEventRow[]);
+          const next = res.data as DeviceEventRow[];
+          const prev = events();
+          if (
+            olderEvents().length > 0 &&
+            (prev.length !== next.length || prev.some((ev, i) => ev.seq !== next[i]?.seq))
+          ) {
+            setOlderEvents([]);
+          }
+          setEvents(next);
         }
       }
-      if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
-        firstReadsDeferred.remaining.delete(name);
-        if (firstReadsDeferred.remaining.size === 0) {
-          firstReadsDeferred.resolve();
-          firstReadsDeferred = undefined;
+      if (failedViews.has(name)) {
+        failedViews.delete(name);
+        if (messageOwner === name) {
+          const entries = [...failedViews.entries()];
+          const last = entries[entries.length - 1];
+          if (last) {
+            messageOwner = last[0];
+            setMessage(last[1]);
+          } else {
+            messageOwner = null;
+            setMessage(nonViewError);
+          }
         }
       }
+      markFirstReadDone(name);
       return res;
     },
   };
@@ -140,16 +193,18 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         branch,
         limit: 100,
       });
+      nonViewError = '';
       setTransactions(txs);
       if (selectedTx() && !txs.some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
   async function initBranch(branch: string, isBranchSwitch = false): Promise<void> {
+    pollGen += 1;
     devicesPoller?.stop();
     jobsPoller?.stop();
     eventsPoller?.stop();
@@ -232,16 +287,74 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   async function runAction(fn: () => Promise<void>): Promise<void> {
     if (busy()) return;
     setBusy(true);
-    setMessage('');
+    setNonViewMessage('');
     try {
       await fn();
       await initBranch(effectiveBranch());
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
   }
+
+  let lastMappedKey: string | null = null;
+  let lastResolvedId: string | null = null;
+  function resolveKey(key: string): string {
+    if (!props.newId) return key;
+    if (lastMappedKey !== key || lastResolvedId === null) {
+      lastMappedKey = key;
+      lastResolvedId = props.newId();
+    }
+    return lastResolvedId;
+  }
+
+  const deviceCommandClient = {
+    command: async <B, R>(
+      method: string,
+      path: string,
+      body: B,
+      key: string,
+    ): Promise<R> => {
+      const resolvedKey = resolveKey(key);
+      let finalBody: unknown = body;
+      const b = body as unknown as {
+        action?: string;
+        payload?: Record<string, unknown>;
+      };
+      if (b && b.action === 'queue' && b.payload) {
+        if (b.payload.kind === 'PRINT_RECEIPT') {
+          finalBody = {
+            action: 'queue',
+            payload: {
+              kind: 'PRINT_RECEIPT',
+              ref: b.payload.ref,
+              requestId: resolvedKey,
+              branchId: b.payload.branchId,
+            },
+          };
+        } else {
+          finalBody = {
+            action: 'queue',
+            payload: {
+              ...b.payload,
+              requestId: resolvedKey,
+            },
+          };
+        }
+      }
+      if (typeof props.api.command === 'function') {
+        return props.api.command<unknown, R>(method as 'POST', path, finalBody, resolvedKey);
+      }
+      return props.api.post<unknown, R>(path, finalBody);
+    },
+  } as unknown as ApiClient;
+
+  const deviceWrite = keyedWrite<Record<string, unknown>, unknown>(
+    deviceCommandClient,
+    'POST',
+    '/api/devices',
+  );
 
   async function handleRefresh(): Promise<void> {
     await runAction(async () => {});
@@ -249,13 +362,11 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handlePrint(): Promise<void> {
     await runAction(async () => {
-      const id = props.newId ? props.newId() : crypto.randomUUID();
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'queue',
         payload: {
           kind: 'PRINT_RECEIPT',
           ref: selectedTx(),
-          requestId: id,
           branchId: effectiveBranch(),
         },
       });
@@ -264,15 +375,13 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleDrawer(): Promise<void> {
     await runAction(async () => {
-      const id = props.newId ? props.newId() : crypto.randomUUID();
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'queue',
         payload: {
           kind: 'DRAWER_REQUEST',
           ref: selectedTx(),
           reason: reason(),
           branchId: effectiveBranch(),
-          requestId: id,
         },
       });
     });
@@ -280,7 +389,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleProcess(id: string): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'process',
         payload: {
           id,
@@ -292,7 +401,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleRetry(id: string): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'retry',
         payload: {
           id,
@@ -304,7 +413,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handlePrinterOnlineChange(checked: boolean): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'printerOnline',
         payload: {
           online: checked,
@@ -316,7 +425,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleDrawerObservation(state: 'OPEN' | 'CLOSED'): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'drawerObservation',
         payload: {
           state,
@@ -352,7 +461,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
@@ -369,7 +478,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       });
       setOlderEvents((prev) => [...prev, ...older]);
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 

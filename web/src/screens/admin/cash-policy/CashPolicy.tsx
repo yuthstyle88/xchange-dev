@@ -3,6 +3,7 @@
 // through `transferPolicySave`. Limits stay the server's strings, or what was typed.
 import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
 import type {
   CashTransferPolicyData,
@@ -24,13 +25,44 @@ const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   idempotencyConflict: 'error.idempotencyConflict',
 };
 
+const OWN_FIELD_TEXT: Record<string, Parameters<typeof t>[0]> = {
+  currency: 'error.currency',
+  limits: 'error.limits',
+};
+
 function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+}
+
+function isFieldRefusal(err: unknown): boolean {
+  if (isServerFailure(err)) return false;
+  if (err instanceof ApiError) {
+    return (
+      err.status === 400 &&
+      err.code === 'validationFailed' &&
+      typeof err.field === 'string' &&
+      err.field in OWN_FIELD_TEXT
+    );
+  }
+  if (err && typeof err === 'object') {
+    const e = err as { status?: unknown; code?: unknown; field?: unknown };
+    return (
+      e.status === 400 &&
+      e.code === 'validationFailed' &&
+      typeof e.field === 'string' &&
+      e.field in OWN_FIELD_TEXT
+    );
+  }
+  return false;
 }
 
 function policyError(err: unknown): string {
   if (isServerFailure(err)) {
     return wordedError(err);
+  }
+  if (isFieldRefusal(err)) {
+    const field = (err as { field: string }).field;
+    return t(OWN_FIELD_TEXT[field]!);
   }
   if (err instanceof ApiError && err.code in OWN_TEXT) {
     return t(OWN_TEXT[err.code]!);
@@ -46,12 +78,18 @@ function policyError(err: unknown): string {
 
 export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveWrite = keyedWrite<TransferPolicySaveInput, CashTransferPolicyData>(
+    api,
+    'PUT',
+    '/api/cash-transfer-policy',
+  );
 
   const [policy, setPolicy] = createSignal<CashTransferPolicyData | null>(null);
   const [register, setRegister] = createSignal<string[]>([]);
   const [typed, setTyped] = createSignal<Record<string, string>>({});
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
+  const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
 
   /** The register the cash screen reads, plus any currency the current version names. */
   const currencies = () => {
@@ -96,9 +134,6 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     });
   });
 
-  // One Idempotency-Key per save, kept for a retry of the same body until the server answers.
-  let pending: { key: string; body: string } | null = null;
-
   async function save(e: Event) {
     e.preventDefault();
     if (busy()) return;
@@ -109,20 +144,20 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       if (value.trim() !== '') limits[cur] = value;
     }
     const body: TransferPolicySaveInput = { limits };
-    const sent = JSON.stringify(body);
-    if (!pending || pending.body !== sent) pending = { key: crypto.randomUUID(), body: sent };
-    const key = pending.key;
     setBusy(true);
     setRefusal(null);
+    setFieldRefusal(null);
     try {
-      await api.command<TransferPolicySaveInput, CashTransferPolicyData>('PUT', '/api/cash-transfer-policy', body, key);
-      pending = null;
+      await saveWrite.send(body);
       toast(t('saved'));
       await readPolicy();
     } catch (err: unknown) {
-      // a refusal is the server's answer: the next save is a new request; anything else keeps the key
-      if (err instanceof ApiError && err.status < 500) pending = null;
-      setRefusal(policyError(err));
+      const message = policyError(err);
+      if (isFieldRefusal(err)) {
+        setFieldRefusal(message);
+      } else {
+        setRefusal(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -148,7 +183,26 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       <Card>
         <CardHead eyebrow={t('eyebrow')} title={t('title')} />
         <CardBody>
+          <Show when={policy()?.valid === false}>
+            <div role="status">
+              <p>{t('invalidPolicyNote')}</p>
+              <ul>
+                <For each={policy()?.invalidEntries ?? []}>
+                  {(entry) => (
+                    <li>
+                      <strong>{entry.currency}</strong>: <code>{entry.raw}</code> ({entry.reason})
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </div>
+          </Show>
           <form onSubmit={save}>
+            <Show when={fieldRefusal()}>
+              <p role="alert" class="error-message">
+                {fieldRefusal()}
+              </p>
+            </Show>
             <div class="table-scroll">
               <table class="cash-policy-table">
                 <thead>

@@ -4,6 +4,7 @@
 import { createSignal } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../../shared/api/client';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import type { DeskEntryState, DeskStore, DeskType } from '../../desk-store';
 import type { DeskEntry } from '../../entries';
 import * as texts from './i18n';
@@ -62,7 +63,7 @@ export const entry: DeskEntry = {
       );
     } catch (e) {
       const refused = e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'httpError';
-      return refusedState(id, refused ? e.message : t('failed'));
+      return refusedState(id, refused ? wordedError(e) : t('failed'));
     }
     if (!b || text(b.status) !== 'CONFIRMED') {
       return refusedState(id, t('notConfirmed'));

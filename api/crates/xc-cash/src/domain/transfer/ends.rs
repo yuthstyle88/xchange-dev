@@ -18,8 +18,8 @@ pub trait TransferEnds: Send + Sync + 'static {
     fn check_receive(&self, who: &Actor, t: &CashTransfer) -> Result<(), TransferError>;
 
     /// Generates posting requests at DISPATCHED state.
-    fn on_dispatch(&self, t: &CashTransfer) -> Vec<PostingRequest>;
+    fn on_dispatch(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError>;
 
     /// Generates posting requests at RECEIVED state.
-    fn on_receive(&self, t: &CashTransfer) -> Vec<PostingRequest>;
+    fn on_receive(&self, t: &CashTransfer) -> Result<Vec<PostingRequest>, TransferError>;
 }

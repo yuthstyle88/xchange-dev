@@ -22,7 +22,7 @@
 //   [{ currency, minQuantity }], expectedVersion }`. `minQuantity` is the decimal string as typed;
 //   an empty minutes field is `null` (E-3). `expectedVersion` is the version of the set on screen:
 //   the view's, or the last save's answer.
-// - A refused save shows the server's `message`. A `staleVersion` refusal also reads the view again,
+// - A refused save shows `wordedError` (`error.staleVersion` or the server's `message`). A `staleVersion` refusal also reads the view again,
 //   so the screen shows the newer set and the next save carries its version.
 // - DOM hooks: the minutes input is found by the `<label>` whose text starts with the i18n
 //   `staleDataMinutes`; a floor row is `[data-floor="<CODE>"]` and holds one `<input>` for its
@@ -463,7 +463,7 @@ describe('EX-5 A01 thresholds form (#1075; design §6.1, §8.2, §11.1)', () => 
 
     expect(saves().length).toBe(1);
     expect(saves()[0]!.body?.expectedVersion).toBe(4);
-    expect(pageText(), 'the refusal is shown, not swallowed').toContain('Someone saved these thresholds first (test)');
+    expect(pageText(), 'the refusal is shown, not swallowed').toContain('ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง');
     expect(readsOf(B01).length, 'the view is read again after staleVersion').toBeGreaterThan(readsBefore);
     expect(field(m.el, say('staleDataMinutes')).value, "the other editor's set is shown").toBe('15');
     expect(floorCodes(m.el)).toEqual(['USD']);

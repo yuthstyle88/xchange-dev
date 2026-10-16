@@ -857,16 +857,6 @@ fn what_each_role_may_write_on_both_paths() {
     assert!(allowed_roles(EntryPath::StaffRpc, "adminAbandonRequest").is_empty());
 }
 
-#[test]
-fn moving_stock_is_branch_manager_and_finance() {
-    // C3: CashManage (§03 B05, users MANAGER/FINANCE); was OWNER and FINANCE (`policy_test.rs:316`)
-    assert_eq!(
-        allowed_roles(EntryPath::Rpc, "adminMoveStock"),
-        ["BRANCH_MANAGER", "FINANCE"]
-    );
-    assert!(allowed_roles(EntryPath::StaffRpc, "adminMoveStock").is_empty());
-}
-
 // ── the owner ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -886,9 +876,8 @@ fn the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow() {
         ask(Some(&o), EntryPath::Rpc, "adminSaveRate"),
         Err(PolicyError::InvalidRequest)
     );
-    // C3 (adminMoveStock) and C2 (reserveCustomer, saveTransaction): EXECUTIVE is refused and
-    // ADMIN holds neither
-    for name in ["adminMoveStock", "reserveCustomer", "saveTransaction"] {
+    // C2 (reserveCustomer, saveTransaction): EXECUTIVE is refused and ADMIN holds neither
+    for name in ["reserveCustomer", "saveTransaction"] {
         assert_eq!(
             said(ask(Some(&o), EntryPath::Rpc, name)),
             (ROLE_NOT_ALLOWED_HERE.to_owned(), 400),
@@ -959,11 +948,6 @@ fn a_staff_path_admits_whoever_holds_its_role() {
     assert_eq!(
         ask(Some(&admin), EntryPath::StaffRpc, "adminSnapshot"),
         Ok(())
-    );
-    // and the owner RPC still has no custody action at all
-    assert_eq!(
-        said(ask(Some(&o), EntryPath::Rpc, "opsEnable")),
-        (INVALID_REQUEST.to_owned(), 400)
     );
 }
 

@@ -34,6 +34,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
   const [data, setData] = createSignal<AdminOverviewData | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [exporting, setExporting] = createSignal(false);
 
   let heldVersion: number | undefined = undefined;
   let activeBranch = '';
@@ -91,7 +92,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       period.from !== activeFrom || period.to !== activeTo;
 
     if (branchChanged || periodChanged) {
-      if (branchChanged) {
+      if (branchChanged || !(period.from && period.to && period.from > period.to)) {
         setData(null);
       }
       activeBranch = branch;
@@ -137,6 +138,9 @@ export function Overview(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleExportCsv() {
+    if (exporting()) return;
+    setExporting(true);
+
     const branch = props.branch();
     const period = props.period();
     const filter: Record<string, string> = {};
@@ -179,11 +183,14 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       } else {
         setError(wordedError(err));
       }
+    } finally {
+      setExporting(false);
     }
   }
 
   const netDisplay = () => {
-    const net = data()?.totals.net ?? '0.00';
+    const net = data()?.totals.net;
+    if (net === undefined) return '—';
     if (!net.startsWith('-') && net !== '0.00' && net !== '0') {
       return `+${formatMoney(net)}`;
     }
@@ -205,6 +212,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
               type="button"
               class="btn-export"
               onClick={handleExportCsv}
+              disabled={exporting()}
             >
               {t('exportCsv')}
             </button>
@@ -237,10 +245,10 @@ export function Overview(props: AdminMenuProps): JSX.Element {
         <div>
           <p class="eyebrow">{t('pendingTotalLabel')}</p>
           <strong>
-            {error()
+            {error() || !data()
               ? '—'
               : t('pendingItemCount', {
-                  count: data()?.status.pendingCount ?? 0,
+                  count: data()!.status.pendingCount,
                 })}
           </strong>
           <span>{t('pendingNote')}</span>
@@ -259,33 +267,33 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       <CardGrid>
         <StatCard
           label={t('totalVolume')}
-          value={data()?.totals.volume ?? '0.00'}
+          value={data()?.totals.volume ?? '—'}
           unit="THB"
           note={t('totalVolumeNote')}
         />
         <StatCard
           label={t('buyCardLabel')}
-          value={data()?.totals.buyPrincipal ?? '0.00'}
+          value={data()?.totals.buyPrincipal ?? '—'}
           unit="THB"
           note={t('buyCardNote', {
-            count: data()?.totals.buyCount ?? 0,
+            count: data()?.totals.buyCount ?? '—',
           })}
         />
         <StatCard
           label={t('sellCardLabel')}
-          value={data()?.totals.sellPrincipal ?? '0.00'}
+          value={data()?.totals.sellPrincipal ?? '—'}
           unit="THB"
           note={t('sellCardNote', {
-            count: data()?.totals.sellCount ?? 0,
+            count: data()?.totals.sellCount ?? '—',
           })}
         />
         <StatCard
           label={t('completedTransactions')}
-          value={String(data()?.totals.completedCount ?? 0)}
+          value={String(data()?.totals.completedCount ?? '—')}
           unit={t('completedUnit')}
           note={t('completedNote', {
-            cancelled: data()?.totals.cancelledCount ?? 0,
-            pending: data()?.totals.pendingCount ?? 0,
+            cancelled: data()?.totals.cancelledCount ?? '—',
+            pending: data()?.totals.pendingCount ?? '—',
           })}
         />
       </CardGrid>
@@ -305,11 +313,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
                 <span>
                   {t('buy')}{' '}
                   <span class="unit">
-                    / {data()?.totals.buyCount ?? 0} {t('completedUnit')}
+                    / {data()?.totals.buyCount ?? '—'} {t('completedUnit')}
                   </span>
                 </span>
                 <strong>
-                  {formatMoney(data()?.totals.buyPrincipal ?? '0.00')}
+                  {formatMoney(data()?.totals.buyPrincipal ?? '—')}
                 </strong>
               </div>
               <div class="activity-track">
@@ -325,11 +333,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
                 <span>
                   {t('sell')}{' '}
                   <span class="unit">
-                    / {data()?.totals.sellCount ?? 0} {t('completedUnit')}
+                    / {data()?.totals.sellCount ?? '—'} {t('completedUnit')}
                   </span>
                 </span>
                 <strong>
-                  {formatMoney(data()?.totals.sellPrincipal ?? '0.00')}
+                  {formatMoney(data()?.totals.sellPrincipal ?? '—')}
                 </strong>
               </div>
               <div class="activity-track">
@@ -353,11 +361,11 @@ export function Overview(props: AdminMenuProps): JSX.Element {
           </div>
           <div class="flow-row">
             <span>{t('flowIn')}</span>
-            <span>{formatMoney(data()?.totals.received ?? '0.00')}</span>
+            <span>{formatMoney(data()?.totals.received ?? '—')}</span>
           </div>
           <div class="flow-row">
             <span>{t('flowOut')}</span>
-            <span>{formatMoney(data()?.totals.paid ?? '0.00')}</span>
+            <span>{formatMoney(data()?.totals.paid ?? '—')}</span>
           </div>
           <p class="dark-note">
             {t('flowNote1')}

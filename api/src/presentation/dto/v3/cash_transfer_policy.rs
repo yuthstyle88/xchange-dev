@@ -6,6 +6,16 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// One malformed entry in a stored `cash_transfer_policy_versions.limits` value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "cash_transfer_policy.ts")]
+pub struct InvalidTransferLimitEntry {
+    pub currency: String,
+    pub raw: String,
+    pub reason: String,
+}
+
 /// The answer of `transferPolicySave` and the `cash_transfer_policy` view's `data`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +24,8 @@ pub struct CashTransferPolicyData {
     pub version: String,
     #[ts(type = "Record<string, string>")]
     pub limits: BTreeMap<String, String>,
+    pub valid: bool,
+    pub invalid_entries: Vec<InvalidTransferLimitEntry>,
     pub set_by: String,
     pub created_at: String,
 }
@@ -43,6 +55,7 @@ pub struct CashTransferPolicyFilter {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     CashTransferPolicyData::export_all(&cfg)?;
+    InvalidTransferLimitEntry::export_all(&cfg)?;
     CashTransferPolicyFilter::export_all(&cfg)?;
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())

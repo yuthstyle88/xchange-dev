@@ -84,6 +84,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
   const [error, setError] = createSignal<string | null>(null);
   const [showConfirm, setShowConfirm] = createSignal<boolean>(false);
   const [ratesData, setRatesData] = createSignal<PublishedRatesData | null>(null);
+  const [busy, setBusy] = createSignal<boolean>(false);
 
   const [targetAmounts, setTargetAmounts] = createSignal<Record<string, string>>({});
 
@@ -125,6 +126,8 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
   );
 
   const handleClock = async () => {
+    if (busy()) return;
+    setBusy(true);
     try {
       setError(null);
       const direction = props.ctx.floor?.myClockIn ? 'OUT' : 'IN';
@@ -137,10 +140,14 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
     } catch (e: unknown) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleStartService = async () => {
+    if (busy()) return;
+    setBusy(true);
     try {
       setError(null);
       let currentRates = ratesData();
@@ -173,10 +180,14 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
     } catch (e: unknown) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleCutoff = async () => {
+    if (busy()) return;
+    setBusy(true);
     try {
       setError(null);
       await cutoffCmd.send({
@@ -187,11 +198,15 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
     } catch (e: unknown) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleTargetSubmit = async (e: Event) => {
     e.preventDefault();
+    if (busy()) return;
+    setBusy(true);
     try {
       setError(null);
       const amounts: Record<string, string> = {};
@@ -212,6 +227,8 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
     } catch (e: unknown) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -233,6 +250,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
           type="button"
           data-testid="floor-clock"
           class="xc-floor-clock-btn"
+          disabled={busy()}
           onClick={handleClock}
         >
           {props.ctx.floor?.myClockIn ? t('clockOut') : t('clockIn')}
@@ -244,7 +262,10 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
               type="button"
               data-testid="floor-start"
               class="xc-floor-start-btn"
-              onClick={() => setShowConfirm(true)}
+              disabled={busy()}
+              onClick={() => {
+                if (!busy()) setShowConfirm(true);
+              }}
             >
               {t('startService')}
             </button>
@@ -254,6 +275,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
               type="button"
               data-testid="floor-cutoff"
               class="xc-floor-cutoff-btn"
+              disabled={busy()}
               onClick={handleCutoff}
             >
               {t('cutoff')}
@@ -289,6 +311,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
             type="submit"
             data-testid="floor-target-save"
             class="xc-floor-target-save-btn"
+            disabled={busy()}
           >
             {t('targetSave')}
           </button>
@@ -324,10 +347,11 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
       </Show>
 
       <ConfirmDialog
-        open={showConfirm()}
+        open={showConfirm() && !busy()}
         title={t('startService')}
         message={t('startConfirm')}
         onConfirm={() => {
+          if (busy()) return;
           setShowConfirm(false);
           void handleStartService();
         }}

@@ -2,12 +2,14 @@
 // the uploads, then POST /api/transactions, …/confirm and …/complete, each with an Idempotency-Key. The outcome is the
 // server's transaction state; a refusal is a 4xx with an error code, and anything else that fails is unknown (DK-1).
 // No arithmetic and no figure the quote did not give (W7).
-import { ApiError } from '../../shared/api/client';
+import { ApiClient, ApiError } from '../../shared/api/client';
+import { keyedWrite } from '../../shared/api/keyed-write';
 import type {
   TransactionConfirmInput,
   TransactionCreateInput,
 } from '../../shared/api/generated/transactions';
 import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import type { DeskStore, SaveOutcome, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
 
@@ -31,26 +33,30 @@ export const APPROVAL_POLL_MS = 15_000;
 
 const STATES: readonly TransactionState[] = ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'COMPLETED', 'CANCELLED'];
 
-export function newKey(): string {
-  return crypto.randomUUID();
-}
+let mintedKey = '';
+const keyMinter = keyedWrite<null, void>(
+  {
+    command: (_method, _path, _body, key) => {
+      mintedKey = key;
+      return Promise.resolve();
+    },
+  } as ApiClient,
+  'POST',
+  '/',
+);
 
-/** A request made once and resent byte for byte on a retry (D-10). */
-interface Request {
-  path: string;
-  body: unknown;
-  key: string;
+export function newKey(): string {
+  keyMinter.reset();
+  void keyMinter.send(null);
+  return mintedKey;
 }
 
 /** One exchange's progress: what has been sent and answered, so a retry redoes nothing that succeeded. */
 interface Session {
-  passportUploadKey: string;
   passportKey?: string;
-  slipUploadKey: string;
   slipKey?: string;
-  create?: Request;
-  confirm?: Request;
-  complete?: Request;
+  quoteId?: string;
+  paidAt: string;
   tx?: { id: string; status: TransactionState; dto: Record<string, unknown> };
 }
 
@@ -89,6 +95,64 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
   let running: Promise<SaveOutcome> | undefined;
   let watch: ReturnType<typeof setInterval> | undefined;
 
+  const txCommandApi = {
+    command: async <B,>(method: string, path: string, body: B, key: string) => {
+      const answer = await store.api.command<B, unknown>(method, path, body, key);
+      return transactionOf(answer);
+    },
+  } as unknown as ApiClient;
+
+  const createWrite = keyedWrite<TransactionCreateInput, NonNullable<Session['tx']>>(
+    txCommandApi,
+    'POST',
+    routes.transactions,
+  );
+  const confirmWrite = keyedWrite<TransactionConfirmInput, NonNullable<Session['tx']>>(
+    txCommandApi,
+    'POST',
+    (b) => `${routes.transactions}/${b.id}/confirm`,
+  );
+  const completeWrite = keyedWrite<{ id: string }, NonNullable<Session['tx']>>(
+    txCommandApi,
+    'POST',
+    (b) => `${routes.transactions}/${b.id}/complete`,
+  );
+
+  function makeUploadWrite(slot: 'passport' | 'slip') {
+    let activeFile: File | undefined;
+    const w = keyedWrite<{ slot: string; name: string; size: number; type: string }, string>(
+      {
+        command: async (_method: string, path: string, _body: unknown, key: string) => {
+          const file = activeFile!;
+          const answer = await store.api.postBytes<{ uploadKey?: unknown }>(
+            path,
+            file,
+            file.type || 'application/octet-stream',
+            key,
+          );
+          if (!answer || typeof answer.uploadKey !== 'string') {
+            throw new NoState('no upload key');
+          }
+          return answer.uploadKey;
+        },
+      } as unknown as ApiClient,
+      'POST',
+      store.path.upload,
+    );
+    return {
+      send(file: File): Promise<string> {
+        activeFile = file;
+        return w.send({ slot, name: file.name, size: file.size, type: file.type });
+      },
+      reset(): void {
+        w.reset();
+      },
+    };
+  }
+
+  const passportUploadWrite = makeUploadWrite('passport');
+  const slipUploadWrite = makeUploadWrite('slip');
+
   function stopWatch(): void {
     if (watch !== undefined) {
       clearInterval(watch);
@@ -99,24 +163,11 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
   function reset(): void {
     stopWatch();
     session = undefined;
-  }
-
-  async function send(r: Request): Promise<NonNullable<Session['tx']>> {
-    const answer = await store.api.command<unknown, unknown>('POST', r.path, r.body, r.key);
-    return transactionOf(answer);
-  }
-
-  async function upload(file: File, key: string): Promise<string> {
-    const answer = await store.api.postBytes<{ uploadKey?: unknown }>(
-      store.path.upload,
-      file,
-      file.type || 'application/octet-stream',
-      key,
-    );
-    if (!answer || typeof answer.uploadKey !== 'string') {
-      throw new NoState('no upload key');
-    }
-    return answer.uploadKey;
+    passportUploadWrite.reset();
+    slipUploadWrite.reset();
+    createWrite.reset();
+    confirmWrite.reset();
+    completeWrite.reset();
   }
 
   function createBody(quoteId: string, s: Session): TransactionCreateInput {
@@ -136,7 +187,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         account: store.account(),
         slip: s.slipKey ? { uploadKey: s.slipKey } : null,
         bankFeeThb: store.bankFee() === '' ? '0' : store.bankFee(),
-        paidAt: new Date().toISOString(),
+        paidAt: s.paidAt,
       },
       valueDate: store.valueDate(),
       notes: store.notes(),
@@ -166,7 +217,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
   async function run(): Promise<SaveOutcome> {
     sink.setOutcome('saving');
     sink.setSaveError(undefined);
-    const s: Session = (session ??= { passportUploadKey: newKey(), slipUploadKey: newKey() });
+    const s: Session = (session ??= { paidAt: new Date().toISOString() });
 
     try {
       const refusal = store.entry()?.refusal();
@@ -176,21 +227,23 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
       if (!s.passportKey) {
         const file = store.passport();
         if (!file) throw new Refused(t('noPassport'), 'noPassport');
-        s.passportKey = await upload(file, s.passportUploadKey);
+        s.passportKey = await passportUploadWrite.send(file);
       }
       const slipFile = store.slip();
       if (slipFile && !s.slipKey) {
-        s.slipKey = await upload(slipFile, s.slipUploadKey);
+        s.slipKey = await slipUploadWrite.send(slipFile);
       }
 
-      // 2. a quote that has not expired (D-5), then the create, made once
-      if (!s.create) {
+      // 2. a quote that has not expired (D-5), then the create
+      if (!s.tx) {
         let q = store.quote();
-        if (!q || expired(q.expiresAt)) q = await store.requote();
-        if (!q) throw new Refused(store.quoteError()?.message ?? t('noQuote'), 'noQuote');
-        s.create = { path: routes.transactions, body: createBody(q.id, s), key: newKey() };
+        if (!s.quoteId || !q || q.id !== s.quoteId || expired(q.expiresAt)) {
+          if (!q || expired(q.expiresAt)) q = await store.requote();
+          if (!q) throw new Refused(store.quoteError()?.message ?? t('noQuote'), 'noQuote');
+          s.quoteId = q.id;
+        }
+        s.tx = await createWrite.send(createBody(s.quoteId, s));
       }
-      if (!s.tx) s.tx = await send(s.create);
 
       // 3. the server's state decides the next call
       for (;;) {
@@ -199,17 +252,16 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         switch (tx.status) {
           case 'DRAFT': {
             const body: TransactionConfirmInput = { id: tx.id };
-            s.confirm ??= { path: `${routes.transactions}/${tx.id}/confirm`, body, key: newKey() };
-            s.tx = await send(s.confirm);
+            s.tx = await confirmWrite.send(body);
             break;
           }
           case 'CONFIRMED': {
-            s.complete ??= { path: `${routes.transactions}/${tx.id}/complete`, body: { id: tx.id }, key: newKey() };
-            s.tx = await send(s.complete);
+            s.tx = await completeWrite.send({ id: tx.id });
             break;
           }
           case 'COMPLETED': {
             stopWatch();
+            s.tx = undefined;
             const ref = tx.dto.documentRef;
             const answer: SaveAnswer = {
               id: tx.id,
@@ -232,7 +284,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
           }
           case 'CANCELLED': {
             const reason = tx.dto.cancelReason;
-            session = undefined;
+            reset();
             sink.setSaveError(typeof reason === 'string' && reason !== '' ? reason : t('cancelled'));
             sink.setOutcome('refused');
             return 'refused';
@@ -242,8 +294,10 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     } catch (e) {
       if (e instanceof Refused || (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'httpError')) {
         // a refusal: the next submit is a new exchange
-        reset();
-        sink.setSaveError(e.message);
+        stopWatch();
+        s.tx = undefined;
+        s.quoteId = undefined;
+        sink.setSaveError(e instanceof Refused ? e.message : wordedError(e));
         sink.setOutcome('refused');
         if (e instanceof ApiError && e.code === 'quoteExpired') {
           void store.requote();

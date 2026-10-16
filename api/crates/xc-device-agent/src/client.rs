@@ -314,6 +314,14 @@ impl AgentApi for HttpAgentApi {
         } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let retry_after_secs = parse_retry_after(response.headers());
             Err(ApiError::RateLimited { retry_after_secs })
+        } else if status.is_server_error() {
+            let body = response.text().await.unwrap_or_default();
+            let detail = if body.is_empty() {
+                format!("server error {}", status.as_u16())
+            } else {
+                format!("server error {}: {}", status.as_u16(), body)
+            };
+            Err(ApiError::Connection(self.redact_error(detail)))
         } else {
             let error = response.text().await.unwrap_or_default();
             Err(ApiError::Rejected {

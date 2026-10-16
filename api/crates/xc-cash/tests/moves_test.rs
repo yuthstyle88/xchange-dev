@@ -421,12 +421,12 @@ fn each_moves_postings_follow_the_table() {
     for (kind, from_shift, to_shift, d_from, d_to, r_from, r_to) in cases {
         let t = move_of(kind, from_shift, to_shift, 4, Some(3));
         assert_eq!(
-            flat(&ends(kind).on_dispatch(&t)),
+            flat(&ends(kind).on_dispatch(&t).unwrap()),
             one(d_from, d_to, "200"),
             "{kind:?} dispatch"
         );
         assert_eq!(
-            flat(&ends(kind).on_receive(&t)),
+            flat(&ends(kind).on_receive(&t).unwrap()),
             one(r_from, r_to, "150"),
             "{kind:?} receipt"
         );

@@ -1,5 +1,6 @@
 // APP-16 customer book screen (design customer-app.md §4.5, §9.1 C02, #985).
 import {
+  createEffect,
   createSignal,
   onMount,
   For,
@@ -7,6 +8,9 @@ import {
   type JSX,
 } from 'solid-js';
 import { fill, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
@@ -40,18 +44,13 @@ export interface PlannerPreviewResult {
   [key: string]: unknown;
 }
 
+export type BookingCreateBody = Partial<BookingCreateInput> & Record<string, unknown>;
+
 export type BookingCreateResult = Partial<BookingCreateOutput> & {
   id: string;
   status: string;
   [key: string]: unknown;
 };
-
-function makeIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `book-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 export function getTodayInTimezone(timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -77,6 +76,30 @@ export function formatSlotTime(start: string, end: string, timeZone: string): st
 export function BookScreen(props: BookScreenProps): JSX.Element {
   const t = screenT('customer.book', { th, en, zh });
   const fetchFn = props.fetch ?? ((url, init) => window.fetch(url, init));
+  const api = new ApiClient(async (url, init) => {
+    try {
+      const res = await fetchFn(url, init);
+      if (url === BOOKING_CREATE_COMMAND_ROUTE && res.status >= 500) {
+        setSubmitting(false);
+      }
+      return res;
+    } catch (err) {
+      if (url === BOOKING_CREATE_COMMAND_ROUTE) {
+        setSubmitting(false);
+      }
+      throw err;
+    }
+  });
+
+  const bookError = (err: unknown): string => {
+    if (err instanceof ApiError && !isServerFailure(err)) {
+      const key = `error.${err.code}` as keyof typeof th;
+      if (Object.prototype.hasOwnProperty.call(th, key)) {
+        return t(key);
+      }
+    }
+    return wordedError(err);
+  };
 
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const initialRef = searchParams.get('ref') ?? '';
@@ -106,7 +129,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const [globalError, setGlobalError] = createSignal<string | null>(null);
   const [successData, setSuccessData] = createSignal<BookingCreateResult | null>(null);
 
-  const [idempotencyKey, setIdempotencyKey] = createSignal(makeIdempotencyKey());
+  const createBooking = keyedWrite<BookingCreateBody, BookingCreateResult>(
+    api,
+    'POST',
+    BOOKING_CREATE_COMMAND_ROUTE,
+  );
 
   const loadBranches = async () => {
     setBranchesLoading(true);
@@ -170,10 +197,12 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         setServiceDate(dateToUse);
         void loadSlots(activeBranch, dateToUse);
       } else {
+        slotsSeq++;
         setBranchId('');
         setServiceDate('');
         setMinDate('');
         setSlots([]);
+        setSlotId('');
         setSlotsLoading(false);
       }
     } catch {
@@ -183,11 +212,24 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
   };
 
+  let slotsSeq = 0;
+  let slotSelectEl: HTMLSelectElement | undefined;
+
+  createEffect(() => {
+    slots();
+    const id = slotId();
+    if (slotSelectEl) {
+      slotSelectEl.value = id;
+    }
+  });
+
   const loadSlots = async (overrideBranch?: string, overrideDate?: string) => {
+    const seq = ++slotsSeq;
     const b = overrideBranch !== undefined ? overrideBranch : branchId();
     const d = overrideDate !== undefined ? overrideDate : serviceDate();
     if (!b || !d) {
       setSlots([]);
+      setSlotId('');
       setSlotsLoading(false);
       return;
     }
@@ -200,19 +242,27 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       const url = `${BOOKING_SLOTS_VIEW_ROUTE}?${params.toString()}`;
 
       const slotsRes = await fetchFn(url);
+      if (seq !== slotsSeq) return;
       if (slotsRes.status !== 200) {
         setSlots([]);
+        setSlotId('');
         setSlotsLoading(false);
         setSlotsError(t('error.loadFailed'));
         return;
       }
       const slotsJson: { data?: BookingSlotsData } =
         await slotsRes.json().catch(() => ({}));
+      if (seq !== slotsSeq) return;
       const list: BookingSlot[] = slotsJson.data?.slots ?? [];
       setSlots(list);
+      if (!list.some((s) => s.id === slotId())) {
+        setSlotId('');
+      }
       setSlotsLoading(false);
     } catch {
+      if (seq !== slotsSeq) return;
       setSlots([]);
+      setSlotId('');
       setSlotsLoading(false);
       setSlotsError(t('error.loadFailed'));
     }
@@ -222,7 +272,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     void loadBranches();
   });
 
+  let previewSeq = 0;
+  let createFailed = false;
+
   const updatePreview = async () => {
+    const seq = ++previewSeq;
     const b = branchId();
     if (!b) {
       setPreview(null);
@@ -238,32 +292,45 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
 
     try {
-      const res = await fetchFn('/api/v3/compute/planner_preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          branch: b,
-          currency: c,
-          customerSide: s === 'BUY' ? 'Buy' : 'Sell',
-          amount: { quantity: String(Number(q)) },
-        }),
+      const data = await api.act<
+        {
+          branch: string;
+          currency: string;
+          customerSide: 'Buy' | 'Sell';
+          amount: { quantity: string };
+        },
+        PlannerPreviewResult
+      >('compute', 'planner_preview', {
+        branch: b,
+        currency: c,
+        customerSide: s === 'BUY' ? 'Buy' : 'Sell',
+        amount: { quantity: String(Number(q)) },
       });
-      if (res.status === 200) {
-        const data = await res.json().catch(() => null);
-        setPreview(data);
-      } else {
-        setPreview(null);
+      if (seq !== previewSeq) return;
+      setPreview(data);
+      if (!createFailed) {
+        setGlobalError(null);
       }
-    } catch {
+    } catch (err) {
+      if (seq !== previewSeq) return;
       setPreview(null);
+      if (!submitting() && !createFailed) {
+        setGlobalError(bookError(err));
+      }
     }
   };
 
+  let submitSeq = 0;
+
   const handleSubmit = async (e?: Event) => {
     if (e) e.preventDefault();
+    if (submitting()) return;
+    const seq = ++submitSeq;
     setSubmitting(true);
+    createFailed = false;
     setGlobalError(null);
     setReferralError(null);
+    setSuccessData(null);
 
     // Read current form values from signals or DOM
     const currentBranch =
@@ -283,7 +350,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         ? referralCode()
         : (document.querySelector('input[name="referralCode"]') as HTMLInputElement)?.value ?? '';
 
-    const payload: Partial<BookingCreateInput> & Record<string, unknown> = {
+    const payload: BookingCreateBody = {
       branch: currentBranch,
       branchId: currentBranch,
       slotId: currentSlot,
@@ -297,53 +364,29 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
 
     try {
-      const res = await fetchFn(BOOKING_CREATE_COMMAND_ROUTE, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey(),
-          'idempotency-key': idempotencyKey(),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.status === 200) {
-        const data = await res.json();
-        setSuccessData(data);
-        setIdempotencyKey(makeIdempotencyKey());
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        const err = errJson.error ?? errJson;
-
-        if (err.code === 'validationFailed') {
-          const hasRefField =
-            Array.isArray(err.fields) && err.fields.some((f: any) => f.field === 'referralCode');
-          if (hasRefField) {
-            setReferralError(t('error.invalidReferralCode'));
-          } else {
-            setGlobalError(t('error.validationFailed'));
-          }
-        } else if (err.code === 'slotUnavailable') {
-          setGlobalError(t('error.slotUnavailable'));
+      const data = await createBooking.send(payload);
+      if (seq !== submitSeq) return;
+      setSuccessData(data);
+    } catch (err) {
+      if (seq !== submitSeq) return;
+      if (err instanceof ApiError && !isServerFailure(err)) {
+        if (
+          err.code === 'invalidReferralCode' ||
+          (err.code === 'validationFailed' && err.field === 'referralCode')
+        ) {
+          setReferralError(t('error.invalidReferralCode'));
+          return;
+        }
+        if (err.code === 'slotUnavailable' || err.code === 'capacityFull') {
           void loadSlots(currentBranch, serviceDate());
-        } else if (err.code === 'capacityFull') {
-          setGlobalError(t('error.capacityFull'));
-          void loadSlots(currentBranch, serviceDate());
-        } else if (err.code === 'bookingsClosed') {
-          setGlobalError(t('error.bookingsClosed'));
-        } else {
-          const errorKey = `error.${err.code}` as keyof typeof th;
-          if (errorKey in th) {
-            setGlobalError(t(errorKey));
-          } else {
-            setGlobalError(err.message ?? t('error.general'));
-          }
         }
       }
-    } catch {
-      setGlobalError(t('error.general'));
+      createFailed = true;
+      setGlobalError(bookError(err));
     } finally {
-      setSubmitting(false);
+      if (seq === submitSeq) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -404,7 +447,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             onChange={(e) => {
               const val = e.currentTarget.value;
               setBranchId(val);
-              setIdempotencyKey(makeIdempotencyKey());
+              setSlotId('');
               void updatePreview();
               if (val) {
                 const br = branches().find((b) => b.code === val);
@@ -422,6 +465,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
                   setBranchesError(t('error.loadFailed'));
                 }
               } else {
+                slotsSeq++;
                 setServiceDate('');
                 setMinDate('');
                 setSlots([]);
@@ -455,18 +499,28 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             disabled={!branchId()}
             onInput={(e) => {
               const newDate = e.currentTarget.value;
+              if (newDate === serviceDate()) return;
+              setSlotId('');
               setServiceDate(newDate);
-              setIdempotencyKey(makeIdempotencyKey());
               if (branchId() && newDate) {
                 void loadSlots(branchId(), newDate);
+              } else {
+                slotsSeq++;
+                setSlots([]);
+                setSlotsLoading(false);
               }
             }}
             onChange={(e) => {
               const newDate = e.currentTarget.value;
+              if (newDate === serviceDate()) return;
+              setSlotId('');
               setServiceDate(newDate);
-              setIdempotencyKey(makeIdempotencyKey());
               if (branchId() && newDate) {
                 void loadSlots(branchId(), newDate);
+              } else {
+                slotsSeq++;
+                setSlots([]);
+                setSlotsLoading(false);
               }
             }}
           />
@@ -499,6 +553,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           </Show>
 
           <select
+            ref={slotSelectEl}
             id="slotId"
             name="slotId"
             class="xc-book-select"
@@ -507,7 +562,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             disabled={slotsLoading() || slots().length === 0}
             onChange={(e) => {
               setSlotId(e.currentTarget.value);
-              setIdempotencyKey(makeIdempotencyKey());
             }}
           >
             <option value="">{slotsLoading() ? t('loading') : (slots().length === 0 ? t('noSlots') : t('selectSlot'))}</option>
@@ -539,7 +593,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={shopSide()}
             onChange={(e) => {
               setShopSide(e.currentTarget.value as 'BUY' | 'SELL');
-              setIdempotencyKey(makeIdempotencyKey());
               updatePreview();
             }}
           >
@@ -560,7 +613,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={currency()}
             onChange={(e) => {
               setCurrency(e.currentTarget.value);
-              setIdempotencyKey(makeIdempotencyKey());
               updatePreview();
             }}
           >
@@ -588,7 +640,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={quantity()}
             onInput={(e) => {
               setQuantity(e.currentTarget.value);
-              setIdempotencyKey(makeIdempotencyKey());
               updatePreview();
             }}
           />
@@ -609,7 +660,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             onInput={(e) => {
               setReferralCode(e.currentTarget.value);
               setReferralError(null);
-              setIdempotencyKey(makeIdempotencyKey());
             }}
             aria-invalid={referralError() ? 'true' : undefined}
           />
@@ -635,6 +685,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           class="xc-book-submit"
           data-action="book"
           data-testid="book-submit"
+          disabled={submitting()}
           onClick={handleSubmit}
         >
           {submitting() ? t('submitting') : t('submit')}

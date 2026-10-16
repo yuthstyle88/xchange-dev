@@ -31,6 +31,11 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
   function onSubmit(ev: Event): void {
     ev.preventDefault();
     setRefusal(undefined);
+    const cfgErr = store.configError();
+    if (cfgErr) {
+      setRefusal(cfgErr);
+      return;
+    }
     const err = store.quoteError();
     if (!shiftOpen() || err?.field === 'currency') {
       setRefusal(t('needShiftAndRate'));
@@ -46,8 +51,8 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
   return (
     <form class="desk-form" onSubmit={onSubmit}>
       <h2>{t('heading')}</h2>
-      <Show when={!shiftOpen()}>
-        <p class="desk-notice">{t('noShift')}</p>
+      <Show when={store.configError() || !shiftOpen()}>
+        <p class="desk-notice">{store.configError() ?? t('noShift')}</p>
       </Show>
 
       <label class="desk-field">

@@ -17,7 +17,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
@@ -28,6 +28,7 @@ use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::posting::{CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
+    add_line_minor,
 };
 use crate::domain::transfer::kinds::TransferKinds;
 use crate::domain::transfer::transfer_repository::TransferRepository;
@@ -57,6 +58,13 @@ fn require(
     Authorizer::check(Some(who), permission, &target, now)
         .map(|_| ())
         .map_err(|e| AppError::Domain(e.code().to_string()))
+}
+
+fn from_transfer_error(e: TransferError) -> AppError {
+    match e {
+        TransferError::Internal(m) => AppError::Internal(m),
+        other => AppError::Domain(other.to_string()),
+    }
 }
 
 impl TransferFlow {
@@ -179,7 +187,13 @@ impl TransferFlow {
         self.approvals
             .decide(&mut tx, &req_id, &policy_actor, outcome, reason, "")
             .await
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+            .map_err(|e| match e {
+                xc_approval::application::approval_service::ApprovalError::Database(m)
+                | xc_approval::application::approval_service::ApprovalError::Internal(m) => {
+                    AppError::Internal(m)
+                }
+                other => AppError::Domain(other.to_string()),
+            })?;
 
         tx.commit().await?;
 
@@ -308,21 +322,46 @@ async fn locked(
     Ok(t)
 }
 
-/// Writes a cash exception row if the counted total differs from the sent one (CA-7d #1425).
-async fn write_exceptions(
-    tx: &mut Transaction<'_, Postgres>,
+/// Builds an in-memory copy of `t` with each line's `qty_received` set from `counted` (and 0 for
+/// unmentioned lines), matching `mark_received` (D:§4.5).
+fn with_counted_lines(t: &CashTransfer, counted: &[NewTransferLine]) -> CashTransfer {
+    let mut updated = t.clone();
+    updated.status = TransferStatus::Received;
+    for line in &mut updated.lines {
+        let qty = counted
+            .iter()
+            .rfind(|c| c.currency == line.currency && c.denomination_id == line.denomination_id)
+            .map(|c| c.qty)
+            .unwrap_or(0);
+        line.qty_received = Some(qty);
+    }
+    updated
+}
+
+/// Computes the cash exception row if the counted total differs from the sent one (CA-7d #1425,
+/// D:§4.5). Runs before `mark_received` so an overflowing line or currency sum refuses before any write.
+fn compute_exception(
     id: &str,
-    branch: &BranchId,
     t: &CashTransfer,
     now: DateTime<Utc>,
-) -> AppResult<()> {
+) -> AppResult<Option<CashException>> {
     let mut sent_totals: HashMap<CurrencyCode, i64> = HashMap::new();
     let mut recv_totals: HashMap<CurrencyCode, i64> = HashMap::new();
     for line in &t.lines {
-        let sent_minor = line.face_value.minor() * (line.qty_sent as i64);
-        *sent_totals.entry(line.currency).or_insert(0) += sent_minor;
-        let recv_minor = line.face_value.minor() * (line.qty_received.unwrap_or(0) as i64);
-        *recv_totals.entry(line.currency).or_insert(0) += recv_minor;
+        add_line_minor(
+            &mut sent_totals,
+            line.currency,
+            line.face_value,
+            line.qty_sent,
+        )
+        .map_err(from_transfer_error)?;
+        add_line_minor(
+            &mut recv_totals,
+            line.currency,
+            line.face_value,
+            line.qty_received.unwrap_or(0),
+        )
+        .map_err(from_transfer_error)?;
     }
 
     let mut delta_pairs = Vec::new();
@@ -331,31 +370,43 @@ async fn write_exceptions(
         if recv_minor != sent_minor {
             delta_pairs.push((
                 cur,
-                MoneyDelta::from_minor((recv_minor - sent_minor) as i128),
+                MoneyDelta::from_minor(i128::from(recv_minor) - i128::from(sent_minor)),
             ));
         }
     }
 
-    if !delta_pairs.is_empty() {
-        let delta = StockDelta::of(&delta_pairs);
-        let (cash_variance, safe_variance) = if t.to_shift.is_some() {
-            (Some(delta), None)
-        } else {
-            (None, Some(delta))
-        };
+    if delta_pairs.is_empty() {
+        return Ok(None);
+    }
 
-        let exc = CashException {
-            id: format!("EX-{}", Uuid::new_v4()),
-            request_id: id.to_string(),
-            status: ExceptionStatus::Open,
-            target_difference: None,
-            cash_variance,
-            safe_variance,
-            note: format!("TRANSFER {id}"),
-            at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
-            reviewed_by: None,
-            reviewed_at: None,
-        };
+    let delta = StockDelta::of(&delta_pairs);
+    let (cash_variance, safe_variance) = if t.to_shift.is_some() {
+        (Some(delta), None)
+    } else {
+        (None, Some(delta))
+    };
+
+    Ok(Some(CashException {
+        id: format!("EX-{}", Uuid::new_v4()),
+        request_id: id.to_string(),
+        status: ExceptionStatus::Open,
+        target_difference: None,
+        cash_variance,
+        safe_variance,
+        note: format!("TRANSFER {id}"),
+        at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+        reviewed_by: None,
+        reviewed_at: None,
+    }))
+}
+
+/// Writes the pre-computed cash exception row if present (CA-7d #1425).
+async fn write_exceptions(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    exc: Option<CashException>,
+) -> AppResult<()> {
+    if let Some(exc) = exc {
         append_cash_exception_in(tx, branch, &exc).await?;
     }
     Ok(())
@@ -393,6 +444,25 @@ impl TransferFlow {
             && let Some(t) = self.repo.find_by_id_in(tx, &id.to_string()).await?
         {
             return Ok(t);
+        }
+
+        let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
+        for line in &cmd.lines {
+            let face_dec: Option<Decimal> =
+                sqlx::query_scalar("SELECT face_value FROM denominations WHERE id = $1")
+                    .bind(line.denomination_id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            if let Some(face_dec) = face_dec {
+                let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
+                    AppError::Internal(format!(
+                        "invalid face_value {face_dec} for denomination {}: {e}",
+                        line.denomination_id
+                    ))
+                })?;
+                add_line_minor(&mut totals, line.currency, face_value, line.qty)
+                    .map_err(from_transfer_error)?;
+            }
         }
 
         self.repo.insert(tx, &cmd, who, now).await
@@ -434,6 +504,8 @@ impl TransferFlow {
         let within_limit = policy
             .as_ref()
             .map(|p| p.is_within_limit(&t.lines))
+            .transpose()
+            .map_err(from_transfer_error)?
             .unwrap_or(false);
 
         let payload = serde_json::json!({
@@ -450,7 +522,13 @@ impl TransferFlow {
             .approvals
             .request(tx, "CASH_TRANSFER", id, &payload, &policy_actor, &key)
             .await
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+            .map_err(|e| match e {
+                xc_approval::application::approval_service::ApprovalError::Database(m)
+                | xc_approval::application::approval_service::ApprovalError::Internal(m) => {
+                    AppError::Internal(m)
+                }
+                other => AppError::Domain(other.to_string()),
+            })?;
 
         self.repo
             .set_approval_request_id(tx, id, &req.id, now)
@@ -512,14 +590,17 @@ impl TransferFlow {
             .kinds
             .get(t.kind)
             .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
-        let reqs = ends.on_dispatch(&t);
+        let reqs = ends.on_dispatch(&t).map_err(from_transfer_error)?;
 
         // A move out of a drawer or the safe cannot exceed its expected balance.
         for r in &reqs {
             match &r.from {
                 CashPlace::Drawer(_) | CashPlace::Safe(_) => {
                     let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    if Decimal::new(balances.get(r.currency).minor(), 2) < r.quantity.value() {
+                    let balance_minor = balances.get(r.currency).try_minor().map_err(|e| {
+                        AppError::Internal(format!("expected balance overflows i64: {e}"))
+                    })?;
+                    if Decimal::new(balance_minor, 2) < r.quantity.value() {
                         return Err(AppError::Domain(
                             TransferError::StockInsufficient.to_string(),
                         ));
@@ -584,15 +665,13 @@ impl TransferFlow {
             }
         }
 
+        let counted_t = with_counted_lines(&t, &counted);
+        let reqs = ends.on_receive(&counted_t).map_err(from_transfer_error)?;
+        let exc = compute_exception(id, &counted_t, now)?;
+
         parts.repo.mark_received(tx, id, who, &counted, now).await?;
-        let updated_t = parts
-            .repo
-            .find_by_id_in(tx, id)
-            .await?
-            .ok_or_else(|| not_found(id))?;
-        let reqs = ends.on_receive(&updated_t);
         parts.postings.post_in(tx, &reqs, None).await?;
-        write_exceptions(tx, id, branch, &updated_t, now).await?;
+        write_exceptions(tx, branch, exc).await?;
         parts
             .repo
             .find_by_id_in(tx, id)
@@ -640,10 +719,20 @@ impl TransferFlow {
         // IN_TRANSIT, an overage back into it.
         let mut left: Vec<(CurrencyCode, Decimal)> = Vec::new();
         for line in &t.lines {
-            let qty = line.qty_sent - line.qty_received.unwrap_or(0);
-            let amount = Decimal::new(line.face_value.minor(), 2) * Decimal::from(qty);
+            let face_minor = line.face_value.try_minor().map_err(|e| {
+                AppError::Internal(format!("reconcile face_value overflows i64: {e}"))
+            })?;
+            let qty = i64::from(line.qty_sent) - i64::from(line.qty_received.unwrap_or(0));
+            let line_diff_minor = face_minor
+                .checked_mul(qty)
+                .ok_or_else(|| AppError::Internal("reconcile line total overflows i64".into()))?;
+            let amount = Decimal::new(line_diff_minor, 2);
             match left.iter_mut().find(|(c, _)| *c == line.currency) {
-                Some((_, a)) => *a += amount,
+                Some((_, a)) => {
+                    *a = a.checked_add(amount).ok_or_else(|| {
+                        AppError::Internal("reconcile currency total overflows".into())
+                    })?;
+                }
                 None => left.push((line.currency, amount)),
             }
         }

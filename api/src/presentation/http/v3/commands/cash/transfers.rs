@@ -95,7 +95,14 @@ impl CommandAction for TransferCreate {
                 now,
             )
             .await
-            .map_err(from_cash_error)?;
+            .map_err(|e| match e {
+                pos_error::AppError::Domain(ref m) | pos_error::AppError::Validation(ref m)
+                    if m.contains("overflows i64") =>
+                {
+                    validation_failed("lines", m.clone())
+                }
+                other => from_cash_error(other),
+            })?;
         Ok(answer(t))
     }
 }

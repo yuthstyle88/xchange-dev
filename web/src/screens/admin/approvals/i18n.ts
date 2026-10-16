@@ -13,6 +13,12 @@ export const th = {
   empty: 'ไม่มีคำขอที่รออนุมัติ',
   ratePublication: 'เผยแพร่เรท',
   pending: 'รออนุมัติ',
+  approved: 'อนุมัติแล้ว',
+  rejected: 'ไม่อนุมัติ',
+  decidedBy: 'ผู้อนุมัติ: ',
+  decisionOutcome: 'ผลการพิจารณา: ',
+  decidedAt: 'เวลาที่พิจารณา: ',
+  noDecisionRecord: 'ไม่พบข้อมูลการตัดสินใจ',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
 };
 
@@ -31,5 +37,11 @@ export const en = {
   empty: 'No pending approval requests',
   ratePublication: 'Rate Publication',
   pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  decidedBy: 'Decided by: ',
+  decisionOutcome: 'Outcome: ',
+  decidedAt: 'Decided at: ',
+  noDecisionRecord: 'No decision record',
   connectionError: 'Connection error',
 };

@@ -18,8 +18,11 @@ use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side};
+use xc_kernel::money::{
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
+};
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
+use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
 use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
@@ -36,6 +39,12 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::infrastructure::marketing::consent_gate::MarketingConsentGate;
 use crate::infrastructure::marketing::referral_source::MarketingReferralSource;
 use crate::infrastructure::marketing::tier_source::MarketingTierSource;
+
+fn thb_or_refuse(q: ForeignAmount, r: Rate, u: UnitSize) -> AppResult<Money> {
+    ExchangeArithmetic::try_thb(q, r, u).map_err(|_| {
+        AppError::Domain("validationFailed: quantity overflows thb amount".to_string())
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct QuoteRequestLine {
@@ -120,7 +129,6 @@ impl ActiveRules for AvailableActiveRules {
 }
 
 pub struct QuoteService {
-    pool: PgPool,
     published_rates: PgPublishedRates,
     quote_repo: PgQuoteRepository,
     settings_repo: PgSettingsRepository,
@@ -135,8 +143,7 @@ impl QuoteService {
             quote_repo: PgQuoteRepository::new(pool.clone()),
             settings_repo: PgSettingsRepository::new(pool.clone()),
             campaign_repo: Arc::new(PgCampaignRepository::new()),
-            budget_ledger: Arc::new(BudgetLedger::new(pool.clone())),
-            pool,
+            budget_ledger: Arc::new(BudgetLedger::new(pool)),
         }
     }
 
@@ -221,11 +228,11 @@ impl QuoteService {
         };
 
         // Step 4: Arithmetic
-        let thb_amount = ExchangeArithmetic::thb(
+        let thb_amount = thb_or_refuse(
             line_req.quantity,
             published_side.rate,
             published_side.unit_size,
-        );
+        )?;
 
         let fee_thb = line_req.fee_thb.unwrap_or(Money::ZERO);
         if fee_thb > thb_amount {
@@ -331,7 +338,7 @@ impl QuoteService {
 
         let tier_source = MarketingTierSource::new();
         let consent_gate = match req.customer_id.as_deref() {
-            Some(cid) => MarketingConsentGate::prefetch_in(&self.pool, tx, cid).await?,
+            Some(cid) => MarketingConsentGate::prefetch_in(tx, cid).await?,
             None => MarketingConsentGate::new(),
         };
         let referral_source = match req.customer_id.as_deref() {
@@ -437,7 +444,7 @@ impl QuoteService {
         let mut final_rate = eval.lines[0].final_rate;
         let mut final_fee_thb = eval.lines[0].fee_thb;
         let mut final_thb_amount =
-            ExchangeArithmetic::thb(line_req.quantity, final_rate, published_side.unit_size);
+            thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
         let mut final_settle_thb = match line_req.shop_side {
             Side::Buy => {
                 let settle_minor = final_thb_amount.minor() - final_fee_thb.minor();
@@ -536,6 +543,7 @@ impl QuoteService {
                         });
                         recompute_needed = true;
                     }
+                    Err(BenefitError::Store(e)) => return Err(e),
                     Err(e) => return Err(AppError::Domain(e.to_string())),
                 }
             }
@@ -563,11 +571,8 @@ impl QuoteService {
                     final_fee_thb = re_eval.lines[0].fee_thb;
                 }
 
-                final_thb_amount = ExchangeArithmetic::thb(
-                    line_req.quantity,
-                    final_rate,
-                    published_side.unit_size,
-                );
+                final_thb_amount =
+                    thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
                 final_settle_thb = match line_req.shop_side {
                     Side::Buy => {
                         let settle_minor = final_thb_amount.minor() - final_fee_thb.minor();

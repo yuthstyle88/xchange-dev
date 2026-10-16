@@ -3,6 +3,7 @@
 //! Enters central organisation-level starting prices, mirrors them to rate references,
 //! and prices unpublished branches that have an active policy.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -83,11 +84,18 @@ impl CommandAction for OrgStartingPriceSaveCommand {
             raw: serde_json::Value,
         }
 
+        let mut seen_currencies = HashSet::with_capacity(input.prices.len());
         let mut validated = Vec::with_capacity(input.prices.len());
         for p in &input.prices {
             let currency = p.currency.trim().to_uppercase();
             if currency.len() != 3 {
                 return Err(validation_failed("currency", "invalid currency code"));
+            }
+            if !seen_currencies.insert(currency.clone()) {
+                return Err(validation_failed(
+                    "prices",
+                    "currency appears more than once",
+                ));
             }
 
             let buy = match &p.buy {
@@ -222,6 +230,12 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
+        let all_currencies: Vec<(String,)> =
+            sqlx::query_as("SELECT code FROM currencies ORDER BY code")
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|_| server_error())?;
+
         let mut unpriced = Vec::new();
         for (b_id,) in unpublished {
             let b = BranchId::new(&b_id);
@@ -243,15 +257,8 @@ impl CommandAction for OrgStartingPriceSaveCommand {
                 continue;
             }
 
-            let all_currencies: Vec<(String,)> = sqlx::query_as(
-                "SELECT code FROM currencies ORDER BY code",
-            )
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
-
             let mut lines = Vec::new();
-            for (code_str,) in all_currencies {
+            for (code_str,) in &all_currencies {
                 if let Ok(c) = CurrencyCode::parse(code_str.trim()) {
                     let ref_line = ReferenceBase::newest_in(tx, &b, &c)
                         .await

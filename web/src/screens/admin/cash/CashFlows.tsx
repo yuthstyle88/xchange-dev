@@ -4,6 +4,7 @@
 
 import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
 import type {
   CashLineInput,
@@ -57,7 +58,7 @@ const kindText = (kind: string) => (KIND_TEXT[kind] ? t(KIND_TEXT[kind]!) : kind
 const statusText = (status: string) => (STATUS_TEXT[status] ? t(STATUS_TEXT[status]!) : status);
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
 }
 
 export interface CashFlowsProps {
@@ -97,39 +98,79 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     }
   }
 
+  // #2417: each read takes a sequence number; an answer (or error) whose number is no longer the latest is dropped,
+  // so a slow answer for an earlier branch cannot land over the current branch's rows.
+  let countsSeq = 0;
+  let transfersSeq = 0;
+  let formSeq = 0;
+
   async function readCounts() {
+    const seq = ++countsSeq;
     try {
-      setCounts(
-        await api.page<CashCountRow, Partial<CashCountsFilter>>('cash_counts', {
-          branch: props.branch(),
-          filter: { status: 'WAITING' },
-        }),
-      );
+      const rows = await api.page<CashCountRow, Partial<CashCountsFilter>>('cash_counts', {
+        branch: props.branch(),
+        filter: { status: 'WAITING' },
+      });
+      if (seq !== countsSeq) return;
+      setCounts(rows);
     } catch (err: unknown) {
+      if (seq !== countsSeq) return;
       setCounts([]);
       setRefusal(message(err));
     }
   }
 
   async function readTransfers() {
+    const seq = ++transfersSeq;
     try {
-      setTransfers(await api.page<CashTransferRow>('cash_transfers', { branch: props.branch() }));
+      const rows = await api.page<CashTransferRow>('cash_transfers', { branch: props.branch() });
+      if (seq !== transfersSeq) return;
+      setTransfers(rows);
     } catch (err: unknown) {
+      if (seq !== transfersSeq) return;
       setTransfers([]);
       setRefusal(message(err));
     }
   }
 
   async function readForm() {
+    const seq = ++formSeq;
     const [denoms, dests] = await Promise.allSettled([
       api.view<Denominations>('denominations', { branch: props.branch() }),
       api.view<TransferBranches>('transfer_branches', { branch: props.branch() }),
     ]);
+    if (seq !== formSeq) return;
     setDenominations(denoms.status === 'fulfilled' ? (denoms.value.data?.rows ?? []) : []);
     setBranches(dests.status === 'fulfilled' ? (dests.value.data?.rows ?? []) : []);
+    if (denoms.status === 'rejected') {
+      setRefusal(message(denoms.reason));
+    } else if (dests.status === 'rejected') {
+      setRefusal(message(dests.reason));
+    }
   }
 
   let lastBranch: string | undefined;
+  /** Set while a receive / reconcile dialog of this screen may be open, so a branch switch closes only our own. */
+  let ownDialog = false;
+
+  /** #2417: drop everything the previous branch put on screen before the new branch's reads start. */
+  function clearBranchState() {
+    setCounts([]);
+    setTransfers([]);
+    setDenominations([]);
+    setBranches([]);
+    setToBranch('');
+    setFromShift('');
+    setToShift('');
+    setLineQty({});
+    setNote('');
+    setRefusal(null);
+    setAwaiting(null);
+    if (ownDialog) {
+      ownDialog = false;
+      closeDialog();
+    }
+  }
 
   createEffect(() => {
     if (!props.shown()) return;
@@ -142,6 +183,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
         return;
       }
       if (branch === lastBranch) return;
+      if (lastBranch !== undefined) clearBranchState();
       lastBranch = branch;
       if (can(VERIFY) || err !== null) void readCounts();
       if (can(MANAGE) || err !== null) {
@@ -153,7 +195,16 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   // ── writes: one Idempotency-Key per user action, kept until the server answers ──
 
-  const keys = new Map<string, { key: string; body: string }>();
+  const writes = new Map<string, { send(body: unknown): Promise<unknown>; reset(): void }>();
+
+  function writeFor<B, R>(action: string, path: string): { send(body: B): Promise<R>; reset(): void } {
+    let w = writes.get(action);
+    if (!w) {
+      w = keyedWrite<unknown, unknown>(api, 'POST', path);
+      writes.set(action, w);
+    }
+    return w as { send(body: B): Promise<R>; reset(): void };
+  }
 
   function message(err: unknown): string {
     if (err instanceof ApiError && err.code in table.th) {
@@ -164,23 +215,13 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   async function send<B, R>(action: string, path: string, body: B, done: (answer: R) => void): Promise<void> {
     if (busy()) return;
-    const sent = JSON.stringify(body);
-    let held = keys.get(action);
-    if (!held || held.body !== sent) {
-      held = { key: crypto.randomUUID(), body: sent };
-      keys.set(action, held);
-    }
     setBusy(true);
     setRefusal(null);
     setAwaiting(null);
     try {
-      const answer = await api.command<B, R>('POST', path, body, held.key);
-      keys.delete(action);
+      const answer = await writeFor<B, R>(action, path).send(body);
       done(answer);
     } catch (err: unknown) {
-      // A refusal is the server's answer: the next try is a new action. Anything else may have been applied,
-      // so the retry keeps the key.
-      if (err instanceof ApiError && err.status < 500) keys.delete(action);
       const text = message(err);
       setRefusal(text);
       toast(text);
@@ -227,11 +268,13 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       }));
       const body: TransferReceiveInput = { branch: props.branch(), id: row.id, lines };
       void send<TransferReceiveInput, CashRecordOutput>(`receive:${row.id}`, `/api/cash-transfers/${row.id}/receive`, body, () => {
+        ownDialog = false;
         closeDialog();
         toast(t('actionSaved'));
         void readTransfers();
       });
     };
+    ownDialog = true;
     openDialog(t('receiveTitle', { id: row.id }), () => (
       <form onSubmit={onSubmit} class="cash-transfer-dialog">
         <p class="dialog-note">{t('receiveNote')}</p>
@@ -256,7 +299,14 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
           )}
         </For>
         <div class="dialog-actions">
-          <button type="button" class="secondary" onClick={closeDialog}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => {
+              ownDialog = false;
+              closeDialog();
+            }}
+          >
             {t('cancel')}
           </button>
           <button type="submit" class="primary" data-action="confirm" disabled={busy()}>
@@ -277,12 +327,14 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
         `/api/cash-transfers/${row.id}/reconcile`,
         body,
         () => {
+          ownDialog = false;
           closeDialog();
           toast(t('actionSaved'));
           void readTransfers();
         },
       );
     };
+    ownDialog = true;
     openDialog(t('reconcileTitle', { id: row.id }), () => (
       <form onSubmit={onSubmit} class="cash-transfer-dialog">
         <div>
@@ -297,7 +349,14 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
           />
         </div>
         <div class="dialog-actions">
-          <button type="button" class="secondary" onClick={closeDialog}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => {
+              ownDialog = false;
+              closeDialog();
+            }}
+          >
             {t('cancel')}
           </button>
           <button type="submit" class="primary" data-action="confirm" disabled={busy()}>

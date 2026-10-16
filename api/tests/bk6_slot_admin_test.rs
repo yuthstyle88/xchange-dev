@@ -129,6 +129,7 @@ async fn slot_rule_set_updates_rule_and_generates_slots() {
     let db = TestDb::start().await;
     let uri = format!("/api/branches/{B01}/booking-slot-rule");
     let payload = json!({
+        "branch": B01,
         "slotMinutes": 30,
         "capacity": 8,
         "horizonDays": 21,
@@ -160,6 +161,7 @@ async fn closure_add_and_remove_manages_branch_closures() {
     let db = TestDb::start().await;
     let add_uri = format!("/api/branches/{B01}/closures");
     let payload = json!({
+        "branch": B01,
         "closedOn": "2026-12-25",
         "reason": "Christmas Day"
     });
@@ -187,7 +189,7 @@ async fn closure_add_and_remove_manages_branch_closures() {
         Some("ADMIN@*"),
         Method::POST,
         &rm_uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-clos-rm"),
     )
     .await;
@@ -221,7 +223,7 @@ async fn slot_capacity_set_refuses_capacity_below_reserved() {
 
     let uri = format!("/api/booking-slots/{slot_id}/capacity");
     // Attempting to set capacity to 2 (which is < reserved 3)
-    let payload = json!({ "capacity": 2 });
+    let payload = json!({ "branch": B01, "capacity": 2 });
 
     let res = call(
         &db,
@@ -263,7 +265,7 @@ async fn slot_capacity_set_updates_capacity() {
     .await;
 
     let uri = format!("/api/booking-slots/{slot_id}/capacity");
-    let payload = json!({ "capacity": 10 });
+    let payload = json!({ "branch": B01, "capacity": 10 });
 
     let res = call(
         &db,
@@ -309,7 +311,7 @@ async fn slot_close_and_open_toggles_slot_status() {
         Some("ADMIN@*"),
         Method::POST,
         &close_uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-s-close"),
     )
     .await;
@@ -326,7 +328,7 @@ async fn slot_close_and_open_toggles_slot_status() {
         Some("ADMIN@*"),
         Method::POST,
         &open_uri,
-        None,
+        Some(json!({ "branch": B01 })),
         Some("k-s-open"),
     )
     .await;
@@ -344,6 +346,7 @@ async fn booking_policy_set_updates_policy() {
     let db = TestDb::start().await;
     let uri = "/api/booking-policy";
     let payload = json!({
+        "branch": B01,
         "cancelCutoffMinutes": 45,
         "noShowGraceMinutes": 20,
         "confirmExpiryMinutes": 30,
@@ -404,53 +407,53 @@ async fn slot_admin_idempotency_replay_and_conflict() {
             "slotRuleSet",
             Method::PUT,
             format!("/api/branches/{B01}/booking-slot-rule"),
-            Some(json!({ "slotMinutes": 30, "capacity": 10, "horizonDays": 14 })),
-            Some(json!({ "slotMinutes": 60, "capacity": 10, "horizonDays": 14 })),
+            Some(json!({ "branch": B01, "slotMinutes": 30, "capacity": 10, "horizonDays": 14 })),
+            Some(json!({ "branch": B01, "slotMinutes": 60, "capacity": 10, "horizonDays": 14 })),
         ),
         (
             "closureAdd",
             Method::POST,
             format!("/api/branches/{B01}/closures"),
-            Some(json!({ "closedOn": "2026-12-25", "reason": "Christmas Day" })),
-            Some(json!({ "closedOn": "2026-12-25", "reason": "Renovation" })),
+            Some(json!({ "branch": B01, "closedOn": "2026-12-25", "reason": "Christmas Day" })),
+            Some(json!({ "branch": B01, "closedOn": "2026-12-25", "reason": "Renovation" })),
         ),
         (
             "closureRemove",
             Method::POST,
             format!("/api/branches/{B01}/closures/2026-12-31/remove"),
-            Some(json!({})),
-            Some(json!({ "reason": "reopened" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "reason": "reopened" })),
         ),
         (
             "slotCapacitySet",
             Method::PUT,
             format!("/api/booking-slots/{slot_id}/capacity"),
-            Some(json!({ "capacity": 8 })),
-            Some(json!({ "capacity": 12 })),
+            Some(json!({ "branch": B01, "capacity": 8 })),
+            Some(json!({ "branch": B01, "capacity": 12 })),
         ),
         (
             "slotClose",
             Method::POST,
             format!("/api/booking-slots/{slot_id}/close"),
-            Some(json!({})),
-            Some(json!({ "reason": "maintenance" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "reason": "maintenance" })),
         ),
         (
             "slotOpen",
             Method::POST,
             format!("/api/booking-slots/{slot_id}/open"),
-            Some(json!({})),
-            Some(json!({ "reason": "reopened" })),
+            Some(json!({ "branch": B01 })),
+            Some(json!({ "branch": B01, "reason": "reopened" })),
         ),
         (
             "bookingPolicySet",
             Method::PUT,
             "/api/booking-policy".to_string(),
             Some(
-                json!({ "cancelCutoffMinutes": 50, "noShowGraceMinutes": 10, "confirmExpiryMinutes": 40 }),
+                json!({ "branch": B01, "cancelCutoffMinutes": 50, "noShowGraceMinutes": 10, "confirmExpiryMinutes": 40 }),
             ),
             Some(
-                json!({ "cancelCutoffMinutes": 90, "noShowGraceMinutes": 10, "confirmExpiryMinutes": 40 }),
+                json!({ "branch": B01, "cancelCutoffMinutes": 90, "noShowGraceMinutes": 10, "confirmExpiryMinutes": 40 }),
             ),
         ),
     ];
