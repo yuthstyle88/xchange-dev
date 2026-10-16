@@ -77,7 +77,7 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
   const submit = (e: Event) => {
     e.preventDefault();
     const code = (codeInput?.value ?? '').trim();
-    if (code) {
+    if (code && (challenge() || requesting)) {
       void verify(code);
     } else {
       void requestCode();
