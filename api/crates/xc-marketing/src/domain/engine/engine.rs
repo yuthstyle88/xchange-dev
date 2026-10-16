@@ -8,7 +8,7 @@ use xc_kernel::money::{
     CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
 };
 
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 
 use super::active_rules::ActiveRules;
@@ -121,7 +121,9 @@ impl BenefitEngine {
         let mut applied_rule_ids = HashSet::new();
 
         for line in lines {
-            let line_thb = ExchangeArithmetic::thb(line.quantity, line.base_rate, line.unit_size);
+            let line_thb =
+                ExchangeArithmetic::try_thb(line.quantity, line.base_rate, line.unit_size)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
             let thb_amount = Some(
                 Decimal::try_from_i128_with_scale(line_thb.minor_i128(), 2)
                     .unwrap_or(Decimal::ZERO),
