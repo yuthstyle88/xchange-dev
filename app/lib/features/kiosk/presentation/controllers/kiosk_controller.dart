@@ -42,6 +42,35 @@ String plainDecimal(String typed) {
   return t;
 }
 
+final _decimalPattern = RegExp(r'^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$');
+
+BigInt _tenPow(int n) => BigInt.from(10).pow(n);
+
+({BigInt digits, int scale})? _scaled(String raw) {
+  final m = _decimalPattern.firstMatch(plainDecimal(raw));
+  if (m == null) return null;
+  final whole = m.group(1)!;
+  final frac = m.group(2) ?? '';
+  final exp = int.tryParse(m.group(3) ?? '0');
+  if (exp == null) return null;
+  final digits = BigInt.tryParse('$whole$frac');
+  if (digits == null) return null;
+  final scale = frac.length - exp;
+  if (scale < 0) {
+    return (digits: digits * _tenPow(-scale), scale: 0);
+  }
+  return (digits: digits, scale: scale);
+}
+
+double _roundHalfUp2(BigInt num, BigInt den) {
+  final scaled = num * BigInt.from(100);
+  var cents = scaled ~/ den;
+  if (scaled.remainder(den) * BigInt.two >= den) {
+    cents += BigInt.one;
+  }
+  return cents.toDouble() / 100;
+}
+
 const _keep = Object();
 
 class KioskState {
@@ -148,19 +177,25 @@ class KioskState {
 
   Estimate? get estimate {
     final rate = selectedRate?.rateFor(type) ?? 0;
-    final amount = double.tryParse(amountText.trim());
-    if (amount == null || !amount.isFinite || amount <= 0 || amount > 1e7) {
+    if (!rate.isFinite || rate <= 0) return null;
+    final a = _scaled(amountText);
+    final r = _scaled(rate.toString());
+    if (a == null ||
+        r == null ||
+        a.digits <= BigInt.zero ||
+        r.digits <= BigInt.zero ||
+        a.digits > BigInt.from(10000000) * _tenPow(a.scale)) {
       return null;
     }
-    if (rate <= 0) return null;
     if (type == ExchangeType.buy) {
-      final foreign = (amount * 100).round() / 100;
       return Estimate(
-        foreign: foreign,
-        receive: (foreign * rate * 100).round() / 100,
+        foreign: _roundHalfUp2(a.digits, _tenPow(a.scale)),
+        receive: _roundHalfUp2(a.digits * r.digits, _tenPow(a.scale + r.scale)),
       );
     }
-    final foreign = (amount / rate * 100).floor() / 100;
+    final cents =
+        (a.digits * _tenPow(r.scale + 2)) ~/ (r.digits * _tenPow(a.scale));
+    final foreign = cents.toDouble() / 100;
     return Estimate(foreign: foreign, receive: foreign);
   }
 
@@ -449,7 +484,11 @@ class KioskController extends Notifier<KioskState> {
         state.copyWith(
           status: s,
           quoteExpired: state.quoteExpired || expired,
-          error: expired ? _t.text('quoteExpired') : '',
+          error: expired
+              ? _t.text('quoteExpired')
+              : state.error == _t.text('statusError')
+              ? ''
+              : state.error,
         ),
       );
       _afterStatus();

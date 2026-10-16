@@ -223,6 +223,9 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         await slotsRes.json().catch(() => ({}));
       const list: BookingSlot[] = slotsJson.data?.slots ?? [];
       setSlots(list);
+      if (!list.some((s) => s.id === slotId())) {
+        setSlotId('');
+      }
       setSlotsLoading(false);
     } catch {
       setSlots([]);
@@ -390,6 +393,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             onChange={(e) => {
               const val = e.currentTarget.value;
               setBranchId(val);
+              setSlotId('');
               void updatePreview();
               if (val) {
                 const br = branches().find((b) => b.code === val);
@@ -440,6 +444,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             disabled={!branchId()}
             onInput={(e) => {
               const newDate = e.currentTarget.value;
+              setSlotId('');
               setServiceDate(newDate);
               if (branchId() && newDate) {
                 void loadSlots(branchId(), newDate);
@@ -447,6 +452,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             }}
             onChange={(e) => {
               const newDate = e.currentTarget.value;
+              setSlotId('');
               setServiceDate(newDate);
               if (branchId() && newDate) {
                 void loadSlots(branchId(), newDate);

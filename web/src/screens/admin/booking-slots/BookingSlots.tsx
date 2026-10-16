@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import type {
@@ -113,8 +114,12 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
         setErrorMessage(t(errKey as any));
         return;
       }
+      if (!isServerFailure(err)) {
+        setErrorMessage(t('error.validationFailed'));
+        return;
+      }
     }
-    setErrorMessage(t('error.validationFailed'));
+    setErrorMessage(wordedError(err));
   }
 
   async function handleSaveRule() {
@@ -252,9 +257,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleSavePolicy() {
     setErrorMessage(null);
-    const cut = Number(cutoff());
-    const grc = Number(grace());
-    const exp = Number(expiry());
+    const cutRaw = cutoff().trim();
+    const grcRaw = grace().trim();
+    const expRaw = expiry().trim();
+    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw)) {
+      setErrorMessage(t('policyValidationFailed'));
+      return;
+    }
+    const cut = Number(cutRaw);
+    const grc = Number(grcRaw);
+    const exp = Number(expRaw);
 
     // Boundary checks: cutoff >= 0, grace >= 0, expiry > 0
     if (

@@ -30,7 +30,9 @@ export function Slips(props: AdminMenuProps): JSX.Element {
   const [status, setStatus] = createSignal('');
   const [page, setPage] = createSignal(1);
   const [rows, setRows] = createSignal<TransactionRow[]>([]);
-  const [error, setError] = createSignal<string | null>(null);
+  const [branchError, setBranchError] = createSignal<string | null>(null);
+  const [slipsError, setSlipsError] = createSignal<string | null>(null);
+  const error = () => slipsError() ?? branchError();
   const [loaded, setLoaded] = createSignal(false);
   const [branches, setBranches] = createSignal<Array<{ id: string; name: string }>>([]);
 
@@ -47,11 +49,12 @@ export function Slips(props: AdminMenuProps): JSX.Element {
       if (res.data?.branches) {
         setBranches(res.data.branches);
         branchFailed = false;
+        setBranchError(null);
       }
     } catch (err: unknown) {
       branchFailed = true;
       setBranches([]);
-      setError(wordedError(err));
+      setBranchError(wordedError(err));
     }
   }
 
@@ -91,16 +94,14 @@ export function Slips(props: AdminMenuProps): JSX.Element {
 
       setRows(data);
       setPage(targetPage);
-      if (!branchFailed) {
-        setError(null);
-      }
+      setSlipsError(null);
       setLoaded(true);
     } catch (err: unknown) {
       if (fetchId !== currentFetchId) return;
 
       setRows([]);
       setLoaded(true);
-      setError(wordedError(err));
+      setSlipsError(wordedError(err));
     }
   }
 
@@ -128,6 +129,9 @@ export function Slips(props: AdminMenuProps): JSX.Element {
     if (tick !== lastSeenTick) {
       lastSeenTick = tick;
       if (props.shown()) {
+        if (branchFailed) {
+          void loadBranches();
+        }
         void fetchSlips(page());
       }
     }
