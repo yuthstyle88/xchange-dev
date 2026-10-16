@@ -31,6 +31,7 @@ jobs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
       test_args: ${{ steps.filter.outputs.test_args }}
       test_scope: ${{ steps.filter.outputs.test_scope }}
+      changed_tests: ${{ steps.filter.outputs.changed_tests }}
       runs_on: ${{ steps.pool.outputs.runs_on }}
       cargo_jobs: ${{ steps.pool.outputs.cargo_jobs }}
     steps:
@@ -57,6 +58,9 @@ jobs:
 
       - name: Self-test api-test-plan
         run: bash .github/scripts/api-test-plan.test.sh
+
+      - name: Self-test api-changed-tests
+        run: bash .github/scripts/api-changed-tests.test.sh
 
       - name: Self-test main-push-base
         run: bash .github/scripts/main-push-base.test.sh
@@ -164,16 +168,26 @@ jobs:
           test_args="${test_args:-}"
           echo "test_args=$test_args" >> "$GITHUB_OUTPUT"
 
-          # Owner's order 2026-10-16: tests run while the code is being written, by the
-          # implementer and again by the reviewer; an ordinary PR runs none in CI. The full
-          # suite (test_args above) still runs on main pushes and batch-merge PRs (batch/*),
-          # which is where a regression in an old test is caught before release.
+          # Owner's order 2026-10-16: a PR runs only the tests it changes or adds. The full
+          # suite (test_args above) runs on main pushes and batch-merge PRs (batch/*), which
+          # is where a regression in an old test is caught before release.
           test_scope=full
+          changed_tests=""
           if [ "$EVENT_NAME" = "pull_request" ] && [[ "$HEAD_REF" != batch/* ]]; then
-            test_scope=none
+            test_scope=changed
+            CHANGED_FILE=$(mktemp)
+            METADATA_FILE=$(mktemp)
+            if git diff --name-only "$BASE...$HEAD" > "$CHANGED_FILE" 2>/dev/null && \
+               cargo metadata --format-version 1 --no-deps --manifest-path api/Cargo.toml > "$METADATA_FILE" 2>/dev/null; then
+              changed_tests=$(bash .github/scripts/api-changed-tests.sh "$CHANGED_FILE" "$METADATA_FILE" . 2>/dev/null || true)
+            else
+              test_scope=full
+            fi
+            rm -f "$CHANGED_FILE" "$METADATA_FILE"
           fi
           echo "test_scope=$test_scope" >> "$GITHUB_OUTPUT"
-          echo "test_scope=$test_scope"
+          echo "changed_tests=$changed_tests" >> "$GITHUB_OUTPUT"
+          echo "test_scope=$test_scope changed_tests=$changed_tests"
           echo "skip_build=$skip_build test_args=$test_args"
 
   test:
@@ -373,11 +387,25 @@ jobs:
           XC_REQUIRE_WEB_DIST: 1
           TEST_ARGS: ${{ needs.changes.outputs.test_args }}
           TEST_SCOPE: ${{ needs.changes.outputs.test_scope }}
+          CHANGED_TESTS: ${{ needs.changes.outputs.changed_tests }}
         run: |
           if [ -z "$TEST_ARGS" ]; then
             echo "Skipping test step: test_args is empty (no Rust packages affected)"
-          elif [ "$TEST_SCOPE" = "none" ]; then
-            echo "Ordinary PR: tests are run by the implementer and the reviewer, not here. The full suite runs on the batch merge and on main."
+          elif [ "$TEST_SCOPE" = "changed" ]; then
+            # Only the test targets this PR changes or adds (api-changed-tests.sh).
+            if [ -z "$CHANGED_TESTS" ]; then
+              echo "No test file changed or added in this PR; the full suite runs on the batch merge and on main"
+              exit 0
+            fi
+            IFS=';' read -ra groups <<< "$CHANGED_TESTS"
+            for g in "${groups[@]}"; do
+              pkg="${g%%:*}"
+              targets="${g#*:}"
+              echo "::group::cargo nextest run -p $pkg $targets"
+              # shellcheck disable=SC2086
+              cargo nextest run -p "$pkg" $targets --no-fail-fast
+              echo "::endgroup::"
+            done
           else
             cargo nextest run $TEST_ARGS --no-fail-fast
           fi
@@ -390,7 +418,6 @@ jobs:
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
-        if: ${{ needs.changes.outputs.test_scope != 'none' }}
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
