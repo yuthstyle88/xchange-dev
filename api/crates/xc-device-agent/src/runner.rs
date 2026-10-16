@@ -203,15 +203,21 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
     }
 
     /// A retry of an owed report failed: the next one waits [`backoff`] (and at least a 429's
-    /// `Retry-After`). The first retry after the report's own failure is not delayed.
+    /// `Retry-After`, capped at the 24 h owed window). The first retry after the report's own
+    /// failure is not delayed.
     fn owe_later(&mut self, key: (String, String), now: Instant, error: &ApiError) {
+        const MAX_OWED_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
         let entry = self.owed_backoff.entry(key).or_insert((0, now));
-        entry.0 += 1;
+        entry.0 = entry.0.saturating_add(1);
         let mut wait = backoff(entry.0 - 1, random_jitter());
         if let ApiError::RateLimited { retry_after_secs } = error {
-            wait = wait.max(Duration::from_secs(*retry_after_secs));
+            let retry_after = Duration::from_secs(*retry_after_secs).min(MAX_OWED_WAIT);
+            wait = wait.max(retry_after);
         }
-        entry.1 = now + wait;
+        entry.1 = now
+            .checked_add(wait)
+            .or_else(|| now.checked_add(MAX_OWED_WAIT))
+            .unwrap_or(now);
     }
 
     /// At start: a send with no outcome is reported `FAILED` `AGENT_RESTARTED` and never sent
