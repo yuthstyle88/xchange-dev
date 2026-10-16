@@ -131,8 +131,10 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   const [newGroup, setNewGroup] = createSignal('');
   const [addError, setAddError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  let loadSeq = 0;
 
   const loadView = async () => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<AdminDenominationGroupsData>(
         'admin_denomination_groups',
@@ -140,10 +142,10 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
           branch: props.branch(),
         },
       );
-      if (res.data) {
-        setData(res.data);
-      }
+      if (seq !== loadSeq) return;
+      setData(res.data ?? null);
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setData(null);
       const message = wordedError(err);
       toast(message);
@@ -152,6 +154,7 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
 
   createEffect(() => {
     props.branch();
+    setData(null);
     loadView();
   });
 
