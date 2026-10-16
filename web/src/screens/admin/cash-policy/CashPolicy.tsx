@@ -90,6 +90,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
+  const [registerError, setRegisterError] = createSignal<string | null>(null);
 
   /** The register the cash screen reads, plus any currency the current version names. */
   const currencies = () => {
@@ -109,13 +110,18 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  let registerSeq = 0;
   async function readRegister(branch: string) {
+    const mine = ++registerSeq;
     try {
       const answer = await api.view<AdminCashData>('admin_cash', { branch });
+      if (mine !== registerSeq) return;
       if (answer.data) setRegister(answer.data.currencies);
+      setRegisterError(null);
     } catch (err: unknown) {
+      if (mine !== registerSeq) return;
       setRegister([]);
-      setRefusal(policyError(err));
+      setRegisterError(policyError(err));
     }
   }
 
@@ -177,6 +183,12 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       <Show when={refusal()}>
         <p role="alert" class="error-message">
           {refusal()}
+        </p>
+      </Show>
+
+      <Show when={registerError()}>
+        <p role="alert" class="error-message">
+          {registerError()}
         </p>
       </Show>
 

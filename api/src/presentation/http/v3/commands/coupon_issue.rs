@@ -138,6 +138,33 @@ impl CommandAction for CouponIssueCommand {
             ));
         }
 
+        if let Some(ref cid) = input.customer_id {
+            let customer_exists: Option<i32> = sqlx::query_scalar(
+                "SELECT 1 FROM customers WHERE id = $1 AND organization_id = $2",
+            )
+            .bind(cid)
+            .bind(org_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+
+            if customer_exists.is_none() {
+                return Err(V3Error::new(
+                    "notFound",
+                    Some("customerId"),
+                    "customer not found",
+                    StatusCode::NOT_FOUND,
+                ));
+            }
+        }
+
         let expires_at = chrono::DateTime::parse_from_rfc3339(&input.expires_at)
             .map_err(|e| {
                 V3Error::new(

@@ -154,6 +154,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
     setBusy(true);
     try {
       setError(null);
+      setNotice(null);
       let currentRates = ratesData();
       if (!currentRates?.publication?.publishedAt) {
         try {

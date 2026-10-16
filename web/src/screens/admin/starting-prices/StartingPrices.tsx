@@ -287,6 +287,8 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
       toast(t('saved'));
       setAddedCurrencies([]);
       setUnpriced(res?.unpriced ?? []);
+      setReason('');
+      setReasonError(null);
       await loadView(true);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status < 500) {

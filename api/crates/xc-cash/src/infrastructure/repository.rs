@@ -69,10 +69,13 @@ impl CashRepository for PgCashRepository {
         id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CashCount>>> {
         Box::pin(async move {
+            let Ok(id) = uuid::Uuid::parse_str(id) else {
+                return Ok(None);
+            };
             let row: Option<CashCountDbRow> = sqlx::query_as(
                 "SELECT id, organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
                         verified_by, verified_at, note, idempotency_key, created_at, updated_at \
-                 FROM cash_counts WHERE id = $1::uuid",
+                 FROM cash_counts WHERE id = $1",
             )
             .bind(id)
             .fetch_optional(&mut **tx)

@@ -50,6 +50,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const [loading, setLoading] = createSignal<boolean>(false);
   const [saving, setSaving] = createSignal<boolean>(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [listError, setListError] = createSignal<string | null>(null);
   const [success, setSuccess] = createSignal<string | null>(null);
 
   // Form fields
@@ -85,8 +86,9 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
           setSelectedBranch(match ? match.id : res.data.branches[0]!.id);
         }
       }
+      setListError(null);
     } catch (err: unknown) {
-      setError(wordedError(err));
+      setListError(wordedError(err));
     }
   };
 
@@ -264,8 +266,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       </div>
 
       <div class="branches-content">
-        <Show when={error()}>
-          <div role="alert" class="branches-form-error">{error()}</div>
+        <Show when={error() ?? listError()}>
+          <div role="alert" class="branches-form-error">{error() ?? listError()}</div>
         </Show>
         <Show when={success()}>
           <div role="status" class="branches-form-success">{success()}</div>
