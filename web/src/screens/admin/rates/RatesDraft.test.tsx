@@ -51,8 +51,8 @@
 //   `Side` that `rate_draft_simulate.rs:81` answered at `f04fd32`; Debug text is not a wire contract.)
 // - Publish sends `expectedVersion` = `published_rates.publication.version` (null before the first
 //   publication); after a publish it reads `published_rates` again.
-// - A refused command shows the server's `message` (v3's `errorText(code, message)` falls back to
-//   it; no shared `error.staleVersion` / `error.approvalRequired` key exists).
+// - A refused command shows `errorText(code, message)` (the shared `error.staleVersion` key, or
+//   the server's `message` when no shared key exists such as `error.approvalRequired`).
 // - DOM hooks: a draft line is an element `[data-draft-line="<CODE>"]`; a line of the current
 //   publication is `[data-published-line="<CODE>"]`; a button is found by its whole text; an input
 //   by the `<label>` whose text starts with its i18n text.
@@ -724,7 +724,7 @@ describe('RE-5 A02: draft → simulate → submit → publish (design §4.6, §4
     await settle();
     await click(m.el, say('publish'));
     expect(writes().filter((s) => s.path === '/api/rate-drafts/d1/publish').length).toBe(1);
-    expect(pageText()).toContain('Publication 8 is already current (test)');
+    expect(pageText()).toContain('ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง');
   });
 
   it('an approvalRequired answer to publish is shown, not swallowed', async () => {

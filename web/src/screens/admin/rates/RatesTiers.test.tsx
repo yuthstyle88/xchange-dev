@@ -722,6 +722,6 @@ describe('VT-5 value tiers and sharp-move threshold (#1650)', () => {
     };
 
     await click(saveBtn);
-    expect(pageText(el), 'worded staleVersion message is shown').toContain('policy version changed');
+    expect(pageText(el), 'worded staleVersion message is shown').toContain('ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง');
   });
 });
