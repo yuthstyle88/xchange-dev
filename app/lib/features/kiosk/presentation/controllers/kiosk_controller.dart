@@ -465,6 +465,10 @@ class KioskController extends Notifier<KioskState> {
       _receiptPoller.start();
       _afterStatus();
     } catch (e) {
+      if (state.screen != KioskScreen.quote || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
@@ -477,6 +481,26 @@ class KioskController extends Notifier<KioskState> {
     try {
       final s = await _repo.status(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final confirmed =
+          state.screen == KioskScreen.quote &&
+          (s.status == KioskStatus.waiting ||
+              s.status == KioskStatus.accepted ||
+              s.status == KioskStatus.idChecked ||
+              s.status == KioskStatus.completed);
+      if (confirmed) {
+        _countdown?.cancel();
+        _set(
+          state.copyWith(
+            status: s,
+            screen: KioskScreen.waiting,
+            busy: false,
+            error: '',
+          ),
+        );
+        _receiptPoller.start();
+        _afterStatus();
+        return;
+      }
       final expired =
           s.status == KioskStatus.expired && state.screen == KioskScreen.quote;
       if (expired) _countdown?.cancel();
