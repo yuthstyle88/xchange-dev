@@ -75,6 +75,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     branches().find((b) => b.id === branchId)?.name ?? branchId;
 
   let branchFailed = false;
+  let reportFailed = false;
 
   async function readBranches() {
     try {
@@ -82,6 +83,9 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       if (res.data) {
         setBranches(res.data.branches);
         branchFailed = false;
+        if (!reportFailed) {
+          setError(null);
+        }
       }
     } catch (err: unknown) {
       branchFailed = true;
@@ -112,13 +116,16 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         filter: filterObj,
       });
       lastVersion = res.version;
+      reportFailed = false;
       if (res.changed && res.data) {
         setData(res.data);
-        if (!branchFailed) {
-          setError(null);
-        }
+      }
+      if (!branchFailed) {
+        setError(null);
       }
     } catch (err: unknown) {
+      reportFailed = true;
+      lastVersion = undefined;
       if (!isRefresh) {
         setData(null);
       }
@@ -157,13 +164,13 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     const staffQ = searchStaff();
     const currentKey = `${branch}|${from}|${to}|${staff}|${staffQ}`;
 
-    if (!branchesLoaded) {
+    const isRefresh = currentKey === lastKey;
+    lastKey = currentKey;
+
+    if (!branchesLoaded || (isRefresh && branchFailed)) {
       branchesLoaded = true;
       readBranches();
     }
-
-    const isRefresh = currentKey === lastKey;
-    lastKey = currentKey;
 
     readReports(isRefresh);
   });

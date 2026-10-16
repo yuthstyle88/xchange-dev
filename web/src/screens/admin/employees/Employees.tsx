@@ -3,6 +3,7 @@ import {
   createSignal,
   For,
   Show,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
@@ -128,6 +129,9 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       readEmployees();
       readOperations(true);
     } else {
+      if (untrack(branchesError)) {
+        readBranches();
+      }
       readEmployees();
       readOperations(false);
     }

@@ -222,11 +222,22 @@ export function KioskCurrenciesScreen(props: {
         code,
         enabled: isEnabled,
       });
+    } catch (err: unknown) {
+      const msg = wordedError(err);
+      setCardStatuses((prev) => ({
+        ...prev,
+        [code]: { kind: 'message', text: msg },
+      }));
+      setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      return;
+    }
 
+    try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
         branch: props.branch,
       });
 
+      setLoadError(undefined);
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
@@ -239,11 +250,14 @@ export function KioskCurrenciesScreen(props: {
         }));
       }
     } catch (err: unknown) {
-      const msg = wordedError(err);
+      setCurrencies((prev) =>
+        prev.map((c) => (c.code === code ? { ...c, enabled: isEnabled } : c)),
+      );
       setCardStatuses((prev) => ({
         ...prev,
-        [code]: { kind: 'message', text: msg },
+        [code]: isEnabled ? { kind: 'savedOn' } : { kind: 'savedOff' },
       }));
+      setLoadError(wordedError(err));
     } finally {
       setSavingCodes((prev) => ({ ...prev, [code]: false }));
     }

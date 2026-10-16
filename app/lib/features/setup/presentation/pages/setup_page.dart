@@ -59,8 +59,9 @@ class _SetupPageState extends ConsumerState<SetupPage> {
     final s = ref.watch(setupControllerProvider);
     final c = ref.read(setupControllerProvider.notifier);
     final hasEndpoint = ref.watch(kioskEndpointProvider) != null;
-    final error =
-        s.serverMessage ?? (s.errorKey == null ? null : t(s.errorKey!));
+    final error = s.serverMessage != null
+        ? t('serverRefused')
+        : (s.errorKey == null ? null : t(s.errorKey!));
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -122,12 +123,21 @@ class _SetupPageState extends ConsumerState<SetupPage> {
                         color: KioskColors.brand,
                       ),
                     ),
-                  if (error != null)
+                  if (error != null) ...[
                     Text(
                       error,
                       key: const Key('setup-error'),
                       style: const TextStyle(fontSize: 16, color: Colors.red),
                     ),
+                    if (s.serverMessage != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        s.serverMessage!,
+                        key: const Key('setup-error-detail'),
+                        style: const TextStyle(fontSize: 14, color: Colors.red),
+                      ),
+                    ],
+                  ],
                   const SizedBox(height: 20),
                   FilledButton(
                     key: const Key('setup-save'),

@@ -22,7 +22,7 @@ pub use compat_rate::{CompatRate, CompatRateError};
 pub use currency_code::{CurrencyCode, UnknownCurrency};
 pub use currency_units::CurrencyUnits;
 pub use customer_side::CustomerSide;
-pub use exchange_arithmetic::ExchangeArithmetic;
+pub use exchange_arithmetic::{ArithmeticOverflow, ExchangeArithmetic};
 pub use foreign_amount::ForeignAmount;
 pub use minor_unit::MinorUnit;
 pub use money::{Money, NumberError};
