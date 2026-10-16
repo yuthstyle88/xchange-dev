@@ -16,7 +16,7 @@ use xc_kernel::ids::BranchId;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, Locks};
+use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct ClosureAdd {
@@ -47,14 +47,10 @@ impl CommandAction for ClosureAdd {
     const ROUTE: &'static str = "/api/branches/{id}/closures";
     const METHOD: Method = Method::POST;
 
-    fn locks(&self, _branch: &BranchId, input: &Self::Input) -> Locks {
-        Locks::One(BranchId::new(&input.id))
-    }
-
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
+        grant_branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
@@ -63,6 +59,25 @@ impl CommandAction for ClosureAdd {
         let user_uuid = Uuid::parse_str(&who.user_id).unwrap_or_else(|_| Uuid::new_v4());
 
         let branch = BranchId::new(&input.id);
+        if branch != *grant_branch {
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1)")
+                    .bind(branch.as_str())
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        V3Error::new(
+                            "serverError",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    })?;
+            if exists {
+                return Err(out_of_scope());
+            }
+        }
+
         BranchTx::lock_also(tx, &branch).await.map_err(|e| {
             V3Error::new(
                 "serverError",
@@ -81,14 +96,7 @@ impl CommandAction for ClosureAdd {
             .slot_service
             .add_closure_in(tx, &branch, &closure, user_uuid)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }
