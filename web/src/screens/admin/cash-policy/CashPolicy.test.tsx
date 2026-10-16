@@ -77,12 +77,16 @@ function meWith(permissions: string[]): Me {
 const V1: CashTransferPolicyData = {
   version: 'v-0001',
   limits: { USD: '300.00', EUR: '12.5' },
+  valid: true,
+  invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T01:00:00Z',
 };
 const V2: CashTransferPolicyData = {
   version: 'v-0002',
   limits: { USD: '450.00' },
+  valid: true,
+  invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T02:00:00Z',
 };
