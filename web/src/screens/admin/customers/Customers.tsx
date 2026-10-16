@@ -152,6 +152,7 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
   const t = screenT('admin.customers', { th, en });
   const [search, setSearch] = createSignal('');
   const [historyRows, setHistoryRows] = createSignal<TransactionRow[]>([]);
+  const [historyLoading, setHistoryLoading] = createSignal(true);
   const [hasMore, setHasMore] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
 
@@ -160,6 +161,7 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
 
   async function loadHistory(query: string, beforeId?: string) {
     const seq = ++lastHistorySeq;
+    setHistoryLoading(true);
 
     const trimmed = query.trim();
     setHistoryError(null);
@@ -191,6 +193,10 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
       }
       setHasMore(false);
       setHistoryError(wordedError(err));
+    } finally {
+      if (seq === lastHistorySeq) {
+        setHistoryLoading(false);
+      }
     }
   }
 
@@ -297,8 +303,13 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
       <Show
         when={historyRows().length > 0}
         fallback={
-          <Show when={!historyError()}>
-            <div class="empty">{t('historyEmpty')}</div>
+          <Show
+            when={!historyLoading()}
+            fallback={<div class="waiting-text">{t('waiting')}</div>}
+          >
+            <Show when={!historyError()}>
+              <div class="empty">{t('historyEmpty')}</div>
+            </Show>
           </Show>
         }
       >
@@ -583,7 +594,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   }
 
   const shouldShowSummary = () => {
-    if (!hasLoadedOnce() || refusalError()) return false;
+    if (loading() || !hasLoadedOnce() || refusalError()) return false;
     if (page() !== 1 || rows().length === 0 || rows().length >= 50) return false;
     return totalCount() !== null;
   };
@@ -644,7 +655,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
               </div>
             </Show>
 
-            <Show when={!hasLoadedOnce() && loading()}>
+            <Show when={loading() && rows().length === 0}>
               <div class="waiting-text">{t('waiting')}</div>
             </Show>
           </div>
@@ -663,19 +674,21 @@ export function Customers(props: AdminMenuProps): JSX.Element {
             <Show
               when={rows().length > 0}
               fallback={
-                <Show
-                  when={search().trim().length > 0}
-                  fallback={
+                <Show when={!loading()}>
+                  <Show
+                    when={search().trim().length > 0}
+                    fallback={
+                      <div class="empty">
+                        <strong>{t('emptyBranch')}</strong>
+                        <p>{t('emptyBranchNote')}</p>
+                      </div>
+                    }
+                  >
                     <div class="empty">
-                      <strong>{t('emptyBranch')}</strong>
-                      <p>{t('emptyBranchNote')}</p>
+                      <strong>{t('noMatch')}</strong>
+                      <p>{t('noMatchNote')}</p>
                     </div>
-                  }
-                >
-                  <div class="empty">
-                    <strong>{t('noMatch')}</strong>
-                    <p>{t('noMatchNote')}</p>
-                  </div>
+                  </Show>
                 </Show>
               }
             >
