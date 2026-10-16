@@ -62,7 +62,8 @@ impl BranchView for ApprovalRequestsBranchView {
                            r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at \
                            FROM approval_requests r \
                            LEFT JOIN approval_decisions d ON d.request_id = r.id \
-                           WHERE (r.branch_id = $1 OR r.branch_id IS NULL)"
+                           WHERE (r.branch_id = $1 OR r.branch_id IS NULL) \
+                           AND r.organization_id = (SELECT b.organization_id FROM branches b WHERE b.id = $1)"
                 .to_string();
 
             if status_filter.is_some() {
