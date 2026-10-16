@@ -360,7 +360,7 @@ fn a_branch_dispatch_moves_the_sent_notes_from_the_source_safe_into_transit_one_
     let from = CashPlace::Safe(BranchId::new("B1"));
     let transit = CashPlace::InTransit("t-1".to_owned());
     assert_eq!(
-        flat(&branch().on_dispatch(&t)),
+        flat(&branch().on_dispatch(&t).unwrap()),
         HashSet::from([
             post(from.clone(), transit.clone(), usd(), "380"),
             post(from, transit, eur(), "100"),
@@ -376,7 +376,7 @@ fn a_branch_receipt_moves_the_counted_notes_from_transit_into_the_destination_sa
         TransferStatus::Dispatched,
     );
     assert_eq!(
-        flat(&branch().on_receive(&t)),
+        flat(&branch().on_receive(&t).unwrap()),
         HashSet::from([post(
             CashPlace::InTransit("t-1".to_owned()),
             CashPlace::Safe(BranchId::new("B2")),
@@ -395,7 +395,7 @@ fn a_currency_whose_counted_total_is_zero_posts_nothing() {
         ],
         TransferStatus::Dispatched,
     );
-    let got = flat(&branch().on_receive(&t));
+    let got = flat(&branch().on_receive(&t).unwrap());
     assert_eq!(got.len(), 1, "{got:?}");
     assert!(got.iter().all(|p| p.2 == "EUR"));
 }
