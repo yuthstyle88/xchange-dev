@@ -347,13 +347,25 @@ class KioskController extends Notifier<KioskState> {
     );
     try {
       final m = await _repo.rates();
-      if (_disposed || seq < _ratesMinSeq) return;
+      if (_disposed ||
+          seq < _ratesMinSeq ||
+          state.screen != KioskScreen.select ||
+          state.busy ||
+          state.quote != null) {
+        return;
+      }
       _ratesMinSeq = seq;
       _ratesError = false;
       _modelEndpoint = endpoint;
       _applyRates(m, error: m.open ? _noError() : _keyError('closed'));
     } catch (e) {
-      if (_disposed || seq < _ratesMinSeq) return;
+      if (_disposed ||
+          seq < _ratesMinSeq ||
+          state.screen != KioskScreen.select ||
+          state.busy ||
+          state.quote != null) {
+        return;
+      }
       _ratesMinSeq = seq;
       _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
