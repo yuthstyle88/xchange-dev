@@ -2,7 +2,7 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
@@ -19,6 +19,19 @@ import type {
 } from '../../../shared/api/generated/bookings';
 import * as table from './i18n';
 import './booking-slots.css';
+
+function formatSlotTime(iso: string): string {
+  if (!iso) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale(), {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  });
+}
 
 export function BookingSlots(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.booking-slots', table);
@@ -454,7 +467,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               <div class="slot-item" data-slot-id={slot.id}>
                 <span class="slot-date">{slot.serviceDate}</span>
                 <span class="slot-time">
-                  {slot.startAt} - {slot.endAt}
+                  {formatSlotTime(slot.startAt)} - {formatSlotTime(slot.endAt)}
                 </span>
                 <span class="slot-status">{slot.status}</span>
                 <span class="slot-reserved">
