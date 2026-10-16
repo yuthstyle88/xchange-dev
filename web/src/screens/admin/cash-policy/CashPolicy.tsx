@@ -25,13 +25,44 @@ const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   idempotencyConflict: 'error.idempotencyConflict',
 };
 
+const OWN_FIELD_TEXT: Record<string, Parameters<typeof t>[0]> = {
+  currency: 'error.currency',
+  limits: 'error.limits',
+};
+
 function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+}
+
+function isFieldRefusal(err: unknown): boolean {
+  if (isServerFailure(err)) return false;
+  if (err instanceof ApiError) {
+    return (
+      err.status === 400 &&
+      err.code === 'validationFailed' &&
+      typeof err.field === 'string' &&
+      err.field in OWN_FIELD_TEXT
+    );
+  }
+  if (err && typeof err === 'object') {
+    const e = err as { status?: unknown; code?: unknown; field?: unknown };
+    return (
+      e.status === 400 &&
+      e.code === 'validationFailed' &&
+      typeof e.field === 'string' &&
+      e.field in OWN_FIELD_TEXT
+    );
+  }
+  return false;
 }
 
 function policyError(err: unknown): string {
   if (isServerFailure(err)) {
     return wordedError(err);
+  }
+  if (isFieldRefusal(err)) {
+    const field = (err as { field: string }).field;
+    return t(OWN_FIELD_TEXT[field]!);
   }
   if (err instanceof ApiError && err.code in OWN_TEXT) {
     return t(OWN_TEXT[err.code]!);
@@ -58,6 +89,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const [typed, setTyped] = createSignal<Record<string, string>>({});
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
+  const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
 
   /** The register the cash screen reads, plus any currency the current version names. */
   const currencies = () => {
@@ -114,12 +146,18 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     const body: TransferPolicySaveInput = { limits };
     setBusy(true);
     setRefusal(null);
+    setFieldRefusal(null);
     try {
       await saveWrite.send(body);
       toast(t('saved'));
       await readPolicy();
     } catch (err: unknown) {
-      setRefusal(policyError(err));
+      const message = policyError(err);
+      if (isFieldRefusal(err)) {
+        setFieldRefusal(message);
+      } else {
+        setRefusal(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -145,7 +183,26 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       <Card>
         <CardHead eyebrow={t('eyebrow')} title={t('title')} />
         <CardBody>
+          <Show when={policy()?.valid === false}>
+            <div role="status">
+              <p>{t('invalidPolicyNote')}</p>
+              <ul>
+                <For each={policy()?.invalidEntries ?? []}>
+                  {(entry) => (
+                    <li>
+                      <strong>{entry.currency}</strong>: <code>{entry.raw}</code> ({entry.reason})
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </div>
+          </Show>
           <form onSubmit={save}>
+            <Show when={fieldRefusal()}>
+              <p role="alert" class="error-message">
+                {fieldRefusal()}
+              </p>
+            </Show>
             <div class="table-scroll">
               <table class="cash-policy-table">
                 <thead>
