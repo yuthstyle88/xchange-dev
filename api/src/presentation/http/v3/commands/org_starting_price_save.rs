@@ -159,13 +159,16 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         let now = Utc::now();
         let source_date = now.date_naive();
         let provider = format!("START:{}", org_id);
+        let batch_id = Uuid::new_v4();
 
         let raw_checksum = {
             let bytes = serde_json::to_vec(&input.prices).map_err(|_| server_error())?;
-            format!("{:x}", Sha256::digest(&bytes))
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            hasher.update(batch_id.as_bytes());
+            format!("{:x}", hasher.finalize())
         };
 
-        let batch_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO rate_reference_batches (id, provider, source_date, fetched_at, raw_checksum, status) \
              VALUES ($1, $2, $3, $4, $5, 'COMPLETE')",
