@@ -109,6 +109,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     const date = day();
     setError(null);
+    setSheet(null);
     void read(branch, date);
   });
 
@@ -126,7 +127,11 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     try {
       await certifyWrite.send(input);
       setNote('');
-      await read(shown.branch, shown.date);
+      if (props.branch() === shown.branch && day() === shown.date) {
+        await read(shown.branch, shown.date);
+      } else {
+        await read(props.branch(), day());
+      }
     } catch (err: unknown) {
       setError(err);
     } finally {
