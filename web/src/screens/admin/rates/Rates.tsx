@@ -128,6 +128,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [adjustBuyPct, setAdjustBuyPct] = createSignal<string>('0.0000');
   const [adjustSellPct, setAdjustSellPct] = createSignal<string>('0.0000');
 
+  // #2410: one write at a time. A second click while a write is in flight would
+  // resend the same idempotency key, get 409 idempotencyConflict, and lose the key.
+  const [busy, setBusy] = createSignal<boolean>(false);
+  const guarded = (fn: () => Promise<void>) => async (): Promise<void> => {
+    if (busy()) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fetchReference = async (opts: { since?: number; fresh?: boolean }) => {
     if (!props.shown()) return;
     try {
@@ -344,7 +357,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const handleNewDraft = async () => {
+  const handleNewDraft = guarded(async () => {
     const branch = props.branch();
     const gen = readGen;
     const curPub = pubData();
@@ -381,9 +394,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSimulate = async () => {
+  const handleSimulate = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
@@ -403,9 +416,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSubmit = async () => {
+  const handleSubmit = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
@@ -426,9 +439,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handlePublish = async () => {
+  const handlePublish = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
@@ -446,9 +459,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleAdjustAll = async () => {
+  const handleAdjustAll = guarded(async () => {
     const draft = draftDetail()?.draft;
     const lines = draftDetail()?.lines ?? [];
     if (!draft) return;
@@ -495,7 +508,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const nonRisingTierNo = (): 1 | 2 | 3 | null => {
     if (!valueTiersOn()) return null;
@@ -539,7 +552,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     );
   };
 
-  const handleSavePolicy = async () => {
+  const handleSavePolicy = guarded(async () => {
     if (!canSavePolicy()) return;
     const policy = policyData()?.policy;
     if (!policy || Boolean(policyError())) return;
@@ -582,7 +595,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const openHistory = async () => {
     const branch = props.branch();
@@ -650,6 +663,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 data-action="save-policy"
                 data-testid="save-policy"
                 disabled={
+                  busy() ||
                   !canSavePolicy() ||
                   Boolean(policyError()) ||
                   !policyData()?.policy ||
@@ -799,6 +813,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="btn-new-draft"
+                disabled={busy()}
                 onClick={handleNewDraft}
               >
                 {t('newDraft')}
@@ -807,6 +822,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-simulate"
+                  disabled={busy()}
                   onClick={handleSimulate}
                 >
                   {t('simulate')}
@@ -814,6 +830,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-submit"
+                  disabled={busy()}
                   onClick={handleSubmit}
                 >
                   {t('submit')}
@@ -821,6 +838,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-publish"
+                  disabled={busy()}
                   onClick={handlePublish}
                 >
                   {t('publish')}
@@ -861,7 +879,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="btn-adjust-all"
-              disabled={Boolean(policyError()) || !policyData()?.policy}
+              disabled={busy() || Boolean(policyError()) || !policyData()?.policy}
               onClick={handleAdjustAll}
             >
               {t('adjustAll')}
