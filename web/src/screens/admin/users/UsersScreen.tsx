@@ -121,11 +121,23 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     if (activeBranch && activeBranch !== branch) {
       setUsers([]);
+      setPageSuccess(null);
     }
     activeBranch = branch;
     loadBranches();
     loadUsers();
   });
+
+  // Which dialog is open (kind + user id). A dialog write's late answer only
+  // closes / sets the error of the dialog it was sent from (#2460).
+  const openDialogKey = (): string | null => {
+    if (showCreate()) return 'create';
+    const activating = activatingUser();
+    if (activating) return `activate:${activating.userId}`;
+    const granting = grantingUser();
+    if (granting) return `grant:${granting.userId}`;
+    return null;
+  };
 
   const openCreateDialog = () => {
     setCreateName('');
@@ -141,7 +153,9 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   const handleCreateSubmit = async (e: Event) => {
     e.preventDefault();
+    const sentFrom = 'create';
     setDialogError(null);
+    setPageSuccess(null);
     setDialogSubmitting(true);
 
     const pwdInput = document.querySelector<HTMLInputElement>('input[name="password"]');
@@ -165,11 +179,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
           },
         ],
       });
-      setShowCreate(false);
+      if (openDialogKey() === sentFrom) setShowCreate(false);
       setPageSuccess(t('successCreated'));
       await loadUsers();
     } catch (err: unknown) {
-      setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
       setDialogSubmitting(false);
     }
@@ -186,8 +200,10 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     e.preventDefault();
     const user = activatingUser();
     if (!user) return;
+    const sentFrom = `activate:${user.userId}`;
 
     setDialogError(null);
+    setPageSuccess(null);
     setDialogSubmitting(true);
 
     const pwdInput = document.querySelector<HTMLInputElement>('input[name="activatePassword"]');
@@ -210,11 +226,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         roles: roles,
         userId: user.userId,
       });
-      setActivatingUser(null);
+      if (openDialogKey() === sentFrom) setActivatingUser(null);
       setPageSuccess(t('successActivated'));
       await loadUsers();
     } catch (err: unknown) {
-      setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
       setDialogSubmitting(false);
     }
@@ -231,8 +247,10 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     e.preventDefault();
     const user = grantingUser();
     if (!user) return;
+    const sentFrom = `grant:${user.userId}`;
 
     setDialogError(null);
+    setPageSuccess(null);
     setDialogSubmitting(true);
 
     try {
@@ -241,11 +259,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         role: grantRole(),
         branch: grantBranch() ? grantBranch() : null,
       });
-      setGrantingUser(null);
+      if (openDialogKey() === sentFrom) setGrantingUser(null);
       setPageSuccess(t('successGranted'));
       await loadUsers();
     } catch (err: unknown) {
-      setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
       setDialogSubmitting(false);
     }
@@ -255,6 +273,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (rowWriting()) return;
     setRowWriting(true);
     setPageError(null);
+    setPageSuccess(null);
     try {
       await revokeWrite.send({
         userId: user.userId,
@@ -264,6 +283,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       setPageSuccess(t('successRevoked'));
       await loadUsers();
     } catch (err: unknown) {
+      setPageSuccess(null);
       setPageError(wordedError(err));
     } finally {
       setRowWriting(false);
@@ -274,6 +294,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (rowWriting()) return;
     setRowWriting(true);
     setPageError(null);
+    setPageSuccess(null);
     try {
       await disableWrite.send({
         userId: user.userId,
@@ -281,6 +302,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       setPageSuccess(t('successDisabled'));
       await loadUsers();
     } catch (err: unknown) {
+      setPageSuccess(null);
       setPageError(wordedError(err));
     } finally {
       setRowWriting(false);
