@@ -6,6 +6,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   AssistantAskAnswerDto,
   AssistantAskInput,
@@ -94,6 +95,11 @@ function parseSearch(searchStr: string): { branch?: string; conversationId?: str
 
 export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
   const client = props.api ?? (props.fetch ? new ApiClient(props.fetch) : new ApiClient());
+  const askWrite = keyedWrite<AssistantAskInput, AssistantAskAnswerDto>(
+    client,
+    'POST',
+    '/api/app/assistant/messages',
+  );
 
   const searchParams = () =>
     parseSearch(
@@ -112,9 +118,6 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
   const [inputText, setInputText] = createSignal('');
   const [sending, setSending] = createSignal(false);
   const [sendError, setSendError] = createSignal<string | null>(null);
-
-  let pendingIdemKey: string | null = null;
-  let lastAttemptedText: string | null = null;
 
   const loadConversation = async (targetId?: string) => {
     const id = targetId ?? conversationId();
@@ -162,31 +165,13 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     setSending(true);
     setSendError(null);
 
-    // Reuse idempotency key if retrying the same text after failure
-    if (lastAttemptedText !== textToSend || !pendingIdemKey) {
-      pendingIdemKey =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      lastAttemptedText = textToSend;
-    }
-
     try {
       const currentLocale = lang();
-      const res = await client.command<AssistantAskInput, AssistantAskAnswerDto>(
-        'POST',
-        '/api/app/assistant/messages',
-        {
-          text: textToSend,
-          branch: effectiveBranch(),
-          locale: currentLocale,
-        },
-        pendingIdemKey,
-      );
-
-      // Successfully sent - reset idempotency state
-      pendingIdemKey = null;
-      lastAttemptedText = null;
+      const res = await askWrite.send({
+        text: textToSend,
+        branch: effectiveBranch(),
+        locale: currentLocale,
+      });
 
       // Update URL to preserve conversation across reloads
       if (typeof window !== 'undefined' && window.history && res.conversationId) {
@@ -217,8 +202,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     setLoadError(null);
     setSendError(null);
     setInputText('');
-    pendingIdemKey = null;
-    lastAttemptedText = null;
+    askWrite.reset();
     if (typeof window !== 'undefined' && window.history) {
       try {
         const url = new URL(window.location.href);

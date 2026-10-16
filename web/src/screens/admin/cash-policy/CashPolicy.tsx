@@ -3,6 +3,7 @@
 // through `transferPolicySave`. Limits stay the server's strings, or what was typed.
 import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
 import type {
   CashTransferPolicyData,
@@ -46,6 +47,11 @@ function policyError(err: unknown): string {
 
 export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveWrite = keyedWrite<TransferPolicySaveInput, CashTransferPolicyData>(
+    api,
+    'PUT',
+    '/api/cash-transfer-policy',
+  );
 
   const [policy, setPolicy] = createSignal<CashTransferPolicyData | null>(null);
   const [register, setRegister] = createSignal<string[]>([]);
@@ -96,9 +102,6 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     });
   });
 
-  // One Idempotency-Key per save, kept for a retry of the same body until the server answers.
-  let pending: { key: string; body: string } | null = null;
-
   async function save(e: Event) {
     e.preventDefault();
     if (busy()) return;
@@ -109,19 +112,13 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       if (value.trim() !== '') limits[cur] = value;
     }
     const body: TransferPolicySaveInput = { limits };
-    const sent = JSON.stringify(body);
-    if (!pending || pending.body !== sent) pending = { key: crypto.randomUUID(), body: sent };
-    const key = pending.key;
     setBusy(true);
     setRefusal(null);
     try {
-      await api.command<TransferPolicySaveInput, CashTransferPolicyData>('PUT', '/api/cash-transfer-policy', body, key);
-      pending = null;
+      await saveWrite.send(body);
       toast(t('saved'));
       await readPolicy();
     } catch (err: unknown) {
-      // a refusal is the server's answer: the next save is a new request; anything else keeps the key
-      if (err instanceof ApiError && err.status < 500) pending = null;
       setRefusal(policyError(err));
     } finally {
       setBusy(false);

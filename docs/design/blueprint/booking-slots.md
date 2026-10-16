@@ -313,6 +313,8 @@ classDiagram
   class Booking { <<xc-booking domain/booking/booking.rs>> id; booking_no; customer_id; slot_id; status; qr_version }
   class BookingStatus { <<xc-booking domain/booking/booking_status.rs>> 8 states; +holds_place() }
   class BookingMachine { <<xc-booking domain/booking/booking_machine.rs  pure transitions>> +confirm() +cancel() +reschedule() +check_in() +start() +complete() +expire() +no_show() }
+  class EffectiveStatus { <<xc-booking domain/booking/effective_status.rs  pure, B12's reader half>> +effective_status(status, facts: OverdueFacts, now) BookingStatus }
+  class OverdueFacts { <<xc-booking domain/booking/effective_status.rs>> confirm_expires_at: Option~DateTime~; grace_until: DateTime; service_date: NaiveDate; branch_today: NaiveDate; has_active_ticket: bool }
   class SourceChannel { <<xc-booking domain/booking/source_channel.rs>> APP; DESK; PARTNER; +start_status() }
   class BookingNo { <<xc-booking domain/booking/booking_no.rs>> +format(date, seq) }
   class QrToken { <<xc-booking domain/booking/qr_token.rs  HMAC, never stored>> +derive(key, id, version) +hash() }
@@ -384,6 +386,9 @@ classDiagram
   BookingCommands --> SlotService
   CommandEndpoint ..> BookingCommands : registers and runs (§4.5)
   BookingViews --> BookingRepository
+  BookingViews --> EffectiveStatus : the status shown and the QR (B12)
+  EffectiveStatus --> BookingStatus
+  EffectiveStatus --> OverdueFacts
 ```
 
 - **New crate `xc-booking`.** It depends on `xc-kernel`, `xc-customer`, `xc-rate` (for `BranchHours`) and `xc-referral`.
@@ -410,6 +415,38 @@ classDiagram
 | this design `BookingQueueEvents` | `xc-queue` | — |
 | #1641 `pg_booking_lifecycle(pool)` (the one place a production `BookingLifecycle` is built, always with slots) | `rpc.rs`, v3 `transactions.rs`, `kiosk.rs`, v3 `queue.rs`, v3 `bookings.rs` | none: until #1641 merges, those sites build it by hand |
 | this design `bookings` (COMPLETED, slot date) | executive EX-8 booking conversion (`executive-finance.md` D-2) | — |
+| this design `effective_status` (B12's reader half, BK-13) | `views/my_bookings.rs` (list and one), `views/desk_bookings.rs` | none: until BK-13 merges, those views show the stored status |
+
+### 5.2 `effective_status` (B12's reader half)
+
+B12 says *"Readers also treat an overdue row as its final state, so a late sweep never shows a wrong state."* Measured
+on `main` `ea81249a`, no reader does: `views/my_bookings.rs:132` hands out the QR for any status but
+`CANCELLED`/`COMPLETED`/`NO_SHOW`/`EXPIRED`, so a `CONFIRMED` booking past start + grace shows `CONFIRMED` with a live QR
+until the sweeper runs; `views/desk_bookings.rs` shows the stored status too.
+
+One pure function holds the rule; it computes exactly what the sweeper would write next, with the sweeper's and the
+machine's own predicates (`sweeper.rs:82-147`, the day-ended query after it; `BookingMachine::expire` and `::no_show`):
+
+| Stored status | Becomes, when | Predicate (same as the writer's) |
+|---|---|---|
+| `PENDING_CUSTOMER_CONFIRMATION` | `EXPIRED` | `confirm_expires_at` is `None`, or `now > confirm_expires_at` |
+| `CONFIRMED` | `NO_SHOW` | `now > grace_until` (`BookingPolicy::grace_until(slot)` = `slot.start_at + no_show_grace_minutes`) |
+| `CHECKED_IN` | `CANCELLED` (`dayEnded`) | `service_date < branch_today` (the branch's local date of `now`, its timezone, default `Asia/Bangkok`) and no active ticket (`WAITING`, `CALLED`, `SERVING`) |
+| anything else, or not yet overdue | itself | — |
+
+- **[required]** `pub fn effective_status(status: BookingStatus, facts: &OverdueFacts, now: DateTime<Utc>) -> BookingStatus`
+  and `pub struct OverdueFacts { confirm_expires_at, grace_until, service_date, branch_today, has_active_ticket }`, both in
+  `xc-booking/src/domain/booking/effective_status.rs` (its own file: no other ticket touches it). Pure: no clock, no
+  database. A boundary instant is not overdue (`now == grace_until` stays `CONFIRMED`), as the writers compare.
+- **Readers (BK-13):** `my_bookings` (list and one) and `desk_bookings` build `OverdueFacts` in their existing query
+  (the slot's `start_at` and `service_date`, the organisation's `no_show_grace_minutes`, the branch's local date of
+  `now`, whether an active ticket exists) and show `effective_status`; the QR is withheld when the effective status is
+  `CANCELLED`, `COMPLETED`, `NO_SHOW` or `EXPIRED`. The stored row is not changed: writing stays the sweeper's.
+- **Out of BK-13, one core (♻️):** the sweeper's three queries, `CheckInService`'s window (`check_in.rs:171-181`), the
+  booking commands' `qr.rs` (QR re-issue), and `infrastructure/executive/booking_facts.rs` (EX-8 counts) each restate
+  part of this rule. They should call `effective_status` too, so the rule has one home. That is **BK-14**, a follow-up:
+  the sweeper still has to write, but it can select with the same predicate. `admin_bookings.rs` reads `v2_bookings`
+  (v2, retired by BK-11) and is not a reader of this rule.
 
 ## 6. Kept, changed, retired
 
@@ -531,6 +568,9 @@ start dependencies are merged (fleet rule 🧪).
 | BK-12 | partner bookings (R03) | the machine route and its token (own design per `broker-seam.md` §7), `http/v3/commands/bookings/partner_create.rs`, the `partner_attribution_id` FK migration | BK-6, Broker PL-0 and RA-1 #979, #558's rule for how a customer confirms a booking made from a phone |
 | BK-8b | (#1891) B02 writes go through `ApiClient` (`view`/`command`), so every write carries `x-xchange-request` and errors go through `wordedError`; the local fetch, key and error helpers are removed. FE follow-up (owner's choice A, 2026-10-15) | `web/src/screens/desk/bookings/DeskBookingsScreen.tsx`, `DeskBookings.client.test.tsx` | BK-8 |
 | BK-6-FE | (#1915) every booking command the web sends names its `branch` (FE twin of #1913); merges with or before #1913 | customer `book/Book.tsx`, `bookings/Bookings.tsx`, the desk screen, admin `booking-slots/BookingSlots.tsx` and their tests | BK-8b |
+| BK-9b | A04's booking-policy section (`BookingSlots.tsx` "Section 4: Booking Policy") is shown only to an organisation-wide ADMIN: `sharedSession().me()?.roles` has a row with `role === 'ADMIN'` and `branchId === null`, the same test as `web/src/screens/login/home.ts:8`. A branch-scoped ADMIN still sees the rule, closures and slots sections. FE twin of BE #2086, which makes `bookingPolicySet` answer 403 `outOfScope` to a branch-scoped ADMIN; it may land before #2086, since hiding the form from a branch-scoped ADMIN is right either way. Only ADMIN holds `BranchesManage` (`role_permissions.rs:40-41`), so no other role is checked | `web/src/screens/admin/booking-slots/BookingSlots.tsx`, `web/src/screens/admin/booking-slots/BookingSlots.policy-gate.test.tsx` | BK-9 |
+| BK-13 | B12's reader half (§5.2): `effective_status` and its readers | `api/crates/xc-booking/src/domain/booking/effective_status.rs` (+ one `pub mod` line), `api/src/presentation/http/v3/views/my_bookings.rs`, `api/src/presentation/http/v3/views/desk_bookings.rs`, their tests | — |
+| BK-14 | one core for the overdue rule (§5.2, ♻️): the sweeper's selections, `CheckInService`'s window, `qr.rs`, `booking_facts.rs` call `effective_status` | the files named in §5.2 | BK-13 |
 
 C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking conversion) reads `bookings` after BK-3.
 
@@ -549,6 +589,7 @@ C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking con
 | BK-10 | verifying a phone writes one PHONE identity with `verified_at` and one audit row without the value; the member flag is true for that customer at every branch |
 | BK-11 | the workspace builds and passes with the v2 module, routes, tables and screen gone; `git grep -n -E "v2_bookings\|FROM members" -- api` is empty |
 | BK-12 | a partner booking without `referralCode` refused; with it, one ACTIVE capture on the booking; it starts `PENDING_CUSTOMER_CONFIRMATION` |
+| BK-13 | `effective_status`'s table (§5.2): each stored status before, at and after its boundary; `PENDING` with no `confirm_expires_at`; `CHECKED_IN` on a later day with and without an active ticket; and through HTTP, `my_bookings` shows a `CONFIRMED` booking past start + grace as `NO_SHOW` with no QR while its stored row stays `CONFIRMED` |
 
 ## 10. Owner decisions (2026-10-10)
 

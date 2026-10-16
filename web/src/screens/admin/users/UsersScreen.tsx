@@ -8,6 +8,7 @@ import {
 import { ApiClient } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { PasswordField } from '../../../shared/ui/PasswordField';
@@ -30,6 +31,9 @@ export const AVAILABLE_ROLES = [
 
 export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const grantWrite = keyedWrite(api, 'POST', '/api/users/grant');
+  const revokeWrite = keyedWrite(api, 'POST', '/api/users/revoke');
+  const disableWrite = keyedWrite(api, 'POST', '/api/users/disable');
 
   const [users, setUsers] = createSignal<AdminUserRow[]>([]);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
@@ -219,16 +223,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setDialogSubmitting(true);
 
     try {
-      await api.command(
-        'POST',
-        '/api/users/grant',
-        {
-          userId: user.userId,
-          role: grantRole(),
-          branch: grantBranch() ? grantBranch() : null,
-        },
-        crypto.randomUUID(),
-      );
+      await grantWrite.send({
+        userId: user.userId,
+        role: grantRole(),
+        branch: grantBranch() ? grantBranch() : null,
+      });
       setGrantingUser(null);
       setPageSuccess(t('successGranted'));
       await loadUsers();
@@ -242,16 +241,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const handleRevoke = async (user: AdminUserRow, role: AdminUserRole) => {
     setPageError(null);
     try {
-      await api.command(
-        'POST',
-        '/api/users/revoke',
-        {
-          userId: user.userId,
-          role: role.role,
-          branch: role.branch,
-        },
-        crypto.randomUUID(),
-      );
+      await revokeWrite.send({
+        userId: user.userId,
+        role: role.role,
+        branch: role.branch,
+      });
       setPageSuccess(t('successRevoked'));
       await loadUsers();
     } catch (err: unknown) {
@@ -262,14 +256,9 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const handleDisable = async (user: AdminUserRow) => {
     setPageError(null);
     try {
-      await api.command(
-        'POST',
-        '/api/users/disable',
-        {
-          userId: user.userId,
-        },
-        crypto.randomUUID(),
-      );
+      await disableWrite.send({
+        userId: user.userId,
+      });
       setPageSuccess(t('successDisabled'));
       await loadUsers();
     } catch (err: unknown) {
