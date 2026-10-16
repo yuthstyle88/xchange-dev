@@ -436,7 +436,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             <button
               type="button"
               class="xc-shift-cancel-btn"
-              onClick={() => setCountKind(null)}
+              onClick={() => {
+                setCountKind(null);
+                setCountQuantities({});
+              }}
             >
               {t('cancel')}
             </button>
@@ -503,7 +506,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             <button
               type="button"
               class="xc-shift-cancel-btn"
-              onClick={() => setShowHandover(false)}
+              onClick={() => {
+                setShowHandover(false);
+                setSelectedReceiver('');
+                setHandoverQuantities({});
+              }}
             >
               {t('cancel')}
             </button>
