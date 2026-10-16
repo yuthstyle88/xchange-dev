@@ -147,6 +147,7 @@ export function VerificationScreen(): JSX.Element {
 
   let lastQueueVersion: number | undefined;
   let queueErrorActive = false;
+  let caseRead = 0;
   let expiresInputRef: HTMLInputElement | undefined;
   let reasonSelectRef: HTMLSelectElement | undefined;
   let branchCustInputRef: HTMLInputElement | undefined;
@@ -284,6 +285,12 @@ export function VerificationScreen(): JSX.Element {
   });
 
   async function loadCase(caseId: string, keepError = false): Promise<void> {
+    const mine = ++caseRead;
+    if (selectedCase()?.id !== caseId) {
+      setSelectedCase(null);
+      setCaseDocuments([]);
+      setCaseAudit([]);
+    }
     setSelectedCaseId(caseId);
     if (!keepError) {
       queueErrorActive = false;
@@ -300,12 +307,14 @@ export function VerificationScreen(): JSX.Element {
         'verification_case',
         { filter: { id: caseId } },
       );
+      if (mine !== caseRead || selectedCaseId() !== caseId) return;
       if (answer.data) {
         setSelectedCase(answer.data.case);
         setCaseDocuments(answer.data.documents ?? []);
         setCaseAudit(answer.data.audit ?? []);
       }
     } catch (err: unknown) {
+      if (mine !== caseRead || selectedCaseId() !== caseId) return;
       queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
@@ -313,8 +322,9 @@ export function VerificationScreen(): JSX.Element {
 
   async function openDocument(docId: string): Promise<void> {
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
+    const caseId = currentCase.id;
     setDocError(null);
     setLinkExpiredDocId(null);
     const input: VerificationDocumentLinkInput = {
@@ -324,16 +334,20 @@ export function VerificationScreen(): JSX.Element {
 
     try {
       const linkOut = await documentLinkWrite.send(input);
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       const contentRes = await fetch(linkOut.url, {
         method: 'GET',
         credentials: 'same-origin',
       });
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       if (!contentRes.ok) {
         await parseRawResponseError(contentRes);
       }
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       setPreviewDocId(docId);
       setPreviewUrl(linkOut.url);
     } catch (err: unknown) {
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       const msg = describeFailure(err);
       if (
         err instanceof ApiError &&
@@ -395,6 +409,7 @@ export function VerificationScreen(): JSX.Element {
     caseId: string,
     retryCallback: () => Promise<void>,
   ): Promise<void> {
+    if (selectedCaseId() !== caseId) return;
     const msg = describeFailure(err);
     queueErrorActive = false;
     setErrorMessage(msg);
@@ -408,7 +423,7 @@ export function VerificationScreen(): JSX.Element {
 
   async function handleStartReview(): Promise<void> {
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
@@ -418,10 +433,12 @@ export function VerificationScreen(): JSX.Element {
     };
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
       try {
         queueErrorActive = false;
         setErrorMessage(null);
         const updated = await startReviewWrite.send(body);
+        if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -434,7 +451,7 @@ export function VerificationScreen(): JSX.Element {
 
   async function handleApprove(): Promise<void> {
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const rawDate = (expiresInputRef ? expiresInputRef.value : expiresAt()).trim();
     const today = todayBangkokIso();
@@ -453,10 +470,12 @@ export function VerificationScreen(): JSX.Element {
     };
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
       try {
         queueErrorActive = false;
         setErrorMessage(null);
         const updated = await approveWrite.send(body);
+        if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -477,7 +496,7 @@ export function VerificationScreen(): JSX.Element {
 
   async function submitReasonDecision(action: PendingReasonAction): Promise<void> {
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const selectedReason = currentReasonCode();
     if (!selectedReason || !(S5_REASON_CODES as readonly string[]).includes(selectedReason)) {
@@ -490,6 +509,7 @@ export function VerificationScreen(): JSX.Element {
     const expectedVersion = currentCase.version;
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
       try {
         queueErrorActive = false;
         setErrorMessage(null);
@@ -500,6 +520,7 @@ export function VerificationScreen(): JSX.Element {
             reasonCode: selectedReason,
           };
           const updated = await rejectWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         } else if (action === 'request-update') {
           const body: VerificationCaseRequestUpdateInput = {
@@ -508,6 +529,7 @@ export function VerificationScreen(): JSX.Element {
             reasonCode: selectedReason,
           };
           const updated = await requestUpdateWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         } else {
           const body: VerificationCaseRevokeInput = {
@@ -516,6 +538,7 @@ export function VerificationScreen(): JSX.Element {
             reasonCode: selectedReason,
           };
           const updated = await revokeWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         }
         setRetryFn(null);
