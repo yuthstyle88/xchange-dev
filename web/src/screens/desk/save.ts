@@ -9,6 +9,7 @@ import type {
   TransactionCreateInput,
 } from '../../shared/api/generated/transactions';
 import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import type { DeskStore, SaveOutcome, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
 
@@ -296,7 +297,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         stopWatch();
         s.tx = undefined;
         s.quoteId = undefined;
-        sink.setSaveError(e.message);
+        sink.setSaveError(e instanceof Refused ? e.message : wordedError(e));
         sink.setOutcome('refused');
         if (e instanceof ApiError && e.code === 'quoteExpired') {
           void store.requote();
