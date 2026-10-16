@@ -14,6 +14,7 @@
     "branchMissing": "Enter the branch code.",
     "branchInvalid": "A branch code has no spaces and is at most 80 characters.",
     "unreachable": "The server did not answer. Check the address and the network.",
+    "serverRefused": "The server refused the connection test.",
     "notTested": "Test the connection with these values before saving."
   },
   "th": {
@@ -31,6 +32,7 @@
     "branchMissing": "กรุณาใส่รหัสสาขา",
     "branchInvalid": "รหัสสาขาต้องไม่มีช่องว่างและยาวไม่เกิน 80 ตัวอักษร",
     "unreachable": "เซิร์ฟเวอร์ไม่ตอบ ตรวจที่อยู่และเครือข่ายอีกครั้ง",
+    "serverRefused": "เซิร์ฟเวอร์ปฏิเสธการทดสอบการเชื่อมต่อ",
     "notTested": "ทดสอบการเชื่อมต่อด้วยค่านี้ก่อนบันทึก"
   }
 }
