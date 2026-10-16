@@ -222,6 +222,12 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
+        let all_currencies: Vec<(String,)> =
+            sqlx::query_as("SELECT code FROM currencies ORDER BY code")
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|_| server_error())?;
+
         let mut unpriced = Vec::new();
         for (b_id,) in unpublished {
             let b = BranchId::new(&b_id);
@@ -243,15 +249,8 @@ impl CommandAction for OrgStartingPriceSaveCommand {
                 continue;
             }
 
-            let all_currencies: Vec<(String,)> = sqlx::query_as(
-                "SELECT code FROM currencies ORDER BY code",
-            )
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
-
             let mut lines = Vec::new();
-            for (code_str,) in all_currencies {
+            for (code_str,) in &all_currencies {
                 if let Ok(c) = CurrencyCode::parse(code_str.trim()) {
                     let ref_line = ReferenceBase::newest_in(tx, &b, &c)
                         .await
