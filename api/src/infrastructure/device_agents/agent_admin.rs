@@ -80,6 +80,18 @@ impl AgentAdmin {
         }
     }
 
+    /// The branch of `agent_id`, or `None` when `agent_id` is not a valid UUID or names no agent.
+    pub async fn branch_of(&self, agent_id: &str) -> AppResult<Option<BranchId>> {
+        let Ok(uuid) = Uuid::parse_str(agent_id) else {
+            return Ok(None);
+        };
+        let id_str = uuid.to_string();
+        let Some(agent) = self.agents.find(&id_str).await? else {
+            return Ok(None);
+        };
+        Ok(Some(BranchId::new(agent.branch_id)))
+    }
+
     /// Every agent with its calculated state:
     /// - `REVOKED` if revoked_at is set;
     /// - otherwise `PENDING` if never paired;
