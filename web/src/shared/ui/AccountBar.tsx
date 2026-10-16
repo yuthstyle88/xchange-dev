@@ -75,10 +75,12 @@ export function AccountBar(props: {
   const handleSignOut = async () => {
     if (pending()) return;
     setPending(true);
+    setError('');
     try {
       await session().signOut();
       navigate('/login');
     } catch {
+      setError(t('shell.account.signOutFailed'));
       setPending(false);
     }
   };

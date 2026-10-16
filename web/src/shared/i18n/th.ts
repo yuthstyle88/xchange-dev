@@ -6,6 +6,7 @@ export const th = {
   'shell.account.signOut': 'ออกจากระบบ',
   'shell.account.switchBranch': 'สลับสาขา',
   'shell.account.switchFailed': 'สลับสาขาไม่สำเร็จ',
+  'shell.account.signOutFailed': 'ออกจากระบบไม่สำเร็จ กรุณาลองใหม่',
   'shell.account.role.executive': 'ผู้บริหาร',
   'shell.account.role.admin': 'ผู้ดูแลระบบ',
   'shell.account.role.rateManager': 'ผู้จัดการเรท',
