@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import type {
@@ -113,8 +114,12 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
         setErrorMessage(t(errKey as any));
         return;
       }
+      if (!isServerFailure(err)) {
+        setErrorMessage(t('error.validationFailed'));
+        return;
+      }
     }
-    setErrorMessage(t('error.validationFailed'));
+    setErrorMessage(wordedError(err));
   }
 
   async function handleSaveRule() {
