@@ -15,7 +15,9 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
-use xc_marketing::application::simulator::{CampaignSimulator, SimulationScenario};
+use xc_marketing::application::simulator::{
+    CampaignSimulator, SimulationError, SimulationScenario,
+};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -226,13 +228,19 @@ impl CommandAction for CampaignSimulateCommand {
             now,
         )
         .await
-        .map_err(|e| {
-            V3Error::new(
-                "simulationFailed",
+        .map_err(|e| match e {
+            SimulationError::RateUnavailable => V3Error::new(
+                "rateUnavailable",
                 None,
                 e.to_string(),
+                StatusCode::CONFLICT,
+            ),
+            other => V3Error::new(
+                "simulationFailed",
+                None,
+                other.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-            )
+            ),
         })?;
 
         Ok(CampaignSimulateOutput {
