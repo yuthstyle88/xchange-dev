@@ -627,6 +627,9 @@ export function VerificationScreen(): JSX.Element {
       setBranchSuccessMsg(st('branchSubmittedNotice'));
       setBranchCustomerId('');
       setBranchFile(null);
+      if (branchFileInputRef) {
+        branchFileInputRef.value = '';
+      }
       await fetchQueue(false);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.code === 'branchReviewNotAllowed') {
