@@ -519,6 +519,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   }
 
   function nextPage() {
+    if (loading()) return;
     const currentRows = rows();
     if (currentRows.length === 0) return;
     const lastId = currentRows[currentRows.length - 1]?.id;
@@ -535,6 +536,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   }
 
   function prevPage() {
+    if (loading()) return;
     if (page() <= 1) return;
     const prevP = page() - 1;
     setPage(prevP);
@@ -746,29 +748,31 @@ export function Customers(props: AdminMenuProps): JSX.Element {
                   </tbody>
                 </table>
               </div>
-
-              <div class="pagination">
-                <button
-                  type="button"
-                  class="secondary"
-                  disabled={page() <= 1}
-                  onClick={prevPage}
-                >
-                  {t('prev')}
-                </button>
-                <span>
-                  {t('page')} {page()}
-                </span>
-                <button
-                  type="button"
-                  class="secondary"
-                  disabled={!hasMore()}
-                  onClick={nextPage}
-                >
-                  {t('next')}
-                </button>
-              </div>
             </Show>
+          </Show>
+
+          <Show when={hasLoadedOnce() && (rows().length > 0 || page() > 1)}>
+            <div class="pagination">
+              <button
+                type="button"
+                class="secondary"
+                disabled={loading() || page() <= 1}
+                onClick={prevPage}
+              >
+                {t('prev')}
+              </button>
+              <span>
+                {t('page')} {page()}
+              </span>
+              <button
+                type="button"
+                class="secondary"
+                disabled={loading() || !hasMore()}
+                onClick={nextPage}
+              >
+                {t('next')}
+              </button>
+            </div>
           </Show>
         </Card>
       </div>
