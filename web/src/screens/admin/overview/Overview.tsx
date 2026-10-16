@@ -34,6 +34,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
   const [data, setData] = createSignal<AdminOverviewData | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [exportError, setExportError] = createSignal<string | null>(null);
   const [exporting, setExporting] = createSignal(false);
 
   let heldVersion: number | undefined = undefined;
@@ -92,6 +93,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       period.from !== activeFrom || period.to !== activeTo;
 
     if (branchChanged || periodChanged) {
+      setExportError(null);
       if (branchChanged || !(period.from && period.to && period.from > period.to)) {
         setData(null);
       }
@@ -158,6 +160,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       );
 
       if (allRows.length === 0) {
+        setExportError(null);
         toast(t('noTransactionsToExport'));
         return;
       }
@@ -177,11 +180,12 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       const csvRows = allRows.map((r) => liveCsvRow(branch, branchName, r));
 
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
+      setExportError(null);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.code === 'outOfScope') {
-        setError(t('outOfScope'));
+        setExportError(t('outOfScope'));
       } else {
-        setError(wordedError(err));
+        setExportError(wordedError(err));
       }
     } finally {
       setExporting(false);
@@ -199,7 +203,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="overview-screen">
-      <Show when={error()}>
+      <Show when={error() ?? exportError()}>
         {(err) => <div class="error-banner">{err()}</div>}
       </Show>
 
