@@ -20,6 +20,7 @@ use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::validation::NO_SUCH_BRANCH;
 
 use super::caller::Caller;
+use super::command::out_of_scope;
 use super::error::V3Error;
 use super::export_gate::ExportGate;
 use crate::bootstrap::AppState;
@@ -477,6 +478,52 @@ pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Resu
     }
 }
 
+/// 403 outOfScope when a signed-in Blueprint caller names a branch outside its organisation;
+/// 500 serverError when the branch's organisation cannot be read.
+async fn require_branch_in_caller_org(
+    req: &HttpRequest,
+    branch: &BranchId,
+    caller: &Caller,
+) -> Result<(), V3Error> {
+    let Some(ref who) = caller.user else {
+        return Ok(());
+    };
+    let pool = match req.app_data::<web::Data<AppState>>() {
+        Some(state) => state.db.clone(),
+        None => {
+            return Err(V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    let in_org: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM branches b
+            JOIN organizations o ON o.id = b.organization_id
+            WHERE b.id = $1 AND (o.id::text = $2 OR o.code = $2)
+        )",
+    )
+    .bind(branch.as_str())
+    .bind(&who.organization_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| {
+        V3Error::new(
+            "serverError",
+            None,
+            "เซิร์ฟเวอร์ขัดข้อง",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+    if !in_org {
+        return Err(out_of_scope());
+    }
+    Ok(())
+}
+
 pub(crate) use super::caller::authenticate_caller;
 
 async fn get_branch_version(req: &HttpRequest, branch: &BranchId) -> Result<i64, V3Error> {
@@ -532,6 +579,9 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
     let branch = grant.branch;
 
     if let Err(e) = require_branch(req, &branch).await {
+        return e.error_response();
+    }
+    if let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await {
         return e.error_response();
     }
 
@@ -645,6 +695,9 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     };
 
     if let Err(e) = require_branch(req, &branch).await {
+        return e.error_response();
+    }
+    if let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await {
         return e.error_response();
     }
 
