@@ -342,13 +342,19 @@ class KioskController extends Notifier<KioskState> {
       final currency = keep
           ? state.currency
           : (m.rates.isEmpty ? null : m.rates.first.code);
+      final amountText = keep ? state.amountText : '';
       final openChanged = state.model == null || m.open != state.model!.open;
       final error = openChanged
           ? (m.open ? '' : _t.text('closed'))
           : state.error;
       _set(
         _keepOfferedMethod(
-          state.copyWith(model: m, currency: currency, error: error),
+          state.copyWith(
+            model: m,
+            currency: currency,
+            amountText: amountText,
+            error: error,
+          ),
         ),
       );
     } catch (_) {}
