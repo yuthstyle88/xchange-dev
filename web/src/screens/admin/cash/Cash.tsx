@@ -46,8 +46,11 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   let lastBranch = '';
   let lastTick: number | undefined = undefined;
   let currentCashVersion: number | undefined = undefined;
+  let cashSeq = 0;
+  let readAllSeq = 0;
 
   async function readCash(resetVersion = false, all = showAll(), isReadAll = false) {
+    const seq = ++cashSeq;
     const curBranch = props.branch();
     if (resetVersion || curBranch !== lastBranch) {
       lastBranch = curBranch;
@@ -59,6 +62,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         since: currentCashVersion,
         filter: { all },
       });
+      if (seq !== cashSeq) return;
       currentCashVersion = res.version;
       if (res.changed && res.data) {
         setCash(res.data);
@@ -67,33 +71,38 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
+      if (seq !== cashSeq) return;
       currentCashVersion = undefined;
       setCashError(wordedError(err));
       setCash(null);
     }
   }
 
-  async function readMovements() {
+  async function readMovements(seq: number) {
     try {
       const rows = await api.page<AdminCashMovementRow>('admin_cash_movements', {
         branch: props.branch(),
         limit: 100,
       });
+      if (seq !== readAllSeq) return;
       setMovements(rows);
     } catch (err: unknown) {
+      if (seq !== readAllSeq) return;
       setMovements([]);
       setCashError(wordedError(err));
     }
   }
 
-  async function readShifts() {
+  async function readShifts(seq: number) {
     try {
       const rows = await api.page<AdminShiftRow>('admin_shifts', {
         branch: props.branch(),
       });
+      if (seq !== readAllSeq) return;
       setShifts(rows);
       setHasMoreShifts(rows.length > 0);
     } catch (err: unknown) {
+      if (seq !== readAllSeq) return;
       setShifts([]);
       setHasMoreShifts(false);
       setCashError(wordedError(err));
@@ -101,8 +110,13 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   }
 
   async function readAll(resetVersion = true) {
+    const seq = ++readAllSeq;
     setCashError(null);
-    await Promise.all([readCash(resetVersion, showAll(), true), readMovements(), readShifts()]);
+    await Promise.all([
+      readCash(resetVersion, showAll(), true),
+      readMovements(seq),
+      readShifts(seq),
+    ]);
   }
 
   createEffect(() => {
