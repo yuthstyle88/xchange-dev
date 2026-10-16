@@ -20,6 +20,7 @@ use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side};
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
+use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
 use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
@@ -534,6 +535,7 @@ impl QuoteService {
                         });
                         recompute_needed = true;
                     }
+                    Err(BenefitError::Store(e)) => return Err(e),
                     Err(e) => return Err(AppError::Domain(e.to_string())),
                 }
             }

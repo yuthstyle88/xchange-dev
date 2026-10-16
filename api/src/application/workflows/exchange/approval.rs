@@ -13,8 +13,10 @@ use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::access::{Actor, Role};
+use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{TransactionId, TransactionStatus};
+use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::money::Side;
 
@@ -25,12 +27,14 @@ pub const EXCHANGE_TRANSACTION: &str = "EXCHANGE_TRANSACTION";
 
 pub struct ExchangeTransactionSubject {
     store: PgTransactionStore,
+    quotes: PgQuoteRepository,
 }
 
 impl ExchangeTransactionSubject {
     pub fn new(pool: PgPool) -> Self {
         Self {
-            store: PgTransactionStore::new(pool),
+            store: PgTransactionStore::new(pool.clone()),
+            quotes: PgQuoteRepository::new(pool),
         }
     }
 }
@@ -99,7 +103,7 @@ impl ApprovalSubject for ExchangeTransactionSubject {
     }
 
     /// APPROVED ⇒ `CONFIRMED`; REJECTED ⇒ `CANCELLED` with the reason of the decision `decide` has
-    /// just written in this transaction (`on_decided` is not given it).
+    /// just written in this transaction (`on_decided` is not given it), and its quote `CANCELLED`.
     fn on_decided<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
@@ -131,7 +135,21 @@ impl ApprovalSubject for ExchangeTransactionSubject {
                     approval_request_id: None,
                 },
             };
-            self.store.set_status_in(tx, id, r#move, at).await
+            self.store.set_status_in(tx, id, r#move, at).await?;
+            if matches!(outcome, Outcome::Rejected) {
+                let t = self
+                    .store
+                    .find_in(tx, id)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound {
+                        entity: "ExchangeTransaction",
+                        id: object_id.to_owned(),
+                    })?;
+                if let Some(q) = t.quote_id {
+                    self.quotes.cancel_in(tx, q).await?;
+                }
+            }
+            Ok(())
         })
     }
 }

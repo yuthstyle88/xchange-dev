@@ -3,6 +3,7 @@ import { ApiClient, ApiError } from '../../../../shared/api/client';
 import type { DeskRefundRow, DeskRefunds } from '../../../../shared/api/generated/desk_refunds';
 import type { ReceiptDocumentViewData } from '../../../../shared/api/generated/receipt_document';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import { ReceiptFrame } from '../../../../shared/receipt/ReceiptFrame';
 import * as texts from './i18n';
 import { createPoster, type Poster } from './post';
@@ -42,6 +43,7 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   const [confirmingId, setConfirmingId] = createSignal<string | null>(null);
 
   let currentPoster: Poster | null = null;
+  let currentPostingId: string | null = null;
 
   async function readRefunds(): Promise<void> {
     const res = await api.view<DeskRefunds>('desk_refunds');
@@ -56,22 +58,40 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
     setConfirmingId(null);
   }
 
-  async function execute(poster: Poster): Promise<void> {
+  async function execute(poster: Poster, id: string): Promise<void> {
     setPostError(null);
     setCanRetry(false);
+    let doc: string;
     try {
-      const doc = await poster.post();
-      setLastPostedDoc(doc);
-      await readRefunds();
+      doc = await poster.post();
     } catch (err) {
       if (err instanceof ApiError && (ERROR_CODES as readonly string[]).includes(err.code)) {
         const code = err.code as (typeof ERROR_CODES)[number];
         setPostError(t(`error.${code}`));
         setCanRetry(false);
-      } else {
+        currentPoster = null;
+        currentPostingId = null;
+      } else if (!(err instanceof ApiError) || err.status >= 500) {
         setPostError(t('error.unknown'));
         setCanRetry(true);
+      } else {
+        setPostError(wordedError(err));
+        setCanRetry(false);
+        currentPoster = null;
+        currentPostingId = null;
       }
+      return;
+    }
+
+    currentPoster = null;
+    currentPostingId = null;
+    setLastPostedDoc(doc);
+    setRows(rows().filter((r) => r.reversal.id !== id));
+    try {
+      await readRefunds();
+    } catch (err) {
+      setPostError(wordedError(err));
+      setCanRetry(false);
     }
   }
 
@@ -80,12 +100,13 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
     if (!id) return;
     setConfirmingId(null);
     currentPoster = createPoster(api, id);
-    await execute(currentPoster);
+    currentPostingId = id;
+    await execute(currentPoster, id);
   }
 
   async function retry(): Promise<void> {
-    if (!currentPoster) return;
-    await execute(currentPoster);
+    if (!currentPoster || !currentPostingId) return;
+    await execute(currentPoster, currentPostingId);
   }
 
   async function printReceipt(): Promise<void> {
