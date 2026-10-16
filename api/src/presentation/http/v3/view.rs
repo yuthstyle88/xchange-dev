@@ -41,6 +41,7 @@ pub trait BranchView: Send + Sync + 'static {
     const NAME: &'static str;
     const INHERITS: (EntryPath, &'static str);
     const VERSIONED: bool = true;
+    const ORG_WIDE: bool = false;
     /// A version that is not the branch's (design §12.16). None = use branch_versions.
     fn own_version(
         &self,
@@ -581,7 +582,9 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
     if let Err(e) = require_branch(req, &branch).await {
         return e.error_response();
     }
-    if let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await {
+    if !V::ORG_WIDE
+        && let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await
+    {
         return e.error_response();
     }
 
