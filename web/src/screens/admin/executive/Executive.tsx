@@ -15,7 +15,7 @@ import type {
   ExecutiveOverviewData,
   MetricDto,
 } from '../../../shared/api/generated/executive_overview';
-import { lang, screenT } from '../../../shared/i18n';
+import { lang, locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
@@ -119,10 +119,17 @@ function MetricValue(props: { metric: MetricDto; money: boolean; class: string }
   );
 }
 
+/** A server time (UTC ISO-8601) as Bangkok date and time in the screen's locale; an unparsable one as sent. */
+function bangkok(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+}
+
 function Time(props: { at: string | null }): JSX.Element {
   return (
     <Show when={props.at} fallback={<span class="executive-never">{t('never')}</span>}>
-      {(at) => <time datetime={at()}>{at()}</time>}
+      {(at) => <time datetime={at()}>{bangkok(at())}</time>}
     </Show>
   );
 }
@@ -407,7 +414,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
                         {ALERT_LABEL[a.kind] ? t(ALERT_LABEL[a.kind]!) : a.kind}
                       </span>
                       <span class="executive-alert-branch">{branchName(a.branchId)}</span>
-                      <Show when={a.since}>{(since) => <time datetime={since()}>{since()}</time>}</Show>
+                      <Show when={a.since}>{(since) => <time datetime={since()}>{bangkok(since())}</time>}</Show>
                       <span class="executive-alert-detail">{a.detail}</span>
                       <Drilldown drilldown={a.drilldown} />
                     </li>
