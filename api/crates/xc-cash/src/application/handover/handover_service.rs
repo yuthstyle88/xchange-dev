@@ -40,6 +40,13 @@ fn dom(e: impl ToString) -> AppError {
     AppError::Domain(e.to_string())
 }
 
+fn handover_id(id: &str) -> AppResult<uuid::Uuid> {
+    uuid::Uuid::parse_str(id).map_err(|_| AppError::NotFound {
+        entity: "handover",
+        id: id.to_string(),
+    })
+}
+
 type Row = (
     String,
     String,
@@ -307,13 +314,19 @@ impl HandoverService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,
@@ -450,13 +463,19 @@ impl HandoverService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,

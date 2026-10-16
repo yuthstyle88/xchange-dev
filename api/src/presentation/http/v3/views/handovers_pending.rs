@@ -58,7 +58,7 @@ impl PagedView for HandoversPendingView {
                  FROM handovers h \
                  WHERE h.branch_id = $1 AND h.receiver_id::text = $2 AND h.status = 'PENDING' \
                    AND ($3::text IS NULL OR (h.created_at, h.id) < \
-                        (SELECT b.created_at, b.id FROM handovers b WHERE b.id::text = $3)) \
+                        (SELECT b.created_at, b.id FROM handovers b WHERE b.id::text = $3 AND b.branch_id = $1 AND b.receiver_id::text = $2)) \
                  ORDER BY h.created_at DESC, h.id DESC \
                  LIMIT $4",
             )

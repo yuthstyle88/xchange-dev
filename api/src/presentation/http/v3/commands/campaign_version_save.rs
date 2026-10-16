@@ -18,6 +18,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::infrastructure::marketing::branch_scope::CampaignBranchScope;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -121,6 +122,42 @@ impl CommandAction for CampaignVersionSaveCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+
+        if ends_at <= starts_at {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("endsAt"),
+                "endsAt must be after startsAt",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        if budget_thb < Decimal::ZERO {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("budgetThb"),
+                "budgetThb must not be negative",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        if CampaignBranchScope::first_outside_org_in(tx, org_id, &input.branches)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+            .is_some()
+        {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("branches"),
+                "branch does not belong to organization",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
 
         let row = sqlx::query(
             "SELECT id, version FROM campaign_versions \

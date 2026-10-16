@@ -220,17 +220,6 @@ impl CaseService {
             .await
             .map_err(|e| CaseError::Store(pos_error::AppError::Database(e)))?;
 
-        if let Some(existing) = self.cases.find_document_by_ref(&mut tx, &doc_ref).await? {
-            if existing.checksum == checksum {
-                tx.commit()
-                    .await
-                    .map_err(|e| CaseError::Store(pos_error::AppError::Database(e)))?;
-                return Ok(existing);
-            } else {
-                return Err(CaseError::IdempotencyConflict);
-            }
-        }
-
         let case = self
             .cases
             .find_case_by_id_for_update(&mut tx, case_id)
@@ -262,6 +251,17 @@ impl CaseService {
                 r.user_id
             }
         };
+
+        if let Some(existing) = self.cases.find_document_by_ref(&mut tx, &doc_ref).await? {
+            if existing.checksum == checksum {
+                tx.commit()
+                    .await
+                    .map_err(|e| CaseError::Store(pos_error::AppError::Database(e)))?;
+                return Ok(existing);
+            } else {
+                return Err(CaseError::IdempotencyConflict);
+            }
+        }
 
         if case.status != CaseStatus::Draft && case.status != CaseStatus::NeedsUpdate {
             return Err(CaseError::CaseLocked);

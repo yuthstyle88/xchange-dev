@@ -5,7 +5,6 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
@@ -17,7 +16,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::draft::reference_base::ReferenceBase;
 use xc_rate::application::publication::publish_service::PublishService;
@@ -99,16 +98,16 @@ impl CommandAction for OrgStartingPriceSaveCommand {
             }
 
             let buy = match &p.buy {
-                Some(s) => match Decimal::from_str(s.trim()) {
-                    Ok(d) => Some(d),
+                Some(s) => match Rate::parse(s.trim()) {
+                    Ok(r) => Some(r.value()),
                     Err(_) => return Err(validation_failed("buy", "invalid buy rate")),
                 },
                 None => None,
             };
 
             let sell = match &p.sell {
-                Some(s) => match Decimal::from_str(s.trim()) {
-                    Ok(d) => Some(d),
+                Some(s) => match Rate::parse(s.trim()) {
+                    Ok(r) => Some(r.value()),
                     Err(_) => return Err(validation_failed("sell", "invalid sell rate")),
                 },
                 None => None,

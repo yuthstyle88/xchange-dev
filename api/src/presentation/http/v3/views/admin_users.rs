@@ -61,7 +61,7 @@ impl PagedView for AdminUsersPagedView {
                 "SELECT u.id::text, u.name, u.status, u.version \
                  FROM users u JOIN branches b ON b.id = $1 AND u.organization_id = b.organization_id \
                  WHERE $2::text IS NULL \
-                    OR (u.name, u.id::text) > (SELECT p.name, p.id::text FROM users p WHERE p.id::text = $2) \
+                    OR (u.name, u.id::text) > (SELECT p.name, p.id::text FROM users p JOIN branches pb ON pb.id = $1 AND p.organization_id = pb.organization_id WHERE p.id::text = $2) \
                  ORDER BY u.name, u.id \
                  LIMIT $3",
             )
