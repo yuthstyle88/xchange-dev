@@ -34,6 +34,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
 
   const [data, setData] = createSignal<AdminOverviewData | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [exporting, setExporting] = createSignal(false);
 
   let heldVersion: number | undefined = undefined;
   let activeBranch = '';
@@ -137,6 +138,9 @@ export function Overview(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleExportCsv() {
+    if (exporting()) return;
+    setExporting(true);
+
     const branch = props.branch();
     const period = props.period();
     const filter: Record<string, string> = {};
@@ -179,6 +183,8 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       } else {
         setError(wordedError(err));
       }
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -206,6 +212,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
               type="button"
               class="btn-export"
               onClick={handleExportCsv}
+              disabled={exporting()}
             >
               {t('exportCsv')}
             </button>
