@@ -31,9 +31,7 @@ const RAW_ROUTE_FORMS: &[&str] = &[
 /// - (iii) a pure `CommandEndpoint` registrar (at least one `CommandEndpoint::register(` call and no raw route forms).
 pub fn route_file_verdict(code: &str) -> Result<(), String> {
     let inherits = code.contains("const INHERITS:");
-    let on_a_trait = TRAITS
-        .iter()
-        .any(|t| code.contains(&format!("{t} for ")));
+    let on_a_trait = TRAITS.iter().any(|t| code.contains(&format!("{t} for ")));
     if inherits && !on_a_trait {
         return Err(
             "INHERITS declared outside an impl of BranchView/PagedView/ComputeAction/CommandAction"
