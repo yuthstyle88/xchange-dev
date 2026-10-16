@@ -369,8 +369,14 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     const [customerId, setCustomerId] = createSignal('');
     const [dialogError, setDialogError] = createSignal<string | null>(null);
 
+    const chosen = () => {
+      const list = availableCurrencies();
+      const c = currency();
+      return c && list.includes(c) ? c : (list[0] ?? '');
+    };
+
     const currentRate = () => {
-      const cr = (settings()?.counterRates ?? []).find((r) => r.currency === currency());
+      const cr = (settings()?.counterRates ?? []).find((r) => r.currency === chosen());
       if (!cr) return '';
       return type() === 'BUY' ? cr.buy : cr.sell;
     };
@@ -392,7 +398,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         return;
       }
 
-      if (!currency()) {
+      if (!chosen()) {
         setDialogError(t('noCurrencies'));
         return;
       }
@@ -410,7 +416,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         name: trimmedName,
         phone: rawPhone,
         type: type(),
-        currency: currency(),
+        currency: chosen(),
         amount: rawAmount,
         expectedRate: r,
       };
@@ -467,7 +473,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <label>
           {t('fieldCurrency')}
           <select
-            value={currency()}
+            value={chosen()}
             onChange={(e) => setCurrency(e.currentTarget.value)}
           >
             <Show when={availableCurrencies().length === 0}>
@@ -476,7 +482,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
               </option>
             </Show>
             <For each={availableCurrencies()}>
-              {(c) => <option value={c}>{c}</option>}
+              {(c) => (
+                <option value={c} selected={c === chosen()}>
+                  {c}
+                </option>
+              )}
             </For>
           </select>
         </label>
