@@ -110,6 +110,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const [formReferralCode, setFormReferralCode] = createSignal('');
 
   const allSlots = () => groupBookingsBySlot(items());
+  let readErrorActive = false;
 
   async function fetchBookings(opts?: { since?: number; qr?: string }) {
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
@@ -120,6 +121,11 @@ export function DeskBookingsScreen(): JSX.Element {
       });
       if (envelope.version !== undefined) {
         setVersion(envelope.version);
+      }
+      if (readErrorActive) {
+        readErrorActive = false;
+        setErrorMessage(null);
+        setRetryAction(null);
       }
       if (envelope.changed === false) {
         return;
@@ -140,7 +146,9 @@ export function DeskBookingsScreen(): JSX.Element {
         setRefusalMessage(t('error.roleNotAllowed'));
         return;
       }
+      readErrorActive = true;
       setErrorMessage(deskBookingError(err));
+      setRetryAction(() => () => fetchBookings(opts));
     }
   }
 
@@ -216,6 +224,7 @@ export function DeskBookingsScreen(): JSX.Element {
       checkInWrite.reset();
       activeCheckInId = bookingId;
     }
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -246,6 +255,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
     setCancellingBookingId(bookingId);
     setCancelReason('');
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
   }
@@ -258,6 +268,7 @@ export function DeskBookingsScreen(): JSX.Element {
       return;
     }
 
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -288,6 +299,7 @@ export function DeskBookingsScreen(): JSX.Element {
       activeRescheduleId = bookingId;
     }
     setReschedulingBookingId(bookingId);
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
     const booking = items().find((b) => b.id === bookingId);
@@ -302,6 +314,7 @@ export function DeskBookingsScreen(): JSX.Element {
     const target = targetSlotId();
     if (!target) return;
 
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -327,6 +340,7 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   function openNewBooking() {
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
     setShowNewBookingModal(true);
@@ -358,6 +372,7 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleCreateBooking() {
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -420,24 +435,24 @@ export function DeskBookingsScreen(): JSX.Element {
         </div>
       </Show>
 
+      <Show when={authorized() !== false && errorMessage()}>
+        <div role="alert" class="xc-error-banner">
+          <span>{errorMessage()}</span>
+          <Show when={retryAction()}>
+            <button
+              type="button"
+              data-action="retry"
+              class="xc-retry-btn xc-btn-secondary"
+              onClick={handleRetry}
+            >
+              {t('retry')}
+            </button>
+          </Show>
+        </div>
+      </Show>
+
       <Show when={authorized() === true}>
         <div class="xc-desk-bookings" data-screen="desk-bookings">
-          <Show when={errorMessage()}>
-            <div role="alert" class="xc-error-banner">
-              <span>{errorMessage()}</span>
-              <Show when={retryAction()}>
-                <button
-                  type="button"
-                  data-action="retry"
-                  class="xc-retry-btn xc-btn-secondary"
-                  onClick={handleRetry}
-                >
-                  {t('retry')}
-                </button>
-              </Show>
-            </div>
-          </Show>
-
           <div class="xc-bookings-toolbar">
             <div class="xc-qr-search">
               <input

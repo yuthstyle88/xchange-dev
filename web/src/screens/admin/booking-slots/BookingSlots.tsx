@@ -252,9 +252,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleSavePolicy() {
     setErrorMessage(null);
-    const cut = Number(cutoff());
-    const grc = Number(grace());
-    const exp = Number(expiry());
+    const cutRaw = cutoff().trim();
+    const grcRaw = grace().trim();
+    const expRaw = expiry().trim();
+    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw)) {
+      setErrorMessage(t('policyValidationFailed'));
+      return;
+    }
+    const cut = Number(cutRaw);
+    const grc = Number(grcRaw);
+    const exp = Number(expRaw);
 
     // Boundary checks: cutoff >= 0, grace >= 0, expiry > 0
     if (

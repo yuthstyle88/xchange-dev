@@ -55,6 +55,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   let currentCreateCmd: ReturnType<typeof command<TransferCreateInput, CashRecordOutput>> | null = null;
   let currentSubmitCmd: ReturnType<typeof command<CashRecordInput, CashRecordOutput>> | null = null;
   let pendingCreatedId: string | null = null;
+  let pendingCreateBody: string | null = null;
 
   // Dispatch command references for retry
   const dispatchCmds = new Map<string, ReturnType<typeof command<CashRecordInput, CashRecordOutput>>>();
@@ -139,6 +140,36 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     setSubmitting(true);
 
     try {
+      const lines: CashLineInput[] = [];
+      for (const d of denominations()) {
+        const qStr = quantities()[d.id];
+        if (qStr && qStr.trim() !== '') {
+          lines.push({
+            currency: d.currency,
+            denominationId: d.id,
+            qty: qStr.trim(),
+          });
+        }
+      }
+      const createBody: TransferCreateInput = {
+        branch: props.ctx.me.branchId,
+        kind: kind(),
+        toBranchId: kind() === 'BRANCH' ? toBranchId() || null : null,
+        fromShiftId:
+          kind() === 'DRAWER_TO_SAFE' ? props.ctx.floor?.myShift?.id ?? null : null,
+        toShiftId:
+          kind() === 'SAFE_TO_DRAWER' ? props.ctx.floor?.myShift?.id ?? null : null,
+        lines,
+        note: note(),
+      };
+      const serializedCreateBody = JSON.stringify(createBody);
+
+      if (pendingCreatedId && pendingCreateBody !== serializedCreateBody) {
+        pendingCreatedId = null;
+        pendingCreateBody = null;
+        currentSubmitCmd = null;
+      }
+
       let createdId = pendingCreatedId;
       if (!createdId) {
         if (!currentCreateCmd) {
@@ -148,32 +179,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             '/api/cash-transfers'
           );
         }
-        const lines: CashLineInput[] = [];
-        for (const d of denominations()) {
-          const qStr = quantities()[d.id];
-          if (qStr && qStr.trim() !== '') {
-            lines.push({
-              currency: d.currency,
-              denominationId: d.id,
-              qty: qStr.trim(),
-            });
-          }
-        }
-        const createBody: TransferCreateInput = {
-          branch: props.ctx.me.branchId,
-          kind: kind(),
-          toBranchId: kind() === 'BRANCH' ? toBranchId() || null : null,
-          fromShiftId:
-            kind() === 'DRAWER_TO_SAFE' ? props.ctx.floor?.myShift?.id ?? null : null,
-          toShiftId:
-            kind() === 'SAFE_TO_DRAWER' ? props.ctx.floor?.myShift?.id ?? null : null,
-          lines,
-          note: note(),
-        };
 
         const res = await currentCreateCmd.send(createBody);
         createdId = res.id;
         pendingCreatedId = createdId;
+        pendingCreateBody = serializedCreateBody;
         currentCreateCmd = null;
       }
 
@@ -192,6 +202,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       // Reset upon success
       currentSubmitCmd = null;
       pendingCreatedId = null;
+      pendingCreateBody = null;
       setShowCreate(false);
       setNote('');
       setQuantities({});
@@ -435,6 +446,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               onClick={() => {
                 setShowCreate(false);
                 pendingCreatedId = null;
+                pendingCreateBody = null;
                 currentCreateCmd = null;
                 currentSubmitCmd = null;
               }}
