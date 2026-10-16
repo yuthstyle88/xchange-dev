@@ -4,6 +4,7 @@
 // is refused `staleVersion` by the server.
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   CertificationRow,
@@ -27,12 +28,6 @@ function today(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function newKey(): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `key-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 type PartName = 'transactions' | 'counts' | 'transfers' | 'exceptions' | 'integrity' | 'reversalsPending';
@@ -83,6 +78,7 @@ function Certification(props: { row: CertificationRow }): JSX.Element {
 
 export function Reconciliation(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const certifyWrite = keyedWrite<ReconciliationCertifyInput, CertificationRow>(api, 'POST', CERTIFY);
   const [sheet, setSheet] = createSignal<FinanceSheet | null>(null);
   const [error, setError] = createSignal<unknown>(null);
   const [note, setNote] = createSignal('');
@@ -128,7 +124,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
       note: note(),
     };
     try {
-      await api.command<ReconciliationCertifyInput, CertificationRow>('POST', CERTIFY, input, newKey());
+      await certifyWrite.send(input);
       setNote('');
       await read(shown.branch, shown.date);
     } catch (err: unknown) {

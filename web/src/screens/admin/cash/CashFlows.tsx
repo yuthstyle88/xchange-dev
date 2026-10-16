@@ -4,6 +4,7 @@
 
 import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
 import type {
   CashLineInput,
@@ -153,7 +154,16 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   // ── writes: one Idempotency-Key per user action, kept until the server answers ──
 
-  const keys = new Map<string, { key: string; body: string }>();
+  const writes = new Map<string, { send(body: unknown): Promise<unknown>; reset(): void }>();
+
+  function writeFor<B, R>(action: string, path: string): { send(body: B): Promise<R>; reset(): void } {
+    let w = writes.get(action);
+    if (!w) {
+      w = keyedWrite<unknown, unknown>(api, 'POST', path);
+      writes.set(action, w);
+    }
+    return w as { send(body: B): Promise<R>; reset(): void };
+  }
 
   function message(err: unknown): string {
     if (err instanceof ApiError && err.code in table.th) {
@@ -164,23 +174,13 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   async function send<B, R>(action: string, path: string, body: B, done: (answer: R) => void): Promise<void> {
     if (busy()) return;
-    const sent = JSON.stringify(body);
-    let held = keys.get(action);
-    if (!held || held.body !== sent) {
-      held = { key: crypto.randomUUID(), body: sent };
-      keys.set(action, held);
-    }
     setBusy(true);
     setRefusal(null);
     setAwaiting(null);
     try {
-      const answer = await api.command<B, R>('POST', path, body, held.key);
-      keys.delete(action);
+      const answer = await writeFor<B, R>(action, path).send(body);
       done(answer);
     } catch (err: unknown) {
-      // A refusal is the server's answer: the next try is a new action. Anything else may have been applied,
-      // so the retry keeps the key.
-      if (err instanceof ApiError && err.status < 500) keys.delete(action);
       const text = message(err);
       setRefusal(text);
       toast(text);

@@ -13,6 +13,7 @@ import {
 import { fill, lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -234,7 +235,11 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
   };
 
-  let pendingSave: { key: string; bodyJson: string } | null = null;
+  const savePlan = keyedWrite<Record<string, unknown>, PlannerDraftDto>(
+    api,
+    'POST',
+    '/api/app/planner-drafts',
+  );
 
   const handleCalculate = async () => {
     const amtStr = amount().trim();
@@ -306,24 +311,9 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       customerSide: customerSide(),
       amount: amountType() === 'quantity' ? { quantity: amtStr } : { budgetThb: amtStr },
     };
-    const bodyJson = JSON.stringify(body);
-    if (!pendingSave || pendingSave.bodyJson !== bodyJson) {
-      const nextKey =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      pendingSave = { key: nextKey, bodyJson };
-    }
-    const idempotencyKey = pendingSave.key;
 
     try {
-      const draft = await api.command<Record<string, unknown>, PlannerDraftDto>(
-        'POST',
-        '/api/app/planner-drafts',
-        body,
-        idempotencyKey,
-      );
-      pendingSave = null;
+      const draft = await savePlan.send(body);
       setSavedPlanId(draft.id);
     } catch (err) {
       setSavePlanError(wordedError(err));

@@ -11,6 +11,7 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
+import { keyedWrite } from '../../shared/api/keyed-write';
 import type { DeviceEventRow } from '../../shared/api/generated/device_events';
 import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
 import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
@@ -38,7 +39,7 @@ if (
 }
 
 export interface DevicesScreenProps {
-  api: Pick<ApiClient, 'view' | 'post' | 'page'>;
+  api: Pick<ApiClient, 'view' | 'post' | 'page'> & Partial<Pick<ApiClient, 'command'>>;
   branch: string;
   newId?: () => string;
   navigate?: (url: string) => void;
@@ -243,19 +244,75 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     }
   }
 
+  let lastMappedKey: string | null = null;
+  let lastResolvedId: string | null = null;
+  function resolveKey(key: string): string {
+    if (!props.newId) return key;
+    if (lastMappedKey !== key || lastResolvedId === null) {
+      lastMappedKey = key;
+      lastResolvedId = props.newId();
+    }
+    return lastResolvedId;
+  }
+
+  const deviceCommandClient = {
+    command: async <B, R>(
+      method: string,
+      path: string,
+      body: B,
+      key: string,
+    ): Promise<R> => {
+      const resolvedKey = resolveKey(key);
+      let finalBody: unknown = body;
+      const b = body as unknown as {
+        action?: string;
+        payload?: Record<string, unknown>;
+      };
+      if (b && b.action === 'queue' && b.payload) {
+        if (b.payload.kind === 'PRINT_RECEIPT') {
+          finalBody = {
+            action: 'queue',
+            payload: {
+              kind: 'PRINT_RECEIPT',
+              ref: b.payload.ref,
+              requestId: resolvedKey,
+              branchId: b.payload.branchId,
+            },
+          };
+        } else {
+          finalBody = {
+            action: 'queue',
+            payload: {
+              ...b.payload,
+              requestId: resolvedKey,
+            },
+          };
+        }
+      }
+      if (typeof props.api.command === 'function') {
+        return props.api.command<unknown, R>(method as 'POST', path, finalBody, resolvedKey);
+      }
+      return props.api.post<unknown, R>(path, finalBody);
+    },
+  } as unknown as ApiClient;
+
+  const deviceWrite = keyedWrite<Record<string, unknown>, unknown>(
+    deviceCommandClient,
+    'POST',
+    '/api/devices',
+  );
+
   async function handleRefresh(): Promise<void> {
     await runAction(async () => {});
   }
 
   async function handlePrint(): Promise<void> {
     await runAction(async () => {
-      const id = props.newId ? props.newId() : crypto.randomUUID();
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'queue',
         payload: {
           kind: 'PRINT_RECEIPT',
           ref: selectedTx(),
-          requestId: id,
           branchId: effectiveBranch(),
         },
       });
@@ -264,15 +321,13 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleDrawer(): Promise<void> {
     await runAction(async () => {
-      const id = props.newId ? props.newId() : crypto.randomUUID();
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'queue',
         payload: {
           kind: 'DRAWER_REQUEST',
           ref: selectedTx(),
           reason: reason(),
           branchId: effectiveBranch(),
-          requestId: id,
         },
       });
     });
@@ -280,7 +335,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleProcess(id: string): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'process',
         payload: {
           id,
@@ -292,7 +347,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleRetry(id: string): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'retry',
         payload: {
           id,
@@ -304,7 +359,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handlePrinterOnlineChange(checked: boolean): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'printerOnline',
         payload: {
           online: checked,
@@ -316,7 +371,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
 
   async function handleDrawerObservation(state: 'OPEN' | 'CLOSED'): Promise<void> {
     await runAction(async () => {
-      await props.api.post('/api/devices', {
+      await deviceWrite.send({
         action: 'drawerObservation',
         payload: {
           state,
