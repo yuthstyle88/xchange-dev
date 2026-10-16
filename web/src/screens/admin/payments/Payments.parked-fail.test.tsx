@@ -324,4 +324,48 @@ describe('#2492 Payments parked branch switch on failed save', () => {
     expect(feedback()).toBe('');
     expect(branchNotice()).toBeNull();
   });
+
+  // #2588: save MAIN held → shell A1 (parked) → save fails → confirm DECLINED → shell back to MAIN (no confirm) → save MAIN succeeds
+  it('save MAIN held -> shell A1 (parked) -> save fails -> confirm DECLINED -> shell back to MAIN -> save MAIN succeeds -> stays on MAIN', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const m = await mount();
+    server.holdSave = true;
+    server.failSave = true;
+
+    await editAndSave('Counter 9');
+    expect(feedback()).toBe('Saving…');
+
+    // 1. Shell switches to A1 while save on MAIN is held (parked)
+    m.setBranch('A1');
+    await settle();
+    expect(confirm).not.toHaveBeenCalled();
+
+    // 2. Save fails, user declines the switch
+    server.release();
+    await settle();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(heading()).toContain('Main Desk');
+    expect(server.paymentReads).toEqual(['MAIN']);
+
+    // 3. Move shell back to MAIN without saving (no confirm prompt since target matches displayed)
+    m.setBranch('MAIN');
+    await settle();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(heading()).toContain('Main Desk');
+
+    // 4. Save on MAIN succeeds
+    server.holdSave = false;
+    server.failSave = false;
+    button('Save settings').click();
+    await settle();
+
+    // Edge case (§9): confirm was called exactly once (at the failed save) and not again
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // Screen stays on MAIN, no payment read for A1
+    expect(heading()).toContain('Main Desk');
+    expect(server.paymentReads).toEqual(['MAIN', 'MAIN']);
+    expect(server.paymentReads).not.toContain('A1');
+  });
 });
+
