@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::collections::HashSet;
 use std::sync::Arc;
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
@@ -54,6 +55,19 @@ fn sha256_hex(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn refuse_duplicate_currency(lines: &[DraftLine]) -> Result<(), RateEngineError> {
+    let mut seen = HashSet::with_capacity(lines.len());
+    for line in lines {
+        if !seen.insert(line.currency) {
+            return Err(RateEngineError::ValidationFailed(format!(
+                "duplicate currency in draft lines: {}",
+                line.currency
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl RateDraftService {
     pub fn new(pool: PgPool, approvals: Arc<ApprovalService>) -> Self {
         Self { pool, approvals }
@@ -66,6 +80,8 @@ impl RateDraftService {
         who: &access::Actor,
         lines: Vec<DraftLine>,
     ) -> Result<RateDraft, RateEngineError> {
+        refuse_duplicate_currency(&lines)?;
+
         // Validate manual reasons upfront
         for line in &lines {
             if matches!(line.buy, LineSide::Manual(_)) || matches!(line.sell, LineSide::Manual(_)) {
@@ -183,6 +199,8 @@ impl RateDraftService {
                 "expected version {expected_version}, got {current_version}"
             )));
         }
+
+        refuse_duplicate_currency(&lines)?;
 
         // Validate manual reasons
         for line in &lines {
