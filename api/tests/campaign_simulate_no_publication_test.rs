@@ -21,7 +21,8 @@
 //! 2. `currency_without_published_line_is_refused_like_the_quote`: MAIN publishes USD only, the
 //!    scenario asks EUR ⇒ the same refusal, nothing written.
 //! 3. `one_unpriceable_scenario_refuses_the_whole_simulation`: first scenario priced (MAIN/USD),
-//!    second at a branch with no publication ⇒ the same refusal, 0 rows, status unchanged.
+//!    second on MAIN in a currency MAIN has not published (EUR) ⇒ the same refusal, 0 rows,
+//!    status unchanged. (Same branch on purpose: #1992 refuses two branches with 400 first.)
 //! 4. `priced_scenario_is_simulated_at_the_published_rate`: MAIN publishes USD 33.50/34.00 ⇒ 200,
 //!    one row, version `SIMULATED`, and the stored result's `rateBefore` equals the published buy
 //!    rate (never 1.0) and `rateAfter` is that rate plus the rule's 0.25.
@@ -56,7 +57,6 @@ const AS: &str = "x-test-as";
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 const USER: &str = "00000000-0000-0000-0000-000000000002";
 const MAIN: &str = "MAIN";
-const UNPUBLISHED: &str = "B1993";
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
 
@@ -476,24 +476,18 @@ async fn currency_without_published_line_is_refused_like_the_quote() {
 #[actix_web::test]
 async fn one_unpriceable_scenario_refuses_the_whole_simulation() {
     let room = Room::start().await;
-    sqlx::query("INSERT INTO branches (id, name) VALUES ($1, 'Unpublished branch')")
-        .bind(UNPUBLISHED)
-        .execute(&room.pool)
-        .await
-        .expect("seed unpublished branch");
-    let (campaign_id, version_id) = seed_draft_campaign(&room.pool, &[MAIN, UNPUBLISHED]).await;
+    let (campaign_id, version_id) = seed_draft_campaign(&room.pool, &[MAIN]).await;
+    // One branch only: #1992 refuses scenarios on two branches with 400 before any rate is read,
+    // so the unpriceable scenario is a currency MAIN has not published (ruling claude/7c9b7042,
+    // 2026-10-16, #1993).
     publish(&room.pool, MAIN, &[("USD", "33.50000000", "34.00000000")]).await;
-    assert!(
-        !has_publication(&room.pool, UNPUBLISHED).await,
-        "precondition: the second branch has no current publication"
-    );
 
     let ans = simulate(
         &room,
         campaign_id,
         json!([
             { "branchId": MAIN, "currency": "USD", "amount": "100.00" },
-            { "branchId": UNPUBLISHED, "currency": "USD", "amount": "100.00" }
+            { "branchId": MAIN, "currency": "EUR", "amount": "100.00" }
         ]),
     )
     .await;
