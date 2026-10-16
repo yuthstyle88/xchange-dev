@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type {
   ApprovalRequestItemDto,
@@ -49,6 +49,11 @@ interface RequestCardProps {
 }
 
 function RequestCard(props: RequestCardProps): JSX.Element {
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
+
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -73,13 +78,17 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         reason: reason(),
         branch: props.branch,
       });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
@@ -100,13 +109,17 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         reason: r,
         branch: props.branch,
       });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
