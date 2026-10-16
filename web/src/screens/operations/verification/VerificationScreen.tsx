@@ -152,6 +152,7 @@ export function VerificationScreen(): JSX.Element {
   let lastQueueVersion: number | undefined;
   let queueErrorActive = false;
   let caseRead = 0;
+  let queueRead = 0;
   let expiresInputRef: HTMLInputElement | undefined;
   let reasonSelectRef: HTMLSelectElement | undefined;
   let branchCustInputRef: HTMLInputElement | undefined;
@@ -202,6 +203,9 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function fetchQueue(isPoll = false): Promise<void> {
+    // #2454: a poll started before a full reload can answer after it; only the
+    // latest-started queue read may apply its answer, version, authorization or error.
+    const mine = ++queueRead;
     try {
       const filter: VerificationQueueFilter = {
         since: isPoll && lastQueueVersion !== undefined ? lastQueueVersion : null,
@@ -210,6 +214,7 @@ export function VerificationScreen(): JSX.Element {
         'verification_queue',
         filter.since !== null ? { since: filter.since } : {},
       );
+      if (mine !== queueRead) return;
       lastQueueVersion = answer.version;
       if (answer.changed && Array.isArray(answer.data)) {
         setQueueItems(answer.data);
@@ -222,6 +227,7 @@ export function VerificationScreen(): JSX.Element {
         setRetryFn(null);
       }
     } catch (err: unknown) {
+      if (mine !== queueRead) return;
       if (
         err instanceof ApiError &&
         (err.code === 'roleNotAllowed' ||
