@@ -98,6 +98,8 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
     if (busy()) return;
     const cust = selectedCustomer();
     if (!cust) {
+      setNotice(null);
+      setError(t('pickCustomer'));
       return;
     }
     setBusy(true);
