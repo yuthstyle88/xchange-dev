@@ -1685,7 +1685,7 @@ async fn adapters_fallbacks() {
 
     // Assert ConsentGate answers from real data
     let mut tx = db.pool.begin().await.expect("begin");
-    let gate_granted = MarketingConsentGate::prefetch_in(&db.pool, &mut tx, cust_granted)
+    let gate_granted = MarketingConsentGate::prefetch_in(&mut tx, cust_granted)
         .await
         .expect("prefetch granted");
     assert!(
@@ -1693,7 +1693,7 @@ async fn adapters_fallbacks() {
         "customer with granted consent must have marketing_allowed == true"
     );
 
-    let gate_withdrawn = MarketingConsentGate::prefetch_in(&db.pool, &mut tx, cust_withdrawn)
+    let gate_withdrawn = MarketingConsentGate::prefetch_in(&mut tx, cust_withdrawn)
         .await
         .expect("prefetch withdrawn");
     assert!(
@@ -1701,7 +1701,7 @@ async fn adapters_fallbacks() {
         "customer with withdrawn consent must have marketing_allowed == false"
     );
 
-    let gate_none = MarketingConsentGate::prefetch_in(&db.pool, &mut tx, "cust-no-consent")
+    let gate_none = MarketingConsentGate::prefetch_in(&mut tx, "cust-no-consent")
         .await
         .expect("prefetch none");
     assert!(
