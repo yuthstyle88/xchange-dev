@@ -599,6 +599,8 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
     saveOutput = { unpriced: [] };
     buyInput.value = '34.20';
     buyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    reasonInput.value = 'Price update 2';
+    reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
     saveBtn.click();
 
     await vi.waitFor(() => {

@@ -176,6 +176,8 @@ export function KioskCurrenciesScreen(props: {
     setKbankRef(null);
     setFreshness(null);
     setLoadError(undefined);
+    setCardStatuses({});
+    setSavingCodes({});
     try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
         branch: branchId,
@@ -206,6 +208,8 @@ export function KioskCurrenciesScreen(props: {
       setKbankRef(null);
       setFreshness(null);
       setLoadError(undefined);
+      setCardStatuses({});
+      setSavingCodes({});
       return;
     }
     void fetchCurrencies(b);
@@ -246,13 +250,12 @@ export function KioskCurrenciesScreen(props: {
           ...prev,
           [code]: { kind: 'message', text: msg },
         }));
+        setSavingCodes((prev) => ({ ...prev, [code]: false }));
       }
-      setSavingCodes((prev) => ({ ...prev, [code]: false }));
       return;
     }
 
     if (props.branch !== branchId) {
-      setSavingCodes((prev) => ({ ...prev, [code]: false }));
       return;
     }
 
@@ -294,7 +297,9 @@ export function KioskCurrenciesScreen(props: {
         [code]: isEnabled ? { kind: 'savedOn' } : { kind: 'savedOff' },
       }));
     } finally {
-      setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      if (props.branch === branchId) {
+        setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      }
     }
   };
 

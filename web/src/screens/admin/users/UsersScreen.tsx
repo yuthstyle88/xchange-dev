@@ -280,15 +280,18 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setRowWriting(true);
     setPageError(null);
     setPageSuccess(null);
+    const branch = props.branch();
     try {
       await revokeWrite.send({
         userId: user.userId,
         role: role.role,
         branch: role.branch,
       });
+      if (props.branch() !== branch) return;
       setPageSuccess(t('successRevoked'));
       await loadUsers();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       setPageSuccess(null);
       setPageError(wordedError(err));
     } finally {
@@ -301,13 +304,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setRowWriting(true);
     setPageError(null);
     setPageSuccess(null);
+    const branch = props.branch();
     try {
       await disableWrite.send({
         userId: user.userId,
       });
+      if (props.branch() !== branch) return;
       setPageSuccess(t('successDisabled'));
       await loadUsers();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       setPageSuccess(null);
       setPageError(wordedError(err));
     } finally {

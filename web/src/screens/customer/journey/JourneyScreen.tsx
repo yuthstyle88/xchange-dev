@@ -78,7 +78,11 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
     return null;
   };
 
+  let ticketSeq = 0;
+  let draftsSeq = 0;
+
   const loadQueueTicket = async () => {
+    const seq = ++ticketSeq;
     const tId = activeTicketId();
     const br = activeBranch();
 
@@ -96,6 +100,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         branch: br,
         filter: { ticketId: tId },
       });
+      if (seq !== ticketSeq) return;
       const data = answer.data;
       if (data && data.ticketId) {
         setTicket(data);
@@ -105,6 +110,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         setQueueState('empty');
       }
     } catch (err: unknown) {
+      if (seq !== ticketSeq) return;
       setTicket(null);
       if ((err as { status?: number })?.status === 401) {
         setQueueState('unauthorized');
@@ -124,14 +130,17 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
   };
 
   const loadDrafts = async () => {
+    const seq = ++draftsSeq;
     setDraftsState('loading');
     setDraftsError(null);
     try {
       const answer = await api.view<MyPlannerDraftsData>('my_planner_drafts');
+      if (seq !== draftsSeq) return;
       const list = answer.data?.drafts ?? [];
       setDrafts(list);
       setDraftsState(list.length === 0 ? 'empty' : 'ready');
     } catch (err: unknown) {
+      if (seq !== draftsSeq) return;
       setDrafts([]);
       if ((err as { status?: number })?.status === 401) {
         setDraftsState('unauthorized');
@@ -243,6 +252,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
             type="button"
             class="xc-journey-refresh-btn"
             onClick={loadQueueTicket}
+            disabled={queueState() === 'loading'}
             aria-label={t('refresh')}
           >
             {t('refresh')}
@@ -343,6 +353,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
             type="button"
             class="xc-journey-refresh-btn"
             onClick={loadDrafts}
+            disabled={draftsState() === 'loading'}
             aria-label={t('refresh')}
           >
             {t('refresh')}

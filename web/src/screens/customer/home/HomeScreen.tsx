@@ -248,6 +248,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     calcSeq += 1;
     setPreviewLoading(false);
     setPreviewResult(null);
+    setPreviewError(null);
     setSavedPlanId(null);
     setSavePlanError(null);
   };

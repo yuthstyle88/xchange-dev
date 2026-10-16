@@ -76,6 +76,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       setStaleDataMinutes(null);
       setFloors([]);
       setVersion(null);
+      setSaving(false);
       saveWrite.reset();
       lastTick = tick;
       setError(null);
@@ -110,9 +111,10 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
-    ++readSeq;
+    const seq = ++readSeq;
 
     const branch = props.branch();
+    const isStale = () => props.branch() !== branch || seq !== readSeq;
     const input: BranchAlertSettingsSaveInput = {
       branch,
       staleDataMinutes: staleDataMinutes(),
@@ -125,16 +127,20 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
 
     try {
       const res = await saveWrite.send(input);
+      if (isStale()) return;
       setVersion(res.version ?? null);
       setStaleDataMinutes(res.staleDataMinutes);
       setFloors(res.floors ? res.floors.map((f) => ({ ...f })) : []);
     } catch (err: unknown) {
+      if (isStale()) return;
       setError(wordedError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadSettings(branch);
       }
     } finally {
-      setSaving(false);
+      if (props.branch() === branch) {
+        setSaving(false);
+      }
     }
   };
 

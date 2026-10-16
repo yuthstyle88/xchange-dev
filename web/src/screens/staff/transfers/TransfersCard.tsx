@@ -475,6 +475,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 pendingCreateBody = null;
                 currentCreateCmd = null;
                 currentSubmitCmd = null;
+                setNote('');
+                setQuantities({});
+                setToBranchId('');
+                setKind('BRANCH');
+                setError(null);
               }}
             >
               {t('cancel')}

@@ -509,6 +509,11 @@ describe('Staff transfers resubmit after refused submit (#2188)', () => {
 
     // Re-open with exact same values as ID_2 -> must create from scratch (ID_3), not reuse ID_2
     form = await openCreate();
+    typeInto(must<HTMLSelectElement>(tid('transfer-kind')), 'EXTERNAL_OUT');
+    await settle();
+    typeInto(must<HTMLInputElement>(tid('transfer-note')), 'edited before cancel');
+    typeInto(qtyInput(form, 21), '10');
+    await settle();
     await save();
     expect(sent.map((s) => s.url)).toEqual([
       '/api/cash-transfers',

@@ -245,6 +245,7 @@ class _SelectPageState extends ConsumerState<SelectPage> {
                 decimal: true,
               ),
               inputFormatters: [
+                _amountKeys,
                 FilteringTextInputFormatter.allow(
                   RegExp(r'^\d{0,8}(\.\d{0,2})?'),
                 ),
@@ -522,3 +523,23 @@ String _formatRate(double rate) {
   final decimals = s.length - dot - 1;
   return decimals < 4 ? s.padRight(dot + 5, '0') : s;
 }
+
+final _amountKeys = TextInputFormatter.withFunction((_, next) {
+  final units = next.text.codeUnits;
+  var changed = false;
+  final out = List<int>.filled(units.length, 0);
+  for (var i = 0; i < units.length; i++) {
+    final u = units[i];
+    var mapped = u;
+    if (u == 0x002C || u == 0x066B) {
+      mapped = 0x002E;
+    } else if (u >= 0x0660 && u <= 0x0669) {
+      mapped = 0x0030 + (u - 0x0660);
+    } else if (u >= 0x06F0 && u <= 0x06F9) {
+      mapped = 0x0030 + (u - 0x06F0);
+    }
+    if (mapped != u) changed = true;
+    out[i] = mapped;
+  }
+  return changed ? next.copyWith(text: String.fromCharCodes(out)) : next;
+});

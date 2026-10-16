@@ -42,7 +42,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const [accountsError, setAccountsError] = createSignal<string | null>(null);
   const [operationsError, setOperationsError] = createSignal<string | null>(null);
   const [branchesError, setBranchesError] = createSignal<string | null>(null);
-  const employeesError = () => accountsError() ?? operationsError() ?? branchesError();
+  const employeesError = () => accountsError() ?? branchesError();
   const setEmployeesError = (err: string | null) => setAccountsError(err);
   const [operations, setOperations] = createSignal<AdminOperationsData | null>(null);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
@@ -345,6 +345,10 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
         <Show when={employeesError()}>
           <div role="alert">{employeesError()}</div>
+        </Show>
+
+        <Show when={!employeesError() && operationsError()}>
+          <div role="alert">{operationsError()}</div>
         </Show>
 
         <Show when={!employeesError()}>
