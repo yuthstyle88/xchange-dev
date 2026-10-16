@@ -322,8 +322,9 @@ impl PostReversal {
             .run_reversed_in(tx, EffectPhase::Redeem, &facts)
             .await?;
 
-        // 4. Commission adjustment: the Broker feed. `amount_thb` has 2 places, so its minor units are the satang
-        //    exactly. An exchange with no feed row (none was recorded for it) has nothing to adjust.
+        // 4. Commission adjustment: the Broker feed. A reversal is always full (V-1), so the cumulative reversed
+        //    amount is the feed row's own `value_satang` (broker-seam §6.3). An exchange with no feed row has nothing
+        //    to adjust.
         let fed: Option<i64> = sqlx::query_scalar(
             "SELECT value_satang FROM broker_exchange_feed WHERE transaction_id = $1",
         )
@@ -331,9 +332,8 @@ impl PostReversal {
         .fetch_optional(&mut **tx)
         .await
         .map_err(AppError::Database)?;
-        if fed.is_some() {
-            ExchangeFeedWriter::record_reversed(tx, original.0, reversal.amount_thb.minor(), now)
-                .await?;
+        if let Some(value_satang) = fed {
+            ExchangeFeedWriter::record_reversed(tx, original.0, value_satang, now).await?;
         }
 
         // 5. Member recalculation event: the Outbox-phase effects (#559's Loyalty handler registers here).
