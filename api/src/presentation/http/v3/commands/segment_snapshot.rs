@@ -8,7 +8,6 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -121,29 +120,34 @@ impl CommandAction for SegmentSnapshotCommand {
             .await
             .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
 
-        let consent_svc = xc_customer::application::consent_service::ConsentService::pg(
-            PgPool::connect_lazy("postgres://127.0.0.1/none").expect("lazy pool"),
-        );
+        let matching_ids: Vec<String> = candidates
+            .iter()
+            .filter(|candidate| rule.matches(candidate))
+            .map(|candidate| candidate.customer_id.clone())
+            .collect();
 
-        let mut allowed_map = HashMap::new();
-        for candidate in &candidates {
-            if !rule.matches(candidate) {
-                continue;
-            }
-            let allowed = consent_svc
-                .marketing_allowed_in(tx, &candidate.customer_id, xc_customer::domain::consent::Channel::Sms)
-                .await
-                .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
-                || consent_svc
-                    .marketing_allowed_in(tx, &candidate.customer_id, xc_customer::domain::consent::Channel::Email)
-                    .await
-                    .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
-                || consent_svc
-                    .marketing_allowed_in(tx, &candidate.customer_id, xc_customer::domain::consent::Channel::Push)
-                    .await
-                    .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
-            allowed_map.insert(candidate.customer_id.clone(), allowed);
-        }
+        let eligible =
+            xc_customer::application::consent_service::ConsentService::marketing_eligible_in(
+                tx,
+                &matching_ids,
+            )
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+
+        let allowed_map: HashMap<String, bool> = matching_ids
+            .into_iter()
+            .map(|id| {
+                let is_eligible = eligible.contains(&id);
+                (id, is_eligible)
+            })
+            .collect();
 
         let consent_gate = PrefetchedConsentGate { allowed: allowed_map };
 

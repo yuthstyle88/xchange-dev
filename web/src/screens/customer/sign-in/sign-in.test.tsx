@@ -73,17 +73,18 @@ describe('customer sign-in and sign-up (APP-7 #998)', () => {
       expect(expectedText, `${lang}.consentTextMissing must exist`).toBeTypeOf('string');
 
       const navigate = vi.fn();
-      const mockFetch = vi.fn().mockResolvedValue({
-        status: 409,
-        ok: false,
-        json: async () => ({
-          error: {
-            code: 'consentTextMissing',
-            field: 'lang',
-            message: 'Consent text missing',
-          },
-        }),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'consentTextMissing',
+              field: 'lang',
+              message: 'Consent text missing',
+            },
+          }),
+          { status: 409 }
+        )
+      );
 
       dispose = render(
         () => <SignUp navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,

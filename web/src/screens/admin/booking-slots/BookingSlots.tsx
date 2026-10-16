@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import type {
   AdminBookingSlotsData,
@@ -284,6 +285,9 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  const orgWideAdmin = () =>
+    (sharedSession().me()?.roles ?? []).some((r) => r.role === 'ADMIN' && r.branchId === null);
+
   return (
     <div class="booking-slots-screen">
       <Show when={loading()}>
@@ -428,45 +432,47 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       </section>
 
       {/* Section 4: Booking Policy */}
-      <section class="booking-slots-section">
-        <h3>{t('policySection')}</h3>
-        <div class="form-group">
-          <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
-          <input
-            id="cancelCutoffMinutes"
-            name="cancelCutoffMinutes"
-            data-field="cancelCutoffMinutes"
-            type="number"
-            value={cutoff()}
-            onInput={(e) => setCutoff(e.currentTarget.value)}
-          />
-        </div>
-        <div class="form-group">
-          <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
-          <input
-            id="noShowGraceMinutes"
-            name="noShowGraceMinutes"
-            data-field="noShowGraceMinutes"
-            type="number"
-            value={grace()}
-            onInput={(e) => setGrace(e.currentTarget.value)}
-          />
-        </div>
-        <div class="form-group">
-          <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
-          <input
-            id="confirmExpiryMinutes"
-            name="confirmExpiryMinutes"
-            data-field="confirmExpiryMinutes"
-            type="number"
-            value={expiry()}
-            onInput={(e) => setExpiry(e.currentTarget.value)}
-          />
-        </div>
-        <button type="button" onClick={handleSavePolicy}>
-          {t('savePolicy')}
-        </button>
-      </section>
+      <Show when={orgWideAdmin()}>
+        <section class="booking-slots-section">
+          <h3>{t('policySection')}</h3>
+          <div class="form-group">
+            <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
+            <input
+              id="cancelCutoffMinutes"
+              name="cancelCutoffMinutes"
+              data-field="cancelCutoffMinutes"
+              type="number"
+              value={cutoff()}
+              onInput={(e) => setCutoff(e.currentTarget.value)}
+            />
+          </div>
+          <div class="form-group">
+            <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
+            <input
+              id="noShowGraceMinutes"
+              name="noShowGraceMinutes"
+              data-field="noShowGraceMinutes"
+              type="number"
+              value={grace()}
+              onInput={(e) => setGrace(e.currentTarget.value)}
+            />
+          </div>
+          <div class="form-group">
+            <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
+            <input
+              id="confirmExpiryMinutes"
+              name="confirmExpiryMinutes"
+              data-field="confirmExpiryMinutes"
+              type="number"
+              value={expiry()}
+              onInput={(e) => setExpiry(e.currentTarget.value)}
+            />
+          </div>
+          <button type="button" onClick={handleSavePolicy}>
+            {t('savePolicy')}
+          </button>
+        </section>
+      </Show>
     </div>
   );
 }
