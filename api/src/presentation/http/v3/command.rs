@@ -410,6 +410,27 @@ async fn handle_command<C: CommandAction>(
             }
         };
 
+    if let Some(user) = caller.user.as_ref() {
+        let same_org: bool = match sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM organizations o WHERE o.id::text = $1 AND (o.id::text = $2 OR o.code = $2))",
+        )
+        .bind(&org_id)
+        .bind(&user.organization_id)
+        .fetch_one(&pool)
+        .await
+        {
+            Ok(same) => same,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to check caller organization");
+                return server_error().error_response();
+            }
+        };
+
+        if !same_org {
+            return out_of_scope().error_response();
+        }
+    }
+
     // If Pair, check that the other branch belongs to the same organization
     if let Locks::Pair(a, b) = &locks {
         let other = if a == &branch { b } else { a };
