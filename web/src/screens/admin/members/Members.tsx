@@ -112,6 +112,8 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
       const res = await defineWrite.send(body);
       setDefinition(res);
+      setSnapshotInfo(null);
+      setPreview(null);
     } catch (err) {
       setErrorMsg(memberError(err));
     } finally {
@@ -139,6 +141,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
       const body = { id: def.id };
       const res = await snapshotWrite.send(body);
       setSnapshotInfo(res);
+      setPreview(null);
       await loadPreview(res.id);
     } catch (err) {
       setErrorMsg(memberError(err));
