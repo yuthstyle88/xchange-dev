@@ -87,15 +87,19 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
   const [busy, setBusy] = createSignal<boolean>(false);
 
   const [targetAmounts, setTargetAmounts] = createSignal<Record<string, string>>({});
+  // Currencies the user typed since the last server answer and has not saved
+  // yet; every other input follows the server's target on each re-read (#2635).
+  const typedCurrencies = new Set<string>();
 
   createEffect(() => {
-    const amounts = props.ctx.floor?.target?.amounts;
-    if (amounts) {
-      setTargetAmounts((prev) => ({
-        ...amounts,
-        ...prev,
-      }));
-    }
+    const amounts = props.ctx.floor?.target?.amounts ?? {};
+    setTargetAmounts((prev) => {
+      const next: Record<string, string> = { ...amounts };
+      for (const cur of typedCurrencies) {
+        if (prev[cur] !== undefined) next[cur] = prev[cur];
+      }
+      return next;
+    });
   });
 
   const loadRates = async () => {
@@ -222,6 +226,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
         branch: props.ctx.me.branchId,
         amounts,
       });
+      typedCurrencies.clear();
       setNotice(t('saved'));
       await props.ctx.refresh();
     } catch (e: unknown) {
@@ -301,6 +306,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
                   value={targetAmounts()[cur] ?? ''}
                   onInput={(e) => {
                     const val = e.currentTarget.value;
+                    typedCurrencies.add(cur);
                     setTargetAmounts((prev) => ({ ...prev, [cur]: val }));
                   }}
                 />
