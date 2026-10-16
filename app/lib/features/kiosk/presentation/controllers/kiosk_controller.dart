@@ -244,6 +244,7 @@ class KioskController extends Notifier<KioskState> {
   Timer? _countdown;
   Timer? _restart;
   bool _disposed = false;
+  bool _ratesError = false;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -269,6 +270,7 @@ class KioskController extends Notifier<KioskState> {
       e is KioskFailure ? _t.errorText(e.serverMessage) : _t.text('errGeneric');
 
   void reportError(String textKey) {
+    _ratesError = false;
     _set(state.copyWith(error: _t.text(textKey)));
   }
 
@@ -285,6 +287,7 @@ class KioskController extends Notifier<KioskState> {
     _statusPoller.stop();
     _receiptPoller.stop();
     _idle.touch();
+    _ratesError = false;
     _set(
       KioskState(
         languageCode: defaultLanguage,
@@ -295,6 +298,7 @@ class KioskController extends Notifier<KioskState> {
     try {
       final m = await _repo.rates();
       if (_disposed) return;
+      _ratesError = false;
       final keep = m.rates.any((r) => r.code == state.currency);
       _set(
         _keepOfferedMethod(
@@ -308,6 +312,7 @@ class KioskController extends Notifier<KioskState> {
         ),
       );
     } catch (e) {
+      _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
   }
@@ -343,7 +348,9 @@ class KioskController extends Notifier<KioskState> {
           ? state.currency
           : (m.rates.isEmpty ? null : m.rates.first.code);
       final amountText = keep ? state.amountText : '';
-      final openChanged = state.model == null || m.open != state.model!.open;
+      final openChanged =
+          state.model == null || m.open != state.model!.open || _ratesError;
+      _ratesError = false;
       final error = openChanged
           ? (m.open ? '' : _t.text('closed'))
           : state.error;
@@ -361,6 +368,7 @@ class KioskController extends Notifier<KioskState> {
   }
 
   void setLanguage(String code) {
+    _ratesError = false;
     final t = _l10n.of(code);
     final closed =
         state.model != null &&
@@ -406,6 +414,7 @@ class KioskController extends Notifier<KioskState> {
 
   Future<void> submitQuote() async {
     if (!state.canReview) return;
+    _ratesError = false;
     _set(state.copyWith(busy: true, error: ''));
     try {
       final quote = await _repo.quote(
@@ -433,6 +442,7 @@ class KioskController extends Notifier<KioskState> {
       });
       _statusPoller.start();
     } catch (e) {
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
@@ -442,6 +452,7 @@ class KioskController extends Notifier<KioskState> {
   void backToSelect() {
     _countdown?.cancel();
     _statusPoller.stop();
+    _ratesError = false;
     _set(
       state.copyWith(
         quote: null,
@@ -457,6 +468,7 @@ class KioskController extends Notifier<KioskState> {
   Future<void> confirm() async {
     final q = state.quote;
     if (!state.canConfirm || q == null) return;
+    _ratesError = false;
     _set(state.copyWith(busy: true, error: ''));
     try {
       final status = await _repo.confirm(q.id);
@@ -475,6 +487,7 @@ class KioskController extends Notifier<KioskState> {
         _set(state.copyWith(busy: false));
         return;
       }
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
