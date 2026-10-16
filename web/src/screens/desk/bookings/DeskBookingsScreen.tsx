@@ -82,7 +82,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
   const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
   const [branchId, setBranchId] = createSignal<string>('');
-  const [version, setVersion] = createSignal<number>(1);
+  const [version, setVersion] = createSignal<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
   const [retryAction, setRetryAction] = createSignal<(() => Promise<void>) | null>(null);
 
@@ -112,14 +112,38 @@ export function DeskBookingsScreen(): JSX.Element {
 
   const allSlots = () => groupBookingsBySlot(items());
   let readErrorActive = false;
+  let readSeq = 0;
+  let settledSeq = 0;
+  let loadedQr: string | null = null;
 
   async function fetchBookings(opts?: { since?: number; qr?: string }) {
+    const seq = ++readSeq;
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
+    const sinceParam = loadedQr === qrParam ? opts?.since : undefined;
     try {
       const envelope = await api.view<DeskBookingsData>(VIEW_DESK_BOOKINGS, {
-        since: opts?.since,
+        since: sinceParam,
         filter: qrParam ? { qr: qrParam } : undefined,
       });
+      if (seq < settledSeq) return;
+      if (envelope.changed === false) {
+        if (loadedQr !== qrParam || seq !== readSeq) {
+          return;
+        }
+        settledSeq = seq;
+        if (envelope.version !== undefined) {
+          setVersion(envelope.version);
+        }
+        if (readErrorActive) {
+          readErrorActive = false;
+          setErrorMessage(null);
+          setRetryAction(null);
+        }
+        return;
+      }
+      if (seq !== readSeq && loadedQr === qrParam) return;
+      if (qrParam !== activeQr()) return;
+      settledSeq = Math.max(settledSeq, seq);
       if (envelope.version !== undefined) {
         setVersion(envelope.version);
       }
@@ -128,10 +152,8 @@ export function DeskBookingsScreen(): JSX.Element {
         setErrorMessage(null);
         setRetryAction(null);
       }
-      if (envelope.changed === false) {
-        return;
-      }
       if (envelope.data && Array.isArray(envelope.data.items)) {
+        loadedQr = qrParam;
         setItems(envelope.data.items);
         const groups = groupBookingsBySlot(envelope.data.items);
         const firstSlot = groups[0]?.slotId;
@@ -142,6 +164,8 @@ export function DeskBookingsScreen(): JSX.Element {
         setRefusalMessage(null);
       }
     } catch (err) {
+      if (seq !== readSeq || seq < settledSeq) return;
+      settledSeq = seq;
       if (err instanceof ApiError && err.code === 'roleNotAllowed') {
         setAuthorized(false);
         setRefusalMessage(t('error.roleNotAllowed'));
@@ -174,11 +198,16 @@ export function DeskBookingsScreen(): JSX.Element {
   });
 
   async function handleRefresh() {
-    await fetchBookings({ since: version() });
+    const q = activeQr();
+    const since = loadedQr === q ? version() : undefined;
+    await fetchBookings({ since });
   }
 
   async function handleQrLookup() {
     const q = qrInput().trim();
+    if (q !== loadedQr) {
+      setVersion(undefined);
+    }
     setActiveQr(q);
     await fetchBookings({ qr: q });
   }
