@@ -38,11 +38,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Spread the heavy `test` job over the pools that finish it (#2261), weighted over a 12-slot
-      # cycle: Dell 8 (dell-org-ci, cargo_jobs=12), heavy Macs 4 (heavy-build: 1 Studio runner + 1 MacBook, one heavy build per Mac;
-      # cargo_jobs ceiling 8; 6 Studio builds at once took 47 min just to compile, #2574). No API call: the slot is
-      # (run_id + run_attempt) mod 12, so a rerun can land elsewhere. If this step does not run,
-      # `test` falls back to the Dell pool with 12 jobs.
+      # The heavy `test` job runs on ONE pool, the runners labelled heavy-build (#2574). The number a machine carries
+      # caps its concurrent heavy builds (owner 2026-10-16: Dell 2, Studio 2, Warut 1, MacBook 1; Mac mini none); GitHub
+      # hands each build to whichever is idle. cargo-jobs.sh then sizes compile jobs to that machine's free cores.
+      # If this step does not run, `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
         id: pool
         env:
