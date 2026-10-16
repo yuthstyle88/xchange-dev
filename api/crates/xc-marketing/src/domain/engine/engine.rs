@@ -198,8 +198,12 @@ impl BenefitEngine {
                     ctx.max_spread_share,
                 );
 
-                current_final_rate = rf_result.final_rate;
-                current_fee_thb = rf_result.fee_thb;
+                if winning_rule.rule.benefit_class
+                    == crate::domain::benefit::rule::BenefitClass::Price
+                {
+                    current_final_rate = rf_result.final_rate;
+                    current_fee_thb = rf_result.fee_thb;
+                }
 
                 let (rate_after, fee_after) = match winning_rule.rule.benefit_class {
                     crate::domain::benefit::rule::BenefitClass::Price => (

@@ -81,14 +81,7 @@ impl CommandAction for ClosureAdd {
             .slot_service
             .add_closure_in(tx, &branch, &closure, user_uuid)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }

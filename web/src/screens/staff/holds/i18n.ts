@@ -4,6 +4,7 @@ export const th = {
   release: 'ปลดพัก',
   releaseTitle: 'ผลตรวจและเหตุผลปลดพัก',
   saved: 'บันทึกแล้ว',
+  pickCustomer: 'กรุณาเลือกลูกค้าจากผลการค้นหาก่อน',
 };
 
 export const en = {
@@ -12,4 +13,5 @@ export const en = {
   release: 'Release',
   releaseTitle: 'Inspection result and reason to release',
   saved: 'Saved',
+  pickCustomer: 'Pick a customer from the search results first.',
 };

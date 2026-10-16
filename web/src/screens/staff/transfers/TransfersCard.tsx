@@ -228,6 +228,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await props.ctx.refresh();
       await loadTransfers();
     } catch (err: unknown) {
+      setNotice(null);
       setError(wordedError(err));
     } finally {
       setSubmitting(false);
@@ -257,6 +258,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await props.ctx.refresh();
       await loadTransfers();
     } catch (err: unknown) {
+      setNotice(null);
       setError(wordedError(err));
     } finally {
       setRowBusy(row.id, false);
@@ -312,6 +314,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await props.ctx.refresh();
       await loadTransfers();
     } catch (err: unknown) {
+      setNotice(null);
       setError(wordedError(err));
     } finally {
       setRowBusy(row.id, false);
@@ -347,6 +350,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await props.ctx.refresh();
       await loadTransfers();
     } catch (err: unknown) {
+      setNotice(null);
       setError(wordedError(err));
     } finally {
       setRowBusy(row.id, false);
