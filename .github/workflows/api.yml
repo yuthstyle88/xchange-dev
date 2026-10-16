@@ -39,8 +39,8 @@ jobs:
           fetch-depth: 0
 
       # Spread the heavy `test` job over the pools that finish it (#2261), weighted over a 12-slot
-      # cycle: Dell 8 (dell-org-ci, cargo_jobs=12), heavy Macs 4 (heavy-build: 1 Studio runner + 1 MacBook, one heavy build per Mac;
-      # cargo_jobs ceiling 8; 6 Studio builds at once took 47 min just to compile, #2574). No API call: the slot is
+      # cycle: Dell 6 (dell-org-ci, cargo_jobs=12), Mac Studio 6 (mac-studio, cargo_jobs=4 so 6
+      # concurrent builds fit one 20-core Studio without timing out). No API call: the slot is
       # (run_id + run_attempt) mod 12, so a rerun can land elsewhere. If this step does not run,
       # `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
@@ -171,8 +171,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64","dell-org-ci"]') }}
     timeout-minutes: 90
     env:
-      # Ceiling from select-pool.sh; the "Set cargo jobs" step lowers it to this machine's free cores (#2574).
-      CARGO_JOBS_CAP: ${{ needs.changes.outputs.cargo_jobs || 12 }}
+      CARGO_BUILD_JOBS: ${{ needs.changes.outputs.cargo_jobs || 12 }}
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
@@ -315,13 +314,6 @@ jobs:
             echo "::error::rustc version must be 1.98.1, but found: $VERSION"
             exit 1
           fi
-
-      - name: Set cargo jobs from this machine's free cores
-        run: |
-          bash .github/scripts/cargo-jobs.test.sh
-          jobs=$(bash .github/scripts/cargo-jobs.sh "$CARGO_JOBS_CAP")
-          echo "cargo jobs: $jobs (cap $CARGO_JOBS_CAP) on $RUNNER_NAME"
-          echo "CARGO_BUILD_JOBS=$jobs" >> "$GITHUB_ENV"
 
       - name: Check formatting
         working-directory: api
