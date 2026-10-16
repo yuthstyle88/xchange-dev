@@ -183,7 +183,13 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     }
   };
 
+  // Bumped on every slots read and on dialog close, so an answer or error
+  // for a dialog that is no longer the open one is dropped (#2418).
+  let slotsSeq = 0;
+
   const loadSlots = async (booking: MyBookingItemDto) => {
+    const seq = ++slotsSeq;
+    setAvailableSlots([]);
     setSlotsLoading(true);
     setCommandError(null);
     setLastAction(() => () => loadSlots(booking));
@@ -192,11 +198,14 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
       const res = await api.view<BookingSlotsData>('booking_slots', {
         branch: booking.branchId,
       });
+      if (seq !== slotsSeq) return;
       setAvailableSlots(res.data?.slots ?? []);
     } catch (err: any) {
+      if (seq !== slotsSeq) return;
+      setAvailableSlots([]);
       setCommandError(getWordedError(err));
     } finally {
-      setSlotsLoading(false);
+      if (seq === slotsSeq) setSlotsLoading(false);
     }
   };
 
@@ -204,14 +213,18 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     setReschedulingBooking(booking);
     setCommandError(null);
     setSelectedSlotId('');
+    setAvailableSlots([]);
     loadSlots(booking);
   };
 
   const handleCloseReschedule = () => {
+    slotsSeq++;
     rescheduleWrite.reset();
     setReschedulingBooking(null);
     setCommandError(null);
     setSelectedSlotId('');
+    setAvailableSlots([]);
+    setSlotsLoading(false);
   };
 
   const executeReschedule = async () => {
