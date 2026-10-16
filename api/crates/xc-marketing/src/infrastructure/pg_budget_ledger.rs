@@ -180,41 +180,11 @@ impl BudgetLedger {
         }
 
         // 7. Check per-customer caps
-        let (caps_json,): (serde_json::Value,) =
-            sqlx::query_as("SELECT caps FROM benefit_rules WHERE id = $1")
-                .bind(request.rule_id)
-                .fetch_optional(&mut **tx)
-                .await?
-                .ok_or(BenefitError::NotFound)?;
-        let caps: BenefitCaps = serde_json::from_value(caps_json)
-            .map_err(|e| pos_error::AppError::Internal(format!("failed to decode caps: {e}")))?;
-
-        if let Some(per_customer_uses) = caps.per_customer_uses {
-            if let Some(customer_id) = request.customer_id.as_deref().filter(|s| !s.is_empty()) {
-                let since: Option<DateTime<Utc>> = caps
-                    .per_customer_period_days
-                    .map(|days| Utc::now() - chrono::Duration::days(days as i64));
-
-                let (cust_uses,): (i64,) = sqlx::query_as(
-                    "SELECT \
-                         (SELECT count(*) FROM benefit_redemptions \
-                          WHERE rule_id = $1 AND customer_id = $2 AND status = 'REDEEMED' \
-                            AND ($3::timestamptz IS NULL OR redeemed_at >= $3)) \
-                         + \
-                         (SELECT count(*) FROM benefit_reservations \
-                          WHERE rule_id = $1 AND customer_id = $2 AND status = 'RESERVED' AND expires_at > now() \
-                            AND ($3::timestamptz IS NULL OR created_at >= $3))",
-                )
-                .bind(request.rule_id)
-                .bind(customer_id)
-                .bind(since)
-                .fetch_one(&mut **tx)
-                .await?;
-
-                if cust_uses >= per_customer_uses as i64 {
-                    return Ok(ReserveOutcome::Skipped(SkipReason::CapReached));
-                }
-            }
+        if self
+            .per_customer_cap_reached_in(tx, request.rule_id, request.customer_id.as_deref())
+            .await?
+        {
+            return Ok(ReserveOutcome::Skipped(SkipReason::CapReached));
         }
 
         // 8. Check budget availability
@@ -244,6 +214,53 @@ impl BudgetLedger {
         .await?;
 
         Ok(ReserveOutcome::Reserved(reservation_id))
+    }
+
+    /// The rule's `per_customer_uses` cap is reached for `customer_id`: its `REDEEMED` redemptions plus live
+    /// `RESERVED` reservations (within `per_customer_period_days` when set) leave no use. No cap, or no customer, is
+    /// never reached. Shared by `reserve_in` and the completion's re-reserve (`BenefitRedeemer::redeem_in`).
+    pub async fn per_customer_cap_reached_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        rule_id: Uuid,
+        customer_id: Option<&str>,
+    ) -> Result<bool, BenefitError> {
+        let (caps_json,): (serde_json::Value,) =
+            sqlx::query_as("SELECT caps FROM benefit_rules WHERE id = $1")
+                .bind(rule_id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or(BenefitError::NotFound)?;
+        let caps: BenefitCaps = serde_json::from_value(caps_json)
+            .map_err(|e| pos_error::AppError::Internal(format!("failed to decode caps: {e}")))?;
+
+        let Some(per_customer_uses) = caps.per_customer_uses else {
+            return Ok(false);
+        };
+        let Some(customer_id) = customer_id.filter(|s| !s.is_empty()) else {
+            return Ok(false);
+        };
+        let since: Option<DateTime<Utc>> = caps
+            .per_customer_period_days
+            .map(|days| Utc::now() - chrono::Duration::days(days as i64));
+
+        let (cust_uses,): (i64,) = sqlx::query_as(
+            "SELECT \
+                 (SELECT count(*) FROM benefit_redemptions \
+                  WHERE rule_id = $1 AND customer_id = $2 AND status = 'REDEEMED' \
+                    AND ($3::timestamptz IS NULL OR redeemed_at >= $3)) \
+                 + \
+                 (SELECT count(*) FROM benefit_reservations \
+                  WHERE rule_id = $1 AND customer_id = $2 AND status = 'RESERVED' AND expires_at > now() \
+                    AND ($3::timestamptz IS NULL OR created_at >= $3))",
+        )
+        .bind(rule_id)
+        .bind(customer_id)
+        .bind(since)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        Ok(cust_uses >= per_customer_uses as i64)
     }
 
     /// D-8: `RESERVED` → `CONSUMED`, one `benefit_redemptions` row, `consumed_thb` / `used_count` up, a coupon
