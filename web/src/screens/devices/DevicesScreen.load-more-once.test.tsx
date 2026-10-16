@@ -447,4 +447,152 @@ describe('Devices: load more in-flight guards (#2664)', () => {
     expect(eventPageReads[0]?.before).toBe('101');
     expect(eventPageReads[1]?.before).toBe('51');
   });
+
+  it('Transactions "Load more" while the read is in flight -> that button is disabled until it answers', async () => {
+    const initialTx = transactions(['tx-20', 'tx-19', 'tx-18']);
+    const olderTx = transactions(['tx-17', 'tx-16', 'tx-15']);
+
+    let resolveHold: (() => void) | undefined;
+    const holdPromise = new Promise<void>((resolve) => {
+      resolveHold = resolve;
+    });
+
+    const server = new FakeServer({
+      B1: branchData('B1', {
+        version: 5,
+        transactions: initialTx,
+        olderTransactions: {
+          'tx-18': olderTx,
+        },
+      }),
+    });
+
+    server.pageHook = (name, q) => {
+      if (name === 'device_transactions' && q?.before !== undefined) return holdPromise;
+    };
+
+    mount(server, 'B1');
+    const txSection = sectionOf(th.requestHeading);
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(4);
+    });
+
+    const loadMoreBtn = button(th.loadMore, txSection);
+    expect(loadMoreBtn.disabled).toBe(false);
+
+    loadMoreBtn.click();
+
+    await vi.waitFor(() => expect(loadMoreBtn.disabled).toBe(true));
+
+    resolveHold!();
+    await vi.waitFor(() => expect(loadMoreBtn.disabled).toBe(false));
+
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(7);
+    });
+  });
+
+  it('Transactions: two clicks with the first answer back in between -> 2 reads, the second with the new last id', async () => {
+    const initialTx = transactions(['tx-30', 'tx-29', 'tx-28']);
+    const older1 = transactions(['tx-27', 'tx-26', 'tx-25']);
+    const older2 = transactions(['tx-24', 'tx-23', 'tx-22']);
+
+    const server = new FakeServer({
+      B1: branchData('B1', {
+        version: 5,
+        transactions: initialTx,
+        olderTransactions: {
+          'tx-28': older1,
+          'tx-25': older2,
+        },
+      }),
+    });
+
+    mount(server, 'B1');
+    const txSection = sectionOf(th.requestHeading);
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(4);
+    });
+
+    const loadMoreBtn = button(th.loadMore, txSection);
+    loadMoreBtn.click();
+
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(7);
+    });
+    expect(loadMoreBtn.disabled).toBe(false);
+
+    loadMoreBtn.click();
+
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(10);
+    });
+
+    const olderTxReads = server.reads.filter(
+      (r) => r.via === 'page' && r.name === 'device_transactions' && r.before !== undefined,
+    );
+    expect(olderTxReads).toHaveLength(2);
+    expect(olderTxReads[0]?.before).toBe('tx-28');
+    expect(olderTxReads[1]?.before).toBe('tx-25');
+  });
+
+  it('Transactions: older-transactions read fails (500) -> the worded error shows, and the button is enabled again so a retry sends one read', async () => {
+    const initialTx = transactions(['tx-20', 'tx-19', 'tx-18']);
+    const olderTx = transactions(['tx-17', 'tx-16', 'tx-15']);
+
+    let fail = true;
+    const server = new FakeServer({
+      B1: branchData('B1', {
+        version: 5,
+        transactions: initialTx,
+        olderTransactions: {
+          'tx-18': olderTx,
+        },
+      }),
+    });
+
+    server.pageHook = (name, q) => {
+      if (name === 'device_transactions' && q?.before !== undefined && fail) {
+        return Promise.reject(
+          new ApiError({ code: 'httpError', status: 500, message: 'Server error' }),
+        );
+      }
+    };
+
+    mount(server, 'B1');
+    const txSection = sectionOf(th.requestHeading);
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(4);
+    });
+
+    const loadMoreBtn = button(th.loadMore, txSection);
+    loadMoreBtn.click();
+
+    await vi.waitFor(() => {
+      const msg = host.querySelector('#message');
+      expect(textOf(msg)).not.toBe('');
+    });
+
+    expect(loadMoreBtn.disabled).toBe(false);
+
+    fail = false;
+    loadMoreBtn.click();
+
+    await vi.waitFor(() => {
+      const select = txSection.querySelector('select')!;
+      expect(select.querySelectorAll('option').length).toBe(7);
+    });
+
+    const olderTxReads = server.reads.filter(
+      (r) => r.via === 'page' && r.name === 'device_transactions' && r.before !== undefined,
+    );
+    expect(olderTxReads).toHaveLength(2);
+  });
 });
+
