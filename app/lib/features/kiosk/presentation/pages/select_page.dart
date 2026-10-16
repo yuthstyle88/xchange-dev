@@ -28,6 +28,12 @@ class _SelectPageState extends ConsumerState<SelectPage> {
   DisplayNames get names => ref.watch(displayNamesProvider);
 
   @override
+  void initState() {
+    super.initState();
+    _amount.text = ref.read(kioskControllerProvider).amountText;
+  }
+
+  @override
   void dispose() {
     _amount.dispose();
     _search.dispose();

@@ -20,6 +20,7 @@ use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side};
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
+use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
 use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
@@ -120,7 +121,6 @@ impl ActiveRules for AvailableActiveRules {
 }
 
 pub struct QuoteService {
-    pool: PgPool,
     published_rates: PgPublishedRates,
     quote_repo: PgQuoteRepository,
     settings_repo: PgSettingsRepository,
@@ -135,8 +135,7 @@ impl QuoteService {
             quote_repo: PgQuoteRepository::new(pool.clone()),
             settings_repo: PgSettingsRepository::new(pool.clone()),
             campaign_repo: Arc::new(PgCampaignRepository::new()),
-            budget_ledger: Arc::new(BudgetLedger::new(pool.clone())),
-            pool,
+            budget_ledger: Arc::new(BudgetLedger::new(pool)),
         }
     }
 
@@ -331,7 +330,7 @@ impl QuoteService {
 
         let tier_source = MarketingTierSource::new();
         let consent_gate = match req.customer_id.as_deref() {
-            Some(cid) => MarketingConsentGate::prefetch_in(&self.pool, tx, cid).await?,
+            Some(cid) => MarketingConsentGate::prefetch_in(tx, cid).await?,
             None => MarketingConsentGate::new(),
         };
         let referral_source = match req.customer_id.as_deref() {
@@ -536,6 +535,7 @@ impl QuoteService {
                         });
                         recompute_needed = true;
                     }
+                    Err(BenefitError::Store(e)) => return Err(e),
                     Err(e) => return Err(AppError::Domain(e.to_string())),
                 }
             }

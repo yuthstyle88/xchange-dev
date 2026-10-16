@@ -449,7 +449,11 @@ class KioskController extends Notifier<KioskState> {
         state.copyWith(
           status: s,
           quoteExpired: state.quoteExpired || expired,
-          error: expired ? _t.text('quoteExpired') : '',
+          error: expired
+              ? _t.text('quoteExpired')
+              : state.error == _t.text('statusError')
+              ? ''
+              : state.error,
         ),
       );
       _afterStatus();
