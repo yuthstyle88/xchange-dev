@@ -362,6 +362,10 @@ impl CaseService {
             .await?
             .ok_or(CaseError::NotFound)?;
 
+        if doc.removed_at.is_some() {
+            return Err(CaseError::NotFound);
+        }
+
         let case = self
             .cases
             .find_case_by_id_for_update(&mut tx, doc.case_id)
