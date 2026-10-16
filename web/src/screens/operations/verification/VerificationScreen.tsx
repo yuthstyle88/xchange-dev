@@ -144,6 +144,10 @@ export function VerificationScreen(): JSX.Element {
   const [branchDocType, setBranchDocType] = createSignal<'PASSPORT' | 'NATIONAL_ID'>('PASSPORT');
   const [branchFile, setBranchFile] = createSignal<File | null>(null);
   const [branchSuccessMsg, setBranchSuccessMsg] = createSignal<string | null>(null);
+  // #2412: a second send while the first is in flight reuses the idempotency key,
+  // gets 409 idempotencyConflict and drops the key; block it instead.
+  const [deciding, setDeciding] = createSignal<boolean>(false);
+  const [branchSubmitting, setBranchSubmitting] = createSignal<boolean>(false);
 
   let lastQueueVersion: number | undefined;
   let queueErrorActive = false;
@@ -434,6 +438,8 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
         queueErrorActive = false;
         setErrorMessage(null);
@@ -443,6 +449,8 @@ export function VerificationScreen(): JSX.Element {
         setSelectedCase(updated);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -450,6 +458,7 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function handleApprove(): Promise<void> {
+    if (deciding()) return;
     const currentCase = selectedCase();
     if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
@@ -471,6 +480,8 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
         queueErrorActive = false;
         setErrorMessage(null);
@@ -480,6 +491,8 @@ export function VerificationScreen(): JSX.Element {
         setSelectedCase(updated);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -495,6 +508,7 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function submitReasonDecision(action: PendingReasonAction): Promise<void> {
+    if (deciding()) return;
     const currentCase = selectedCase();
     if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
@@ -510,6 +524,8 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
         queueErrorActive = false;
         setErrorMessage(null);
@@ -545,6 +561,8 @@ export function VerificationScreen(): JSX.Element {
         setPendingReasonAction(null);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -553,6 +571,7 @@ export function VerificationScreen(): JSX.Element {
 
   async function handleBranchSubmit(e?: Event): Promise<void> {
     e?.preventDefault();
+    if (branchSubmitting()) return;
     setBranchSuccessMsg(null);
     queueErrorActive = false;
     setErrorMessage(null);
@@ -576,6 +595,7 @@ export function VerificationScreen(): JSX.Element {
     formData.append('documentType', docType);
     formData.append('file', file);
 
+    setBranchSubmitting(true);
     try {
       await api.postForm(ROUTE_BRANCH_CASES, formData, key);
       clearIdemKey(sig);
@@ -589,6 +609,8 @@ export function VerificationScreen(): JSX.Element {
       }
       queueErrorActive = false;
       setErrorMessage(describeFailure(err));
+    } finally {
+      setBranchSubmitting(false);
     }
   }
 
@@ -802,6 +824,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="start-review"
+                            disabled={deciding()}
                             onClick={() => void handleStartReview()}
                           >
                             {st('actionStartReview')}
@@ -829,6 +852,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="approve"
+                            disabled={deciding()}
                             onClick={() => void handleApprove()}
                           >
                             {st('actionApprove')}
@@ -836,6 +860,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="reject"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('reject')}
                           >
                             {st('actionReject')}
@@ -843,6 +868,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="request-update"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('request-update')}
                           >
                             {st('actionRequestUpdate')}
@@ -853,6 +879,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="revoke"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('revoke')}
                           >
                             {st('actionRevoke')}
@@ -887,6 +914,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-reject"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('reject')}
                               >
                                 {st('actionConfirmReject')}
@@ -896,6 +924,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-request-update"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('request-update')}
                               >
                                 {st('actionConfirmRequestUpdate')}
@@ -905,6 +934,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-revoke"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('revoke')}
                               >
                                 {st('actionConfirmRevoke')}
@@ -992,6 +1022,7 @@ export function VerificationScreen(): JSX.Element {
               <button
                 type="submit"
                 data-action="submit-branch-case"
+                disabled={branchSubmitting()}
                 onClick={(e) => void handleBranchSubmit(e)}
               >
                 {st('branchSubmitBtn')}
