@@ -1,5 +1,7 @@
 //! Consent application service (design `customer-identity-consent.md` §4.1, §4.3).
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
@@ -329,5 +331,32 @@ impl ConsentService {
             .map_err(AppError::Database)?;
 
         Ok(granted.unwrap_or(false))
+    }
+
+    const MARKETING_ELIGIBLE_SQL: &'static str = "SELECT DISTINCT customer_id FROM ( \
+         SELECT DISTINCT ON (customer_id, channel) customer_id, granted \
+         FROM consents \
+         WHERE customer_id = ANY($1) \
+           AND purpose = 'MARKETING' \
+           AND channel IN ('SMS', 'EMAIL', 'PUSH') \
+         ORDER BY customer_id, channel, effective_at DESC, created_at DESC \
+     ) latest \
+     WHERE granted";
+
+    pub async fn marketing_eligible_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        customer_ids: &[String],
+    ) -> AppResult<HashSet<String>> {
+        if customer_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let eligible: Vec<String> = sqlx::query_scalar(Self::MARKETING_ELIGIBLE_SQL)
+            .bind(customer_ids)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+
+        Ok(eligible.into_iter().collect())
     }
 }
