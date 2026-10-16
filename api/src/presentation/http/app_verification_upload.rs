@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use actix_web::http::{StatusCode, header};
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -25,6 +25,8 @@ use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
 use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
+use crate::presentation::extractors::origin::same_origin;
+use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::pages;
 
 pub const ROUTE: &str = "/api/app/verification/cases/{id}/documents";
@@ -195,6 +197,16 @@ async fn handle_upload(
     pool: &PgPool,
     doc_store: Arc<dyn DocumentStore>,
 ) -> HttpResponse {
+    if !same_origin(req) {
+        return V3Error::new(
+            "originRejected",
+            None,
+            "ORIGIN_REJECTED",
+            StatusCode::BAD_REQUEST,
+        )
+        .error_response();
+    }
+
     let idempotency_key = match req
         .headers()
         .get("idempotency-key")
