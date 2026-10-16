@@ -3,12 +3,17 @@
 /**
  * The answer of `transferPolicySave` and the `cash_transfer_policy` view's `data`.
  */
-export type CashTransferPolicyData = { version: string, limits: Record<string, string>, setBy: string, createdAt: string, };
+export type CashTransferPolicyData = { version: string, limits: Record<string, string>, valid: boolean, invalidEntries: Array<InvalidTransferLimitEntry>, setBy: string, createdAt: string, };
 
 /**
  * The `cash_transfer_policy` view query parameters.
  */
 export type CashTransferPolicyFilter = { branch?: string, };
+
+/**
+ * One malformed entry in a stored `cash_transfer_policy_versions.limits` value.
+ */
+export type InvalidTransferLimitEntry = { currency: string, raw: string, reason: string, };
 
 /**
  * The body of `PUT /api/cash-transfer-policy`, beside the seam's `branch`.

@@ -17,6 +17,8 @@ use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::branch_scope::BranchScope;
+use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
@@ -30,8 +32,8 @@ use crate::presentation::dto::v3::exchange_settings::{
     BranchExchangeLimitDto, ExchangeSettingsDto,
 };
 use crate::presentation::extractors::actor::legacy_actor;
-use crate::presentation::http::v3::command::{role_not_allowed_here, 
-    CommandAction, CommandEndpoint, Locks, server_error,
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, Locks, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -117,6 +119,9 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        if BranchScope::of(who, Permission::SystemSettings, Utc::now()) != BranchScope::All {
+            return Err(out_of_scope());
+        }
         // OR-7 bridge, removed by #1026: the audit row still records the v2 role
         let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let org = organization_of(tx, branch).await?;

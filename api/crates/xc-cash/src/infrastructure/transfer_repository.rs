@@ -1,7 +1,5 @@
 //! Postgres implementation of `TransferRepository`.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
@@ -423,21 +421,11 @@ impl TransferRepository for PgTransferRepository {
                 None => return Ok(None),
             };
 
-            let mut limits: HashMap<CurrencyCode, Money> = HashMap::new();
-            if let Value::Object(map) = limits_val {
-                for (cur_str, val) in map {
-                    if let Ok(code) = CurrencyCode::parse(cur_str.trim()) {
-                        let amount_str = match val {
-                            Value::String(s) => s,
-                            Value::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        if let Ok(m) = Money::parse(&amount_str) {
-                            limits.insert(code, m);
-                        }
-                    }
-                }
-            }
+            let limits = TransferPolicy::parse_limits(&limits_val).map_err(|invalid| {
+                pos_error::AppError::Internal(format!(
+                    "malformed cash transfer policy {version} for organization {org_id}: {invalid}"
+                ))
+            })?;
 
             Ok(Some(TransferPolicy::new(version, limits)))
         })

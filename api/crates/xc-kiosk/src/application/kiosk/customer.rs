@@ -81,10 +81,13 @@ impl KioskService {
                         if facts.line.is_some() {
                             let mut settled = false;
                             for _round in 0..4 {
-                                let foreign = ForeignAmount::from_decimal(Decimal::new(
-                                    request.quote.foreign.minor(),
-                                    2,
-                                ));
+                                let foreign_minor = request
+                                    .quote
+                                    .foreign
+                                    .try_minor()
+                                    .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
+                                let foreign =
+                                    ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
                                 match ports.tier_line_in(tx, &b, currency, side, foreign).await? {
                                     None => {
                                         settled = true;
@@ -150,8 +153,12 @@ impl KioskService {
 
                     repo.insert_in(tx, &b, &request, &cmd.client_ip).await?;
 
-                    let quote_qty =
-                        ForeignAmount::from_decimal(Decimal::new(request.quote.foreign.minor(), 2));
+                    let quote_minor = request
+                        .quote
+                        .foreign
+                        .try_minor()
+                        .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
+                    let quote_qty = ForeignAmount::from_decimal(Decimal::new(quote_minor, 2));
                     if let Some(quote_id) = ports
                         .quote_in(
                             tx,

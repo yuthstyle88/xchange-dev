@@ -321,6 +321,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let repo = self.counts.repo().clone();
         let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
@@ -432,7 +439,7 @@ impl HandoverService {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         id: &str,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> AppResult<Handover> {
         let r: Row = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
@@ -457,6 +464,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let res = sqlx::query(
             "UPDATE handovers SET status = 'REJECTED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
