@@ -1361,7 +1361,7 @@ async fn row_5_org_wide_and_b1_with_b1_first_answers_403_out_of_scope() {
 }
 
 #[actix_web::test]
-async fn row_6_expired_role_row_at_b1_answers_403_role_not_allowed() {
+async fn row_6_expired_role_row_at_b1_answers_403_role_not_allowed_here() {
     let env = TestEnv::start().await;
     let from = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
     let expired_to = Utc.with_ymd_and_hms(2025, 6, 1, 0, 0, 0).unwrap();
@@ -1372,7 +1372,7 @@ async fn row_6_expired_role_row_at_b1_answers_403_role_not_allowed() {
         Some(expired_to),
     );
     let answer = call_intake_as_actor(&env, vec![expired_role], Some(B01)).await;
-    assert_refused_403_no_case(&env, &answer, "roleNotAllowed").await;
+    assert_refused_403_no_case(&env, &answer, "roleNotAllowedHere").await;
     env.finish().await;
 }
 

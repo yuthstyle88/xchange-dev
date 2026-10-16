@@ -13,6 +13,9 @@ use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Permission;
 use xc_auth::domain::access::branch_scope::BranchScope;
+use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::pii::identity_type::IdentityType;
 use xc_verification::application::branch_intake::{
     BranchDocument, BranchIntake, BranchIntakeError,
@@ -181,6 +184,33 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
     };
 
     let now = Utc::now();
+    let action = Action::new(COMMAND_NAME);
+    let _grant = match Policy::authorize(Some(user), EntryPath::Rpc, &action, None, now) {
+        Ok(g) => g,
+        Err(e) => {
+            let code = match e {
+                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere => {
+                    "roleNotAllowedHere"
+                }
+                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed => {
+                    "roleNotAllowed"
+                }
+                xc_auth::domain::policy::value_objects::policy_error::PolicyError::OutOfScope => {
+                    "outOfScope"
+                }
+                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => {
+                    "signIn"
+                }
+                _ => "roleNotAllowed",
+            };
+            let status = match e {
+                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => 401,
+                _ => 403,
+            };
+            return refuse(status, code, &e.to_string());
+        }
+    };
+
     let user_id = match Uuid::parse_str(&user.user_id) {
         Ok(u) => u,
         Err(_) => return refuse(403, "outOfScope", "invalid user_id"),
