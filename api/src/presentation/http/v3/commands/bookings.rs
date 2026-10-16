@@ -36,8 +36,6 @@ pub mod closure_remove;
 pub mod confirm;
 #[path = "bookings/create.rs"]
 pub mod create;
-#[path = "bookings/error_map.rs"]
-mod error_map;
 #[path = "bookings/kiosk_check_in.rs"]
 pub mod kiosk_check_in;
 #[path = "bookings/policy.rs"]
