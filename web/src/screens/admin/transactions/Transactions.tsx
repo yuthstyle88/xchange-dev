@@ -67,6 +67,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     stat: string;
   }) {
     const fetchId = ++currentFetchId;
+    setLoadingMore(false);
     const filter: Record<string, string> = {};
     if (opts.period.from) filter.from = opts.period.from;
     if (opts.period.to) filter.to = opts.period.to;
@@ -190,7 +191,9 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       if (fetchId !== currentFetchId || props.branch() !== branch) return;
       setError(wordedError(err));
     } finally {
-      setLoadingMore(false);
+      if (fetchId === currentFetchId) {
+        setLoadingMore(false);
+      }
     }
   }
 
