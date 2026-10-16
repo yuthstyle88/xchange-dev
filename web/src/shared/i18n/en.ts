@@ -8,6 +8,7 @@ export const en: Record<Key, string> = {
   'shell.account.signOut': 'Sign out',
   'shell.account.switchBranch': 'Switch branch',
   'shell.account.switchFailed': 'Could not switch branch',
+  'shell.account.signOutFailed': 'Could not sign out. Please try again.',
   'shell.account.role.executive': 'Executive',
   'shell.account.role.admin': 'Administrator',
   'shell.account.role.rateManager': 'Rate manager',

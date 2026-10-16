@@ -52,8 +52,18 @@ struct LineRow {
 }
 
 fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTransfer> {
-    let kind = TransferKind::parse(&row.kind).unwrap_or(TransferKind::Branch);
-    let status = TransferStatus::parse(&row.status).unwrap_or(TransferStatus::Draft);
+    let kind = TransferKind::parse(&row.kind).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown kind {:?}",
+            row.id, row.kind
+        ))
+    })?;
+    let status = TransferStatus::parse(&row.status).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown status {:?}",
+            row.id, row.status
+        ))
+    })?;
 
     let mut lines = Vec::with_capacity(line_rows.len());
     for lr in line_rows {
@@ -63,8 +73,14 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTran
                 lr.face_value, lr.denomination_id
             ))
         })?;
+        let currency = CurrencyCode::parse(lr.currency.trim()).map_err(|e| {
+            pos_error::AppError::Internal(format!(
+                "cash_transfer {} line has invalid currency {:?}: {e}",
+                row.id, lr.currency
+            ))
+        })?;
         lines.push(TransferLine {
-            currency: CurrencyCode::parse(lr.currency.trim()).expect("valid currency"),
+            currency,
             denomination_id: lr.denomination_id,
             face_value,
             qty_sent: lr.qty_sent,

@@ -111,9 +111,40 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     });
   }
 
+  const failedViews = new Map<string, string>();
+  let messageOwner: string | null = null;
+  let nonViewError = '';
+
+  function setNonViewMessage(text: string): void {
+    messageOwner = null;
+    nonViewError = text;
+    setMessage(text);
+  }
+
+  function markFirstReadDone(name: string): void {
+    if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
+      firstReadsDeferred.remaining.delete(name);
+      if (firstReadsDeferred.remaining.size === 0) {
+        firstReadsDeferred.resolve();
+        firstReadsDeferred = undefined;
+      }
+    }
+  }
+
   const wrappedClient: Pick<ApiClient, 'view'> = {
     view: async <T,>(name: string, params?: ViewParams): Promise<ViewAnswer<T>> => {
-      const res = await props.api.view<T>(name, params);
+      let res: ViewAnswer<T>;
+      try {
+        res = await props.api.view<T>(name, params);
+      } catch (err: unknown) {
+        const msg = wordedError(err);
+        failedViews.delete(name);
+        failedViews.set(name, msg);
+        messageOwner = name;
+        setMessage(msg);
+        markFirstReadDone(name);
+        throw err;
+      }
       if (res.changed && res.data !== undefined) {
         if (name === 'devices') {
           const ov = res.data as DevicesOverview;
@@ -124,13 +155,21 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
           setEvents(res.data as DeviceEventRow[]);
         }
       }
-      if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
-        firstReadsDeferred.remaining.delete(name);
-        if (firstReadsDeferred.remaining.size === 0) {
-          firstReadsDeferred.resolve();
-          firstReadsDeferred = undefined;
+      if (failedViews.has(name)) {
+        failedViews.delete(name);
+        if (messageOwner === name) {
+          const entries = [...failedViews.entries()];
+          const last = entries[entries.length - 1];
+          if (last) {
+            messageOwner = last[0];
+            setMessage(last[1]);
+          } else {
+            messageOwner = null;
+            setMessage(nonViewError);
+          }
         }
       }
+      markFirstReadDone(name);
       return res;
     },
   };
@@ -141,12 +180,13 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         branch,
         limit: 100,
       });
+      nonViewError = '';
       setTransactions(txs);
       if (selectedTx() && !txs.some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
@@ -233,12 +273,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   async function runAction(fn: () => Promise<void>): Promise<void> {
     if (busy()) return;
     setBusy(true);
-    setMessage('');
+    setNonViewMessage('');
     try {
       await fn();
       await initBranch(effectiveBranch());
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
@@ -407,7 +447,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
@@ -424,7 +464,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       });
       setOlderEvents((prev) => [...prev, ...older]);
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
