@@ -190,8 +190,8 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
       if (seq !== lastHistorySeq) return;
       if (!beforeId) {
         setHistoryRows([]);
+        setHasMore(false);
       }
-      setHasMore(false);
       setHistoryError(wordedError(err));
     } finally {
       if (seq === lastHistorySeq) {
