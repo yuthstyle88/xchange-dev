@@ -448,10 +448,14 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
     };
 
     let foreign = ForeignAmount::from_decimal(amount);
-    let base = Decimal::from_i128_with_scale(
-        ExchangeArithmetic::thb(foreign, rate_val, unit_val).minor_i128(),
-        2,
-    );
+    let base_money = match ExchangeArithmetic::try_thb(foreign, rate_val, unit_val) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!("thb overflow in transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
+    let base = Decimal::from_i128_with_scale(base_money.minor_i128(), 2);
     let (verb, thb) = if tx_type == "BUY" {
         ("จ่าย", base - fee)
     } else {

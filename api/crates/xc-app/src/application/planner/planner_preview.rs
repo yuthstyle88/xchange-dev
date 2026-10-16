@@ -82,7 +82,8 @@ impl PlannerPreview {
             .await
             .map_err(|e| CustomerAppError::Server(e.to_string()))?
             .ok_or_else(|| unavailable("no published line"))?;
-        let thb = ExchangeArithmetic::thb(quantity, line.rate, line.unit_size);
+        let thb = ExchangeArithmetic::try_thb(quantity, line.rate, line.unit_size)
+            .map_err(|_| CustomerAppError::ValidationFailed { field: "quantity" })?;
         if line.stale {
             let policy = self
                 .published_rates
