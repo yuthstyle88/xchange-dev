@@ -235,13 +235,16 @@ export function DeskBookingsScreen(): JSX.Element {
   const cancelWrite = keyedWrite<{ reason: string; branch: string }, BookingCancelOutput>(
     api,
     'POST',
-    () => routeCancel(cancellingBookingId() ?? ''),
+    // #2464: the path is resolved synchronously inside send(), right after
+    // submitCancel sets activeCancelId to the booking the write is for, so a
+    // dialog opened for another booking meanwhile cannot redirect it.
+    () => routeCancel(activeCancelId),
   );
   let activeRescheduleId = '';
   const rescheduleWrite = keyedWrite<{ slotId: string; branch: string }, BookingRescheduleOutput>(
     api,
     'POST',
-    () => routeReschedule(reschedulingBookingId() ?? ''),
+    () => routeReschedule(activeRescheduleId),
   );
   const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
     api,
@@ -309,6 +312,17 @@ export function DeskBookingsScreen(): JSX.Element {
     if (!reason) {
       return;
     }
+    await submitCancel(bookingId, reason);
+  }
+
+  // #2464: the write, its late answer and its Retry are all bound to the
+  // booking it was sent for, not to whichever dialog is open when it answers.
+  async function submitCancel(bookingId: string, reason: string) {
+    if (writing()) return;
+    if (activeCancelId !== bookingId) {
+      cancelWrite.reset();
+      activeCancelId = bookingId;
+    }
 
     readErrorActive = false;
     setErrorMessage(null);
@@ -329,12 +343,14 @@ export function DeskBookingsScreen(): JSX.Element {
       updateBookingInState(bookingId, {
         status: resData.status,
       });
-      setCancellingBookingId(null);
-      setCancelReason('');
+      if (cancellingBookingId() === bookingId) {
+        setCancellingBookingId(null);
+        setCancelReason('');
+      }
     } catch (err) {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmCancel());
+      setRetryAction(() => () => submitCancel(bookingId, reason));
     } finally {
       setWriting(false);
     }
@@ -361,6 +377,15 @@ export function DeskBookingsScreen(): JSX.Element {
     if (!bookingId) return;
     const target = targetSlotId();
     if (!target) return;
+    await submitReschedule(bookingId, target);
+  }
+
+  async function submitReschedule(bookingId: string, target: string) {
+    if (writing()) return;
+    if (activeRescheduleId !== bookingId) {
+      rescheduleWrite.reset();
+      activeRescheduleId = bookingId;
+    }
 
     readErrorActive = false;
     setErrorMessage(null);
@@ -382,11 +407,13 @@ export function DeskBookingsScreen(): JSX.Element {
         slotId: resData.slotId,
         status: resData.status,
       });
-      setReschedulingBookingId(null);
+      if (reschedulingBookingId() === bookingId) {
+        setReschedulingBookingId(null);
+      }
     } catch (err) {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmReschedule());
+      setRetryAction(() => () => submitReschedule(bookingId, target));
     } finally {
       setWriting(false);
     }
