@@ -342,7 +342,11 @@
    "transfer": "银行转账",
    "callAgent": "如需转账，请联系工作人员",
    "receiptTitle": "您的收据",
-   "saveImage": "保存图片"
+   "saveImage": "保存图片",
+   "rateStale": "基准汇率已过期",
+   "rateSourceDate": "基准日期 {date}",
+   "rateNoSourceDate": "无基准汇率",
+   "ratePublishedAt": "发布于 {at}"
   },
   "zh-HK": {
    "lang": "語言",
@@ -417,7 +421,11 @@
    "transfer": "銀行轉帳",
    "callAgent": "如需轉帳，請聯絡工作人員",
    "receiptTitle": "您的收據",
-   "saveImage": "儲存圖片"
+   "saveImage": "儲存圖片",
+   "rateStale": "基準匯率已逾時",
+   "rateSourceDate": "基準日 {date}",
+   "rateNoSourceDate": "無基準匯率",
+   "ratePublishedAt": "發布於 {at}"
   },
   "ja": {
    "lang": "言語",
@@ -642,7 +650,11 @@
    "transfer": "Банковский перевод",
    "callAgent": "Для перевода обратитесь к сотруднику",
    "receiptTitle": "Ваш чек",
-   "saveImage": "Сохранить изображение"
+   "saveImage": "Сохранить изображение",
+   "rateStale": "Справочный курс устарел",
+   "rateSourceDate": "Дата курса {date}",
+   "rateNoSourceDate": "Нет справочного курса",
+   "ratePublishedAt": "Опубликовано {at}"
   },
   "hi": {
    "lang": "भाषा",
@@ -717,7 +729,11 @@
    "transfer": "बैंक ट्रांसफ़र",
    "callAgent": "ट्रांसफ़र के लिए कर्मचारी से संपर्क करें",
    "receiptTitle": "आपकी रसीद",
-   "saveImage": "चित्र सहेजें"
+   "saveImage": "चित्र सहेजें",
+   "rateStale": "संदर्भ दर पुरानी है",
+   "rateSourceDate": "संदर्भ तिथि {date}",
+   "rateNoSourceDate": "कोई संदर्भ दर नहीं",
+   "ratePublishedAt": "प्रकाशित {at}"
   },
   "ar": {
    "lang": "اللغة",
@@ -792,7 +808,11 @@
    "transfer": "تحويل مصرفي",
    "callAgent": "للتحويل، تواصل مع الموظف",
    "receiptTitle": "إيصالك",
-   "saveImage": "حفظ الصورة"
+   "saveImage": "حفظ الصورة",
+   "rateStale": "السعر المرجعي قديم",
+   "rateSourceDate": "تاريخ المرجع {date}",
+   "rateNoSourceDate": "لا يوجد سعر مرجعي",
+   "ratePublishedAt": "نُشر في {at}"
   },
   "lo": {
    "lang": "ພາສາ",
@@ -867,7 +887,11 @@
    "transfer": "ໂອນທະນາຄານ",
    "callAgent": "ຖ້າໂອນເງິນ ກະລຸນາຕິດຕໍ່ພະນັກງານ",
    "receiptTitle": "ໃບຮັບເງິນຂອງທ່ານ",
-   "saveImage": "ບັນທຶກຮູບ"
+   "saveImage": "ບັນທຶກຮູບ",
+   "rateStale": "ອັດຕາອ້າງອີງເກົ່າ",
+   "rateSourceDate": "ອ້າງອີງວັນທີ {date}",
+   "rateNoSourceDate": "ບໍ່ມີອັດຕາອ້າງອີງ",
+   "ratePublishedAt": "ປະກາດເມື່ອ {at}"
   },
   "my": {
    "lang": "ဘာသာစကား",
@@ -1017,7 +1041,11 @@
    "transfer": "Chuyển khoản",
    "callAgent": "Nếu chuyển khoản, hãy liên hệ nhân viên",
    "receiptTitle": "Biên nhận của bạn",
-   "saveImage": "Lưu hình ảnh"
+   "saveImage": "Lưu hình ảnh",
+   "rateStale": "Tỷ giá tham chiếu đã cũ",
+   "rateSourceDate": "Ngày tham chiếu {date}",
+   "rateNoSourceDate": "Không có tỷ giá tham chiếu",
+   "ratePublishedAt": "Công bố lúc {at}"
   },
   "ms": {
    "lang": "Bahasa",
@@ -1092,7 +1120,11 @@
    "transfer": "Pindahan bank",
    "callAgent": "Untuk pindahan, hubungi kakitangan",
    "receiptTitle": "Resit anda",
-   "saveImage": "Simpan imej"
+   "saveImage": "Simpan imej",
+   "rateStale": "Kadar rujukan lapuk",
+   "rateSourceDate": "Tarikh rujukan {date}",
+   "rateNoSourceDate": "Tiada rujukan",
+   "ratePublishedAt": "Diterbitkan {at}"
   },
   "de": {
    "lang": "Sprache",
@@ -1167,7 +1199,11 @@
    "transfer": "Banküberweisung",
    "callAgent": "Bei Überweisung Personal kontaktieren",
    "receiptTitle": "Ihr Beleg",
-   "saveImage": "Bild speichern"
+   "saveImage": "Bild speichern",
+   "rateStale": "Referenzkurs veraltet",
+   "rateSourceDate": "Referenzdatum {date}",
+   "rateNoSourceDate": "Keine Referenz",
+   "ratePublishedAt": "Veröffentlicht {at}"
   },
   "fr": {
    "lang": "Langue",
@@ -1242,7 +1278,11 @@
    "transfer": "Virement bancaire",
    "callAgent": "Pour un virement, contactez un agent",
    "receiptTitle": "Votre reçu",
-   "saveImage": "Enregistrer l’image"
+   "saveImage": "Enregistrer l’image",
+   "rateStale": "Taux de référence obsolète",
+   "rateSourceDate": "Date de référence {date}",
+   "rateNoSourceDate": "Aucune référence",
+   "ratePublishedAt": "Publié {at}"
   },
   "id": {
    "lang": "Bahasa",
@@ -1317,7 +1357,11 @@
    "transfer": "Transfer bank",
    "callAgent": "Untuk transfer, hubungi petugas",
    "receiptTitle": "Tanda terima Anda",
-   "saveImage": "Simpan gambar"
+   "saveImage": "Simpan gambar",
+   "rateStale": "Kurs acuan kedaluwarsa",
+   "rateSourceDate": "Tanggal acuan {date}",
+   "rateNoSourceDate": "Tidak ada acuan",
+   "ratePublishedAt": "Diterbitkan {at}"
   }
  },
  "errors": {

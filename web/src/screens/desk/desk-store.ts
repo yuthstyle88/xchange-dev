@@ -9,6 +9,7 @@ import type { QuotesCommandInput } from '../../shared/api/generated/quotes';
 import { deskPathFor, type DeskPath } from './desk-path';
 import { sharedApi, sharedSession } from '../../shared/session/session';
 import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import * as screenI18n from './i18n';
 import { createSaver, newKey, type SaveAnswer } from './save';
 
@@ -144,7 +145,8 @@ function pageBranch(path: DeskPath, me: Me | undefined): string {
 
 function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: string } {
   if (e instanceof ApiError) {
-    return e.field ? { field: e.field, message: e.message } : { message: e.message };
+    const message = wordedError(e);
+    return e.field ? { field: e.field, message } : { message };
   }
   return { message: fallback };
 }
@@ -211,7 +213,7 @@ export function createDeskStore(
       }
     })
     .catch((e: unknown) => {
-      setConfigError(e instanceof ApiError ? e.message : t('configFailed'));
+      setConfigError(wordedError(e));
     });
 
   // ── the quote (D-4, D-5) ──
@@ -227,6 +229,10 @@ export function createDeskStore(
 
   function scheduleQuote(): void {
     cancelScheduled();
+    if (currency() === '' || amount() === '') {
+      void requote();
+      return;
+    }
     timer = setTimeout(() => {
       timer = undefined;
       void requote();
@@ -236,6 +242,10 @@ export function createDeskStore(
   async function requote(): Promise<BlueprintQuote | undefined> {
     cancelScheduled();
     if (currency() === '' || amount() === '') {
+      quoteSeq += 1;
+      setQuote(undefined);
+      setQuoteError(undefined);
+      setQuoting(false);
       return undefined;
     }
     const mine = ++quoteSeq;

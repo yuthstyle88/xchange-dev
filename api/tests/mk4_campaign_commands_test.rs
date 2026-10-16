@@ -335,6 +335,15 @@ async fn seed_campaign(pool: &PgPool, status: &str) -> (Uuid, Uuid) {
     .await
     .expect("seed budget");
 
+    sqlx::query(
+        "INSERT INTO campaign_branches (campaign_version_id, branch_id) \
+         VALUES ($1, 'MAIN')",
+    )
+    .bind(version_id)
+    .execute(pool)
+    .await
+    .expect("seed campaign_branches");
+
     (campaign_id, version_id)
 }
 

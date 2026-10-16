@@ -67,6 +67,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
+      currentCashVersion = undefined;
       setCashError(wordedError(err));
       setCash(null);
     }
@@ -116,7 +117,11 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         readAll(true);
       } else if (lastTick !== currentTick) {
         lastTick = currentTick;
-        readCash(false, showAll());
+        if (cashError() !== null) {
+          readAll(true);
+        } else {
+          readCash(false, showAll());
+        }
       }
     });
   });
