@@ -266,41 +266,85 @@ async fn row_1_500_error_response_returns_generic_message_without_table_or_const
     );
 }
 
-// Row 2: A real constraint violation through a route (`campaignCreate` with endsAt <= startsAt)
+// Row 2: A real constraint violation through a route (`couponIssue` with an unknown customerId)
 #[actix_web::test]
 async fn row_2_real_constraint_violation_through_route_hides_table_and_constraint_names() {
     let room = Room::start().await;
 
+    let org_id = Uuid::parse_str(ORG).unwrap();
+    let user_id = Uuid::parse_str(TEST_USER).unwrap();
+    let campaign_id = Uuid::new_v4();
+    let version_id = Uuid::new_v4();
+    let rule_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO campaigns (id, organization_id, name, current_version_id, created_by, created_at) \
+         VALUES ($1, $2, 'Coupon FK Campaign', NULL, $3, now())",
+    )
+    .bind(campaign_id)
+    .bind(org_id)
+    .bind(user_id)
+    .execute(&room.pool)
+    .await
+    .expect("seed campaign");
+
+    sqlx::query(
+        "INSERT INTO campaign_versions ( \
+             id, organization_id, campaign_id, version, status, starts_at, ends_at, budget_thb, \
+             stack_group, priority, created_by, created_at, edited_at \
+         ) VALUES ($1, $2, $3, 1, 'DRAFT', now(), now() + interval '10 days', 1000.00, 'RATE', 1, $4, now(), now())",
+    )
+    .bind(version_id)
+    .bind(org_id)
+    .bind(campaign_id)
+    .bind(user_id)
+    .execute(&room.pool)
+    .await
+    .expect("seed campaign_version");
+
+    sqlx::query(
+        "INSERT INTO benefit_rules ( \
+             id, campaign_version_id, benefit_type, benefit_class, eligibility, calculation, caps, requires_coupon, rule_no \
+         ) VALUES ($1, $2, 'RATE_IMPROVEMENT', 'PRICE', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, true, 1)",
+    )
+    .bind(rule_id)
+    .bind(version_id)
+    .execute(&room.pool)
+    .await
+    .expect("seed benefit_rule");
+
     let payload = json!({
-        "name": "Invalid Dates Campaign",
-        "startsAt": "2026-11-01T00:00:00Z",
-        "endsAt": "2026-10-01T00:00:00Z",
-        "budgetThb": "10000.00",
-        "stackGroup": "RATE",
-        "priority": 1,
-        "branches": ["MAIN"]
+        "ruleId": rule_id.to_string(),
+        "count": 1,
+        "customerId": "no-such-customer",
+        "expiresAt": "2026-12-31T23:59:59Z"
     });
 
     let ans = call(
         &room,
         Some("MARKETING"),
         Method::POST,
-        "/api/campaigns",
-        Some((payload, &unique("create_invalid_dates"))),
+        &format!("/api/campaigns/{campaign_id}/coupons"),
+        Some((payload, &unique("issue_coupon_unknown_customer"))),
     )
     .await;
 
     assert_eq!(
         ans.status,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "expected 500 from DB check constraint violation: {}",
+        "expected 500 from DB FK constraint violation: {}",
         ans.text
     );
     assert_eq!(ans.body["error"]["code"], "database");
     assert_eq!(ans.body["error"]["message"], "เซิร์ฟเวอร์ขัดข้อง");
     assert!(
-        !ans.text.contains("campaign_versions"),
-        "500 route response must not contain table name `campaign_versions`: {}",
+        !ans.text.contains("coupons"),
+        "500 route response must not contain table name `coupons`: {}",
+        ans.text
+    );
+    assert!(
+        !ans.text.contains("customers"),
+        "500 route response must not contain table name `customers`: {}",
         ans.text
     );
     assert!(
