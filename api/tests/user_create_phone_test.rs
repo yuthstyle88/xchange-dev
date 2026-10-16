@@ -71,8 +71,11 @@ async fn create_with_phone(app: &App, token: &str, phone: &str) -> Reply {
     .await
 }
 
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// §8 rows 1–3: the account is created and Identity receives exactly `expected`.
 async fn assert_sent_as(typed: &str, expected: &str) {
+    let _serial = SERIAL.lock().await;
     let (desk, identity, app) = setup().await;
     let token = owner_session(&desk, &identity, &app).await;
     identity.answer(
@@ -98,6 +101,7 @@ async fn assert_sent_as(typed: &str, expected: &str) {
 
 /// §8 rows 4–5 and §9: refused on `phone` with `message`; Identity is not called and no `users` row is written.
 async fn assert_refused(typed: &str, message: &str) {
+    let _serial = SERIAL.lock().await;
     let (desk, identity, app) = setup().await;
     let token = owner_session(&desk, &identity, &app).await;
     let before = users_count(&desk).await;
@@ -178,4 +182,28 @@ async fn a_bare_plus_is_refused_and_nothing_is_written() {
 #[actix_web::test]
 async fn a_bare_zero_is_refused_and_nothing_is_written() {
     assert_refused("0", INVALID_PHONE).await;
+}
+
+#[actix_web::test]
+async fn owner_session_prewarms_two_pool_connections_before_login() {
+    let _serial = SERIAL.lock().await;
+    let (desk, identity, app) = setup().await;
+    assert!(
+        desk.pool.size() >= 2,
+        "setup pre-warms at least 2 DB connections so create_session_for_user does not open a 2nd connection mid-login (got {})",
+        desk.pool.size()
+    );
+    let token = owner_session(&desk, &identity, &app).await;
+    assert!(!token.is_empty());
+    for _ in 0..5 {
+        let reply = app
+            .send(Req::post(
+                "/api/auth/login",
+                json!({ "identifier": "+66811111111", "password": "pw-owner-01" }),
+            ))
+            .await;
+        assert_eq!(reply.status, 200, "burst login succeeded: {}", reply.text);
+        assert!(!reply.session().is_empty());
+    }
+    desk.drop_schema().await;
 }

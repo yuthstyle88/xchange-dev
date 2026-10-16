@@ -16,9 +16,11 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
@@ -96,6 +98,7 @@ pub struct FakeIdentity {
     pub port: u16,
     answers: Arc<Mutex<HashMap<String, (u16, String)>>>,
     received: Arc<Mutex<Vec<Received>>>,
+    stop: Arc<AtomicBool>,
 }
 
 impl FakeIdentity {
@@ -113,18 +116,22 @@ impl FakeIdentity {
             ),
         );
         let received: Arc<Mutex<Vec<Received>>> = Arc::default();
-        let (a, r) = (answers.clone(), received.clone());
+        let stop = Arc::new(AtomicBool::new(false));
+        let (a, r, s) = (answers.clone(), received.clone(), stop.clone());
         std::thread::spawn(move || {
             for stream in listener.incoming() {
+                if s.load(Ordering::Relaxed) {
+                    break;
+                }
                 let Ok(stream) = stream else { continue };
-                let (a, r) = (a.clone(), r.clone());
-                std::thread::spawn(move || serve(stream, &a, &r));
+                serve(stream, &a, &r);
             }
         });
         Self {
             port,
             answers,
             received,
+            stop,
         }
     }
 
@@ -173,6 +180,13 @@ impl FakeIdentity {
     }
 }
 
+impl Drop for FakeIdentity {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        let _ = TcpStream::connect(("127.0.0.1", self.port));
+    }
+}
+
 pub fn login_body(access_token: &str, refresh_token: &str) -> Value {
     json!({
         "identityId": SUB_A,
@@ -192,36 +206,41 @@ fn serve(
     answers: &Mutex<HashMap<String, (u16, String)>>,
     received: &Mutex<Vec<Received>>,
 ) {
-    let mut reader = BufReader::new(stream.try_clone().expect("clone the stream"));
-    let mut line = String::new();
-    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-        return;
-    }
-    let mut parts = line.split_whitespace();
-    let method = parts.next().unwrap_or("").to_owned();
-    let path = parts
-        .next()
-        .unwrap_or("")
-        .split('?')
-        .next()
-        .unwrap_or("")
-        .to_owned();
-    let mut headers = HashMap::new();
-    loop {
-        let mut h = String::new();
-        if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" || h == "\n" {
-            break;
+    let _ = stream.set_nodelay(true);
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let (method, path, headers, body) = {
+        let mut reader = BufReader::new(&mut stream);
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return;
         }
-        if let Some((name, value)) = h.trim_end().split_once(':') {
-            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
+        let mut parts = line.split_whitespace();
+        let method = parts.next().unwrap_or("").to_owned();
+        let path = parts
+            .next()
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_owned();
+        let mut headers = HashMap::new();
+        loop {
+            let mut h = String::new();
+            if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" || h == "\n" {
+                break;
+            }
+            if let Some((name, value)) = h.trim_end().split_once(':') {
+                headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
+            }
         }
-    }
-    let length: usize = headers
-        .get("content-length")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let mut body = vec![0u8; length];
-    let _ = reader.read_exact(&mut body);
+        let length: usize = headers
+            .get("content-length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let mut body = vec![0u8; length];
+        let _ = reader.read_exact(&mut body);
+        (method, path, headers, body)
+    };
     received.lock().unwrap().push(Received {
         method,
         path: path.clone(),
@@ -240,6 +259,7 @@ fn serve(
     );
     let _ = stream.write_all(reply.as_bytes());
     let _ = stream.flush();
+    let _ = stream.shutdown(Shutdown::Write);
 }
 
 /// A port nothing listens on.
@@ -310,6 +330,9 @@ pub async fn bound_user(
         .execute(pool)
         .await
         .expect("insert a role row");
+    }
+    if let (Ok(c1), Ok(c2)) = tokio::join!(pool.acquire(), pool.acquire()) {
+        drop((c1, c2));
     }
     id
 }
@@ -436,6 +459,11 @@ impl App {
 
 /// The server's whole route table (`bootstrap::configure`) on `state`.
 pub async fn app(state: AppState) -> App {
+    if state.db.size() > 0
+        && let (Ok(c1), Ok(c2)) = tokio::join!(state.db.acquire(), state.db.acquire())
+    {
+        drop((c1, c2));
+    }
     let service = test::init_service(
         actix_web::App::new().configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
     )
