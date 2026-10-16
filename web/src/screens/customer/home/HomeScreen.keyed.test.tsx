@@ -289,6 +289,7 @@ describe('KW-6a: C01 HomeScreen keyedWrite behaviour (#2103 §9)', () => {
     const amountInput = host.querySelector<HTMLInputElement>('#amount-input')!;
     amountInput.value = '250';
     amountInput.dispatchEvent(new Event('input', { bubbles: true }));
+    clickCalculate();
     await flush();
 
     clickSavePlan();
