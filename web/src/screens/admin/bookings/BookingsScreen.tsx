@@ -67,6 +67,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   const [settings, setSettings] = createSignal<AdminBookingSettingsData | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [settingsError, setSettingsError] = createSignal<string | null>(null);
   const [searchTerm, setSearchTerm] = createSignal('');
   const [hasMore, setHasMore] = createSignal(false);
 
@@ -108,6 +109,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
 
   async function fetchSettings(b: string, since?: number) {
     const seq = ++settingsSeq;
+    setSettingsError(null);
     try {
       const ans = await api.view<AdminBookingSettingsData>('admin_booking_settings', {
         branch: b,
@@ -120,7 +122,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       }
     } catch (err) {
       if (seq !== settingsSeq) return;
-      setError(wordedError(err));
+      setSettingsError(wordedError(err));
     }
   }
 
@@ -289,6 +291,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   }
 
   async function openSettingsDialog() {
+    setSettingsError(null);
     let bName = props.branch();
     try {
       const res = await api.view<{ branches: Array<{ id: string; name: string }> }>('admin_branches');
@@ -297,7 +300,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         if (found) bName = found.name;
       }
     } catch (err) {
-      setError(wordedError(err));
+      setSettingsError(wordedError(err));
       return;
     }
 
@@ -557,6 +560,10 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
           {settings() ? settings()!.memberCount : 0}
           {t('infoPersons')}
         </div>
+
+        <Show when={settingsError()}>
+          <p>{settingsError()}</p>
+        </Show>
 
         <label>
           {t('searchBookings')}
