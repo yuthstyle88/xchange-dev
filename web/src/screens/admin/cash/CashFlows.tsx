@@ -215,13 +215,16 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   async function send<B, R>(action: string, path: string, body: B, done: (answer: R) => void): Promise<void> {
     if (busy()) return;
+    const branch = props.branch();
     setBusy(true);
     setRefusal(null);
     setAwaiting(null);
     try {
       const answer = await writeFor<B, R>(action, path).send(body);
+      if (props.branch() !== branch) return;
       done(answer);
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const text = message(err);
       setRefusal(text);
       toast(text);
