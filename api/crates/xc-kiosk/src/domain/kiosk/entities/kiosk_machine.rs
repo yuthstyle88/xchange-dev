@@ -50,11 +50,14 @@ impl KioskMachine {
             Side::Buy => {
                 let foreign_amt = ForeignAmount::parse(&amount.to_string(), &units)
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                let thb = ExchangeArithmetic::thb(foreign_amt, line.rate, line.unit_size);
+                let thb = ExchangeArithmetic::try_thb(foreign_amt, line.rate, line.unit_size)
+                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
                 (amount, thb)
             }
             Side::Sell => {
-                let foreign_amt = ExchangeArithmetic::foreign_for_thb(amount, line.rate, &units);
+                let foreign_amt =
+                    ExchangeArithmetic::try_foreign_for_thb(amount, line.rate, &units)
+                        .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
                 if foreign_amt.value().is_zero() {
                     return Err(KioskError::AmountTooSmall);
                 }
@@ -69,7 +72,8 @@ impl KioskMachine {
                 let foreign = Money::try_from_minor_i128(dec.mantissa())
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
                 let truncated_amt = ForeignAmount::from_decimal(truncated);
-                let thb = ExchangeArithmetic::thb(truncated_amt, line.rate, line.unit_size);
+                let thb = ExchangeArithmetic::try_thb(truncated_amt, line.rate, line.unit_size)
+                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
                 (foreign, thb)
             }
         };
