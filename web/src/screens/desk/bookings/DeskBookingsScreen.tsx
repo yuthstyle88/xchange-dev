@@ -312,6 +312,9 @@ export function DeskBookingsScreen(): JSX.Element {
     if (!bookingId) return;
     const reason = cancelReason().trim();
     if (!reason) {
+      readErrorActive = false;
+      setErrorMessage(t('reasonRequired'));
+      setRetryAction(null);
       return;
     }
     await submitCancel(bookingId, reason);
@@ -662,6 +665,21 @@ export function DeskBookingsScreen(): JSX.Element {
             <div class="xc-modal-overlay">
               <div class="xc-modal">
                 <h3 class="xc-modal-title">{t('cancel')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <div class="xc-form-group">
                   <label for="cancel-reason-input">{t('reasonRequired')}</label>
                   <input
@@ -700,6 +718,21 @@ export function DeskBookingsScreen(): JSX.Element {
             <div class="xc-modal-overlay">
               <div class="xc-modal">
                 <h3 class="xc-modal-title">{t('reschedule')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <div class="xc-form-group">
                   <label for="reschedule-slot-select">Slot</label>
                   <select
@@ -748,6 +781,21 @@ export function DeskBookingsScreen(): JSX.Element {
             <div class="xc-modal-overlay">
               <div class="xc-modal">
                 <h3 class="xc-modal-title">{t('newBooking')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <form onSubmit={handleSubmitNewBooking}>
                   <div class="xc-form-group">
                     <label for="new-booking-branch">Branch</label>
