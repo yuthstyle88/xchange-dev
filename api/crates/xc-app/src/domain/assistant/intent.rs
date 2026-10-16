@@ -175,7 +175,7 @@ fn parse_amount(s: &str) -> Option<ForeignAmount> {
     }
     let clean: String = s.chars().filter(|c| *c != ',').collect();
     if let Ok(dec) = clean.parse::<Decimal>() {
-        if dec > Decimal::ZERO {
+        if dec > Decimal::ZERO && dec <= Decimal::from(Money::MAX_INPUT_UNITS) {
             return Some(ForeignAmount::from_decimal(dec));
         }
     }
