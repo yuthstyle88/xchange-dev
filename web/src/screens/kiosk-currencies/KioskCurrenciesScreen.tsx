@@ -293,7 +293,7 @@ export function KioskCurrenciesScreen(props: {
       <section aria-label={t('bankReference')} id="bank-reference">
         <Show
           when={kbankRef()}
-          fallback={t('kbankFailed')}
+          fallback={loaded() || loadError() ? t('kbankFailed') : ''}
         >
           {(ref) => (
             <>
