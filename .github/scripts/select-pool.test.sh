@@ -16,10 +16,9 @@ fi
 
 DELL='["self-hosted","Linux","X64","dell-org-ci"]'
 STUDIO='["self-hosted","macOS","ARM64","mac-studio"]'
-WARUT='["self-hosted","macOS","ARM64","warut-mbp"]'
 
 fail=0
-dell=0; studio=0; warut=0
+dell=0; studio=0
 for slot in $(seq 0 11); do
   out=$(RUN_ID=$slot RUN_ATTEMPT=0 "$SELECT")
   pool=$(printf '%s\n' "$out" | sed -n 's/^runs_on=//p')
@@ -27,7 +26,6 @@ for slot in $(seq 0 11); do
   case "$pool" in
     "$DELL")   dell=$((dell+1));     want_jobs=12 ;;
     "$STUDIO") studio=$((studio+1)); want_jobs=4 ;;
-    "$WARUT")  warut=$((warut+1));   want_jobs=6 ;;
     *) echo "FAIL: slot $slot gave unknown pool '$pool'"; fail=1; continue ;;
   esac
   if [ "$jobs" != "$want_jobs" ]; then
@@ -35,10 +33,11 @@ for slot in $(seq 0 11); do
   fi
 done
 
-# Row 1: weights over one 12-slot cycle are Dell 6, Studio 4, Warut 2.
+# Row 1: weights over one 12-slot cycle are Dell 6, Studio 6. Warut is out of the pool
+# (owner 2026-10-16: "ย้าย ที่รันใน warut ไปรันที่ อื่นแทน"; measured load 99 on 10 cores).
 [ "$dell" = 6 ]   || { echo "FAIL: Dell got $dell of 12 slots, want 6"; fail=1; }
-[ "$studio" = 4 ] || { echo "FAIL: Studio got $studio of 12 slots, want 4"; fail=1; }
-[ "$warut" = 2 ]  || { echo "FAIL: Warut got $warut of 12 slots, want 2"; fail=1; }
+[ "$studio" = 6 ] || { echo "FAIL: Studio got $studio of 12 slots, want 6"; fail=1; }
+if grep -q "warut-mbp" "$SELECT"; then echo "FAIL: select-pool.sh still names warut-mbp"; fail=1; fi
 
 # Row 2: a rerun (RUN_ATTEMPT+1) moves to the next slot, so it can land on another pool.
 a=$(RUN_ID=5 RUN_ATTEMPT=1 "$SELECT" | sed -n 's/^runs_on=//p')
