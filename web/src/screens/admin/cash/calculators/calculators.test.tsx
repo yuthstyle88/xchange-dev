@@ -418,7 +418,7 @@ describe('V2-cash-calculators: in English, no Thai anywhere in either panel (W10
     const all = spaced(root);
     expect(all).toContain('2026-10-27');
     expect(all).toContain(`${formatMoney('77.77')} THB`);
-    expect(all).toContain(norm(now.toLocaleString('en-GB')));
+    expect(all).toContain(norm(now.toLocaleString('en-GB', { timeZone: 'Asia/Bangkok' })));
 
     // the profit: eight figures, the confirmation, submit
     for (const input of numbers.slice(1)) type(input, '1');

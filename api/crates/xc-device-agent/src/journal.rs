@@ -261,7 +261,7 @@ fn repair_torn_last_line(path: &Path, file: &mut File) -> io::Result<()> {
         let trimmed = part.strip_suffix(b"\n").unwrap_or(part);
         let trimmed = trimmed.strip_suffix(b"\r").unwrap_or(trimmed);
 
-        if trimmed.is_empty() {
+        if trimmed.is_empty() && part.ends_with(b"\n") {
             current_offset += part_len;
             last_valid_offset = current_offset;
             continue;
@@ -282,6 +282,9 @@ fn repair_torn_last_line(path: &Path, file: &mut File) -> io::Result<()> {
         file.set_len(last_valid_offset as u64)?;
         file.sync_data()?;
         file.seek(SeekFrom::End(0))?;
+    } else if !data.ends_with(b"\n") {
+        file.write_all(b"\n")?;
+        file.sync_data()?;
     }
 
     Ok(())

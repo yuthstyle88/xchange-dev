@@ -44,17 +44,27 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   const [posting, setPosting] = createSignal(false);
   const [confirmingId, setConfirmingId] = createSignal<string | null>(null);
 
-  function setOpen(v: boolean): void {
-    if (!v) setLastPostedDoc(null);
-    setOpenSignal(v);
-  }
-
   let currentPoster: Poster | null = null;
   let currentPostingId: string | null = null;
 
+  function setOpen(v: boolean): void {
+    if (!v && !posting()) {
+      setLastPostedDoc(null);
+      setPostError(null);
+      setCanRetry(false);
+      currentPoster = currentPostingId = null;
+    }
+    setOpenSignal(v);
+  }
+
   async function readRefunds(): Promise<void> {
-    const res = await api.view<DeskRefunds>('desk_refunds');
-    setRows(res.data?.rows ?? []);
+    try {
+      const res = await api.view<DeskRefunds>('desk_refunds');
+      setRows(res.data?.rows ?? []);
+    } catch (err) {
+      setPostError(wordedError(err));
+      setCanRetry(false);
+    }
   }
 
   function startConfirm(id: string): void {

@@ -1043,3 +1043,115 @@ async fn currency_code_failing_parse_is_skipped() {
 
     db.finish().await;
 }
+
+/// Issue #2398 row S1: `[USD 30/31, USD 30.5/31.5]` -> 400 `validationFailed` field `prices`;
+/// `assert_no_starting_price_artifacts` holds.
+#[actix_web::test]
+async fn s1_duplicate_currency_usd_usd_refused_validation_failed_on_prices() {
+    let db = TestDb::start().await;
+
+    let payload = save_payload(
+        vec![
+            entry("USD", Some("30"), Some("31")),
+            entry("USD", Some("30.5"), Some("31.5")),
+        ],
+        "duplicate USD",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(
+        a.status,
+        StatusCode::BAD_REQUEST,
+        "S1 duplicate USD+USD must answer 400: {} {}",
+        a.status,
+        a.text
+    );
+    assert_eq!(a.code(), "validationFailed", "{}", a.text);
+    assert_eq!(a.body["error"]["field"], "prices", "{}", a.text);
+    assert_no_starting_price_artifacts(&db, "S1 duplicate USD+USD").await;
+
+    db.finish().await;
+}
+
+/// Issue #2398 row S2: `[USD 30/31, usd 30.5/31.5]` -> 400 `validationFailed` field `prices`;
+/// nothing written.
+#[actix_web::test]
+async fn s2_duplicate_currency_case_insensitive_usd_refused_validation_failed_on_prices() {
+    let db = TestDb::start().await;
+
+    let payload = save_payload(
+        vec![
+            entry("USD", Some("30"), Some("31")),
+            entry("usd", Some("30.5"), Some("31.5")),
+        ],
+        "duplicate USD+usd",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(
+        a.status,
+        StatusCode::BAD_REQUEST,
+        "S2 duplicate USD+usd must answer 400: {} {}",
+        a.status,
+        a.text
+    );
+    assert_eq!(a.code(), "validationFailed", "{}", a.text);
+    assert_eq!(a.body["error"]["field"], "prices", "{}", a.text);
+    assert_no_starting_price_artifacts(&db, "S2 duplicate USD+usd").await;
+
+    db.finish().await;
+}
+
+/// Issue #2398 row S3: `[" USD" 30/31, "USD" 30.5/31.5]` -> 400 `validationFailed` field `prices`.
+#[actix_web::test]
+async fn s3_duplicate_currency_trimmed_usd_refused_validation_failed_on_prices() {
+    let db = TestDb::start().await;
+
+    let payload = save_payload(
+        vec![
+            entry(" USD", Some("30"), Some("31")),
+            entry("USD", Some("30.5"), Some("31.5")),
+        ],
+        "duplicate trimmed USD",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(
+        a.status,
+        StatusCode::BAD_REQUEST,
+        "S3 duplicate ' USD'+'USD' must answer 400: {} {}",
+        a.status,
+        a.text
+    );
+    assert_eq!(a.code(), "validationFailed", "{}", a.text);
+    assert_eq!(a.body["error"]["field"], "prices", "{}", a.text);
+    assert_no_starting_price_artifacts(&db, "S3 duplicate trimmed USD").await;
+
+    db.finish().await;
+}
+
+/// Issue #2398 row S4: `[USD 32/33, JPY 0.20/0.25]` (distinct) -> 200, saved.
+#[actix_web::test]
+async fn s4_distinct_currencies_usd_and_jpy_saved() {
+    let db = TestDb::start().await;
+
+    let payload = save_payload(
+        vec![
+            entry("USD", Some("32"), Some("33")),
+            entry("JPY", Some("0.20"), Some("0.25")),
+        ],
+        "distinct USD and JPY",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(
+        a.status,
+        StatusCode::OK,
+        "S4 distinct USD+JPY must answer 200: {} {}",
+        a.status,
+        a.text
+    );
+    let saved_count: i64 = sqlx::query_scalar("SELECT count(*) FROM org_starting_prices")
+        .fetch_one(&db.pool)
+        .await
+        .expect("count org_starting_prices");
+    assert_eq!(saved_count, 2, "both USD and JPY must be saved");
+
+    db.finish().await;
+}

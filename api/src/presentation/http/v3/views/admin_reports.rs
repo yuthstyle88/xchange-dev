@@ -345,10 +345,12 @@ impl BranchView for AdminReportsBranchView {
                 if let Some(ref_rate) = r.reference_rate {
                     referenced += r.line_count;
                     let foreign = ForeignAmount::from_decimal(r.quantity);
-                    let per_line_val = Decimal::from_i128_with_scale(
-                        ExchangeArithmetic::thb(foreign, ref_rate, r.unit_size).minor_i128(),
-                        2,
-                    );
+                    let per_line_thb =
+                        ExchangeArithmetic::try_thb(foreign, ref_rate, r.unit_size).map_err(
+                            |e| AppError::Internal(format!("reference rate calculation overflow: {e}")),
+                        )?;
+                    let per_line_val =
+                        Decimal::from_i128_with_scale(per_line_thb.minor_i128(), 2);
                     let val = per_line_val * Decimal::from(r.line_count);
                     let spread = if r.shop_side == "BUY" {
                         val - r.principal

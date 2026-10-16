@@ -80,6 +80,9 @@ impl PlannerService {
             }
             Some(id) => {
                 let stored = Self::owned(self.drafts.get_in(tx, id).await?, owner)?;
+                if stored.organization_id != organization_id {
+                    return Err(CustomerAppError::OutOfScope);
+                }
                 let expected = save
                     .expected_version
                     .ok_or(CustomerAppError::ValidationFailed {

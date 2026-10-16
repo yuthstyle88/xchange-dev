@@ -67,6 +67,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   const [error, setError] = createSignal<string | undefined>();
   const [fileError, setFileError] = createSignal<string | undefined>();
   const [sending, setSending] = createSignal(false);
+  let fileEl: HTMLInputElement | undefined;
   let alive = true;
   onCleanup(() => {
     alive = false;
@@ -179,7 +180,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
 
       <label class="desk-field">
         <span>{t('file')}</span>
-        <input type="file" name="passport" accept={ACCEPT} onChange={onFile} />
+        <input ref={fileEl} type="file" name="passport" accept={ACCEPT} onChange={onFile} />
         <Show when={fileError()}>
           <span class="desk-error">{fileError()}</span>
         </Show>
@@ -187,7 +188,13 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           {(file) => (
             <span class="desk-file">
               {file().name}{' '}
-              <button type="button" onClick={() => store.setPassport(undefined)}>
+              <button
+                type="button"
+                onClick={() => {
+                  store.setPassport(undefined);
+                  if (fileEl) fileEl.value = '';
+                }}
+              >
                 {t('removeFile')}
               </button>
             </span>

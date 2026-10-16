@@ -107,6 +107,34 @@ function toBangkokEnd(dateStr: string): string {
   return `${dateStr}T23:59:59+07:00`;
 }
 
+const BANGKOK_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function toBangkokWallClock(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  if (!isoStr.includes('T')) return isoStr;
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return isoStr;
+  const parts: Record<string, string> = {};
+  for (const p of BANGKOK_PARTS.formatToParts(d)) {
+    parts[p.type] = p.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}+07:00`;
+}
+
+function toBangkokDate(isoStr: string | null | undefined): string {
+  const wallClock = toBangkokWallClock(isoStr);
+  return wallClock.includes('T') ? wallClock.slice(0, 10) : wallClock;
+}
+
 function parseInteger(raw: string): number | null {
   const trimmed = raw.trim();
   if (!/^-?\d+$/.test(trimmed)) return null;
@@ -266,8 +294,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         if (!keepUnsaved) {
           setFormName(detail.name ?? '');
           setFormBudgetThb(v?.budgetThb ?? '');
-          setFormStartsAt(v?.startsAt ?? '');
-          setFormEndsAt(v?.endsAt ?? '');
+          setFormStartsAt(toBangkokWallClock(v?.startsAt));
+          setFormEndsAt(toBangkokWallClock(v?.endsAt));
           setFormStackGroup(v?.stackGroup ?? 'DEFAULT');
           setFormPriority(String(v?.priority ?? 0));
           setFormBranches(v?.branches ? [...v.branches] : []);
@@ -279,7 +307,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setCouponRuleId('');
         }
         if (v?.endsAt) {
-          setCouponExpiresAt(v.endsAt.includes('T') ? v.endsAt.slice(0, 10) : v.endsAt);
+          setCouponExpiresAt(toBangkokDate(v.endsAt));
         }
       }
     } catch (err: unknown) {

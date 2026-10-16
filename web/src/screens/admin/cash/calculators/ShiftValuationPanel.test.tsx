@@ -479,7 +479,7 @@ describe('V2-cash-calculators: the valuation submit and its result (W3; shift-va
     await submit(el, RATES, { date: '2026-10-27', kind: 'ซื้อตั๋วเงิน' });
     const all = spaced(resultArea(el));
     expect(all).toContain('เรทวันที่ 2026-10-27 · ซื้อตั๋วเงิน · ผู้ใช้กรอกเอง');
-    expect(all).toContain(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH'))}`);
+    expect(all).toContain(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }))}`);
   });
 
   it("the table: one row per answered currency, in the answer's order, with the answer's figures and the server's rate string", async () => {

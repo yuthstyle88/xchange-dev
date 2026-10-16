@@ -13,7 +13,7 @@ import type {
   Part,
   ReconciliationCertifyInput,
 } from '../../../shared/api/generated/finance_reconciliation';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './reconciliation.css';
@@ -23,11 +23,21 @@ const t = screenT('admin.reconciliation', table);
 const VIEW = 'finance_reconciliation';
 const CERTIFY = '/api/v3/commands/reconciliation_certify';
 
-/** Today's date in the browser's timezone, `YYYY-MM-DD`. */
+/** Today's date in Asia/Bangkok, `YYYY-MM-DD`. */
 function today(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
+}
+
+function stamp(iso: string): string {
+  return new Date(iso).toLocaleString(locale(), {
+    timeZone: 'Asia/Bangkok',
+  });
 }
 
 type PartName = 'transactions' | 'counts' | 'transfers' | 'exceptions' | 'integrity' | 'reversalsPending';
@@ -66,7 +76,7 @@ function Empty(): JSX.Element {
 function Certification(props: { row: CertificationRow }): JSX.Element {
   return (
     <li data-certification={props.row.id} data-stale={props.row.stale ? 'true' : 'false'}>
-      <span>{props.row.certifiedAt}</span> <span>{props.row.certifiedBy}</span>{' '}
+      <span>{stamp(props.row.certifiedAt)}</span> <span>{props.row.certifiedBy}</span>{' '}
       <span>{props.row.stale ? t('stale') : t('current')}</span>
       <Show when={props.row.note}>
         {' '}
@@ -262,7 +272,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
                     <For each={rows}>
                       {(r) => (
                         <li>
-                          {r.requestId} {r.transactionId} {r.requestedBy} {r.createdAt}
+                          {r.requestId} {r.transactionId} {r.requestedBy} {stamp(r.createdAt)}
                         </li>
                       )}
                     </For>

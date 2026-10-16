@@ -207,11 +207,20 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       bookingEnabled: bookingEnabled(),
     };
 
+    // #2463: the picker may move to another branch while the save is in flight;
+    // then this answer belongs to a branch no longer shown and must not touch the
+    // profile, the form or the banners (the newer branch's own read owns them).
+    // The branch may also move away and back (A -> B -> A): a newer profile read
+    // has then started and owns the form, so the answer is dropped as well.
+    const saveSeq = profileSeq;
+    const isStale = () => branchId !== selectedBranch() || saveSeq !== profileSeq;
     try {
       const res = await saveProfileWrite.send(payload);
+      if (isStale()) return;
       setProfile(res);
       setSuccess(t('saved'));
     } catch (err: unknown) {
+      if (isStale()) return;
       if (err instanceof ApiError && err.code === 'conflict') {
         setError(t('codeConflict'));
       } else {
@@ -234,7 +243,11 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
             onChange={(e) => setSelectedBranch(e.currentTarget.value)}
           >
             <For each={branches()}>
-              {(b) => <option value={b.id}>{b.name} ({b.id})</option>}
+              {(b) => (
+                <option value={b.id} selected={b.id === selectedBranch()}>
+                  {b.name} ({b.id})
+                </option>
+              )}
             </For>
           </select>
         </div>

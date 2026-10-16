@@ -45,10 +45,9 @@ pub fn compute_reference_exchange(
         .map_err(|e| AppError::Internal(format!("invalid reference rate: {e}")))?;
     let unit_val = UnitSize::from_decimal(unit_size.normalize())
         .map_err(|e| AppError::Internal(format!("invalid unit size: {e}")))?;
-    let ref_principal = Decimal::from_i128_with_scale(
-        ExchangeArithmetic::thb(foreign, ref_rate_parsed, unit_val).minor_i128(),
-        2,
-    );
+    let ref_thb = ExchangeArithmetic::try_thb(foreign, ref_rate_parsed, unit_val)
+        .map_err(|e| AppError::Internal(format!("amount overflow in reference rate calculation: {e}")))?;
+    let ref_principal = Decimal::from_i128_with_scale(ref_thb.minor_i128(), 2);
     let spread = if is_buy {
         ref_principal - principal
     } else {

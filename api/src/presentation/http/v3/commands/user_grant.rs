@@ -14,9 +14,8 @@ use pos_error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::application::user::user_service::UserService;
-use xc_auth::domain::access::Role;
-use xc_auth::domain::access::Actor;
+use xc_auth::application::user::user_service::{UserService, creator_may_grant};
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;
@@ -64,7 +63,7 @@ impl CommandAction for UserGrantCommand {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -84,6 +83,18 @@ impl CommandAction for UserGrantCommand {
             ));
         }
         let role_branch = role_branch(input.branch.as_deref())?;
+        if !creator_may_grant(
+            &who.roles,
+            &[ScopedRole::new(
+                role,
+                role_branch.clone(),
+                valid_from,
+                valid_to,
+            )],
+            Utc::now(),
+        ) {
+            return Err(out_of_scope());
+        }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
             .grant(tx, &user_id, role, role_branch, valid_from, valid_to)

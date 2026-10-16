@@ -833,8 +833,16 @@ impl CashCountService {
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+        let mut seen_denominations: std::collections::HashSet<i64> =
+            std::collections::HashSet::with_capacity(cmd.lines.len());
 
         for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in count lines: {}",
+                    line.denomination_id
+                )));
+            }
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
                     "line qty cannot be negative: {}",

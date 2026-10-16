@@ -155,7 +155,12 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
         },
       );
       if (seq !== loadSeq) return;
-      setData(res.data ?? null);
+      const next = res.data ?? null;
+      setData(next);
+      const curr = selectedCurrency();
+      if (curr && !next?.currencies.some((c) => c.currency === curr)) {
+        setSelectedCurrency('');
+      }
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
       setData(null);
@@ -224,7 +229,11 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
             {t('currency')}
           </option>
           <For each={data()?.currencies ?? []}>
-            {(c) => <option value={c.currency}>{c.currency}</option>}
+            {(c) => (
+              <option value={c.currency} selected={c.currency === selectedCurrency()}>
+                {c.currency}
+              </option>
+            )}
           </For>
         </select>
       </label>
