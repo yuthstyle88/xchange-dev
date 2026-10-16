@@ -47,6 +47,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [grantingUser, setGrantingUser] = createSignal<AdminUserRow | null>(null);
   const [dialogError, setDialogError] = createSignal<string | null>(null);
   const [dialogSubmitting, setDialogSubmitting] = createSignal<boolean>(false);
+  // Row writes (revoke ×, Disable): one in flight at a time (#2413).
+  const [rowWriting, setRowWriting] = createSignal<boolean>(false);
 
   // Create form state
   const [createName, setCreateName] = createSignal('');
@@ -250,6 +252,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   };
 
   const handleRevoke = async (user: AdminUserRow, role: AdminUserRole) => {
+    if (rowWriting()) return;
+    setRowWriting(true);
     setPageError(null);
     try {
       await revokeWrite.send({
@@ -261,10 +265,14 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       await loadUsers();
     } catch (err: unknown) {
       setPageError(wordedError(err));
+    } finally {
+      setRowWriting(false);
     }
   };
 
   const handleDisable = async (user: AdminUserRow) => {
+    if (rowWriting()) return;
+    setRowWriting(true);
     setPageError(null);
     try {
       await disableWrite.send({
@@ -274,6 +282,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       await loadUsers();
     } catch (err: unknown) {
       setPageError(wordedError(err));
+    } finally {
+      setRowWriting(false);
     }
   };
 
@@ -389,6 +399,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                         type="button"
                                         class="users-btn users-btn-revoke"
                                         onClick={() => handleRevoke(user, r)}
+                                        disabled={rowWriting()}
                                         aria-label={`${t('revoke')} ${r.role}`}
                                       >
                                         ×
@@ -428,6 +439,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                   type="button"
                                   class="users-btn users-btn-disable"
                                   onClick={() => handleDisable(user)}
+                                  disabled={rowWriting()}
                                 >
                                   {t('disable')}
                                 </button>
