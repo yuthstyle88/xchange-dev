@@ -58,7 +58,7 @@ const kindText = (kind: string) => (KIND_TEXT[kind] ? t(KIND_TEXT[kind]!) : kind
 const statusText = (status: string) => (STATUS_TEXT[status] ? t(STATUS_TEXT[status]!) : status);
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
 }
 
 export interface CashFlowsProps {
