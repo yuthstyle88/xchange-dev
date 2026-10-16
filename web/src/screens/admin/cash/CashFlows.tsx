@@ -155,7 +155,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     setDenominations([]);
     setBranches([]);
     setToBranch('');
+    setFromShift('');
+    setToShift('');
     setLineQty({});
+    setNote('');
+    setRefusal(null);
+    setAwaiting(null);
     if (ownDialog) {
       ownDialog = false;
       closeDialog();
@@ -258,6 +263,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       }));
       const body: TransferReceiveInput = { branch: props.branch(), id: row.id, lines };
       void send<TransferReceiveInput, CashRecordOutput>(`receive:${row.id}`, `/api/cash-transfers/${row.id}/receive`, body, () => {
+        ownDialog = false;
         closeDialog();
         toast(t('actionSaved'));
         void readTransfers();
@@ -288,7 +294,14 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
           )}
         </For>
         <div class="dialog-actions">
-          <button type="button" class="secondary" onClick={closeDialog}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => {
+              ownDialog = false;
+              closeDialog();
+            }}
+          >
             {t('cancel')}
           </button>
           <button type="submit" class="primary" data-action="confirm" disabled={busy()}>
@@ -309,6 +322,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
         `/api/cash-transfers/${row.id}/reconcile`,
         body,
         () => {
+          ownDialog = false;
           closeDialog();
           toast(t('actionSaved'));
           void readTransfers();
@@ -330,7 +344,14 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
           />
         </div>
         <div class="dialog-actions">
-          <button type="button" class="secondary" onClick={closeDialog}>
+          <button
+            type="button"
+            class="secondary"
+            onClick={() => {
+              ownDialog = false;
+              closeDialog();
+            }}
+          >
             {t('cancel')}
           </button>
           <button type="submit" class="primary" data-action="confirm" disabled={busy()}>
