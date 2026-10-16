@@ -71,6 +71,12 @@ impl KioskMachine {
                 dec.rescale(2);
                 let foreign = Money::try_from_minor_i128(dec.mantissa())
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
+                let foreign_minor = foreign
+                    .try_minor()
+                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
+                if foreign_minor >= 1_000_000_000_000_000_000 {
+                    return Err(KioskError::AmountOrCurrencyInvalid);
+                }
                 let truncated_amt = ForeignAmount::from_decimal(truncated);
                 let thb = ExchangeArithmetic::try_thb(truncated_amt, line.rate, line.unit_size)
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
