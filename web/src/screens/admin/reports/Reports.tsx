@@ -317,7 +317,11 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     ));
   }
 
-  const allEmployeeNames = () => data()?.byEmployee.map((g) => g.staff) ?? [];
+  const allEmployeeNames = () => {
+    const names = data()?.byEmployee.map((g) => g.staff) ?? [];
+    const staff = selectedStaff();
+    return staff && !names.includes(staff) ? [...names, staff] : names;
+  };
 
   const shownEmployees = () => {
     const list = data()?.byEmployee ?? [];
