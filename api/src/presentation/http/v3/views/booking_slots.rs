@@ -36,8 +36,19 @@ impl BookingSlotsView {
     ) -> AppResult<BookingSlotsData> {
         let date = match &filter.date {
             Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                .unwrap_or_else(|_| Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()),
-            None => Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+                .map_err(|e| pos_error::AppError::Internal(format!("invalid date {d}: {e}")))?,
+            None => {
+                let tz_str: String =
+                    sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                        .bind(branch.as_str())
+                        .fetch_one(pool)
+                        .await
+                        .map_err(pos_error::AppError::Database)?;
+                let tz: chrono_tz::Tz = tz_str.parse().map_err(|e| {
+                    pos_error::AppError::Internal(format!("invalid timezone {tz_str}: {e}"))
+                })?;
+                Utc::now().with_timezone(&tz).date_naive()
+            }
         };
 
         type SlotRow = (uuid::Uuid, DateTime<Utc>, DateTime<Utc>, i32, i32);
