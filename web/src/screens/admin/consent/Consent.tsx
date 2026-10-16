@@ -128,6 +128,7 @@ export function Consent(props: AdminMenuProps): JSX.Element {
     if (b !== loadedBranch) {
       loadedBranch = b;
       setTexts([]);
+      setPublishError(null);
     }
     if (s) {
       loadTexts(b);
@@ -159,19 +160,24 @@ export function Consent(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const sent = props.branch();
     setPublishing(true);
     try {
       await publishWrite.send({
         purpose: purpose(),
         lang: lang(),
         body: textBody,
-        branch: props.branch(),
+        branch: sent,
       });
-      setBody('');
-      await loadTexts(props.branch());
+      if (props.branch() === sent) {
+        setBody('');
+        await loadTexts(props.branch());
+      }
     } catch (err: unknown) {
-      setPublishError(err);
-      toast(wordedError(err));
+      if (props.branch() === sent) {
+        setPublishError(err);
+        toast(wordedError(err));
+      }
     } finally {
       setPublishing(false);
     }
