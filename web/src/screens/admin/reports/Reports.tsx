@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   Show,
@@ -64,6 +65,8 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedStaff, setSelectedStaff] = createSignal<string>('');
   const [searchStaff, setSearchStaff] = createSignal<string>('');
+  /** The search as read, keyed and filtered: trimmed, so all spaces is no search (#2496). */
+  const staffQuery = createMemo(() => searchStaff().trim());
   const [employeeTxMap, setEmployeeTxMap] = createSignal<Record<string, TransactionRow[]>>({});
 
   let branchesLoaded = false;
@@ -112,7 +115,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
     const curBranch = props.branch();
     const curStaff = selectedStaff();
-    const curStaffQ = searchStaff();
+    const curStaffQ = staffQuery();
 
     const filterObj: AdminReportsFilter = {
       from,
@@ -197,7 +200,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
     const branch = props.branch();
     const staff = selectedStaff();
-    const staffQ = searchStaff();
+    const staffQ = staffQuery();
     const currentKey = `${branch}|${from}|${to}|${staff}|${staffQ}`;
 
     const isRefresh = currentKey === lastKey;
@@ -271,7 +274,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       from: props.period().from || undefined,
       to: props.period().to || undefined,
       staff: selectedStaff() || undefined,
-      staffQ: searchStaff() || undefined,
+      staffQ: staffQuery() || undefined,
     };
     const rows = await walkPages<TransactionRow>(api, 'admin_transactions', {
       branch: props.branch(),
@@ -319,7 +322,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   const shownEmployees = () => {
     const list = data()?.byEmployee ?? [];
     const s = selectedStaff();
-    const q = searchStaff().toLowerCase();
+    const q = staffQuery().toLowerCase();
     return list.filter((g) => {
       if (s && g.staff !== s) return false;
       if (q && !g.staff.toLowerCase().includes(q)) return false;

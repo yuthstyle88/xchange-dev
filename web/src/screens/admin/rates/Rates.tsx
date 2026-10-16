@@ -333,9 +333,18 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     return '1';
   };
 
+  let lastDraftId: string | undefined;
+  createEffect(() => {
+    const curDraftId = draftDetail()?.draft?.id;
+    if (curDraftId !== lastDraftId) {
+      lastDraftId = curDraftId;
+      setSimulateResult(null);
+    }
+  });
+
   const isOutOfBound = (currency: string): boolean => {
     const sim = simulateResult();
-    if (!sim || !Array.isArray(sim.outOfBound)) return false;
+    if (!sim || !draftDetail()?.draft || !Array.isArray(sim.outOfBound)) return false;
     return sim.outOfBound.some((item) => item.currency === currency);
   };
 
@@ -399,6 +408,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const handleSimulate = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
+    const draftId = draft.id;
     const branch = props.branch();
     const gen = readGen;
     try {
@@ -409,8 +419,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           isInBound: boolean;
           outOfBound: OutOfBoundItem[];
         }
-      >('simulateDraft:' + draft.id, 'POST', `/api/rate-drafts/${draft.id}/simulate`).send({ branch });
-      if (gen !== readGen) return;
+      >('simulateDraft:' + draftId, 'POST', `/api/rate-drafts/${draftId}/simulate`).send({ branch });
+      if (gen !== readGen || draftDetail()?.draft?.id !== draftId) return;
       setSimulateResult(res);
     } catch (err: unknown) {
       if (gen !== readGen) return;
@@ -453,6 +463,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'POST',
         `/api/rate-drafts/${draft.id}/publish`,
       ).send({ branch, expectedVersion: curVersion });
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
       await readPublished(branch, gen);
       await readDrafts(branch, gen);
     } catch (err: unknown) {
@@ -495,6 +508,9 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         expectedVersion: draft.version,
         lines: putLines,
       });
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
 
       const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
@@ -591,6 +607,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
     try {
       await savePolicyWrite.send(payload);
+      if (gen !== readGen) return;
+      setSimulateResult(null);
     } catch (err: unknown) {
       if (gen !== readGen) return;
       toast(wordedError(err));
@@ -846,7 +864,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               </Show>
             </div>
           </div>
-          <Show when={simulateResult() && simulateResult()!.isInBound}>
+          <Show when={draftDetail()?.draft && simulateResult() && simulateResult()!.isInBound}>
             <div class="in-bound-status">{t('inBound')}</div>
           </Show>
           <Show when={draftsError()}>

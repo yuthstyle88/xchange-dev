@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/endpoint/endpoint_store.dart';
+import '../../../../core/endpoint/kiosk_endpoint.dart';
 import '../../../../l10n/kiosk_l10n.dart';
 import '../../app/kiosk_providers.dart';
 import '../../domain/entities/kiosk_models.dart';
@@ -89,6 +91,7 @@ class KioskState {
     this.busy = false,
     this.quoteExpired = false,
     this.secondsLeft = 0,
+    this.resetGeneration = 0,
   });
 
   final String languageCode;
@@ -107,6 +110,10 @@ class KioskState {
   final bool busy;
   final bool quoteExpired;
   final int secondsLeft;
+
+  /// Bumped by every [KioskController.reset], so screen-local inputs (the
+  /// currency search) can clear even when the screen is not rebuilt.
+  final int resetGeneration;
 
   KioskState copyWith({
     String? languageCode,
@@ -142,6 +149,7 @@ class KioskState {
     busy: busy ?? this.busy,
     quoteExpired: quoteExpired ?? this.quoteExpired,
     secondsLeft: secondsLeft ?? this.secondsLeft,
+    resetGeneration: resetGeneration,
   );
 
   CurrencyRate? get selectedRate {
@@ -247,6 +255,7 @@ class KioskController extends Notifier<KioskState> {
   bool _ratesError = false;
   int _ratesSeq = 0;
   int _ratesMinSeq = 0;
+  KioskEndpoint? _modelEndpoint;
   String? _errorKey;
   String? _errorServerMessage;
 
@@ -323,11 +332,17 @@ class KioskController extends Notifier<KioskState> {
     _noError();
     final seq = ++_ratesSeq;
     _ratesMinSeq = seq;
+    final endpoint = ref.read(kioskEndpointProvider);
+    final keepModel = state.model != null && endpoint == _modelEndpoint;
+    if (!keepModel) {
+      _modelEndpoint = null;
+    }
     _set(
       KioskState(
         languageCode: defaultLanguage,
-        model: state.model,
-        currency: state.currency,
+        model: keepModel ? state.model : null,
+        currency: keepModel ? state.currency : null,
+        resetGeneration: state.resetGeneration + 1,
       ),
     );
     try {
@@ -335,6 +350,7 @@ class KioskController extends Notifier<KioskState> {
       if (_disposed || seq < _ratesMinSeq) return;
       _ratesMinSeq = seq;
       _ratesError = false;
+      _modelEndpoint = endpoint;
       _applyRates(m, error: m.open ? _noError() : _keyError('closed'));
     } catch (e) {
       if (_disposed || seq < _ratesMinSeq) return;
@@ -380,11 +396,13 @@ class KioskController extends Notifier<KioskState> {
         state.quote != null) {
       return;
     }
+    final endpoint = ref.read(kioskEndpointProvider);
     final seq = ++_ratesSeq;
     try {
       final m = await _repo.rates();
       if (_disposed ||
           seq < _ratesMinSeq ||
+          ref.read(kioskEndpointProvider) != endpoint ||
           state.screen != KioskScreen.select ||
           state.busy ||
           state.quote != null) {
@@ -394,6 +412,7 @@ class KioskController extends Notifier<KioskState> {
       final openChanged =
           state.model == null || m.open != state.model!.open || _ratesError;
       _ratesError = false;
+      _modelEndpoint = endpoint;
       final error = openChanged
           ? (m.open ? _noError() : _keyError('closed'))
           : state.error;

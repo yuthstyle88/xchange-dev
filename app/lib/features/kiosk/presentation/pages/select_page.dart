@@ -72,6 +72,14 @@ class _SelectPageState extends ConsumerState<SelectPage> {
         _search.clear();
       }
     });
+    // Every reset starts a new customer: neither box keeps the last one's text.
+    ref.listen(kioskControllerProvider.select((x) => x.resetGeneration), (
+      _,
+      _,
+    ) {
+      _amount.clear();
+      _search.clear();
+    });
     final buy = s.type == ExchangeType.buy;
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final direction = Row(

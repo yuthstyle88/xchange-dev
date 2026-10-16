@@ -294,8 +294,22 @@ export function VerificationScreen(): JSX.Element {
     void initScreen();
   });
 
+  function resetDecisionInputs(): void {
+    setExpiresAt('');
+    if (expiresInputRef) {
+      expiresInputRef.value = '';
+    }
+    setReasonCode('DOCUMENT_UNREADABLE');
+    if (reasonSelectRef) {
+      reasonSelectRef.value = 'DOCUMENT_UNREADABLE';
+    }
+  }
+
   async function loadCase(caseId: string, keepError = false): Promise<void> {
     const mine = ++caseRead;
+    if (selectedCaseId() !== caseId || selectedCase()?.id !== caseId) {
+      resetDecisionInputs();
+    }
     if (selectedCase()?.id !== caseId) {
       setSelectedCase(null);
       setCaseDocuments([]);
@@ -303,6 +317,7 @@ export function VerificationScreen(): JSX.Element {
     }
     setSelectedCaseId(caseId);
     if (!keepError) {
+      resetDecisionInputs();
       queueErrorActive = false;
       setErrorMessage(null);
       setRetryFn(null);
@@ -494,6 +509,9 @@ export function VerificationScreen(): JSX.Element {
         const updated = await approveWrite.send(body);
         if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
+        if (updated.status === 'VERIFIED') {
+          resetDecisionInputs();
+        }
         setSelectedCase(updated);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
@@ -564,6 +582,7 @@ export function VerificationScreen(): JSX.Element {
           setSelectedCase(updated);
         }
         setRetryFn(null);
+        resetDecisionInputs();
         setPendingReasonAction(null);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
