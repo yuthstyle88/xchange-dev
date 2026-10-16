@@ -752,7 +752,10 @@ async fn realized_margin_sell_reversed_in_period_is_zero() {
         .await;
 
     // Reverse the SELL in the period
-    room.insert_posted_reversal(B1, tx_id, date, "120.00").await;
+    // Production stores minus the margin (reversal.md:83,156; reversal_post.rs:384). Fixture corrected by the
+    // ticket writer claude/b61d81bb (was +120.00, which hid the sign bug).
+    room.insert_posted_reversal(B1, tx_id, date, "-120.00")
+        .await;
 
     let filter = ExecutiveFilter {
         from: Some(date),
