@@ -147,11 +147,13 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
 
   async function onSkip(): Promise<void> {
     if (sending()) return;
+    setSending(true);
     setError(undefined);
     try {
       store.setPassport(await noPassportImage());
     } catch (e) {
       setError(t('skipFailed', { reason: wordedError(e) }));
+      setSending(false);
       return;
     }
     store.setField('name', 'WALK-IN', 'user');
@@ -231,7 +233,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
         <button type="button" onClick={() => store.go(0)}>
           {t('back')}
         </button>
-        <button type="button" onClick={() => void onSkip()}>
+        <button type="button" disabled={sending()} onClick={() => void onSkip()}>
           {t('skip')}
         </button>
         <button type="submit" disabled={sending()}>
