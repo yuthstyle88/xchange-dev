@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pos_error::AppResult;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use xc_marketing::domain::engine::consent_gate::ConsentGate;
 
 #[derive(Debug, Clone, Default)]
@@ -23,7 +23,6 @@ impl MarketingConsentGate {
     }
 
     pub async fn prefetch_in(
-        _pool: &PgPool,
         tx: &mut Transaction<'_, Postgres>,
         customer: &str,
     ) -> AppResult<Self> {
