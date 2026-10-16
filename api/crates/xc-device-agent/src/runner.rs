@@ -1,7 +1,8 @@
 //! The loop: claim, send, record (§5.4c *Claim → send → record*, *Restart and offline*).
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 
@@ -56,6 +57,9 @@ pub struct AgentRunner<A, T, C = SystemClock> {
     /// Consecutive failed calls, for [`backoff`].
     pub failures: u32,
     pub clock: C,
+    /// Owed reports whose retry failed: (job, lease) → (consecutive failed retries, next retry
+    /// not before). An owed report is retried with [`backoff`], not on every step (§5.4c).
+    owed_backoff: HashMap<(String, String), (u32, Instant)>,
 }
 
 impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T, SystemClock> {
@@ -67,6 +71,7 @@ impl<A: AgentApi, T: DrawerTransport> AgentRunner<A, T, SystemClock> {
             config,
             failures: 0,
             clock: SystemClock,
+            owed_backoff: HashMap::new(),
         }
     }
 }
@@ -86,6 +91,7 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
             config,
             failures: 0,
             clock,
+            owed_backoff: HashMap::new(),
         }
     }
 
@@ -120,7 +126,19 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
     /// A still-owed report must not stop the agent from claiming new jobs.
     async fn retry_owed(&mut self) -> Result<(), ApiError> {
         let owed = self.journal.pending(SystemTime::now());
+        // Forget the backoff of reports that are no longer owed (taken, rejected, or past 24 h).
+        self.owed_backoff
+            .retain(|key, _| owed.iter().any(|item| owed_key(item) == *key));
+        // The clock is read only when a backoff needs it, so a step with nothing in backoff
+        // reads it no more often than before.
+        let mut now = None;
         for item in owed {
+            let key = owed_key(&item);
+            if let Some((_, not_before)) = self.owed_backoff.get(&key) {
+                if *now.get_or_insert_with(|| self.clock.now()) < *not_before {
+                    continue;
+                }
+            }
             match item {
                 Pending::Sending { job_id, lease_id } => {
                     let report = Report {
@@ -133,26 +151,33 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
                     let _ = self.journal.outcome(&report, SystemTime::now());
                     match self.api.report(&report).await {
                         Ok(()) => {
+                            self.owed_backoff.remove(&key);
                             let _ = self.journal.acknowledged(&job_id, &lease_id);
                         }
                         Err(ApiError::Rejected { status, error }) => {
+                            self.owed_backoff.remove(&key);
                             eprintln!("report rejected ({status}): {error}");
                             let _ = self.journal.rejected(&job_id, &lease_id, status, &error);
                         }
                         Err(ApiError::Unauthorized) => {
                             return Err(ApiError::Unauthorized);
                         }
-                        Err(ApiError::Connection(_)) | Err(ApiError::RateLimited { .. }) => {
+                        Err(e @ ApiError::Connection(_))
+                        | Err(e @ ApiError::RateLimited { .. }) => {
                             // Only Connection and 429 keep a report owed; do not stop claiming
+                            let at = *now.get_or_insert_with(|| self.clock.now());
+                            self.owe_later(key, at, &e);
                         }
                     }
                 }
                 Pending::Unacknowledged(report) => {
                     match self.api.report(&report).await {
                         Ok(()) => {
+                            self.owed_backoff.remove(&key);
                             let _ = self.journal.acknowledged(&report.job_id, &report.lease_id);
                         }
                         Err(ApiError::Rejected { status, error }) => {
+                            self.owed_backoff.remove(&key);
                             eprintln!("report rejected ({status}): {error}");
                             let _ = self.journal.rejected(
                                 &report.job_id,
@@ -164,14 +189,29 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
                         Err(ApiError::Unauthorized) => {
                             return Err(ApiError::Unauthorized);
                         }
-                        Err(ApiError::Connection(_)) | Err(ApiError::RateLimited { .. }) => {
+                        Err(e @ ApiError::Connection(_))
+                        | Err(e @ ApiError::RateLimited { .. }) => {
                             // Only Connection and 429 keep a report owed; do not stop claiming
+                            let at = *now.get_or_insert_with(|| self.clock.now());
+                            self.owe_later(key, at, &e);
                         }
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// A retry of an owed report failed: the next one waits [`backoff`] (and at least a 429's
+    /// `Retry-After`). The first retry after the report's own failure is not delayed.
+    fn owe_later(&mut self, key: (String, String), now: Instant, error: &ApiError) {
+        let entry = self.owed_backoff.entry(key).or_insert((0, now));
+        entry.0 += 1;
+        let mut wait = backoff(entry.0 - 1, random_jitter());
+        if let ApiError::RateLimited { retry_after_secs } = error {
+            wait = wait.max(Duration::from_secs(*retry_after_secs));
+        }
+        entry.1 = now + wait;
     }
 
     /// At start: a send with no outcome is reported `FAILED` `AGENT_RESTARTED` and never sent
@@ -308,6 +348,13 @@ impl<A: AgentApi, T: DrawerTransport, C: Clock> AgentRunner<A, T, C> {
         }
 
         Step::Done(outcome)
+    }
+}
+
+fn owed_key(item: &Pending) -> (String, String) {
+    match item {
+        Pending::Sending { job_id, lease_id } => (job_id.clone(), lease_id.clone()),
+        Pending::Unacknowledged(report) => (report.job_id.clone(), report.lease_id.clone()),
     }
 }
 
