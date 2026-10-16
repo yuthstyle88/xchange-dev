@@ -150,6 +150,19 @@ impl BenefitRedeemer {
                     .bind(cid)
                     .execute(&mut **tx)
                     .await?;
+
+                    let (live_coupon_count,): (i64,) = sqlx::query_as(
+                        "SELECT count(*) FROM benefit_reservations \
+                         WHERE coupon_id = $1 AND status = 'RESERVED' AND expires_at > now() AND id <> $2",
+                    )
+                    .bind(cid)
+                    .bind(res_id)
+                    .fetch_one(&mut **tx)
+                    .await?;
+
+                    if live_coupon_count > 0 {
+                        return Err(BenefitError::BenefitLimitReached);
+                    }
                 }
 
                 // 3. Lazy release expired reservations for this campaign version
