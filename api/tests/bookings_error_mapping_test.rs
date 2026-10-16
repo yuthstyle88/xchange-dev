@@ -23,6 +23,15 @@ use bk6_common::*;
 
 const UNKNOWN_BRANCH: &str = "XC-NO-SUCH-BRANCH";
 
+fn out_of_scope(a: &Answer, what: &str) {
+    assert!(
+        a.status == StatusCode::FORBIDDEN && a.body["error"]["code"] == "outOfScope",
+        "{what}: expected 403 outOfScope; got {} {}",
+        a.status,
+        a.text
+    );
+}
+
 fn not_found(a: &Answer, what: &str) {
     assert!(
         a.status == StatusCode::NOT_FOUND && a.body["error"]["code"] == "notFound",
@@ -50,14 +59,17 @@ async fn seed_open_slot(db: &TestDb, capacity: i32, reserved: i32) -> Uuid {
     slot_id
 }
 
-// ------------------------------------------------------------ rows 1–2: SlotError::NotFound → 404
+// ------------------------------------------------------------ rows 1–2: unknown path branch → 403 outOfScope
 //
-// The named `branch` must exist (the command gate answers `400 noSuchBranch` otherwise), so the
-// unknown branch is the path `{id}` the command writes to; the INSERT … SELECT FROM branches then
-// matches no row and the service returns `SlotError::NotFound`.
+// Controller ruling 2026-10-16 (BE controller claude/1656900d, PR 2331 FAIL): #2077's merged
+// `locks() -> Locks::One(path id)` refuses any path branch outside the grant with 403 `outOfScope`,
+// before the transaction, and that includes a branch that does not exist. That is intended: a
+// branch-scoped admin must not learn whether a branch id exists. So an unknown path branch answers
+// 403 like any other out-of-grant branch. `SlotError::NotFound → 404` stays pinned by the
+// unknown-slot test below.
 
 #[actix_web::test]
-async fn closure_add_on_an_unknown_branch_answers_404_not_found() {
+async fn closure_add_on_an_unknown_branch_answers_403_out_of_scope() {
     let db = TestDb::start().await;
     let res = call(
         &db,
@@ -68,12 +80,12 @@ async fn closure_add_on_an_unknown_branch_answers_404_not_found() {
         Some("k-bkerr-closure-add-404"),
     )
     .await;
-    not_found(&res, "closureAdd on an unknown branch");
+    out_of_scope(&res, "closureAdd on an unknown branch");
     db.finish().await;
 }
 
 #[actix_web::test]
-async fn slot_rule_set_on_an_unknown_branch_answers_404_not_found() {
+async fn slot_rule_set_on_an_unknown_branch_answers_403_out_of_scope() {
     let db = TestDb::start().await;
     let res = call(
         &db,
@@ -84,7 +96,7 @@ async fn slot_rule_set_on_an_unknown_branch_answers_404_not_found() {
         Some("k-bkerr-rule-404"),
     )
     .await;
-    not_found(&res, "slotRuleSet on an unknown branch");
+    out_of_scope(&res, "slotRuleSet on an unknown branch");
     db.finish().await;
 }
 
