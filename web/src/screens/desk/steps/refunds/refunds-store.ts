@@ -58,8 +58,13 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   }
 
   async function readRefunds(): Promise<void> {
-    const res = await api.view<DeskRefunds>('desk_refunds');
-    setRows(res.data?.rows ?? []);
+    try {
+      const res = await api.view<DeskRefunds>('desk_refunds');
+      setRows(res.data?.rows ?? []);
+    } catch (err) {
+      setPostError(wordedError(err));
+      setCanRetry(false);
+    }
   }
 
   function startConfirm(id: string): void {
