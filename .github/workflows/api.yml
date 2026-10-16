@@ -39,10 +39,10 @@ jobs:
           fetch-depth: 0
 
       # Spread the heavy `test` job over the pools that finish it (#2261), weighted over a 12-slot
-      # cycle: Dell 6 (dell-org-ci, cargo_jobs=12), Mac Studio 4 (mac-studio, cargo_jobs=4 so 6
-      # concurrent builds fit one 20-core Studio without timing out), Warut's MacBook 2 (warut-mbp,
-      # cargo_jobs=6). No API call: the slot is (run_id + run_attempt) mod 12, so a rerun can land
-      # elsewhere. If this step does not run, `test` falls back to the Dell pool with 12 jobs.
+      # cycle: Dell 6 (dell-org-ci, cargo_jobs=12), Mac Studio 6 (mac-studio, cargo_jobs=4 so 6
+      # concurrent builds fit one 20-core Studio without timing out). No API call: the slot is
+      # (run_id + run_attempt) mod 12, so a rerun can land elsewhere. If this step does not run,
+      # `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
         id: pool
         env:

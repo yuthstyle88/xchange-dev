@@ -17,10 +17,7 @@ slot=$(( (RUN_ID + attempt) % 12 ))
 if [ "$slot" -lt 6 ]; then
   echo 'runs_on=["self-hosted","Linux","X64","dell-org-ci"]'
   echo 'cargo_jobs=12'
-elif [ "$slot" -lt 10 ]; then
+else
   echo 'runs_on=["self-hosted","macOS","ARM64","mac-studio"]'
   echo 'cargo_jobs=4'
-else
-  echo 'runs_on=["self-hosted","macOS","ARM64","warut-mbp"]'
-  echo 'cargo_jobs=6'
 fi
