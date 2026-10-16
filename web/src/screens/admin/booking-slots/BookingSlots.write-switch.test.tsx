@@ -234,6 +234,54 @@ describe('#2663: BookingSlots write answers across branch switch', () => {
     expect(alertEl()).toBeNull();
   });
 
+  it('Add closure on A, switch to B, A\'s write fails (4xx) -> no error on B', async () => {
+    const { setBranch } = await mount();
+    setInputValue(input('closedOn'), '2026-12-31');
+    setInputValue(input('reason'), 'New Year Eve on A');
+    hold = true;
+
+    button(table.th.addClosure).click();
+    await settle();
+
+    // Switch to branch B
+    setBranch(B02);
+    await settle();
+
+    // A's write fails
+    await release({
+      status: 400,
+      body: { error: { code: 'validationFailed', message: 'Closure invalid on branch A' } },
+    });
+
+    // No error shown on B
+    expect(alertEl()).toBeNull();
+  });
+
+  it('edge: Switch A -> B -> A before the answer lands -> A\'s error is shown', async () => {
+    const { setBranch } = await mount();
+    setInputValue(input('closedOn'), '2026-12-31');
+    setInputValue(input('reason'), 'New Year Eve on A');
+    hold = true;
+
+    button(table.th.addClosure).click();
+    await settle();
+
+    // Switch A -> B -> A
+    setBranch(B02);
+    await settle();
+    setBranch(B01);
+    await settle();
+
+    // A's write fails
+    await release({
+      status: 400,
+      body: { error: { code: 'validationFailed', message: 'Closure invalid on branch A' } },
+    });
+
+    // Error is shown on A because branch is A again
+    expect(alertEl()).not.toBeNull();
+  });
+
   it('row 3: Remove closure / Update capacity / Close slot / Open slot on A, switch to B, write fails -> No error on B', async () => {
     const actions: Array<{ name: string; getButton: () => HTMLButtonElement }> = [
       { name: 'removeClosure', getButton: () => button(table.th.removeClosure) },
