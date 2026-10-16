@@ -137,6 +137,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         const fromSearch = branchFromSearch(props.search);
         const searchMatch = fromSearch ? branches.find((b) => b.code === fromSearch) : undefined;
         setSelectedBranchCode(searchMatch ? searchMatch.code : branches[0]!.code);
+        clearPreview();
       }
     }
   });
@@ -316,6 +317,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
 
     const branch = selectedBranchCode();
+    const seq = calcSeq;
     setSavingPlan(true);
     setSavedPlanId(null);
     setSavePlanError(null);
@@ -329,8 +331,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
 
     try {
       const draft = await savePlan.send(body);
+      if (seq !== calcSeq) return;
       setSavedPlanId(draft.id);
     } catch (err) {
+      if (seq !== calcSeq) return;
       setSavePlanError(wordedError(err));
     } finally {
       setSavingPlan(false);
