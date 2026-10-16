@@ -56,7 +56,7 @@ function formatExpiry(expiresAt: string | null, t: (k: any) => string, loc: stri
   if (!expiresAt) {
     return t('pendingStaff');
   }
-  return new Date(expiresAt).toLocaleString(loc);
+  return new Date(expiresAt).toLocaleString(loc, { timeZone: 'Asia/Bangkok' });
 }
 
 export function BookingsScreen(props: AdminMenuProps): JSX.Element {
