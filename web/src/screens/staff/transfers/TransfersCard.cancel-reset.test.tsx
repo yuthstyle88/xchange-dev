@@ -221,12 +221,24 @@ afterEach(() => {
 
 describe('108-Plaza/xchange#2654 Staff Transfers: Cancel resets form and clears error', () => {
   // C1: New transfer → kind EXTERNAL_OUT, note "x", a quantity "5" → Cancel → New transfer
-  // Required: kind BRANCH, note empty, every quantity empty
+  // Required: kind BRANCH, note empty, every quantity empty, no destination branch
   it('C1: New transfer -> kind EXTERNAL_OUT, note "x", quantity "5" -> Cancel -> New transfer -> empty form', async () => {
     stub();
     await mount(me(['CashManage']));
 
     let form = await openCreate();
+    // With kind BRANCH (the default), pick a destination branch, Cancel, and verify reset
+    typeInto(must<HTMLSelectElement>(tid('transfer-to-branch')), ELSEWHERE);
+    await settle();
+    clickCancel(form);
+    await settle();
+    expect(q(tid('transfer-form'))).toBeNull();
+
+    form = await openCreate();
+    expect(must<HTMLSelectElement>(tid('transfer-to-branch')).value).toBe('');
+
+    typeInto(must<HTMLSelectElement>(tid('transfer-to-branch')), ELSEWHERE);
+    await settle();
     typeInto(must<HTMLSelectElement>(tid('transfer-kind')), 'EXTERNAL_OUT');
     await settle();
     typeInto(must<HTMLInputElement>(tid('transfer-note')), 'x');
@@ -240,12 +252,14 @@ describe('108-Plaza/xchange#2654 Staff Transfers: Cancel resets form and clears 
     // Reopen form
     form = await openCreate();
     const kindSelect = must<HTMLSelectElement>(tid('transfer-kind'));
+    const toBranchSelect = must<HTMLSelectElement>(tid('transfer-to-branch'));
     const noteInput = must<HTMLInputElement>(tid('transfer-note'));
     const qty21 = qtyInput(form, 21);
     const qty11 = qtyInput(form, 11);
     const qty12 = qtyInput(form, 12);
 
     expect(kindSelect.value).toBe('BRANCH');
+    expect(toBranchSelect.value).toBe('');
     expect(noteInput.value).toBe('');
     expect(qty21.value).toBe('');
     expect(qty11.value).toBe('');
