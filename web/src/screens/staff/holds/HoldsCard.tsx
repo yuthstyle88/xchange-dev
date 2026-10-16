@@ -21,6 +21,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
 
   const [notice, setNotice] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal<boolean>(false);
 
   const [holds, setHolds] = createSignal<StaffHoldRow[]>([]);
   const [searchKey, setSearchKey] = createSignal<string>('');
@@ -94,10 +95,12 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   };
 
   const handlePlace = async () => {
+    if (busy()) return;
     const cust = selectedCustomer();
     if (!cust) {
       return;
     }
+    setBusy(true);
     try {
       await placeCmd.send({
         customerId: cust.id,
@@ -112,12 +115,16 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
     } catch (e) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleReleaseConfirm = async (note: string) => {
+    if (busy()) return;
     const target = releaseTarget();
     if (!target) return;
+    setBusy(true);
     try {
       const cmd = getReleaseCmd(target.id);
       await cmd.send({
@@ -132,6 +139,8 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
     } catch (e) {
       setNotice(null);
       setError(wordedError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -185,7 +194,12 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
             value={reason()}
             onInput={(e) => setReason(e.currentTarget.value)}
           />
-          <button type="button" data-testid="holds-place" onClick={handlePlace}>
+          <button
+            type="button"
+            data-testid="holds-place"
+            disabled={busy()}
+            onClick={handlePlace}
+          >
             {t('place')}
           </button>
         </form>
