@@ -147,39 +147,53 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     fetchBookings();
   });
 
+  let commandSeq = 0;
+
   const handleOpenCancel = (booking: MyBookingItemDto) => {
+    commandSeq++;
     setCancellingBooking(booking);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
   };
 
   const handleCloseCancel = () => {
+    commandSeq++;
     cancelWrite.reset();
     setCancellingBooking(null);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
   };
 
   const executeCancel = async () => {
     const booking = cancellingBooking();
     if (!booking) return;
+    const bookingId = booking.id;
+    const seq = ++commandSeq;
     setCommandLoading(true);
     setCommandError(null);
-    setLastAction(() => executeCancel);
 
     try {
       const out = await cancelWrite.send({
-        id: booking.id,
+        id: bookingId,
         reason: null,
         branch: booking.branchId,
       });
       // Update status to CANCELLED in local list
       setBookings((prev) =>
-        prev.map((b) => (b.id === booking.id ? { ...b, status: out.status } : b)),
+        prev.map((b) => (b.id === bookingId ? { ...b, status: out.status } : b)),
       );
+      if (seq !== commandSeq || cancellingBooking()?.id !== bookingId) return;
       setCancellingBooking(null);
     } catch (err: any) {
+      if (seq !== commandSeq || cancellingBooking()?.id !== bookingId) return;
+      setLastAction(() => executeCancel);
       setCommandError(getWordedError(err));
     } finally {
-      setCommandLoading(false);
+      if (seq === commandSeq) {
+        setCommandLoading(false);
+      }
     }
   };
 
@@ -210,8 +224,11 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   };
 
   const handleOpenReschedule = (booking: MyBookingItemDto) => {
+    commandSeq++;
     setReschedulingBooking(booking);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
     setSelectedSlotId('');
     setAvailableSlots([]);
     loadSlots(booking);
@@ -219,9 +236,12 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
 
   const handleCloseReschedule = () => {
     slotsSeq++;
+    commandSeq++;
     rescheduleWrite.reset();
     setReschedulingBooking(null);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
     setSelectedSlotId('');
     setAvailableSlots([]);
     setSlotsLoading(false);
@@ -231,25 +251,31 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     const booking = reschedulingBooking();
     const slotId = selectedSlotId();
     if (!booking || !slotId) return;
+    const bookingId = booking.id;
+    const seq = ++commandSeq;
     setCommandLoading(true);
     setCommandError(null);
-    setLastAction(() => executeReschedule);
 
     try {
       await rescheduleWrite.send({
-        id: booking.id,
+        id: bookingId,
         slotId,
         branch: booking.branchId,
       });
       // Success: re-read bookings
       await fetchBookings();
+      if (seq !== commandSeq || reschedulingBooking()?.id !== bookingId) return;
       setReschedulingBooking(null);
     } catch (err: any) {
       // On error (409 staleVersion / 400 capacityFull), re-read booking (§4.3)
       await fetchBookings();
+      if (seq !== commandSeq || reschedulingBooking()?.id !== bookingId) return;
+      setLastAction(() => executeReschedule);
       setCommandError(getWordedError(err));
     } finally {
-      setCommandLoading(false);
+      if (seq === commandSeq) {
+        setCommandLoading(false);
+      }
     }
   };
 
