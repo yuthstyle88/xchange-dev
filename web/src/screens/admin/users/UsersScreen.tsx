@@ -130,16 +130,20 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   // Which dialog is open (kind + user id). A dialog write's late answer only
   // closes / sets the error of the dialog it was sent from (#2460).
+  // Each opening also gets a fresh generation, so a dialog of the same kind and
+  // user that was closed and reopened is not the one the write was sent from (#2472).
+  let dialogOpening = 0;
   const openDialogKey = (): string | null => {
-    if (showCreate()) return 'create';
+    if (showCreate()) return `create#${dialogOpening}`;
     const activating = activatingUser();
-    if (activating) return `activate:${activating.userId}`;
+    if (activating) return `activate:${activating.userId}#${dialogOpening}`;
     const granting = grantingUser();
-    if (granting) return `grant:${granting.userId}`;
+    if (granting) return `grant:${granting.userId}#${dialogOpening}`;
     return null;
   };
 
   const openCreateDialog = () => {
+    dialogOpening++;
     setCreateName('');
     setCreateUsername('');
     setCreatePhone('');
@@ -153,7 +157,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   const handleCreateSubmit = async (e: Event) => {
     e.preventDefault();
-    const sentFrom = 'create';
+    const sentFrom = openDialogKey();
     setDialogError(null);
     setPageSuccess(null);
     setDialogSubmitting(true);
@@ -190,6 +194,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   };
 
   const openActivate = (user: AdminUserRow) => {
+    dialogOpening++;
     setActivatingUser(user);
     setActivatePhone('');
     setActivatePassword('');
@@ -200,7 +205,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     e.preventDefault();
     const user = activatingUser();
     if (!user) return;
-    const sentFrom = `activate:${user.userId}`;
+    const sentFrom = openDialogKey();
 
     setDialogError(null);
     setPageSuccess(null);
@@ -237,6 +242,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   };
 
   const openGrant = (user: AdminUserRow) => {
+    dialogOpening++;
     setGrantingUser(user);
     setGrantRole('TELLER');
     setGrantBranch(props.branch());
@@ -247,7 +253,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     e.preventDefault();
     const user = grantingUser();
     if (!user) return;
-    const sentFrom = `grant:${user.userId}`;
+    const sentFrom = openDialogKey();
 
     setDialogError(null);
     setPageSuccess(null);
