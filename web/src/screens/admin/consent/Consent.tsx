@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   ConsentTextsData,
@@ -23,6 +24,11 @@ interface RetentionRowProps {
 }
 
 function RetentionRow(props: RetentionRowProps): JSX.Element {
+  const saveRetention = keyedWrite(
+    props.client,
+    'PUT',
+    `/api/retention-policies/${props.dataType}`,
+  );
   const [days, setDays] = createSignal('');
   const [error, setError] = createSignal<unknown>(null);
   const [busy, setBusy] = createSignal(false);
@@ -45,16 +51,10 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await props.client.command(
-        'PUT',
-        `/api/retention-policies/${props.dataType}`,
-        {
-          periodDays,
-          branch: props.branch(),
-        },
-        key,
-      );
+      await saveRetention.send({
+        periodDays,
+        branch: props.branch(),
+      });
       toast(t('save'));
     } catch (err: unknown) {
       setError(err);
@@ -95,6 +95,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
 export function Consent(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const publishWrite = keyedWrite(client, 'POST', '/api/consent-texts');
 
   const [texts, setTexts] = createSignal<ConsentTextViewItem[]>([]);
   const [purpose, setPurpose] = createSignal('MARKETING');
@@ -150,18 +151,12 @@ export function Consent(props: AdminMenuProps): JSX.Element {
 
     setPublishing(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        '/api/consent-texts',
-        {
-          purpose: purpose(),
-          lang: lang(),
-          body: textBody,
-          branch: props.branch(),
-        },
-        key,
-      );
+      await publishWrite.send({
+        purpose: purpose(),
+        lang: lang(),
+        body: textBody,
+        branch: props.branch(),
+      });
       setBody('');
       await loadTexts(props.branch());
     } catch (err: unknown) {

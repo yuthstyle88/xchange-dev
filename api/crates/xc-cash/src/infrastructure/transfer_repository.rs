@@ -51,22 +51,28 @@ struct LineRow {
     qty_received: Option<i32>,
 }
 
-fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> CashTransfer {
+fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTransfer> {
     let kind = TransferKind::parse(&row.kind).unwrap_or(TransferKind::Branch);
     let status = TransferStatus::parse(&row.status).unwrap_or(TransferStatus::Draft);
 
-    let lines = line_rows
-        .into_iter()
-        .map(|lr| TransferLine {
+    let mut lines = Vec::with_capacity(line_rows.len());
+    for lr in line_rows {
+        let face_value = Money::parse(&lr.face_value.to_string()).map_err(|e| {
+            pos_error::AppError::Internal(format!(
+                "invalid face_value {} for denomination {}: {e}",
+                lr.face_value, lr.denomination_id
+            ))
+        })?;
+        lines.push(TransferLine {
             currency: CurrencyCode::parse(lr.currency.trim()).expect("valid currency"),
             denomination_id: lr.denomination_id,
-            face_value: Money::parse(&lr.face_value.to_string()).unwrap_or(Money::ZERO),
+            face_value,
             qty_sent: lr.qty_sent,
             qty_received: lr.qty_received,
-        })
-        .collect();
+        });
+    }
 
-    CashTransfer {
+    Ok(CashTransfer {
         id: row.id.to_string(),
         kind,
         from_branch: BranchId::new(row.from_branch_id),
@@ -76,7 +82,7 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> CashTransfer {
         status,
         created_by: row.created_by.to_string(),
         lines,
-    }
+    })
 }
 
 impl TransferRepository for PgTransferRepository {
@@ -106,7 +112,7 @@ impl TransferRepository for PgTransferRepository {
             .fetch_all(&self.pool)
             .await?;
 
-            Ok(Some(map_transfer(row, line_rows)))
+            Ok(Some(map_transfer(row, line_rows)?))
         })
     }
 
@@ -140,7 +146,7 @@ impl TransferRepository for PgTransferRepository {
             .fetch_all(&mut **tx)
             .await?;
 
-            Ok(Some(map_transfer(row, line_rows)))
+            Ok(Some(map_transfer(row, line_rows)?))
         })
     }
 

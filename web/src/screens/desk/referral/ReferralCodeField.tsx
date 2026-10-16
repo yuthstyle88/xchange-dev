@@ -2,6 +2,7 @@ import { createSignal, onMount, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AttachReferralInput, AttachReferralOutput } from '../../../shared/api/generated/attach_referral';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import { can } from '../../staff/parts/can';
@@ -13,8 +14,28 @@ export interface ReferralCodeFieldProps {
   api?: ApiClient;
 }
 
+const referralWriters = new WeakMap<
+  ApiClient,
+  ReturnType<typeof keyedWrite<AttachReferralInput, AttachReferralOutput>>
+>();
+
+function writerFor(api: ApiClient) {
+  let w = referralWriters.get(api);
+  if (!w) {
+    w = keyedWrite<AttachReferralInput, AttachReferralOutput>(
+      api,
+      'POST',
+      (b) => `/api/transactions/${b.id}/referral`,
+    );
+    referralWriters.set(api, w);
+  }
+  return w;
+}
+
 export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const t = screenT('desk.referral', texts);
+  const defaultApi = new ApiClient();
+  const getApi = () => props.api ?? defaultApi;
   const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
   const [code, setCode] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
@@ -23,7 +44,7 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const [error, setError] = createSignal<unknown>(null);
 
   onMount(async () => {
-    const api = props.api ?? new ApiClient();
+    const api = getApi();
     try {
       const res = await api.view<StaffMeView>('staff_me');
       const meData =
@@ -45,15 +66,9 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
     setSubmitting(true);
     setError(null);
 
-    const api = props.api ?? new ApiClient();
+    const referralWrite = writerFor(getApi());
     try {
-      const key = crypto.randomUUID();
-      await api.command<AttachReferralInput, AttachReferralOutput>(
-        'POST',
-        `/api/transactions/${props.transactionId}/referral`,
-        { id: props.transactionId, referralCode: c },
-        key,
-      );
+      await referralWrite.send({ id: props.transactionId, referralCode: c });
       setSavedCode(c);
       setLocked(true);
     } catch (err: unknown) {

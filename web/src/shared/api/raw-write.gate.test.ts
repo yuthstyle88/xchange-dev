@@ -1,16 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-export const STALE_KNOWN_FAILS = false;
+export const STALE_KNOWN_FAILS = true;
 
 // RW-1 (docs/design/xchange-v3-web.md §12.23): frozen at the 5 known raw-write files on main.
 // Sorted alphabetically, one path per line.
-export const KNOWN: readonly string[] = [
-  'web/src/screens/customer/book/Book.tsx',
-  'web/src/screens/customer/home/HomeScreen.tsx',
-  'web/src/screens/customer/sign-in/SignIn.tsx',
-  'web/src/screens/customer/sign-in/SignUp.tsx',
-  'web/src/screens/operations/verification/VerificationScreen.tsx',
-];
+export const KNOWN: readonly string[] = [];
 
 export function normalizePath(p: string): string {
   const norm = p.replace(/\\/g, '/');
@@ -115,7 +109,7 @@ describe('RW-1 raw-write gate (real source tree)', () => {
     });
     const result = checkGate(realFiles, KNOWN, STALE_KNOWN_FAILS);
 
-    expect(KNOWN).toHaveLength(5);
+    expect(KNOWN).toHaveLength(0);
     expect([...KNOWN].sort()).toEqual(KNOWN);
     expect(result.newOffenders).toEqual([]);
     expect(result.passed).toBe(true);

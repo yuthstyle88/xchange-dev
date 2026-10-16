@@ -105,6 +105,20 @@ impl CommandAction for RatePolicySaveCommand {
             ));
         }
 
+        if let Some(on_stale) = input.on_stale.as_deref()
+            && !matches!(on_stale, "STOP" | "LIMIT")
+        {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("onStale"),
+                "onStale must be STOP or LIMIT",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        let max_pct_abs = Decimal::from(100_000);
+        let max_stale_limit_thb = Decimal::from(1_000_000_000_000_000_000_i64);
+
         let buy_pct = Decimal::from_str(&input.buy_adjust_pct).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -113,6 +127,15 @@ impl CommandAction for RatePolicySaveCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+        if buy_pct.abs() >= max_pct_abs {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("buyAdjustPct"),
+                "buyAdjustPct must have absolute value < 100000",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let sell_pct = Decimal::from_str(&input.sell_adjust_pct).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -121,15 +144,35 @@ impl CommandAction for RatePolicySaveCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+        if sell_pct.abs() >= max_pct_abs {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("sellAdjustPct"),
+                "sellAdjustPct must have absolute value < 100000",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let stale_limit = match input.stale_limit_thb.as_deref() {
-            Some(s) => Some(Decimal::from_str(s).map_err(|e| {
-                V3Error::new(
-                    "validationFailed",
-                    Some("staleLimitThb"),
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?),
+            Some(s) => {
+                let d = Decimal::from_str(s).map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("staleLimitThb"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+                if d.abs() >= max_stale_limit_thb {
+                    return Err(V3Error::new(
+                        "validationFailed",
+                        Some("staleLimitThb"),
+                        "staleLimitThb must be < 10^18",
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+                Some(d)
+            }
             None => None,
         };
 
@@ -144,11 +187,11 @@ impl CommandAction for RatePolicySaveCommand {
                         StatusCode::BAD_REQUEST,
                     )
                 })?;
-                if d <= Decimal::ZERO {
+                if d <= Decimal::ZERO || d.abs() >= max_pct_abs {
                     return Err(V3Error::new(
                         "validationFailed",
                         Some("sharpMoveAlertPct"),
-                        "sharpMoveAlertPct must be strictly positive",
+                        "sharpMoveAlertPct must be in (0, 100000)",
                         StatusCode::BAD_REQUEST,
                     ));
                 }
@@ -163,11 +206,11 @@ impl CommandAction for RatePolicySaveCommand {
                         StatusCode::BAD_REQUEST,
                     )
                 })?;
-                if d <= Decimal::ZERO {
+                if d <= Decimal::ZERO || d.abs() >= max_pct_abs {
                     return Err(V3Error::new(
                         "validationFailed",
                         Some("sharpMoveAlertPct"),
-                        "sharpMoveAlertPct must be strictly positive",
+                        "sharpMoveAlertPct must be in (0, 100000)",
                         StatusCode::BAD_REQUEST,
                     ));
                 }
