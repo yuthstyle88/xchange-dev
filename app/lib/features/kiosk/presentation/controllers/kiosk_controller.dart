@@ -245,6 +245,8 @@ class KioskController extends Notifier<KioskState> {
   Timer? _restart;
   bool _disposed = false;
   bool _ratesError = false;
+  int _ratesSeq = 0;
+  int _ratesMinSeq = 0;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -288,6 +290,8 @@ class KioskController extends Notifier<KioskState> {
     _receiptPoller.stop();
     _idle.touch();
     _ratesError = false;
+    final seq = ++_ratesSeq;
+    _ratesMinSeq = seq;
     _set(
       KioskState(
         languageCode: defaultLanguage,
@@ -297,7 +301,8 @@ class KioskController extends Notifier<KioskState> {
     );
     try {
       final m = await _repo.rates();
-      if (_disposed) return;
+      if (_disposed || seq < _ratesMinSeq) return;
+      _ratesMinSeq = seq;
       _ratesError = false;
       final keep = m.rates.any((r) => r.code == state.currency);
       _set(
@@ -312,6 +317,8 @@ class KioskController extends Notifier<KioskState> {
         ),
       );
     } catch (e) {
+      if (_disposed || seq < _ratesMinSeq) return;
+      _ratesMinSeq = seq;
       _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
@@ -335,14 +342,17 @@ class KioskController extends Notifier<KioskState> {
         state.quote != null) {
       return;
     }
+    final seq = ++_ratesSeq;
     try {
       final m = await _repo.rates();
       if (_disposed ||
+          seq < _ratesMinSeq ||
           state.screen != KioskScreen.select ||
           state.busy ||
           state.quote != null) {
         return;
       }
+      _ratesMinSeq = seq;
       final keep = m.rates.any((r) => r.code == state.currency);
       final currency = keep
           ? state.currency
