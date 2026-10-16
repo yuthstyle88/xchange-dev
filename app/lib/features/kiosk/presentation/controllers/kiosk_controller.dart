@@ -89,6 +89,7 @@ class KioskState {
     this.busy = false,
     this.quoteExpired = false,
     this.secondsLeft = 0,
+    this.resetGeneration = 0,
   });
 
   final String languageCode;
@@ -107,6 +108,10 @@ class KioskState {
   final bool busy;
   final bool quoteExpired;
   final int secondsLeft;
+
+  /// Bumped by every [KioskController.reset], so screen-local inputs (the
+  /// currency search) can clear even when the screen is not rebuilt.
+  final int resetGeneration;
 
   KioskState copyWith({
     String? languageCode,
@@ -142,6 +147,7 @@ class KioskState {
     busy: busy ?? this.busy,
     quoteExpired: quoteExpired ?? this.quoteExpired,
     secondsLeft: secondsLeft ?? this.secondsLeft,
+    resetGeneration: resetGeneration,
   );
 
   CurrencyRate? get selectedRate {
@@ -328,6 +334,7 @@ class KioskController extends Notifier<KioskState> {
         languageCode: defaultLanguage,
         model: state.model,
         currency: state.currency,
+        resetGeneration: state.resetGeneration + 1,
       ),
     );
     try {
