@@ -91,7 +91,7 @@ export function Overview(props: AdminMenuProps): JSX.Element {
       period.from !== activeFrom || period.to !== activeTo;
 
     if (branchChanged || periodChanged) {
-      if (branchChanged) {
+      if (branchChanged || !(period.from && period.to && period.from > period.to)) {
         setData(null);
       }
       activeBranch = branch;
