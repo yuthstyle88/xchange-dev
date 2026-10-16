@@ -179,7 +179,13 @@ impl TransferFlow {
         self.approvals
             .decide(&mut tx, &req_id, &policy_actor, outcome, reason, "")
             .await
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+            .map_err(|e| match e {
+                xc_approval::application::approval_service::ApprovalError::Database(m)
+                | xc_approval::application::approval_service::ApprovalError::Internal(m) => {
+                    AppError::Internal(m)
+                }
+                other => AppError::Domain(other.to_string()),
+            })?;
 
         tx.commit().await?;
 
@@ -450,7 +456,13 @@ impl TransferFlow {
             .approvals
             .request(tx, "CASH_TRANSFER", id, &payload, &policy_actor, &key)
             .await
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+            .map_err(|e| match e {
+                xc_approval::application::approval_service::ApprovalError::Database(m)
+                | xc_approval::application::approval_service::ApprovalError::Internal(m) => {
+                    AppError::Internal(m)
+                }
+                other => AppError::Domain(other.to_string()),
+            })?;
 
         self.repo
             .set_approval_request_id(tx, id, &req.id, now)
