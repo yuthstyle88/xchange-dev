@@ -404,6 +404,7 @@ export function createDeskStore(
     setSaveError(undefined);
     setSaved(undefined);
     setStep(0);
+    void requote();
   }
 
   /** v2's New (dh:118): asks while unsaved; keeps `staff` and `valueDate`; clears staffDraftId (DK-1). */
