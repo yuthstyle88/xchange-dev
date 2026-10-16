@@ -918,3 +918,128 @@ async fn buy_greater_than_sell_or_all_null_entry_refused() {
 
     db.finish().await;
 }
+
+/// Issue #1995 behaviour row (a): two unpublished branches, both with an active policy and
+/// reference lines -> one draft per branch, with the full currency set on each branch.
+#[actix_web::test]
+async fn two_unpublished_branches_each_gets_full_currency_set() {
+    let db = TestDb::start().await;
+
+    db.insert_policy_version(B01, 1).await;
+    db.insert_policy_version(B02, 1).await;
+
+    let payload = save_payload(
+        vec![
+            entry("USD", Some("32.00000000"), Some("33.00000000")),
+            entry("JPY", Some("0.22000000"), Some("0.23000000")),
+        ],
+        "pricing two unpublished branches",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(a.status, StatusCode::OK, "save must succeed: {}", a.text);
+
+    if let Some(unpriced) = a.body.get("unpriced").and_then(|u| u.as_array()) {
+        for branch in [B01, B02] {
+            assert!(
+                !unpriced
+                    .iter()
+                    .any(|u| u["branch"].as_str() == Some(branch)),
+                "{branch} has an active policy and must not be in unpriced: {unpriced:?}"
+            );
+        }
+    }
+
+    for branch in [B01, B02] {
+        let draft_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM rate_drafts WHERE branch_id = $1")
+                .bind(branch)
+                .fetch_one(&db.pool)
+                .await
+                .expect("count rate_drafts for branch");
+        assert_eq!(draft_count, 1, "{branch} must have exactly one draft");
+
+        let pub_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT current_publication_id FROM branches WHERE id = $1")
+                .bind(branch)
+                .fetch_one(&db.pool)
+                .await
+                .expect("check branch current_publication_id");
+        let pub_id = pub_id.unwrap_or_else(|| panic!("{branch} must have current_publication_id"));
+
+        let priced_currencies: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT btrim(currency_code) AS code FROM published_rate_lines \
+             WHERE publication_id = $1 AND buy_rate IS NOT NULL AND sell_rate IS NOT NULL \
+             ORDER BY code ASC",
+        )
+        .bind(pub_id)
+        .fetch_all(&db.pool)
+        .await
+        .expect("fetch published currencies for branch");
+
+        assert_eq!(
+            priced_currencies,
+            vec!["JPY".to_string(), "USD".to_string()],
+            "{branch} must receive the full currency set"
+        );
+    }
+
+    db.finish().await;
+}
+
+/// Issue #1995 behaviour row (b): a currency code in `currencies` that fails `CurrencyCode::parse`
+/// is skipped, while valid currencies are still priced.
+#[actix_web::test]
+async fn currency_code_failing_parse_is_skipped() {
+    let db = TestDb::start().await;
+
+    sqlx::query(
+        "INSERT INTO currencies (code, name_th, name_en, symbol, unit_size) \
+         VALUES ('ZZZ', 'สกุลเงินที่ไม่รู้จัก', 'Unknown Currency', 'Z', 1.0000)",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("seed unparsable currency code ZZZ");
+
+    db.insert_policy_version(B01, 1).await;
+
+    let payload = save_payload(
+        vec![
+            entry("USD", Some("32.00000000"), Some("33.00000000")),
+            entry("JPY", Some("0.22000000"), Some("0.23000000")),
+        ],
+        "pricing with unparsable currency code in currencies table",
+    );
+    let a = call(&db, "owner", Method::POST, CMD_SAVE, Some(payload)).await;
+    assert_eq!(
+        a.status,
+        StatusCode::OK,
+        "save must succeed and skip unparsable currency code ZZZ: {}",
+        a.text
+    );
+
+    let pub_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT current_publication_id FROM branches WHERE id = $1")
+            .bind(B01)
+            .fetch_one(&db.pool)
+            .await
+            .expect("check XC-B01 current_publication_id");
+    let pub_id = pub_id.expect("XC-B01 must have current_publication_id");
+
+    let priced_currencies: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT btrim(currency_code) AS code FROM published_rate_lines \
+         WHERE publication_id = $1 AND buy_rate IS NOT NULL AND sell_rate IS NOT NULL \
+         ORDER BY code ASC",
+    )
+    .bind(pub_id)
+    .fetch_all(&db.pool)
+    .await
+    .expect("fetch published currencies for XC-B01");
+
+    assert_eq!(
+        priced_currencies,
+        vec!["JPY".to_string(), "USD".to_string()],
+        "unparsable currency ZZZ must be skipped and valid currencies priced"
+    );
+
+    db.finish().await;
+}

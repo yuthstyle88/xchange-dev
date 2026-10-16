@@ -92,6 +92,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (fetchId !== currentFetchId) return;
+      heldVersion = undefined;
       setRows([]);
       setHasMore(false);
       setError(wordedError(err));

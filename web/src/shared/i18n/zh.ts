@@ -8,6 +8,7 @@ export const zh: Record<Key, string> = {
   'shell.account.signOut': '退出登录',
   'shell.account.switchBranch': '切换分行',
   'shell.account.switchFailed': '切换分行失败',
+  'shell.account.signOutFailed': '退出登录失败，请重试',
   'shell.account.role.executive': '管理层',
   'shell.account.role.admin': '系统管理员',
   'shell.account.role.rateManager': '汇率经理',
