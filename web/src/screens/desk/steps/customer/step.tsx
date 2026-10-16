@@ -1,7 +1,7 @@
 // Step 1, passport / customer (design xchange-v3-wave3-desk.md §3.2 rows 1 and "1 skip", §3.9 DK-1; #539 Part 3).
 // Calls go through `store.api` on `store.path.rpc` (lane controller's ruling 1 on #539). Nationality is an ISO
 // alpha-3 picker, never free text (CI-4 ruling (a)); the skip sends `XXX` (owner 2026-10-11). No arithmetic (W7).
-import { createSignal, For, Show, type Component, type JSX } from 'solid-js';
+import { createSignal, For, onCleanup, Show, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { screenT } from '../../../../shared/i18n';
 import { wordedError } from '../../../../shared/i18n/worded-error';
@@ -67,6 +67,10 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   const [error, setError] = createSignal<string | undefined>();
   const [fileError, setFileError] = createSignal<string | undefined>();
   const [sending, setSending] = createSignal(false);
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
 
   const field = (k: keyof PassportFields) => store.fields()[k];
   const edit = (k: keyof PassportFields) => (e: { currentTarget: HTMLInputElement | HTMLSelectElement }) =>
@@ -98,9 +102,11 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           action: 'opsBeginTransaction',
           payload: { type: store.type(), currency: store.currency(), amount: store.amount() },
         });
+        if (!alive) return;
         if (typeof draft.id === 'string' && draft.id !== '') store.setStaffDraftId(draft.id);
       }
       await store.entry()?.beforeReserve?.(store);
+      if (!alive) return;
       const f = store.fields();
       const answer = await store.api.post<
         { action: string; payload: PassportFields & { mode: 'LIVE' } },
@@ -116,6 +122,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           mode: 'LIVE',
         },
       });
+      if (!alive) return;
       if (typeof answer.customerId !== 'string' || answer.customerId === '') {
         setError(prefix ? prefix(t('noServer')) : t('noServer'));
         return;
@@ -123,10 +130,11 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       store.setCustomerId(answer.customerId);
       store.go(2);
     } catch (e) {
+      if (!alive) return;
       const reason = wordedError(e);
       setError(prefix ? prefix(reason) : reason);
     } finally {
-      setSending(false);
+      if (alive) setSending(false);
     }
   }
 
@@ -150,8 +158,11 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     setSending(true);
     setError(undefined);
     try {
-      store.setPassport(await noPassportImage());
+      const img = await noPassportImage();
+      if (!alive) return;
+      store.setPassport(img);
     } catch (e) {
+      if (!alive) return;
       setError(t('skipFailed', { reason: wordedError(e) }));
       setSending(false);
       return;
@@ -230,7 +241,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       </Show>
 
       <div class="desk-actions">
-        <button type="button" onClick={() => store.go(0)}>
+        <button type="button" disabled={sending()} onClick={() => store.go(0)}>
           {t('back')}
         </button>
         <button type="button" disabled={sending()} onClick={() => void onSkip()}>
