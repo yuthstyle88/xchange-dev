@@ -829,7 +829,17 @@ export function VerificationScreen(): JSX.Element {
                     <Show when={previewUrl()}>
                       {(url) => (
                         <div class="xc-verification-doc-preview">
-                          <img src={url()} alt={previewDocId() ?? st('documentsTitle')} />
+                          <Show
+                            when={
+                              caseDocuments().find((d) => d.id === previewDocId())?.mime ===
+                              'application/pdf'
+                            }
+                            fallback={
+                              <img src={url()} alt={previewDocId() ?? st('documentsTitle')} />
+                            }
+                          >
+                            <iframe src={url()} title={previewDocId() ?? st('documentsTitle')} />
+                          </Show>
                         </div>
                       )}
                     </Show>

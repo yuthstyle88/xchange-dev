@@ -68,6 +68,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   /** The search as read, keyed and filtered: trimmed, so all spaces is no search (#2496). */
   const staffQuery = createMemo(() => searchStaff().trim());
   const [employeeTxMap, setEmployeeTxMap] = createSignal<Record<string, TransactionRow[]>>({});
+  const [busyExport, setBusyExport] = createSignal(false);
 
   let branchesLoaded = false;
   let lastKey = '';
@@ -237,10 +238,14 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
   /** An export the server refuses (EX-9 #1147: `outOfScope` without `ReportsExport`) shows on the screen's error line. */
   async function exporting(run: () => Promise<void>) {
+    if (busyExport()) return;
+    setBusyExport(true);
     try {
       await run();
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setBusyExport(false);
     }
   }
 
@@ -353,6 +358,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             class="secondary"
             id="export"
             hidden={activeTab() === 2}
+            disabled={busyExport()}
             onClick={() => void exporting(handleExport)}
           >
             {t('exportCsv')}
@@ -527,6 +533,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                     type="button"
                     class="secondary"
                     id="employee-csv"
+                    disabled={busyExport()}
                     onClick={() => void exporting(handleEmployeeCsv)}
                   >
                     {t('downloadCsv')}

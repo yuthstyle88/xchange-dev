@@ -37,6 +37,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
 
   const [rows, setRows] = createSignal<TransactionRow[]>([]);
   const [hasMore, setHasMore] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
   let heldVersion: number | undefined = undefined;
@@ -154,6 +155,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   });
 
   async function handleLoadMore() {
+    if (loadingMore()) return;
     const currentRows = rows();
     if (currentRows.length === 0) return;
     const lastId = currentRows[currentRows.length - 1]!.id;
@@ -173,6 +175,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     if (typ) filter.type = typ;
     if (stat) filter.status = stat;
 
+    setLoadingMore(true);
     try {
       const nextRows = await api.page<TransactionRow>('admin_transactions', {
         branch,
@@ -186,6 +189,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (fetchId !== currentFetchId || props.branch() !== branch) return;
       setError(wordedError(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -321,6 +326,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           <button
             type="button"
             class="secondary"
+            disabled={loadingMore()}
             onClick={() => void handleLoadMore()}
           >
             {t('loadMore')}

@@ -330,6 +330,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     createFailed = false;
     setGlobalError(null);
     setReferralError(null);
+    setSuccessData(null);
 
     // Read current form values from signals or DOM
     const currentBranch =

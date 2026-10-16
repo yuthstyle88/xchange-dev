@@ -1,7 +1,7 @@
 import {
   createEffect,
   createSignal,
-  For,
+  Index,
   Show,
   type JSX,
 } from 'solid-js';
@@ -173,25 +173,25 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
             when={floors().length > 0}
             fallback={<div class="no-floors">{t('noFloors')}</div>}
           >
-            <For each={floors()}>
+            <Index each={floors()}>
               {(floor) => (
-                <div data-floor={floor.currency} class="floor-row">
-                  <span class="floor-currency">{floor.currency}</span>
+                <div data-floor={floor().currency} class="floor-row">
+                  <span class="floor-currency">{floor().currency}</span>
                   <input
                     type="text"
-                    value={floor.minQuantity}
-                    onInput={(e) => updateFloor(floor.currency, e.currentTarget.value)}
+                    value={floor().minQuantity}
+                    onInput={(e) => updateFloor(floor().currency, e.currentTarget.value)}
                   />
                   <button
                     type="button"
                     class="remove-floor-button"
-                    onClick={() => handleRemoveFloor(floor.currency)}
+                    onClick={() => handleRemoveFloor(floor().currency)}
                   >
                     {t('removeFloor')}
                   </button>
                 </div>
               )}
-            </For>
+            </Index>
           </Show>
 
           <div class="add-floor-section">

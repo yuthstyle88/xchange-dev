@@ -199,6 +199,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   };
 
   const nextPage = () => {
+    if (loading()) return;
     const currentRows = rows();
     if (currentRows.length < 51) return;
     setRefusalMessage(null);
@@ -209,6 +210,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   };
 
   const prevPage = () => {
+    if (loading()) return;
     if (page() <= 1) return;
     setRefusalMessage(null);
     currentBefore = cursorStack.pop();
@@ -418,7 +420,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
       <nav class="xc-queue-pager" aria-label={t('queue.pagerLabel')}>
         <button
           type="button"
-          disabled={page() <= 1}
+          disabled={page() <= 1 || loading()}
           onClick={prevPage}
         >
           {t('queue.pager.prev')}
@@ -426,7 +428,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         <span>{fill(t('queue.pager.page'), { page: page() })}</span>
         <button
           type="button"
-          disabled={rows().length < 51}
+          disabled={rows().length < 51 || loading()}
           onClick={nextPage}
         >
           {t('queue.pager.next')}

@@ -252,6 +252,15 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     setSavePlanError(null);
   };
 
+  createEffect(() => {
+    const list = availableCurrencies();
+    const curr = calcCurrency();
+    if (list.length > 0 && !list.includes(curr)) {
+      setCalcCurrency(list[0]!);
+      clearPreview();
+    }
+  });
+
   const handleCalculate = async () => {
     const amtStr = amount().trim();
     const isNum = /^\d+(\.\d+)?$/.test(amtStr) && parseFloat(amtStr) > 0;

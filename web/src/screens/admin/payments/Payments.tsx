@@ -171,6 +171,41 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const applyShellBranch = (targetBranch: string) => {
+    const current = displayedBranch();
+    if (current === '') {
+      setDisplayedBranch(targetBranch);
+      void loadData(targetBranch);
+      return;
+    }
+
+    if (saving()) {
+      pendingBranchSwitch = targetBranch;
+      return;
+    }
+
+    if (targetBranch === current) return;
+
+    if (isDirty()) {
+      const confirmed = window.confirm(t('confirmBranch'));
+      if (confirmed) {
+        setEdits(null);
+        setBranchNotice(null);
+        // #2489: save feedback describes the previous branch; drop it on switch.
+        setFeedback('');
+        setDisplayedBranch(targetBranch);
+        void loadData(targetBranch);
+      } else {
+        setBranchNotice(t('branchNotice', { branch: branchDisplayName() }));
+      }
+    } else {
+      setBranchNotice(null);
+      setFeedback('');
+      setDisplayedBranch(targetBranch);
+      void loadData(targetBranch);
+    }
+  };
+
   // Tracking shown & branch switch from shell
   createEffect(() => {
     const isShown = props.shown();
@@ -178,38 +213,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     if (!isShown) return;
 
     untrack(() => {
-      const current = displayedBranch();
-      if (current === '') {
-        setDisplayedBranch(targetBranch);
-        void loadData(targetBranch);
-        return;
-      }
-
-      if (targetBranch === current) return;
-
-      if (saving()) {
-        pendingBranchSwitch = targetBranch;
-        return;
-      }
-
-      if (isDirty()) {
-        const confirmed = window.confirm(t('confirmBranch'));
-        if (confirmed) {
-          setEdits(null);
-          setBranchNotice(null);
-          // #2489: save feedback describes the previous branch; drop it on switch.
-          setFeedback('');
-          setDisplayedBranch(targetBranch);
-          void loadData(targetBranch);
-        } else {
-          setBranchNotice(t('branchNotice', { branch: branchDisplayName() }));
-        }
-      } else {
-        setBranchNotice(null);
-        setFeedback('');
-        setDisplayedBranch(targetBranch);
-        void loadData(targetBranch);
-      }
+      applyShellBranch(targetBranch);
     });
   });
 
@@ -330,7 +334,13 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           await loadData(next);
         }
       } catch (err: unknown) {
+        setSaving(false);
         if (displayedBranch() === branchToSave) setFeedback(wordedError(err));
+        if (pendingBranchSwitch) {
+          const next = pendingBranchSwitch;
+          pendingBranchSwitch = null;
+          applyShellBranch(next);
+        }
       } finally {
         setSaving(false);
         savePromise = null;

@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/api/generated/finance_reconciliation';
 import { locale, screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
+import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
 import './reconciliation.css';
 
@@ -116,6 +117,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
 
   createEffect(() => {
     if (!props.shown()) return;
+    refreshTick();
     const branch = props.branch();
     const date = day();
     setError(null);

@@ -157,7 +157,15 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         } else if (name === 'device_jobs') {
           setJobs(res.data as DeviceJobRow[]);
         } else if (name === 'device_events') {
-          setEvents(res.data as DeviceEventRow[]);
+          const next = res.data as DeviceEventRow[];
+          const prev = events();
+          if (
+            olderEvents().length > 0 &&
+            (prev.length !== next.length || prev.some((ev, i) => ev.seq !== next[i]?.seq))
+          ) {
+            setOlderEvents([]);
+          }
+          setEvents(next);
         }
       }
       if (failedViews.has(name)) {
