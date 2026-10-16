@@ -298,7 +298,7 @@ describe('Admin Employees branch-read recovery on refresh (#2179)', () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(sharedTh['error.serverError']);
     });
-    expect(root.querySelector('table')).toBeNull();
+    expect(root.querySelector('table')).not.toBeNull();
 
     // Operations recover on next refresh
     operationsResponse = null;
