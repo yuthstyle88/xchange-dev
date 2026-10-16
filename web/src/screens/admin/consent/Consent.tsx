@@ -104,13 +104,19 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   const [publishError, setPublishError] = createSignal<unknown>(null);
   const [publishing, setPublishing] = createSignal(false);
 
+  let loadSeq = 0;
+  let loadedBranch: string | undefined;
+
   const loadTexts = async (branchName: string) => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<ConsentTextsData>('consent_texts', { branch: branchName });
+      if (seq !== loadSeq) return;
       if (res.data?.texts) {
         setTexts(res.data.texts);
       }
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setTexts([]);
       toast(wordedError(err));
     }
@@ -119,6 +125,10 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   createEffect(() => {
     const b = props.branch();
     const s = props.shown ? props.shown() : true;
+    if (b !== loadedBranch) {
+      loadedBranch = b;
+      setTexts([]);
+    }
     if (s) {
       loadTexts(b);
     }
