@@ -206,7 +206,7 @@ async function failOnce(onSaved = vi.fn(), branch = 'B1'): Promise<void> {
   openForm();
   void pendingWrite.run(fake.api, branch, 'adminSaveRate', { code: 'USD', buy: '32.1' }, onSaved);
   await settle();
-  fake.last().reject(new ApiError({ code: 'refused', message: RATE_REFUSED, status: 400 }));
+  fake.last().reject(new ApiError({ code: 'refused', message: RATE_REFUSED, status: 503 }));
   await settle();
 }
 
@@ -233,7 +233,7 @@ describe('pendingWrite.run (#476 P4, §8)', () => {
     await settle();
     expect(fake.posts().length).toBe(1);
     // the ignored write left no trace: the request that fails and is retried is the first one
-    fake.last().reject(new ApiError({ code: 'refused', message: RATE_REFUSED, status: 400 }));
+    fake.last().reject(new ApiError({ code: 'refused', message: RATE_REFUSED, status: 503 }));
     await settle();
     expect(pendingWrite.busy()).toBe(false);
     button(RETRY).click();
@@ -306,7 +306,7 @@ describe('pendingWrite — a failed write (#476 P4, §9)', () => {
     await failOnce(onSaved);
     const text = dialogText();
     expect(text).toContain(NOT_CONFIRMED);
-    expect(text).toContain(RATE_REFUSED);
+    expect(text).toContain('เซิร์ฟเวอร์ขัดข้อง'); // #2156: a 5xx is the unknown-outcome case, worded error.serverError
     expect(text).toContain(NOTE);
     button(RETRY);
     button(INSPECT);
@@ -461,10 +461,10 @@ describe('pendingWrite — English (#476, W10)', () => {
     openForm();
     void pendingWrite.run(fake.api, 'B1', 'adminSaveRate', { code: 'USD' }, vi.fn());
     await settle();
-    fake.last().reject(new ApiError({ code: 'refused', message: 'Rate changed', status: 400 }));
+    fake.last().reject(new ApiError({ code: 'refused', message: 'Rate changed', status: 503 }));
     await settle();
     const text = dialogText();
-    expect(text).toContain('Rate changed');
+    expect(text).toContain('Server error'); // #2156: a 5xx is worded error.serverError (en)
     expect(THAI.test(text), text).toBe(false);
     expect(THAI.test(closeX().getAttribute('aria-label') ?? '')).toBe(false);
   });

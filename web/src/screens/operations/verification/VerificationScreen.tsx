@@ -146,6 +146,7 @@ export function VerificationScreen(): JSX.Element {
   const [branchSuccessMsg, setBranchSuccessMsg] = createSignal<string | null>(null);
 
   let lastQueueVersion: number | undefined;
+  let queueErrorActive = false;
   let expiresInputRef: HTMLInputElement | undefined;
   let reasonSelectRef: HTMLSelectElement | undefined;
   let branchCustInputRef: HTMLInputElement | undefined;
@@ -210,6 +211,11 @@ export function VerificationScreen(): JSX.Element {
       }
       setAuthorized(true);
       setRefusalMessage(null);
+      if (queueErrorActive) {
+        queueErrorActive = false;
+        setErrorMessage(null);
+        setRetryFn(null);
+      }
     } catch (err: unknown) {
       if (
         err instanceof ApiError &&
@@ -223,7 +229,9 @@ export function VerificationScreen(): JSX.Element {
         setRefusalMessage(describeFailure(err));
         return;
       }
+      queueErrorActive = true;
       setErrorMessage(describeFailure(err));
+      setRetryFn(() => () => fetchQueue(false));
     }
   }
 
@@ -267,7 +275,7 @@ export function VerificationScreen(): JSX.Element {
 
   onMount(() => {
     const timer = setInterval(() => {
-      if (authorized() === true) {
+      if (authorized() !== false) {
         void fetchQueue(true);
       }
     }, QUEUE_POLL_MS);
@@ -278,6 +286,7 @@ export function VerificationScreen(): JSX.Element {
   async function loadCase(caseId: string, keepError = false): Promise<void> {
     setSelectedCaseId(caseId);
     if (!keepError) {
+      queueErrorActive = false;
       setErrorMessage(null);
       setRetryFn(null);
       setDocError(null);
@@ -297,6 +306,7 @@ export function VerificationScreen(): JSX.Element {
         setCaseAudit(answer.data.audit ?? []);
       }
     } catch (err: unknown) {
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
   }
@@ -386,6 +396,7 @@ export function VerificationScreen(): JSX.Element {
     retryCallback: () => Promise<void>,
   ): Promise<void> {
     const msg = describeFailure(err);
+    queueErrorActive = false;
     setErrorMessage(msg);
     if (err instanceof ApiError && err.code === 'staleVersion') {
       setRetryFn(null);
@@ -408,6 +419,7 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
         const updated = await startReviewWrite.send(body);
         setRetryFn(null);
@@ -427,6 +439,7 @@ export function VerificationScreen(): JSX.Element {
     const rawDate = (expiresInputRef ? expiresInputRef.value : expiresAt()).trim();
     const today = todayBangkokIso();
     if (!rawDate || !/^\d{4}-\d{2}-\d{2}$/.test(rawDate) || rawDate <= today) {
+      queueErrorActive = false;
       setErrorMessage(st('errExpiresAtRequired'));
       return;
     }
@@ -441,6 +454,7 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
         const updated = await approveWrite.send(body);
         setRetryFn(null);
@@ -467,6 +481,7 @@ export function VerificationScreen(): JSX.Element {
 
     const selectedReason = currentReasonCode();
     if (!selectedReason || !(S5_REASON_CODES as readonly string[]).includes(selectedReason)) {
+      queueErrorActive = false;
       setErrorMessage(st('errReasonRequired'));
       return;
     }
@@ -476,6 +491,7 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
         if (action === 'reject') {
           const body: VerificationCaseRejectInput = {
@@ -515,6 +531,7 @@ export function VerificationScreen(): JSX.Element {
   async function handleBranchSubmit(e?: Event): Promise<void> {
     e?.preventDefault();
     setBranchSuccessMsg(null);
+    queueErrorActive = false;
     setErrorMessage(null);
 
     const custId = (branchCustInputRef ? branchCustInputRef.value : branchCustomerId()).trim();
@@ -523,6 +540,7 @@ export function VerificationScreen(): JSX.Element {
     ) as 'PASSPORT' | 'NATIONAL_ID';
     const file = branchFileInputRef?.files?.[0] ?? branchFile();
     if (!custId || !file) {
+      queueErrorActive = false;
       setErrorMessage(st('errBranchFormIncomplete'));
       return;
     }
@@ -546,6 +564,7 @@ export function VerificationScreen(): JSX.Element {
       if (err instanceof ApiError && err.code === 'branchReviewNotAllowed') {
         setBranchReviewAllowed(false);
       }
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
   }
