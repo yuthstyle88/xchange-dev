@@ -107,6 +107,13 @@ function toBangkokEnd(dateStr: string): string {
   return `${dateStr}T23:59:59+07:00`;
 }
 
+function parseInteger(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 export function Campaigns(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
 
@@ -182,7 +189,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [createStartsAt, setCreateStartsAt] = createSignal('');
   const [createEndsAt, setCreateEndsAt] = createSignal('');
   const [createStackGroup, setCreateStackGroup] = createSignal('DEFAULT');
-  const [createPriority, setCreatePriority] = createSignal<number>(10);
+  const [createPriority, setCreatePriority] = createSignal('10');
   const [createBranches, setCreateBranches] = createSignal<string[]>(['MAIN']);
   const [createError, setCreateError] = createSignal<string | null>(null);
 
@@ -198,13 +205,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [formStartsAt, setFormStartsAt] = createSignal('');
   const [formEndsAt, setFormEndsAt] = createSignal('');
   const [formStackGroup, setFormStackGroup] = createSignal('DEFAULT');
-  const [formPriority, setFormPriority] = createSignal(0);
+  const [formPriority, setFormPriority] = createSignal('0');
   const [formBranches, setFormBranches] = createSignal<string[]>([]);
   const [isEditedAfterSimulation, setIsEditedAfterSimulation] = createSignal(false);
 
   // Coupon issue inputs
   const [couponRuleId, setCouponRuleId] = createSignal('');
-  const [couponCount, setCouponCount] = createSignal(1);
+  const [couponCount, setCouponCount] = createSignal('1');
   const [couponExpiresAt, setCouponExpiresAt] = createSignal('');
 
   // Issued coupons from couponIssue
@@ -256,7 +263,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setFormStartsAt(v?.startsAt ?? '');
           setFormEndsAt(v?.endsAt ?? '');
           setFormStackGroup(v?.stackGroup ?? 'DEFAULT');
-          setFormPriority(v?.priority ?? 0);
+          setFormPriority(String(v?.priority ?? 0));
           setFormBranches(v?.branches ? [...v.branches] : []);
           setIsEditedAfterSimulation(false);
         }
@@ -315,7 +322,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setCreateStartsAt('');
     setCreateEndsAt('');
     setCreateStackGroup('DEFAULT');
-    setCreatePriority(10);
+    setCreatePriority('10');
     setCreateBranches(['MAIN']);
     setCreateError(null);
     resetWrites();
@@ -325,6 +332,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setIsCreating(false);
     setSelectedCampaignId(campaignId);
     setIssuedCoupons(null);
+    setCouponCount('1');
     resetWrites();
     void loadCampaignDetail(campaignId, false);
   }
@@ -335,6 +343,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleCreate() {
+    const priority = parseInteger(createPriority());
+    if (priority === null) {
+      setCreateError(t('error.validationFailed'));
+      return;
+    }
     const rawBranches = createBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
@@ -347,7 +360,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       endsAt: toBangkokEnd(createEndsAt()),
       budgetThb: createBudgetThb(),
       stackGroup: createStackGroup() || 'DEFAULT',
-      priority: Number(createPriority()) || 0,
+      priority,
       branches,
     };
     setCreateError(null);
@@ -367,6 +380,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   async function handleSave() {
     const campaignId = selectedCampaignId();
     if (!campaignId) return;
+    const priority = parseInteger(formPriority());
+    if (priority === null) {
+      setDetailError(t('error.validationFailed'));
+      return;
+    }
     const rawBranches = formBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
@@ -379,7 +397,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       endsAt: toBangkokEnd(formEndsAt()),
       budgetThb: formBudgetThb(),
       stackGroup: formStackGroup(),
-      priority: Number(formPriority()) || 0,
+      priority,
       branches,
     };
     setDetailError(null);
@@ -475,8 +493,12 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   async function handleIssueCoupons() {
     const campaignId = selectedCampaignId();
     if (!campaignId) return;
+    const count = parseInteger(couponCount());
+    if (count === null || count < 1) {
+      setDetailError(t('error.validationFailed'));
+      return;
+    }
     const ruleId = couponRuleId() || currentVersion()?.rules?.[0]?.id || '';
-    const count = Number(couponCount()) || 1;
     const expiresAt = toBangkokEnd(couponExpiresAt());
     const body = {
       ruleId,
@@ -693,8 +715,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   data-field="priority"
                   class="xc-input"
                   value={createPriority()}
-                  onInput={(e) => setCreatePriority(Number(e.currentTarget.value))}
-                  onChange={(e) => setCreatePriority(Number(e.currentTarget.value))}
+                  onInput={(e) => setCreatePriority(e.currentTarget.value)}
+                  onChange={(e) => setCreatePriority(e.currentTarget.value)}
                 />
               </div>
 
@@ -885,10 +907,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 data-field="priority"
                 class="xc-input"
                 value={formPriority()}
-                onInput={(e) => {
-                  setFormPriority(Number(e.currentTarget.value));
-                  setIsEditedAfterSimulation(true);
-                }}
+                onInput={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
+                onChange={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
               />
             </div>
           </div>
@@ -924,8 +944,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   class="xc-input"
                   min="1"
                   value={couponCount()}
-                  onInput={(e) => setCouponCount(Number(e.currentTarget.value))}
-                  onChange={(e) => setCouponCount(Number(e.currentTarget.value))}
+                  onInput={(e) => setCouponCount(e.currentTarget.value)}
+                  onChange={(e) => setCouponCount(e.currentTarget.value)}
                 />
               </div>
 

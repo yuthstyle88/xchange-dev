@@ -139,6 +139,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (res.changed && res.data) {
         setRefData(res.data);
         setRefError(res.data.error ?? null);
+      } else if (!res.changed) {
+        setRefError(refData()?.error ?? null);
       }
     } catch (err: unknown) {
       setRefError(wordedError(err));
