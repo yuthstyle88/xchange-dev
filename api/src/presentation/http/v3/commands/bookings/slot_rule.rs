@@ -83,14 +83,7 @@ impl CommandAction for SlotRuleSet {
             .slot_service
             .set_rule_in(tx, &branch, &rule, user_uuid)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         let tz_str: Option<String> =
             sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
