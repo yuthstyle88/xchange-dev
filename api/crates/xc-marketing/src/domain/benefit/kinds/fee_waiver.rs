@@ -1,14 +1,35 @@
-use std::str::FromStr;
-
 use rust_decimal::Decimal;
 use xc_kernel::money::Money;
 
-use crate::domain::benefit::calculator::{BenefitCalculator, BenefitEffect};
+use crate::domain::benefit::calculator::{
+    BenefitCalculator, BenefitEffect, ParamError, decimal_param,
+};
 use crate::domain::benefit::rule::BenefitClass;
 use crate::domain::engine::engine::QuoteLineInput;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FeeWaiver;
+
+enum FeeWaiverParams {
+    Percent(Decimal),
+    Fixed(Decimal),
+}
+
+fn parse_params(params: &serde_json::Value) -> Result<FeeWaiverParams, ParamError> {
+    if let Some(pct) = decimal_param(params, "percent", "percent")? {
+        return Ok(FeeWaiverParams::Percent(pct));
+    }
+    if let Some(amount) = decimal_param(params, "amount", "amount")? {
+        return Ok(FeeWaiverParams::Fixed(amount));
+    }
+    if let Some(fixed) = decimal_param(params, "fixed", "fixed")? {
+        return Ok(FeeWaiverParams::Fixed(fixed));
+    }
+    Err(ParamError {
+        field: "calculation",
+        reason: "FEE_WAIVER requires percent, amount, or fixed".into(),
+    })
+}
 
 impl BenefitCalculator for FeeWaiver {
     fn kind(&self) -> &str {
@@ -19,34 +40,27 @@ impl BenefitCalculator for FeeWaiver {
         BenefitClass::Price
     }
 
-    fn apply(&self, line: &QuoteLineInput, params: &serde_json::Value) -> BenefitEffect {
-        let waived_minor = if let Some(pct_val) = params.get("percent") {
-            let pct = if let Some(s) = pct_val.as_str() {
-                Decimal::from_str(s).unwrap_or(Decimal::ZERO)
-            } else if let Some(n) = pct_val.as_i64() {
-                Decimal::from(n)
-            } else {
-                Decimal::from_str(&pct_val.to_string()).unwrap_or(Decimal::ZERO)
-            };
-            if pct >= Decimal::ONE {
-                line.fee_thb.minor()
-            } else if pct <= Decimal::ZERO {
-                0
-            } else {
-                let waived = Decimal::from(line.fee_thb.minor()) * pct;
-                waived.round().mantissa() as i64
+    fn validate_params(&self, params: &serde_json::Value) -> Result<(), ParamError> {
+        parse_params(params).map(|_| ())
+    }
+
+    fn apply(
+        &self,
+        line: &QuoteLineInput,
+        params: &serde_json::Value,
+    ) -> Result<BenefitEffect, ParamError> {
+        let waived_minor = match parse_params(params)? {
+            FeeWaiverParams::Percent(pct) => {
+                if pct >= Decimal::ONE {
+                    line.fee_thb.minor()
+                } else if pct <= Decimal::ZERO {
+                    0
+                } else {
+                    let waived = Decimal::from(line.fee_thb.minor()) * pct;
+                    waived.round().mantissa() as i64
+                }
             }
-        } else if let Some(fixed_val) = params.get("amount").or_else(|| params.get("fixed")) {
-            let fixed = if let Some(s) = fixed_val.as_str() {
-                Decimal::from_str(s).unwrap_or(Decimal::ZERO)
-            } else if let Some(n) = fixed_val.as_i64() {
-                Decimal::from(n)
-            } else {
-                Decimal::from_str(&fixed_val.to_string()).unwrap_or(Decimal::ZERO)
-            };
-            (fixed * Decimal::from(100)).round().mantissa() as i64
-        } else {
-            0
+            FeeWaiverParams::Fixed(fixed) => (fixed * Decimal::from(100)).round().mantissa() as i64,
         };
 
         let waived_minor = waived_minor.clamp(0, line.fee_thb.minor());
@@ -54,10 +68,10 @@ impl BenefitCalculator for FeeWaiver {
         let new_fee_thb = Some(Money::from_minor(new_fee_minor).unwrap_or(Money::ZERO));
         let amount_thb = Money::from_minor(waived_minor).unwrap_or(Money::ZERO);
 
-        BenefitEffect {
+        Ok(BenefitEffect {
             new_final_rate: None,
             new_fee_thb,
             amount_thb,
-        }
+        })
     }
 }

@@ -50,7 +50,9 @@ fn test_margin_guard_limits_fee_waiver() {
     };
 
     let waiver = FeeWaiver;
-    let effect = waiver.apply(&line, &json!({ "percent": "1" }));
+    let effect = waiver
+        .apply(&line, &json!({ "percent": "1" }))
+        .expect("valid params");
     assert_eq!(effect.new_fee_thb, Some(Money::ZERO));
 
     // Case A: share = 0 -> allowance = 0 THB. fee_after must stay 200.00 THB, amount_thb = 0.00 THB.
@@ -111,7 +113,9 @@ fn test_rate_improvement_8_decimals_not_dropped() {
     };
 
     let imp = RateImprovement;
-    let effect = imp.apply(&line, &json!({ "delta": "0.8" }));
+    let effect = imp
+        .apply(&line, &json!({ "delta": "0.8" }))
+        .expect("valid params");
     assert!(effect.new_final_rate.is_some());
 
     let res = RateFloor::apply(
@@ -137,7 +141,9 @@ fn test_rate_improvement_8_decimals_not_dropped() {
 
     // Case B: Percentage rate improvement from 8-decimal published rate:
     // base 35.12345678, percent = "0.01" (1%) -> delta = 0.3512345678 (10 decimals)
-    let effect_pct = imp.apply(&line, &json!({ "percent": "0.01" }));
+    let effect_pct = imp
+        .apply(&line, &json!({ "percent": "0.01" }))
+        .expect("valid params");
     assert!(
         effect_pct.new_final_rate.is_some(),
         "percent improvement on 8-decimal rate must not return None"
