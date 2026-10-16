@@ -198,12 +198,13 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       }
       setSendError(wordedError(err));
     } finally {
-      setSending(false);
+      if (mine === sendSeq) setSending(false);
     }
   };
 
   const resetConversation = () => {
     sendSeq++;
+    setSending(false);
     setConversationId(null);
     setMessages([]);
     setLoadError(null);
