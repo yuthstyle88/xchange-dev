@@ -27,6 +27,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   const [customers, setCustomers] = createSignal<StaffCustomerRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = createSignal<StaffCustomerRow | null>(null);
   const [reason, setReason] = createSignal<string>('');
+  let findSeq = 0;
 
   const [releaseTarget, setReleaseTarget] = createSignal<StaffHoldRow | null>(null);
 
@@ -67,8 +68,12 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   });
 
   const handleFind = async () => {
+    const seq = ++findSeq;
+    setSelectedCustomer(null);
+    setCustomers([]);
     const key = searchKey().trim();
     if (!key) {
+      setSelectedCustomer(null);
       setCustomers([]);
       return;
     }
@@ -77,10 +82,12 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       const res = await api.view<StaffCustomerRow[], StaffCustomersFilter>('staff_customers', {
         filter: { q: searchKey() },
       });
-      if (res.data) {
-        setCustomers(res.data);
-      }
+      if (seq !== findSeq) return;
+      setSelectedCustomer(null);
+      setCustomers(res.data ?? []);
     } catch (e: unknown) {
+      if (seq !== findSeq) return;
+      setSelectedCustomer(null);
       setCustomers([]);
       setError(wordedError(e));
     }
@@ -96,6 +103,8 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
         customerId: cust.id,
         reason: reason(),
       } as CustomerHoldCreateInput);
+      setSelectedCustomer(null);
+      setReason('');
       setNotice(t('saved'));
       setError(null);
       await props.ctx.refresh();
@@ -160,6 +169,9 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
             {(cust) => (
               <div
                 data-customer-id={cust.id}
+                aria-pressed={selectedCustomer()?.id === cust.id ? 'true' : 'false'}
+                data-selected={selectedCustomer()?.id === cust.id ? 'true' : undefined}
+                style={selectedCustomer()?.id === cust.id ? { 'font-weight': '600' } : undefined}
                 onClick={() => setSelectedCustomer(cust)}
               >
                 {cust.displayName}
