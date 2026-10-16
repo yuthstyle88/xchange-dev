@@ -500,19 +500,25 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                         <div
                           class={`xc-slot-option ${selectedSlotId() === slot.id ? 'selected' : ''}`}
                           data-slot-id={slot.id}
-                          onClick={() => setSelectedSlotId(slot.id)}
+                          onClick={() => {
+                            if (slot.available === 0) return;
+                            setSelectedSlotId(slot.id);
+                          }}
                         >
                           <label class="xc-slot-label">
                             <input
                               type="radio"
                               name="rescheduleSlot"
                               value={slot.id}
+                              disabled={slot.available === 0}
                               checked={selectedSlotId() === slot.id}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (slot.available === 0) return;
                                 setSelectedSlotId(slot.id);
                               }}
                               onChange={() => {
+                                if (slot.available === 0) return;
                                 setSelectedSlotId(slot.id);
                               }}
                             />
