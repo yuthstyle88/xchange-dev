@@ -44,4 +44,4 @@ devices:
       paperMm: 80
       drawerPulse: { pin: 0, on: 25, off: 250 }
   passportDrawerBranches: []
-
+  passportDrawerReadWindowMs: 5000
