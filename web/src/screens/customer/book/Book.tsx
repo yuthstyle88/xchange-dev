@@ -238,7 +238,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     void loadBranches();
   });
 
+  let previewSeq = 0;
+  let createFailed = false;
+
   const updatePreview = async () => {
+    const seq = ++previewSeq;
     const b = branchId();
     if (!b) {
       setPreview(null);
@@ -268,10 +272,15 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         customerSide: s === 'BUY' ? 'Buy' : 'Sell',
         amount: { quantity: String(Number(q)) },
       });
+      if (seq !== previewSeq) return;
       setPreview(data);
+      if (!createFailed) {
+        setGlobalError(null);
+      }
     } catch (err) {
+      if (seq !== previewSeq) return;
       setPreview(null);
-      if (!submitting()) {
+      if (!submitting() && !createFailed) {
         setGlobalError(bookError(err));
       }
     }
@@ -280,6 +289,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const handleSubmit = async (e?: Event) => {
     if (e) e.preventDefault();
     setSubmitting(true);
+    createFailed = false;
     setGlobalError(null);
     setReferralError(null);
 
@@ -330,6 +340,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           void loadSlots(currentBranch, serviceDate());
         }
       }
+      createFailed = true;
       setGlobalError(bookError(err));
     } finally {
       setSubmitting(false);
