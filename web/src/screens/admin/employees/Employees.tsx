@@ -47,6 +47,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const [operations, setOperations] = createSignal<AdminOperationsData | null>(null);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal('');
+  const [disabling, setDisabling] = createSignal(false);
 
   const filteredEmployees = () => {
     const picked = selectedBranch();
@@ -297,9 +298,11 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleDisable(employee: AdminEmployeeRow) {
+    if (disabling()) return;
     const ok = window.confirm(t('disableConfirm'));
     if (!ok) return;
 
+    setDisabling(true);
     try {
       await api.post('/api/employees', {
         action: 'disable',
@@ -308,6 +311,8 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       await reReadBoth();
     } catch (err: unknown) {
       toast(wordedError(err));
+    } finally {
+      setDisabling(false);
     }
   }
 
@@ -403,6 +408,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
                             <button
                               type="button"
                               class="danger"
+                              disabled={disabling()}
                               onClick={() => handleDisable(e)}
                             >
                               {t('disable')}
