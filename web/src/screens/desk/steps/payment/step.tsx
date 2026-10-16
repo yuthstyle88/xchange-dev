@@ -24,6 +24,7 @@ function slipRefused(file: File): boolean {
 
 function PaymentStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
+  let slipEl: HTMLInputElement | undefined;
   const [error, setError] = createSignal<string | undefined>();
   const [slipError, setSlipError] = createSignal<string | undefined>();
 
@@ -186,7 +187,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       </label>
       <label class="desk-field">
         <span>{t('slip')}</span>
-        <input type="file" name="slip" accept={SLIP_ACCEPT} onChange={onSlip} />
+        <input ref={slipEl} type="file" name="slip" accept={SLIP_ACCEPT} onChange={onSlip} />
         <Show when={slipError()}>
           <span class="desk-error">{slipError()}</span>
         </Show>
@@ -194,7 +195,13 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
           {(file) => (
             <span class="desk-notice">
               {file().name}{' '}
-              <button type="button" onClick={() => store.setSlip(undefined)}>
+              <button
+                type="button"
+                onClick={() => {
+                  store.setSlip(undefined);
+                  if (slipEl) slipEl.value = '';
+                }}
+              >
                 {t('removeSlip')}
               </button>
             </span>
