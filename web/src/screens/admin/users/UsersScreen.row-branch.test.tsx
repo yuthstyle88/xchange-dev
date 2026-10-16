@@ -178,8 +178,8 @@ describe('108-Plaza/xchange#2716 UsersScreen row actions after branch switch', (
     expect(statusText(c)).toBeNull();
   });
 
-  // Row 3: Revoke or Disable on A held, switch to B, the write fails -> No error banner on B
-  it('Row 3: Revoke or Disable on A held, switch to B, the write fails -> No error banner on B', async () => {
+  // Row 3a: Revoke on A held, switch to B, the write fails -> No error banner on B
+  it('Row 3a: Revoke on A held, switch to B, the write fails -> No error banner on B', async () => {
     const defRevoke = deferred();
     queue.push(() => defRevoke.promise);
 
@@ -195,6 +195,28 @@ describe('108-Plaza/xchange#2716 UsersScreen row actions after branch switch', (
 
     // In-flight write fails
     defRevoke.resolve(json(500, { error: { code: 'serverError', message: 'SERVER_ERROR' } }));
+    await settle();
+
+    expect(alertText(c)).toBeNull();
+  });
+
+  // Row 3b: Disable on A held, switch to B, the write fails -> No error banner on B
+  it('Row 3b: Disable on A held, switch to B, the write fails -> No error banner on B', async () => {
+    const defDisable = deferred();
+    queue.push(() => defDisable.promise);
+
+    const { c, setBranch } = mountScreen();
+    await settle();
+
+    rowButton(c, 'Alpha Active', '.users-btn-disable').click();
+    await settle();
+
+    // Switch branch while write is in flight
+    setBranch(B02);
+    await settle();
+
+    // In-flight write fails
+    defDisable.resolve(json(500, { error: { code: 'serverError', message: 'SERVER_ERROR' } }));
     await settle();
 
     expect(alertText(c)).toBeNull();
