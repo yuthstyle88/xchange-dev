@@ -439,7 +439,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminRetryAction', {}, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'First fail' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'First fail' }));
       await settle();
 
       // Click retry
@@ -477,7 +477,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminRetryAction', {}, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'First fail' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'First fail' }));
       await settle();
 
       const retryBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -510,7 +510,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminRetryAction', {}, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'First fail' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'First fail' }));
       await settle();
 
       const retryBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -545,7 +545,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminInspectAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       const inspectBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -578,7 +578,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminInspectAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       const inspectBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -610,7 +610,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminInspectAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       const inspectBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -644,7 +644,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminAbandonAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       // Click inspect to transition to notFound dialog
@@ -687,7 +687,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminAbandonAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       const inspectBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -727,7 +727,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
 
       void pendingWrite.run(fake.api, 'B1', 'adminAbandonAction', { requestId: 'REQ-1' }, vi.fn());
       await settle();
-      fake.last().reject(new ApiError({ status: 400, code: 'init', message: 'Initial' }));
+      fake.last().reject(new ApiError({ status: 503, code: 'init', message: 'Initial' }));
       await settle();
 
       const inspectBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(

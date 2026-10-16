@@ -33,6 +33,7 @@ pub struct DevicePassportDrawer {
     device_service: DeviceService,
     branch_tx: BranchTx,
     pool: PgPool,
+    read_window: std::time::Duration,
 }
 
 fn word(status: JobStatus) -> PassportDrawerState {
@@ -140,7 +141,7 @@ impl PassportDrawerDevice for DevicePassportDrawer {
             };
 
             let repo = PgDeviceRepository::new(self.pool.clone());
-            let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(5000);
+            let deadline = tokio::time::Instant::now() + self.read_window;
             let mut status = job.status;
 
             while status == JobStatus::Queued || status == JobStatus::Leased {
@@ -205,11 +206,14 @@ pub fn passport_drawer_device(
         .iter()
         .cloned()
         .collect();
+    let read_window =
+        std::time::Duration::from_millis(settings.devices.passport_drawer_read_window_ms);
 
     Some(Arc::new(DevicePassportDrawer {
         branches,
         device_service,
         branch_tx,
         pool: db.clone(),
+        read_window,
     }))
 }
