@@ -40,6 +40,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
   const [notice, setNotice] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  let errorFrom: string | null = null;
   // #2409: one write at a time; a second click or Enter while one is in flight does nothing.
   const [busy, setBusy] = createSignal<boolean>(false);
 
@@ -69,7 +70,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: CashCountRow[] }).rows)) {
         setCashCounts((data as { rows: CashCountRow[] }).rows);
       }
+      if (errorFrom === 'loadCashCounts') {
+        errorFrom = null;
+        setError(null);
+      }
     } catch (err: unknown) {
+      errorFrom = 'loadCashCounts';
       setError(wordedError(err));
     }
   };
@@ -84,7 +90,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: HandoverPendingRow[] }).rows)) {
         setPendingHandovers((data as { rows: HandoverPendingRow[] }).rows);
       }
+      if (errorFrom === 'loadPendingHandovers') {
+        errorFrom = null;
+        setError(null);
+      }
     } catch (err: unknown) {
+      errorFrom = 'loadPendingHandovers';
       setError(wordedError(err));
     }
   };
@@ -99,7 +110,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: DenominationRow[] }).rows)) {
         setDenominations((data as { rows: DenominationRow[] }).rows);
       }
+      if (errorFrom === 'loadDenominations') {
+        errorFrom = null;
+        setError(null);
+      }
     } catch (err: unknown) {
+      errorFrom = 'loadDenominations';
       setError(wordedError(err));
     }
   };
@@ -114,7 +130,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       } else if (data && Array.isArray((data as { rows: HandoverReceiverRow[] }).rows)) {
         setHandoverReceivers((data as { rows: HandoverReceiverRow[] }).rows);
       }
+      if (errorFrom === 'loadHandoverReceivers') {
+        errorFrom = null;
+        setError(null);
+      }
     } catch (err: unknown) {
+      errorFrom = 'loadHandoverReceivers';
       setError(wordedError(err));
     }
   };
@@ -187,6 +208,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       await cmd.send(body);
       setNotice(t('saved'));
+      errorFrom = null;
       setError(null);
       setCountKind(null);
       setCountQuantities({});
@@ -194,6 +216,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadCashCounts();
     } catch (err: unknown) {
       setNotice(null);
+      errorFrom = null;
       setError(wordedError(err));
     } finally {
       setBusy(false);
@@ -240,6 +263,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       await cmd.send(body);
       setNotice(t('saved'));
+      errorFrom = null;
       setError(null);
       setShowHandover(false);
       setSelectedReceiver('');
@@ -248,6 +272,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
+      errorFrom = null;
       setError(wordedError(err));
     } finally {
       setBusy(false);
@@ -265,11 +290,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       await cmd.send({ id, branch: props.ctx.me.branchId });
       setNotice(t('saved'));
+      errorFrom = null;
       setError(null);
       await props.ctx.refresh();
       await loadCashCounts();
     } catch (err: unknown) {
       setNotice(null);
+      errorFrom = null;
       setError(wordedError(err));
     } finally {
       setBusy(false);
@@ -287,11 +314,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       await cmd.send({ id, branch: props.ctx.me.branchId });
       setNotice(t('saved'));
+      errorFrom = null;
       setError(null);
       await props.ctx.refresh();
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
+      errorFrom = null;
       setError(wordedError(err));
     } finally {
       setBusy(false);
@@ -309,11 +338,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       await cmd.send({ id, branch: props.ctx.me.branchId });
       setNotice(t('saved'));
+      errorFrom = null;
       setError(null);
       await props.ctx.refresh();
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
+      errorFrom = null;
       setError(wordedError(err));
     } finally {
       setBusy(false);
