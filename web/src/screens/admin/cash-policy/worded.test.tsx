@@ -12,6 +12,8 @@ import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_
 const SAMPLE_POLICY: CashTransferPolicyData = {
   version: 'v-0001',
   limits: { USD: '300.00', EUR: '12.5' },
+  valid: true,
+  invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T01:00:00Z',
 };
