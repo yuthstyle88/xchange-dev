@@ -146,6 +146,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
       currentBefore = undefined;
       setPage(1);
       lastQueueVersion = undefined;
+      setReadError(null);
       setRefusalMessage(null);
       if (isShown) {
         prevShown = true;
@@ -181,7 +182,9 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   });
 
   const selectTab = (tab: TabState) => {
+    setRows([]);
     setActiveTab(tab);
+    setReadError(null);
     setRefusalMessage(null);
     cursorStack = [];
     currentBefore = undefined;
@@ -226,7 +229,9 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
       });
 
       if (props.branch === branchAtStart) {
+        setRows([]);
         setActiveTab('working');
+        setReadError(null);
         cursorStack = [];
         currentBefore = undefined;
         setPage(1);
@@ -320,7 +325,11 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
 
       <Show
         when={displayedRows().length > 0}
-        fallback={<p class="queue-empty">{t('queue.list.empty')}</p>}
+        fallback={
+          <Show when={!loading() && readError() === null}>
+            <p class="queue-empty">{t('queue.list.empty')}</p>
+          </Show>
+        }
       >
         <div class="xc-queue-list">
           <For each={displayedRows()}>
