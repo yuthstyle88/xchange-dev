@@ -217,6 +217,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   // Issued coupons from couponIssue
   const [issuedCoupons, setIssuedCoupons] = createSignal<IssuedCouponDto[] | null>(null);
 
+  // #2426: true while a campaign write is in flight; blocks a second write (reads stay unblocked).
+  const [writing, setWriting] = createSignal(false);
+
   let readingList = 0;
   async function loadList(branch: string | undefined, from: string, to: string) {
     const mine = ++readingList;
@@ -363,6 +366,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       priority,
       branches,
     };
+    if (writing()) return;
+    setWriting(true);
     setCreateError(null);
     try {
       const res = await createWrite.send(body);
@@ -374,6 +379,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       setCreateError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -400,6 +407,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       priority,
       branches,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await saveWrite.send(body);
@@ -410,6 +419,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         await loadCampaignDetail(campaignId, true);
       }
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -420,6 +431,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       campaignId,
       scenarios: [],
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await simulateWrite.send(body);
@@ -427,6 +440,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -436,12 +451,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignSubmitInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await submitWrite.send(body);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -451,12 +470,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignPauseInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await pauseWrite.send(body);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -466,12 +489,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignResumeInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await resumeWrite.send(body);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -481,12 +508,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignVersionNewInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await newVersionWrite.send(body);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -505,12 +536,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       count,
       expiresAt,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       const res = await issueCouponsWriteFor(campaignId).send(body);
       setIssuedCoupons(res?.coupons ?? []);
     } catch (err: unknown) {
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -626,6 +661,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-primary"
+                  disabled={writing()}
                   onClick={handleCreate}
                 >
                   {t('create')}
@@ -772,6 +808,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-primary"
+                disabled={writing()}
                 onClick={handleSave}
               >
                 {t('save')}
@@ -780,6 +817,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-secondary"
+                disabled={writing()}
                 onClick={handleSimulate}
               >
                 {t('simulate')}
@@ -788,7 +826,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-success"
-                disabled={isSubmitDisabled()}
+                disabled={writing() || isSubmitDisabled()}
                 onClick={handleSubmit}
               >
                 {t('submit')}
@@ -798,6 +836,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-warning"
+                  disabled={writing()}
                   onClick={handlePause}
                 >
                   {t('pause')}
@@ -808,6 +847,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-success"
+                  disabled={writing()}
                   onClick={handleResume}
                 >
                   {t('resume')}
@@ -818,6 +858,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-secondary"
+                  disabled={writing()}
                   onClick={handleNewVersion}
                 >
                   {t('newVersion')}
@@ -965,6 +1006,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="xc-btn-secondary"
+              disabled={writing()}
               onClick={handleIssueCoupons}
             >
               {t('issueCoupons')}
