@@ -512,10 +512,17 @@ class KioskController extends Notifier<KioskState> {
     try {
       final status = await _repo.confirm(q.id);
       if (_disposed) return;
+      if (state.screen == KioskScreen.select || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _countdown?.cancel();
       _set(
         state.copyWith(
-          status: status,
-          screen: KioskScreen.waiting,
+          status: _nextStatus(status),
+          screen: state.screen == KioskScreen.receipt
+              ? KioskScreen.receipt
+              : KioskScreen.waiting,
           busy: false,
         ),
       );
@@ -533,6 +540,22 @@ class KioskController extends Notifier<KioskState> {
 
   // ---- screens 3 and 4: waiting, receipt ---------------------------------
 
+  static int _statusRank(KioskStatus s) => switch (s) {
+    KioskStatus.waiting => 0,
+    KioskStatus.accepted => 1,
+    KioskStatus.idChecked => 2,
+    KioskStatus.completed => 3,
+    _ => -1,
+  };
+
+  RequestIdentity _nextStatus(RequestIdentity incoming) {
+    final current = state.status;
+    if (current == null) return incoming;
+    return _statusRank(incoming.status) < _statusRank(current.status)
+        ? current
+        : incoming;
+  }
+
   Future<void> _pollStatus() async {
     final q = state.quote;
     if (q == null) return;
@@ -549,7 +572,7 @@ class KioskController extends Notifier<KioskState> {
         _countdown?.cancel();
         _set(
           state.copyWith(
-            status: s,
+            status: _nextStatus(s),
             screen: KioskScreen.waiting,
             busy: false,
             error: _noError(),
@@ -564,7 +587,7 @@ class KioskController extends Notifier<KioskState> {
       if (expired) _countdown?.cancel();
       _set(
         state.copyWith(
-          status: s,
+          status: _nextStatus(s),
           quoteExpired: state.quoteExpired || expired,
           error: expired
               ? _keyError('quoteExpired')
@@ -590,7 +613,7 @@ class KioskController extends Notifier<KioskState> {
       _set(
         state.copyWith(
           receiptImage: r.image,
-          status: r.identity,
+          status: _nextStatus(r.identity),
           screen: r.image == null ? KioskScreen.waiting : KioskScreen.receipt,
         ),
       );
