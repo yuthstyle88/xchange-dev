@@ -123,7 +123,9 @@ async fn the_owner_never_sees_another_organisations_branch() {
 #[actix_web::test]
 async fn an_employee_still_gets_only_their_own_branch() {
     let room = Room::open().await;
-    let answer = room.get("FRONT", "/api/v3/views/admin_branches?branch=MAIN").await;
+    let answer = room
+        .get("FRONT", "/api/v3/views/admin_branches?branch=MAIN")
+        .await;
     assert_eq!(answer.status, 200, "{:.400}", answer.text);
     assert_eq!(
         answer.json()["data"]["branches"],
