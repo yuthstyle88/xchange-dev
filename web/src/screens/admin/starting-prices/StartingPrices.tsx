@@ -58,7 +58,7 @@ export function isBuyGreaterThanSell(buy: string, sell: string): boolean {
 
 function formatWhen(iso: string): string {
   try {
-    return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+    return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
   } catch {
     return iso;
   }

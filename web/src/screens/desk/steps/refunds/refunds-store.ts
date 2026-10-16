@@ -25,6 +25,7 @@ export interface RefundsStore {
   lastPostedDoc: Accessor<string | null>;
   postError: Accessor<string | null>;
   canRetry: Accessor<boolean>;
+  posting: Accessor<boolean>;
   confirmingId: Accessor<string | null>;
   startConfirm(id: string): void;
   cancelConfirm(): void;
@@ -36,21 +37,38 @@ export interface RefundsStore {
 
 export function createRefundsStore(api: ApiClient): RefundsStore {
   const [rows, setRows] = createSignal<DeskRefundRow[]>([]);
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpenSignal] = createSignal(false);
   const [lastPostedDoc, setLastPostedDoc] = createSignal<string | null>(null);
   const [postError, setPostError] = createSignal<string | null>(null);
   const [canRetry, setCanRetry] = createSignal(false);
+  const [posting, setPosting] = createSignal(false);
   const [confirmingId, setConfirmingId] = createSignal<string | null>(null);
 
   let currentPoster: Poster | null = null;
   let currentPostingId: string | null = null;
 
+  function setOpen(v: boolean): void {
+    if (!v && !posting()) {
+      setLastPostedDoc(null);
+      setPostError(null);
+      setCanRetry(false);
+      currentPoster = currentPostingId = null;
+    }
+    setOpenSignal(v);
+  }
+
   async function readRefunds(): Promise<void> {
-    const res = await api.view<DeskRefunds>('desk_refunds');
-    setRows(res.data?.rows ?? []);
+    try {
+      const res = await api.view<DeskRefunds>('desk_refunds');
+      setRows(res.data?.rows ?? []);
+    } catch (err) {
+      setPostError(wordedError(err));
+      setCanRetry(false);
+    }
   }
 
   function startConfirm(id: string): void {
+    if (posting()) return;
     setConfirmingId(id);
   }
 
@@ -59,8 +77,10 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   }
 
   async function execute(poster: Poster, id: string): Promise<void> {
+    setLastPostedDoc(null);
     setPostError(null);
     setCanRetry(false);
+    setPosting(true);
     let doc: string;
     try {
       doc = await poster.post();
@@ -81,6 +101,8 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
         currentPostingId = null;
       }
       return;
+    } finally {
+      setPosting(false);
     }
 
     currentPoster = null;
@@ -96,6 +118,7 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   }
 
   async function submitPost(): Promise<void> {
+    if (posting()) return;
     const id = confirmingId();
     if (!id) return;
     setConfirmingId(null);
@@ -129,6 +152,7 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
     lastPostedDoc,
     postError,
     canRetry,
+    posting,
     confirmingId,
     startConfirm,
     cancelConfirm,

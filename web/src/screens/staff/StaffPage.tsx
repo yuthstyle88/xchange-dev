@@ -32,12 +32,17 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
   const [floor, setFloor] = createSignal<StaffFloorView | undefined>(undefined);
   const [floorError, setFloorError] = createSignal<string | undefined>(undefined);
 
+  let seq = 0;
+
   const refresh = async (): Promise<void> => {
+    const mine = ++seq;
     let meData: StaffMeView | undefined;
     try {
       const meRes = await props.api.view<StaffMeView>('staff_me');
+      if (mine !== seq) return;
       meData = meRes.data;
     } catch (err: unknown) {
+      if (mine !== seq) return;
       if (
         (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 401) ||
         (err instanceof ApiError && err.status === 401)
@@ -53,8 +58,10 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
     let floorErr: string | undefined;
     try {
       const floorRes = await props.api.view<StaffFloorView>('staff_floor');
+      if (mine !== seq) return;
       floorData = floorRes.data;
     } catch (err: unknown) {
+      if (mine !== seq) return;
       floorErr = wordedError(err);
     }
 

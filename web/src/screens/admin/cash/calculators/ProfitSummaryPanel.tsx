@@ -54,7 +54,7 @@ export function ProfitSummaryPanel(props: { api: ApiClient; branch: string; shif
       const a = await props.api.act<Record<string, string>, ProfitSummary>('compute', 'profit_summary', body);
       if (id !== seq) return;
       setResult(a);
-      setAlert(t('profitComputed', { when: new Date().toLocaleString(locale()) }));
+      setAlert(t('profitComputed', { when: new Date().toLocaleString(locale(), { timeZone: 'Asia/Bangkok' }) }));
     } catch (err) {
       if (id !== seq) return;
       setResult(null);

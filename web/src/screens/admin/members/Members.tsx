@@ -82,13 +82,21 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
     try {
       const rule: Record<string, unknown> = {};
-      const parsedRecency = Number.parseInt(recencyDays().trim(), 10);
-      if (!Number.isNaN(parsedRecency)) {
-        rule.recency_days = parsedRecency;
+      const recencyTrimmed = recencyDays().trim();
+      if (recencyTrimmed !== '') {
+        if (!/^\d+$/.test(recencyTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.recency_days = Number.parseInt(recencyTrimmed, 10);
       }
-      const parsedFreq = Number.parseInt(frequency().trim(), 10);
-      if (frequency().trim() !== '' && !Number.isNaN(parsedFreq)) {
-        rule.frequency = parsedFreq;
+      const freqTrimmed = frequency().trim();
+      if (freqTrimmed !== '') {
+        if (!/^\d+$/.test(freqTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.frequency = Number.parseInt(freqTrimmed, 10);
       }
       if (valueThb().trim() !== '') {
         rule.value_thb = valueThb().trim();

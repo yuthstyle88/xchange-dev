@@ -49,7 +49,7 @@ export function LoginScreen(props: {
     if (!formEl) return;
 
     const data = new FormData(formEl);
-    const identifier = String(data.get('identifier') ?? '');
+    const identifier = String(data.get('identifier') ?? '').trim();
     const password = String(data.get('password') ?? '');
 
     setPending(true);

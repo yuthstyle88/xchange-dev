@@ -20,24 +20,35 @@ export function NewTransactionButton(
 ): JSX.Element {
   const t = screenT('admin.parts', { th, en });
   const [readError, setReadError] = createSignal<string | null>(null);
+  let reading = false;
+  let readSeq = 0;
 
   createEffect(() => {
     props.branch;
+    readSeq += 1;
+    reading = false;
     setReadError(null);
   });
 
   async function handleClick(): Promise<void> {
-    if (pendingWrite.busy()) {
+    if (pendingWrite.busy() || reading) {
       return;
     }
+
+    const clickedBranch = props.branch;
+    const seq = ++readSeq;
+    reading = true;
+    setReadError(null);
 
     try {
       const res = await props.api.view<{
         shiftOpen: boolean;
         deskUrl: string;
-      }>('admin_shift_state', { branch: props.branch });
+      }>('admin_shift_state', { branch: clickedBranch });
 
-      setReadError(null);
+      if (seq !== readSeq || props.branch !== clickedBranch) {
+        return;
+      }
 
       if (!res.data?.shiftOpen) {
         toast(t('openShiftFirst'));
@@ -59,7 +70,14 @@ export function NewTransactionButton(
         ));
       }
     } catch (err: unknown) {
+      if (seq !== readSeq || props.branch !== clickedBranch) {
+        return;
+      }
       setReadError(wordedError(err));
+    } finally {
+      if (seq === readSeq) {
+        reading = false;
+      }
     }
   }
 
@@ -68,7 +86,7 @@ export function NewTransactionButton(
       <button
         type="button"
         class="new-transaction-button"
-        disabled={pendingWrite.busy() || readError() !== null}
+        disabled={pendingWrite.busy()}
         onClick={() => void handleClick()}
       >
         {t('newTransactionBtn')}

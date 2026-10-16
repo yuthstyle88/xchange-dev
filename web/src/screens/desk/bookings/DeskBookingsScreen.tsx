@@ -82,7 +82,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
   const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
   const [branchId, setBranchId] = createSignal<string>('');
-  const [version, setVersion] = createSignal<number>(1);
+  const [version, setVersion] = createSignal<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
   const [retryAction, setRetryAction] = createSignal<(() => Promise<void>) | null>(null);
 
@@ -112,14 +112,38 @@ export function DeskBookingsScreen(): JSX.Element {
 
   const allSlots = () => groupBookingsBySlot(items());
   let readErrorActive = false;
+  let readSeq = 0;
+  let settledSeq = 0;
+  let loadedQr: string | null = null;
 
   async function fetchBookings(opts?: { since?: number; qr?: string }) {
+    const seq = ++readSeq;
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
+    const sinceParam = loadedQr === qrParam ? opts?.since : undefined;
     try {
       const envelope = await api.view<DeskBookingsData>(VIEW_DESK_BOOKINGS, {
-        since: opts?.since,
+        since: sinceParam,
         filter: qrParam ? { qr: qrParam } : undefined,
       });
+      if (seq < settledSeq) return;
+      if (envelope.changed === false) {
+        if (loadedQr !== qrParam || seq !== readSeq) {
+          return;
+        }
+        settledSeq = seq;
+        if (envelope.version !== undefined) {
+          setVersion(envelope.version);
+        }
+        if (readErrorActive) {
+          readErrorActive = false;
+          setErrorMessage(null);
+          setRetryAction(null);
+        }
+        return;
+      }
+      if (seq !== readSeq && loadedQr === qrParam) return;
+      if (qrParam !== activeQr()) return;
+      settledSeq = Math.max(settledSeq, seq);
       if (envelope.version !== undefined) {
         setVersion(envelope.version);
       }
@@ -128,10 +152,8 @@ export function DeskBookingsScreen(): JSX.Element {
         setErrorMessage(null);
         setRetryAction(null);
       }
-      if (envelope.changed === false) {
-        return;
-      }
       if (envelope.data && Array.isArray(envelope.data.items)) {
+        loadedQr = qrParam;
         setItems(envelope.data.items);
         const groups = groupBookingsBySlot(envelope.data.items);
         const firstSlot = groups[0]?.slotId;
@@ -142,6 +164,8 @@ export function DeskBookingsScreen(): JSX.Element {
         setRefusalMessage(null);
       }
     } catch (err) {
+      if (seq !== readSeq || seq < settledSeq) return;
+      settledSeq = seq;
       if (err instanceof ApiError && err.code === 'roleNotAllowed') {
         setAuthorized(false);
         setRefusalMessage(t('error.roleNotAllowed'));
@@ -174,11 +198,16 @@ export function DeskBookingsScreen(): JSX.Element {
   });
 
   async function handleRefresh() {
-    await fetchBookings({ since: version() });
+    const q = activeQr();
+    const since = loadedQr === q ? version() : undefined;
+    await fetchBookings({ since });
   }
 
   async function handleQrLookup() {
     const q = qrInput().trim();
+    if (q !== loadedQr) {
+      setVersion(undefined);
+    }
     setActiveQr(q);
     await fetchBookings({ qr: q });
   }
@@ -206,13 +235,16 @@ export function DeskBookingsScreen(): JSX.Element {
   const cancelWrite = keyedWrite<{ reason: string; branch: string }, BookingCancelOutput>(
     api,
     'POST',
-    () => routeCancel(cancellingBookingId() ?? ''),
+    // #2464: the path is resolved synchronously inside send(), right after
+    // submitCancel sets activeCancelId to the booking the write is for, so a
+    // dialog opened for another booking meanwhile cannot redirect it.
+    () => routeCancel(activeCancelId),
   );
   let activeRescheduleId = '';
   const rescheduleWrite = keyedWrite<{ slotId: string; branch: string }, BookingRescheduleOutput>(
     api,
     'POST',
-    () => routeReschedule(reschedulingBookingId() ?? ''),
+    () => routeReschedule(activeRescheduleId),
   );
   const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
     api,
@@ -220,7 +252,13 @@ export function DeskBookingsScreen(): JSX.Element {
     ROUTE_BOOKINGS,
   );
 
+  // #2411: only one booking write (check-in / cancel / reschedule) at a time.
+  // A second send while the first is in flight reuses the idempotency key, the
+  // server answers 409 idempotencyConflict, and keyedWrite then drops the key.
+  const [writing, setWriting] = createSignal(false);
+
   async function handleCheckIn(bookingId: string) {
+    if (writing()) return;
     if (activeCheckInId !== bookingId) {
       checkInWrite.reset();
       activeCheckInId = bookingId;
@@ -229,6 +267,7 @@ export function DeskBookingsScreen(): JSX.Element {
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await checkInWrite.send({
         identityChecked: true,
@@ -248,11 +287,15 @@ export function DeskBookingsScreen(): JSX.Element {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCheckIn(bookingId));
+    } finally {
+      setWriting(false);
     }
   }
 
   function openCancel(bookingId: string) {
-    if (activeCancelId !== bookingId) {
+    // #2475: while a write is in flight or its Retry is offered, keep its key so
+    // that Retry replays it; submitCancel still resets when another booking is sent.
+    if (!writing() && !retryAction() && activeCancelId !== bookingId) {
       cancelWrite.reset();
       activeCancelId = bookingId;
     }
@@ -264,17 +307,30 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleConfirmCancel() {
+    if (writing()) return;
     const bookingId = cancellingBookingId();
     if (!bookingId) return;
     const reason = cancelReason().trim();
     if (!reason) {
       return;
     }
+    await submitCancel(bookingId, reason);
+  }
+
+  // #2464: the write, its late answer and its Retry are all bound to the
+  // booking it was sent for, not to whichever dialog is open when it answers.
+  async function submitCancel(bookingId: string, reason: string) {
+    if (writing()) return;
+    if (activeCancelId !== bookingId) {
+      cancelWrite.reset();
+      activeCancelId = bookingId;
+    }
 
     readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await cancelWrite.send({
         reason,
@@ -289,17 +345,22 @@ export function DeskBookingsScreen(): JSX.Element {
       updateBookingInState(bookingId, {
         status: resData.status,
       });
-      setCancellingBookingId(null);
-      setCancelReason('');
+      if (cancellingBookingId() === bookingId) {
+        setCancellingBookingId(null);
+        setCancelReason('');
+      }
     } catch (err) {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmCancel());
+      setRetryAction(() => () => submitCancel(bookingId, reason));
+    } finally {
+      setWriting(false);
     }
   }
 
   function openReschedule(bookingId: string) {
-    if (activeRescheduleId !== bookingId) {
+    // #2475: see openCancel.
+    if (!writing() && !retryAction() && activeRescheduleId !== bookingId) {
       rescheduleWrite.reset();
       activeRescheduleId = bookingId;
     }
@@ -314,15 +375,26 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleConfirmReschedule() {
+    if (writing()) return;
     const bookingId = reschedulingBookingId();
     if (!bookingId) return;
     const target = targetSlotId();
     if (!target) return;
+    await submitReschedule(bookingId, target);
+  }
+
+  async function submitReschedule(bookingId: string, target: string) {
+    if (writing()) return;
+    if (activeRescheduleId !== bookingId) {
+      rescheduleWrite.reset();
+      activeRescheduleId = bookingId;
+    }
 
     readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await rescheduleWrite.send({
         slotId: target,
@@ -338,11 +410,15 @@ export function DeskBookingsScreen(): JSX.Element {
         slotId: resData.slotId,
         status: resData.status,
       });
-      setReschedulingBookingId(null);
+      if (reschedulingBookingId() === bookingId) {
+        setReschedulingBookingId(null);
+      }
     } catch (err) {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmReschedule());
+      setRetryAction(() => () => submitReschedule(bookingId, target));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -549,6 +625,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                 type="button"
                                 data-action="check-in"
                                 class="xc-checkin-btn xc-btn-primary"
+                                disabled={writing()}
                                 onClick={() => handleCheckIn(b.id)}
                               >
                                 {t('checkIn')}
@@ -608,6 +685,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     type="button"
                     data-action="confirm-cancel"
                     class="xc-confirm-cancel xc-btn-primary"
+                    disabled={writing()}
                     onClick={() => handleConfirmCancel()}
                   >
                     {t('cancel')}
@@ -655,6 +733,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     type="button"
                     data-action="confirm-reschedule"
                     class="xc-confirm-reschedule xc-btn-primary"
+                    disabled={writing()}
                     onClick={() => handleConfirmReschedule()}
                   >
                     {t('reschedule')}

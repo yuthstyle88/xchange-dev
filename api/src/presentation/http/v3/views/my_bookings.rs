@@ -6,13 +6,15 @@ use std::sync::Arc;
 
 use actix_web::http::{header, StatusCode};
 use actix_web::{web, HttpRequest, HttpResponse, ResponseError};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_booking::domain::booking::booking_status::BookingStatus;
+use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
 use xc_booking::domain::booking::qr_token::QrToken;
 use xc_kernel::ids::BranchId;
 
@@ -37,19 +39,24 @@ impl MyBookingsView {
     }
 }
 
-type MyBookingDbRow = (
-    String,                  // b.id
-    String,                  // b.booking_no
-    String,                  // b.status
-    String,                  // b.customer_id
-    String,                  // b.branch_id
-    uuid::Uuid,              // b.slot_id
-    i32,                     // b.qr_version
-    DateTime<Utc>,           // s.start_at
-    DateTime<Utc>,           // s.end_at
-    Option<String>,          // qt.display_number
-    i32,                     // p.cancel_cutoff_minutes
-);
+#[derive(sqlx::FromRow)]
+struct MyBookingDbRow {
+    id: String,
+    booking_no: String,
+    status: String,
+    branch_id: String,
+    slot_id: Uuid,
+    qr_version: i32,
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+    ticket_no: Option<String>,
+    cutoff_mins: i32,
+    confirm_expires_at: Option<DateTime<Utc>>,
+    grace_until: DateTime<Utc>,
+    service_date: NaiveDate,
+    branch_today: NaiveDate,
+    has_active_ticket: bool,
+}
 
 impl BranchView for MyBookingsView {
     const NAME: &'static str = "my_bookings";
@@ -100,14 +107,24 @@ impl BranchView for MyBookingsView {
 
             let pii_keys = xc_customer::get_pii_keys().map_err(|e| AppError::Internal(e.to_string()))?;
             let qr_key = QrToken::key_from_pii(&pii_keys);
+            let now = Utc::now();
 
             let rows: Vec<MyBookingDbRow> = sqlx::query_as(
-                "SELECT b.id, b.booking_no, b.status, b.customer_id, b.branch_id, \
+                "SELECT b.id, b.booking_no, b.status, b.branch_id, \
                         b.slot_id, b.qr_version, s.start_at, s.end_at, \
                         (SELECT qt.display_number FROM queue_tickets qt \
                          WHERE qt.booking_id = b.id AND qt.status NOT IN ('CANCELLED', 'NO_SHOW') \
-                         ORDER BY qt.created_at DESC LIMIT 1), \
-                        COALESCE(p.cancel_cutoff_minutes, 60) \
+                         ORDER BY qt.created_at DESC LIMIT 1) AS ticket_no, \
+                        COALESCE(p.cancel_cutoff_minutes, 60) AS cutoff_mins, \
+                        b.confirm_expires_at, \
+                        (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                        s.service_date, \
+                        ($4 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
+                        EXISTS ( \
+                            SELECT 1 FROM queue_tickets qt \
+                            WHERE qt.booking_id = b.id \
+                              AND qt.status IN ('WAITING', 'CALLED', 'SERVING') \
+                        ) AS has_active_ticket \
                  FROM bookings b \
                  JOIN booking_slots s ON s.id = b.slot_id \
                  JOIN branches br ON br.id = b.branch_id \
@@ -120,32 +137,47 @@ impl BranchView for MyBookingsView {
             .bind(&customer_id)
             .bind(branch.as_str())
             .bind(&requested_booking_id)
+            .bind(now)
             .fetch_all(&pool)
             .await
             .map_err(AppError::Database)?;
 
             let bookings = rows
                 .into_iter()
-                .map(|(id, booking_no, status, _cust_id, branch_id, slot_id, qr_version, start_at, end_at, ticket_no, cutoff_mins)| {
-                    let booking_uuid = Uuid::parse_str(id.strip_prefix("BK-").unwrap_or(&id))
-                        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes()));
-                    let qr_token = (status != "CANCELLED" && status != "COMPLETED" && status != "NO_SHOW" && status != "EXPIRED")
-                        .then(|| QrToken::derive(&qr_key, &booking_uuid, qr_version as u32));
+                .map(|row| {
+                    let facts = OverdueFacts {
+                        confirm_expires_at: row.confirm_expires_at,
+                        grace_until: row.grace_until,
+                        service_date: row.service_date,
+                        branch_today: row.branch_today,
+                        has_active_ticket: row.has_active_ticket,
+                    };
+                    let status = BookingStatus::parse(&row.status)
+                        .map(|st| effective_status(st, &facts, now).as_str().to_string())
+                        .unwrap_or(row.status);
 
-                    let cancel_cutoff_at = (start_at - Duration::minutes(cutoff_mins as i64)).to_rfc3339();
+                    let booking_uuid = Uuid::parse_str(row.id.strip_prefix("BK-").unwrap_or(&row.id))
+                        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_OID, row.id.as_bytes()));
+                    let qr_token = (status != "CANCELLED"
+                        && status != "COMPLETED"
+                        && status != "NO_SHOW"
+                        && status != "EXPIRED")
+                        .then(|| QrToken::derive(&qr_key, &booking_uuid, row.qr_version as u32));
+
+                    let cancel_cutoff_at = (row.start_at - Duration::minutes(row.cutoff_mins as i64)).to_rfc3339();
 
                     MyBookingItemDto {
-                        id,
-                        booking_no,
+                        id: row.id,
+                        booking_no: row.booking_no,
                         status,
-                        branch_id,
-                        slot_id: slot_id.to_string(),
-                        start_at: start_at.to_rfc3339(),
-                        end_at: end_at.to_rfc3339(),
+                        branch_id: row.branch_id,
+                        slot_id: row.slot_id.to_string(),
+                        start_at: row.start_at.to_rfc3339(),
+                        end_at: row.end_at.to_rfc3339(),
                         qr_token,
                         quote_summary: "เรทสุดท้ายยืนยันเมื่อทำรายการ".to_string(),
                         cancel_cutoff_at: Some(cancel_cutoff_at),
-                        ticket_number: ticket_no,
+                        ticket_number: row.ticket_no,
                         readiness: "unknown".to_string(),
                     }
                 })

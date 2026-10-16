@@ -56,7 +56,7 @@ function formatExpiry(expiresAt: string | null, t: (k: any) => string, loc: stri
   if (!expiresAt) {
     return t('pendingStaff');
   }
-  return new Date(expiresAt).toLocaleString(loc);
+  return new Date(expiresAt).toLocaleString(loc, { timeZone: 'Asia/Bangkok' });
 }
 
 export function BookingsScreen(props: AdminMenuProps): JSX.Element {
@@ -74,8 +74,13 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   let settingsVersion: number | undefined;
   let currentBranch: string | undefined;
   let currentQ: string = '';
+  // #2440: every list / settings read takes the next number; only the latest read may apply its
+  // answer, version or error, so an older branch's or term's answer that lands last is dropped.
+  let listSeq = 0;
+  let settingsSeq = 0;
 
   async function fetchBookings(b: string, since?: number, q?: string) {
+    const seq = ++listSeq;
     if (rows().length === 0 && since === undefined) {
       setLoading(true);
     }
@@ -87,29 +92,34 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         since,
         filter,
       });
+      if (seq !== listSeq) return;
       bookingsVersion = ans.version;
       if (ans.changed && ans.data) {
         setRows(ans.data);
         setHasMore(ans.data.length >= 50);
       }
     } catch (err) {
+      if (seq !== listSeq) return;
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === listSeq) setLoading(false);
     }
   }
 
   async function fetchSettings(b: string, since?: number) {
+    const seq = ++settingsSeq;
     try {
       const ans = await api.view<AdminBookingSettingsData>('admin_booking_settings', {
         branch: b,
         since,
       });
+      if (seq !== settingsSeq) return;
       settingsVersion = ans.version;
       if (ans.changed && ans.data) {
         setSettings(ans.data);
       }
     } catch (err) {
+      if (seq !== settingsSeq) return;
       setError(wordedError(err));
     }
   }
@@ -124,18 +134,25 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     const lastRow = currentRows[currentRows.length - 1];
     if (!lastRow) return;
     const q = searchTerm().trim();
+    const b = props.branch();
+    const seq = listSeq;
+    // the page belongs to the list it was asked for: a branch / term change or a newer list read
+    // during the await makes it stale
+    const stale = () => seq !== listSeq || b !== props.branch() || q !== searchTerm().trim();
     try {
       const nextRows = await api.page<AdminBookingRow>('admin_bookings', {
-        branch: props.branch(),
+        branch: b,
         before: lastRow.id,
         limit: 50,
         filter: q ? { q } : undefined,
       });
+      if (stale()) return;
       if (nextRows.length < 50) {
         setHasMore(false);
       }
-      setRows([...currentRows, ...nextRows]);
+      setRows([...rows(), ...nextRows]);
     } catch (err) {
+      if (stale()) return;
       toast(wordedError(err));
     }
   }

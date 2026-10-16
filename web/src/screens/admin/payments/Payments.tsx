@@ -135,6 +135,11 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   const loadData = async (branch: string, since?: number) => {
     const seq = ++loadSeq;
     const stale = () => seq !== loadSeq || branch !== displayedBranch();
+    if (data() && data()!.branchId !== branch) {
+      setData(null);
+      setVersion(null);
+      setEdits(null);
+    }
     setLoading(true);
     setError(null);
     try {
@@ -192,6 +197,8 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         if (confirmed) {
           setEdits(null);
           setBranchNotice(null);
+          // #2489: save feedback describes the previous branch; drop it on switch.
+          setFeedback('');
           setDisplayedBranch(targetBranch);
           void loadData(targetBranch);
         } else {
@@ -199,6 +206,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         }
       } else {
         setBranchNotice(null);
+        setFeedback('');
         setDisplayedBranch(targetBranch);
         void loadData(targetBranch);
       }
@@ -269,6 +277,8 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       if (!confirmed) return;
     }
     setEdits(null);
+    // #2489: a reload starts a fresh view; old save feedback no longer applies.
+    setFeedback('');
     void loadData(displayedBranch());
   };
 
@@ -300,7 +310,8 @@ export function Payments(props: AdminMenuProps): JSX.Element {
             methods: methodsToSave,
           },
         });
-        setFeedback(t('saved'));
+        // #2489: the answer only describes branchToSave; never word it under another branch.
+        if (displayedBranch() === branchToSave) setFeedback(t('saved'));
         setEdits(null);
         await loadData(branchToSave);
 
@@ -308,16 +319,18 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           const next = pendingBranchSwitch;
           pendingBranchSwitch = null;
           setBranchNotice(null);
+          setFeedback('');
           setDisplayedBranch(next);
           await loadData(next);
         } else if (displayedBranch() !== props.branch()) {
           const next = props.branch();
           setBranchNotice(null);
+          setFeedback('');
           setDisplayedBranch(next);
           await loadData(next);
         }
       } catch (err: unknown) {
-        setFeedback(wordedError(err));
+        if (displayedBranch() === branchToSave) setFeedback(wordedError(err));
       } finally {
         setSaving(false);
         savePromise = null;

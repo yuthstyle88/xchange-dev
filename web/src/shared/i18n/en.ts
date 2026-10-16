@@ -50,6 +50,8 @@ export const en: Record<Key, string> = {
   'error.profitIncomplete': 'Fill in the profit and reserve figures before calculating.',
   'error.profitNegative': 'Cost, capital and reserves must not be negative.',
   'error.originRejected': 'ORIGIN_REJECTED',
+  'error.staleVersion': 'This data has changed; reload and try again',
+  'error.idempotencyConflict': 'This request was already sent with other data; reload and try again',
   'queue.state.waiting': 'Waiting',
   'queue.state.working': 'In progress',
   'queue.state.completed': 'Completed',
