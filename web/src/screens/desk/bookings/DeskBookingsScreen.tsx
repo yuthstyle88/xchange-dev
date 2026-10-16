@@ -467,6 +467,9 @@ export function DeskBookingsScreen(): JSX.Element {
     const qty = Number(rawQty);
     if (!/^\d+$/.test(rawQty) || !Number.isSafeInteger(qty) || qty <= 0) {
       setQuantityInvalid(true);
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
       return;
     }
     setQuantityInvalid(false);

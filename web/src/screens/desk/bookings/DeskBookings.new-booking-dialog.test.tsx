@@ -391,4 +391,39 @@ describe('DeskBookingsScreen.tsx — New booking dialog lifecycle and write guar
     expect(getSubmitButton().disabled).toBe(false);
     expect(getCloseButton().disabled).toBe(false);
   });
+
+  it('create fails (4xx), type quantity 0, submit -> no refusal banner, no Retry, quantity error shows, no POST', async () => {
+    await mount();
+    await openNewBookingModal();
+
+    setInputValue(getQuantityInput(), '100');
+    setInputValue(getNameInput(), 'Somchai');
+    setInputValue(getPhoneInput(), '0812345678');
+
+    getSubmitButton().click();
+    await vi.waitFor(() => expect(server.held).toHaveLength(1));
+
+    server.answer({
+      kind: 'http',
+      status: 400,
+      body: { error: { code: 'validationFailed', message: 'Slot full' } },
+    });
+    await flush();
+
+    expect(host.querySelector('.xc-error-banner')).not.toBeNull();
+    expect(getRetryButton()).not.toBeNull();
+
+    // Type invalid quantity and submit
+    setInputValue(getQuantityInput(), '0');
+    getSubmitButton().click();
+    await flush();
+
+    // No new POST
+    expect(server.writes).toHaveLength(1);
+    // Quantity error shows
+    expect(host.querySelector('.field-error')).not.toBeNull();
+    // Stale server error and Retry must be cleared
+    expect(host.querySelector('.xc-error-banner')).toBeNull();
+    expect(getRetryButton()).toBeNull();
+  });
 });
