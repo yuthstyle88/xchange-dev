@@ -57,7 +57,7 @@ impl TransactionForm {
     /// The exchange keeps no plain passport (#554 K4), so `passport_no` and the dates stay empty.
     pub fn from_transaction(
         t: &crate::domain::transaction::transaction::ExchangeTransaction,
-    ) -> TransactionForm {
+    ) -> AppResult<TransactionForm> {
         let line = &t.lines[0];
         let unit = line.unit_size.value();
         let client_rate = line.rate_snapshot.value() / unit;
@@ -74,7 +74,7 @@ impl TransactionForm {
                 paid: line.settle_thb,
             },
         };
-        TransactionForm {
+        Ok(TransactionForm {
             customer: CustomerDetails {
                 name: t.customer_name.clone(),
                 passport_no: String::new(),
@@ -87,7 +87,7 @@ impl TransactionForm {
             customer_id: t.customer_id.clone(),
             side: line.shop_side,
             currency: line.currency.as_str().to_owned(),
-            amount: money_of(line.quantity.value()),
+            amount: money_of(t.id.0, line.quantity.value())?,
             rate: per_one_rate(client_rate),
             client_rate,
             fee: line.fee_thb,
@@ -105,7 +105,7 @@ impl TransactionForm {
             reference_rate: client_reference_rate.map(per_one_rate),
             client_reference_rate,
             quote,
-        }
+        })
     }
 
     pub fn parse(cmd: &SaveTransaction) -> AppResult<Self> {
@@ -309,9 +309,13 @@ fn per_one_rate(per_one: Decimal) -> Rate {
 }
 
 /// A stored quantity as the form's amount (two places, half up, as `parse` reads it).
-fn money_of(value: Decimal) -> Money {
+fn money_of(id: uuid::Uuid, value: Decimal) -> AppResult<Money> {
     let rounded = value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    Money::parse(&rounded.normalize().to_string()).unwrap_or(Money::ZERO)
+    Money::parse(&rounded.normalize().to_string()).map_err(|_| {
+        AppError::Internal(format!(
+            "transaction {id} stored quantity {value} is out of range for TransactionForm"
+        ))
+    })
 }
 
 /// The form's sentence for a per-1 rate `CompatRate::parse_per_one` refuses (#770).

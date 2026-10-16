@@ -3,8 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use chrono::{NaiveDate, TimeZone, Utc};
-use chrono_tz::Asia::Bangkok;
+use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
@@ -21,6 +20,14 @@ use xc_loyalty::infrastructure::exchange_handler::LoyaltyPhoneReader;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+fn end_of_business_day(business_date: NaiveDate, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
+    business_date
+        .checked_add_days(Days::new(1))
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .and_then(|d| tz.from_local_datetime(&d).earliest())
+        .map(|d| d.with_timezone(&Utc))
+}
+
 #[derive(Clone)]
 pub struct PgLoyaltyFactsSource {
     pool: PgPool,
@@ -36,8 +43,11 @@ impl LoyaltyFactsSource for PgLoyaltyFactsSource {
     fn completed(&self, tx_id: Uuid) -> BoxFuture<'_, AppResult<CompletedFacts>> {
         Box::pin(async move {
             let tx_row = sqlx::query(
-                "SELECT organization_id, document_ref, customer_id, mode, branch_id, completed_at, value_date \
-                 FROM transactions WHERE id = $1",
+                "SELECT t.organization_id, t.document_ref, t.customer_id, t.mode, t.branch_id, \
+                        t.completed_at, t.value_date, b.timezone \
+                 FROM transactions t \
+                 LEFT JOIN branches b ON b.id = t.branch_id \
+                 WHERE t.id = $1",
             )
             .bind(tx_id)
             .fetch_optional(&self.pool)
@@ -66,21 +76,24 @@ impl LoyaltyFactsSource for PgLoyaltyFactsSource {
             let completed_at = tx_row.try_get("completed_at").map_err(AppError::Database)?;
             let business_date: NaiveDate =
                 tx_row.try_get("value_date").map_err(AppError::Database)?;
+            let timezone: Option<String> =
+                tx_row.try_get("timezone").map_err(AppError::Database)?;
 
             let mode = match mode_str.as_str() {
                 "LIVE" => Mode::Live,
                 _ => Mode::Demo,
             };
 
-            let until_bangkok = business_date
-                .and_hms_opt(23, 59, 59)
-                .and_then(|dt| Bangkok.from_local_datetime(&dt).single())
-                .ok_or_else(|| {
-                    AppError::Internal(
-                        "failed to compute reversibleUntil in Asia/Bangkok".to_string(),
-                    )
-                })?;
-            let reversible_until = until_bangkok.with_timezone(&Utc);
+            let Some(timezone) = timezone else {
+                return Err(AppError::Internal(format!(
+                    "branch {branch_id} does not exist"
+                )));
+            };
+            let tz: chrono_tz::Tz = timezone
+                .parse()
+                .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
+            let reversible_until = end_of_business_day(business_date, tz)
+                .ok_or_else(|| AppError::Internal(format!("the end of {business_date}")))?;
 
             let line_rows = sqlx::query(
                 "SELECT currency, shop_side, quantity, unit_size, thb_amount, settle_thb, realized_margin_thb \
@@ -208,5 +221,40 @@ impl LoyaltyPhoneReader for PgLoyaltyFactsSource {
                 )
                 .await
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_of_business_day_uses_branch_timezone_and_earliest_instant() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 7).unwrap();
+        assert_eq!(
+            end_of_business_day(day, chrono_tz::Asia::Bangkok),
+            Some(Utc.with_ymd_and_hms(2026, 10, 7, 17, 0, 0).unwrap())
+        );
+        assert_eq!(
+            end_of_business_day(day, chrono_tz::Asia::Tokyo),
+            Some(Utc.with_ymd_and_hms(2026, 10, 7, 15, 0, 0).unwrap())
+        );
+        assert_eq!(
+            end_of_business_day(day, chrono_tz::Europe::London),
+            Some(Utc.with_ymd_and_hms(2026, 10, 7, 23, 0, 0).unwrap())
+        );
+
+        // DST transition at midnight (America/Havana): fall-back fold on 2026-11-01 00:00 returns earliest (04:00Z),
+        // and spring-forward gap on 2026-03-08 00:00 returns None without panicking (same as branch_day_in).
+        let havana_fold_eve = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
+        assert_eq!(
+            end_of_business_day(havana_fold_eve, chrono_tz::America::Havana),
+            Some(Utc.with_ymd_and_hms(2026, 11, 1, 4, 0, 0).unwrap())
+        );
+        let havana_gap_eve = NaiveDate::from_ymd_opt(2026, 3, 7).unwrap();
+        assert_eq!(
+            end_of_business_day(havana_gap_eve, chrono_tz::America::Havana),
+            None
+        );
     }
 }

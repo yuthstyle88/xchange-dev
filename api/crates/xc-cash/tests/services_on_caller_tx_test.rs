@@ -1466,3 +1466,391 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
         .expect("fund the safe through the ledger");
     tx.commit().await.expect("commit");
 }
+
+// ------------------------------------------------------------ #2199 count verify organisation scope
+
+const OTHER_ORG: &str = "00000000-0000-0000-0000-0000000000b2";
+
+async fn other_org_person(
+    db: &Db,
+    role: Role,
+    db_branch: Option<&BranchId>,
+    actor_branch: Option<&BranchId>,
+) -> Actor {
+    sqlx::query(
+        "INSERT INTO organizations (id, code, timezone, created_at) \
+         VALUES ($1::uuid, $2, 'Asia/Bangkok', now()) \
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(OTHER_ORG)
+    .bind("OTHER")
+    .execute(&db.pool)
+    .await
+    .expect("insert the other organisation");
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+    )
+    .bind(OTHER_ORG)
+    .bind(unique(role.as_str()))
+    .fetch_one(&db.pool)
+    .await
+    .expect("insert a user in the other organisation");
+    sqlx::query(
+        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+         VALUES ($1::uuid, $2, $3::uuid, $4)",
+    )
+    .bind(&id)
+    .bind(role.as_str())
+    .bind(OTHER_ORG)
+    .bind(db_branch.map(|b| b.as_str().to_owned()))
+    .execute(&db.pool)
+    .await
+    .expect("give the user in the other organisation a role");
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    Actor::new(
+        &id,
+        OTHER_ORG,
+        vec![ScopedRole::new(role, actor_branch.cloned(), from, None)],
+        None,
+    )
+}
+
+/// #2199 §9 row 3: an organisation-wide BRANCH_MANAGER in another organisation is refused;
+/// `cash_counts.verified_by` stays NULL and no new `shifts` row is written.
+#[tokio::test]
+async fn verify_in_other_org_organisation_wide_branch_manager_is_refused() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let outsider = other_org_person(&db, Role::BranchManager, None, None).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let result = within(
+        "verify_in cross-org",
+        counts.verify_in(&mut tx, &outsider, &open.id, at(60)),
+    )
+    .await;
+    match result {
+        Err(AppError::Domain(m)) => {
+            assert_eq!(m, CashError::Refused(Refusal::OutOfScope).to_string());
+        }
+        other => panic!("expected OutOfScope refusal for cross-org verify_in, got {other:?}"),
+    }
+    assert_eq!(
+        on_text(
+            &mut tx,
+            &format!(
+                "SELECT verified_by::text FROM cash_counts WHERE id = '{}'::uuid",
+                open.id
+            )
+        )
+        .await,
+        None,
+        "cash_counts.verified_by stays NULL on tx"
+    );
+    assert_eq!(
+        on(&mut tx, "SELECT count(*) FROM shifts").await,
+        0,
+        "no new shifts row on tx"
+    );
+    tx.commit().await.expect("commit");
+
+    let wrapper_res = counts.verify(&outsider, &open.id, at(60)).await;
+    match wrapper_res {
+        Err(AppError::Domain(m)) => {
+            assert_eq!(m, CashError::Refused(Refusal::OutOfScope).to_string());
+        }
+        other => panic!("expected OutOfScope refusal for cross-org verify, got {other:?}"),
+    }
+    assert_eq!(
+        db.committed_text(&format!(
+            "SELECT verified_by::text FROM cash_counts WHERE id = '{}'::uuid",
+            open.id
+        ))
+        .await,
+        None,
+        "cash_counts.verified_by stays NULL"
+    );
+    assert_eq!(
+        db.committed("SELECT count(*) FROM shifts").await,
+        0,
+        "no new shifts row"
+    );
+}
+
+/// #2199 §9 row 1: a same-org BRANCH_MANAGER scoped to the count's branch verifies the OPEN count and opens the shift
+/// (after an other-org manager is refused).
+#[tokio::test]
+async fn verify_in_same_org_branch_manager_on_count_branch_opens_shift() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let manager = db.person(Role::BranchManager, Some(&branch)).await;
+    let outsider = other_org_person(&db, Role::BranchManager, None, None).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let cross_org = within(
+        "verify_in cross-org",
+        counts.verify_in(&mut tx, &outsider, &open.id, at(30)),
+    )
+    .await;
+    assert_eq!(
+        cross_org
+            .expect_err("other-org manager must be refused")
+            .to_string(),
+        AppError::Domain(CashError::Refused(Refusal::OutOfScope).to_string()).to_string()
+    );
+
+    let verified = within(
+        "verify_in same-org branch manager",
+        counts.verify_in(&mut tx, &manager, &open.id, at(60)),
+    )
+    .await
+    .expect("same-org branch-scoped manager verifies the OPEN count");
+    let count = match verified {
+        CountVerified::Verified(c) => c,
+        CountVerified::AwaitingFinance(id) => panic!("unexpected AwaitingFinance({id})"),
+    };
+    assert_eq!(count.verified_by.as_deref(), Some(manager.user_id.as_str()));
+    let shift_id = count.shift_id.expect("shift opened");
+    assert_eq!(
+        on_text(
+            &mut tx,
+            &format!("SELECT status FROM shifts WHERE id = '{shift_id}'")
+        )
+        .await
+        .as_deref(),
+        Some("OPEN")
+    );
+    tx.rollback().await.expect("roll back");
+}
+
+/// #2199 §9 row 2: a same-org organisation-wide BRANCH_MANAGER (`branch = None`) verifies the OPEN count
+/// (while an other-org organisation-wide BRANCH_MANAGER is refused).
+#[tokio::test]
+async fn verify_in_same_org_organisation_wide_branch_manager_verifies_count() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let org_wide_manager = db.person(Role::BranchManager, None).await;
+    let outsider = other_org_person(&db, Role::BranchManager, None, None).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let cross_org = within(
+        "verify_in cross-org",
+        counts.verify_in(&mut tx, &outsider, &open.id, at(30)),
+    )
+    .await;
+    assert_eq!(
+        cross_org
+            .expect_err("other-org manager must be refused")
+            .to_string(),
+        AppError::Domain(CashError::Refused(Refusal::OutOfScope).to_string()).to_string()
+    );
+
+    let verified = within(
+        "verify_in same-org org-wide manager",
+        counts.verify_in(&mut tx, &org_wide_manager, &open.id, at(60)),
+    )
+    .await
+    .expect("same-org org-wide manager verifies the OPEN count");
+    let count = match verified {
+        CountVerified::Verified(c) => c,
+        CountVerified::AwaitingFinance(id) => panic!("unexpected AwaitingFinance({id})"),
+    };
+    assert_eq!(
+        count.verified_by.as_deref(),
+        Some(org_wide_manager.user_id.as_str())
+    );
+    assert!(count.shift_id.is_some(), "shift opened");
+    tx.rollback().await.expect("roll back");
+}
+
+/// #2199 §9 row 4: an other-org BRANCH_MANAGER scoped to the count's branch id is refused with OutOfScope.
+#[tokio::test]
+async fn verify_in_other_org_branch_manager_scoped_to_count_branch_id_is_refused() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let outsider_scoped = other_org_person(&db, Role::BranchManager, None, Some(&branch)).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let result = within(
+        "verify_in cross-org scoped to count branch",
+        counts.verify_in(&mut tx, &outsider_scoped, &open.id, at(60)),
+    )
+    .await;
+    match result {
+        Err(AppError::Domain(m)) => {
+            assert_eq!(m, CashError::Refused(Refusal::OutOfScope).to_string());
+        }
+        other => panic!("expected OutOfScope refusal, got {other:?}"),
+    }
+    assert_eq!(
+        on_text(
+            &mut tx,
+            &format!(
+                "SELECT verified_by::text FROM cash_counts WHERE id = '{}'::uuid",
+                open.id
+            )
+        )
+        .await,
+        None
+    );
+    assert_eq!(on(&mut tx, "SELECT count(*) FROM shifts").await, 0);
+    tx.rollback().await.expect("roll back");
+}
+
+/// #2199 §9 row 5: unknown count id returns NotFound (and an other-org manager is refused on an existing count).
+#[tokio::test]
+async fn verify_in_unknown_count_id_returns_not_found() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let manager = db.person(Role::BranchManager, Some(&branch)).await;
+    let outsider = other_org_person(&db, Role::BranchManager, None, None).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let unknown_id = "00000000-0000-0000-0000-000000000999";
+    let not_found = within(
+        "verify_in unknown count",
+        counts.verify_in(&mut tx, &manager, unknown_id, at(30)),
+    )
+    .await;
+    assert!(
+        matches!(
+            not_found,
+            Err(AppError::NotFound {
+                entity: "cash_count",
+                ..
+            })
+        ),
+        "expected NotFound for unknown count id, got {not_found:?}"
+    );
+
+    let cross_org = within(
+        "verify_in cross-org",
+        counts.verify_in(&mut tx, &outsider, &open.id, at(45)),
+    )
+    .await;
+    assert_eq!(
+        cross_org
+            .expect_err("other-org manager must be refused")
+            .to_string(),
+        AppError::Domain(CashError::Refused(Refusal::OutOfScope).to_string()).to_string()
+    );
+    tx.rollback().await.expect("roll back");
+}
+
+/// #2199 §9 row 6: a same-org verifier who is the counter is refused by PersonRules::verifier_is_not_counter
+/// (after an other-org manager is refused with OutOfScope).
+#[tokio::test]
+async fn verify_in_same_org_verifier_is_counter_is_refused_by_person_rules() {
+    use xc_auth::domain::access::Refusal;
+
+    let db = Db::fresh().await;
+    let branch = db.branch("b").await;
+    let teller = db.person(Role::Teller, Some(&branch)).await;
+    let outsider = other_org_person(&db, Role::BranchManager, None, None).await;
+    let counts = db.counts();
+    let open = counts
+        .submit(
+            &teller,
+            count_cmd(&branch, None, CountKind::Open, thb_2300(&db).await),
+            at(0),
+        )
+        .await
+        .expect("the OPEN count, committed");
+
+    let mut tx = db.locked(&[&branch]).await;
+    let cross_org = within(
+        "verify_in cross-org",
+        counts.verify_in(&mut tx, &outsider, &open.id, at(45)),
+    )
+    .await;
+    assert_eq!(
+        cross_org
+            .expect_err("other-org manager must be refused")
+            .to_string(),
+        AppError::Domain(CashError::Refused(Refusal::OutOfScope).to_string()).to_string()
+    );
+
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let counter_as_manager = Actor::new(
+        &teller.user_id,
+        ORG,
+        vec![ScopedRole::new(
+            Role::BranchManager,
+            Some(branch.clone()),
+            from,
+            None,
+        )],
+        None,
+    );
+    let self_verify = within(
+        "verify_in self",
+        counts.verify_in(&mut tx, &counter_as_manager, &open.id, at(60)),
+    )
+    .await;
+    match self_verify {
+        Err(AppError::Domain(m)) => assert_eq!(m, CashError::SameCounter.to_string()),
+        other => panic!("expected SameCounter refusal, got {other:?}"),
+    }
+    tx.rollback().await.expect("roll back");
+}

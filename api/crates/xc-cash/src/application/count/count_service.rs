@@ -967,7 +967,7 @@ impl CashCountService {
             CountKind::HandoverOut => Permission::ShiftOperate,
             _ => Permission::ShiftCloseCertify,
         };
-        let target = Target::new(&actor.organization_id, Some(count.branch_id.clone()), None);
+        let target = Target::new(&count.organization_id, Some(count.branch_id.clone()), None);
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 

@@ -38,9 +38,10 @@ fn money(d: Decimal) -> String {
 }
 
 fn money_from_decimal(d: Decimal) -> AppResult<Money> {
-    let mut m = d;
-    m.rescale(2);
-    Money::parse(&m.to_string()).map_err(|e| AppError::Internal(format!("parse money: {e}")))
+    Money::parse(&d.to_string()).map_err(|e| {
+        tracing::error!(face_value = %d, error = %e, "invalid stored denomination face_value");
+        AppError::Internal(format!("parse money ({d}): {e}"))
+    })
 }
 
 fn format_minor(minor: i64) -> String {
@@ -209,16 +210,22 @@ impl SheetPartsPort for SheetParts {
                 };
 
                 let t_str = transfer_id.to_string();
+                let line_sent = line
+                    .sent_minor()
+                    .map_err(|e| AppError::Internal(format!("in-transit line total: {e}")))?;
                 if let Some(agg) = in_transit_map
                     .iter_mut()
                     .find(|a| a.transfer_id == t_str && a.currency == currency_trimmed)
                 {
-                    agg.total_minor += line.sent_minor();
+                    agg.total_minor = agg
+                        .total_minor
+                        .checked_add(line_sent)
+                        .ok_or_else(|| AppError::Internal("in-transit total overflow".into()))?;
                 } else {
                     in_transit_map.push(AggInTransit {
                         transfer_id: t_str,
                         currency: currency_trimmed,
-                        total_minor: line.sent_minor(),
+                        total_minor: line_sent,
                     });
                 }
             }
@@ -284,8 +291,12 @@ impl SheetPartsPort for SheetParts {
                 };
 
                 let t_str = transfer_id.to_string();
-                let line_sent = line.sent_minor();
-                let line_received = line.received_minor();
+                let line_sent = line
+                    .sent_minor()
+                    .map_err(|e| AppError::Internal(format!("short-receipt sent total: {e}")))?;
+                let line_received = line.received_minor().map_err(|e| {
+                    AppError::Internal(format!("short-receipt received total: {e}"))
+                })?;
                 let mismatch =
                     line.qty_received.is_some() && line.qty_received != Some(line.qty_sent);
 
@@ -293,8 +304,15 @@ impl SheetPartsPort for SheetParts {
                     .iter_mut()
                     .find(|a| a.transfer_id == t_str && a.currency == currency_trimmed)
                 {
-                    agg.sent_minor += line_sent;
-                    agg.received_minor += line_received;
+                    agg.sent_minor = agg.sent_minor.checked_add(line_sent).ok_or_else(|| {
+                        AppError::Internal("short-receipt sent sum overflow".into())
+                    })?;
+                    agg.received_minor =
+                        agg.received_minor
+                            .checked_add(line_received)
+                            .ok_or_else(|| {
+                                AppError::Internal("short-receipt received sum overflow".into())
+                            })?;
                     if mismatch {
                         agg.has_mismatch = true;
                     }
