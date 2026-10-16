@@ -422,4 +422,49 @@ describe("#2725: Staff Transfers notice clearing on failure", () => {
     expect(q(tid("transfer-notice"))).toBeNull();
     expect(must(tid("transfer-error")).textContent).toBeTruthy();
   });
+
+  it("T7: create fails while Saved is showing -> no transfer-notice, a transfer-error", async () => {
+    stub();
+    answers[`/api/cash-transfers/${T_APPROVED_A}/dispatch`] = [
+      { status: 200, body: { id: T_APPROVED_A, status: "DISPATCHED" } },
+    ];
+    answers["/api/cash-transfers"] = [
+      { status: 500, body: { error: { code: "serverError", message: "Create failed" } } },
+    ];
+
+    await mount(me(["CashManage"]));
+    await vi.waitFor(() => expect(q(tid("transfer-new"))).not.toBeNull());
+
+    // Open create form and fill it
+    must(tid("transfer-new")).click();
+    await settle();
+    await vi.waitFor(() => expect(q(tid("transfer-form"))).not.toBeNull());
+    const form = must<HTMLFormElement>(tid("transfer-form"));
+    await vi.waitFor(() =>
+      expect(form.querySelector('input[data-denomination-id="21"]')).not.toBeNull(),
+    );
+
+    typeInto(must<HTMLSelectElement>(tid("transfer-kind")), "EXTERNAL_OUT");
+    await settle();
+    typeInto(form.querySelector<HTMLInputElement>('input[data-denomination-id="21"]')!, "5");
+    await settle();
+
+    // Dispatch a row successfully while the form is open, so Saved shows
+    await vi.waitFor(() =>
+      expect(inRow(T_APPROVED_A, "transfer-dispatch")).not.toBeNull(),
+    );
+    inRow<HTMLButtonElement>(T_APPROVED_A, "transfer-dispatch")!.click();
+    await settle();
+
+    expect(must(tid("transfer-notice")).textContent).toBe(transfersTh.saved);
+    expect(q(tid("transfer-error"))).toBeNull();
+
+    // Now submit the create form with /api/cash-transfers answering 500
+    must<HTMLButtonElement>(tid("transfer-save")).click();
+    await settle();
+
+    expect(q(tid("transfer-notice"))).toBeNull();
+    expect(must(tid("transfer-error")).textContent).toBeTruthy();
+  });
 });
+
