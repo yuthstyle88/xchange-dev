@@ -149,22 +149,27 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const readPublished = async (branch: string) => {
+  let readGen = 0;
+
+  const readPublished = async (branch: string, gen: number) => {
     try {
       const res = await client.view<PublishedRatesData>('published_rates', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPubData(res.data);
       }
       setPubError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPubData(null);
       setPubError(wordedError(err));
     }
   };
 
-  const readDrafts = async (branch: string) => {
+  const readDrafts = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RateDraftsData>('rate_drafts', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setDraftsData(res.data);
       }
@@ -177,6 +182,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           'rate_draft',
           { branch, filter: { id: openDraft.id } },
         );
+        if (gen !== readGen) return;
         if (detailRes.changed && detailRes.data) {
           setDraftDetail(detailRes.data);
         }
@@ -185,29 +191,33 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setDraftsError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setDraftsData(null);
       setDraftDetail(null);
       setDraftsError(wordedError(err));
     }
   };
 
-  const readMe = async () => {
+  const readMe = async (gen: number) => {
     try {
       const res = await client.view<{ permissions?: readonly string[] }>('me');
+      if (gen !== readGen) return;
       if (res.data && Array.isArray(res.data.permissions)) {
         setPermissions(res.data.permissions);
       } else {
         setPermissions([]);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPermissions([]);
       setPolicyError(wordedError(err));
     }
   };
 
-  const readPolicy = async (branch: string) => {
+  const readPolicy = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RatePolicyData>('rate_policy', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPolicyData(res.data);
         if (res.data.policy) {
@@ -237,6 +247,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setPolicyError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPolicyData(null);
       setPolicyError(wordedError(err));
     }
@@ -244,9 +255,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
   const readAll = async (branch: string) => {
     if (!props.shown()) return;
+    const gen = ++readGen;
     setSimulateResult(null);
     void fetchReference({ since: undefined });
-    await Promise.all([readMe(), readPublished(branch), readDrafts(branch), readPolicy(branch)]);
+    await Promise.all([readMe(gen), readPublished(branch, gen), readDrafts(branch, gen), readPolicy(branch, gen)]);
   };
 
   let lastShown = false;
@@ -334,18 +346,18 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
   const handleNewDraft = async () => {
     const branch = props.branch();
+    const gen = readGen;
+    const curPub = pubData();
+    const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
+      currency: l.currency,
+      buyMode: 'AUTO',
+      sellMode: 'AUTO',
+      manualBuy: null,
+      manualSell: null,
+      reason: null,
+    }));
     try {
       await writeFor('fetchReference', 'POST', '/api/rate-references/fetch').send({ branch });
-
-      const curPub = pubData();
-      const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
-        currency: l.currency,
-        buyMode: 'AUTO',
-        sellMode: 'AUTO',
-        manualBuy: null,
-        manualSell: null,
-        reason: null,
-      }));
 
       const createRes = await writeFor<unknown, { id: string; version: number; status: string }>(
         'createDraft',
@@ -357,13 +369,16 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'rate_draft',
         { branch, filter: { id: createRes.id } },
       );
+      if (gen !== readGen) return;
       if (detailRes.data) {
         setDraftDetail(detailRes.data);
       }
 
-      await readDrafts(branch);
+      await readDrafts(branch, gen);
+      if (gen !== readGen) return;
       setSimulateResult(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -372,6 +387,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await writeFor<
         unknown,
@@ -381,8 +397,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           outOfBound: OutOfBoundItem[];
         }
       >('simulateDraft:' + draft.id, 'POST', `/api/rate-drafts/${draft.id}/simulate`).send({ branch });
+      if (gen !== readGen) return;
       setSimulateResult(res);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -391,18 +409,21 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await writeFor<unknown, { requestId?: string; status: string }>(
         'submitDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/submit`,
       ).send({ branch });
+      if (gen !== readGen) return;
       if (res?.status) {
         setDraftDetail((prev) =>
           prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
         );
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -411,6 +432,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const curVersion = pubData()?.publication?.version ?? null;
     try {
       await writeFor<unknown, { id: string; version: number }>(
@@ -418,9 +440,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'POST',
         `/api/rate-drafts/${draft.id}/publish`,
       ).send({ branch, expectedVersion: curVersion });
-      await readPublished(branch);
-      await readDrafts(branch);
+      await readPublished(branch, gen);
+      await readDrafts(branch, gen);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -430,6 +453,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const lines = draftDetail()?.lines ?? [];
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const policy = policyData()?.policy;
     if (!policy) return;
     try {
@@ -463,10 +487,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'rate_draft',
         { branch, filter: { id: draft.id } },
       );
+      if (gen !== readGen) return;
       if (updated.data) {
         setDraftDetail(updated.data);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -520,6 +546,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!areValueTiersValid()) return;
 
     const branch = props.branch();
+    const gen = readGen;
     const rows = valueTiers();
     const hasAnyTierInput = rows.some(
       (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
@@ -552,14 +579,17 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     try {
       await savePolicyWrite.send(payload);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
 
   const openHistory = async () => {
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+      if (gen !== readGen) return;
       const pubs = res.data?.publications ?? [];
       openDialog(
         t('historyTitle'),
@@ -591,6 +621,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         ),
       );
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
