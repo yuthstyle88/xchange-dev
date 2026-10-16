@@ -142,6 +142,11 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     if (seq !== formSeq) return;
     setDenominations(denoms.status === 'fulfilled' ? (denoms.value.data?.rows ?? []) : []);
     setBranches(dests.status === 'fulfilled' ? (dests.value.data?.rows ?? []) : []);
+    if (denoms.status === 'rejected') {
+      setRefusal(message(denoms.reason));
+    } else if (dests.status === 'rejected') {
+      setRefusal(message(dests.reason));
+    }
   }
 
   let lastBranch: string | undefined;
