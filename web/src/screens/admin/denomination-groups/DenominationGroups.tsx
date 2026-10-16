@@ -51,6 +51,7 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     setBusy(true);
     try {
       await mapWrite.send({
@@ -58,35 +59,46 @@ function GroupRow(props: GroupRowProps): JSX.Element {
         group: props.group.group,
         provider,
         instrumentKey: key,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
   const handleRemove = async () => {
+    const branch = props.branch();
     setBusy(true);
     try {
       await removeWrite.send({
         currency: props.currency,
         group: props.group.group,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
@@ -155,6 +167,8 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   createEffect(() => {
     props.branch();
     setData(null);
+    setAddError(null);
+    setBusy(false);
     loadView();
   });
 
@@ -172,22 +186,28 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
     const curr = selectedCurrency();
     if (!curr) return;
 
+    const branch = props.branch();
     setBusy(true);
     try {
       await addGroupWrite.send({
         currency: curr,
         group: code,
-        branch: props.branch(),
+        branch,
       });
-      setNewGroup('');
-      setAddError(null);
+      if (props.branch() === branch) {
+        setNewGroup('');
+        setAddError(null);
+      }
       await loadView();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
       const message = wordedError(err);
       setAddError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
