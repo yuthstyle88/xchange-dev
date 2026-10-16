@@ -396,10 +396,13 @@ export function Customers(props: AdminMenuProps): JSX.Element {
 
   let lastListSeq = 0;
   let lastRegSeq = 0;
+  let branchNameSeq = 0;
 
   async function fetchBranchName(branchId: string) {
+    const seq = ++branchNameSeq;
     try {
       const res = await api.view<{ branches: { id: string; name: string }[] }>('admin_branches');
+      if (seq !== branchNameSeq || props.branch() !== branchId) return;      
       const b = res.data?.branches?.find((x) => x.id === branchId);
       if (b) {
         setBranchName(b.name);
@@ -479,6 +482,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     if (!props.shown()) return;
     const currentBranch = props.branch();
 
+    setBranchName(currentBranch);
     fetchBranchName(currentBranch);
 
     // On branch change or show: reset to page 1, clear search
