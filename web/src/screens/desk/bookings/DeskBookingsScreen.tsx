@@ -430,6 +430,7 @@ export function DeskBookingsScreen(): JSX.Element {
     setErrorMessage(null);
     setRetryAction(null);
     setQuantityInvalid(false);
+    resetNewBookingForm();
     setShowNewBookingModal(true);
     const slots = allSlots();
     if (!formSlotId() && slots.length > 0) {
@@ -460,9 +461,7 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleCreateBooking() {
-    readErrorActive = false;
-    setErrorMessage(null);
-    setRetryAction(null);
+    if (writing()) return;
 
     const rawQty = formQuantity().trim();
     const qty = Number(rawQty);
@@ -488,8 +487,12 @@ export function DeskBookingsScreen(): JSX.Element {
       payload.referralCode = ref;
     }
 
+    setWriting(true);
     try {
       await createWrite.send(payload);
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
       setShowNewBookingModal(false);
       resetNewBookingForm();
       await fetchBookings();
@@ -497,6 +500,8 @@ export function DeskBookingsScreen(): JSX.Element {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCreateBooking());
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -789,6 +794,7 @@ export function DeskBookingsScreen(): JSX.Element {
                         type="button"
                         data-action="retry"
                         class="xc-retry-btn xc-btn-secondary"
+                        disabled={writing()}
                         onClick={handleRetry}
                       >
                         {t('retry')}
@@ -918,6 +924,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     <button
                       type="button"
                       class="xc-btn-secondary"
+                      disabled={writing()}
                       onClick={() => setShowNewBookingModal(false)}
                     >
                       Close
@@ -926,6 +933,7 @@ export function DeskBookingsScreen(): JSX.Element {
                       type="submit"
                       data-action="submit-booking"
                       class="xc-submit-booking xc-btn-primary"
+                      disabled={writing()}
                       onClick={handleSubmitNewBooking}
                     >
                       {t('newBooking')}
