@@ -145,7 +145,8 @@ function pageBranch(path: DeskPath, me: Me | undefined): string {
 
 function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: string } {
   if (e instanceof ApiError) {
-    return e.field ? { field: e.field, message: e.message } : { message: e.message };
+    const message = wordedError(e);
+    return e.field ? { field: e.field, message } : { message };
   }
   return { message: fallback };
 }
@@ -228,6 +229,10 @@ export function createDeskStore(
 
   function scheduleQuote(): void {
     cancelScheduled();
+    if (currency() === '' || amount() === '') {
+      void requote();
+      return;
+    }
     timer = setTimeout(() => {
       timer = undefined;
       void requote();
@@ -237,6 +242,10 @@ export function createDeskStore(
   async function requote(): Promise<BlueprintQuote | undefined> {
     cancelScheduled();
     if (currency() === '' || amount() === '') {
+      quoteSeq += 1;
+      setQuote(undefined);
+      setQuoteError(undefined);
+      setQuoting(false);
       return undefined;
     }
     const mine = ++quoteSeq;
