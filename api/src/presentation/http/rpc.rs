@@ -26,6 +26,7 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use xc_auth::domain::account::entities::session::SignedIn;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
@@ -399,11 +400,7 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
         BranchSettingStore::new(pool.clone()),
         PgBranchRepository::new(pool.clone()),
     );
-    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
-        Arc::new(
-            xc_booking::infrastructure::booking_repository::PgBookingRepository::new(pool.clone()),
-        ),
-    ));
+    let lifecycle = pg_booking_lifecycle(pool.clone());
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(CustodyAction::new(custody.clone())),

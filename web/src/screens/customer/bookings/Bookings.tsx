@@ -8,6 +8,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   BookingCancelInput,
   BookingCancelOutput,
@@ -28,13 +29,6 @@ import * as table from './i18n';
 import './bookings.css';
 
 const t = screenT('customer.bookings', table);
-
-function generateIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'key-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-}
 
 function getStatusLabel(status: string): string {
   const key = `status_${status}` as keyof typeof table.th;
@@ -119,11 +113,19 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
 
   // Cancel dialog
   const [cancellingBooking, setCancellingBooking] = createSignal<MyBookingItemDto | null>(null);
-  const [cancelIdempotencyKey, setCancelIdempotencyKey] = createSignal<string>('');
+  const cancelWrite = keyedWrite<BookingCancelInput & { branch: string }, BookingCancelOutput>(
+    api,
+    'POST',
+    (b) => `/api/bookings/${b.id}/cancel`,
+  );
 
   // Reschedule dialog
   const [reschedulingBooking, setReschedulingBooking] = createSignal<MyBookingItemDto | null>(null);
-  const [rescheduleIdempotencyKey, setRescheduleIdempotencyKey] = createSignal<string>('');
+  const rescheduleWrite = keyedWrite<BookingRescheduleInput & { branch: string }, BookingRescheduleOutput>(
+    api,
+    'POST',
+    (b) => `/api/bookings/${b.id}/reschedule`,
+  );
   const [availableSlots, setAvailableSlots] = createSignal<BookingSlotItemDto[]>([]);
   const [slotsLoading, setSlotsLoading] = createSignal(false);
   const [selectedSlotId, setSelectedSlotId] = createSignal<string>('');
@@ -148,10 +150,10 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const handleOpenCancel = (booking: MyBookingItemDto) => {
     setCancellingBooking(booking);
     setCommandError(null);
-    setCancelIdempotencyKey(generateIdempotencyKey());
   };
 
   const handleCloseCancel = () => {
+    cancelWrite.reset();
     setCancellingBooking(null);
     setCommandError(null);
   };
@@ -159,18 +161,16 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const executeCancel = async () => {
     const booking = cancellingBooking();
     if (!booking) return;
-    const key = cancelIdempotencyKey();
     setCommandLoading(true);
     setCommandError(null);
     setLastAction(() => executeCancel);
 
     try {
-      const out = await api.command<BookingCancelInput & { branch: string }, BookingCancelOutput>(
-        'POST',
-        `/api/bookings/${booking.id}/cancel`,
-        { id: booking.id, reason: null, branch: booking.branchId },
-        key,
-      );
+      const out = await cancelWrite.send({
+        id: booking.id,
+        reason: null,
+        branch: booking.branchId,
+      });
       // Update status to CANCELLED in local list
       setBookings((prev) =>
         prev.map((b) => (b.id === booking.id ? { ...b, status: out.status } : b)),
@@ -203,12 +203,12 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const handleOpenReschedule = (booking: MyBookingItemDto) => {
     setReschedulingBooking(booking);
     setCommandError(null);
-    setRescheduleIdempotencyKey(generateIdempotencyKey());
     setSelectedSlotId('');
     loadSlots(booking);
   };
 
   const handleCloseReschedule = () => {
+    rescheduleWrite.reset();
     setReschedulingBooking(null);
     setCommandError(null);
     setSelectedSlotId('');
@@ -218,18 +218,16 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     const booking = reschedulingBooking();
     const slotId = selectedSlotId();
     if (!booking || !slotId) return;
-    const key = rescheduleIdempotencyKey();
     setCommandLoading(true);
     setCommandError(null);
     setLastAction(() => executeReschedule);
 
     try {
-      await api.command<BookingRescheduleInput & { branch: string }, BookingRescheduleOutput>(
-        'POST',
-        `/api/bookings/${booking.id}/reschedule`,
-        { id: booking.id, slotId, branch: booking.branchId },
-        key,
-      );
+      await rescheduleWrite.send({
+        id: booking.id,
+        slotId,
+        branch: booking.branchId,
+      });
       // Success: re-read bookings
       await fetchBookings();
       setReschedulingBooking(null);

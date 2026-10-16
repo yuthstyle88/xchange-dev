@@ -522,12 +522,7 @@ describe('APP-16 customer C02 book screen (/app/book) up-front tests (#985)', ()
       error: {
         code: 'validationFailed',
         message: 'รหัสแนะนำไม่ถูกต้อง',
-        fields: [
-          {
-            field: 'referralCode',
-            reason: 'invalidReferralCode',
-          },
-        ],
+        field: 'referralCode',
       },
     };
 

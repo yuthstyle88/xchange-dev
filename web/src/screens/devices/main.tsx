@@ -28,7 +28,6 @@ if (appEl) {
           <DevicesScreen
             api={api}
             branch={b}
-            newId={() => crypto.randomUUID()}
             download={downloadFile}
           />
         )}
