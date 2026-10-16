@@ -321,12 +321,13 @@ impl BranchIntake {
                 .cases
                 .insert_case(&mut tx, &submitted_case)
                 .await
-                .map_err(BranchIntakeError::Case)?;
+                .map_err(BranchIntakeError::Case)?
+                .ok_or(BranchIntakeError::CaseLocked)?;
             self.cases
                 .insert_document(&mut tx, cust_org_id, &doc)
                 .await
                 .map_err(BranchIntakeError::Case)?;
-            inserted.ok_or(BranchIntakeError::CaseLocked)?
+            inserted
         } else {
             self.cases
                 .insert_document(&mut tx, cust_org_id, &doc)
