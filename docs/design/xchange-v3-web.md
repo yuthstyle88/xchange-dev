@@ -2165,9 +2165,9 @@ None. Web and test files only.
 
 **Decision (fleet rule ♻️: the rule lives once, in the core).** Add one helper, `web/src/shared/api/keyed-write.ts`:
 `keyedWrite<B, R>(api: ApiClient, method: string, path: string | ((body: B) => string)): { send(body: B): Promise<R>; reset(): void }`.
-- The same serialized body as the last unfinished send reuses that key; a different body gets a new key.
-- The key is dropped after a 2xx, or after a refusal that is not "unknown" (a 4xx other than a network failure).
-- `reset()` drops it explicitly, for example when a dialog closes.
+- Each serialized body whose outcome is still unknown keeps its own key. A send with that same body reuses the key; a different body gets a new key, and the earlier body keeps its own (amended 2026-10-16 by #2327: overlapping sends of different bodies must not erase each other's key).
+- A body's key is dropped only by that body's own 2xx, or by its own refusal that is not "unknown" (a 4xx other than a network failure). A network failure or a 5xx keeps it, so a retry of the same body sends the same key.
+- `reset()` drops every held key, for example when a dialog closes.
 
 Screens call `keyedWrite(...).send(body)` instead of building keys. `staff/parts/command.ts` becomes a thin re-export.
 
