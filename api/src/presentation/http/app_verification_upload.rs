@@ -218,6 +218,10 @@ fn map_case_error(err: CaseError) -> HttpResponse {
         }))
 }
 
+fn key_shape_ok(key: &str) -> bool {
+    xc_kernel::document_store::document_ref("x", key).is_ok()
+}
+
 async fn handle_upload(
     req: &HttpRequest,
     payload: web::Payload,
@@ -239,8 +243,9 @@ async fn handle_upload(
         .headers()
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
+        .map(|k| k.trim())
     {
-        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        Some(k) if !k.is_empty() && key_shape_ok(k) => k.to_string(),
         _ => {
             return HttpResponse::BadRequest()
                 .insert_header((header::CACHE_CONTROL, "no-store"))
