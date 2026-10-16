@@ -1283,7 +1283,7 @@ which replaces PD-1, keeps its files and the rows 8–12 of §5.5.5, and covers 
   `auto:<branch>:passport:<KIOSK|DESK>:<orderId>`; the `(branch_id, request_id)` key keeps "once per order"; `Existing(job)`
   with another actor → row 10, the same actor → row 11). `NoDrawer` → `UNCERTAIN`; `NoAgent` → `SIMULATED`; nothing is sent
   in either case.
-- It never sends. It reads the job (pool, no lock) every 250 ms for at most 5 s [proposed] — within the 10 s freshness — and
+- It never sends. It reads the job (pool, no lock) every 250 ms for at most `devices.passportDrawerReadWindowMs` (default 5 s) [proposed] — within the 10 s freshness — and
   answers the state then: `QUEUED`, `LEASED` → `REQUESTED`; `DRAWER_OPENED` → `SUBMITTED_TO_CUPS` (v2's word, which the kept
   script knows); `FAILED`, `EXPIRED` → `UNCERTAIN`.
 - The switch `devices.passportDrawerBranches` [proposed] stays as §5.5.5 has it.
