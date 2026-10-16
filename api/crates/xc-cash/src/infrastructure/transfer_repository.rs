@@ -99,14 +99,23 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTran
     })
 }
 
+fn parse_id(id: &str) -> Option<Uuid> {
+    Uuid::parse_str(id).ok()
+}
+
 impl TransferRepository for PgTransferRepository {
     fn find_by_id<'a>(&'a self, id: &'a str) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&self.pool)
             .await?;
 
@@ -119,10 +128,10 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&self.pool)
             .await?;
 
@@ -136,11 +145,16 @@ impl TransferRepository for PgTransferRepository {
         id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&mut **tx)
             .await?;
 
@@ -153,10 +167,10 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&mut **tx)
             .await?;
 
