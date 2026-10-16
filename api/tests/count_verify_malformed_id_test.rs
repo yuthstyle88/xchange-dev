@@ -411,7 +411,13 @@ async fn v3_count_verify_with_submitted_open_count_id_verifies_and_opens_shift()
     let teller = room.person(Role::Teller, Some(B01)).await;
     let manager = room.person(Role::BranchManager, Some(B01)).await;
 
-    let submitted = post(&room, &teller, "/api/cash-counts", open_count_body(&room).await).await;
+    let submitted = post(
+        &room,
+        &teller,
+        "/api/cash-counts",
+        open_count_body(&room).await,
+    )
+    .await;
     let count = id_of(&submitted, "countSubmit");
 
     let a = post(
@@ -451,7 +457,13 @@ async fn v4_count_verify_with_uppercase_uuid_of_real_count_verifies_and_opens_sh
     let teller = room.person(Role::Teller, Some(B01)).await;
     let manager = room.person(Role::BranchManager, Some(B01)).await;
 
-    let submitted = post(&room, &teller, "/api/cash-counts", open_count_body(&room).await).await;
+    let submitted = post(
+        &room,
+        &teller,
+        "/api/cash-counts",
+        open_count_body(&room).await,
+    )
+    .await;
     let count = id_of(&submitted, "countSubmit");
     let upper = count.to_ascii_uppercase();
     assert_ne!(upper, count, "count uuid should have uppercase hex digits");
