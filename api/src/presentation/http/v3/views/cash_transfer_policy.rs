@@ -13,11 +13,12 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::domain::transfer::transfer_policy::TransferPolicy;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::cash_transfer_policy::{
-    CashTransferPolicyData, CashTransferPolicyFilter,
+    CashTransferPolicyData, CashTransferPolicyFilter, InvalidTransferLimitEntry,
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::org_view::{OrgFilter, OrgView, OrgViewEndpoint};
@@ -108,12 +109,39 @@ impl OrgView for CashTransferPolicyView {
                 return Ok(None);
             };
 
-            let limits: BTreeMap<String, String> = serde_json::from_value(limits_val)
-                .unwrap_or_default();
+            let (limits, valid, invalid_entries) = match TransferPolicy::parse_limits(&limits_val) {
+                Ok(parsed) => (
+                    parsed
+                        .into_iter()
+                        .map(|(c, m)| (c.as_str().to_owned(), m.to_string()))
+                        .collect(),
+                    true,
+                    Vec::new(),
+                ),
+                Err(invalid) => (
+                    invalid
+                        .parsed
+                        .into_iter()
+                        .map(|(c, m)| (c.as_str().to_owned(), m.to_string()))
+                        .collect(),
+                    false,
+                    invalid
+                        .entries
+                        .into_iter()
+                        .map(|e| InvalidTransferLimitEntry {
+                            currency: e.currency,
+                            raw: e.raw,
+                            reason: e.reason,
+                        })
+                        .collect(),
+                ),
+            };
 
             Ok(Some(CashTransferPolicyData {
                 version,
                 limits,
+                valid,
+                invalid_entries,
                 set_by: set_by.to_string(),
                 created_at: created_at.to_rfc3339(),
             }))
