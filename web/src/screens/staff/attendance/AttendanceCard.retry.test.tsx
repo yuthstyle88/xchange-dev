@@ -148,13 +148,17 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
 
   it('retry, then fails again: error still shown, button still there, and exactly 2 reads', async () => {
     let reads = 0;
+    let resolveSecond!: (res: Response) => void;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (url.includes('/api/v3/views/staff_attendance')) {
           reads += 1;
-          return serverErrorResponse();
+          if (reads === 1) return serverErrorResponse();
+          return new Promise<Response>((resolve) => {
+            resolveSecond = resolve;
+          });
         }
         return new Response('Not found', { status: 404 });
       }),
@@ -172,7 +176,10 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
 
     await vi.waitFor(() => {
       expect(reads).toBe(2);
+      expect(resolveSecond).toBeTypeOf('function');
     });
+    resolveSecond(serverErrorResponse());
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
 
     const errEl = host.querySelector('[data-testid="attendance-error"]');
     expect(errEl).not.toBeNull();
