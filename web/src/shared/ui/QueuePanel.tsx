@@ -223,6 +223,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
     setClaiming(true);
     setRefusalMessage(null);
     const branchAtStart = props.branch;
+    const tabAtStart = activeTab();
 
     try {
       await api.post('/api/kiosk', {
@@ -245,6 +246,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         await store().refresh();
       }
     } catch (err: unknown) {
+      if (props.branch !== branchAtStart || activeTab() !== tabAtStart) return;
       setRefusalMessage(() => () => wordedError(err));
       await readQueue({ forced: false });
     } finally {
