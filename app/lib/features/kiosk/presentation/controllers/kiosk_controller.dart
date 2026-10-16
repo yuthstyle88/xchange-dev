@@ -446,7 +446,10 @@ class KioskController extends Notifier<KioskState> {
 
   void setCurrency(String code) => _set(state.copyWith(currency: code));
 
-  void setAmount(String text) => _set(state.copyWith(amountText: text));
+  void setAmount(String text) {
+    _idle.touch();
+    _set(state.copyWith(amountText: text));
+  }
 
   void setPaymentMethod(String? method) =>
       _set(state.copyWith(paymentMethod: method));
