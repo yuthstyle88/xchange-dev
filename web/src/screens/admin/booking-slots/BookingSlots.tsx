@@ -175,21 +175,24 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       slotMinutes: sMin,
       capacity: cap,
       horizonDays: hDays,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<SlotRuleSetInput, 'id'> & { branch: string };
-    const actionId = `slotRuleSet:${props.branch()}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/booking-slot-rule`;
+    const actionId = `slotRuleSet:${branch}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/booking-slot-rule`;
 
     setWriting(true);
     try {
       await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
@@ -206,22 +209,27 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       closedOn,
       reason,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<ClosureAddInput, 'id'> & { branch: string };
-    const actionId = `closureAdd:${props.branch()}:${closedOn}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures`;
+    const actionId = `closureAdd:${branch}:${closedOn}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/closures`;
 
     setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
-      setNewClosedOn('');
-      setNewReason('');
+      if (props.branch() === branch) {
+        setNewClosedOn('');
+        setNewReason('');
+      }
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
@@ -230,16 +238,19 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleRemoveClosure(closedOn: string) {
     if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
-    const actionId = `closureRemove:${props.branch()}:${closedOn}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures/${encodeURIComponent(closedOn)}/remove`;
+    const branch = props.branch();
+    const payload = { branch };
+    const actionId = `closureRemove:${branch}:${closedOn}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/closures/${encodeURIComponent(closedOn)}/remove`;
 
     setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
@@ -256,9 +267,10 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       capacity: capNum,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<SlotCapacitySetInput, 'id'> & { branch: string };
     const actionId = `slotCapacitySet:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/capacity`;
@@ -268,7 +280,9 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
@@ -277,7 +291,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleCloseSlot(slotId: string) {
     if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
+    const branch = props.branch();
+    const payload = { branch };
     const actionId = `slotClose:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/close`;
 
@@ -286,7 +301,9 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
@@ -295,7 +312,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleOpenSlot(slotId: string) {
     if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
+    const branch = props.branch();
+    const payload = { branch };
     const actionId = `slotOpen:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/open`;
 
@@ -304,7 +322,9 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
     } finally {
       setWriting(false);
     }
