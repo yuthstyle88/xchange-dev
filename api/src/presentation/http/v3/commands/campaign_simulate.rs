@@ -19,6 +19,7 @@ use xc_marketing::application::simulator::{CampaignSimulator, SimulationScenario
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::infrastructure::marketing::branch_scope::CampaignBranchScope;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -150,12 +151,11 @@ impl CommandAction for CampaignSimulateCommand {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
-            let branch_in_org: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1 AND organization_id = $2)",
+            if CampaignBranchScope::first_outside_org_in(
+                tx,
+                org_id,
+                std::slice::from_ref(&s.branch_id),
             )
-            .bind(&s.branch_id)
-            .bind(org_id)
-            .fetch_one(&mut **tx)
             .await
             .map_err(|e| {
                 V3Error::new(
@@ -164,8 +164,9 @@ impl CommandAction for CampaignSimulateCommand {
                     e.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
-            })?;
-            if !branch_in_org {
+            })?
+            .is_some()
+            {
                 return Err(V3Error::new(
                     "validationFailed",
                     Some("branchId"),
