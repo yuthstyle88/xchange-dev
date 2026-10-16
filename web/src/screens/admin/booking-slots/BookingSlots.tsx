@@ -1,7 +1,9 @@
 // BK-9 (#1410): Admin Booking Slots screen (design `docs/design/blueprint/booking-slots.md` §4.4, §7, §8, §9 BK-9).
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import type {
   AdminBookingSlotsData,
@@ -17,25 +19,19 @@ import type {
 import * as table from './i18n';
 import './booking-slots.css';
 
-const pendingKeys = new Map<string, { bodyString: string; key: string }>();
-
-function getIdempotencyKey(actionId: string, bodyString: string): string {
-  const existing = pendingKeys.get(actionId);
-  if (existing && existing.bodyString === bodyString) {
-    return existing.key;
-  }
-  const newKey = crypto.randomUUID();
-  pendingKeys.set(actionId, { bodyString, key: newKey });
-  return newKey;
-}
-
-function clearIdempotencyKey(actionId: string): void {
-  pendingKeys.delete(actionId);
-}
-
 export function BookingSlots(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.booking-slots', table);
   const api = new ApiClient();
+  const writes = new Map<string, { send(body: unknown): Promise<unknown>; reset(): void }>();
+
+  function writeFor<B, R>(actionId: string, method: string, path: string): { send(body: B): Promise<R>; reset(): void } {
+    let w = writes.get(actionId);
+    if (!w) {
+      w = keyedWrite<unknown, unknown>(api, method, path);
+      writes.set(actionId, w);
+    }
+    return w as { send(body: B): Promise<R>; reset(): void };
+  }
 
   const [loading, setLoading] = createSignal(false);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -148,18 +144,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       horizonDays: hDays,
       branch: props.branch(),
     } satisfies Omit<SlotRuleSetInput, 'id'> & { branch: string };
-    const bodyString = JSON.stringify(payload);
     const actionId = `slotRuleSet:${props.branch()}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/branches/${encodeURIComponent(props.branch())}/booking-slot-rule`;
 
     try {
-      await api.command(
-        'PUT',
-        `/api/branches/${encodeURIComponent(props.branch())}/booking-slot-rule`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
@@ -181,18 +170,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       reason,
       branch: props.branch(),
     } satisfies Omit<ClosureAddInput, 'id'> & { branch: string };
-    const bodyString = JSON.stringify(payload);
     const actionId = `closureAdd:${props.branch()}:${closedOn}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures`;
 
     try {
-      await api.command(
-        'POST',
-        `/api/branches/${encodeURIComponent(props.branch())}/closures`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'POST', path).send(payload);
       setNewClosedOn('');
       setNewReason('');
       await loadView(props.branch());
@@ -204,18 +186,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleRemoveClosure(closedOn: string) {
     setErrorMessage(null);
     const payload = { branch: props.branch() };
-    const bodyString = JSON.stringify(payload);
     const actionId = `closureRemove:${props.branch()}:${closedOn}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures/${encodeURIComponent(closedOn)}/remove`;
 
     try {
-      await api.command(
-        'POST',
-        `/api/branches/${encodeURIComponent(props.branch())}/closures/${encodeURIComponent(closedOn)}/remove`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
@@ -236,18 +211,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       capacity: capNum,
       branch: props.branch(),
     } satisfies Omit<SlotCapacitySetInput, 'id'> & { branch: string };
-    const bodyString = JSON.stringify(payload);
     const actionId = `slotCapacitySet:${slotId}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/booking-slots/${encodeURIComponent(slotId)}/capacity`;
 
     try {
-      await api.command(
-        'PUT',
-        `/api/booking-slots/${encodeURIComponent(slotId)}/capacity`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
@@ -257,18 +225,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleCloseSlot(slotId: string) {
     setErrorMessage(null);
     const payload = { branch: props.branch() };
-    const bodyString = JSON.stringify(payload);
     const actionId = `slotClose:${slotId}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/booking-slots/${encodeURIComponent(slotId)}/close`;
 
     try {
-      await api.command(
-        'POST',
-        `/api/booking-slots/${encodeURIComponent(slotId)}/close`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
@@ -278,18 +239,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   async function handleOpenSlot(slotId: string) {
     setErrorMessage(null);
     const payload = { branch: props.branch() };
-    const bodyString = JSON.stringify(payload);
     const actionId = `slotOpen:${slotId}`;
-    const key = getIdempotencyKey(actionId, bodyString);
+    const path = `/api/booking-slots/${encodeURIComponent(slotId)}/open`;
 
     try {
-      await api.command(
-        'POST',
-        `/api/booking-slots/${encodeURIComponent(slotId)}/open`,
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
@@ -298,9 +252,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleSavePolicy() {
     setErrorMessage(null);
-    const cut = Number(cutoff());
-    const grc = Number(grace());
-    const exp = Number(expiry());
+    const cutRaw = cutoff().trim();
+    const grcRaw = grace().trim();
+    const expRaw = expiry().trim();
+    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw)) {
+      setErrorMessage(t('policyValidationFailed'));
+      return;
+    }
+    const cut = Number(cutRaw);
+    const grc = Number(grcRaw);
+    const exp = Number(expRaw);
 
     // Boundary checks: cutoff >= 0, grace >= 0, expiry > 0
     if (
@@ -321,23 +282,18 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       confirmExpiryMinutes: exp,
       branch: props.branch(),
     } satisfies BookingPolicySetInput & { branch: string };
-    const bodyString = JSON.stringify(payload);
     const actionId = 'bookingPolicySet';
-    const key = getIdempotencyKey(actionId, bodyString);
 
     try {
-      await api.command(
-        'PUT',
-        '/api/booking-policy',
-        payload,
-        key,
-      );
-      clearIdempotencyKey(actionId);
+      await writeFor(actionId, 'PUT', '/api/booking-policy').send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
     }
   }
+
+  const orgWideAdmin = () =>
+    (sharedSession().me()?.roles ?? []).some((r) => r.role === 'ADMIN' && r.branchId === null);
 
   return (
     <div class="booking-slots-screen">
@@ -483,45 +439,47 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       </section>
 
       {/* Section 4: Booking Policy */}
-      <section class="booking-slots-section">
-        <h3>{t('policySection')}</h3>
-        <div class="form-group">
-          <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
-          <input
-            id="cancelCutoffMinutes"
-            name="cancelCutoffMinutes"
-            data-field="cancelCutoffMinutes"
-            type="number"
-            value={cutoff()}
-            onInput={(e) => setCutoff(e.currentTarget.value)}
-          />
-        </div>
-        <div class="form-group">
-          <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
-          <input
-            id="noShowGraceMinutes"
-            name="noShowGraceMinutes"
-            data-field="noShowGraceMinutes"
-            type="number"
-            value={grace()}
-            onInput={(e) => setGrace(e.currentTarget.value)}
-          />
-        </div>
-        <div class="form-group">
-          <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
-          <input
-            id="confirmExpiryMinutes"
-            name="confirmExpiryMinutes"
-            data-field="confirmExpiryMinutes"
-            type="number"
-            value={expiry()}
-            onInput={(e) => setExpiry(e.currentTarget.value)}
-          />
-        </div>
-        <button type="button" onClick={handleSavePolicy}>
-          {t('savePolicy')}
-        </button>
-      </section>
+      <Show when={orgWideAdmin()}>
+        <section class="booking-slots-section">
+          <h3>{t('policySection')}</h3>
+          <div class="form-group">
+            <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
+            <input
+              id="cancelCutoffMinutes"
+              name="cancelCutoffMinutes"
+              data-field="cancelCutoffMinutes"
+              type="number"
+              value={cutoff()}
+              onInput={(e) => setCutoff(e.currentTarget.value)}
+            />
+          </div>
+          <div class="form-group">
+            <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
+            <input
+              id="noShowGraceMinutes"
+              name="noShowGraceMinutes"
+              data-field="noShowGraceMinutes"
+              type="number"
+              value={grace()}
+              onInput={(e) => setGrace(e.currentTarget.value)}
+            />
+          </div>
+          <div class="form-group">
+            <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
+            <input
+              id="confirmExpiryMinutes"
+              name="confirmExpiryMinutes"
+              data-field="confirmExpiryMinutes"
+              type="number"
+              value={expiry()}
+              onInput={(e) => setExpiry(e.currentTarget.value)}
+            />
+          </div>
+          <button type="button" onClick={handleSavePolicy}>
+            {t('savePolicy')}
+          </button>
+        </section>
+      </Show>
     </div>
   );
 }

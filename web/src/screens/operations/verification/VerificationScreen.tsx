@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { MeView } from '../../../shared/api/generated/me';
 import type {
   VerificationCaseAuditRow,
@@ -145,6 +146,7 @@ export function VerificationScreen(): JSX.Element {
   const [branchSuccessMsg, setBranchSuccessMsg] = createSignal<string | null>(null);
 
   let lastQueueVersion: number | undefined;
+  let queueErrorActive = false;
   let expiresInputRef: HTMLInputElement | undefined;
   let reasonSelectRef: HTMLSelectElement | undefined;
   let branchCustInputRef: HTMLInputElement | undefined;
@@ -209,6 +211,11 @@ export function VerificationScreen(): JSX.Element {
       }
       setAuthorized(true);
       setRefusalMessage(null);
+      if (queueErrorActive) {
+        queueErrorActive = false;
+        setErrorMessage(null);
+        setRetryFn(null);
+      }
     } catch (err: unknown) {
       if (
         err instanceof ApiError &&
@@ -222,7 +229,9 @@ export function VerificationScreen(): JSX.Element {
         setRefusalMessage(describeFailure(err));
         return;
       }
+      queueErrorActive = true;
       setErrorMessage(describeFailure(err));
+      setRetryFn(() => () => fetchQueue(false));
     }
   }
 
@@ -266,7 +275,7 @@ export function VerificationScreen(): JSX.Element {
 
   onMount(() => {
     const timer = setInterval(() => {
-      if (authorized() === true) {
+      if (authorized() !== false) {
         void fetchQueue(true);
       }
     }, QUEUE_POLL_MS);
@@ -277,6 +286,7 @@ export function VerificationScreen(): JSX.Element {
   async function loadCase(caseId: string, keepError = false): Promise<void> {
     setSelectedCaseId(caseId);
     if (!keepError) {
+      queueErrorActive = false;
       setErrorMessage(null);
       setRetryFn(null);
       setDocError(null);
@@ -296,6 +306,7 @@ export function VerificationScreen(): JSX.Element {
         setCaseAudit(answer.data.audit ?? []);
       }
     } catch (err: unknown) {
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
   }
@@ -306,19 +317,13 @@ export function VerificationScreen(): JSX.Element {
 
     setDocError(null);
     setLinkExpiredDocId(null);
-    const key = makeIdempotencyKey();
     const input: VerificationDocumentLinkInput = {
       id: docId,
       expectedVersion: currentCase.version,
     };
 
     try {
-      const linkOut = await api.command<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
-        'POST',
-        `/api/operations/verification/documents/${encodeURIComponent(docId)}/link`,
-        input,
-        key,
-      );
+      const linkOut = await documentLinkWrite.send(input);
       const contentRes = await fetch(linkOut.url, {
         method: 'GET',
         credentials: 'same-origin',
@@ -343,12 +348,55 @@ export function VerificationScreen(): JSX.Element {
     }
   }
 
+  const documentLinkWrite = keyedWrite<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/documents/${encodeURIComponent(b.id)}/link`,
+  );
+
+  const startReviewWrite = keyedWrite<
+    VerificationCaseStartReviewInput,
+    VerificationCaseStartReviewOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/start-review`,
+  );
+
+  const approveWrite = keyedWrite<VerificationCaseApproveInput, VerificationCaseApproveOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/approve`,
+  );
+
+  const rejectWrite = keyedWrite<VerificationCaseRejectInput, VerificationCaseRejectOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/reject`,
+  );
+
+  const requestUpdateWrite = keyedWrite<
+    VerificationCaseRequestUpdateInput,
+    VerificationCaseRequestUpdateOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/request-update`,
+  );
+
+  const revokeWrite = keyedWrite<VerificationCaseRevokeInput, VerificationCaseRevokeOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/revoke`,
+  );
+
   async function handleCommandFailure(
     err: unknown,
     caseId: string,
     retryCallback: () => Promise<void>,
   ): Promise<void> {
     const msg = describeFailure(err);
+    queueErrorActive = false;
     setErrorMessage(msg);
     if (err instanceof ApiError && err.code === 'staleVersion') {
       setRetryFn(null);
@@ -364,8 +412,6 @@ export function VerificationScreen(): JSX.Element {
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:start-review:${expectedVersion}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseStartReviewInput = {
       id: caseId,
       expectedVersion,
@@ -373,17 +419,9 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseStartReviewInput,
-          VerificationCaseStartReviewOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/start-review`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await startReviewWrite.send(body);
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -401,14 +439,13 @@ export function VerificationScreen(): JSX.Element {
     const rawDate = (expiresInputRef ? expiresInputRef.value : expiresAt()).trim();
     const today = todayBangkokIso();
     if (!rawDate || !/^\d{4}-\d{2}-\d{2}$/.test(rawDate) || rawDate <= today) {
+      queueErrorActive = false;
       setErrorMessage(st('errExpiresAtRequired'));
       return;
     }
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:approve:${expectedVersion}:${rawDate}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseApproveInput = {
       id: caseId,
       expectedVersion,
@@ -417,17 +454,9 @@ export function VerificationScreen(): JSX.Element {
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseApproveInput,
-          VerificationCaseApproveOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/approve`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await approveWrite.send(body);
         setRetryFn(null);
         setSelectedCase(updated);
       } catch (err: unknown) {
@@ -452,17 +481,17 @@ export function VerificationScreen(): JSX.Element {
 
     const selectedReason = currentReasonCode();
     if (!selectedReason || !(S5_REASON_CODES as readonly string[]).includes(selectedReason)) {
+      queueErrorActive = false;
       setErrorMessage(st('errReasonRequired'));
       return;
     }
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:${action}:${expectedVersion}:${selectedReason}`;
-    const key = getOrCreateIdemKey(sig);
 
     const execute = async (): Promise<void> => {
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
         if (action === 'reject') {
           const body: VerificationCaseRejectInput = {
@@ -470,15 +499,7 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRejectInput,
-            VerificationCaseRejectOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/reject`,
-            body,
-            key,
-          );
+          const updated = await rejectWrite.send(body);
           setSelectedCase(updated);
         } else if (action === 'request-update') {
           const body: VerificationCaseRequestUpdateInput = {
@@ -486,15 +507,7 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRequestUpdateInput,
-            VerificationCaseRequestUpdateOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/request-update`,
-            body,
-            key,
-          );
+          const updated = await requestUpdateWrite.send(body);
           setSelectedCase(updated);
         } else {
           const body: VerificationCaseRevokeInput = {
@@ -502,18 +515,9 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRevokeInput,
-            VerificationCaseRevokeOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/revoke`,
-            body,
-            key,
-          );
+          const updated = await revokeWrite.send(body);
           setSelectedCase(updated);
         }
-        clearIdemKey(sig);
         setRetryFn(null);
         setPendingReasonAction(null);
       } catch (err: unknown) {
@@ -527,6 +531,7 @@ export function VerificationScreen(): JSX.Element {
   async function handleBranchSubmit(e?: Event): Promise<void> {
     e?.preventDefault();
     setBranchSuccessMsg(null);
+    queueErrorActive = false;
     setErrorMessage(null);
 
     const custId = (branchCustInputRef ? branchCustInputRef.value : branchCustomerId()).trim();
@@ -535,6 +540,7 @@ export function VerificationScreen(): JSX.Element {
     ) as 'PASSPORT' | 'NATIONAL_ID';
     const file = branchFileInputRef?.files?.[0] ?? branchFile();
     if (!custId || !file) {
+      queueErrorActive = false;
       setErrorMessage(st('errBranchFormIncomplete'));
       return;
     }
@@ -548,17 +554,7 @@ export function VerificationScreen(): JSX.Element {
     formData.append('file', file);
 
     try {
-      const res = await fetch(ROUTE_BRANCH_CASES, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Idempotency-Key': key,
-        },
-        body: formData,
-      });
-      if (!res.ok) {
-        await parseRawResponseError(res);
-      }
+      await api.postForm(ROUTE_BRANCH_CASES, formData, key);
       clearIdemKey(sig);
       setBranchSuccessMsg(st('branchSubmittedNotice'));
       setBranchCustomerId('');
@@ -568,6 +564,7 @@ export function VerificationScreen(): JSX.Element {
       if (err instanceof ApiError && err.code === 'branchReviewNotAllowed') {
         setBranchReviewAllowed(false);
       }
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
   }

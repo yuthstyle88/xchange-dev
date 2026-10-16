@@ -52,6 +52,12 @@ impl Money {
         d.mantissa()
     }
 
+    /// The amount as hundredths (satang, cents), or `Err(NumberError::Invalid)` when it does not
+    /// fit in `i64`.
+    pub fn try_minor(self) -> Result<i64, NumberError> {
+        i64::try_from(self.minor_i128()).map_err(|_| NumberError::Invalid)
+    }
+
     /// The inverse of [`Money::minor`]; no upper cap. `Err(Invalid)` when negative.
     pub fn from_minor(minor: i64) -> Result<Money, NumberError> {
         if minor < 0 {

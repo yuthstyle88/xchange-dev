@@ -4,6 +4,7 @@ import type {
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
@@ -28,14 +29,20 @@ interface OutOfBoundSide {
   side: 'BUY' | 'SELL';
 }
 
+interface DecidePayload {
+  outcome: 'APPROVED' | 'REJECTED';
+  reason: string;
+  branch: string;
+}
+
 interface RequestCardProps {
   request: ApprovalRequestItemDto;
   branch: string;
+  decideWrite: { send(body: DecidePayload): Promise<unknown>; reset(): void };
   onDecided: () => Promise<void>;
 }
 
 function RequestCard(props: RequestCardProps): JSX.Element {
-  const client = new ApiClient();
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -55,17 +62,11 @@ function RequestCard(props: RequestCardProps): JSX.Element {
     setError(null);
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        `/api/approvals/${props.request.id}/decide`,
-        {
-          outcome: 'APPROVED',
-          reason: reason(),
-          branch: props.branch,
-        },
-        key,
-      );
+      await props.decideWrite.send({
+        outcome: 'APPROVED',
+        reason: reason(),
+        branch: props.branch,
+      });
       await props.onDecided();
     } catch (err: unknown) {
       const message = wordedError(err);
@@ -88,17 +89,11 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        `/api/approvals/${props.request.id}/decide`,
-        {
-          outcome: 'REJECTED',
-          reason: r,
-          branch: props.branch,
-        },
-        key,
-      );
+      await props.decideWrite.send({
+        outcome: 'REJECTED',
+        reason: r,
+        branch: props.branch,
+      });
       await props.onDecided();
     } catch (err: unknown) {
       const message = wordedError(err);
@@ -211,6 +206,22 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
 export function Approvals(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const decideWrites = new Map<
+    string,
+    { send(body: DecidePayload): Promise<unknown>; reset(): void }
+  >();
+  const getDecideWrite = (id: string) => {
+    let w = decideWrites.get(id);
+    if (!w) {
+      w = keyedWrite<DecidePayload, unknown>(
+        client,
+        'POST',
+        `/api/approvals/${id}/decide`,
+      );
+      decideWrites.set(id, w);
+    }
+    return w;
+  };
   const [statusFilter, setStatusFilter] = createSignal<ApprovalStatusFilter>('PENDING');
   const [requests, setRequests] = createSignal<ApprovalRequestItemDto[]>([]);
   const [error, setError] = createSignal<string | null>(null);
@@ -280,6 +291,7 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
               <RequestCard
                 request={req}
                 branch={props.branch()}
+                decideWrite={getDecideWrite(req.id)}
                 onDecided={() => loadQueue(props.branch(), statusFilter())}
               />
             )}

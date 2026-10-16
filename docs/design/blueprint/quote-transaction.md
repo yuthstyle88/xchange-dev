@@ -366,6 +366,12 @@ type, currency, amount or benefits (§06, desk D-5); the old one simply expires 
 steps need no change. `PaymentSaveStep`'s check moves from `after_in` to `before_in` (it refuses, it writes nothing),
 which is the one edit to a step, in TX-5.
 
+[required] `from_transaction` is fallible: `TransactionForm::from_transaction(&ExchangeTransaction) -> AppResult<TransactionForm>`
+(amended for #2105). The form's `amount` is `Money`, which holds at most 100,000,000 (`Money::parse`, `money.rs` `MAX_INPUT_UNITS`),
+while `transaction_lines.quantity` is `numeric(20,4)`. A stored quantity the form cannot hold is stored data, so it answers
+`AppError::Internal` (500 `serverError`), never an amount of 0.00. `confirm` and `complete` propagate it with `?` before any
+`before_in`, receipt or posting, so nothing is written. No `SaveStep` changes. This closes the **reader** side only. The entry that lets a quantity above 100,000,000 be stored at all, `quoteCreate` (`api/src/presentation/http/v3/commands/quotes.rs:139-158`, `Decimal::from_str` plus a `> 0` check only), is tracked as row 2 of #2054.
+
 **Cancel** (from `DRAFT` or `CONFIRMED`) sets `CANCELLED`, `cancel_reason`, `cancelled_at`, and the quote
 `CANCELLED`. Nothing was posted before `COMPLETED`, so nothing is undone.
 - **A `PENDING_APPROVAL` transaction is not cancelled by the teller**; cancel answers `staleVersion`. It ends by the
@@ -691,7 +697,7 @@ classDiagram
   class ExchangeTransactionSubject { <<api application/workflows/exchange/approval.rs>> }
   class ExchangeApprovalPolicy { <<api application/workflows/exchange/approval.rs>> }
 
-  class TransactionForm { <<xc-exchange domain/exchange/value_objects/transaction_form.rs existing>> +from_transaction() }
+  class TransactionForm { <<xc-exchange domain/exchange/value_objects/transaction_form.rs existing>> +from_transaction() AppResult~TransactionForm~ }
   class SaveStep { <<trait api application/workflows/save_step.rs existing>> }
   class PublishedRates { <<trait xc-rate rates §4.8>> }
   class ExchangeArithmetic { <<xc-kernel rates §3.2>> }

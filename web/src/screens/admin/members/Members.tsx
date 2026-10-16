@@ -5,6 +5,7 @@ import type {
   SegmentPreviewDto,
   SegmentPreviewFilter,
 } from '../../../shared/api/generated/segment_preview';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -14,6 +15,11 @@ import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 
 const t = screenT('admin.members', table);
+
+interface DefineBody {
+  name: string;
+  rule: Record<string, unknown>;
+}
 
 interface SegmentDefineOutput {
   id: string;
@@ -61,24 +67,12 @@ export function Members(_props: AdminMenuProps): JSX.Element {
   const [snapshotInfo, setSnapshotInfo] = createSignal<SegmentSnapshotOutput | null>(null);
   const [preview, setPreview] = createSignal<SegmentPreviewDto | null>(null);
 
-  let pendingActionKey: { action: string; payload: string; key: string } | null = null;
-
-  function getIdempotencyKey(action: string, body: unknown): string {
-    const payload = JSON.stringify(body);
-    if (pendingActionKey && pendingActionKey.action === action && pendingActionKey.payload === payload) {
-      return pendingActionKey.key;
-    }
-    const key =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    pendingActionKey = { action, payload, key };
-    return key;
-  }
-
-  function clearPendingKey() {
-    pendingActionKey = null;
-  }
+  const defineWrite = keyedWrite<DefineBody, SegmentDefineOutput>(api, 'POST', '/api/segments');
+  const snapshotWrite = keyedWrite<{ id: string }, SegmentSnapshotOutput>(
+    api,
+    'POST',
+    (b) => `/api/segments/${b.id}/snapshots`,
+  );
 
   async function handleDefine(e?: Event) {
     e?.preventDefault();
@@ -107,14 +101,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
         rule,
       };
 
-      const key = getIdempotencyKey('segment_define', body);
-      const res = await api.command<typeof body, SegmentDefineOutput>(
-        'POST',
-        '/api/segments',
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await defineWrite.send(body);
       setDefinition(res);
     } catch (err) {
       setErrorMsg(memberError(err));
@@ -140,14 +127,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
     try {
       const body = { id: def.id };
-      const key = getIdempotencyKey('segment_snapshot', body);
-      const res = await api.command<typeof body, SegmentSnapshotOutput>(
-        'POST',
-        `/api/segments/${def.id}/snapshots`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await snapshotWrite.send(body);
       setSnapshotInfo(res);
       await loadPreview(res.id);
     } catch (err) {
