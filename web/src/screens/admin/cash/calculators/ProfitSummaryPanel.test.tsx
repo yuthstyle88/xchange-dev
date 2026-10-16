@@ -379,7 +379,7 @@ describe('V2-cash-calculators: the profit submit, its result and the reset (W5; 
     const el = await mount();
     await submit(el);
     cardsShow(el, [`${formatMoney('1234567.89')} THB`, `${formatMoney('-200.01')} THB`, `${formatMoney('42.00')} THB`]);
-    expect(text(alertLine(el))).toBe(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH'))} · ไม่ได้บันทึกหรือถอนเงิน`);
+    expect(text(alertLine(el))).toBe(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }))} · ไม่ได้บันทึกหรือถอนเงิน`);
   });
 
   it('any input puts the cards back to รอข้อมูล and says ข้อมูลเปลี่ยน กรุณาคำนวณใหม่ (P3; §9 row 4)', async () => {
