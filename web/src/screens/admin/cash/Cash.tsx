@@ -28,7 +28,10 @@ import './cash.css';
 const t = screenT('admin.cash', table);
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+  return new Date(iso)
+    .toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function Cash(props: AdminMenuProps): JSX.Element {
