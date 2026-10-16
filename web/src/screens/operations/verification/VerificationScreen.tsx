@@ -482,6 +482,7 @@ export function VerificationScreen(): JSX.Element {
         if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
         setSelectedCase(updated);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
       } finally {
