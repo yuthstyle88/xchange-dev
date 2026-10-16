@@ -15,30 +15,23 @@ if [ ! -x "$SELECT" ]; then
 fi
 
 DELL='["self-hosted","Linux","X64","dell-org-ci"]'
-STUDIO='["self-hosted","macOS","ARM64","heavy-build"]'
+HEAVY='["self-hosted","heavy-build"]'
 
 fail=0
-dell=0; studio=0
+heavy=0
 for slot in $(seq 0 11); do
   out=$(RUN_ID=$slot RUN_ATTEMPT=0 "$SELECT")
   pool=$(printf '%s\n' "$out" | sed -n 's/^runs_on=//p')
   jobs=$(printf '%s\n' "$out" | sed -n 's/^cargo_jobs=//p')
-  case "$pool" in
-    "$DELL")   dell=$((dell+1));     want_jobs=12 ;;
-    "$STUDIO") studio=$((studio+1)); want_jobs=8 ;;
-    *) echo "FAIL: slot $slot gave unknown pool '$pool'"; fail=1; continue ;;
-  esac
-  if [ "$jobs" != "$want_jobs" ]; then
-    echo "FAIL: slot $slot pool $pool gave cargo_jobs='$jobs', want $want_jobs"; fail=1
-  fi
+  if [ "$pool" = "$HEAVY" ]; then heavy=$((heavy+1)); else echo "FAIL: slot $slot gave pool '$pool', want $HEAVY"; fail=1; fi
+  [ "$jobs" = 12 ] || { echo "FAIL: slot $slot gave cargo_jobs='$jobs', want ceiling 12 (cargo-jobs.sh lowers it per machine)"; fail=1; }
 done
 
-# Row 1: weights over one 12-slot cycle are Dell 8, heavy Macs 4 (#2574: 4 dell-org-ci runners vs 2 runners labelled
-#        heavy-build: 1 on Mac Studio, 1 on the MacBook; owner: one heavy build at a time per Mac). Warut is out of the pool
-# (owner 2026-10-16: "ย้าย ที่รันใน warut ไปรันที่ อื่นแทน"; measured load 99 on 10 cores).
-[ "$dell" = 8 ]   || { echo "FAIL: Dell got $dell of 12 slots, want 8"; fail=1; }
-[ "$studio" = 4 ] || { echo "FAIL: heavy Macs got $studio of 12 slots, want 4"; fail=1; }
-if grep -q "warut-mbp" "$SELECT"; then echo "FAIL: select-pool.sh still names warut-mbp"; fail=1; fi
+# Row 1: every slot goes to ONE pool, the runners labelled heavy-build. The label count per machine is the cap on heavy
+#        builds it runs at once: owner 2026-10-16 "Heavy-build มี 4 เครื่อง Dell 2 studio 2 warut 1 yut macbook 1" (dell-org-ci-1..2,
+#        studio-org-1..2, warut-org-1, mbp-org-1). GitHub hands each heavy build to whichever is idle,
+#        so no labelled runner sits idle while a build waits ("Dell ควรมัน รัน อย่างน้อย 2 ตัว ตลอดเวลา").
+[ "$heavy" = 12 ] || { echo "FAIL: heavy pool got $heavy of 12 slots, want 12"; fail=1; }
 
 # Row 2: a rerun (RUN_ATTEMPT+1) moves to the next slot, so it can land on another pool.
 a=$(RUN_ID=5 RUN_ATTEMPT=1 "$SELECT" | sed -n 's/^runs_on=//p')
