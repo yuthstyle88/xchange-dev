@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { MeView } from '../../../shared/api/generated/me';
@@ -131,6 +131,12 @@ export function VerificationScreen(): JSX.Element {
   const [previewUrl, setPreviewUrl] = createSignal<string | null>(null);
   const [linkExpiredDocId, setLinkExpiredDocId] = createSignal<string | null>(null);
   const [docError, setDocError] = createSignal<string | null>(null);
+  const [docBusy, setDocBusy] = createSignal<boolean>(false);
+
+  createEffect(() => {
+    selectedCaseId();
+    setDocBusy(false);
+  });
 
   const [expiresAt, setExpiresAt] = createSignal<string>('');
   const [reasonCode, setReasonCode] = createSignal<S5ReasonCode>('DOCUMENT_UNREADABLE');
@@ -346,12 +352,16 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function openDocument(docId: string): Promise<void> {
+    if (docBusy()) return;
     const currentCase = selectedCase();
     if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
-    const caseId = currentCase.id;
+    setDocBusy(true);
+    setPreviewDocId(null);
+    setPreviewUrl(null);
     setDocError(null);
     setLinkExpiredDocId(null);
+    const caseId = currentCase.id;
     const input: VerificationDocumentLinkInput = {
       id: docId,
       expectedVersion: currentCase.version,
@@ -384,6 +394,10 @@ export function VerificationScreen(): JSX.Element {
         return;
       }
       setDocError(msg);
+    } finally {
+      if (selectedCaseId() === caseId) {
+        setDocBusy(false);
+      }
     }
   }
 
@@ -797,6 +811,7 @@ export function VerificationScreen(): JSX.Element {
                                 type="button"
                                 data-doc-id={doc.id}
                                 data-action="view-document"
+                                disabled={docBusy()}
                                 onClick={() => void openDocument(doc.id)}
                               >
                                 {st('docView')}
@@ -816,6 +831,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="refresh-link"
+                                disabled={docBusy()}
                                 onClick={() => void openDocument(expiredId())}
                               >
                                 {st('docRefreshLink')}
