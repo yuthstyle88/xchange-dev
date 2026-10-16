@@ -154,11 +154,14 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     }
   });
 
+  let sendSeq = 0;
+
   const sendMessage = async (overrideText?: string) => {
     const isFromInput = overrideText === undefined;
     const textToSend = (overrideText ?? inputText()).trim();
     if (!textToSend || sending()) return;
 
+    const mine = ++sendSeq;
     if (isFromInput) {
       setInputText('');
     }
@@ -172,6 +175,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
         branch: effectiveBranch(),
         locale: currentLocale,
       });
+      if (mine !== sendSeq) return;
 
       // Update URL to preserve conversation across reloads
       if (typeof window !== 'undefined' && window.history && res.conversationId) {
@@ -187,6 +191,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       setConversationId(res.conversationId);
       setMessages((prev) => [...prev, res.customerMessage, res.assistantReply]);
     } catch (err) {
+      if (mine !== sendSeq) return;
       if (isFromInput) {
         setInputText(textToSend);
       }
@@ -197,6 +202,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
   };
 
   const resetConversation = () => {
+    sendSeq++;
     setConversationId(null);
     setMessages([]);
     setLoadError(null);
