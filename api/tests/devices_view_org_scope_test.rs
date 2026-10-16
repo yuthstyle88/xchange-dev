@@ -96,10 +96,18 @@ fn branches(body: &Value) -> Value {
 async fn the_devices_view_lists_only_the_callers_organisations_branches() {
     let room = Room::open().await;
     let expected = json!([{ "id": MAIN, "name": MAIN_NAME }, { "id": "Z9", "name": "Zulu" }]);
-    for (who, query) in [("OWNER", "?branch=MAIN"), ("OWNER", "?branch=Z9"), ("SYSTEM", "")] {
+    for (who, query) in [
+        ("OWNER", "?branch=MAIN"),
+        ("OWNER", "?branch=Z9"),
+        ("SYSTEM", ""),
+    ] {
         let path = format!("/api/v3/views/devices{query}");
         let answer = room.get(who, &path).await;
-        assert_eq!(answer.status, 200, "GET {path} as {who}: {:.400}", answer.text);
+        assert_eq!(
+            answer.status, 200,
+            "GET {path} as {who}: {:.400}",
+            answer.text
+        );
         let body = answer.json();
         let list = branches(&body);
         assert!(
@@ -107,7 +115,10 @@ async fn the_devices_view_lists_only_the_callers_organisations_branches() {
                 .is_some_and(|l| l.iter().all(|b| b["id"] != json!(OTHER_BRANCH))),
             "GET {path} as {who}: another organisation's branch is listed: {body}"
         );
-        assert_eq!(list, expected, "GET {path} as {who}: exactly the caller's organisation's branches");
+        assert_eq!(
+            list, expected,
+            "GET {path} as {who}: exactly the caller's organisation's branches"
+        );
     }
     room.finish().await;
 }
