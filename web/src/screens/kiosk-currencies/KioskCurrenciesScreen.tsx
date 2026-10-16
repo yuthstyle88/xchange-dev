@@ -162,8 +162,15 @@ export function KioskCurrenciesScreen(props: {
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
 
   let readingBranch = '';
+  // Bumped by every list read (first read and toggle re-read); a list read
+  // (first read or toggle re-read) applies only if it is still the latest.
+  // When a newer toggle re-read supersedes the first read, that re-read
+  // ends the loading state.
+  let listReadSeq = 0;
   const fetchCurrencies = async (branchId: string) => {
     readingBranch = branchId;
+    listReadSeq += 1;
+    const seq = listReadSeq;
     setLoaded(false);
     setCurrencies([]);
     setKbankRef(null);
@@ -174,6 +181,7 @@ export function KioskCurrenciesScreen(props: {
         branch: branchId,
       });
       if (readingBranch !== branchId) return;
+      if (seq !== listReadSeq) return;
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
@@ -182,6 +190,7 @@ export function KioskCurrenciesScreen(props: {
       setLoaded(true);
     } catch (err: unknown) {
       if (readingBranch !== branchId) return;
+      if (seq !== listReadSeq) return;
       setLoadError(wordedError(err));
       setCurrencies([]);
       setKbankRef(null);
@@ -219,36 +228,50 @@ export function KioskCurrenciesScreen(props: {
   });
 
   const handleToggle = async (code: string, isEnabled: boolean) => {
-    if (!props.branch) return;
+    const branchId = props.branch;
+    if (!branchId) return;
     setSavingCodes((prev) => ({ ...prev, [code]: true }));
     setCardStatuses((prev) => ({ ...prev, [code]: undefined }));
 
     try {
       await configure(props.api, {
-        branchId: props.branch,
+        branchId,
         code,
         enabled: isEnabled,
       });
     } catch (err: unknown) {
-      const msg = wordedError(err);
-      setCardStatuses((prev) => ({
-        ...prev,
-        [code]: { kind: 'message', text: msg },
-      }));
+      if (props.branch === branchId) {
+        const msg = wordedError(err);
+        setCardStatuses((prev) => ({
+          ...prev,
+          [code]: { kind: 'message', text: msg },
+        }));
+      }
       setSavingCodes((prev) => ({ ...prev, [code]: false }));
       return;
     }
 
+    if (props.branch !== branchId) {
+      setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      return;
+    }
+
+    listReadSeq += 1;
+    const seq = listReadSeq;
     try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
-        branch: props.branch,
+        branch: branchId,
       });
+      if (props.branch !== branchId) return;
+      const latest = seq === listReadSeq;
 
-      setLoadError(undefined);
+      if (latest) setLoadError(undefined);
       if (res.data) {
-        setCurrencies(res.data.currencies);
-        setKbankRef(res.data.kbank);
-        setFreshness(res.data.freshness);
+        if (latest) {
+          setCurrencies(res.data.currencies);
+          setKbankRef(res.data.kbank);
+          setFreshness(res.data.freshness);
+        }
         const thisCurrency = res.data.currencies.find((c) => c.code === code);
         const active = thisCurrency ? thisCurrency.enabled : isEnabled;
         setCardStatuses((prev) => ({
@@ -256,15 +279,20 @@ export function KioskCurrenciesScreen(props: {
           [code]: active ? { kind: 'savedOn' } : { kind: 'savedOff' },
         }));
       }
+      // This re-read may have superseded the first read: it ends loading.
+      if (latest) setLoaded(true);
     } catch (err: unknown) {
-      setCurrencies((prev) =>
-        prev.map((c) => (c.code === code ? { ...c, enabled: isEnabled } : c)),
-      );
+      if (props.branch !== branchId) return;
+      if (seq === listReadSeq) {
+        setCurrencies((prev) =>
+          prev.map((c) => (c.code === code ? { ...c, enabled: isEnabled } : c)),
+        );
+        setLoadError(wordedError(err));
+      }
       setCardStatuses((prev) => ({
         ...prev,
         [code]: isEnabled ? { kind: 'savedOn' } : { kind: 'savedOff' },
       }));
-      setLoadError(wordedError(err));
     } finally {
       setSavingCodes((prev) => ({ ...prev, [code]: false }));
     }

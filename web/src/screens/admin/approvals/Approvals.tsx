@@ -248,10 +248,18 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  let lastContext = '';
+
   createEffect(() => {
     if (!props.shown()) return;
     const branch = props.branch();
     const status = statusFilter();
+    const context = `${branch}\0${status}`;
+    if (context !== lastContext) {
+      lastContext = context;
+      setRequests([]);
+      setError(null);
+    }
     void loadQueue(branch, status);
   });
 

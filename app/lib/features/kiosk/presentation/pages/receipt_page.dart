@@ -11,7 +11,7 @@ import '../../domain/entities/kiosk_models.dart';
 import '../widgets/kiosk_widgets.dart';
 
 /// Screen 4 — the receipt image the staff member published to this screen.
-class ReceiptPage extends ConsumerWidget {
+class ReceiptPage extends ConsumerStatefulWidget {
   const ReceiptPage({super.key});
 
   /// The bytes of a `data:image/png;base64,…` URL, or null if it is not one.
@@ -29,14 +29,38 @@ class ReceiptPage extends ConsumerWidget {
       '${id.transactionNo ?? '${id.queue}_PENDING'}_RECEIPT.png';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReceiptPage> createState() => _ReceiptPageState();
+}
+
+class _ReceiptPageState extends ConsumerState<ReceiptPage> {
+  bool _saving = false;
+
+  Future<void> _saveReceipt(String image, RequestIdentity id) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    // Read before the await: the page may be gone when it fails.
+    final actions = ref.read(deviceActionsProvider);
+    final kiosk = ref.read(kioskControllerProvider.notifier);
+    try {
+      await actions.saveImage(image, ReceiptPage.filename(id));
+    } on DeviceActionException {
+      kiosk.reportError('errGeneric');
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width <= 760;
     final s = ref.watch(kioskControllerProvider);
     final l = ref.watch(kioskTextsProvider);
     final id = s.identity!;
     final image = s.receiptImage!;
-    final bytes = decode(image);
+    final bytes = ReceiptPage.decode(image);
     return _DoneCard(
       padding: EdgeInsets.all(narrow ? 20 : 30),
       child: Column(
@@ -78,16 +102,7 @@ class ReceiptPage extends ConsumerWidget {
               child: PrimaryButton(
                 key: const Key('save-receipt'),
                 label: l.text('saveImage'),
-                onPressed: () async {
-                  // Read before the await: the page may be gone when it fails.
-                  final actions = ref.read(deviceActionsProvider);
-                  final kiosk = ref.read(kioskControllerProvider.notifier);
-                  try {
-                    await actions.saveImage(image, filename(id));
-                  } on DeviceActionException {
-                    kiosk.reportError('errGeneric');
-                  }
-                },
+                onPressed: _saving ? null : () => _saveReceipt(image, id),
               ),
             ),
           ),

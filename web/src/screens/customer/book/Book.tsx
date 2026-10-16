@@ -76,7 +76,20 @@ export function formatSlotTime(start: string, end: string, timeZone: string): st
 export function BookScreen(props: BookScreenProps): JSX.Element {
   const t = screenT('customer.book', { th, en, zh });
   const fetchFn = props.fetch ?? ((url, init) => window.fetch(url, init));
-  const api = new ApiClient(props.fetch);
+  const api = new ApiClient(async (url, init) => {
+    try {
+      const res = await fetchFn(url, init);
+      if (url === BOOKING_CREATE_COMMAND_ROUTE && res.status >= 500) {
+        setSubmitting(false);
+      }
+      return res;
+    } catch (err) {
+      if (url === BOOKING_CREATE_COMMAND_ROUTE) {
+        setSubmitting(false);
+      }
+      throw err;
+    }
+  });
 
   const bookError = (err: unknown): string => {
     if (err instanceof ApiError && !isServerFailure(err)) {
@@ -307,8 +320,12 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     }
   };
 
+  let submitSeq = 0;
+
   const handleSubmit = async (e?: Event) => {
     if (e) e.preventDefault();
+    if (submitting()) return;
+    const seq = ++submitSeq;
     setSubmitting(true);
     createFailed = false;
     setGlobalError(null);
@@ -347,8 +364,10 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
 
     try {
       const data = await createBooking.send(payload);
+      if (seq !== submitSeq) return;
       setSuccessData(data);
     } catch (err) {
+      if (seq !== submitSeq) return;
       if (err instanceof ApiError && !isServerFailure(err)) {
         if (
           err.code === 'invalidReferralCode' ||
@@ -364,7 +383,9 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       createFailed = true;
       setGlobalError(bookError(err));
     } finally {
-      setSubmitting(false);
+      if (seq === submitSeq) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -663,6 +684,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           class="xc-book-submit"
           data-action="book"
           data-testid="book-submit"
+          disabled={submitting()}
           onClick={handleSubmit}
         >
           {submitting() ? t('submitting') : t('submit')}

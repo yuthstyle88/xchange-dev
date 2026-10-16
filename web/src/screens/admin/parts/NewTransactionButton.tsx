@@ -21,9 +21,12 @@ export function NewTransactionButton(
   const t = screenT('admin.parts', { th, en });
   const [readError, setReadError] = createSignal<string | null>(null);
   let reading = false;
+  let readSeq = 0;
 
   createEffect(() => {
     props.branch;
+    readSeq += 1;
+    reading = false;
     setReadError(null);
   });
 
@@ -32,6 +35,8 @@ export function NewTransactionButton(
       return;
     }
 
+    const clickedBranch = props.branch;
+    const seq = ++readSeq;
     reading = true;
     setReadError(null);
 
@@ -39,7 +44,11 @@ export function NewTransactionButton(
       const res = await props.api.view<{
         shiftOpen: boolean;
         deskUrl: string;
-      }>('admin_shift_state', { branch: props.branch });
+      }>('admin_shift_state', { branch: clickedBranch });
+
+      if (seq !== readSeq || props.branch !== clickedBranch) {
+        return;
+      }
 
       if (!res.data?.shiftOpen) {
         toast(t('openShiftFirst'));
@@ -61,9 +70,14 @@ export function NewTransactionButton(
         ));
       }
     } catch (err: unknown) {
+      if (seq !== readSeq || props.branch !== clickedBranch) {
+        return;
+      }
       setReadError(wordedError(err));
     } finally {
-      reading = false;
+      if (seq === readSeq) {
+        reading = false;
+      }
     }
   }
 

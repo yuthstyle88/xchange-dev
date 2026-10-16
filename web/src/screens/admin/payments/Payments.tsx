@@ -135,6 +135,11 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   const loadData = async (branch: string, since?: number) => {
     const seq = ++loadSeq;
     const stale = () => seq !== loadSeq || branch !== displayedBranch();
+    if (data() && data()!.branchId !== branch) {
+      setData(null);
+      setVersion(null);
+      setEdits(null);
+    }
     setLoading(true);
     setError(null);
     try {

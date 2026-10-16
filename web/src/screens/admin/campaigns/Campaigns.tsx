@@ -198,6 +198,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [campaignDetail, setCampaignDetail] = createSignal<CampaignDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = createSignal(false);
   const [detailError, setDetailError] = createSignal<string | null>(null);
+  // #2441: id of the campaign whose detail fills the form; null until its read answers.
+  const [loadedDetailId, setLoadedDetailId] = createSignal<string | null>(null);
 
   // Detail Form inputs
   const [formName, setFormName] = createSignal('');
@@ -216,6 +218,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
   // Issued coupons from couponIssue
   const [issuedCoupons, setIssuedCoupons] = createSignal<IssuedCouponDto[] | null>(null);
+
+  // #2426: true while a campaign write is in flight; blocks a second write (reads stay unblocked).
+  const [writing, setWriting] = createSignal(false);
 
   let readingList = 0;
   async function loadList(branch: string | undefined, from: string, to: string) {
@@ -254,6 +259,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       if (mine !== readingDetail) return;
       const detail = res.data?.campaign ?? null;
       setCampaignDetail(detail);
+      setLoadedDetailId(detail ? id : null);
 
       if (detail) {
         const v = detail.versions[0];
@@ -286,6 +292,27 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  // #2441: forget the shown campaign so its values can never be shown or sent for another one.
+  // Bumping `readingDetail` drops any detail read still in flight.
+  function resetDetailForm(): void {
+    readingDetail++;
+    setLoadingDetail(false);
+    setCampaignDetail(null);
+    setLoadedDetailId(null);
+    setFormName('');
+    setFormBudgetThb('');
+    setFormStartsAt('');
+    setFormEndsAt('');
+    setFormStackGroup('DEFAULT');
+    setFormPriority('0');
+    setFormBranches([]);
+    setIsEditedAfterSimulation(false);
+    setCouponRuleId('');
+    setCouponCount('1');
+    setCouponExpiresAt('');
+    setIssuedCoupons(null);
+  }
+
   let lastBranch: string | undefined = undefined;
   createEffect(() => {
     if (props.shown && !props.shown()) return;
@@ -293,7 +320,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const p = props.period();
     if (lastBranch !== undefined && branch !== lastBranch) {
       setSelectedCampaignId(null);
-      setCampaignDetail(null);
+      resetDetailForm();
       setCampaignsList([]);
     }
     lastBranch = branch;
@@ -330,12 +357,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
   function openCampaign(campaignId: string) {
     setIsCreating(false);
+    resetDetailForm();
     setSelectedCampaignId(campaignId);
-    setIssuedCoupons(null);
-    setCouponCount('1');
     resetWrites();
     void loadCampaignDetail(campaignId, false);
   }
+
+  // #2441: Save / Issue coupons only send once the selected campaign's own detail is loaded.
+  const detailReady = () => {
+    const id = selectedCampaignId();
+    return id !== null && loadedDetailId() === id && campaignDetail() !== null;
+  };
 
   function handleInputEdit(setter: (val: string) => void, val: string) {
     setter(val);
@@ -363,6 +395,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       priority,
       branches,
     };
+    if (writing()) return;
+    setWriting(true);
     setCreateError(null);
     try {
       const res = await createWrite.send(body);
@@ -374,12 +408,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       setCreateError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
+  // #2438: a write's answer applies only while the campaign it was sent for is still shown.
+  const stillShowing = (campaignId: string) => selectedCampaignId() === campaignId;
+
   async function handleSave() {
     const campaignId = selectedCampaignId();
-    if (!campaignId) return;
+    if (!campaignId || !detailReady()) return;
     const priority = parseInteger(formPriority());
     if (priority === null) {
       setDetailError(t('error.validationFailed'));
@@ -400,16 +439,22 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       priority,
       branches,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await saveWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       setIsEditedAfterSimulation(false);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadCampaignDetail(campaignId, true);
       }
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -420,13 +465,19 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       campaignId,
       scenarios: [],
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await simulateWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       setIsEditedAfterSimulation(false);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -436,12 +487,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignSubmitInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await submitWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -451,12 +508,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignPauseInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await pauseWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -466,12 +529,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignResumeInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await resumeWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -481,18 +550,24 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignVersionNewInput = {
       campaignId,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       await newVersionWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleIssueCoupons() {
     const campaignId = selectedCampaignId();
-    if (!campaignId) return;
+    if (!campaignId || !detailReady()) return;
     const count = parseInteger(couponCount());
     if (count === null || count < 1) {
       setDetailError(t('error.validationFailed'));
@@ -505,12 +580,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       count,
       expiresAt,
     };
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
       const res = await issueCouponsWriteFor(campaignId).send(body);
+      if (!stillShowing(campaignId)) return;
       setIssuedCoupons(res?.coupons ?? []);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -626,6 +707,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-primary"
+                  disabled={writing()}
                   onClick={handleCreate}
                 >
                   {t('create')}
@@ -753,8 +835,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 class="xc-btn-secondary"
                 onClick={() => {
                   setSelectedCampaignId(null);
-                  setCampaignDetail(null);
-                  setIssuedCoupons(null);
+                  resetDetailForm();
                   void loadList(props.branch?.(), props.period().from, props.period().to);
                 }}
               >
@@ -772,6 +853,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-primary"
+                disabled={writing() || !detailReady()}
                 onClick={handleSave}
               >
                 {t('save')}
@@ -780,6 +862,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-secondary"
+                disabled={writing()}
                 onClick={handleSimulate}
               >
                 {t('simulate')}
@@ -788,7 +871,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-success"
-                disabled={isSubmitDisabled()}
+                disabled={writing() || isSubmitDisabled()}
                 onClick={handleSubmit}
               >
                 {t('submit')}
@@ -798,6 +881,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-warning"
+                  disabled={writing()}
                   onClick={handlePause}
                 >
                   {t('pause')}
@@ -808,6 +892,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-success"
+                  disabled={writing()}
                   onClick={handleResume}
                 >
                   {t('resume')}
@@ -818,6 +903,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-secondary"
+                  disabled={writing()}
                   onClick={handleNewVersion}
                 >
                   {t('newVersion')}
@@ -965,6 +1051,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="xc-btn-secondary"
+              disabled={writing() || !detailReady()}
               onClick={handleIssueCoupons}
             >
               {t('issueCoupons')}

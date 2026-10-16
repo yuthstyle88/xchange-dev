@@ -131,12 +131,16 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     }
   }
 
+  let pollGen = 0;
+
   const wrappedClient: Pick<ApiClient, 'view'> = {
     view: async <T,>(name: string, params?: ViewParams): Promise<ViewAnswer<T>> => {
+      const myGen = pollGen;
       let res: ViewAnswer<T>;
       try {
         res = await props.api.view<T>(name, params);
       } catch (err: unknown) {
+        if (myGen !== pollGen) throw err;
         const msg = wordedError(err);
         failedViews.delete(name);
         failedViews.set(name, msg);
@@ -145,6 +149,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         markFirstReadDone(name);
         throw err;
       }
+      if (myGen !== pollGen) return res;
       if (res.changed && res.data !== undefined) {
         if (name === 'devices') {
           const ov = res.data as DevicesOverview;
@@ -191,6 +196,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   async function initBranch(branch: string, isBranchSwitch = false): Promise<void> {
+    pollGen += 1;
     devicesPoller?.stop();
     jobsPoller?.stop();
     eventsPoller?.stop();
