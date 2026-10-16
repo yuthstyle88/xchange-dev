@@ -118,12 +118,7 @@ impl CommandAction for BookingConfirm {
                 BookingError::NotFound => {
                     V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
                 }
-                other => V3Error::new(
-                    "badRequest",
-                    None,
-                    other.to_string(),
-                    StatusCode::BAD_REQUEST,
-                ),
+                other => V3Error::from(other),
             })?;
 
         Ok(BookingConfirmOutput {

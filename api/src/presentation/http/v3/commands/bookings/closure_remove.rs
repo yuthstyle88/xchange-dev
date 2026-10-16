@@ -72,14 +72,7 @@ impl CommandAction for ClosureRemove {
             .slot_service
             .remove_closure_in(tx, &branch, input.date)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }
