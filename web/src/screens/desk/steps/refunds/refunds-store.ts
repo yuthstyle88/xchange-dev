@@ -37,12 +37,17 @@ export interface RefundsStore {
 
 export function createRefundsStore(api: ApiClient): RefundsStore {
   const [rows, setRows] = createSignal<DeskRefundRow[]>([]);
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpenSignal] = createSignal(false);
   const [lastPostedDoc, setLastPostedDoc] = createSignal<string | null>(null);
   const [postError, setPostError] = createSignal<string | null>(null);
   const [canRetry, setCanRetry] = createSignal(false);
   const [posting, setPosting] = createSignal(false);
   const [confirmingId, setConfirmingId] = createSignal<string | null>(null);
+
+  function setOpen(v: boolean): void {
+    if (!v) setLastPostedDoc(null);
+    setOpenSignal(v);
+  }
 
   let currentPoster: Poster | null = null;
   let currentPostingId: string | null = null;
@@ -62,6 +67,7 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
   }
 
   async function execute(poster: Poster, id: string): Promise<void> {
+    setLastPostedDoc(null);
     setPostError(null);
     setCanRetry(false);
     setPosting(true);
