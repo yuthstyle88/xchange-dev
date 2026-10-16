@@ -67,7 +67,7 @@ impl BenefitRedeemer {
             rule_id,
             version_id,
             coupon_id,
-            _cust_id,
+            cust_id,
             amount_thb,
             mut status,
             mut is_expired,
@@ -175,7 +175,7 @@ impl BenefitRedeemer {
                 .execute(&mut **tx)
                 .await?;
 
-                // 4. Check max_uses and available budget
+                // 4. Check max_uses, the per-customer cap and available budget
                 let (budget_thb, max_uses): (Decimal, Option<i32>) = sqlx::query_as(
                     "SELECT budget_thb, max_uses FROM campaign_versions WHERE id = $1",
                 )
@@ -197,6 +197,14 @@ impl BenefitRedeemer {
                     if (used_count as i64 + live_count) >= max as i64 {
                         return Err(BenefitError::BenefitLimitReached);
                     }
+                }
+
+                if self
+                    .ledger
+                    .per_customer_cap_reached_in(tx, rule_id, cust_id.as_deref())
+                    .await?
+                {
+                    return Err(BenefitError::BenefitLimitReached);
                 }
 
                 let available = budget_thb - consumed_thb - live_reservations_sum;
