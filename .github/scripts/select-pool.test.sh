@@ -15,7 +15,7 @@ if [ ! -x "$SELECT" ]; then
 fi
 
 DELL='["self-hosted","Linux","X64","dell-org-ci"]'
-STUDIO='["self-hosted","macOS","ARM64","mac-studio"]'
+STUDIO='["self-hosted","macOS","ARM64","heavy-build"]'
 
 fail=0
 dell=0; studio=0
@@ -25,7 +25,7 @@ for slot in $(seq 0 11); do
   jobs=$(printf '%s\n' "$out" | sed -n 's/^cargo_jobs=//p')
   case "$pool" in
     "$DELL")   dell=$((dell+1));     want_jobs=12 ;;
-    "$STUDIO") studio=$((studio+1)); want_jobs=4 ;;
+    "$STUDIO") studio=$((studio+1)); want_jobs=8 ;;
     *) echo "FAIL: slot $slot gave unknown pool '$pool'"; fail=1; continue ;;
   esac
   if [ "$jobs" != "$want_jobs" ]; then
@@ -33,10 +33,11 @@ for slot in $(seq 0 11); do
   fi
 done
 
-# Row 1: weights over one 12-slot cycle are Dell 6, Studio 6. Warut is out of the pool
+# Row 1: weights over one 12-slot cycle are Dell 8, heavy Macs 4 (#2574: 4 dell-org-ci runners vs 2 runners labelled
+#        heavy-build: 1 on Mac Studio, 1 on the MacBook; owner: one heavy build at a time per Mac). Warut is out of the pool
 # (owner 2026-10-16: "ย้าย ที่รันใน warut ไปรันที่ อื่นแทน"; measured load 99 on 10 cores).
-[ "$dell" = 6 ]   || { echo "FAIL: Dell got $dell of 12 slots, want 6"; fail=1; }
-[ "$studio" = 6 ] || { echo "FAIL: Studio got $studio of 12 slots, want 6"; fail=1; }
+[ "$dell" = 8 ]   || { echo "FAIL: Dell got $dell of 12 slots, want 8"; fail=1; }
+[ "$studio" = 4 ] || { echo "FAIL: heavy Macs got $studio of 12 slots, want 4"; fail=1; }
 if grep -q "warut-mbp" "$SELECT"; then echo "FAIL: select-pool.sh still names warut-mbp"; fail=1; fi
 
 # Row 2: a rerun (RUN_ATTEMPT+1) moves to the next slot, so it can land on another pool.
@@ -53,8 +54,8 @@ c=$(env -u RUN_ID RUN_ATTEMPT=1 "$SELECT" | sed -n 's/^runs_on=//p')
 grep -q 'select-pool.sh' "$API_WORKFLOW" || { echo "FAIL: api.yml does not call select-pool.sh"; fail=1; }
 grep -q 'select-pool.test.sh' "$API_WORKFLOW" || { echo "FAIL: api.yml does not run select-pool.test.sh in the changes job"; fail=1; }
 if grep -qE 'slot=\$\(\( *\(RUN_ID' "$API_WORKFLOW"; then echo "FAIL: api.yml still has the inline slot arithmetic"; fail=1; fi
-grep -qE 'CARGO_BUILD_JOBS: *\$\{\{ *needs\.changes\.outputs\.cargo_jobs' "$API_WORKFLOW" \
-  || { echo "FAIL: test job CARGO_BUILD_JOBS is not taken from needs.changes.outputs.cargo_jobs"; fail=1; }
+grep -qE 'CARGO_JOBS_CAP: *\$\{\{ *needs\.changes\.outputs\.cargo_jobs' "$API_WORKFLOW" \
+  || { echo "FAIL: test job CARGO_JOBS_CAP is not taken from needs.changes.outputs.cargo_jobs"; fail=1; }
 
 if [ "$fail" = 0 ]; then echo "select-pool: all rows pass"; fi
 exit $fail
