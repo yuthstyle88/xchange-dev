@@ -8,6 +8,7 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminBranchProfileData } from '../../../shared/api/generated/admin_branches_profile';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
@@ -37,6 +38,11 @@ interface DayHoursState {
 
 export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveProfileWrite = keyedWrite<unknown, AdminBranchProfileData>(
+    api,
+    'PUT',
+    '/api/branches/profile',
+  );
 
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal<string>('');
@@ -196,12 +202,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     };
 
     try {
-      const res = await api.command<typeof payload, AdminBranchProfileData>(
-        'PUT',
-        '/api/branches/profile',
-        payload,
-        crypto.randomUUID(),
-      );
+      const res = await saveProfileWrite.send(payload);
       setProfile(res);
       setSuccess(t('saved'));
     } catch (err: unknown) {

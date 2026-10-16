@@ -1,6 +1,7 @@
 // SP-3 (#1617): Admin Starting Prices screen (design `docs/design/blueprint/rates.md` §12.6, §12.7, §12.10 SP-3).
 import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   OrgStartingPriceSaveInput,
   OrgStartingPriceSaveOutput,
@@ -176,8 +177,11 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
     setAddCode('');
   }
 
-  // Idempotency-Key retention
-  let pendingKey: { bodyString: string; key: string } | null = null;
+  const saveWrite = keyedWrite<OrgStartingPriceSaveInput, OrgStartingPriceSaveOutput>(
+    api,
+    'POST',
+    '/api/v3/commands/org_starting_price_save',
+  );
 
   async function handleSave(e: Event) {
     e.preventDefault();
@@ -276,31 +280,16 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
       prices: changedPrices,
       reason: trimmedReason,
     };
-    const bodyString = JSON.stringify(body);
-    if (!pendingKey || pendingKey.bodyString !== bodyString) {
-      pendingKey = {
-        bodyString,
-        key: crypto.randomUUID(),
-      };
-    }
-    const key = pendingKey.key;
     setBusy(true);
 
     try {
-      const res = await api.command<OrgStartingPriceSaveInput, OrgStartingPriceSaveOutput>(
-        'POST',
-        '/api/v3/commands/org_starting_price_save',
-        body,
-        key,
-      );
-      pendingKey = null;
+      const res = await saveWrite.send(body);
       toast(t('saved'));
       setAddedCurrencies([]);
       setUnpriced(res?.unpriced ?? []);
       await loadView(true);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status < 500) {
-        pendingKey = null;
         if (err.field === 'currency') {
           const rErrors: Record<string, string> = {};
           for (const p of changedPrices) {

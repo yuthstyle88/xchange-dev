@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
   RateDraftDetailData,
@@ -81,6 +82,22 @@ function isDecimalLessThan(
 
 export function Rates(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const writes = new Map<string, { send(body: unknown): Promise<unknown>; reset(): void }>();
+
+  function writeFor<B, R>(actionId: string, method: string, path: string): { send(body: B): Promise<R>; reset(): void } {
+    let w = writes.get(actionId);
+    if (!w) {
+      w = keyedWrite<unknown, unknown>(client, method, path);
+      writes.set(actionId, w);
+    }
+    return w as { send(body: B): Promise<R>; reset(): void };
+  }
+
+  const savePolicyWrite = keyedWrite<RatePolicySaveInput & { branch: string }, RatePolicySaveOutput>(
+    client,
+    'POST',
+    '/api/rate-policies',
+  );
 
   const [pubData, setPubData] = createSignal<PublishedRatesData | null>(null);
   const [pubError, setPubError] = createSignal<string | null>(null);
@@ -96,7 +113,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
   const [valueTiers, setValueTiers] = createSignal<TierFormRow[]>(emptyValueTiers());
   const [sharpMoveAlertPct, setSharpMoveAlertPct] = createSignal<string>('');
-  let savePolicyKey: string | null = null;
 
   const [refData, setRefData] = createSignal<RatesReferenceData | null>(null);
   const [refVersion, setRefVersion] = createSignal<number | undefined>(undefined);
@@ -209,12 +225,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               };
             }),
           );
-          savePolicyKey = null;
+          savePolicyWrite.reset();
         } else {
           setValueTiersOn(false);
           setValueTiers(emptyValueTiers());
           setSharpMoveAlertPct('');
-          savePolicyKey = null;
+          savePolicyWrite.reset();
         }
       }
       setPolicyError(null);
@@ -259,7 +275,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       setValueTiersOn(false);
       setValueTiers(emptyValueTiers());
       setSharpMoveAlertPct('');
-      savePolicyKey = null;
+      savePolicyWrite.reset();
       void readAll(branch);
       return;
     }
@@ -317,12 +333,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const handleNewDraft = async () => {
     const branch = props.branch();
     try {
-      await client.command(
-        'POST',
-        '/api/rate-references/fetch',
-        { branch },
-        crypto.randomUUID(),
-      );
+      await writeFor('fetchReference', 'POST', '/api/rate-references/fetch').send({ branch });
 
       const curPub = pubData();
       const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
@@ -334,12 +345,11 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         reason: null,
       }));
 
-      const createRes = await client.command<unknown, { id: string; version: number; status: string }>(
+      const createRes = await writeFor<unknown, { id: string; version: number; status: string }>(
+        'createDraft',
         'POST',
         '/api/rate-drafts',
-        { branch, lines },
-        crypto.randomUUID(),
-      );
+      ).send({ branch, lines });
 
       const detailRes = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
@@ -361,19 +371,14 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!draft) return;
     const branch = props.branch();
     try {
-      const res = await client.command<
+      const res = await writeFor<
         unknown,
         {
           id: string;
           isInBound: boolean;
           outOfBound: OutOfBoundItem[];
         }
-      >(
-        'POST',
-        `/api/rate-drafts/${draft.id}/simulate`,
-        { branch },
-        crypto.randomUUID(),
-      );
+      >('simulateDraft:' + draft.id, 'POST', `/api/rate-drafts/${draft.id}/simulate`).send({ branch });
       setSimulateResult(res);
     } catch (err: unknown) {
       toast(wordedError(err));
@@ -385,12 +390,11 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!draft) return;
     const branch = props.branch();
     try {
-      const res = await client.command<unknown, { requestId?: string; status: string }>(
+      const res = await writeFor<unknown, { requestId?: string; status: string }>(
+        'submitDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/submit`,
-        { branch },
-        crypto.randomUUID(),
-      );
+      ).send({ branch });
       if (res?.status) {
         setDraftDetail((prev) =>
           prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
@@ -407,12 +411,11 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     const curVersion = pubData()?.publication?.version ?? null;
     try {
-      await client.command<unknown, { id: string; version: number }>(
+      await writeFor<unknown, { id: string; version: number }>(
+        'publishDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/publish`,
-        { branch, expectedVersion: curVersion },
-        crypto.randomUUID(),
-      );
+      ).send({ branch, expectedVersion: curVersion });
       await readPublished(branch);
       await readDrafts(branch);
     } catch (err: unknown) {
@@ -428,21 +431,16 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const policy = policyData()?.policy;
     if (!policy) return;
     try {
-      await client.command(
-        'POST',
-        '/api/rate-policies',
-        {
-          branch,
-          buyAdjustPct: adjustBuyPct(),
-          sellAdjustPct: adjustSellPct(),
-          guards: policy.guards,
-          maxReferenceAgeHours: policy.maxReferenceAgeHours,
-          onStale: policy.onStale,
-          staleLimitThb: policy.staleLimitThb,
-          reason: policy.reason || t('adjustAll'),
-        },
-        crypto.randomUUID(),
-      );
+      await writeFor('adjustPolicy', 'POST', '/api/rate-policies').send({
+        branch,
+        buyAdjustPct: adjustBuyPct(),
+        sellAdjustPct: adjustSellPct(),
+        guards: policy.guards,
+        maxReferenceAgeHours: policy.maxReferenceAgeHours,
+        onStale: policy.onStale,
+        staleLimitThb: policy.staleLimitThb,
+        reason: policy.reason || t('adjustAll'),
+      });
 
       const putLines = lines.map((l: RateDraftLineDto) => ({
         currency: l.currency,
@@ -453,16 +451,11 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         reason: l.reason,
       }));
 
-      await client.command(
-        'PUT',
-        `/api/rate-drafts/${draft.id}`,
-        {
-          branch,
-          expectedVersion: draft.version,
-          lines: putLines,
-        },
-        crypto.randomUUID(),
-      );
+      await writeFor('saveDraft:' + draft.id, 'PUT', `/api/rate-drafts/${draft.id}`).send({
+        branch,
+        expectedVersion: draft.version,
+        lines: putLines,
+      });
 
       const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
@@ -513,7 +506,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     field: 'upperInclusiveThb' | 'buyMarginPct' | 'sellMarginPct',
     value: string,
   ) => {
-    savePolicyKey = null;
     setValueTiers((prev) =>
       prev.map((row) => (row.tierNo === tierNo ? { ...row, [field]: value } : row)),
     );
@@ -526,9 +518,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (!areValueTiersValid()) return;
 
     const branch = props.branch();
-    if (!savePolicyKey) {
-      savePolicyKey = crypto.randomUUID();
-    }
     const rows = valueTiers();
     const hasAnyTierInput = rows.some(
       (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
@@ -559,13 +548,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     };
 
     try {
-      await client.command<RatePolicySaveInput & { branch: string }, RatePolicySaveOutput>(
-        'POST',
-        '/api/rate-policies',
-        payload,
-        savePolicyKey,
-      );
-      savePolicyKey = null;
+      await savePolicyWrite.send(payload);
     } catch (err: unknown) {
       toast(wordedError(err));
     }
@@ -666,7 +649,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               checked={valueTiersOn()}
               disabled={!canSavePolicy()}
               onChange={(e) => {
-                savePolicyKey = null;
                 setValueTiersOn(e.currentTarget.checked);
               }}
             />
@@ -683,7 +665,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               value={sharpMoveAlertPct()}
               disabled={!canSavePolicy()}
               onInput={(e) => {
-                savePolicyKey = null;
                 setSharpMoveAlertPct(e.currentTarget.value);
               }}
             />

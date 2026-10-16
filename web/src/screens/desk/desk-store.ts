@@ -9,6 +9,7 @@ import type { QuotesCommandInput } from '../../shared/api/generated/quotes';
 import { deskPathFor, type DeskPath } from './desk-path';
 import { sharedApi, sharedSession } from '../../shared/session/session';
 import { screenT } from '../../shared/i18n';
+import { wordedError } from '../../shared/i18n/worded-error';
 import * as screenI18n from './i18n';
 import { createSaver, newKey, type SaveAnswer } from './save';
 
@@ -211,7 +212,7 @@ export function createDeskStore(
       }
     })
     .catch((e: unknown) => {
-      setConfigError(e instanceof ApiError ? e.message : t('configFailed'));
+      setConfigError(wordedError(e));
     });
 
   // ── the quote (D-4, D-5) ──

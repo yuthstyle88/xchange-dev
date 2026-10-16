@@ -1,7 +1,10 @@
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyTransactionItem, MyTransactionsData } from '../../../shared/api/generated/my_transactions';
-import { screenT } from '../../../shared/i18n';
+import { lang, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
+import * as shellTable from '../_shell/i18n';
 import { en, th, zh } from './i18n';
 import './history.css';
 
@@ -9,38 +12,55 @@ export type TransactionRow = MyTransactionItem;
 
 export interface HistoryScreenProps {
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  navigate?: (url: string) => void;
 }
 
 export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
   const t = screenT('customer.history', { th, en, zh });
   const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal(false);
+  const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [unauthorized, setUnauthorized] = createSignal(false);
   const [transactions, setTransactions] = createSignal<TransactionRow[]>([]);
 
-  const fetchFn = props.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init));
+  const api = new ApiClient(props.fetch);
+
+  const routeToSignIn = () => {
+    if (props.navigate) {
+      props.navigate('/app/sign-in');
+    } else if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+      try {
+        window.location.assign('/app/sign-in');
+      } catch {
+        // ignore navigation error in non-browser test runners
+      }
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
-    setError(false);
+    setErrorMsg(null);
+    setUnauthorized(false);
     try {
-      const res = await fetchFn('/api/v3/views/my_transactions');
-      if (!res.ok) {
-        setError(true);
-        setLoading(false);
+      const answer = await api.view<MyTransactionsData>('my_transactions');
+      const items = answer.data?.transactions ?? [];
+      setTransactions(items);
+    } catch (err: unknown) {
+      if (
+        (err instanceof ApiError && err.status === 401) ||
+        (typeof err === 'object' && err !== null && 'status' in err && (err as { status: unknown }).status === 401)
+      ) {
+        setUnauthorized(true);
+        routeToSignIn();
         return;
       }
-      const json = (await res.json()) as { data?: MyTransactionsData };
-      const items = json?.data?.transactions ?? [];
-      setTransactions(items);
-      setLoading(false);
-    } catch {
-      setError(true);
+      setErrorMsg(wordedError(err));
+    } finally {
       setLoading(false);
     }
   };
 
   onMount(() => {
-    loadData();
+    void loadData();
   });
 
   return (
@@ -51,20 +71,29 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
         </div>
       </Show>
 
-      <Show when={!loading() && error()}>
-        <div class="xc-history-error">
-          <p>{t('loadFailed')}</p>
-          <button type="button" class="xc-history-retry-btn" onClick={loadData}>
-            {t('retry')}
-          </button>
-        </div>
+      <Show when={!loading() && unauthorized()}>
+        <a class="xc-customer-signin" href="/app/sign-in">
+          {shellTable[lang()].signIn}
+        </a>
       </Show>
 
-      <Show when={!loading() && !error() && transactions().length === 0}>
+      <Show when={!loading() && errorMsg()}>
+        {(msg) => (
+          <div class="xc-history-error" role="alert">
+            <p>{t('loadFailed')}</p>
+            <p>{msg()}</p>
+            <button type="button" class="xc-history-retry-btn" onClick={loadData}>
+              {t('retry')}
+            </button>
+          </div>
+        )}
+      </Show>
+
+      <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length === 0}>
         <div class="xc-history-empty">{t('empty')}</div>
       </Show>
 
-      <Show when={!loading() && !error() && transactions().length > 0}>
+      <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length > 0}>
         <div class="xc-history-list">
           <For each={transactions()}>
             {(tx) => (

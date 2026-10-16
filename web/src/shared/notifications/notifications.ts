@@ -1,5 +1,6 @@
 import { createEffect, createSignal, type Accessor } from 'solid-js';
 import { ApiClient } from '../api/client';
+import { keyedWrite } from '../api/keyed-write';
 import type {
   MyNotificationItem,
   MyNotificationsData,
@@ -41,6 +42,17 @@ export function createNotifications(
   const [unreadOnly, setUnreadOnly] = createSignal(opts.initialUnreadOnly ?? false);
   const [markingIds, setMarkingIds] = createSignal<Set<string>>(new Set());
   const [markingAll, setMarkingAll] = createSignal(false);
+
+  const markOneWrite = keyedWrite<{ id: string }, void>(
+    api,
+    'POST',
+    (b) => `/api/app/notifications/${encodeURIComponent(b.id)}/read`,
+  );
+  const markAllWrite = keyedWrite<Record<string, never>, void>(
+    api,
+    'POST',
+    '/api/app/notifications/read-all',
+  );
 
   const load = async (filter?: MyNotificationsFilter, loadOpts?: { silent?: boolean }) => {
     if (!loadOpts?.silent) {
@@ -94,7 +106,7 @@ export function createNotifications(
     }
 
     try {
-      await api.command('POST', `/api/app/notifications/${encodeURIComponent(id)}/read`, { id }, crypto.randomUUID());
+      await markOneWrite.send({ id });
       await refetch({ silent: true });
     } catch (e) {
       if (opts.optimistic && prevItems) {
@@ -121,7 +133,7 @@ export function createNotifications(
     }
 
     try {
-      await api.command('POST', '/api/app/notifications/read-all', {}, crypto.randomUUID());
+      await markAllWrite.send({});
       await refetch({ silent: true });
     } catch (e) {
       if (opts.optimistic && prevItems) {
