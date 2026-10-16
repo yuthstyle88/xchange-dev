@@ -513,6 +513,7 @@ export function VerificationScreen(): JSX.Element {
           resetDecisionInputs();
         }
         setSelectedCase(updated);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
       } finally {
@@ -584,6 +585,7 @@ export function VerificationScreen(): JSX.Element {
         setRetryFn(null);
         resetDecisionInputs();
         setPendingReasonAction(null);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
       } finally {
