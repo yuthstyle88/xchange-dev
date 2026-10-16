@@ -142,10 +142,14 @@ export function createRefundsStore(api: ApiClient): RefundsStore {
         filter: { number: doc },
       });
       const html = res.data?.receipt?.html;
-      if (html) {
-        const doPrint = ReceiptFrame.print;
-        await doPrint(html);
+      if (!html) {
+        printError = t('error.receiptMissing');
+        setPostError(printError);
+        setCanRetry(false);
+        return;
       }
+      const doPrint = ReceiptFrame.print;
+      await doPrint(html);
       if (printError !== null && postError() === printError) setPostError(null);
       printError = null;
     } catch (err) {
