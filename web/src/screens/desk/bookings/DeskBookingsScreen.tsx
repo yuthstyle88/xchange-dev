@@ -293,7 +293,9 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   function openCancel(bookingId: string) {
-    if (activeCancelId !== bookingId) {
+    // #2475: while a write is in flight or its Retry is offered, keep its key so
+    // that Retry replays it; submitCancel still resets when another booking is sent.
+    if (!writing() && !retryAction() && activeCancelId !== bookingId) {
       cancelWrite.reset();
       activeCancelId = bookingId;
     }
@@ -357,7 +359,8 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   function openReschedule(bookingId: string) {
-    if (activeRescheduleId !== bookingId) {
+    // #2475: see openCancel.
+    if (!writing() && !retryAction() && activeRescheduleId !== bookingId) {
       rescheduleWrite.reset();
       activeRescheduleId = bookingId;
     }
