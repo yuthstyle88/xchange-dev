@@ -23,7 +23,11 @@ export function keyedWrite<B, R>(
         }
         return result;
       } catch (err: unknown) {
-        if (err instanceof ApiError && err.status < 500) {
+        // 409 idempotencyConflict means the first request with this key is still running,
+        // not a refusal: keep the key so the retry gets the server's replay (#2437).
+        const stillRunning =
+          err instanceof ApiError && err.status === 409 && err.code === 'idempotencyConflict';
+        if (err instanceof ApiError && err.status < 500 && !stillRunning) {
           if (pending.get(serialized) === key) {
             pending.delete(serialized);
           }
