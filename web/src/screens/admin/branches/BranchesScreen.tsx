@@ -243,7 +243,11 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
             onChange={(e) => setSelectedBranch(e.currentTarget.value)}
           >
             <For each={branches()}>
-              {(b) => <option value={b.id}>{b.name} ({b.id})</option>}
+              {(b) => (
+                <option value={b.id} selected={b.id === selectedBranch()}>
+                  {b.name} ({b.id})
+                </option>
+              )}
             </For>
           </select>
         </div>
