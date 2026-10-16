@@ -76,6 +76,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   const [selectedTx, setSelectedTx] = createSignal<string>('');
   const [reason, setReason] = createSignal<string>('');
   const [busy, setBusy] = createSignal<boolean>(false);
+  const [loadingMoreEvents, setLoadingMoreEvents] = createSignal<boolean>(false);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = createSignal<boolean>(false);
   const [message, setMessage] = createSignal<string>('');
 
   let selectRef: HTMLSelectElement | undefined;
@@ -445,31 +447,34 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   async function handleLoadMoreTransactions(): Promise<void> {
-    if (busy()) return;
+    if (busy() || loadingMoreTransactions()) return;
     const current = transactions() ?? [];
     const last = current[current.length - 1];
     if (!last) return;
+    setLoadingMoreTransactions(true);
     try {
       const older = await props.api.page<DeviceTransactionRow>('device_transactions', {
         branch: effectiveBranch(),
         before: last.id,
         limit: 100,
       });
-      const updated = [...current, ...older];
-      setTransactions(updated);
-      if (selectedTx() && !updated.some((item) => item.id === selectedTx())) {
+      setTransactions((prev) => [...(prev ?? []), ...older]);
+      if (selectedTx() && !(transactions() ?? []).some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
     } catch (err: unknown) {
       setNonViewMessage(wordedError(err));
+    } finally {
+      setLoadingMoreTransactions(false);
     }
   }
 
   async function handleLoadMoreEvents(): Promise<void> {
-    if (busy()) return;
+    if (busy() || loadingMoreEvents()) return;
     const current = displayedEvents();
     const last = current[current.length - 1];
     if (!last) return;
+    setLoadingMoreEvents(true);
     try {
       const older = await props.api.page<DeviceEventRow>('device_events', {
         branch: effectiveBranch(),
@@ -479,6 +484,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       setOlderEvents((prev) => [...prev, ...older]);
     } catch (err: unknown) {
       setNonViewMessage(wordedError(err));
+    } finally {
+      setLoadingMoreEvents(false);
     }
   }
 
@@ -635,7 +642,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               <button
                 type="button"
                 onClick={handleLoadMoreTransactions}
-                disabled={busy()}
+                disabled={busy() || loadingMoreTransactions()}
               >
                 {t('loadMore')}
               </button>
@@ -741,7 +748,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               <button
                 type="button"
                 onClick={handleLoadMoreEvents}
-                disabled={busy()}
+                disabled={busy() || loadingMoreEvents()}
               >
                 {t('loadMore')}
               </button>
