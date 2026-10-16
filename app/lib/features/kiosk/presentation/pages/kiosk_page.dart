@@ -197,6 +197,13 @@ class _HeaderState extends ConsumerState<_Header> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<KioskState>(kioskControllerProvider, (prev, next) {
+      if (prev != null &&
+          (prev.languageCode != next.languageCode ||
+              prev.screen != next.screen)) {
+        setState(_search.clear);
+      }
+    });
     final s = ref.watch(kioskControllerProvider);
     final c = ref.read(kioskControllerProvider.notifier);
     final l = ref.watch(kioskTextsProvider);
