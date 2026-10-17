@@ -320,15 +320,28 @@ impl CaseRepository for PgCaseRepository {
         submitted_at: DateTime<Utc>,
         version: i32,
     ) -> BoxFuture<'a, Result<(), CaseError>> {
+        self.update_case_submitted_with_branch(tx, case_id, submitted_at, version, None)
+    }
+
+    fn update_case_submitted_with_branch<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        case_id: Uuid,
+        submitted_at: DateTime<Utc>,
+        version: i32,
+        branch_id: Option<&'a BranchId>,
+    ) -> BoxFuture<'a, Result<(), CaseError>> {
         Box::pin(async move {
             sqlx::query(
                 "UPDATE verification_cases \
-                 SET status = 'SUBMITTED', submitted_at = $2, reviewed_by = NULL, decided_at = NULL, \
-                 decision_reason_code = NULL, version = $3, updated_at = $2 WHERE id = $1",
+                 SET status = 'SUBMITTED', branch_id = COALESCE($4, branch_id), submitted_at = $2, \
+                 reviewed_by = NULL, decided_at = NULL, decision_reason_code = NULL, version = $3, \
+                 updated_at = $2 WHERE id = $1",
             )
             .bind(case_id)
             .bind(submitted_at)
             .bind(version)
+            .bind(branch_id.map(|b| b.as_str()))
             .execute(&mut **tx)
             .await
             .map_err(|e| CaseError::Store(pos_error::AppError::Database(e)))?;

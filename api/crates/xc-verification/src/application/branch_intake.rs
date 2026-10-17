@@ -250,12 +250,17 @@ impl BranchIntake {
             }
         }
 
-        let case_to_submit = if let Some(existing) = open_case {
+        let case_to_submit = if let Some(mut existing) = open_case {
             if existing.status == CaseStatus::Submitted
                 || existing.status == CaseStatus::UnderReview
+                || existing
+                    .branch_id
+                    .as_ref()
+                    .is_some_and(|b| b != &rev_branch_id)
             {
                 return Err(BranchIntakeError::CaseLocked);
             }
+            existing.branch_id = Some(rev_branch_id.clone());
             existing
         } else {
             VerificationCase {
@@ -334,7 +339,13 @@ impl BranchIntake {
                 .await
                 .map_err(BranchIntakeError::Case)?;
             self.cases
-                .update_case_submitted(&mut tx, submitted_case.id, now, submitted_case.version)
+                .update_case_submitted_with_branch(
+                    &mut tx,
+                    submitted_case.id,
+                    now,
+                    submitted_case.version,
+                    submitted_case.branch_id.as_ref(),
+                )
                 .await
                 .map_err(BranchIntakeError::Case)?;
             submitted_case
