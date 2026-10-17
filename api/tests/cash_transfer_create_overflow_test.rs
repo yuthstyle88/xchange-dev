@@ -487,7 +487,7 @@ async fn the_largest_line_that_fits_is_still_stored_as_a_draft() {
     let who = creator(&room).await;
     let big = room.big_denomination("TEST").await;
 
-    let a = create(&room, &who, &[(big, LARGEST_FITTING_QTY)]).await;
+    let a = create(&room, &who, &[(big, "99999999")]).await;
     id_of(&a, "transferCreate of the largest line that fits");
     assert_eq!(
         a.body["status"], "DRAFT",
