@@ -163,7 +163,7 @@ fn reversal_html(
     original_number: &str,
     branch_name: &str,
     posted_at: DateTime<Utc>,
-) -> String {
+) -> AppResult<String> {
     let mut lines = String::new();
     for line in &t.lines {
         let side = match line.shop_side {
@@ -182,7 +182,10 @@ fn reversal_html(
         PaymentMethod::Cash => "เงินสด",
         _ => "ช่องทางเดิมที่ชำระ",
     };
-    format!(
+    let amount_minor = reversal.amount_thb.try_minor().map_err(|e| {
+        AppError::Internal(format!("reversal document amount_thb overflows i64: {e}"))
+    })?;
+    Ok(format!(
         "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><title>ใบกลับรายการ {number}</title>\
          <style>body{{font-family:sans-serif}}table{{border-collapse:collapse;width:100%}}\
          td,th{{border:1px solid #999;padding:4px}}.num{{text-align:right}}</style></head><body>\
@@ -201,9 +204,9 @@ fn reversal_html(
         branch = escape(branch_name),
         at = escape(&posted_at.to_rfc3339()),
         reason = escape(&reversal.reason),
-        amount = baht(i128::from(reversal.amount_thb.minor())),
+        amount = baht(i128::from(amount_minor)),
         way = escape(way),
-    )
+    ))
 }
 
 impl PostReversal {
@@ -295,17 +298,23 @@ impl PostReversal {
             .postings
             .post_in(tx, &reversed_legs(&t, id, &shift_id), None)
             .await?;
+        // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2862).
         let cost_difference_minor: i128 = posted
             .reversed
             .iter()
             .map(|r| r.difference_thb.minor())
             .sum();
+        // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2862).
         let margin_minor: i128 = t
             .lines
             .iter()
             .filter_map(|l| l.realized_margin_thb)
             .map(|m| m.minor())
             .sum();
+
+        let amount_thb_minor = reversal.amount_thb.try_minor().map_err(|e| {
+            AppError::Internal(format!("reversal facts amount_thb overflows i64: {e}"))
+        })?;
 
         let facts = PostedReversal {
             organization_id: t.organization_id,
@@ -314,7 +323,7 @@ impl PostReversal {
             customer_id: (!t.customer_id.is_empty()).then(|| t.customer_id.clone()),
             mode: t.mode,
             posted_at: now,
-            amount_thb: Decimal::new(reversal.amount_thb.minor(), 2),
+            amount_thb: Decimal::new(amount_thb_minor, 2),
         };
 
         // 3. Benefit adjustment: the Redeem-phase effects (#560's, none until it registers one).
@@ -349,7 +358,7 @@ impl PostReversal {
             )));
         };
         let number = format!("{original_number}-R2");
-        let html = reversal_html(&t, &reversal, &number, &original_number, &branch_name, now);
+        let html = reversal_html(&t, &reversal, &number, &original_number, &branch_name, now)?;
         let document_ref = self
             .files
             .store_receipt_in(tx, &reversal.branch_id, &who.id, &html, now)

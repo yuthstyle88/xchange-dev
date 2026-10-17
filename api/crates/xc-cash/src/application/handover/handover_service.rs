@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
+use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
@@ -118,6 +118,88 @@ impl HandoverService {
 
 pub const INVALID_RECEIVER: &str = "ผู้รับมอบกะไม่ถูกต้องหรือไม่มีสิทธิ์ปฏิบัติงานกะในสาขานี้";
 
+/// A person who may receive a hand-over: their valid role rows at `now` that reach `branch` (#2846, #2879).
+#[derive(Clone, Debug)]
+pub struct ReceiverCandidate {
+    pub user_id: String,
+    pub name: String,
+    pub roles: Vec<ScopedRole>,
+}
+
+/// One candidate role row: user, name, role code, branch, valid from, valid to.
+type CandidateRole = (
+    String,
+    String,
+    String,
+    Option<String>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+);
+
+/// The one loader of hand-over receivers, used by `start_in` and the `handover_receivers` view: the ACTIVE users of
+/// `organization_id` with role rows of that organisation valid at `now` (`valid_from <= now`, `valid_to` NULL or
+/// `> now`) scoped to `branch` or organisation-wide. `only = Some(id)` narrows to one user. Role codes `Role::parse`
+/// cannot read are skipped. Ordered by name, then user id. Who may receive is decided by [`may_receive`], never here.
+pub async fn receiver_candidates<'e, E: sqlx::PgExecutor<'e>>(
+    ex: E,
+    organization_id: &str,
+    branch: &BranchId,
+    only: Option<uuid::Uuid>,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<ReceiverCandidate>> {
+    let rows: Vec<CandidateRole> = sqlx::query_as(
+        "SELECT u.id::text, COALESCE(u.name, ''), r.role_code, r.branch_id, r.valid_from, r.valid_to \
+         FROM users u JOIN user_roles r ON r.user_id = u.id \
+         WHERE u.status = 'ACTIVE' \
+           AND u.organization_id::text = $1 AND r.organization_id = u.organization_id \
+           AND (r.branch_id = $2 OR r.branch_id IS NULL) \
+           AND r.valid_from <= $3 AND (r.valid_to IS NULL OR r.valid_to > $3) \
+           AND ($4::uuid IS NULL OR u.id = $4)",
+    )
+    .bind(organization_id)
+    .bind(branch.as_str())
+    .bind(now)
+    .bind(only)
+    .fetch_all(ex)
+    .await?;
+
+    let mut people: std::collections::BTreeMap<String, ReceiverCandidate> =
+        std::collections::BTreeMap::new();
+    for (user_id, name, code, role_branch, from, to) in rows {
+        let entry = people
+            .entry(user_id.clone())
+            .or_insert_with(|| ReceiverCandidate {
+                user_id,
+                name,
+                roles: Vec::new(),
+            });
+        if let Some(role) = Role::parse(&code) {
+            entry.roles.push(ScopedRole::new(
+                role,
+                role_branch.map(BranchId::new),
+                from,
+                to,
+            ));
+        }
+    }
+    let mut candidates: Vec<ReceiverCandidate> = people.into_values().collect();
+    candidates.sort_by(|a, b| (&a.name, &a.user_id).cmp(&(&b.name, &b.user_id)));
+    Ok(candidates)
+}
+
+/// The receiver rule (blueprint `cash-shift-transfer.md`): the Authorizer's answer to whether `c` holds
+/// `ShiftOperate` at `branch` of `organization_id` at `now`. No role codes: policy lives in `role_permissions.rs`.
+pub fn may_receive(
+    c: &ReceiverCandidate,
+    organization_id: &str,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+) -> bool {
+    let user = Actor::new(&c.user_id, organization_id, c.roles.clone(), None);
+    let at = Target::new(organization_id, Some(branch.clone()), None);
+    Authorizer::check(Some(&user), Permission::ShiftOperate, &at, now).is_ok()
+}
+
 /// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
 /// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
 impl HandoverService {
@@ -139,25 +221,17 @@ impl HandoverService {
 
         let receiver_uuid = uuid::Uuid::parse_str(&cmd.receiver_id)
             .map_err(|_| AppError::Validation(INVALID_RECEIVER.to_owned()))?;
-        let valid_receiver: bool = sqlx::query_scalar(
-            "SELECT EXISTS ( \
-                 SELECT 1 FROM users u \
-                 JOIN user_roles r ON r.user_id = u.id \
-                 WHERE u.id = $1 \
-                   AND u.status = 'ACTIVE' \
-                   AND u.organization_id::text = $2 \
-                   AND r.organization_id = u.organization_id \
-                   AND r.role_code IN ('TELLER', 'BRANCH_MANAGER') \
-                   AND (r.branch_id = $3 OR r.branch_id IS NULL) \
-                   AND (r.valid_to IS NULL OR r.valid_to > $4) \
-             )",
+        let candidates = receiver_candidates(
+            &mut **tx,
+            &actor.organization_id,
+            &cmd.branch,
+            Some(receiver_uuid),
+            now,
         )
-        .bind(receiver_uuid)
-        .bind(&actor.organization_id)
-        .bind(cmd.branch.as_str())
-        .bind(now)
-        .fetch_one(&mut **tx)
         .await?;
+        let valid_receiver = candidates
+            .iter()
+            .any(|c| may_receive(c, &actor.organization_id, &cmd.branch, now));
         if !valid_receiver {
             return Err(AppError::Validation(INVALID_RECEIVER.to_owned()));
         }

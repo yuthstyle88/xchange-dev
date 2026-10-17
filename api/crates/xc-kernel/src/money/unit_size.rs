@@ -4,6 +4,7 @@ use std::fmt;
 
 use rust_decimal::Decimal;
 
+use super::bounded::{Bound, Sign};
 use super::money::NumberError;
 
 /// The selling unit size of a currency: greater than zero, at most 4 decimal places.
@@ -14,34 +15,7 @@ impl UnitSize {
     pub const ONE: UnitSize = UnitSize(Decimal::ONE);
 
     pub fn parse(text: &str) -> Result<UnitSize, NumberError> {
-        if text.is_empty() {
-            return Err(NumberError::Invalid);
-        }
-        if text.starts_with('.') || text.ends_with('.') {
-            return Err(NumberError::Invalid);
-        }
-        let mut dot_count = 0;
-        for b in text.bytes() {
-            if b == b'.' {
-                dot_count += 1;
-                if dot_count > 1 {
-                    return Err(NumberError::Invalid);
-                }
-            } else if !b.is_ascii_digit() {
-                return Err(NumberError::Invalid);
-            }
-        }
-        let frac_part = match text.split_once('.') {
-            Some((_, frac)) => frac,
-            None => "",
-        };
-        if frac_part.len() > 4 && frac_part[4..].bytes().any(|b| b != b'0') {
-            return Err(NumberError::TooManyDecimals);
-        }
-        let val = Decimal::from_str_exact(text).map_err(|_| NumberError::Invalid)?;
-        if val <= Decimal::ZERO {
-            return Err(NumberError::Invalid);
-        }
+        let val = Bound::numeric(20, 4, Sign::Positive).parse(text)?;
         Ok(UnitSize(val))
     }
 
@@ -52,6 +26,7 @@ impl UnitSize {
         if val.scale() > 4 {
             return Err(NumberError::TooManyDecimals);
         }
+        let _ = Bound::numeric(20, 4, Sign::Positive).parse(&val.to_string())?;
         Ok(UnitSize(val))
     }
 

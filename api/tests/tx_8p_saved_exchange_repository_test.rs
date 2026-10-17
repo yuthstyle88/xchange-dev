@@ -186,19 +186,7 @@ async fn seed_five_exchanges(shop: &Shop) -> SeededExchanges {
     .await
     .expect("insert receipt in transaction_files");
 
-    // Mutate the wide row figures of the COMPLETED exchange to different values (§9)
-    sqlx::query(
-        "UPDATE transactions \
-         SET type = 'SELL', code = 'EUR', amount = 9999.00, rate = 99.000000, \
-             reference_rate = 98.000000, principal = 99999.00, fee = 888.00, \
-             bank_fee = 777.00, received = 66666.00, paid = 55555.00, \
-             method = 'PromptPay', payment_ref = 'MUTATED_REF', account = 'MUTATED_ACC' \
-         WHERE id = $1",
-    )
-    .bind(completed_id.0)
-    .execute(&shop.pool)
-    .await
-    .expect("mutate wide columns");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let mutated_slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
     // A stale SLIP row (legacy data): inserted if the writer no longer writes one (TX-9 #677), so it exists

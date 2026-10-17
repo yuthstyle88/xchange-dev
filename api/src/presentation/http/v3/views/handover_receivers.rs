@@ -3,20 +3,18 @@
 //! is exactly a person who could later accept (`PersonRules::receiver_verifies_handover`). No clocked-in filter: the
 //! server requires none. Authorised like `handoverStart` (`ShiftOperate`, the same row).
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::{
-    Actor as User, Authorizer, Permission, Role, ScopedRole, Target,
-};
+use xc_auth::domain::access::Actor as User;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::application::handover::handover_service::{may_receive, receiver_candidates};
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -27,17 +25,6 @@ use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 struct HandoverReceiversView {
     pool: PgPool,
 }
-
-/// A candidate's valid role: user, name, organisation, role code, branch, valid from, valid to.
-type CandidateRole = (
-    String,
-    String,
-    String,
-    String,
-    Option<String>,
-    DateTime<Utc>,
-    Option<DateTime<Utc>>,
-);
 
 impl BranchView for HandoverReceiversView {
     const NAME: &'static str = "handover_receivers";
@@ -66,46 +53,17 @@ impl BranchView for HandoverReceiversView {
             let Some(session_org) = session_org else {
                 return Ok(HandoverReceivers { rows: Vec::new() });
             };
-            // every active user of that organisation (but the caller) with a role of that organisation valid now that
-            // reaches this branch: one scoped to it, or organisation-wide
-            let rows: Vec<CandidateRole> = sqlx::query_as(
-                "SELECT u.id::text, COALESCE(u.name, ''), u.organization_id::text, r.role_code, r.branch_id, r.valid_from, r.valid_to \
-                 FROM users u JOIN user_roles r ON r.user_id = u.id \
-                 WHERE u.status = 'ACTIVE' AND u.id::text <> $1 \
-                   AND u.organization_id::text = $4 AND r.organization_id::text = $4 \
-                   AND (r.branch_id = $2 OR r.branch_id IS NULL) \
-                   AND r.valid_from <= $3 AND (r.valid_to IS NULL OR r.valid_to > $3)",
-            )
-            .bind(&me)
-            .bind(branch.as_str())
-            .bind(now)
-            .bind(&session_org)
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
-
-            let mut people: BTreeMap<String, (String, String, Vec<ScopedRole>)> = BTreeMap::new();
-            for (id, name, org, code, role_branch, from, to) in rows {
-                let entry = people.entry(id).or_insert_with(|| (name, org, Vec::new()));
-                if let Some(role) = Role::parse(&code) {
-                    entry
-                        .2
-                        .push(ScopedRole::new(role, role_branch.map(BranchId::new), from, to));
-                }
-            }
-
-            // holds ShiftOperate at this branch, as the Authorizer decides it
-            let mut receivers: Vec<HandoverReceiverRow> = people
+            // the one receiver rule shared with `handoverStart` (#2846, #2879): valid role rows of that organisation
+            // reaching this branch, decided by the Authorizer's ShiftOperate at the session branch
+            let candidates = receiver_candidates(&pool, &session_org, &branch, None, now).await?;
+            let receivers: Vec<HandoverReceiverRow> = candidates
                 .into_iter()
-                .filter(|(id, (_, org, roles))| {
-                    let user = User::new(id, org, roles.clone(), None);
-                    // the target is the session branch in the session's organisation, never the candidate's own
-                    let at = Target::new(&session_org, Some(branch.clone()), None);
-                    Authorizer::check(Some(&user), Permission::ShiftOperate, &at, now).is_ok()
+                .filter(|c| c.user_id != me && may_receive(c, &session_org, &branch, now))
+                .map(|c| HandoverReceiverRow {
+                    user_id: c.user_id,
+                    name: c.name,
                 })
-                .map(|(user_id, (name, _, _))| HandoverReceiverRow { user_id, name })
                 .collect();
-            receivers.sort_by(|a, b| (&a.name, &a.user_id).cmp(&(&b.name, &b.user_id)));
             Ok(HandoverReceivers { rows: receivers })
         }
     }

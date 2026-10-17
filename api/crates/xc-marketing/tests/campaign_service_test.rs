@@ -882,17 +882,10 @@ async fn simulation_with_cost_ledger_sets_cost_source_ledger() {
     let doc_ref = format!("DOC-{}", Uuid::new_v4());
     let sub_id = format!("sub-{}", Uuid::new_v4());
     sqlx::query(
-        "INSERT INTO transactions ( \
-             id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, \
-             payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, \
-             paid_at, recorded_at, recorded_by, status, completed_at \
-         ) VALUES ( \
-             $1, $2, $3, $4, 'DEMO', NULL, $5, \
-             'hash', $6, 'Somchai', 'THA', 'BUY', 'USD', 100, 32.0, \
-             3200, 0, 0, 0, 3200, 'Cash', '', 'Cash drawer', 'system', 'WALK-IN', '', current_date, \
-             now(), now(), 'system', 'COMPLETED', now() \
-         )",
+        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+             recorded_at, recorded_by, status, completed_at) VALUES ($1, $2, $3, $4, 'DEMO', NULL, $5, 'hash', $6, 'Somchai', 'THA', 'system', 'WALK-IN', '', \
+             current_date, now(), now(), 'system', 'COMPLETED', now())",
     )
     .bind(tx_id)
     .bind(org_id)

@@ -164,19 +164,10 @@ async fn book(replay: &Replay<'_>, id: &str, fields: Value) {
 
     if let Some(t_id) = tx_id {
         sqlx::query(
-            "INSERT INTO transactions (\
-                id, organization_id, document_ref, branch_id, mode, status, submission_id, payload_hash, \
-                customer_id, customer_name, nationality, type, code, amount, \
-                unit_size, rate, principal, fee, bank_fee, received, paid, \
-                method, payment_ref, account, staff_id, booking_no, notes, \
-                value_date, paid_at, recorded_at, recorded_by, completed_at, count_confirmed \
-             ) VALUES (\
-                $1, $2, $3, $4, 'DEMO', 'COMPLETED', $5, 'payload-hash', \
-                $6, 'Test Customer', 'THA', 'BUY', 'USD', 100, \
-                1, 32.2, 3220, 0, 0, 3220, 100, \
-                'Cash', '', 'Cash Drawer', 'teller-1', 'B261014-0001', '', \
-                '2026-10-14', now(), now(), 'teller-1', now(), true \
-             ) ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, status, submission_id, payload_hash, \
+                customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+                recorded_at, recorded_by, completed_at, count_confirmed) VALUES ($1, $2, $3, $4, 'DEMO', 'COMPLETED', $5, 'payload-hash', $6, 'Test Customer', 'THA', \
+                'teller-1', 'B261014-0001', '', '2026-10-14', now(), now(), 'teller-1', now(), true) ON CONFLICT (id) DO NOTHING",
         )
         .bind(t_id)
         .bind(org_id)
