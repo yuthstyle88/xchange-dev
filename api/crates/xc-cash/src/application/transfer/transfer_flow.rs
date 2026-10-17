@@ -215,9 +215,12 @@ impl TransferFlow {
         let parts = self.parts();
         let who = who.clone();
         let id_owned = id.to_owned();
+        let at = t.from_branch.clone();
         self.branch_tx
             .run(&t.from_branch, move |tx| {
-                Box::pin(async move { Self::dispatch_on(&parts, tx, &who, &id_owned, now).await })
+                Box::pin(
+                    async move { Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now).await },
+                )
             })
             .await
     }
@@ -569,11 +572,12 @@ impl TransferFlow {
     pub async fn dispatch_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        Self::dispatch_on(&self.parts(), tx, who, id, now).await
+        Self::dispatch_on(&self.parts(), tx, branch, who, id, now).await
     }
 
     /// `branch` is the caller's (the session) branch. A transfer whose destination is another branch is refused
@@ -606,11 +610,22 @@ impl TransferFlow {
     async fn dispatch_on(
         parts: &FlowParts,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        let t = locked(parts.repo.as_ref(), tx, id, TransferStep::Dispatch).await?;
+        let t = parts
+            .repo
+            .find_by_id_in(tx, id)
+            .await?
+            .ok_or_else(|| not_found(id))?;
+        if t.from_branch != *branch {
+            return Err(AppError::Forbidden);
+        }
+        t.status
+            .next(TransferStep::Dispatch)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
         require(who, Permission::CashManage, &t.from_branch, now)?;
         let ends = parts
             .kinds
