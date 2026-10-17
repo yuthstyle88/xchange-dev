@@ -28,7 +28,9 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::org_starting_prices::{
     OrgStartingPriceSaveInput, OrgStartingPriceSaveOutput, UnpricedBranch,
 };
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, role_not_allowed_here, server_error};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, Locks, role_not_allowed_here, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct OrgStartingPriceSaveCommand {
@@ -56,6 +58,10 @@ impl CommandAction for OrgStartingPriceSaveCommand {
     type Output = OrgStartingPriceSaveOutput;
     const ROUTE: &'static str = "/api/v3/commands/org_starting_price_save";
     const METHOD: Method = Method::POST;
+
+    fn locks(&self, _branch: &BranchId, _input: &Self::Input) -> Locks {
+        Locks::Org
+    }
 
     async fn run(
         &self,
