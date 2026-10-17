@@ -584,13 +584,13 @@ async fn what_a_family_refuses_or_breaks_goes_out_as_for_any_other_action() {
         vec![
             Family::that(
                 "domain",
-                &["opsClock"],
+                &["rateDraft"],
                 BOTH,
                 Does::RefusesAsDomain("ลงเวลาเข้าก่อนทำรายการ")
             ) as Arc<dyn RpcAction>,
             Family::that(
                 "own",
-                &["opsPropose"],
+                &["saveTransaction"],
                 BOTH,
                 Does::Refuses(409, "มีรายการค้างอยู่")
             ) as Arc<dyn RpcAction>,
@@ -599,12 +599,19 @@ async fn what_a_family_refuses_or_breaks_goes_out_as_for_any_other_action() {
     );
     let cookies = everybody(&desk, &app).await;
 
-    ask(&app, &cookies, STAFF_RPC, "opsClock", "FRONT", json!({}))
+    ask(&app, &cookies, STAFF_RPC, "rateDraft", "RATES", json!({}))
         .await
         .assert_refused(400, "ลงเวลาเข้าก่อนทำรายการ", "a use case's sentence");
-    ask(&app, &cookies, STAFF_RPC, "opsPropose", "FRONT", json!({}))
-        .await
-        .assert_refused(409, "มีรายการค้างอยู่", "a refusal of the family's own");
+    ask(
+        &app,
+        &cookies,
+        STAFF_RPC,
+        "saveTransaction",
+        "FRONT",
+        json!({}),
+    )
+    .await
+    .assert_refused(409, "มีรายการค้างอยู่", "a refusal of the family's own");
     let answer = ask(&app, &cookies, STAFF_RPC, "documents", "FRONT", json!({})).await;
     assert_eq!(answer.status, 500, "{:.300}", answer.text);
     assert_eq!(answer.json(), json!({ "error": SERVER_ERROR }));

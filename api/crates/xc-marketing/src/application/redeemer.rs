@@ -67,7 +67,7 @@ impl BenefitRedeemer {
             rule_id,
             version_id,
             coupon_id,
-            _cust_id,
+            cust_id,
             amount_thb,
             mut status,
             mut is_expired,
@@ -109,8 +109,8 @@ impl BenefitRedeemer {
             if status == "RELEASED" || is_expired {
                 // Re-reserve under lock
                 // 1. Lock campaign_budgets
-                let (consumed_thb,): (Decimal,) = sqlx::query_as(
-                    "SELECT consumed_thb FROM campaign_budgets WHERE campaign_version_id = $1 FOR UPDATE",
+                let (consumed_thb, used_count): (Decimal, i32) = sqlx::query_as(
+                    "SELECT consumed_thb, used_count FROM campaign_budgets WHERE campaign_version_id = $1 FOR UPDATE",
                 )
                 .bind(version_id)
                 .fetch_optional(&mut **tx)
@@ -150,6 +150,19 @@ impl BenefitRedeemer {
                     .bind(cid)
                     .execute(&mut **tx)
                     .await?;
+
+                    let (live_coupon_count,): (i64,) = sqlx::query_as(
+                        "SELECT count(*) FROM benefit_reservations \
+                         WHERE coupon_id = $1 AND status = 'RESERVED' AND expires_at > now() AND id <> $2",
+                    )
+                    .bind(cid)
+                    .bind(res_id)
+                    .fetch_one(&mut **tx)
+                    .await?;
+
+                    if live_coupon_count > 0 {
+                        return Err(BenefitError::BenefitLimitReached);
+                    }
                 }
 
                 // 3. Lazy release expired reservations for this campaign version
@@ -162,22 +175,37 @@ impl BenefitRedeemer {
                 .execute(&mut **tx)
                 .await?;
 
-                // 4. Check available budget
-                let (budget_thb,): (Decimal,) =
-                    sqlx::query_as("SELECT budget_thb FROM campaign_versions WHERE id = $1")
-                        .bind(version_id)
-                        .fetch_optional(&mut **tx)
-                        .await?
-                        .ok_or(BenefitError::NotFound)?;
+                // 4. Check max_uses, the per-customer cap and available budget
+                let (budget_thb, max_uses): (Decimal, Option<i32>) = sqlx::query_as(
+                    "SELECT budget_thb, max_uses FROM campaign_versions WHERE id = $1",
+                )
+                .bind(version_id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or(BenefitError::NotFound)?;
 
-                let (live_reservations_sum,): (Decimal,) = sqlx::query_as(
-                    "SELECT COALESCE(SUM(amount_thb), 0) FROM benefit_reservations \
+                let (live_count, live_reservations_sum): (i64, Decimal) = sqlx::query_as(
+                    "SELECT count(*), COALESCE(SUM(amount_thb), 0) FROM benefit_reservations \
                      WHERE campaign_version_id = $1 AND status = 'RESERVED' AND expires_at > now() AND id != $2",
                 )
                 .bind(version_id)
                 .bind(res_id)
                 .fetch_one(&mut **tx)
                 .await?;
+
+                if let Some(max) = max_uses {
+                    if (used_count as i64 + live_count) >= max as i64 {
+                        return Err(BenefitError::BenefitLimitReached);
+                    }
+                }
+
+                if self
+                    .ledger
+                    .per_customer_cap_reached_in(tx, rule_id, cust_id.as_deref())
+                    .await?
+                {
+                    return Err(BenefitError::BenefitLimitReached);
+                }
 
                 let available = budget_thb - consumed_thb - live_reservations_sum;
                 if available < amount_thb {

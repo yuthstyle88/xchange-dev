@@ -2038,8 +2038,8 @@ async fn document_link_command_and_content_route_lifecycle() {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(
-        disp.contains("attachment"),
-        "Content-Disposition must be attachment: {disp}"
+        disp.contains("inline"),
+        "Content-Disposition must be inline for an image: {disp}"
     );
 
     let ctype = ans_content

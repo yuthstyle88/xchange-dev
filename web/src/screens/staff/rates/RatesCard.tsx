@@ -1,4 +1,4 @@
-import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
+import { createSignal, onCleanup, onMount, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient } from '../../../shared/api/client';
@@ -15,21 +15,35 @@ export interface RatesCardProps {
 export function RatesCard(props: RatesCardProps): JSX.Element {
   const t = screenT('staff.rates', { th, en });
   const [rates, setRates] = createSignal<PublishedRatesData | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<unknown>(null);
+  const [loading, setLoading] = createSignal(false);
+  let seq = 0;
+
+  onCleanup(() => {
+    ++seq;
+  });
 
   const load = async () => {
+    const mine = ++seq;
+    setLoading(true);
     try {
       const api = new ApiClient();
       const res = await api.view<PublishedRatesData>('staff_published_rates', {
         branch: props.ctx.me.branchId,
       });
+      if (mine !== seq) return;
       if (res.data) {
         setRates(res.data);
       }
       setError(null);
     } catch (e: unknown) {
+      if (mine !== seq) return;
       setRates(null);
-      setError(wordedError(e));
+      setError(() => e);
+    } finally {
+      if (mine === seq) {
+        setLoading(false);
+      }
     }
   };
 
@@ -90,10 +104,15 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
         </Show>
       </Show>
 
-      <Show when={error()}>
+      <Show when={error() !== null}>
         <div class="xc-rates-error">
-          <p role="alert" class="xc-rates-error-message">{error()}</p>
-          <button type="button" class="xc-rates-retry-button" onClick={() => void load()}>
+          <p role="alert" class="xc-rates-error-message">{wordedError(error())}</p>
+          <button
+            type="button"
+            class="xc-rates-retry-button"
+            disabled={loading()}
+            onClick={() => void load()}
+          >
             {t('retry')}
           </button>
         </div>

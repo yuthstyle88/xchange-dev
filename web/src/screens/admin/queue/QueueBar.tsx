@@ -116,6 +116,8 @@ export function QueueBar(props: {
     }
   });
 
+  const lastToasted = new Map<string, string>();
+
   // Track toast notifications
   createEffect(() => {
     const board = state();
@@ -133,9 +135,22 @@ export function QueueBar(props: {
     }
 
     if (latest && s.count > 0 && storageKey) {
-      const prev = sessionStorage.getItem(storageKey);
+      let prev: string | null = lastToasted.get(storageKey) ?? null;
+      try {
+        const stored = sessionStorage.getItem(storageKey);
+        if (prev === null) {
+          prev = stored;
+        }
+      } catch {
+        // storage blocked
+      }
       if (prev !== latest) {
-        sessionStorage.setItem(storageKey, latest);
+        lastToasted.set(storageKey, latest);
+        try {
+          sessionStorage.setItem(storageKey, latest);
+        } catch {
+          // storage blocked
+        }
         if (!dialogOpen()) {
           setToastMessage(t('toastNotice', { count: s.count, branch: props.branchLabel() }));
           setToastVisible(true);

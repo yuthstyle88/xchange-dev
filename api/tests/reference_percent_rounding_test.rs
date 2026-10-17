@@ -7,6 +7,8 @@
 //! a half shows −0.13 on Cash where Reports shows −0.12.
 //!
 //! Written before the implementation; do not edit, delete or weaken. No database is needed.
+//! (#2815 changed only the call shape: `compute_reference_percent` now returns `AppResult<String>`, so each row
+//! compares `.as_deref().ok()` with `Some(..)`. Every expected value is unchanged.)
 //!
 //! Only a **negative** half, or a value that rounds to zero from below, can tell the two rules apart: a positive half
 //! and an exact value come out the same under both. Those rows are pins (green on main) and stay green after the fix.
@@ -29,37 +31,65 @@ fn d(s: &str) -> Decimal {
 /// −1.25 / 1000 × 100 = −0.125 % exactly: kernel −0.12; `MidpointAwayFromZero` −0.13. Red on main.
 #[test]
 fn cash_a_negative_half_rounds_toward_plus_infinity() {
-    assert_eq!(compute_reference_percent(d("-1.25"), d("1000")), "-0.12");
+    assert_eq!(
+        compute_reference_percent(d("-1.25"), d("1000"))
+            .as_deref()
+            .ok(),
+        Some("-0.12")
+    );
 }
 
 /// −23.45 / 1000 × 100 = −2.345 %: kernel −2.34; `MidpointAwayFromZero` −2.35. Red on main.
 #[test]
 fn cash_another_negative_half_rounds_toward_plus_infinity() {
-    assert_eq!(compute_reference_percent(d("-23.45"), d("1000")), "-2.34");
+    assert_eq!(
+        compute_reference_percent(d("-23.45"), d("1000"))
+            .as_deref()
+            .ok(),
+        Some("-2.34")
+    );
 }
 
 /// −0.04 / 1000 × 100 = −0.004 %: rounds to zero, shown `0.00`, never `-0.00` (`fixed2`).
 #[test]
 fn cash_a_value_that_rounds_to_zero_is_never_minus_zero() {
-    assert_eq!(compute_reference_percent(d("-0.04"), d("1000")), "0.00");
+    assert_eq!(
+        compute_reference_percent(d("-0.04"), d("1000"))
+            .as_deref()
+            .ok(),
+        Some("0.00")
+    );
 }
 
 /// +0.125 % → 0.13 under both rules (pin).
 #[test]
 fn cash_a_positive_half_rounds_up() {
-    assert_eq!(compute_reference_percent(d("1.25"), d("1000")), "0.13");
+    assert_eq!(
+        compute_reference_percent(d("1.25"), d("1000"))
+            .as_deref()
+            .ok(),
+        Some("0.13")
+    );
 }
 
 /// 15 / 1000 × 100 = 1.5 % exactly → 1.50 (pin).
 #[test]
 fn cash_an_exact_value_is_unchanged() {
-    assert_eq!(compute_reference_percent(d("15"), d("1000")), "1.50");
+    assert_eq!(
+        compute_reference_percent(d("15"), d("1000"))
+            .as_deref()
+            .ok(),
+        Some("1.50")
+    );
 }
 
 /// No reference value → 0.00, as today (pin).
 #[test]
 fn cash_no_reference_value_is_zero() {
-    assert_eq!(compute_reference_percent(d("5"), d("0")), "0.00");
+    assert_eq!(
+        compute_reference_percent(d("5"), d("0")).as_deref().ok(),
+        Some("0.00")
+    );
 }
 
 // ── The transaction row: six places (`referencePercent`) ─────────────────────────────────────

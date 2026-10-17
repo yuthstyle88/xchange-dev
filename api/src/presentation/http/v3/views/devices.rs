@@ -64,8 +64,11 @@ impl BranchView for DevicesBranchView {
         async move {
             // 1. Branches list
             let branch_rows: Vec<(String, String)> = sqlx::query_as(
-                "SELECT id, name FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
+                "SELECT b.id, b.name FROM branches b \
+                 WHERE b.organization_id = (SELECT s.organization_id FROM branches s WHERE s.id = $1) \
+                 ORDER BY (b.id = 'MAIN') DESC, b.created_at ASC, b.id ASC",
             )
+            .bind(branch.as_str())
             .fetch_all(&pool)
             .await
             .map_err(AppError::Database)?;

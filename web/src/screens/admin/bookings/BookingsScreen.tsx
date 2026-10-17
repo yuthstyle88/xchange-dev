@@ -56,7 +56,7 @@ function formatExpiry(expiresAt: string | null, t: (k: any) => string, loc: stri
   if (!expiresAt) {
     return t('pendingStaff');
   }
-  return new Date(expiresAt).toLocaleString(loc);
+  return new Date(expiresAt).toLocaleString(loc, { timeZone: 'Asia/Bangkok' });
 }
 
 export function BookingsScreen(props: AdminMenuProps): JSX.Element {
@@ -67,15 +67,22 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   const [settings, setSettings] = createSignal<AdminBookingSettingsData | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [settingsError, setSettingsError] = createSignal<string | null>(null);
   const [searchTerm, setSearchTerm] = createSignal('');
   const [hasMore, setHasMore] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
 
   let bookingsVersion: number | undefined;
   let settingsVersion: number | undefined;
   let currentBranch: string | undefined;
   let currentQ: string = '';
+  // #2440: every list / settings read takes the next number; only the latest read may apply its
+  // answer, version or error, so an older branch's or term's answer that lands last is dropped.
+  let listSeq = 0;
+  let settingsSeq = 0;
 
   async function fetchBookings(b: string, since?: number, q?: string) {
+    const seq = ++listSeq;
     if (rows().length === 0 && since === undefined) {
       setLoading(true);
     }
@@ -87,30 +94,36 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         since,
         filter,
       });
+      if (seq !== listSeq) return;
       bookingsVersion = ans.version;
       if (ans.changed && ans.data) {
         setRows(ans.data);
         setHasMore(ans.data.length >= 50);
       }
     } catch (err) {
+      if (seq !== listSeq) return;
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === listSeq) setLoading(false);
     }
   }
 
   async function fetchSettings(b: string, since?: number) {
+    const seq = ++settingsSeq;
+    setSettingsError(null);
     try {
       const ans = await api.view<AdminBookingSettingsData>('admin_booking_settings', {
         branch: b,
         since,
       });
+      if (seq !== settingsSeq) return;
       settingsVersion = ans.version;
       if (ans.changed && ans.data) {
         setSettings(ans.data);
       }
     } catch (err) {
-      setError(wordedError(err));
+      if (seq !== settingsSeq) return;
+      setSettingsError(wordedError(err));
     }
   }
 
@@ -120,23 +133,34 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleLoadMore() {
+    if (loadingMore()) return;
     const currentRows = rows();
     const lastRow = currentRows[currentRows.length - 1];
     if (!lastRow) return;
     const q = searchTerm().trim();
+    const b = props.branch();
+    const seq = listSeq;
+    // the page belongs to the list it was asked for: a branch / term change or a newer list read
+    // during the await makes it stale
+    const stale = () => seq !== listSeq || b !== props.branch() || q !== searchTerm().trim();
+    setLoadingMore(true);
     try {
       const nextRows = await api.page<AdminBookingRow>('admin_bookings', {
-        branch: props.branch(),
+        branch: b,
         before: lastRow.id,
         limit: 50,
         filter: q ? { q } : undefined,
       });
+      if (stale()) return;
       if (nextRows.length < 50) {
         setHasMore(false);
       }
-      setRows([...currentRows, ...nextRows]);
+      setRows([...rows(), ...nextRows]);
     } catch (err) {
+      if (stale()) return;
       toast(wordedError(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -272,6 +296,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   }
 
   async function openSettingsDialog() {
+    setSettingsError(null);
     let bName = props.branch();
     try {
       const res = await api.view<{ branches: Array<{ id: string; name: string }> }>('admin_branches');
@@ -280,7 +305,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         if (found) bName = found.name;
       }
     } catch (err) {
-      setError(wordedError(err));
+      setSettingsError(wordedError(err));
       return;
     }
 
@@ -352,8 +377,14 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     const [customerId, setCustomerId] = createSignal('');
     const [dialogError, setDialogError] = createSignal<string | null>(null);
 
+    const chosen = () => {
+      const list = availableCurrencies();
+      const c = currency();
+      return c && list.includes(c) ? c : (list[0] ?? '');
+    };
+
     const currentRate = () => {
-      const cr = (settings()?.counterRates ?? []).find((r) => r.currency === currency());
+      const cr = (settings()?.counterRates ?? []).find((r) => r.currency === chosen());
       if (!cr) return '';
       return type() === 'BUY' ? cr.buy : cr.sell;
     };
@@ -375,7 +406,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         return;
       }
 
-      if (!currency()) {
+      if (!chosen()) {
         setDialogError(t('noCurrencies'));
         return;
       }
@@ -393,7 +424,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         name: trimmedName,
         phone: rawPhone,
         type: type(),
-        currency: currency(),
+        currency: chosen(),
         amount: rawAmount,
         expectedRate: r,
       };
@@ -450,7 +481,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <label>
           {t('fieldCurrency')}
           <select
-            value={currency()}
+            value={chosen()}
             onChange={(e) => setCurrency(e.currentTarget.value)}
           >
             <Show when={availableCurrencies().length === 0}>
@@ -459,7 +490,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
               </option>
             </Show>
             <For each={availableCurrencies()}>
-              {(c) => <option value={c}>{c}</option>}
+              {(c) => (
+                <option value={c} selected={c === chosen()}>
+                  {c}
+                </option>
+              )}
             </For>
           </select>
         </label>
@@ -530,6 +565,10 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
           {settings() ? settings()!.memberCount : 0}
           {t('infoPersons')}
         </div>
+
+        <Show when={settingsError()}>
+          <p>{settingsError()}</p>
+        </Show>
 
         <label>
           {t('searchBookings')}
@@ -633,6 +672,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="secondary"
+              disabled={loadingMore()}
               onClick={handleLoadMore}
             >
               {t('loadMore')}

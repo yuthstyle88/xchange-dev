@@ -113,28 +113,43 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     window.removeEventListener('beforeunload', onBeforeUnload);
   });
 
-  // Load branches for branch name display in heading
-  const loadBranches = async () => {
+  // Load branches for branch name display in heading. `stale` (#2246) tells a superseded read to
+  // drop its answer or error.
+  const loadBranches = async (stale: () => boolean = () => false) => {
     try {
       const res = await api.view<{ branches: BranchInfo[] }>('admin_branches');
+      if (stale()) return;
       if (res.data?.branches) {
         setBranches(res.data.branches);
       }
     } catch (err: unknown) {
+      if (stale()) return;
       setBranches([]);
       setError(wordedError(err));
     }
   };
 
+  // #2246: every read takes a number; only the latest read for the displayed branch may land.
+  let loadSeq = 0;
+
   const loadData = async (branch: string, since?: number) => {
+    const seq = ++loadSeq;
+    const stale = () => seq !== loadSeq || branch !== displayedBranch();
+    if (data() && data()!.branchId !== branch) {
+      setData(null);
+      setVersion(null);
+      setEdits(null);
+    }
     setLoading(true);
     setError(null);
     try {
-      await loadBranches();
+      await loadBranches(stale);
+      if (stale()) return;
       const res = await api.view<AdminPaymentsData>('admin_payments', {
         branch,
         since,
       });
+      if (stale()) return;
       if (res.changed && res.data) {
         setData(res.data);
         setVersion(res.version);
@@ -144,6 +159,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
         setVersion(res.version);
       }
     } catch (err: unknown) {
+      if (stale()) return;
       if (data() && data()!.branchId !== branch) {
         setData(null);
         setVersion(null);
@@ -151,7 +167,42 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       }
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq) setLoading(false);
+    }
+  };
+
+  const applyShellBranch = (targetBranch: string) => {
+    const current = displayedBranch();
+    if (current === '') {
+      setDisplayedBranch(targetBranch);
+      void loadData(targetBranch);
+      return;
+    }
+
+    if (saving()) {
+      pendingBranchSwitch = targetBranch;
+      return;
+    }
+
+    if (targetBranch === current) return;
+
+    if (isDirty()) {
+      const confirmed = window.confirm(t('confirmBranch'));
+      if (confirmed) {
+        setEdits(null);
+        setBranchNotice(null);
+        // #2489: save feedback describes the previous branch; drop it on switch.
+        setFeedback('');
+        setDisplayedBranch(targetBranch);
+        void loadData(targetBranch);
+      } else {
+        setBranchNotice(t('branchNotice', { branch: branchDisplayName() }));
+      }
+    } else {
+      setBranchNotice(null);
+      setFeedback('');
+      setDisplayedBranch(targetBranch);
+      void loadData(targetBranch);
     }
   };
 
@@ -162,35 +213,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
     if (!isShown) return;
 
     untrack(() => {
-      const current = displayedBranch();
-      if (current === '') {
-        setDisplayedBranch(targetBranch);
-        void loadData(targetBranch);
-        return;
-      }
-
-      if (targetBranch === current) return;
-
-      if (saving()) {
-        pendingBranchSwitch = targetBranch;
-        return;
-      }
-
-      if (isDirty()) {
-        const confirmed = window.confirm(t('confirmBranch'));
-        if (confirmed) {
-          setEdits(null);
-          setBranchNotice(null);
-          setDisplayedBranch(targetBranch);
-          void loadData(targetBranch);
-        } else {
-          setBranchNotice(t('branchNotice', { branch: branchDisplayName() }));
-        }
-      } else {
-        setBranchNotice(null);
-        setDisplayedBranch(targetBranch);
-        void loadData(targetBranch);
-      }
+      applyShellBranch(targetBranch);
     });
   });
 
@@ -258,6 +281,8 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       if (!confirmed) return;
     }
     setEdits(null);
+    // #2489: a reload starts a fresh view; old save feedback no longer applies.
+    setFeedback('');
     void loadData(displayedBranch());
   };
 
@@ -289,7 +314,8 @@ export function Payments(props: AdminMenuProps): JSX.Element {
             methods: methodsToSave,
           },
         });
-        setFeedback(t('saved'));
+        // #2489: the answer only describes branchToSave; never word it under another branch.
+        if (displayedBranch() === branchToSave) setFeedback(t('saved'));
         setEdits(null);
         await loadData(branchToSave);
 
@@ -297,16 +323,24 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           const next = pendingBranchSwitch;
           pendingBranchSwitch = null;
           setBranchNotice(null);
+          setFeedback('');
           setDisplayedBranch(next);
           await loadData(next);
         } else if (displayedBranch() !== props.branch()) {
           const next = props.branch();
           setBranchNotice(null);
+          setFeedback('');
           setDisplayedBranch(next);
           await loadData(next);
         }
       } catch (err: unknown) {
-        setFeedback(wordedError(err));
+        setSaving(false);
+        if (displayedBranch() === branchToSave) setFeedback(wordedError(err));
+        if (pendingBranchSwitch) {
+          const next = pendingBranchSwitch;
+          pendingBranchSwitch = null;
+          applyShellBranch(next);
+        }
       } finally {
         setSaving(false);
         savePromise = null;

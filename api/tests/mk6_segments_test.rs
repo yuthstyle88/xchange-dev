@@ -1290,6 +1290,103 @@ async fn value_thb_is_the_thb_of_every_line_not_foreign_units() {
     room.finish().await;
 }
 
+/// #1979 follow-up (reviewer claude/32ef39 on PR 1980): the live path, the `segmentSnapshot` command
+/// (`segment_snapshot.rs` → `PgCustomerMetrics::load_candidate_metrics_in` → `rule.matches`), values a customer by the THB
+/// of every line too. USD 100 (3,500 THB) and JPY 10,000 (2,400 THB) in one exchange is 5,900 THB: a rule
+/// `value >= 5,800` takes the customer in (foreign units, 100, or line 1 alone, 3,500, would not), and the frozen
+/// member's metrics say 5,900.00.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_snapshot_command_values_a_customer_by_the_thb_of_every_line() {
+    let room = Room::open().await;
+    let m_actor = marketing_actor(org(), &room.branch);
+    let c = unique("c_cmd_value");
+    insert_customer(&room.pool, &room.branch, &c, "Value User", "VU1").await;
+    let now = Utc::now();
+    let two_lines = insert_tx(
+        &room.pool,
+        &room.branch,
+        &c,
+        "Value User",
+        "3500.00",
+        now - chrono::Duration::days(5),
+    )
+    .await;
+    insert_line(
+        &room.pool,
+        Uuid::parse_str(&two_lines).expect("a transaction id"),
+        2,
+        "JPY",
+        "0.24",
+        "2400.00",
+    )
+    .await;
+    insert_consent(
+        &room.pool,
+        &c,
+        Some("SMS"),
+        true,
+        now - chrono::Duration::days(9),
+    )
+    .await;
+
+    let def_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO segment_definitions (id, organization_id, name, version, rule, created_by, created_at) \
+         VALUES ($1, $2::uuid, 'SnapshotPathValueTest', 1, $3, $4, now())",
+    )
+    .bind(def_id)
+    .bind(ORG)
+    .bind(
+        serde_json::to_value(SegmentRule {
+            tier: None,
+            recency_days: None,
+            frequency: Some(1),
+            value_thb: Some(Decimal::from_str("5800.00").unwrap()),
+            home_branch: None,
+            lookback_months: Some(12),
+        })
+        .unwrap(),
+    )
+    .bind(room.user)
+    .execute(&room.pool)
+    .await
+    .expect("seed segment definition");
+
+    let mut tx = room.pool.begin().await.expect("begin tx");
+    let out = SegmentSnapshotCommand
+        .run(
+            &mut tx,
+            &room.branch,
+            &m_actor,
+            SegmentSnapshotInput {
+                id: def_id.to_string(),
+            },
+            IdempotencyKey::new(Uuid::new_v4()),
+        )
+        .await
+        .expect("segmentSnapshot command succeeds for Marketing actor");
+    tx.commit().await.expect("commit tx");
+
+    assert_eq!(
+        out.member_count, 1,
+        "5,900 THB over every line clears the 5,800 rule (D-14)"
+    );
+    let value: Option<String> = sqlx::query_scalar(
+        "SELECT metrics->>'valueThb' FROM segment_snapshot_members WHERE snapshot_id = $1 AND customer_id = $2",
+    )
+    .bind(out.id)
+    .bind(&c)
+    .fetch_optional(&room.pool)
+    .await
+    .expect("read the member");
+    assert_eq!(
+        value.as_deref(),
+        Some("5900.00"),
+        "the frozen member's value is THB"
+    );
+    room.finish().await;
+}
+
 // -----------------------------------------------------------------------------
 // §9 Row 6: No tier row in mirror -> tierCode null; tier condition never matches
 // -----------------------------------------------------------------------------

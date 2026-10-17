@@ -89,6 +89,7 @@ export function RefundsStep(props: { store: RefundsStore }): JSX.Element {
                     data-action="post"
                     data-id={row.reversal.id}
                     class="desk-refund-post-btn"
+                    disabled={store.posting()}
                     onClick={() => store.startConfirm(row.reversal.id)}
                   >
                     {t('post')}

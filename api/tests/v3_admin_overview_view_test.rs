@@ -43,6 +43,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_setup_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -351,13 +352,13 @@ impl Room {
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
     }
 
-    /// The owner opens a shift in `branch` through `/api/rpc`.
+    /// Opens a shift in `branch` by count.
     async fn open_shift(&self, branch: &str) {
-        self.ok(
-            "OWNER",
-            "adminOpenShift",
-            json!({ "branchId": branch, "requestId": request_id(),
-                    "opening": { "THB": 100000, "USD": 1000 } }),
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch,
+            json!({ "THB": 100000, "USD": 1000 }),
+            self.tick(),
         )
         .await;
     }
@@ -386,29 +387,15 @@ impl Room {
         )
     }
 
-    /// The owner closes the open shift of `branch`, counting what is expected.
+    /// Closes the open shift of `branch` by count, counting what is expected.
     async fn close_shift(&self, branch: &str) {
-        let shift = self.open_shift_id(branch).await;
         let expected = self.expected_of_open_shift(branch).await;
-        self.ok(
-            "OWNER",
-            "adminCloseShift",
-            json!({ "branchId": branch, "requestId": request_id(), "shiftId": shift,
-                    "expected": expected, "counted": expected, "note": "นับเงินปิดกะ" }),
-        )
-        .await;
-    }
-
-    /// FINANCE moves stock into the open shift of `branch` (a branch of FINANCE's: `MAIN`).
-    /// OR-4b (#767, design §4.2 C3): v2's owner moved it; CashManage is BRANCH_MANAGER's and
-    /// FINANCE's.
-    async fn move_stock(&self, branch: &str) {
-        let shift = self.open_shift_id(branch).await;
-        self.ok(
-            "FINANCE",
-            "adminMoveStock",
-            json!({ "branchId": branch, "requestId": request_id(), "shiftId": shift,
-                    "currency": "USD", "direction": "IN", "amount": 10, "reason": "from the safe" }),
+        shift_setup_common::close_shift_by_count_with_note(
+            &self.desk.db.pool,
+            branch,
+            expected,
+            "นับเงินปิดกะ",
+            self.tick(),
         )
         .await;
     }
@@ -915,11 +902,19 @@ async fn status_is_the_branchs_shift_now_whatever_the_period() {
         json!({ "shiftOpen": false, "pendingCount": 0, "openedBy": null })
     );
     room.open_shift(MAIN).await;
+    let shift_id = room.open_shift_id(MAIN).await;
+    let teller_id: String = sqlx::query_scalar(
+        "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
+    )
+    .bind(&shift_id)
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("open count teller");
     room.save(MAIN, Ex::buy("10", "0", "2026-10-06")).await;
     let data = room.data("OWNER", far).await;
     assert_eq!(
         data["status"],
-        json!({ "shiftOpen": true, "pendingCount": 0, "openedBy": "owner" }),
+        json!({ "shiftOpen": true, "pendingCount": 0, "openedBy": teller_id }),
         "a period with nothing in it still shows the open shift: {data}"
     );
     assert_eq!(data["latest"], json!([]), "{data}");
@@ -992,22 +987,15 @@ async fn every_writer_of_the_overview_moves_the_version_it_answers() {
 
     let mut since = v;
     let mut completed = 0;
-    for writer in [
-        "adminOpenShift",
-        "save",
-        "adminMoveStock",
-        "adminAbandonRequest",
-        "adminCloseShift",
-    ] {
+    for writer in ["open_shift", "save", "adminAbandonRequest", "close_shift"] {
         match writer {
-            "adminOpenShift" => room.open_shift(MAIN).await,
+            "open_shift" => room.open_shift(MAIN).await,
             "save" => {
                 room.save(MAIN, Ex::buy("10", "0", "2026-10-06")).await;
                 completed += 1;
             }
-            "adminMoveStock" => room.move_stock(MAIN).await,
             "adminAbandonRequest" => room.abandon(MAIN).await,
-            "adminCloseShift" => room.close_shift(MAIN).await,
+            "close_shift" => room.close_shift(MAIN).await,
             _ => unreachable!(),
         }
         let now = room.version(MAIN).await;
@@ -1025,7 +1013,7 @@ async fn every_writer_of_the_overview_moves_the_version_it_answers() {
         );
         assert_eq!(
             body["data"]["status"]["shiftOpen"],
-            json!(writer != "adminCloseShift"),
+            json!(writer != "close_shift"),
             "after {writer}: {body}"
         );
         assert_eq!(
@@ -1115,11 +1103,19 @@ async fn status_opened_by_shows_opener_when_open() {
     assert_eq!(data["status"]["shiftOpen"], json!(false));
 
     room.open_shift(MAIN).await;
+    let shift_id = room.open_shift_id(MAIN).await;
+    let teller_id: String = sqlx::query_scalar(
+        "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
+    )
+    .bind(&shift_id)
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("open count teller");
     let data = room
         .data("OWNER", "branch=MAIN&from=2026-10-01&to=2026-10-06")
         .await;
     assert_eq!(data["status"]["shiftOpen"], json!(true));
-    assert_eq!(data["status"]["openedBy"], json!("owner"));
+    assert_eq!(data["status"]["openedBy"], json!(teller_id));
 
     room.close_shift(MAIN).await;
     let data = room

@@ -20,6 +20,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::repository::TransactionStore;
@@ -270,9 +271,7 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
         BranchSettingStore::new(pool.clone()),
         PgBranchRepository::new(pool.clone()),
     );
-    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
-        Arc::new(xc_booking::infrastructure::booking_repository::PgBookingRepository::new(pool.clone())),
-    ));
+    let lifecycle = pg_booking_lifecycle(pool.clone());
     vec![
         Arc::new(DeviceSaveStep::new(devices)),
         Arc::new(KioskSaveStep::new(kiosk)),

@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
   RateDraftDetailData,
@@ -81,6 +82,22 @@ function isDecimalLessThan(
 
 export function Rates(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const writes = new Map<string, { send(body: unknown): Promise<unknown>; reset(): void }>();
+
+  function writeFor<B, R>(actionId: string, method: string, path: string): { send(body: B): Promise<R>; reset(): void } {
+    let w = writes.get(actionId);
+    if (!w) {
+      w = keyedWrite<unknown, unknown>(client, method, path);
+      writes.set(actionId, w);
+    }
+    return w as { send(body: B): Promise<R>; reset(): void };
+  }
+
+  const savePolicyWrite = keyedWrite<RatePolicySaveInput & { branch: string }, RatePolicySaveOutput>(
+    client,
+    'POST',
+    '/api/rate-policies',
+  );
 
   const [pubData, setPubData] = createSignal<PublishedRatesData | null>(null);
   const [pubError, setPubError] = createSignal<string | null>(null);
@@ -96,7 +113,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
   const [valueTiers, setValueTiers] = createSignal<TierFormRow[]>(emptyValueTiers());
   const [sharpMoveAlertPct, setSharpMoveAlertPct] = createSignal<string>('');
-  let savePolicyKey: string | null = null;
 
   const [refData, setRefData] = createSignal<RatesReferenceData | null>(null);
   const [refVersion, setRefVersion] = createSignal<number | undefined>(undefined);
@@ -112,6 +128,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [adjustBuyPct, setAdjustBuyPct] = createSignal<string>('0.0000');
   const [adjustSellPct, setAdjustSellPct] = createSignal<string>('0.0000');
 
+  // #2410: one write at a time. A second click while a write is in flight would
+  // resend the same idempotency key, get 409 idempotencyConflict, and lose the key.
+  const [busy, setBusy] = createSignal<boolean>(false);
+  const guarded = (fn: () => Promise<void>) => async (): Promise<void> => {
+    if (busy()) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fetchReference = async (opts: { since?: number; fresh?: boolean }) => {
     if (!props.shown()) return;
     try {
@@ -123,6 +152,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (res.changed && res.data) {
         setRefData(res.data);
         setRefError(res.data.error ?? null);
+      } else if (!res.changed) {
+        setRefError(refData()?.error ?? null);
       }
     } catch (err: unknown) {
       setRefError(wordedError(err));
@@ -131,22 +162,27 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const readPublished = async (branch: string) => {
+  let readGen = 0;
+
+  const readPublished = async (branch: string, gen: number) => {
     try {
       const res = await client.view<PublishedRatesData>('published_rates', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPubData(res.data);
       }
       setPubError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPubData(null);
       setPubError(wordedError(err));
     }
   };
 
-  const readDrafts = async (branch: string) => {
+  const readDrafts = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RateDraftsData>('rate_drafts', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setDraftsData(res.data);
       }
@@ -159,6 +195,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           'rate_draft',
           { branch, filter: { id: openDraft.id } },
         );
+        if (gen !== readGen) return;
         if (detailRes.changed && detailRes.data) {
           setDraftDetail(detailRes.data);
         }
@@ -167,29 +204,33 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setDraftsError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setDraftsData(null);
       setDraftDetail(null);
       setDraftsError(wordedError(err));
     }
   };
 
-  const readMe = async () => {
+  const readMe = async (gen: number) => {
     try {
       const res = await client.view<{ permissions?: readonly string[] }>('me');
+      if (gen !== readGen) return;
       if (res.data && Array.isArray(res.data.permissions)) {
         setPermissions(res.data.permissions);
       } else {
         setPermissions([]);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPermissions([]);
       setPolicyError(wordedError(err));
     }
   };
 
-  const readPolicy = async (branch: string) => {
+  const readPolicy = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RatePolicyData>('rate_policy', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPolicyData(res.data);
         if (res.data.policy) {
@@ -209,16 +250,17 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               };
             }),
           );
-          savePolicyKey = null;
+          savePolicyWrite.reset();
         } else {
           setValueTiersOn(false);
           setValueTiers(emptyValueTiers());
           setSharpMoveAlertPct('');
-          savePolicyKey = null;
+          savePolicyWrite.reset();
         }
       }
       setPolicyError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPolicyData(null);
       setPolicyError(wordedError(err));
     }
@@ -226,9 +268,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
   const readAll = async (branch: string) => {
     if (!props.shown()) return;
+    const gen = ++readGen;
     setSimulateResult(null);
     void fetchReference({ since: undefined });
-    await Promise.all([readMe(), readPublished(branch), readDrafts(branch), readPolicy(branch)]);
+    await Promise.all([readMe(gen), readPublished(branch, gen), readDrafts(branch, gen), readPolicy(branch, gen)]);
   };
 
   let lastShown = false;
@@ -259,7 +302,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       setValueTiersOn(false);
       setValueTiers(emptyValueTiers());
       setSharpMoveAlertPct('');
-      savePolicyKey = null;
+      savePolicyWrite.reset();
       void readAll(branch);
       return;
     }
@@ -290,9 +333,18 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     return '1';
   };
 
+  let lastDraftId: string | undefined;
+  createEffect(() => {
+    const curDraftId = draftDetail()?.draft?.id;
+    if (curDraftId !== lastDraftId) {
+      lastDraftId = curDraftId;
+      setSimulateResult(null);
+    }
+  });
+
   const isOutOfBound = (currency: string): boolean => {
     const sim = simulateResult();
-    if (!sim || !Array.isArray(sim.outOfBound)) return false;
+    if (!sim || !draftDetail()?.draft || !Array.isArray(sim.outOfBound)) return false;
     return sim.outOfBound.some((item) => item.currency === currency);
   };
 
@@ -314,135 +366,133 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const handleNewDraft = async () => {
+  const handleNewDraft = guarded(async () => {
     const branch = props.branch();
+    const gen = readGen;
+    const curPub = pubData();
+    const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
+      currency: l.currency,
+      buyMode: 'AUTO',
+      sellMode: 'AUTO',
+      manualBuy: null,
+      manualSell: null,
+      reason: null,
+    }));
     try {
-      await client.command(
-        'POST',
-        '/api/rate-references/fetch',
-        { branch },
-        crypto.randomUUID(),
-      );
+      await writeFor('fetchReference', 'POST', '/api/rate-references/fetch').send({ branch });
 
-      const curPub = pubData();
-      const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
-        currency: l.currency,
-        buyMode: 'AUTO',
-        sellMode: 'AUTO',
-        manualBuy: null,
-        manualSell: null,
-        reason: null,
-      }));
-
-      const createRes = await client.command<unknown, { id: string; version: number; status: string }>(
+      const createRes = await writeFor<unknown, { id: string; version: number; status: string }>(
+        'createDraft',
         'POST',
         '/api/rate-drafts',
-        { branch, lines },
-        crypto.randomUUID(),
-      );
+      ).send({ branch, lines });
 
       const detailRes = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
         { branch, filter: { id: createRes.id } },
       );
+      if (gen !== readGen) return;
       if (detailRes.data) {
         setDraftDetail(detailRes.data);
       }
 
-      await readDrafts(branch);
+      await readDrafts(branch, gen);
+      if (gen !== readGen) return;
       setSimulateResult(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSimulate = async () => {
+  const handleSimulate = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
+    const draftId = draft.id;
     const branch = props.branch();
+    const gen = readGen;
     try {
-      const res = await client.command<
+      const res = await writeFor<
         unknown,
         {
           id: string;
           isInBound: boolean;
           outOfBound: OutOfBoundItem[];
         }
-      >(
-        'POST',
-        `/api/rate-drafts/${draft.id}/simulate`,
-        { branch },
-        crypto.randomUUID(),
-      );
+      >('simulateDraft:' + draftId, 'POST', `/api/rate-drafts/${draftId}/simulate`).send({ branch });
+      if (gen !== readGen || draftDetail()?.draft?.id !== draftId) return;
       setSimulateResult(res);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSubmit = async () => {
+  const handleSubmit = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     try {
-      const res = await client.command<unknown, { requestId?: string; status: string }>(
+      const res = await writeFor<unknown, { requestId?: string; status: string }>(
+        'submitDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/submit`,
-        { branch },
-        crypto.randomUUID(),
-      );
+      ).send({ branch });
+      if (gen !== readGen) return;
       if (res?.status) {
         setDraftDetail((prev) =>
           prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
         );
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handlePublish = async () => {
+  const handlePublish = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const curVersion = pubData()?.publication?.version ?? null;
     try {
-      await client.command<unknown, { id: string; version: number }>(
+      await writeFor<unknown, { id: string; version: number }>(
+        'publishDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/publish`,
-        { branch, expectedVersion: curVersion },
-        crypto.randomUUID(),
-      );
-      await readPublished(branch);
-      await readDrafts(branch);
+      ).send({ branch, expectedVersion: curVersion });
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
+      await readPublished(branch, gen);
+      await readDrafts(branch, gen);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleAdjustAll = async () => {
+  const handleAdjustAll = guarded(async () => {
     const draft = draftDetail()?.draft;
     const lines = draftDetail()?.lines ?? [];
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const policy = policyData()?.policy;
     if (!policy) return;
     try {
-      await client.command(
-        'POST',
-        '/api/rate-policies',
-        {
-          branch,
-          buyAdjustPct: adjustBuyPct(),
-          sellAdjustPct: adjustSellPct(),
-          guards: policy.guards,
-          maxReferenceAgeHours: policy.maxReferenceAgeHours,
-          onStale: policy.onStale,
-          staleLimitThb: policy.staleLimitThb,
-          reason: policy.reason || t('adjustAll'),
-        },
-        crypto.randomUUID(),
-      );
+      await writeFor('adjustPolicy', 'POST', '/api/rate-policies').send({
+        branch,
+        buyAdjustPct: adjustBuyPct(),
+        sellAdjustPct: adjustSellPct(),
+        guards: policy.guards,
+        maxReferenceAgeHours: policy.maxReferenceAgeHours,
+        onStale: policy.onStale,
+        staleLimitThb: policy.staleLimitThb,
+        reason: policy.reason || t('adjustAll'),
+      });
 
       const putLines = lines.map((l: RateDraftLineDto) => ({
         currency: l.currency,
@@ -453,28 +503,28 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         reason: l.reason,
       }));
 
-      await client.command(
-        'PUT',
-        `/api/rate-drafts/${draft.id}`,
-        {
-          branch,
-          expectedVersion: draft.version,
-          lines: putLines,
-        },
-        crypto.randomUUID(),
-      );
+      await writeFor('saveDraft:' + draft.id, 'PUT', `/api/rate-drafts/${draft.id}`).send({
+        branch,
+        expectedVersion: draft.version,
+        lines: putLines,
+      });
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
 
       const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
         { branch, filter: { id: draft.id } },
       );
+      if (gen !== readGen) return;
       if (updated.data) {
         setDraftDetail(updated.data);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const nonRisingTierNo = (): 1 | 2 | 3 | null => {
     if (!valueTiersOn()) return null;
@@ -513,22 +563,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     field: 'upperInclusiveThb' | 'buyMarginPct' | 'sellMarginPct',
     value: string,
   ) => {
-    savePolicyKey = null;
     setValueTiers((prev) =>
       prev.map((row) => (row.tierNo === tierNo ? { ...row, [field]: value } : row)),
     );
   };
 
-  const handleSavePolicy = async () => {
+  const handleSavePolicy = guarded(async () => {
     if (!canSavePolicy()) return;
     const policy = policyData()?.policy;
     if (!policy || Boolean(policyError())) return;
     if (!areValueTiersValid()) return;
 
     const branch = props.branch();
-    if (!savePolicyKey) {
-      savePolicyKey = crypto.randomUUID();
-    }
+    const gen = readGen;
     const rows = valueTiers();
     const hasAnyTierInput = rows.some(
       (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
@@ -559,22 +606,21 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     };
 
     try {
-      await client.command<RatePolicySaveInput & { branch: string }, RatePolicySaveOutput>(
-        'POST',
-        '/api/rate-policies',
-        payload,
-        savePolicyKey,
-      );
-      savePolicyKey = null;
+      await savePolicyWrite.send(payload);
+      if (gen !== readGen) return;
+      setSimulateResult(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const openHistory = async () => {
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+      if (gen !== readGen) return;
       const pubs = res.data?.publications ?? [];
       openDialog(
         t('historyTitle'),
@@ -606,6 +652,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         ),
       );
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -634,6 +681,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 data-action="save-policy"
                 data-testid="save-policy"
                 disabled={
+                  busy() ||
                   !canSavePolicy() ||
                   Boolean(policyError()) ||
                   !policyData()?.policy ||
@@ -666,7 +714,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               checked={valueTiersOn()}
               disabled={!canSavePolicy()}
               onChange={(e) => {
-                savePolicyKey = null;
                 setValueTiersOn(e.currentTarget.checked);
               }}
             />
@@ -683,7 +730,6 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               value={sharpMoveAlertPct()}
               disabled={!canSavePolicy()}
               onInput={(e) => {
-                savePolicyKey = null;
                 setSharpMoveAlertPct(e.currentTarget.value);
               }}
             />
@@ -785,6 +831,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="btn-new-draft"
+                disabled={busy()}
                 onClick={handleNewDraft}
               >
                 {t('newDraft')}
@@ -793,6 +840,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-simulate"
+                  disabled={busy()}
                   onClick={handleSimulate}
                 >
                   {t('simulate')}
@@ -800,6 +848,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-submit"
+                  disabled={busy()}
                   onClick={handleSubmit}
                 >
                   {t('submit')}
@@ -807,6 +856,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-publish"
+                  disabled={busy()}
                   onClick={handlePublish}
                 >
                   {t('publish')}
@@ -814,7 +864,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               </Show>
             </div>
           </div>
-          <Show when={simulateResult() && simulateResult()!.isInBound}>
+          <Show when={draftDetail()?.draft && simulateResult() && simulateResult()!.isInBound}>
             <div class="in-bound-status">{t('inBound')}</div>
           </Show>
           <Show when={draftsError()}>
@@ -847,7 +897,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="btn-adjust-all"
-              disabled={Boolean(policyError()) || !policyData()?.policy}
+              disabled={busy() || Boolean(policyError()) || !policyData()?.policy}
               onClick={handleAdjustAll}
             >
               {t('adjustAll')}

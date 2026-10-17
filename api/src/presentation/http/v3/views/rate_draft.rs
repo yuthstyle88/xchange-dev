@@ -100,7 +100,12 @@ impl BranchView for RateDraftBranchView {
                         evaluation,
                     })
                 }
-                None => None,
+                None => {
+                    return Ok(RateDraftDetailData {
+                        draft: None,
+                        lines: vec![],
+                    });
+                }
             };
 
             let lines_db = sqlx::query(

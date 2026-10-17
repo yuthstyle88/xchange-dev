@@ -5,13 +5,11 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
@@ -71,15 +69,6 @@ impl FakeOutside {
         let mut o = self.inner.lock().unwrap();
         o.has_live_rate = live;
         o.rates_updated = updated.to_owned();
-    }
-
-    pub fn set_facts(&self, f: &StepFacts) {
-        let mut o = self.inner.lock().unwrap();
-        o.has_live_rate = f.has_live_rate;
-        o.rates_updated = f.rates_updated.clone();
-        o.pending_transactions = f.pending_transactions.clone();
-        o.last_transaction = f.last_transaction.clone();
-        o.customers = f.customers.iter().cloned().collect();
     }
 
     pub fn add_customer(&self, id: &str) {
@@ -428,54 +417,6 @@ pub async fn written(
         "times": times_json(&state),
     });
     flatten(&ids.normalise(&doc))
-}
-
-// ── the fixture ─────────────────────────────────────────────────────────────
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct StepFacts {
-    pub has_live_rate: bool,
-    pub rates_updated: String,
-    pub pending_transactions: Vec<String>,
-    pub last_transaction: Option<String>,
-    pub customers: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Step {
-    /// `rate`, `customer`, `tx` or `pending`: something that happened outside custody
-    pub outside: Option<String>,
-    pub tx: Option<crate::shift_service_common::Tx>,
-    pub actor: Option<String>,
-    pub action: Option<String>,
-    pub payload: Option<Value>,
-    pub now: Option<i64>,
-    pub facts: StepFacts,
-    pub why: Option<String>,
-    pub v2_error: Option<String>,
-    pub changed: Option<BTreeMap<String, Value>>,
-}
-
-#[derive(Deserialize)]
-pub struct Story {
-    pub name: String,
-    pub steps: Vec<Step>,
-}
-
-#[derive(Deserialize)]
-pub struct Fixture {
-    pub sentences: BTreeMap<String, u32>,
-    pub stories: Vec<Story>,
-}
-
-pub fn fixture() -> Fixture {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v2_custody_service_cases.json");
-    let text =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&text).expect("v2_custody_service_cases.json has the expected shape")
 }
 
 // ── a desk for the hand-written tests ───────────────────────────────────────

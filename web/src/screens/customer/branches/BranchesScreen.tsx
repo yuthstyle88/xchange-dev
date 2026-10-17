@@ -65,8 +65,14 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
           initPoller(json.org);
           return;
         }
+        setHostState('notFound');
+        return;
       }
-      setHostState('notFound');
+      if (res.status === 404) {
+        setHostState('notFound');
+        return;
+      }
+      setHostState('error');
     } catch {
       setHostState('error');
     }
@@ -126,10 +132,20 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
         </div>
       </Show>
 
-      {/* Host not found or host error */}
-      <Show when={hostState() === 'notFound' || hostState() === 'error'}>
+      {/* Host not found */}
+      <Show when={hostState() === 'notFound'}>
         <div class="xc-branches-error" role="alert">
           <p>{t('notLinked')}</p>
+          <button type="button" class="xc-branches-retry-btn" onClick={handleRetry}>
+            {t('retry')}
+          </button>
+        </div>
+      </Show>
+
+      {/* Host error */}
+      <Show when={hostState() === 'error'}>
+        <div class="xc-branches-error" role="alert">
+          <p>{t('loadFailed')}</p>
           <button type="button" class="xc-branches-retry-btn" onClick={handleRetry}>
             {t('retry')}
           </button>

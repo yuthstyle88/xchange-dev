@@ -5,8 +5,8 @@ use std::sync::Arc;
 use sqlx::{Postgres, Transaction};
 use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::domain::booking::booking_error::BookingError;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::entities::transaction::Transaction as ExchangeTransaction;
+use xc_kernel::mode::Mode;
 
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 
@@ -136,7 +136,7 @@ mod tests {
     use std::sync::Arc;
     use xc_auth::domain::policy::value_objects::role::Role;
     use xc_booking::infrastructure::booking_repository::PgBookingRepository;
-    use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+    use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
     use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
     use xc_kernel::branch_tx::BranchTx;
     use xc_kernel::ids::BranchId;

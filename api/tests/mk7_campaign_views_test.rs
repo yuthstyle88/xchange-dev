@@ -1194,3 +1194,241 @@ async fn campaign_versions_each_keep_their_own_children() {
 
     room.finish().await;
 }
+
+// ------------------------------------------------------------ period check (#2200, §9)
+
+fn assert_invalid_field(a: &Answer, field: &str, what: &str) {
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{what}: {}", a.text);
+    assert_eq!(a.code(), "invalidRequest", "{what}: {}", a.text);
+    assert_eq!(
+        a.body["error"]["field"].as_str(),
+        Some(field),
+        "{what}: {}",
+        a.text
+    );
+}
+
+fn assert_period_order(a: &Answer, what: &str) {
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{what}: {}", a.text);
+    assert_eq!(a.code(), "periodOrder", "{what}: {}", a.text);
+    assert_eq!(
+        a.body["error"]["field"].as_str(),
+        Some("to"),
+        "{what}: {}",
+        a.text
+    );
+}
+
+#[actix_web::test]
+async fn campaigns_period_check_accepts_valid_range_and_single_day() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    let ok_range = get(
+        &room,
+        "MARKETING",
+        &format!("{base}&from=2026-01-01&to=2026-01-31"),
+    )
+    .await;
+    assert!(ok_range.ok_data()["campaigns"].is_array());
+    let ok_one_day = get(
+        &room,
+        "MARKETING",
+        &format!("{base}&from=2026-01-31&to=2026-01-31"),
+    )
+    .await;
+    assert!(ok_one_day.ok_data()["campaigns"].is_array());
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaigns_refuses_missing_or_empty_from_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&to=2026-01-31")).await,
+        "from",
+        "campaigns missing from",
+    );
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=&to=2026-01-31")).await,
+        "from",
+        "campaigns empty from",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaigns_refuses_missing_or_empty_to_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=2026-01-01")).await,
+        "to",
+        "campaigns missing to",
+    );
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=2026-01-01&to=")).await,
+        "to",
+        "campaigns empty to",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaigns_refuses_invalid_from_date_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    for bad in ["2026-13-01", "x", "2026-02-30"] {
+        assert_invalid_field(
+            &get(
+                &room,
+                "MARKETING",
+                &format!("{base}&from={bad}&to=2026-01-31"),
+            )
+            .await,
+            "from",
+            &format!("campaigns from={bad}"),
+        );
+    }
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaigns_refuses_invalid_to_date_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    assert_invalid_field(
+        &get(
+            &room,
+            "MARKETING",
+            &format!("{base}&from=2026-01-01&to=2026-02-30"),
+        )
+        .await,
+        "to",
+        "campaigns to=2026-02-30",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaigns_refuses_reversed_period_with_400_period_order() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaigns?branch={}", room.branch);
+    assert_period_order(
+        &get(
+            &room,
+            "MARKETING",
+            &format!("{base}&from=2026-02-01&to=2026-01-01"),
+        )
+        .await,
+        "campaigns reversed period",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_period_check_accepts_valid_range_and_single_day() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    let ok_range = get(
+        &room,
+        "MARKETING",
+        &format!("{base}&from=2026-01-01&to=2026-01-31"),
+    )
+    .await;
+    assert!(ok_range.ok_data()["versions"].is_array());
+    let ok_one_day = get(
+        &room,
+        "MARKETING",
+        &format!("{base}&from=2026-01-31&to=2026-01-31"),
+    )
+    .await;
+    assert!(ok_one_day.ok_data()["versions"].is_array());
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_refuses_missing_or_empty_from_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&to=2026-01-31")).await,
+        "from",
+        "campaign_performance missing from",
+    );
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=&to=2026-01-31")).await,
+        "from",
+        "campaign_performance empty from",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_refuses_missing_or_empty_to_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=2026-01-01")).await,
+        "to",
+        "campaign_performance missing to",
+    );
+    assert_invalid_field(
+        &get(&room, "MARKETING", &format!("{base}&from=2026-01-01&to=")).await,
+        "to",
+        "campaign_performance empty to",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_refuses_invalid_from_date_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    for bad in ["2026-13-01", "x", "2026-02-30"] {
+        assert_invalid_field(
+            &get(
+                &room,
+                "MARKETING",
+                &format!("{base}&from={bad}&to=2026-01-31"),
+            )
+            .await,
+            "from",
+            &format!("campaign_performance from={bad}"),
+        );
+    }
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_refuses_invalid_to_date_with_400_invalid_request() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    assert_invalid_field(
+        &get(
+            &room,
+            "MARKETING",
+            &format!("{base}&from=2026-01-01&to=2026-02-30"),
+        )
+        .await,
+        "to",
+        "campaign_performance to=2026-02-30",
+    );
+    room.finish().await;
+}
+
+#[actix_web::test]
+async fn campaign_performance_refuses_reversed_period_with_400_period_order() {
+    let room = Room::start().await;
+    let base = format!("/api/v3/views/campaign_performance?branch={}", room.branch);
+    assert_period_order(
+        &get(
+            &room,
+            "MARKETING",
+            &format!("{base}&from=2026-02-01&to=2026-01-01"),
+        )
+        .await,
+        "campaign_performance reversed period",
+    );
+    room.finish().await;
+}

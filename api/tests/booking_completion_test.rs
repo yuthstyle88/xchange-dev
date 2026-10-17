@@ -45,12 +45,12 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::infrastructure::booking_repository::PgBookingRepository;
 use xc_booking::infrastructure::slot_repository::PgSlotRepository;
-use xc_exchange::domain::customer::value_objects::customer_details::CustomerDetails;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
+use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
 use xc_exchange::domain::exchange::entities::transaction::Transaction as ExchangeTransaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{Money, Quote, Rate, Side};
 use xchange::application::workflows::booking_save_step::BookingSaveStep;
 use xchange::application::workflows::save_step::{

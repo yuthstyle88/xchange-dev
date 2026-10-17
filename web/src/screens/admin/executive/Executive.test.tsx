@@ -64,7 +64,7 @@ function texts(): TextsModule {
   return m!;
 }
 
-const ENDPOINT = '/api/executive/overview';
+const ENDPOINT = '/api/v3/views/executive_overview';
 
 // ── the answer ───────────────────────────────────────────────────────────────
 

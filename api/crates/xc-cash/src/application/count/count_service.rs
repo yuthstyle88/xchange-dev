@@ -811,17 +811,6 @@ impl CashCountService {
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 
-        if let Some(ref s_id) = cmd.shift_id {
-            let shift_teller: Option<String> =
-                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                    .bind(s_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-            let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
-            PersonRules::teller_owns_shift(&teller_id, actor)
-                .map_err(|e| AppError::Domain(e.to_string()))?;
-        }
-
         if let Some(existing) = self
             .repo
             .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
@@ -830,11 +819,34 @@ impl CashCountService {
             return Ok(existing);
         }
 
+        // After the replay lookup, as in handover start: a retry of a CLOSE count whose verification has
+        // since closed the shift answers the original count, not NoOpenShift.
+        if let Some(ref s_id) = cmd.shift_id {
+            let shift_teller: Option<String> = sqlx::query_scalar(
+                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+            )
+            .bind(s_id)
+            .bind(cmd.branch.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+            let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+            PersonRules::teller_owns_shift(&teller_id, actor)
+                .map_err(|e| AppError::Domain(e.to_string()))?;
+        }
+
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+        let mut seen_denominations: std::collections::HashSet<i64> =
+            std::collections::HashSet::with_capacity(cmd.lines.len());
 
         for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in count lines: {}",
+                    line.denomination_id
+                )));
+            }
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
                     "line qty cannot be negative: {}",
@@ -957,6 +969,10 @@ impl CashCountService {
                 id: count_id.to_string(),
             })?;
 
+        if count.verified_at.is_some() {
+            return Err(AppError::Conflict("การนับนี้ได้รับการรับรองแล้ว".into()));
+        }
+
         if count.kind == CountKind::HandoverOut {
             return Err(AppError::Domain(
                 crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
@@ -967,7 +983,7 @@ impl CashCountService {
             CountKind::HandoverOut => Permission::ShiftOperate,
             _ => Permission::ShiftCloseCertify,
         };
-        let target = Target::new(&actor.organization_id, Some(count.branch_id.clone()), None);
+        let target = Target::new(&count.organization_id, Some(count.branch_id.clone()), None);
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 

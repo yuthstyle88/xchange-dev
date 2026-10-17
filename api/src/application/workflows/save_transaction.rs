@@ -10,9 +10,8 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
-use xc_exchange::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
-use xc_exchange::domain::customer::value_objects::mode::Mode;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::transaction_form::{
@@ -24,6 +23,7 @@ use xc_exchange::infrastructure::exchange::transaction_repository::PgTransaction
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::mode::Mode;
 use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::currency::denomination_groups::GroupCode;

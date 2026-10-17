@@ -1682,7 +1682,8 @@ async fn adapters_fallbacks() {
     .expect("seed withdrawn consent");
 
     // Assert ConsentGate answers from real data
-    let gate_granted = MarketingConsentGate::prefetch(&db.pool, cust_granted)
+    let mut tx = db.pool.begin().await.expect("begin");
+    let gate_granted = MarketingConsentGate::prefetch_in(&mut tx, cust_granted)
         .await
         .expect("prefetch granted");
     assert!(
@@ -1690,7 +1691,7 @@ async fn adapters_fallbacks() {
         "customer with granted consent must have marketing_allowed == true"
     );
 
-    let gate_withdrawn = MarketingConsentGate::prefetch(&db.pool, cust_withdrawn)
+    let gate_withdrawn = MarketingConsentGate::prefetch_in(&mut tx, cust_withdrawn)
         .await
         .expect("prefetch withdrawn");
     assert!(
@@ -1698,13 +1699,14 @@ async fn adapters_fallbacks() {
         "customer with withdrawn consent must have marketing_allowed == false"
     );
 
-    let gate_none = MarketingConsentGate::prefetch(&db.pool, "cust-no-consent")
+    let gate_none = MarketingConsentGate::prefetch_in(&mut tx, "cust-no-consent")
         .await
         .expect("prefetch none");
     assert!(
         !gate_none.marketing_allowed("cust-no-consent"),
         "customer with no consent row must have marketing_allowed == false"
     );
+    tx.commit().await.expect("commit");
 
     // Seed ACTIVE referral attribution captured before exchange
     let cust_ref = "cust-referred";

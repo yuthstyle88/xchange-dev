@@ -80,8 +80,8 @@ impl NotificationService {
         }
 
         let updated: DateTime<Utc> = sqlx::query_scalar(
-            "UPDATE notifications SET read_at = now() \
-             WHERE id = $1 AND read_at IS NULL \
+            "UPDATE notifications SET read_at = COALESCE(read_at, now()) \
+             WHERE id = $1 \
              RETURNING read_at",
         )
         .bind(notif_uuid)

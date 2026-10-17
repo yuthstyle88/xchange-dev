@@ -1030,3 +1030,108 @@ async fn a_reversal_whose_customer_lost_the_verified_phone_fails_with_no_verifie
     assert_row_holds_no_phone_or_secret(&row);
     w.finish().await;
 }
+
+// ---------------------------------------------------------------- branch timezone reversibleUntil (#2202)
+
+#[tokio::test]
+async fn an_earn_at_an_asia_tokyo_branch_sets_reversible_until_to_end_of_tokyo_business_day() {
+    let w = World::start().await;
+    w.db.exec("UPDATE branches SET timezone = 'Asia/Tokyo' WHERE id = 'MAIN'")
+        .await;
+    let customer = w.customer(&[(PHONE, Phone::ActiveVerified)]).await;
+    let x = w.exchange(&customer).await;
+    w.enqueue_completed(&x).await;
+
+    let report = w.tick().await;
+    assert_eq!(report.delivered, 1, "{report:?}");
+
+    let seen = w.fake.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    let data = &seen[0].json()["data"];
+    assert_eq!(data["businessDate"], json!("2026-10-07"));
+    assert_eq!(instant(&data["completedAt"]), at(COMPLETED_AT));
+    assert_eq!(
+        instant(&data["reversibleUntil"]),
+        at("2026-10-07T15:00:00Z"),
+        "end of 2026-10-07 in Asia/Tokyo (UTC+9) is 2026-10-07T15:00:00Z"
+    );
+    w.finish().await;
+}
+
+#[tokio::test]
+async fn an_earn_at_a_europe_london_branch_sets_reversible_until_to_end_of_london_business_day() {
+    let w = World::start().await;
+    w.db.exec("UPDATE branches SET timezone = 'Europe/London' WHERE id = 'MAIN'")
+        .await;
+    let customer = w.customer(&[(PHONE, Phone::ActiveVerified)]).await;
+    let x = w.exchange(&customer).await;
+    w.enqueue_completed(&x).await;
+
+    let report = w.tick().await;
+    assert_eq!(report.delivered, 1, "{report:?}");
+
+    let seen = w.fake.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    let data = &seen[0].json()["data"];
+    assert_eq!(data["businessDate"], json!("2026-10-07"));
+    assert_eq!(instant(&data["completedAt"]), at(COMPLETED_AT));
+    assert_eq!(
+        instant(&data["reversibleUntil"]),
+        at("2026-10-07T23:00:00Z"),
+        "end of 2026-10-07 in Europe/London (BST, UTC+1) is 2026-10-07T23:00:00Z"
+    );
+    w.finish().await;
+}
+
+#[tokio::test]
+async fn an_earn_in_a_zone_with_a_dst_transition_at_midnight_uses_earliest_instant_without_panic() {
+    let w = World::start().await;
+    // America/Havana transitions at local midnight (00:00); on 2026-11-01 00:00:00 local is ambiguous (-04:00 then -05:00).
+    w.db.exec("UPDATE branches SET timezone = 'America/Havana' WHERE id = 'MAIN'")
+        .await;
+    let customer = w.customer(&[(PHONE, Phone::ActiveVerified)]).await;
+    let x = w.exchange(&customer).await;
+    w.db.exec(&format!(
+        "UPDATE transactions SET value_date = '2026-10-31' WHERE id = '{}'",
+        x.facts.transaction_id
+    ))
+    .await;
+    w.enqueue_completed(&x).await;
+
+    let report = w.tick().await;
+    assert_eq!(report.delivered, 1, "{report:?}");
+
+    let seen = w.fake.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    let data = &seen[0].json()["data"];
+    assert_eq!(data["businessDate"], json!("2026-10-31"));
+    assert_eq!(
+        instant(&data["reversibleUntil"]),
+        at("2026-11-01T04:00:00Z"),
+        "end of 2026-10-31 in America/Havana uses the earliest 2026-11-01 00:00 local instant (UTC-4 = 04:00Z)"
+    );
+    w.finish().await;
+}
+
+#[tokio::test]
+async fn completed_with_an_unparsable_branch_timezone_returns_internal_error() {
+    use xc_loyalty::domain::facts_source::LoyaltyFactsSource;
+    use xchange::infrastructure::loyalty::pg_facts_source::PgLoyaltyFactsSource;
+
+    let w = World::start().await;
+    w.db.exec("UPDATE branches SET timezone = 'Not/A_Zone' WHERE id = 'MAIN'")
+        .await;
+    let customer = w.customer(&[(PHONE, Phone::ActiveVerified)]).await;
+    let x = w.exchange(&customer).await;
+
+    let src = PgLoyaltyFactsSource::new(w.db.pool.clone());
+    let err = src
+        .completed(x.facts.transaction_id)
+        .await
+        .expect_err("unparsable branch timezone must return Err");
+    assert!(
+        matches!(&err, pos_error::AppError::Internal(msg) if msg == "branch timezone Not/A_Zone"),
+        "expected AppError::Internal(\"branch timezone Not/A_Zone\"), got {err:?}"
+    );
+    w.finish().await;
+}

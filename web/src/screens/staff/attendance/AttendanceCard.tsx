@@ -4,6 +4,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient } from '../../../shared/api/client';
 import type { StaffAttendanceRow } from '../../../shared/api/generated/staff_attendance';
 import type { StaffCtx } from '../cards';
+import * as staffI18n from '../i18n';
 import { th, en } from './i18n';
 
 export interface AttendanceCardProps {
@@ -11,26 +12,44 @@ export interface AttendanceCardProps {
 }
 
 export function AttendanceCard(_props: AttendanceCardProps): JSX.Element {
-  const t = screenT('staff.attendance', { th, en });
+  const t = screenT('staff.attendance', {
+    th: { ...staffI18n.th, ...th },
+    en: { ...staffI18n.en, ...en },
+  });
   const api = new ApiClient();
   const [rows, setRows] = createSignal<StaffAttendanceRow[]>([]);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<unknown>(null);
+  let reading = false;
 
-  onMount(async () => {
+  async function load(): Promise<void> {
+    if (reading) return;
+    reading = true;
     try {
       const res = await api.view<StaffAttendanceRow[]>('staff_attendance');
       if (res.data) {
         setRows(res.data);
       }
+      setError(null);
     } catch (e: unknown) {
-      setError(wordedError(e));
+      setError(e);
+    } finally {
+      reading = false;
     }
+  }
+
+  onMount(() => {
+    void load();
   });
 
   return (
     <div data-card="attendance">
-      <Show when={error()}>
-        <div data-testid="attendance-error">{error()}</div>
+      <Show when={error() !== null}>
+        <div>
+          <div data-testid="attendance-error">{wordedError(error())}</div>
+          <button type="button" onClick={() => void load()}>
+            {t('refresh')}
+          </button>
+        </div>
       </Show>
       <For each={rows()}>
         {(row) => (

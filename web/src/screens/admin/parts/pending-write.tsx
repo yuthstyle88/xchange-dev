@@ -1,7 +1,7 @@
 // V2-parts (#476): pending write manager with retry, inspect and abandon (ticket §7, design §12.2, P4)
 
 import { createSignal } from 'solid-js';
-import type { ApiClient } from '../../../shared/api/client';
+import { ApiError, type ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { closeDialog, openDialog, setDialogLocked } from './Dialog';
@@ -53,6 +53,56 @@ function disableDialogControls(): void {
       }
     }
   }
+}
+
+function enableDialogControls(): void {
+  if (typeof document !== 'undefined') {
+    const dialogEl = document.querySelector('dialog');
+    if (dialogEl) {
+      const controls = dialogEl.querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLButtonElement
+      >('form input, form select, form button');
+      for (const c of controls) {
+        c.disabled = false;
+      }
+    }
+  }
+}
+
+function isDefiniteRefusal(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status >= 400 &&
+    err.status < 500 &&
+    err.status !== 408
+  );
+}
+
+function showRefusal(err: unknown): void {
+  const message = wordedError(err);
+  if (typeof document !== 'undefined') {
+    const dialogEl = document.querySelector('dialog');
+    const bodyEl = dialogEl?.querySelector('.dialog-body');
+    if (dialogEl?.open && bodyEl?.querySelector('form')) {
+      enableDialogControls();
+      let errEl = bodyEl.querySelector<HTMLElement>('.error');
+      if (!errEl) {
+        errEl = document.createElement('p');
+        errEl.className = 'error';
+        errEl.setAttribute('role', 'alert');
+        bodyEl.prepend(errEl);
+      }
+      errEl.textContent = message;
+      setDialogLocked(false);
+      return;
+    }
+  }
+  openDialog('', () => (
+    <p class="error" role="alert">
+      {wordedError(err)}
+    </p>
+  ));
+  setDialogLocked(false);
 }
 
 function showNotConfirmedDialog(errorMessage: string): void {
@@ -158,6 +208,13 @@ export const pendingWrite = {
       onSaved();
     } catch (err: unknown) {
       setBusy(false);
+      if (isDefiniteRefusal(err)) {
+        currentPending = null;
+        disableBeforeUnload();
+        setDialogLocked(false);
+        showRefusal(err);
+        return;
+      }
       enableBeforeUnload();
       setDialogLocked(true);
       showNotConfirmedDialog(wordedError(err));
@@ -191,6 +248,13 @@ export const pendingWrite = {
       req.onSaved();
     } catch (err: unknown) {
       setBusy(false);
+      if (isDefiniteRefusal(err)) {
+        currentPending = null;
+        disableBeforeUnload();
+        setDialogLocked(false);
+        showRefusal(err);
+        return;
+      }
       enableBeforeUnload();
       setDialogLocked(true);
       showNotConfirmedDialog(wordedError(err));

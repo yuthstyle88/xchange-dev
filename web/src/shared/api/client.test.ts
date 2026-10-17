@@ -53,6 +53,33 @@ describe('ApiClient.view', () => {
     expect(answer.version).toBe(7);
     expect(answer.data).toBeUndefined();
   });
+
+  it('v1: carries versions along with version, changed, and data when the answer has versions', async () => {
+    const f = fakeFetch(200, { version: 1, changed: true, versions: { B1: 3 }, data: { ok: true } });
+    const answer = await new ApiClient(f.fn).view<{ ok: boolean }>('executive_overview');
+    expect(answer).toEqual({
+      version: 1,
+      changed: true,
+      versions: { B1: 3 },
+      data: { ok: true },
+    });
+  });
+
+  it('v2: leaves the versions key absent when the body has no versions object', async () => {
+    const f = fakeFetch(200, { version: 8, changed: true, data: { n: 1 } });
+    const answer = await new ApiClient(f.fn).view<{ n: number }>('me');
+    expect('versions' in answer).toBe(false);
+    expect(Object.keys(answer)).toEqual(['version', 'changed', 'data']);
+  });
+
+  it('v3: keeps versions and leaves data absent on an unchanged organisation-view answer', async () => {
+    const f = fakeFetch(200, { changed: false, versions: { B1: 3 } });
+    const answer = await new ApiClient(f.fn).view('executive_overview');
+    expect(answer.changed).toBe(false);
+    expect(answer.versions).toEqual({ B1: 3 });
+    expect('data' in answer).toBe(false);
+    expect(answer.data).toBeUndefined();
+  });
 });
 
 describe('ApiClient.page', () => {

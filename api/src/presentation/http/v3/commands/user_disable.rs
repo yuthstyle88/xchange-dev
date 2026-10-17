@@ -10,13 +10,15 @@ use actix_web::web;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::Actor;
+use xc_auth::application::user::user_service::creator_may_grant;
+use xc_auth::domain::access::{Actor, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::user::UserRepository;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
 use super::user_grant::{changed, from_app_error, user_in_organisation, users};
 
@@ -51,11 +53,23 @@ impl CommandAction for UserDisableCommand {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
+        let now = chrono::Utc::now();
+        let live_roles: Vec<ScopedRole> = users()
+            .repo()
+            .find_roles_by_user_id(tx, &user_id)
+            .await
+            .map_err(from_app_error)?
+            .into_iter()
+            .filter(|r| r.valid_from <= now && r.valid_to.is_none_or(|to| to > now))
+            .collect();
+        if !creator_may_grant(&who.roles, &live_roles, now) {
+            return Err(out_of_scope());
+        }
         users()
             .disable(tx, &user_id)
             .await

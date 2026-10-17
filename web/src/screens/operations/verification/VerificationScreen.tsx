@@ -1,5 +1,6 @@
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { MeView } from '../../../shared/api/generated/me';
 import type {
   VerificationCaseAuditRow,
@@ -130,6 +131,12 @@ export function VerificationScreen(): JSX.Element {
   const [previewUrl, setPreviewUrl] = createSignal<string | null>(null);
   const [linkExpiredDocId, setLinkExpiredDocId] = createSignal<string | null>(null);
   const [docError, setDocError] = createSignal<string | null>(null);
+  const [docBusy, setDocBusy] = createSignal<boolean>(false);
+
+  createEffect(() => {
+    selectedCaseId();
+    setDocBusy(false);
+  });
 
   const [expiresAt, setExpiresAt] = createSignal<string>('');
   const [reasonCode, setReasonCode] = createSignal<S5ReasonCode>('DOCUMENT_UNREADABLE');
@@ -143,8 +150,15 @@ export function VerificationScreen(): JSX.Element {
   const [branchDocType, setBranchDocType] = createSignal<'PASSPORT' | 'NATIONAL_ID'>('PASSPORT');
   const [branchFile, setBranchFile] = createSignal<File | null>(null);
   const [branchSuccessMsg, setBranchSuccessMsg] = createSignal<string | null>(null);
+  // #2412: a second send while the first is in flight reuses the idempotency key,
+  // gets 409 idempotencyConflict and drops the key; block it instead.
+  const [deciding, setDeciding] = createSignal<boolean>(false);
+  const [branchSubmitting, setBranchSubmitting] = createSignal<boolean>(false);
 
   let lastQueueVersion: number | undefined;
+  let queueErrorActive = false;
+  let caseRead = 0;
+  let queueRead = 0;
   let expiresInputRef: HTMLInputElement | undefined;
   let reasonSelectRef: HTMLSelectElement | undefined;
   let branchCustInputRef: HTMLInputElement | undefined;
@@ -195,6 +209,9 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function fetchQueue(isPoll = false): Promise<void> {
+    // #2454: a poll started before a full reload can answer after it; only the
+    // latest-started queue read may apply its answer, version, authorization or error.
+    const mine = ++queueRead;
     try {
       const filter: VerificationQueueFilter = {
         since: isPoll && lastQueueVersion !== undefined ? lastQueueVersion : null,
@@ -203,13 +220,20 @@ export function VerificationScreen(): JSX.Element {
         'verification_queue',
         filter.since !== null ? { since: filter.since } : {},
       );
+      if (mine !== queueRead) return;
       lastQueueVersion = answer.version;
       if (answer.changed && Array.isArray(answer.data)) {
         setQueueItems(answer.data);
       }
       setAuthorized(true);
       setRefusalMessage(null);
+      if (queueErrorActive) {
+        queueErrorActive = false;
+        setErrorMessage(null);
+        setRetryFn(null);
+      }
     } catch (err: unknown) {
+      if (mine !== queueRead) return;
       if (
         err instanceof ApiError &&
         (err.code === 'roleNotAllowed' ||
@@ -222,7 +246,9 @@ export function VerificationScreen(): JSX.Element {
         setRefusalMessage(describeFailure(err));
         return;
       }
+      queueErrorActive = true;
       setErrorMessage(describeFailure(err));
+      setRetryFn(() => () => fetchQueue(false));
     }
   }
 
@@ -266,7 +292,7 @@ export function VerificationScreen(): JSX.Element {
 
   onMount(() => {
     const timer = setInterval(() => {
-      if (authorized() === true) {
+      if (authorized() !== false) {
         void fetchQueue(true);
       }
     }, QUEUE_POLL_MS);
@@ -274,9 +300,31 @@ export function VerificationScreen(): JSX.Element {
     void initScreen();
   });
 
+  function resetDecisionInputs(): void {
+    setExpiresAt('');
+    if (expiresInputRef) {
+      expiresInputRef.value = '';
+    }
+    setReasonCode('DOCUMENT_UNREADABLE');
+    if (reasonSelectRef) {
+      reasonSelectRef.value = 'DOCUMENT_UNREADABLE';
+    }
+  }
+
   async function loadCase(caseId: string, keepError = false): Promise<void> {
+    const mine = ++caseRead;
+    if (selectedCaseId() !== caseId || selectedCase()?.id !== caseId) {
+      resetDecisionInputs();
+    }
+    if (selectedCase()?.id !== caseId) {
+      setSelectedCase(null);
+      setCaseDocuments([]);
+      setCaseAudit([]);
+    }
     setSelectedCaseId(caseId);
     if (!keepError) {
+      resetDecisionInputs();
+      queueErrorActive = false;
       setErrorMessage(null);
       setRetryFn(null);
       setDocError(null);
@@ -290,45 +338,51 @@ export function VerificationScreen(): JSX.Element {
         'verification_case',
         { filter: { id: caseId } },
       );
+      if (mine !== caseRead || selectedCaseId() !== caseId) return;
       if (answer.data) {
         setSelectedCase(answer.data.case);
         setCaseDocuments(answer.data.documents ?? []);
         setCaseAudit(answer.data.audit ?? []);
       }
     } catch (err: unknown) {
+      if (mine !== caseRead || selectedCaseId() !== caseId) return;
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
     }
   }
 
   async function openDocument(docId: string): Promise<void> {
+    if (docBusy()) return;
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
+    setDocBusy(true);
+    setPreviewDocId(null);
+    setPreviewUrl(null);
     setDocError(null);
     setLinkExpiredDocId(null);
-    const key = makeIdempotencyKey();
+    const caseId = currentCase.id;
     const input: VerificationDocumentLinkInput = {
       id: docId,
       expectedVersion: currentCase.version,
     };
 
     try {
-      const linkOut = await api.command<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
-        'POST',
-        `/api/operations/verification/documents/${encodeURIComponent(docId)}/link`,
-        input,
-        key,
-      );
+      const linkOut = await documentLinkWrite.send(input);
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       const contentRes = await fetch(linkOut.url, {
         method: 'GET',
         credentials: 'same-origin',
       });
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       if (!contentRes.ok) {
         await parseRawResponseError(contentRes);
       }
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       setPreviewDocId(docId);
       setPreviewUrl(linkOut.url);
     } catch (err: unknown) {
+      if (selectedCase()?.id !== caseId || selectedCaseId() !== caseId) return;
       const msg = describeFailure(err);
       if (
         err instanceof ApiError &&
@@ -340,15 +394,63 @@ export function VerificationScreen(): JSX.Element {
         return;
       }
       setDocError(msg);
+    } finally {
+      if (selectedCaseId() === caseId) {
+        setDocBusy(false);
+      }
     }
   }
+
+  const documentLinkWrite = keyedWrite<VerificationDocumentLinkInput, VerificationDocumentLinkOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/documents/${encodeURIComponent(b.id)}/link`,
+  );
+
+  const startReviewWrite = keyedWrite<
+    VerificationCaseStartReviewInput,
+    VerificationCaseStartReviewOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/start-review`,
+  );
+
+  const approveWrite = keyedWrite<VerificationCaseApproveInput, VerificationCaseApproveOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/approve`,
+  );
+
+  const rejectWrite = keyedWrite<VerificationCaseRejectInput, VerificationCaseRejectOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/reject`,
+  );
+
+  const requestUpdateWrite = keyedWrite<
+    VerificationCaseRequestUpdateInput,
+    VerificationCaseRequestUpdateOutput
+  >(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/request-update`,
+  );
+
+  const revokeWrite = keyedWrite<VerificationCaseRevokeInput, VerificationCaseRevokeOutput>(
+    api,
+    'POST',
+    (b) => `/api/operations/verification/cases/${encodeURIComponent(b.id)}/revoke`,
+  );
 
   async function handleCommandFailure(
     err: unknown,
     caseId: string,
     retryCallback: () => Promise<void>,
   ): Promise<void> {
+    if (selectedCaseId() !== caseId) return;
     const msg = describeFailure(err);
+    queueErrorActive = false;
     setErrorMessage(msg);
     if (err instanceof ApiError && err.code === 'staleVersion') {
       setRetryFn(null);
@@ -360,34 +462,31 @@ export function VerificationScreen(): JSX.Element {
 
   async function handleStartReview(): Promise<void> {
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:start-review:${expectedVersion}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseStartReviewInput = {
       id: caseId,
       expectedVersion,
     };
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseStartReviewInput,
-          VerificationCaseStartReviewOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/start-review`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await startReviewWrite.send(body);
+        if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
         setSelectedCase(updated);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -395,20 +494,20 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function handleApprove(): Promise<void> {
+    if (deciding()) return;
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const rawDate = (expiresInputRef ? expiresInputRef.value : expiresAt()).trim();
     const today = todayBangkokIso();
     if (!rawDate || !/^\d{4}-\d{2}-\d{2}$/.test(rawDate) || rawDate <= today) {
+      queueErrorActive = false;
       setErrorMessage(st('errExpiresAtRequired'));
       return;
     }
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:approve:${expectedVersion}:${rawDate}`;
-    const key = getOrCreateIdemKey(sig);
     const body: VerificationCaseApproveInput = {
       id: caseId,
       expectedVersion,
@@ -416,22 +515,24 @@ export function VerificationScreen(): JSX.Element {
     };
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
-        const updated = await api.command<
-          VerificationCaseApproveInput,
-          VerificationCaseApproveOutput
-        >(
-          'POST',
-          `/api/operations/verification/cases/${encodeURIComponent(caseId)}/approve`,
-          body,
-          key,
-        );
-        clearIdemKey(sig);
+        const updated = await approveWrite.send(body);
+        if (selectedCaseId() !== caseId) return;
         setRetryFn(null);
+        if (updated.status === 'VERIFIED') {
+          resetDecisionInputs();
+        }
         setSelectedCase(updated);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -447,22 +548,26 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function submitReasonDecision(action: PendingReasonAction): Promise<void> {
+    if (deciding()) return;
     const currentCase = selectedCase();
-    if (!currentCase) return;
+    if (!currentCase || currentCase.id !== selectedCaseId()) return;
 
     const selectedReason = currentReasonCode();
     if (!selectedReason || !(S5_REASON_CODES as readonly string[]).includes(selectedReason)) {
+      queueErrorActive = false;
       setErrorMessage(st('errReasonRequired'));
       return;
     }
 
     const caseId = currentCase.id;
     const expectedVersion = currentCase.version;
-    const sig = `${caseId}:${action}:${expectedVersion}:${selectedReason}`;
-    const key = getOrCreateIdemKey(sig);
 
     const execute = async (): Promise<void> => {
+      if (selectedCaseId() !== caseId) return;
+      if (deciding()) return;
+      setDeciding(true);
       try {
+        queueErrorActive = false;
         setErrorMessage(null);
         if (action === 'reject') {
           const body: VerificationCaseRejectInput = {
@@ -470,15 +575,8 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRejectInput,
-            VerificationCaseRejectOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/reject`,
-            body,
-            key,
-          );
+          const updated = await rejectWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         } else if (action === 'request-update') {
           const body: VerificationCaseRequestUpdateInput = {
@@ -486,15 +584,8 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRequestUpdateInput,
-            VerificationCaseRequestUpdateOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/request-update`,
-            body,
-            key,
-          );
+          const updated = await requestUpdateWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         } else {
           const body: VerificationCaseRevokeInput = {
@@ -502,22 +593,18 @@ export function VerificationScreen(): JSX.Element {
             expectedVersion,
             reasonCode: selectedReason,
           };
-          const updated = await api.command<
-            VerificationCaseRevokeInput,
-            VerificationCaseRevokeOutput
-          >(
-            'POST',
-            `/api/operations/verification/cases/${encodeURIComponent(caseId)}/revoke`,
-            body,
-            key,
-          );
+          const updated = await revokeWrite.send(body);
+          if (selectedCaseId() !== caseId) return;
           setSelectedCase(updated);
         }
-        clearIdemKey(sig);
         setRetryFn(null);
+        resetDecisionInputs();
         setPendingReasonAction(null);
+        void fetchQueue(false);
       } catch (err: unknown) {
         await handleCommandFailure(err, caseId, execute);
+      } finally {
+        setDeciding(false);
       }
     };
 
@@ -526,7 +613,9 @@ export function VerificationScreen(): JSX.Element {
 
   async function handleBranchSubmit(e?: Event): Promise<void> {
     e?.preventDefault();
+    if (branchSubmitting()) return;
     setBranchSuccessMsg(null);
+    queueErrorActive = false;
     setErrorMessage(null);
 
     const custId = (branchCustInputRef ? branchCustInputRef.value : branchCustomerId()).trim();
@@ -535,6 +624,7 @@ export function VerificationScreen(): JSX.Element {
     ) as 'PASSPORT' | 'NATIONAL_ID';
     const file = branchFileInputRef?.files?.[0] ?? branchFile();
     if (!custId || !file) {
+      queueErrorActive = false;
       setErrorMessage(st('errBranchFormIncomplete'));
       return;
     }
@@ -547,28 +637,25 @@ export function VerificationScreen(): JSX.Element {
     formData.append('documentType', docType);
     formData.append('file', file);
 
+    setBranchSubmitting(true);
     try {
-      const res = await fetch(ROUTE_BRANCH_CASES, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Idempotency-Key': key,
-        },
-        body: formData,
-      });
-      if (!res.ok) {
-        await parseRawResponseError(res);
-      }
+      await api.postForm(ROUTE_BRANCH_CASES, formData, key);
       clearIdemKey(sig);
       setBranchSuccessMsg(st('branchSubmittedNotice'));
       setBranchCustomerId('');
       setBranchFile(null);
+      if (branchFileInputRef) {
+        branchFileInputRef.value = '';
+      }
       await fetchQueue(false);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.code === 'branchReviewNotAllowed') {
         setBranchReviewAllowed(false);
       }
+      queueErrorActive = false;
       setErrorMessage(describeFailure(err));
+    } finally {
+      setBranchSubmitting(false);
     }
   }
 
@@ -725,6 +812,7 @@ export function VerificationScreen(): JSX.Element {
                                 type="button"
                                 data-doc-id={doc.id}
                                 data-action="view-document"
+                                disabled={docBusy()}
                                 onClick={() => void openDocument(doc.id)}
                               >
                                 {st('docView')}
@@ -744,6 +832,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="refresh-link"
+                                disabled={docBusy()}
                                 onClick={() => void openDocument(expiredId())}
                               >
                                 {st('docRefreshLink')}
@@ -757,7 +846,17 @@ export function VerificationScreen(): JSX.Element {
                     <Show when={previewUrl()}>
                       {(url) => (
                         <div class="xc-verification-doc-preview">
-                          <img src={url()} alt={previewDocId() ?? st('documentsTitle')} />
+                          <Show
+                            when={
+                              caseDocuments().find((d) => d.id === previewDocId())?.mime ===
+                              'application/pdf'
+                            }
+                            fallback={
+                              <img src={url()} alt={previewDocId() ?? st('documentsTitle')} />
+                            }
+                          >
+                            <iframe src={url()} title={previewDocId() ?? st('documentsTitle')} />
+                          </Show>
                         </div>
                       )}
                     </Show>
@@ -782,6 +881,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="start-review"
+                            disabled={deciding()}
                             onClick={() => void handleStartReview()}
                           >
                             {st('actionStartReview')}
@@ -809,6 +909,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="approve"
+                            disabled={deciding()}
                             onClick={() => void handleApprove()}
                           >
                             {st('actionApprove')}
@@ -816,6 +917,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="reject"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('reject')}
                           >
                             {st('actionReject')}
@@ -823,6 +925,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="request-update"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('request-update')}
                           >
                             {st('actionRequestUpdate')}
@@ -833,6 +936,7 @@ export function VerificationScreen(): JSX.Element {
                           <button
                             type="button"
                             data-action="revoke"
+                            disabled={deciding()}
                             onClick={() => setPendingReasonAction('revoke')}
                           >
                             {st('actionRevoke')}
@@ -867,6 +971,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-reject"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('reject')}
                               >
                                 {st('actionConfirmReject')}
@@ -876,6 +981,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-request-update"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('request-update')}
                               >
                                 {st('actionConfirmRequestUpdate')}
@@ -885,6 +991,7 @@ export function VerificationScreen(): JSX.Element {
                               <button
                                 type="button"
                                 data-action="confirm-revoke"
+                                disabled={deciding()}
                                 onClick={() => void submitReasonDecision('revoke')}
                               >
                                 {st('actionConfirmRevoke')}
@@ -972,6 +1079,7 @@ export function VerificationScreen(): JSX.Element {
               <button
                 type="submit"
                 data-action="submit-branch-case"
+                disabled={branchSubmitting()}
                 onClick={(e) => void handleBranchSubmit(e)}
               >
                 {st('branchSubmitBtn')}

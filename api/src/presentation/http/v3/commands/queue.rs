@@ -21,6 +21,7 @@ use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor as User;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -36,9 +37,7 @@ use xc_queue::domain::ticket::issue_source::IssueSource;
 use xc_queue::domain::ticket::queue_ticket::QueueTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
-use xc_booking::application::lifecycle::BookingLifecycle;
-use xc_booking::infrastructure::booking_repository::PgBookingRepository;
-use xc_booking::infrastructure::slot_repository::PgSlotRepository;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -64,10 +63,7 @@ impl QueueServices {
         let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
         let status = StatusService::new(branch_tx.clone(), repo.clone());
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
-            Arc::new(
-                BookingLifecycle::new(Arc::new(PgBookingRepository::new(pool.clone())))
-                    .with_slots(Arc::new(PgSlotRepository::new(pool))),
-            );
+            pg_booking_lifecycle(pool);
         Self {
             desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone())
                 .with_booking_events(booking_events.clone()),
@@ -286,6 +282,19 @@ impl CommandAction for CallNext {
     }
 }
 
+fn ticket_id(raw: &str) -> Result<String, V3Error> {
+    Uuid::parse_str(raw)
+        .map(|id| id.to_string())
+        .map_err(|_| {
+            V3Error::new(
+                "validationFailed",
+                Some("id"),
+                "invalid ticket id",
+                StatusCode::BAD_REQUEST,
+            )
+        })
+}
+
 /// A desk command on one ticket, `POST /api/queue/tickets/{id}/<verb>`.
 macro_rules! ticket_command {
     ($(#[$doc:meta])* $ty:ident, $name:literal, $route:literal, $method:ident) => {
@@ -308,10 +317,11 @@ macro_rules! ticket_command {
                 input: Self::Input,
                 _key: IdempotencyKey,
             ) -> Result<Self::Output, V3Error> {
+                let id = ticket_id(&input.id)?;
                 let user = user_in(tx, branch, who).await?;
                 self.0
                     .desk
-                    .$method(tx, &user, branch, &input.id, Utc::now())
+                    .$method(tx, &user, branch, &id, Utc::now())
                     .await
                     .map(QueueTicketDto::from)
                     .map_err(refusal)
@@ -360,6 +370,7 @@ impl CommandAction for Cancel {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let id = ticket_id(&input.id)?;
         let reason = input.reason.trim();
         if reason.is_empty() {
             return Err(V3Error::new(
@@ -372,7 +383,7 @@ impl CommandAction for Cancel {
         let user = user_in(tx, branch, who).await?;
         self.0
             .desk
-            .cancel_in(tx, &user, branch, &input.id, reason, Utc::now())
+            .cancel_in(tx, &user, branch, &id, reason, Utc::now())
             .await
             .map(QueueTicketDto::from)
             .map_err(refusal)

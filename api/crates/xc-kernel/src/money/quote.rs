@@ -15,6 +15,8 @@ pub enum QuoteError {
     /// Buying only: the customer fee is larger than what the shop would pay out.
     #[error("the fee is larger than the purchase")]
     FeeExceedsPrincipal,
+    #[error("the amount is too large to price")]
+    ArithmeticOverflow,
 }
 
 /// The baht figures of one exchange.
@@ -40,7 +42,8 @@ impl Quote {
             return Err(QuoteError::ZeroAmount);
         }
 
-        let principal = ExchangeArithmetic::thb(amount, rate, unit);
+        let principal = ExchangeArithmetic::try_thb(amount, rate, unit)
+            .map_err(|_| QuoteError::ArithmeticOverflow)?;
 
         match side {
             Side::Buy => {

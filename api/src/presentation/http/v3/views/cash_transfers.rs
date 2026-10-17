@@ -73,7 +73,7 @@ impl PagedView for CashTransfersView {
                    AND ($2::text IS NULL OR t.status = $2) \
                    AND ($3::text IS NULL OR t.kind = $3) \
                    AND ($4::text IS NULL OR (t.created_at, t.id) < \
-                        (SELECT b.created_at, b.id FROM cash_transfers b WHERE b.id::text = $4)) \
+                        (SELECT b.created_at, b.id FROM cash_transfers b WHERE b.id::text = $4 AND (b.from_branch_id = $1 OR b.to_branch_id = $1))) \
                  ORDER BY t.created_at DESC, t.id DESC \
                  LIMIT $5",
             )

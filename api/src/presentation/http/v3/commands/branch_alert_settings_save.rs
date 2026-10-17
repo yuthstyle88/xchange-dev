@@ -100,6 +100,14 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
                     StatusCode::BAD_REQUEST,
                 ));
             }
+            if dec >= Decimal::from(10_000_000_000_000_000_i64) {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("floors"),
+                    "minQuantity exceeds maximum allowed value",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
         }
 
         if !input.floors.is_empty() {

@@ -373,7 +373,7 @@ function norm(s: string): string {
 }
 
 function when(iso: string): string {
-  return norm(new Date(iso).toLocaleString('th-TH'));
+  return norm(new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
 }
 
 function buttonsNamed(el: ParentNode, name: string): HTMLButtonElement[] {

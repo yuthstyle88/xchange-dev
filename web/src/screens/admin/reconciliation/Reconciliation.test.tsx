@@ -387,6 +387,6 @@ describe('F01 reconciliation screen (FN-1 #1068)', () => {
     hashes[B01] = 'hash-b01-moved'; // the figures moved after the screen read them
     await certify(el);
     expect(certifies().length).toBe(1);
-    expect(document.body.textContent ?? '').toContain('The figures changed; read the sheet again (test)');
+    expect(document.body.textContent ?? '').toContain('ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง');
   });
 });

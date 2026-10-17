@@ -14,10 +14,14 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_marketing::application::simulator::{CampaignSimulator, SimulationScenario};
+use xc_kernel::money::CurrencyCode;
+use xc_marketing::application::simulator::{
+    CampaignSimulator, SimulationError, SimulationScenario,
+};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::infrastructure::marketing::branch_scope::CampaignBranchScope;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -122,8 +126,25 @@ impl CommandAction for CampaignSimulateCommand {
             )
         })?;
 
+        if input.scenarios.is_empty() {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("scenarios"),
+                "at least one scenario is required",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let mut scenarios = Vec::new();
         for s in input.scenarios {
+            CurrencyCode::parse(&s.currency).map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("currency"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
             let amount = Decimal::from_str(&s.amount).map_err(|e| {
                 V3Error::new(
                     "validationFailed",
@@ -132,11 +153,68 @@ impl CommandAction for CampaignSimulateCommand {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
+            if CampaignBranchScope::first_outside_org_in(
+                tx,
+                org_id,
+                std::slice::from_ref(&s.branch_id),
+            )
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+            .is_some()
+            {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("branchId"),
+                    "branch does not belong to organization",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+            let branch_targeted: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM campaign_branches WHERE campaign_version_id = $1 AND branch_id = $2)",
+            )
+            .bind(version_id)
+            .bind(&s.branch_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+            if !branch_targeted {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("branchId"),
+                    "branch is not targeted by campaign version",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
             scenarios.push(SimulationScenario {
                 branch_id: s.branch_id,
                 currency: s.currency,
                 amount,
             });
+        }
+
+        if let Some(first_branch) = scenarios.first().map(|s| s.branch_id.as_str())
+            && scenarios.iter().any(|s| s.branch_id != first_branch)
+        {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("scenarios"),
+                "all scenarios must target the same branch",
+                StatusCode::BAD_REQUEST,
+            ));
         }
 
         let user_id = resolve_user_id(tx, who, org_id).await;
@@ -151,13 +229,19 @@ impl CommandAction for CampaignSimulateCommand {
             now,
         )
         .await
-        .map_err(|e| {
-            V3Error::new(
-                "simulationFailed",
+        .map_err(|e| match e {
+            SimulationError::RateUnavailable => V3Error::new(
+                "rateUnavailable",
                 None,
                 e.to_string(),
+                StatusCode::CONFLICT,
+            ),
+            other => V3Error::new(
+                "simulationFailed",
+                None,
+                other.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-            )
+            ),
         })?;
 
         Ok(CampaignSimulateOutput {

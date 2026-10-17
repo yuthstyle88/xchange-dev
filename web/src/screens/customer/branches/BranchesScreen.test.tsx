@@ -265,7 +265,7 @@ describe('BranchesScreen (C08 / APP-12)', () => {
     });
     const host = mount(s);
     await settle();
-    expect(host.textContent).toContain(text('notLinked'));
+    expect(host.textContent).toContain(text('loadFailed'));
     expect(cards(host)).toHaveLength(0);
 
     const retry = buttonWithText(host, text('retry'));
