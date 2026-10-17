@@ -2,12 +2,10 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
@@ -17,6 +15,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Bound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::executive::alert_settings_repository::{
@@ -27,8 +26,9 @@ use crate::presentation::dto::v3::branch_alert_settings::{
     BranchAlertSettingsData, BranchAlertSettingsSaveInput,
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
-use crate::presentation::http::v3::me::me_roles;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
+use crate::presentation::http::v3::me::me_roles;
 
 pub struct BranchAlertSettingsSaveCommand {
     pool: PgPool,
@@ -76,38 +76,11 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
                     StatusCode::BAD_REQUEST,
                 ));
             }
-            let dec = Decimal::from_str(&floor.min_quantity).map_err(|_| {
-                V3Error::new(
-                    "validationFailed",
-                    Some("floors"),
-                    "malformed minQuantity",
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
-            if dec.is_sign_negative() && !dec.is_zero() {
-                return Err(V3Error::new(
-                    "validationFailed",
-                    Some("floors"),
-                    "minQuantity must be non-negative",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
-            if dec.scale() > 4 {
-                return Err(V3Error::new(
-                    "validationFailed",
-                    Some("floors"),
-                    "minQuantity scale exceeds 4 decimal places",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
-            if dec >= Decimal::from(10_000_000_000_000_000_i64) {
-                return Err(V3Error::new(
-                    "validationFailed",
-                    Some("floors"),
-                    "minQuantity exceeds maximum allowed value",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
+            let _ = input::decimal(
+                "floors",
+                &floor.min_quantity,
+                Bound::numeric(20, 4, Sign::NonNegative),
+            )?;
         }
 
         if !input.floors.is_empty() {
