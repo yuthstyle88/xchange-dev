@@ -15,7 +15,7 @@ import { formatMoney } from '../../../shared/ui/MoneyText';
 import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { menu } from './menu';
 
-const ENDPOINT = '/api/executive/overview';
+const ENDPOINT = '/api/v3/views/executive_overview';
 
 const FROM = '2026-10-05';
 const TO = '2026-10-06';

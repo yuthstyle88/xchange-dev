@@ -2,6 +2,7 @@ export interface ViewAnswer<T> {
   version: number;
   changed: boolean;
   data?: T;
+  versions?: Record<string, number>;
 }
 
 export interface ViewParams<F = unknown> {
@@ -99,13 +100,21 @@ export class ApiClient {
       await this.parseError(res);
     }
 
-    const json = (await res.json()) as { version: number; changed: boolean; data?: T };
+    const json = (await res.json()) as {
+      version: number;
+      changed: boolean;
+      data?: T;
+      versions?: unknown;
+    };
     const answer: ViewAnswer<T> = {
       version: json.version,
       changed: json.changed,
     };
     if ('data' in json && json.data !== undefined) {
       answer.data = json.data;
+    }
+    if (typeof json.versions === 'object' && json.versions !== null && !Array.isArray(json.versions)) {
+      answer.versions = json.versions as Record<string, number>;
     }
     return answer;
   }
