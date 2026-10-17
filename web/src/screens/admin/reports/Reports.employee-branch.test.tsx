@@ -277,4 +277,69 @@ describe('Admin Reports employee transactions on branch and period switch (#2893
     // While P2's read is in flight, no P1 rows may be shown
     expect(root.querySelector('[data-employee-ref="P1-1"]')).toBeNull();
   });
+
+  // Row 4 (kept): As row 1, then B's read succeeds -> B's rows are shown
+  it("Row 4: switch to branch B and B's read succeeds: B's rows are shown", async () => {
+    mount('A', { from: '2026-10-01', to: '2026-10-02' });
+    await openEmployeeTabAndSelectDao();
+
+    const txA = pendingTx[pendingTx.length - 1]!;
+    txA.resolveJson({
+      version: 1,
+      changed: true,
+      data: [makeTxRow('A-1', 'dao')],
+    });
+    await settle();
+
+    expect(root.querySelector('[data-employee-ref="A-1"]')).not.toBeNull();
+
+    const beforeCount = pendingTx.length;
+    setBranch('B');
+    await vi.waitFor(() => expect(pendingTx.length).toBeGreaterThan(beforeCount));
+    const txB = pendingTx[pendingTx.length - 1]!;
+
+    txB.resolveJson({
+      version: 1,
+      changed: true,
+      data: [makeTxRow('B-1', 'dao')],
+    });
+    await settle();
+
+    expect(root.querySelector('[data-employee-ref="B-1"]')).not.toBeNull();
+    expect(root.querySelector('[data-employee-ref="A-1"]')).toBeNull();
+  });
+
+  // Row 5 (kept): Re-opening the same employee with branch and period unchanged -> the rows already loaded stay shown (same key, :171)
+  it('Row 5: re-opening the same employee with branch and period unchanged keeps already loaded rows shown', async () => {
+    mount('A', { from: '2026-10-01', to: '2026-10-02' });
+    await openEmployeeTabAndSelectDao();
+
+    const txA = pendingTx[pendingTx.length - 1]!;
+    txA.resolveJson({
+      version: 1,
+      changed: true,
+      data: [makeTxRow('A-1', 'dao')],
+    });
+    await settle();
+
+    expect(root.querySelector('[data-employee-ref="A-1"]')).not.toBeNull();
+
+    // Deselect employee (pick All staff)
+    const select = root.querySelector<HTMLSelectElement>('select')!;
+    select.value = '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+
+    // When All staff is selected, dao's details is closed (<details open={false}>)
+    const details = root.querySelector<HTMLDetailsElement>('details')!;
+    expect(details.open).toBe(false);
+
+    // Re-open dao's section without changing branch or period
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+    await settle();
+
+    // The rows already loaded stay shown
+    expect(root.querySelector('[data-employee-ref="A-1"]')).not.toBeNull();
+  });
 });
