@@ -26,4 +26,9 @@ pub const ROWS: &[AreaRow] = &[
         action: "loyaltyRuleSubmit",
         need: Need::Permission(Permission::LoyaltyRulesManage),
     },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "loyalty_rule_versions",
+        need: Need::Permission(Permission::LoyaltyRulesManage),
+    },
 ];
