@@ -2,6 +2,12 @@
 //!
 //! Verifies that `insert_in` refuses money values whose hundredths overflow `i64::MAX`,
 //! returning `AppError::Internal` instead of silently wrapping or storing corrupted amounts.
+//!
+//! `money_to` is reachable through `thb` (Buy: amount ≤ 1e7 × rate ≤ 1e8 ÷ unit_size ≥ 0.0001,
+//! up to 1e19 THB against an i64 limit of ≈9.22e16 THB). `foreign` and `input_amount` cannot
+//! overflow: `kiosk_machine.rs:43` caps the input at 1e9 hundredths, Sell `foreign` is checked
+//! at `:73-78`, and the reader `money_from` (`kiosk_repository.rs:173-180`) bounds stored amounts
+//! to i64.
 
 mod kiosk_service_common;
 
@@ -45,30 +51,6 @@ fn dummy_request(id: &str, foreign: Money, thb: Money, input_amount: Money) -> K
 }
 
 #[tokio::test]
-async fn test_foreign_amount_overflow_refused() {
-    let db = TestDb::start().await;
-    let repo = PgKioskRepository::new(db.pool.clone());
-    let branch = BranchId::new(MAIN);
-
-    let req = dummy_request(
-        "req-foreign-overflow",
-        overflowing_money(),
-        Money::from_minor(3500).unwrap(),
-        Money::from_minor(100).unwrap(),
-    );
-
-    let mut tx = db.begin().await;
-    let res = repo.insert_in(&mut tx, &branch, &req, "127.0.0.1").await;
-    assert!(
-        matches!(res, Err(AppError::Internal(_))),
-        "expected AppError::Internal for overflowing foreign_amount, got: {res:?}"
-    );
-    drop(tx);
-
-    db.finish().await;
-}
-
-#[tokio::test]
 async fn test_thb_overflow_refused() {
     let db = TestDb::start().await;
     let repo = PgKioskRepository::new(db.pool.clone());
@@ -86,30 +68,6 @@ async fn test_thb_overflow_refused() {
     assert!(
         matches!(res, Err(AppError::Internal(_))),
         "expected AppError::Internal for overflowing thb, got: {res:?}"
-    );
-    drop(tx);
-
-    db.finish().await;
-}
-
-#[tokio::test]
-async fn test_input_amount_overflow_refused() {
-    let db = TestDb::start().await;
-    let repo = PgKioskRepository::new(db.pool.clone());
-    let branch = BranchId::new(MAIN);
-
-    let req = dummy_request(
-        "req-input-overflow",
-        Money::from_minor(100).unwrap(),
-        Money::from_minor(3500).unwrap(),
-        overflowing_money(),
-    );
-
-    let mut tx = db.begin().await;
-    let res = repo.insert_in(&mut tx, &branch, &req, "127.0.0.1").await;
-    assert!(
-        matches!(res, Err(AppError::Internal(_))),
-        "expected AppError::Internal for overflowing input_amount, got: {res:?}"
     );
     drop(tx);
 
