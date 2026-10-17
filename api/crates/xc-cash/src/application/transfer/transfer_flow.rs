@@ -731,9 +731,10 @@ impl TransferFlow {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
+        let transfer_uuid = Uuid::parse_str(id).map_err(|_| not_found(id))?;
         let org_uuid: Uuid =
-            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1::uuid")
-                .bind(id)
+            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1")
+                .bind(transfer_uuid)
                 .fetch_optional(&mut **tx)
                 .await?
                 .ok_or_else(|| not_found(id))?;
@@ -743,12 +744,11 @@ impl TransferFlow {
         }
         locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
 
-        let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
-            "SELECT created_by, received_by FROM cash_transfers WHERE id = $1::uuid",
-        )
-        .bind(id)
-        .fetch_one(&mut **tx)
-        .await?;
+        let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) =
+            sqlx::query_as("SELECT created_by, received_by FROM cash_transfers WHERE id = $1")
+                .bind(transfer_uuid)
+                .fetch_one(&mut **tx)
+                .await?;
         if creator_uuid.to_string() == who.user_id {
             return Err(AppError::Domain("creator cannot reconcile transfer".into()));
         }
@@ -1025,6 +1025,48 @@ mod tests {
                 assert_eq!(id, unknown);
             }
             other => panic!("expected AppError::NotFound on unknown transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[tokio::test]
+    async fn finance_reconciles_non_uuid_id_gets_not_found() {
+        let pool = test_pool().await;
+        let now = Utc.with_ymd_and_hms(2026, 10, 16, 12, 0, 0).unwrap();
+        let branch = BranchId::new("XC-B01");
+        sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1)")
+            .bind(branch.as_str())
+            .execute(&pool)
+            .await
+            .expect("branch of org A");
+        let user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_A)
+        .bind(unique("orga-fin"))
+        .fetch_one(&pool)
+        .await
+        .expect("org A finance user");
+        let finance = Actor::new(
+            &user_id,
+            ORG_A,
+            vec![ScopedRole::new(Role::Finance, Some(branch), now, None)],
+            None,
+        );
+
+        let flow = TransferFlow::pg(pool.clone());
+        let mut tx = pool.begin().await.expect("begin");
+        let err = flow
+            .reconcile_in(&mut tx, &finance, "abc", "probe", now)
+            .await
+            .expect_err("non-UUID transfer id must be refused");
+        match err {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, "abc");
+            }
+            other => panic!("expected AppError::NotFound on non-UUID id, got {other:?}"),
         }
         tx.rollback().await.expect("rollback");
     }
