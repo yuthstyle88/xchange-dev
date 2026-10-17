@@ -122,7 +122,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
       basis: basis(),
       pointsRatio: pointsRatio().trim(),
       rounding: rounding(),
-      minimumBasisAmount: minimumBasisAmount().trim(),
+      minimumBasisAmount: minimumBasisAmount().trim() || null,
       expiryMonths: parseOptionalInt(expiryMonths()),
       validFrom: toBangkokRfc3339(validFrom()) ?? '',
       validTo: toBangkokRfc3339(validTo()),
