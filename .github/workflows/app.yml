@@ -136,6 +136,7 @@ jobs:
         run: flutter analyze
 
       - name: Test
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: app
         run: flutter test
 
