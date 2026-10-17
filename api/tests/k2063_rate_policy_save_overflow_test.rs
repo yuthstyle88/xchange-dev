@@ -1,5 +1,17 @@
 //! Ticket #2864 / #2063 tail: rate_policy_save.rs uses checked arithmetic (try_minor)
 //! for rate_policy_value_tiers upper_inclusive_thb (1 site).
+//!
+//! Note: The :481 site is a K-b site that cannot really overflow in practice:
+//! - Money::parse at rate_policy_save.rs:238 bounds input to Money::MAX_INPUT_UNITS = 100_000_000
+//!   (10^10 hundredths, well below i64::MAX).
+//! - Stored rows read at :319 also build Money through Money::parse (values exceeding bounds
+//!   produce server_error).
+//!
+//! Thus resolved_tiers never holds a value exceeding i64::MAX hundredths, making line 481
+//! a defense-in-depth site.
+//!
+//! The test below pins the Money::parse boundary at :238, asserting its exact refusal message
+//! to distinguish it from a site overflow error.
 
 mod common;
 
@@ -18,7 +30,6 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_kernel::money::Money;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{SessionReader, Sessions};
 
@@ -121,18 +132,8 @@ fn frame_guards() -> Value {
     })
 }
 
-#[test]
-fn test_money_try_minor_catches_overflow_where_minor_wraps() {
-    let overflow_minor = (i64::MAX as i128) + 1;
-    let m = Money::try_from_minor_i128(overflow_minor).expect("valid decimal");
-    // Unchecked .minor() wrapped silently past i64::MAX hundredths to negative:
-    assert_eq!(m.minor(), i64::MIN);
-    // Checked try_minor() returns an Err:
-    assert!(m.try_minor().is_err());
-}
-
 #[actix_web::test]
-async fn rate_policy_save_upper_inclusive_thb_overflow_returns_validation_failed() {
+async fn upper_bound_past_i64_max_hundredths_is_refused_by_input_cap_at_parse() {
     let db = TestDb::start().await;
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
     let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
@@ -144,6 +145,8 @@ async fn rate_policy_save_upper_inclusive_thb_overflow_returns_validation_failed
     .await;
 
     // 92233720368547758.08 THB = 9223372036854775808 hundredths = i64::MAX + 1 hundredths.
+    // Money::parse at rate_policy_save.rs:238 enforces MAX_INPUT_UNITS = 100_000_000,
+    // refusing the value before resolved_tiers is created.
     let overflowing_amount = "92233720368547758.08";
     let body = json!({
         "branch": B01,
@@ -153,7 +156,7 @@ async fn rate_policy_save_upper_inclusive_thb_overflow_returns_validation_failed
         "maxReferenceAgeHours": 24,
         "onStale": "LIMIT",
         "staleLimitThb": "5000.00",
-        "reason": "testing upper_inclusive_thb overflow",
+        "reason": "testing upper_inclusive_thb input cap",
         "valueTiersOn": false,
         "valueTiers": [
             {
@@ -185,6 +188,11 @@ async fn rate_policy_save_upper_inclusive_thb_overflow_returns_validation_failed
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {val}");
     assert_eq!(val["error"]["code"], "validationFailed", "body: {val}");
     assert_eq!(val["error"]["field"], "valueTiers", "body: {val}");
+    let msg = val["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.starts_with("invalid upper bound in tier 1:"),
+        "expected parse refusal message from :238, got: {msg}"
+    );
 
     db.finish().await;
 }
