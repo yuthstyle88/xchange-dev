@@ -50,17 +50,28 @@ impl Money {
         d.mantissa() as i64
     }
 
-    /// The amount as hundredths with no 64-bit limit.
-    pub fn minor_i128(self) -> i128 {
+    fn hundredths(self) -> Option<i128> {
         let mut d = self.0;
         d.rescale(2);
-        d.mantissa()
+        if d.scale() == 2 {
+            Some(d.mantissa())
+        } else {
+            None
+        }
+    }
+
+    /// The amount as hundredths with no 64-bit limit.
+    pub fn minor_i128(self) -> i128 {
+        self.hundredths()
+            .expect("Money figure is not representable at 2 decimal places")
     }
 
     /// The amount as hundredths (satang, cents), or `Err(NumberError::Invalid)` when it does not
     /// fit in `i64`.
     pub fn try_minor(self) -> Result<i64, NumberError> {
-        i64::try_from(self.minor_i128()).map_err(|_| NumberError::Invalid)
+        self.hundredths()
+            .and_then(|m| i64::try_from(m).ok())
+            .ok_or(NumberError::Invalid)
     }
 
     /// The inverse of [`Money::minor`]; no upper cap. `Err(Invalid)` when negative.

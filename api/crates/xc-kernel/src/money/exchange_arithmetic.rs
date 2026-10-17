@@ -21,6 +21,11 @@ impl ExchangeArithmetic {
         let raw = (amount.value() * rate.value()) / unit.value();
         let mut rounded = raw.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         rounded.rescale(2);
+        assert_eq!(
+            rounded.scale(),
+            2,
+            "Money figure is not representable at 2 decimal places"
+        );
         Money::from_decimal(rounded)
     }
 
@@ -38,6 +43,9 @@ impl ExchangeArithmetic {
             .ok_or(ArithmeticOverflow)?;
         let mut rounded = raw.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         rounded.rescale(2);
+        if rounded.scale() != 2 {
+            return Err(ArithmeticOverflow);
+        }
         Ok(Money::from_decimal(rounded))
     }
 
