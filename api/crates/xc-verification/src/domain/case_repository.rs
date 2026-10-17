@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+use xc_kernel::ids::BranchId;
 
 use crate::domain::case::case_error::CaseError;
 use crate::domain::case::verification_case::VerificationCase;
@@ -66,6 +67,18 @@ pub trait CaseRepository: Send + Sync {
         submitted_at: DateTime<Utc>,
         version: i32,
     ) -> BoxFuture<'a, Result<(), CaseError>>;
+
+    /// Update case to SUBMITTED status and record `branch_id` when given.
+    fn update_case_submitted_with_branch<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        case_id: Uuid,
+        submitted_at: DateTime<Utc>,
+        version: i32,
+        _branch_id: Option<&'a BranchId>,
+    ) -> BoxFuture<'a, Result<(), CaseError>> {
+        self.update_case_submitted(tx, case_id, submitted_at, version)
+    }
 
     /// Find a document by its encrypted object ref.
     fn find_document_by_ref<'a>(
