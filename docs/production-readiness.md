@@ -125,7 +125,7 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 | 422 | deploy lanes | **before** | G2; off-PR steps O3–O6 remain; assignee claude/7a595a04 |
 | 542 | DK-F+J desk OCR | **owner** | G7; waits on Recognize #150 children |
 | 564 | umbrella | **finish** | all 17 design children closed; stays open as the lane's notice board until the release order, then closes |
-| 626 | CA-10 | **before** | G3, approved, pinned studio-8 |
+| 626 | CA-10 | **before** | G3, approved. Stopped 10-17 08:11Z: its scope missed test files that pin the v2 custody types; held (`blocked`, `assign:none`) while it is re-cut (design PR 2908 and the CA-10p split, #2916). Its dependents #1043/#1044/#1046/#1023, #1413, #2856/#2857/#2862 wait on it |
 | 677 | TX-9 | **before** | G3, approved, pinned studio-3 |
 | 930 | LG-6 parent | **finish** | closes when #1047 merges |
 | 947 | OR-7 parent | **finish** | closes when #1027 merges |
@@ -137,7 +137,7 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 | 1043 / 1044 / 1046 | LG-6 r4/r5/r6 | **before** | G3 |
 | 1047 | LG-6.m | **before** | G3 (drop migration), last |
 | 1191 | EX-10 commission | **after** | needs Broker-Platform's endpoint; A01 shows `awaitsBroker` meanwhile |
-| 1411 | LY-6 BE | **finish** | PR 2050 released; merger |
+| 1411 | LY-6 BE | **done** | PR 2050 merged 10-17 (`afcc9533`, batch 2844) |
 | 1413 | BK-11 | **before** | G3, approved |
 | 1414 | BK-12 partner booking | **after** | parked by the owner 04:4xZ |
 | 1474 | fmt gate | **before** | G1; last code ticket (§4 wave 5) |
@@ -147,8 +147,8 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 | 2054 | bounded inputs (tracking) | **after** | ratchet; 500s, not wrong money |
 | 2063 | unchecked money arithmetic (tracking) | **now, in parallel** | stored-amount paths fixed (#2088, #2093, #2096); per_unit cut as #2839. Owner 2026-10-17 ~07:1xZ: the tail (6 K-a + 49 K-b `.minor()` sites) is cut now, one ticket per file, for Flash workers; floor/removal ticket last |
 | 2108 | money falls back to zero (tracking) | **before** | 18 BUG rows are wrong money |
-| 2126 / 2127 | LY-6 follow-ups | **finish** | `ready` after 2050 merges |
-| 2129 | LY-6-FE | **finish** | after 2050 merges |
+| 2126 / 2127 | LY-6 follow-ups | **finish** | unblocked by PR 2050; in review / dispatched by the BE controller |
+| 2129 | LY-6-FE | **finish** | needs PR 2050 (merged) and the BE read view of rule versions #2868 (owner's G1 ruling on #2129). Ships POINT drafting, the list of POINT and TIER versions, and submit (PR 2918). **TIER drafting is held until after the first production release** (owner, 10-17 ~10:5xZ, #2129 issuecomment-6233107116) |
 | 2563 | identity test flake | **finish** | PR 2743 rework |
 | 2569 | 90-min cancel | **close** | fixed by PR 2786 + pool A |
 | 2703 / 2705 / 2774 / 2782 / 2794 / 2795 / 2796 / 2814 | bug PRs in review | **finish** | merger's batch |
@@ -171,7 +171,7 @@ The target is the fleet rule: ≥80 % of a lane's usable workers busy at the sam
 | 2 — after #626 merges | BE | #1043 · #1044 · #1046 · #1023 in parallel | `xc-shift` shift repo · `ops_state` paths · `stock_movements` readers · custody role mapping — **check `scope_prefixes` of all four before pinning**; #1043 and #1044 both name `xc-shift` | G3 |
 | 3 — after wave 2 | BE | #1026 → #1027; #1047 after #1043/#1044/#1046 | extractor → drop migrations | G3 |
 | 2' — parallel with 2 | BE | #2126 · #2127 (after 2050) · **the #2063 tail: one `class:mechanical` ticket per file (6 K-a + 49 K-b sites), pinned to Flash sessions holding no ticket**; the floor/removal ticket last | one file each — disjoint by construction; check `scope_prefixes` across the set | G4 |
-| 3' — parallel | FE | #2129 (after 2050) · "UAT script v1" doc ticket · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
+| 3' — parallel | FE | #2129 (POINT drafting only; TIER after release) with #2868 · UAT script #2835 · the bug tickets cut from the five parked sweep reports (owner, 10-17 ~08:0xZ) · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
 | 4 — owner's hands + Claude | #422's assignee or the BE controller | secrets → build-only run → mirror `deploy/staging` → smoke → record | `.github/`, host | G2 |
 | 5 — last code ticket | BE | #1474 (fmt gate), pinned to a Claude session, when no other BE ticket is leased or in review | ten directories | G1 |
 | 6 — on staging | owner / FE | #1683 · the UAT script · a day of use with the drop migrations applied | — | G5 |
