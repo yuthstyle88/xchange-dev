@@ -16,7 +16,6 @@ BEGIN
      LIMIT 1;
 
     IF bad_teller IS NOT NULL THEN
-        PERFORM pg_advisory_unlock_all();
         RAISE EXCEPTION 'M3 precheck failed: teller % holds % OPEN shifts; close extra OPEN shifts before retiring custody requests',
             bad_teller, open_count;
     END IF;
