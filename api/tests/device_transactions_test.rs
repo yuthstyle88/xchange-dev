@@ -709,18 +709,9 @@ async fn device_transactions_reads_type_amount_and_currency_from_line_not_wide_r
     let t1 = Utc.with_ymd_and_hms(2026, 10, 6, 10, 0, 0).unwrap();
     // Line has: SELL, 150 USD
     let tx1 = room.make_tx(&customer_id, &who.name, Side::Sell, "USD", "150", "33", t1);
-    let doc_ref = room.seed_completed(tx1).await;
+    room.seed_completed(tx1).await;
 
-    // Mutate the wide row in `transactions` to have different values
-    sqlx::query(
-        "UPDATE transactions \
-         SET type = 'BUY', amount = 9999.00, code = 'EUR' \
-         WHERE document_ref = $1",
-    )
-    .bind(&doc_ref)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("update wide transactions columns");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let rows = room.page("branch=MAIN").await;
     assert_eq!(rows.len(), 1, "exactly 1 row: {rows:?}");

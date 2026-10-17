@@ -163,13 +163,11 @@ async fn completed(db: &TestDb, branch: &str, number: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let org = format!("(SELECT organization_id FROM branches WHERE id = '{branch}')");
     db.exec(&format!(
-        "INSERT INTO transactions (id, document_ref, branch_id, mode, submission_id, payload_hash, \
-            customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-            bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-            value_date, paid_at, recorded_at, recorded_by, status, completed_at, organization_id) \
-         VALUES ('{id}', '{number}', '{branch}', 'DEMO', 'sub-{id}', 'hash', 'CU-{branch}', \
-            'Somchai', 'THA', 'BUY', 'USD', 100, 32.1, 3210.00, 10.00, 0, 0, 3200.00, 'Cash', '', \
-            'drawer', 'EMP-001', 'WALK-IN', '', '2026-10-06', '{COMPLETED_AT}', '{COMPLETED_AT}', \
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, submission_id, payload_hash, customer_id, \
+            customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, status, completed_at, organization_id) \
+         VALUES ('{id}', '{number}', '{branch}', 'DEMO', 'sub-{id}', 'hash', 'CU-{branch}', 'Somchai', \
+            'THA', 'EMP-001', 'WALK-IN', '', '2026-10-06', '{COMPLETED_AT}', '{COMPLETED_AT}', \
             'owner', 'COMPLETED', '{COMPLETED_AT}', {org})"
     ))
     .await;

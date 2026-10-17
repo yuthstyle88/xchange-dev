@@ -86,26 +86,18 @@ impl TransactionStore for PgTransactionStore {
             Side::Buy => "BUY",
             Side::Sell => "SELL",
         };
-        let (received, paid) = match line.shop_side {
-            Side::Buy => ("0.00".to_owned(), t.payment.amount_thb.to_string()),
-            Side::Sell => (t.payment.amount_thb.to_string(), "0.00".to_owned()),
-        };
 
         sqlx::query(
             "INSERT INTO transactions ( \
                 id, organization_id, branch_id, mode, status, document_ref, quote_id, \
                 booking_id, shift_id, submission_id, payload_hash, customer_id, customer_name, \
-                nationality, type, code, amount, unit_size, rate, reference_rate, principal, \
-                fee, bank_fee, received, paid, method, payment_ref, account, staff_id, \
-                booking_no, notes, value_date, paid_at, recorded_at, recorded_by, \
-                kiosk_request_id, staff_draft_id, count_confirmed \
+                nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                recorded_by, kiosk_request_id, staff_draft_id, count_confirmed \
             ) VALUES ( \
                 $1, $2, $3, $4, 'DRAFT', NULL, $5, \
                 $6, $7, $8, $9, $10, $11, \
-                $12, $13, $14, $15::numeric, $16::numeric, $17::numeric, $18::numeric, $19::numeric, \
-                $20::numeric, $21::numeric, $22::numeric, $23::numeric, $24, $25, $26, $27, \
-                $28, $29, $30, $31, $32, $33, \
-                $34, $35, $36 \
+                $12, $13, $14, $15, $16, $17, $18, \
+                $19, $20, $21, $22 \
             )",
         )
         .bind(t.id.0)
@@ -120,20 +112,6 @@ impl TransactionStore for PgTransactionStore {
         .bind(&t.customer_id)
         .bind(&t.customer_name)
         .bind(&t.nationality)
-        .bind(side_str)
-        .bind(line.currency.as_str())
-        .bind(line.quantity.value().to_string())
-        .bind(line.unit_size.value().to_string())
-        .bind(line.rate_snapshot.value().to_string())
-        .bind(line.reference_rate.map(|r| r.value().to_string()))
-        .bind(line.thb_amount.to_string())
-        .bind(line.fee_thb.to_string())
-        .bind(t.payment.bank_fee_thb.to_string())
-        .bind(received)
-        .bind(paid)
-        .bind(t.payment.method.as_str())
-        .bind(&t.payment.reference)
-        .bind(&t.payment.account)
         .bind(&t.staff_id)
         .bind(&t.booking_no)
         .bind(&t.notes)
